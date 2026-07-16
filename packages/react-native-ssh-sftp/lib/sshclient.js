@@ -2,6 +2,8 @@ import { Platform, NativeModules, NativeEventEmitter, DeviceEventEmitter } from 
 const { RNSSHClient } = NativeModules;
 const RNSSHClientEmitter = new NativeEventEmitter(RNSSHClient);
 const NATIVE_EVENT_SHELL = 'Shell';
+const NATIVE_EVENT_HERDR_BRIDGE = 'HerdrBridge';
+const NATIVE_EVENT_HERDR_EVENT_STREAM = 'HerdrEventStream';
 const NATIVE_EVENT_DOWNLOAD_PROGRESS = 'DownloadProgress';
 const NATIVE_EVENT_UPLOAD_PROGRESS = 'UploadProgress';
 /**
@@ -126,6 +128,8 @@ class SSHClient {
         this._activeStream = {
             sftp: false,
             shell: false,
+            herdrBridge: false,
+            herdrEventStream: false,
         };
         this._handlers = {};
         this.host = host;
@@ -154,6 +158,12 @@ class SSHClient {
      * @param event The native event to handle.
      */
     handleEvent(event) {
+        if (event.name === NATIVE_EVENT_HERDR_BRIDGE && event.value?.type === 'closed') {
+            this._activeStream.herdrBridge = false;
+        }
+        if (event.name === NATIVE_EVENT_HERDR_EVENT_STREAM && event.value?.includes?.('herdr_android_bridge_closed')) {
+            this._activeStream.herdrEventStream = false;
+        }
         if (this._handlers[event.name] && this._key === event.key) {
             this._handlers[event.name](event.value);
         }
@@ -350,6 +360,89 @@ class SSHClient {
         // TODO this should use a callback too
         RNSSHClient.closeShell(this._key);
         this._activeStream.shell = false;
+    }
+    startHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, handler, callback) {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('Herdr remote-client-bridge is currently Android-only'));
+        }
+        if (this._activeStream.herdrBridge) {
+            this.on(NATIVE_EVENT_HERDR_BRIDGE, handler);
+            return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => {
+            this.on(NATIVE_EVENT_HERDR_BRIDGE, handler);
+            this.registerNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
+            RNSSHClient.startHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
+                if (callback) callback(error);
+                if (error) {
+                    this.off(NATIVE_EVENT_HERDR_BRIDGE);
+                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
+                    return reject(error);
+                }
+                this._activeStream.herdrBridge = true;
+                resolve();
+            });
+        });
+    }
+    herdrBridgeAttach(terminalId, takeover = true) {
+        return new Promise((resolve, reject) => {
+            RNSSHClient.herdrBridgeAttach(terminalId, takeover, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    herdrBridgeInput(text) {
+        return new Promise((resolve, reject) => {
+            RNSSHClient.herdrBridgeInput(text, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    herdrBridgeResize(columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
+        return new Promise((resolve, reject) => {
+            RNSSHClient.herdrBridgeResize(columns, rows, cellWidthPx, cellHeightPx, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    herdrBridgeScroll(direction, lines) {
+        return new Promise((resolve, reject) => {
+            RNSSHClient.herdrBridgeScroll(direction === 'up', lines, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    closeHerdrBridge() {
+        this.off(NATIVE_EVENT_HERDR_BRIDGE);
+        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
+        RNSSHClient.closeHerdrBridge(this._key);
+        this._activeStream.herdrBridge = false;
+    }
+    startHerdrEventStream(command, handler, callback) {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('Herdr event streams are currently Android-only'));
+        }
+        if (this._activeStream.herdrEventStream) {
+            this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
+            return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => {
+            this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
+            this.registerNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
+            RNSSHClient.startHerdrEventStream(command, this._key, error => {
+                if (callback) callback(error);
+                if (error) {
+                    this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
+                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
+                    return reject(error);
+                }
+                this._activeStream.herdrEventStream = true;
+                resolve();
+            });
+        });
+    }
+    writeHerdrEventStream(value) {
+        return new Promise((resolve, reject) => {
+            RNSSHClient.writeHerdrEventStream(value, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    closeHerdrEventStream() {
+        this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
+        this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
+        RNSSHClient.closeHerdrEventStream(this._key);
+        this._activeStream.herdrEventStream = false;
     }
     /**
      * Connects to the SFTP server.
@@ -627,10 +720,16 @@ class SSHClient {
      */
     disconnect() {
         this.off(NATIVE_EVENT_SHELL);
+        this.off(NATIVE_EVENT_HERDR_BRIDGE);
+        this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
+        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
+        this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
         this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
         this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
         this._activeStream.shell = false;
         this._activeStream.sftp = false;
+        this._activeStream.herdrBridge = false;
+        this._activeStream.herdrEventStream = false;
         RNSSHClient.disconnect(this._key);
     }
 }
