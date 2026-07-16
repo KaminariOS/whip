@@ -8,11 +8,11 @@ interface Props {
   agents: AgentInfo[];
   refreshing: boolean;
   onRefresh: () => void;
-  onSelect: (agent: AgentInfo) => void;
+  onOpenTerminal: (agent: AgentInfo) => void;
   onStart: (name: string, command: string, cwd: string) => Promise<void>;
 }
 
-export function HerdScreen({ agents, refreshing, onRefresh, onSelect, onStart }: Props) {
+export function HerdScreen({ agents, refreshing, onRefresh, onOpenTerminal, onStart }: Props) {
   const blocked = agents.filter(agent => agent.agent_status === 'blocked').length;
   const working = agents.filter(agent => agent.agent_status === 'working').length;
   const done = agents.filter(agent => agent.agent_status === 'done').length;
@@ -66,7 +66,12 @@ export function HerdScreen({ agents, refreshing, onRefresh, onSelect, onStart }:
         [...agents]
           .sort((a, b) => priority(a.agent_status) - priority(b.agent_status))
           .map((agent, index) => (
-            <Pressable key={agent.terminal_id} onPress={() => onSelect(agent)} style={styles.agentCard}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${agent.display_agent || agent.name || agent.agent || 'agent'} terminal`}
+              key={agent.terminal_id}
+              onPress={() => onOpenTerminal(agent)}
+              style={styles.agentCard}>
               <View style={styles.agentIndex}>
                 <Text style={styles.indexText}>{String(index + 1).padStart(2, '0')}</Text>
               </View>

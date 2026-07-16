@@ -71,6 +71,9 @@ export function SessionScreen({
   const selectedPane = panes.find(item => item.terminal_id === terminalState.activeTerminalId)
     || panes.find(item => item.focused)
     || panes[0];
+  const activeTerminalSession = terminalState.sessions.find(
+    session => session.terminalId === terminalState.activeTerminalId,
+  );
 
   useEffect(() => {
     const pending = pendingFocus.current;
@@ -334,18 +337,18 @@ export function SessionScreen({
       )}
 
       <View style={styles.terminalStage}>
-        {terminalState.sessions.map(session => (
+        {visible && activeTerminalSession && (
           <TerminalScreen
-            key={session.terminalId}
+            key={activeTerminalSession.terminalId}
             client={client}
             compact
-            visible={visible && session.terminalId === terminalState.activeTerminalId}
-            session={session}
+            visible
+            session={activeTerminalSession}
             preferences={terminalPreferences}
-            onClose={() => onCloseTerminal(session.terminalId)}
-            onStatus={(status, error, reconnectAttempt) => onTerminalStatus(session.terminalId, status, error, reconnectAttempt)}
+            onClose={() => onCloseTerminal(activeTerminalSession.terminalId)}
+            onStatus={(status, error, reconnectAttempt) => onTerminalStatus(activeTerminalSession.terminalId, status, error, reconnectAttempt)}
           />
-        ))}
+        )}
         {!selectedTab && (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>{workspace ? 'EMPTY WORKSPACE' : 'NO WORKSPACES'}</Text>

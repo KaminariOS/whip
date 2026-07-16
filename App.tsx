@@ -2,7 +2,6 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { Alert, AppState, BackHandler, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { AgentDetail } from './src/components/AgentDetail';
 import { BottomNavigation } from './src/components/BottomNavigation';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
@@ -116,7 +115,6 @@ function AppContent() {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [liveSessions, setLiveSessions] = useState(emptyLiveHostSessions);
   const [navigation, setNavigation] = useState(initialMobileNavigation);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
@@ -390,10 +388,6 @@ function AppContent() {
         setConnectError(null);
         return true;
       }
-      if (selectedAgentId) {
-        setSelectedAgentId(null);
-        return true;
-      }
       if (selectedPaneId) {
         setSelectedPaneId(null);
         return true;
@@ -403,7 +397,7 @@ function AppContent() {
       return result.handled;
     });
     return () => subscription.remove();
-  }, [editorProfile, navigation, selectedAgentId, selectedPaneId]);
+  }, [editorProfile, navigation, selectedPaneId]);
 
   const selectTab = (tab: AppTab) => setNavigation(current => selectMobileTab(current, tab));
 
@@ -419,7 +413,6 @@ function AppContent() {
         .finally(() => runtime.client.disconnect());
       runtimes.current.delete(sessionId);
     }
-    setSelectedAgentId(null);
     setSelectedPaneId(null);
     setLiveSessions(current => {
       const next = closeLiveHostSession(current, sessionId);
@@ -541,7 +534,6 @@ function AppContent() {
   };
 
   const selectLiveHost = useCallback((sessionId: string, tab: AppTab = 'terminal') => {
-    setSelectedAgentId(null);
     setSelectedPaneId(null);
     setLiveSessions(current => selectLiveHostSession(current, sessionId));
     setNavigation(current => selectMobileTab(current, tab));
@@ -624,9 +616,6 @@ function AppContent() {
   const activeRuntime = activeSession ? runtimes.current.get(activeSession.id) : undefined;
   const activeClient = activeRuntime?.client;
   const snapshot = activeSession?.snapshot;
-  const selectedAgent = selectedAgentId && snapshot
-    ? snapshot.agents.find(agent => agent.pane_id === selectedAgentId) || null
-    : null;
   const selectedPane = selectedPaneId && snapshot
     ? snapshot.panes.find(pane => pane.pane_id === selectedPaneId) || null
     : null;
@@ -639,7 +628,6 @@ function AppContent() {
     if (!activeSession) return;
     const pane = activeSession.snapshot.panes.find(item => item.pane_id === agent.pane_id);
     if (!pane) return;
-    setSelectedAgentId(null);
     openPaneTerminal(activeSession.id, pane);
   };
 
@@ -714,7 +702,7 @@ function AppContent() {
                       agents={activeSession.snapshot.agents}
                       refreshing={activeSession.sync.status === 'syncing'}
                       onRefresh={refreshActive}
-                      onSelect={agent => setSelectedAgentId(agent.pane_id)}
+                      onOpenTerminal={openAgentTerminal}
                       onStart={startAgent}
                     />
                   )}
@@ -808,22 +796,13 @@ function AppContent() {
       </View>
 
       {activeClient && (
-        <>
-          <AgentDetail
-            agent={selectedAgent}
-            client={activeClient}
-            onClose={() => setSelectedAgentId(null)}
-            onOpenTerminal={openAgentTerminal}
-            onChanged={refreshActive}
-          />
-          <PaneDetail
-            pane={selectedPane}
-            client={activeClient}
-            onClose={() => setSelectedPaneId(null)}
-            onChanged={refreshActive}
-            onOpenTerminal={pane => activeSession && openPaneTerminal(activeSession.id, pane)}
-          />
-        </>
+        <PaneDetail
+          pane={selectedPane}
+          client={activeClient}
+          onClose={() => setSelectedPaneId(null)}
+          onChanged={refreshActive}
+          onOpenTerminal={pane => activeSession && openPaneTerminal(activeSession.id, pane)}
+        />
       )}
     </SafeAreaView>
   );

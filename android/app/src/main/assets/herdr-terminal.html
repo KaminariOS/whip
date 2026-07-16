@@ -76,6 +76,16 @@
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       terminal.write(bytes);
     };
+    const pendingFrames = new Map();
+    window.herdrWriteBase64Chunk = (sequence, data, final) => {
+      const encoded = (pendingFrames.get(sequence) || '') + data;
+      if (!final) {
+        pendingFrames.set(sequence, encoded);
+        return;
+      }
+      pendingFrames.delete(sequence);
+      window.herdrWriteBase64(encoded);
+    };
     window.herdrReset = () => terminal.reset();
     window.herdrConfigure = options => {
       terminal.options.fontSize = Math.max(8, Math.min(16, Number(options.fontSize) || 8));
