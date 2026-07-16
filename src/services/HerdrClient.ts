@@ -279,13 +279,6 @@ export class HerdrClient {
     this.apiServer = null;
   }
 
-  readAgent(target: string): Promise<{ text: string }> {
-    return this.executeJson(
-      `agent read ${shellQuote(target)} --source recent --lines 160 --format ansi`,
-      'read',
-    );
-  }
-
   readPane(paneId: string): Promise<string> {
     return this.executeJson<{ text: string }>(
       `pane read ${shellQuote(paneId)} --source recent --lines 160 --format ansi`,
@@ -457,8 +450,8 @@ export class HerdrClient {
     try {
       client.on('Shell', onData);
       // Herdr's first full redraw is a large newline-delimited JSON record.
-      // Keep that record atomic across the native event bridge; losing any one
-      // chunk leaves xterm with only later incremental updates.
+      // The native reader preserves its line boundary while forwarding bounded
+      // chunks that the JavaScript decoder reassembles.
       await client.startLineShell(PtyType.XTERM);
       this.terminalConnections.set(terminalId, { client });
       const size = this.terminalSizes.get(terminalId) || {

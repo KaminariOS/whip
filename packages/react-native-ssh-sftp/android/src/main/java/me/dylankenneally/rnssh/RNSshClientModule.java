@@ -300,7 +300,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           if (lineBuffered) {
             String line;
             while (client._bufferedReader != null && (line = client._bufferedReader.readLine()) != null) {
-              sendShellEvent(key, line + "\n");
+              sendLineShellEvent(key, line);
             }
           } else {
             char[] chars = new char[8192];
@@ -330,6 +330,20 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     map.putString("key", key);
     map.putString("value", value);
     sendEvent(reactContext, "Shell", map);
+  }
+
+  private void sendLineShellEvent(final String key, final String line) {
+    final int chunkSize = 8192;
+    int start = 0;
+    while (start < line.length()) {
+      int end = Math.min(line.length(), start + chunkSize);
+      if (end < line.length() && Character.isHighSurrogate(line.charAt(end - 1))) {
+        end -= 1;
+      }
+      sendShellEvent(key, line.substring(start, end));
+      start = end;
+    }
+    sendShellEvent(key, "\n");
   }
 
   @ReactMethod

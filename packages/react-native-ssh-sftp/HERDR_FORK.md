@@ -7,7 +7,8 @@ of modifying installed files with `patch-package`.
 
 Herdr-specific changes:
 
-- preserve raw PTY chunks instead of reading shell output one line at a time;
+- preserve the raw PTY stream and expose a line-shell mode that forwards large
+  newline-delimited Herdr frames in bounded React Native event chunks;
 - expose PTY resizing on Android and in the JavaScript API;
 - close shell/SFTP streams synchronously during disconnect so asynchronous
   cleanup cannot race client-pool removal and crash the Android process;

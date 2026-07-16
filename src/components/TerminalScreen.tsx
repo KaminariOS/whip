@@ -47,6 +47,7 @@ const KEYS = [
 ] as const;
 
 const MAX_RECONNECT_ATTEMPTS = 5;
+const FRAME_CHUNK_SIZE = 16_384;
 
 export function TerminalScreen({ client, visible, session, preferences, compact = false, onClose, onStatus }: Props) {
   const { terminalId, title, status } = session;
@@ -68,8 +69,13 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const reportStatus = useEffectEvent(onStatus);
 
   const writeFrame = useEffectEvent((frame: TerminalFrame) => {
-    const encoded = JSON.stringify(frame.bytes);
-    webView.current?.injectJavaScript(`window.herdrWriteBase64(${encoded}); true;`);
+    for (let offset = 0; offset < frame.bytes.length; offset += FRAME_CHUNK_SIZE) {
+      const chunk = frame.bytes.slice(offset, offset + FRAME_CHUNK_SIZE);
+      const final = offset + FRAME_CHUNK_SIZE >= frame.bytes.length;
+      webView.current?.injectJavaScript(
+        `window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(chunk)}, ${final}); true;`,
+      );
+    }
   });
 
   const sendInput = async (data: string) => {
