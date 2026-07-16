@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { AnsiOutput } from './AnsiOutput';
+import { AgentActivityFeed } from './AgentActivityFeed';
 import type { HerdrClient } from '../services/HerdrClient';
 import { colors, statusColor } from '../theme';
 import type { AgentInfo } from '../types';
@@ -25,31 +26,42 @@ interface Props {
 }
 
 export function AgentDetail({ agent, client, onClose, onOpenTerminal, onChanged }: Props) {
+  const paneId = agent?.pane_id || null;
   const loadedPaneId = useRef<string | null>(null);
   const [output, setOutput] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rawOutput, setRawOutput] = useState(false);
 
   useEffect(() => {
-    if (!agent) {
+    if (!paneId) {
       loadedPaneId.current = null;
       return;
     }
     let active = true;
-    if (loadedPaneId.current !== agent.pane_id) {
-      loadedPaneId.current = agent.pane_id;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (loadedPaneId.current !== paneId) {
+      loadedPaneId.current = paneId;
       setOutput('');
     }
     setError(null);
-    client
-      .readAgent(agent.pane_id)
-      .then(read => active && setOutput(read.text))
-      .catch(reason => active && setError(String(reason)));
+    const refreshOutput = async () => {
+      try {
+        const read = await client.readAgent(paneId);
+        if (active) setOutput(read.text);
+      } catch (reason) {
+        if (active) setError(String(reason));
+      } finally {
+        if (active) timer = setTimeout(refreshOutput, 750);
+      }
+    };
+    refreshOutput();
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [agent, client]);
+  }, [client, paneId]);
 
   if (!agent) {
     return null;
@@ -75,10 +87,9 @@ export function AgentDetail({ agent, client, onClose, onOpenTerminal, onChanged 
   };
 
   return (
-    <Modal animationType="slide" visible transparent onRequestClose={onClose}>
+    <Modal animationType="slide" visible onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.backdrop}>
         <View style={styles.sheet}>
-          <View style={styles.handle} />
           <View style={styles.header}>
             <View style={styles.headerBody}>
               <Text style={styles.eyebrow}>{agent.workspace_id} / {agent.pane_id}</Text>
@@ -98,14 +109,23 @@ export function AgentDetail({ agent, client, onClose, onOpenTerminal, onChanged 
 
           <Text numberOfLines={2} style={styles.task}>{agent.title || agent.custom_status || 'No task title reported'}</Text>
 
+          <View style={styles.context}>
+            <Context label="WORKSPACE" value={agent.workspace_id} />
+            <Context label="PANE" value={agent.pane_id} />
+            <Context label="DIRECTORY" value={agent.foreground_cwd || agent.cwd || '—'} wide />
+          </View>
+
           <View style={styles.outputHeader}>
-            <Text style={styles.outputLabel}>RECENT PANE OUTPUT</Text>
-            <Pressable onPress={() => client.readAgent(agent.pane_id).then(read => setOutput(read.text))}>
-              <Text style={styles.refresh}>REFRESH</Text>
-            </Pressable>
+            <Text style={styles.outputLabel}>{rawOutput ? 'RAW TERMINAL VIEW' : 'AGENT ACTIVITY'}</Text>
+            <View style={styles.outputActions}>
+              <Pressable onPress={() => setRawOutput(value => !value)}><Text style={styles.refresh}>{rawOutput ? 'GUI' : 'RAW'}</Text></Pressable>
+              <Pressable onPress={() => client.readAgent(agent.pane_id).then(read => setOutput(read.text))}><Text style={styles.refresh}>REFRESH</Text></Pressable>
+            </View>
           </View>
           <View style={styles.output}>
-            {output ? <AnsiOutput value={output} /> : <ActivityIndicator color={colors.acid} style={styles.outputSpinner} />}
+            {output
+              ? rawOutput ? <AnsiOutput value={output} /> : <AgentActivityFeed value={output} />
+              : <ActivityIndicator color={colors.acid} style={styles.outputSpinner} />}
           </View>
 
           <View style={styles.quickRow}>
@@ -140,10 +160,18 @@ export function AgentDetail({ agent, client, onClose, onOpenTerminal, onChanged 
   );
 }
 
+function Context({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <View style={[styles.contextItem, wide && styles.contextWide]}>
+      <Text style={styles.contextLabel}>{label}</Text>
+      <Text numberOfLines={1} style={styles.contextValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000099' },
-  sheet: { height: '91%', backgroundColor: colors.panel, borderTopColor: colors.acid, borderTopWidth: 2, paddingHorizontal: 16 },
-  handle: { width: 44, height: 3, backgroundColor: colors.line, alignSelf: 'center', marginVertical: 8 },
+  backdrop: { flex: 1, backgroundColor: colors.ink },
+  sheet: { flex: 1, backgroundColor: colors.panel, borderTopColor: colors.acid, borderTopWidth: 2, paddingHorizontal: 16, paddingTop: 10 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerBody: { flex: 1 },
   eyebrow: { color: colors.muted, fontFamily: 'monospace', fontSize: 8 },
@@ -153,8 +181,14 @@ const styles = StyleSheet.create({
   close: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   closeText: { color: colors.text, fontSize: 28, lineHeight: 30 },
   task: { color: colors.muted, fontSize: 13, lineHeight: 19, marginTop: 10 },
+  context: { flexDirection: 'row', flexWrap: 'wrap', borderColor: colors.line, borderWidth: 1, marginTop: 12 },
+  contextItem: { width: '50%', paddingHorizontal: 9, paddingVertical: 8, borderRightColor: colors.line, borderRightWidth: 1 },
+  contextWide: { width: '100%', borderTopColor: colors.line, borderTopWidth: 1, borderRightWidth: 0 },
+  contextLabel: { color: colors.muted, fontFamily: 'monospace', fontSize: 7, letterSpacing: 1 },
+  contextValue: { color: colors.text, fontFamily: 'monospace', fontSize: 9, marginTop: 4 },
   outputHeader: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18, marginBottom: 7 },
   outputLabel: { color: colors.acid, fontFamily: 'monospace', fontSize: 9, letterSpacing: 1.2 },
+  outputActions: { flexDirection: 'row', gap: 16 },
   refresh: { color: colors.muted, fontFamily: 'monospace', fontSize: 9 },
   output: { flex: 1, backgroundColor: colors.ink, borderColor: colors.line, borderWidth: 1 },
   outputSpinner: { flex: 1 },

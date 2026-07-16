@@ -372,30 +372,32 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   public void closeShell(final String key) {
     new Thread(new Runnable()  {
       public void run() {
-        try {
-          SSHClient client = clientPool.get(key);
-          if (client == null) {
-              throw new Exception("client is null");
-          }
-          if (client._channel != null) {
-              client._channel.disconnect();
-          }
-
-          if (client._dataOutputStream != null) {
-              client._dataOutputStream.flush();
-              client._dataOutputStream.close();
-          }
-
-          if (client._bufferedReader != null) {
-              client._bufferedReader.close();
-          }
-        } catch (IOException error) {
-          Log.e(LOGTAG, "Error closing shell:" + error.getMessage());
-        } catch (Exception error) {
-          Log.e(LOGTAG, "Error closing shell:" + error.getMessage());
+        SSHClient client = clientPool.get(key);
+        if (client != null) {
+          closeShellClient(client);
         }
       }
     }).start();
+  }
+
+  private void closeShellClient(SSHClient client) {
+    try {
+      if (client._channel != null) {
+        client._channel.disconnect();
+        client._channel = null;
+      }
+      if (client._dataOutputStream != null) {
+        client._dataOutputStream.flush();
+        client._dataOutputStream.close();
+        client._dataOutputStream = null;
+      }
+      if (client._bufferedReader != null) {
+        client._bufferedReader.close();
+        client._bufferedReader = null;
+      }
+    } catch (IOException error) {
+      Log.e(LOGTAG, "Error closing shell:" + error.getMessage());
+    }
   }
 
   @ReactMethod
@@ -673,16 +675,15 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void disconnect(final String key) {
-    this.closeShell(key);
-    this.disconnectSFTP(key);
-
-    SSHClient client = clientPool.get(key);
+    SSHClient client = clientPool.remove(key);
     if (client != null) {
+        closeShellClient(client);
+        if (client._sftpSession != null) {
+          client._sftpSession.disconnect();
+          client._sftpSession = null;
+        }
         client._session.disconnect();
     }
-    // Remove the client from the pool so it can be garbage collected. Without
-    // this the pool grows unbounded for apps that open many short-lived connections.
-    clientPool.remove(key);
   }
 
   private class progressMonitor implements SftpProgressMonitor {

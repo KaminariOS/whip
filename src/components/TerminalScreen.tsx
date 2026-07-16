@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { Clipboard, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Clipboard, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
@@ -90,12 +90,13 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
     if (!ready || !terminalId) {
       return;
     }
+    if (AppState.currentState !== 'active') return;
     let active = true;
     setError(null);
     reportStatus('connecting', undefined, reconnectAttempt.current);
     webView.current?.injectJavaScript('window.herdrReset(); true;');
     const scheduleReconnect = (reason: string) => {
-      if (!active) return;
+      if (!active || AppState.currentState !== 'active') return;
       const nextAttempt = reconnectAttempt.current + 1;
       if (nextAttempt > MAX_RECONNECT_ATTEMPTS) {
         reportStatus('error', reason, reconnectAttempt.current);
@@ -127,9 +128,26 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
     return () => {
       active = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      client.closeTerminal(terminalId);
+      client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
     };
   }, [client, connectionGeneration, ready, terminalId]);
+
+  useEffect(() => {
+    let previous = AppState.currentState;
+    const subscription = AppState.addEventListener('change', state => {
+      const wasActive = previous === 'active';
+      previous = state;
+      if (state !== 'active' && wasActive) {
+        if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+        client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
+        reportStatus('disconnected', 'Terminal released while the app is in the background.', 0);
+      } else if (state === 'active' && !wasActive) {
+        reconnectAttempt.current = 0;
+        setConnectionGeneration(value => value + 1);
+      }
+    });
+    return () => subscription.remove();
+  }, [client, terminalId]);
 
   useEffect(() => {
     reconnectAttempt.current = session.reconnectAttempt;

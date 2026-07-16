@@ -73,3 +73,7 @@ export function terminalResizeCommand(
 export function terminalScrollCommand(direction: 'up' | 'down', lines: number): string {
   return `${JSON.stringify({ type: 'terminal.scroll', direction, lines, source: 'wheel' })}\n`;
 }
+
+export function terminalReleaseCommand(): string {
+  return `${JSON.stringify({ type: 'terminal.release' })}\n`;
+}
