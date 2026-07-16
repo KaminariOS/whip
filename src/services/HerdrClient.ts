@@ -1,26 +1,29 @@
 import SSHClient, { PtyType } from '@dylankenneally/react-native-ssh-sftp';
 
 import { normalizePrivateKey } from '../lib/privateKey';
+import {
+  apiErrorMessage,
+  apiRequestLine,
+  eventsSubscribeRequest,
+  HerdrApiBridgeDecoder,
+  sessionSnapshotRequest,
+  type HerdrApiMessage,
+  type SessionSnapshotResult,
+} from '../lib/herdrApiBridge';
 import { parseJsonResponse, shellQuote } from '../lib/shell';
 import {
   TerminalBridgeDecoder,
   terminalInputCommand,
+  terminalReleaseCommand,
   terminalResizeCommand,
   terminalScrollCommand,
   type TerminalFrame,
 } from '../lib/terminalBridge';
-import type {
-  AgentInfo,
-  ConnectionProfile,
-  HerdrSnapshot,
-  PaneInfo,
-  ServerInfo,
-  TabInfo,
-  WorkspaceInfo,
-} from '../types';
+import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
+type ApiEventHandler = (message: HerdrApiMessage) => void;
 
 interface TerminalConnection {
   client: SSHClient;
@@ -39,6 +42,9 @@ export class HerdrClient {
   private terminalConnections = new Map<string, TerminalConnection>();
   private terminalOpenings = new Map<string, Promise<void>>();
   private terminalSizes = new Map<string, TerminalSize>();
+  private eventClient: SSHClient | null = null;
+  private eventGeneration = 0;
+  private apiServer: ServerInfo | null = null;
 
   async connect(profile: ConnectionProfile): Promise<void> {
     const port = Number(profile.port);
@@ -48,6 +54,7 @@ export class HerdrClient {
 
     this.client = await this.connectSsh(profile, port);
     this.profile = profile;
+    this.apiServer = null;
   }
 
   /**
@@ -64,6 +71,7 @@ export class HerdrClient {
     const previousClient = this.client;
     this.client = nextClient;
     this.profile = profile;
+    this.apiServer = null;
     previousClient?.off('Shell');
     previousClient?.disconnect();
   }
@@ -72,10 +80,12 @@ export class HerdrClient {
     for (const terminalId of this.terminalConnections.keys()) {
       this.closeTerminal(terminalId);
     }
+    this.closeEventStream();
     this.client?.off('Shell');
     this.client?.disconnect();
     this.client = null;
     this.profile = null;
+    this.apiServer = null;
     this.terminalOpenings.clear();
     this.terminalSizes.clear();
   }
@@ -146,29 +156,127 @@ export class HerdrClient {
       return;
     }
     connection.client.off('Shell');
-    connection.client.closeShell();
     connection.client.disconnect();
     this.terminalConnections.delete(terminalId);
   }
 
+  async releaseTerminal(terminalId: string): Promise<void> {
+    const opening = this.terminalOpenings.get(terminalId);
+    if (opening) await opening.catch(() => undefined);
+    const connection = this.terminalConnections.get(terminalId);
+    if (!connection) return;
+    try {
+      await connection.client.writeToShell(terminalReleaseCommand());
+    } finally {
+      this.closeTerminal(terminalId);
+    }
+  }
+
+  async releaseAllTerminals(): Promise<void> {
+    await Promise.all([...new Set([
+      ...this.terminalConnections.keys(),
+      ...this.terminalOpenings.keys(),
+    ])].map(terminalId => this.releaseTerminal(terminalId)));
+  }
+
   async snapshot(): Promise<HerdrSnapshot> {
-    const server = await this.executeJson<ServerInfo>('status server --json');
+    const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
+    this.apiServer = server;
     if (!server.running) {
       return { server, agents: [], workspaces: [], tabs: [], panes: [] };
     }
-    const [agents, workspaces, tabs, panes] = await Promise.all([
-      this.executeJson<AgentInfo[]>('agent list', 'agents'),
-      this.executeJson<WorkspaceInfo[]>('workspace list', 'workspaces'),
-      this.executeJson<TabInfo[]>('tab list', 'tabs'),
-      this.executeJson<PaneInfo[]>('pane list', 'panes'),
-    ]);
-    return { server, agents, workspaces, tabs, panes };
+    if (!server.socket) throw new Error('Herdr server status did not include its API socket');
+    const request = JSON.stringify(sessionSnapshotRequest());
+    let output: string;
+    try {
+      output = await this.executeFresh(
+        `printf '%s\\n' ${shellQuote(request)} | nc -N -U ${shellQuote(server.socket)} 2>&1`,
+      );
+    } catch (error) {
+      this.apiServer = null;
+      throw error;
+    }
+    const result = parseJsonResponse<SessionSnapshotResult>(output);
+    if (!result || result.type !== 'session_snapshot' || !result.snapshot) {
+      throw new Error('Herdr API socket did not return a session snapshot');
+    }
+    const snapshot = result.snapshot;
+    return {
+      server: { ...server, version: snapshot.version, protocol: snapshot.protocol, compatible: true },
+      agents: snapshot.agents,
+      workspaces: snapshot.workspaces,
+      tabs: snapshot.tabs,
+      panes: snapshot.panes,
+    };
+  }
+
+  async openEventStream(
+    paneIds: string[],
+    onEvent: ApiEventHandler,
+    onClosed?: TerminalClosedHandler,
+  ): Promise<void> {
+    this.closeEventStream();
+    const profile = this.requireProfile();
+    const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
+    this.apiServer = server;
+    if (!server.running || !server.socket) throw new Error('Herdr API socket is not available');
+    const generation = ++this.eventGeneration;
+    const client = await this.connectSsh(profile);
+    if (generation !== this.eventGeneration) {
+      client.disconnect();
+      return;
+    }
+    const decoder = new HerdrApiBridgeDecoder();
+    const close = (reason?: string) => {
+      if (generation !== this.eventGeneration) return;
+      this.closeEventStream();
+      onClosed?.(reason);
+    };
+    client.on('Shell', data => {
+      for (const message of decoder.push(data)) {
+        const error = apiErrorMessage(message);
+        if (error) {
+          close(error);
+        } else if ('subscription_id' in message && message.event) {
+          onEvent(message);
+        } else if ((message as { herdr_android_bridge_closed?: boolean }).herdr_android_bridge_closed) {
+          close('Herdr event bridge closed');
+        }
+      }
+    });
+    try {
+      await client.startLineShell(PtyType.XTERM);
+      if (generation !== this.eventGeneration) {
+        client.off('Shell');
+        client.disconnect();
+        return;
+      }
+      this.eventClient = client;
+      await client.writeToShell(
+        `stty -echo; nc -U ${shellQuote(server.socket)}; printf '%s\\n' '{"herdr_android_bridge_closed":true}'\n`,
+      );
+      await client.writeToShell(apiRequestLine(eventsSubscribeRequest(paneIds)));
+    } catch (error) {
+      if (this.eventClient === client) this.eventClient = null;
+      client.off('Shell');
+      client.disconnect();
+      throw error;
+    }
+  }
+
+  closeEventStream(): void {
+    this.eventGeneration += 1;
+    const client = this.eventClient;
+    this.eventClient = null;
+    client?.off('Shell');
+    client?.disconnect();
   }
 
   async startServer(): Promise<void> {
     await this.requireClient().execute(
       `nohup ${this.baseCommand()} server >/tmp/herdr-remote-server.log 2>&1 </dev/null &`,
     );
+    this.apiServer = null;
   }
 
   readAgent(target: string): Promise<{ text: string }> {
@@ -312,6 +420,15 @@ export class HerdrClient {
         );
   }
 
+  private async executeFresh(command: string): Promise<string> {
+    const client = await this.connectSsh(this.requireProfile());
+    try {
+      return await client.execute(command);
+    } finally {
+      client.disconnect();
+    }
+  }
+
   private async createTerminal(
     terminalId: string,
     onFrame: TerminalFrameHandler,
@@ -331,7 +448,6 @@ export class HerdrClient {
           onFrame(event);
         } else {
           client.off('Shell');
-          client.closeShell();
           client.disconnect();
           this.terminalConnections.delete(terminalId);
           onClosed?.(event.reason);
@@ -366,7 +482,6 @@ export class HerdrClient {
       );
     } catch (error) {
       client.off('Shell');
-      client.closeShell();
       client.disconnect();
       this.terminalConnections.delete(terminalId);
       throw error;

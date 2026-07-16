@@ -626,13 +626,11 @@ class SSHClient {
      * @returns void
      */
     disconnect() {
-        if (this._activeStream.shell) {
-            this.closeShell();
-        }
-        if (this._activeStream.sftp) {
-            this.disconnectSFTP();
-        }
-        // TODO this should use a callback too
+        this.off(NATIVE_EVENT_SHELL);
+        this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
+        this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
+        this._activeStream.shell = false;
+        this._activeStream.sftp = false;
         RNSSHClient.disconnect(this._key);
     }
 }

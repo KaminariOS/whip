@@ -2,6 +2,7 @@ import {
   TerminalBridgeDecoder,
   terminalInputCommand,
   terminalResizeCommand,
+  terminalReleaseCommand,
   terminalScrollCommand,
 } from '../src/lib/terminalBridge';
 
@@ -27,5 +28,6 @@ describe('Herdr terminal bridge', () => {
     expect(terminalInputCommand('\u001b[A')).toBe('{"type":"terminal.input","text":"\\u001b[A"}\n');
     expect(terminalResizeCommand(100, 31, 8, 16)).toBe('{"type":"terminal.resize","cols":100,"rows":31,"cell_width_px":8,"cell_height_px":16}\n');
     expect(terminalScrollCommand('up', 3)).toBe('{"type":"terminal.scroll","direction":"up","lines":3,"source":"wheel"}\n');
+    expect(terminalReleaseCommand()).toBe('{"type":"terminal.release"}\n');
   });
 });

@@ -55,6 +55,11 @@ import {
 } from './src/services/hostProfiles';
 import { loadPersistedTerminals, savePersistedTerminals } from './src/services/persistedTerminals';
 import {
+  loadPersistedLiveHosts,
+  savePersistedLiveHosts,
+  type PersistedLiveHosts,
+} from './src/services/persistedLiveHosts';
+import {
   closeTerminalSession,
   openTerminalSession,
   updateTerminalSession,
@@ -70,6 +75,17 @@ interface LiveRuntime {
   previousStatuses: Map<string, string> | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  eventPaneKey: string | null;
+  eventStatus: 'closed' | 'opening' | 'open';
+  eventReconnectAttempts: number;
+  eventReconnectTimer: ReturnType<typeof setTimeout> | null;
+  eventRefreshTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface ConnectOptions {
+  persistProfile?: boolean;
+  navigate?: boolean;
+  markUsed?: boolean;
 }
 
 function App() {
@@ -84,12 +100,17 @@ function App() {
 function AppContent() {
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
+  const hostsRef = useRef<HostProfile[]>([]);
+  const persistedLiveHostsRef = useRef<PersistedLiveHosts>({ hostIds: [], activeHostId: null });
+  const restoreStarted = useRef(false);
   const alertsEnabledRef = useRef(true);
   const ttsEnabledRef = useRef(false);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [liveHostsLoaded, setLiveHostsLoaded] = useState(false);
+  const [liveHostRestoreComplete, setLiveHostRestoreComplete] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectingHostId, setConnectingHostId] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -102,6 +123,7 @@ function AppContent() {
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
 
   liveSessionsRef.current = liveSessions;
+  hostsRef.current = hosts;
   alertsEnabledRef.current = alertsEnabled;
   ttsEnabledRef.current = ttsEnabled;
 
@@ -119,6 +141,11 @@ function AppContent() {
         setNavigation(current => selectMobileTab(current, preferences.lastTab));
       })
       .finally(() => setPreferencesLoaded(true));
+    loadPersistedLiveHosts()
+      .then(value => {
+        persistedLiveHostsRef.current = value;
+      })
+      .finally(() => setLiveHostsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -139,11 +166,22 @@ function AppContent() {
     }
   }, [liveSessions.sessions]);
 
+  useEffect(() => {
+    if (!liveHostRestoreComplete) return;
+    savePersistedLiveHosts({
+      hostIds: liveSessions.sessions.map(session => session.hostId),
+      activeHostId: getActiveLiveHostSession(liveSessions)?.hostId || null,
+    }).catch(() => undefined);
+  }, [liveHostRestoreComplete, liveSessions]);
+
   useEffect(() => () => {
     for (const runtime of runtimes.current.values()) {
       if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
+      if (runtime.eventReconnectTimer) clearTimeout(runtime.eventReconnectTimer);
+      if (runtime.eventRefreshTimer) clearTimeout(runtime.eventRefreshTimer);
       runtime.refresh.invalidate();
-      runtime.client.disconnect();
+      runtime.client.releaseAllTerminals()
+        .finally(() => runtime.client.disconnect());
     }
     runtimes.current.clear();
   }, []);
@@ -152,6 +190,75 @@ function AppContent() {
     if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
     runtime.reconnectTimer = null;
   };
+
+  const clearEventTimers = (runtime: LiveRuntime) => {
+    if (runtime.eventReconnectTimer) clearTimeout(runtime.eventReconnectTimer);
+    if (runtime.eventRefreshTimer) clearTimeout(runtime.eventRefreshTimer);
+    runtime.eventReconnectTimer = null;
+    runtime.eventRefreshTimer = null;
+  };
+
+  const scheduleEventReconnect = (sessionId: string, cause: unknown) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime || runtime.eventReconnectTimer || AppState.currentState !== 'active') return;
+    const decision = nextReconnect(runtime.eventReconnectAttempts);
+    if (decision.action === 'stop') {
+      runtime.eventReconnectAttempts = 0;
+      refreshHost(sessionId).catch(() => undefined);
+      return;
+    }
+    runtime.eventReconnectAttempts = decision.attempt;
+    runtime.eventReconnectTimer = setTimeout(() => {
+      runtime.eventReconnectTimer = null;
+      const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+      if (!session || runtimes.current.get(sessionId) !== runtime) return;
+      ensureEventStream(sessionId, session.snapshot, true).catch(error => {
+        scheduleEventReconnect(sessionId, error || cause);
+      });
+    }, decision.delayMs);
+  };
+
+  async function ensureEventStream(
+    sessionId: string,
+    snapshot: HerdrSnapshot,
+    force = false,
+  ): Promise<void> {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime || AppState.currentState !== 'active') return;
+    if (!snapshot.server.running) {
+      clearEventTimers(runtime);
+      runtime.eventStatus = 'closed';
+      runtime.eventPaneKey = null;
+      runtime.client.closeEventStream();
+      return;
+    }
+    const paneIds = snapshot.panes.map(pane => pane.pane_id).sort();
+    const paneKey = paneIds.join('\n');
+    if (!force && runtime.eventPaneKey === paneKey && runtime.eventStatus !== 'closed') return;
+
+    clearEventTimers(runtime);
+    runtime.client.closeEventStream();
+    runtime.eventPaneKey = paneKey;
+    runtime.eventStatus = 'opening';
+    await runtime.client.openEventStream(
+      paneIds,
+      () => {
+        if (runtimes.current.get(sessionId) !== runtime || runtime.eventRefreshTimer) return;
+        runtime.eventRefreshTimer = setTimeout(() => {
+          runtime.eventRefreshTimer = null;
+          refreshHost(sessionId).catch(() => undefined);
+        }, 120);
+      },
+      reason => {
+        if (runtimes.current.get(sessionId) !== runtime) return;
+        runtime.eventStatus = 'closed';
+        scheduleEventReconnect(sessionId, reason || 'Herdr event bridge closed');
+      },
+    );
+    if (runtimes.current.get(sessionId) !== runtime) return;
+    runtime.eventStatus = 'open';
+    runtime.eventReconnectAttempts = 0;
+  }
 
   const scheduleReconnect = (sessionId: string, cause: unknown) => {
     const runtime = runtimes.current.get(sessionId);
@@ -194,6 +301,11 @@ function AppContent() {
       previousStatuses: null,
       reconnectAttempts: 0,
       reconnectTimer: null,
+      eventPaneKey: null,
+      eventStatus: 'closed',
+      eventReconnectAttempts: 0,
+      eventReconnectTimer: null,
+      eventRefreshTimer: null,
     } as LiveRuntime;
     runtime.refresh = createRefreshCoordinator(
       async () => {
@@ -230,6 +342,12 @@ function AppContent() {
       clearReconnect(runtime);
       runtime.reconnectAttempts = 0;
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
+      try {
+        await ensureEventStream(sessionId, result.value);
+      } catch (error) {
+        runtime.eventStatus = 'closed';
+        scheduleEventReconnect(sessionId, error);
+      }
     } else if (result.status === 'failed') {
       setLiveSessions(current => {
         const session = findLiveHostSession(current, sessionId);
@@ -240,17 +358,27 @@ function AppContent() {
     }
   }
 
-  const refreshAllOnTimer = useEffectEvent(() => {
+  const resumeLiveConnections = useEffectEvent(() => {
     if (AppState.currentState !== 'active') return;
-    for (const sessionId of runtimes.current.keys()) refreshHost(sessionId).catch(() => undefined);
+    for (const sessionId of runtimes.current.keys()) {
+      refreshHost(sessionId).catch(() => undefined);
+    }
   });
 
   useEffect(() => {
     if (liveSessions.sessions.length === 0) return;
-    const timer = setInterval(refreshAllOnTimer, 2500);
-    const subscription = AppState.addEventListener('change', state => state === 'active' && refreshAllOnTimer());
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        resumeLiveConnections();
+      } else {
+        for (const runtime of runtimes.current.values()) {
+          clearEventTimers(runtime);
+          runtime.eventStatus = 'closed';
+          runtime.client.closeEventStream();
+        }
+      }
+    });
     return () => {
-      clearInterval(timer);
       subscription.remove();
     };
   }, [liveSessions.sessions.length]);
@@ -285,8 +413,10 @@ function AppContent() {
     const runtime = runtimes.current.get(sessionId);
     if (runtime) {
       clearReconnect(runtime);
+      clearEventTimers(runtime);
       runtime.refresh.invalidate();
-      runtime.client.disconnect();
+      runtime.client.releaseAllTerminals()
+        .finally(() => runtime.client.disconnect());
       runtimes.current.delete(sessionId);
     }
     setSelectedAgentId(null);
@@ -300,7 +430,11 @@ function AppContent() {
     });
   }, []);
 
-  const connect = async (nextProfile: ConnectionProfile) => {
+  const connect = async (
+    nextProfile: ConnectionProfile,
+    options: ConnectOptions = {},
+  ): Promise<boolean> => {
+    const { persistProfile = true, navigate = true, markUsed = true } = options;
     setConnecting(true);
     setConnectingHostId(nextProfile.id);
     setConnectError(null);
@@ -308,12 +442,19 @@ function AppContent() {
     if (existing) closeLiveHost(existing.id);
     let runtime: LiveRuntime | null = null;
     try {
-      const saved = await saveConnectionProfile(hosts, nextProfile);
-      setHosts(saved.hosts);
+      const saved = persistProfile
+        ? await saveConnectionProfile(hostsRef.current, nextProfile)
+        : {
+          hosts: hostsRef.current,
+          host: hostsRef.current.find(host => host.id === nextProfile.id),
+        };
+      if (!saved.host) throw new Error(`Saved host ${nextProfile.id} no longer exists`);
+      const savedHost = saved.host;
+      if (persistProfile) setHosts(saved.hosts);
       const sessionId = nextProfile.id;
       runtime = createRuntime(sessionId, nextProfile);
       runtimes.current.set(sessionId, runtime);
-      setLiveSessions(current => openLiveHostSession(current, saved.host, sessionId));
+      setLiveSessions(current => openLiveHostSession(current, savedHost, sessionId));
       await runtime.client.connect(nextProfile);
       const initial = await runtime.client.snapshot();
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
@@ -324,19 +465,60 @@ function AppContent() {
         next = applyLiveHostSnapshot(request.state, sessionId, request.generation, initial, new Date().toISOString());
         return replaceLiveHostTerminals(next, sessionId, restoredTerminals);
       });
+      try {
+        await ensureEventStream(sessionId, initial);
+      } catch (error) {
+        runtime.eventStatus = 'closed';
+        scheduleEventReconnect(sessionId, error);
+      }
       setEditorProfile(null);
-      const usedHosts = await markHostConnected(saved.hosts, nextProfile.id);
-      setHosts(usedHosts);
-      setNavigation(current => selectMobileTab(current, 'herd'));
+      if (markUsed) {
+        const usedHosts = await markHostConnected(saved.hosts, nextProfile.id);
+        setHosts(usedHosts);
+      }
+      if (navigate) setNavigation(current => selectMobileTab(current, 'herd'));
+      return true;
     } catch (error) {
       setConnectError(String(error));
       if (runtime) scheduleReconnect(nextProfile.id, error);
-      setNavigation(current => selectMobileTab(current, 'hosts'));
+      if (navigate) setNavigation(current => selectMobileTab(current, 'hosts'));
+      return false;
     } finally {
       setConnecting(false);
       setConnectingHostId(null);
     }
   };
+
+  const restorePersistedLiveHosts = useEffectEvent(async () => {
+    const persisted = persistedLiveHostsRef.current;
+    for (const hostId of persisted.hostIds) {
+      const host = hostsRef.current.find(item => item.id === hostId);
+      if (!host) continue;
+      try {
+        const profile = await loadConnectionProfile(host);
+        if (!profile.secret) continue;
+        await connect(profile, { persistProfile: false, navigate: false, markUsed: false });
+      } catch (error) {
+        setConnectError(`Could not restore ${hostDisplayName(host)}: ${String(error)}`);
+      }
+    }
+    if (persisted.activeHostId) {
+      setLiveSessions(current => {
+        const active = current.sessions.find(session => session.hostId === persisted.activeHostId);
+        return active ? selectLiveHostSession(current, active.id) : current;
+      });
+    }
+    setLiveHostRestoreComplete(true);
+  });
+
+  useEffect(() => {
+    if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || restoreStarted.current) return;
+    restoreStarted.current = true;
+    restorePersistedLiveHosts().catch(error => {
+      setConnectError(`Could not restore live hosts: ${String(error)}`);
+      setLiveHostRestoreComplete(true);
+    });
+  }, [liveHostsLoaded, preferencesLoaded, profilesLoaded]);
 
   const saveHost = async (nextProfile: ConnectionProfile) => {
     setConnectError(null);
@@ -420,7 +602,7 @@ function AppContent() {
   };
 
   const closeTerminal = useCallback((sessionId: string, terminalId: string) => {
-    runtimes.current.get(sessionId)?.client.closeTerminal(terminalId);
+    runtimes.current.get(sessionId)?.client.releaseTerminal(terminalId).catch(() => undefined);
     setLiveSessions(current => updateLiveHostTerminals(current, sessionId, terminals => closeTerminalSession(terminals, terminalId)));
   }, []);
 
@@ -478,7 +660,7 @@ function AppContent() {
     }
   };
 
-  if (!profilesLoaded || !preferencesLoaded) {
+  if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !liveHostRestoreComplete) {
     return <View style={styles.loading}><Text style={styles.loadingMark}>H/</Text></View>;
   }
 

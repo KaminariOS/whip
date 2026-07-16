@@ -88,6 +88,7 @@ export interface ServerInfo {
   version?: string;
   protocol?: number;
   compatible?: boolean;
+  socket?: string;
 }
 
 export interface HerdrSnapshot {
