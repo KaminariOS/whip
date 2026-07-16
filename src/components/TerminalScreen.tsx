@@ -69,6 +69,12 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const reportStatus = useEffectEvent(onStatus);
 
   const writeFrame = useEffectEvent((frame: TerminalFrame) => {
+    if (typeof frame.final === 'boolean') {
+      webView.current?.injectJavaScript(
+        `window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}); true;`,
+      );
+      return;
+    }
     for (let offset = 0; offset < frame.bytes.length; offset += FRAME_CHUNK_SIZE) {
       const chunk = frame.bytes.slice(offset, offset + FRAME_CHUNK_SIZE);
       const final = offset + FRAME_CHUNK_SIZE >= frame.bytes.length;

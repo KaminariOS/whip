@@ -1,4 +1,6 @@
-import SSHClient, { PtyType } from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient, {
+  type HerdrBridgeEvent,
+} from '@dylankenneally/react-native-ssh-sftp';
 
 import { normalizePrivateKey } from '../lib/privateKey';
 import {
@@ -12,11 +14,6 @@ import {
 } from '../lib/herdrApiBridge';
 import { parseJsonResponse, shellQuote } from '../lib/shell';
 import {
-  TerminalBridgeDecoder,
-  terminalInputCommand,
-  terminalReleaseCommand,
-  terminalResizeCommand,
-  terminalScrollCommand,
   type TerminalFrame,
 } from '../lib/terminalBridge';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
@@ -26,7 +23,8 @@ type TerminalClosedHandler = (reason?: string) => void;
 type ApiEventHandler = (message: HerdrApiMessage) => void;
 
 interface TerminalConnection {
-  client: SSHClient;
+  onFrame: TerminalFrameHandler;
+  onClosed?: TerminalClosedHandler;
 }
 
 interface TerminalSize {
@@ -42,6 +40,9 @@ export class HerdrClient {
   private terminalConnections = new Map<string, TerminalConnection>();
   private terminalOpenings = new Map<string, Promise<void>>();
   private terminalSizes = new Map<string, TerminalSize>();
+  private bridgeStarted = false;
+  private bridgeOpening: Promise<void> | null = null;
+  private activeTerminalId: string | null = null;
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
@@ -57,10 +58,7 @@ export class HerdrClient {
     this.apiServer = null;
   }
 
-  /**
-   * Replace only the command/control SSH connection. Terminal sessions use
-   * dedicated SSH clients and remain alive while the control channel recovers.
-   */
+  /** Replace the single authenticated SSH session and recreate its channels. */
   async reconnectControl(profile: ConnectionProfile = this.requireProfile()): Promise<void> {
     const port = Number(profile.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -72,22 +70,31 @@ export class HerdrClient {
     this.client = nextClient;
     this.profile = profile;
     this.apiServer = null;
+    this.eventClient = null;
+    this.bridgeStarted = false;
+    this.bridgeOpening = null;
+    this.activeTerminalId = null;
+    for (const connection of this.terminalConnections.values()) {
+      connection.onClosed?.('SSH control connection was replaced');
+    }
     previousClient?.off('Shell');
     previousClient?.disconnect();
   }
 
   disconnect(): void {
-    for (const terminalId of this.terminalConnections.keys()) {
-      this.closeTerminal(terminalId);
-    }
     this.closeEventStream();
+    this.client?.closeHerdrBridge();
     this.client?.off('Shell');
     this.client?.disconnect();
     this.client = null;
     this.profile = null;
     this.apiServer = null;
     this.terminalOpenings.clear();
+    this.terminalConnections.clear();
     this.terminalSizes.clear();
+    this.bridgeStarted = false;
+    this.bridgeOpening = null;
+    this.activeTerminalId = null;
   }
 
   async openTerminal(
@@ -95,16 +102,14 @@ export class HerdrClient {
     onFrame: TerminalFrameHandler,
     onClosed?: TerminalClosedHandler,
   ): Promise<void> {
-    if (this.terminalConnections.has(terminalId)) {
-      return;
-    }
+    this.terminalConnections.set(terminalId, { onFrame, onClosed });
 
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) {
       return opening;
     }
 
-    const task = this.createTerminal(terminalId, onFrame, onClosed);
+    const task = this.attachTerminal(terminalId);
     this.terminalOpenings.set(terminalId, task);
     try {
       await task;
@@ -116,7 +121,9 @@ export class HerdrClient {
   async writeToTerminal(terminalId: string, data: string): Promise<string> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening;
-    return this.requireTerminal(terminalId).writeToShell(terminalInputCommand(data));
+    if (this.activeTerminalId !== terminalId) await this.attachTerminal(terminalId);
+    await this.requireClient().herdrBridgeInput(data);
+    return '';
   }
 
   resizeTerminal(
@@ -133,11 +140,12 @@ export class HerdrClient {
       cellHeightPx: Math.max(0, Math.round(cellHeightPx)),
     };
     this.terminalSizes.set(terminalId, size);
-    const connection = this.terminalConnections.get(terminalId);
-    if (connection) {
-      connection.client.resizeShell(size.columns, size.rows);
-      connection.client.writeToShell(
-        terminalResizeCommand(size.columns, size.rows, size.cellWidthPx, size.cellHeightPx),
+    if (this.activeTerminalId === terminalId && this.bridgeStarted) {
+      this.requireClient().herdrBridgeResize(
+        size.columns,
+        size.rows,
+        size.cellWidthPx,
+        size.cellHeightPx,
       ).catch(() => {});
     }
   }
@@ -145,38 +153,23 @@ export class HerdrClient {
   async scrollTerminal(terminalId: string, direction: 'up' | 'down', lines: number): Promise<string> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening;
-    return this.requireTerminal(terminalId).writeToShell(
-      terminalScrollCommand(direction, Math.max(1, Math.round(lines))),
-    );
+    if (this.activeTerminalId !== terminalId) await this.attachTerminal(terminalId);
+    await this.requireClient().herdrBridgeScroll(direction, Math.max(1, Math.round(lines)));
+    return '';
   }
 
   closeTerminal(terminalId: string): void {
-    const connection = this.terminalConnections.get(terminalId);
-    if (!connection) {
-      return;
-    }
-    connection.client.off('Shell');
-    connection.client.disconnect();
     this.terminalConnections.delete(terminalId);
   }
 
   async releaseTerminal(terminalId: string): Promise<void> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening.catch(() => undefined);
-    const connection = this.terminalConnections.get(terminalId);
-    if (!connection) return;
-    try {
-      await connection.client.writeToShell(terminalReleaseCommand());
-    } finally {
-      this.closeTerminal(terminalId);
-    }
+    this.closeTerminal(terminalId);
   }
 
   async releaseAllTerminals(): Promise<void> {
-    await Promise.all([...new Set([
-      ...this.terminalConnections.keys(),
-      ...this.terminalOpenings.keys(),
-    ])].map(terminalId => this.releaseTerminal(terminalId)));
+    this.terminalConnections.clear();
   }
 
   async snapshot(): Promise<HerdrSnapshot> {
@@ -189,7 +182,7 @@ export class HerdrClient {
     const request = JSON.stringify(sessionSnapshotRequest());
     let output: string;
     try {
-      output = await this.executeFresh(
+      output = await this.requireClient().execute(
         `printf '%s\\n' ${shellQuote(request)} | nc -N -U ${shellQuote(server.socket)} 2>&1`,
       );
     } catch (error) {
@@ -216,14 +209,12 @@ export class HerdrClient {
     onClosed?: TerminalClosedHandler,
   ): Promise<void> {
     this.closeEventStream();
-    const profile = this.requireProfile();
     const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
     this.apiServer = server;
     if (!server.running || !server.socket) throw new Error('Herdr API socket is not available');
     const generation = ++this.eventGeneration;
-    const client = await this.connectSsh(profile);
+    const client = this.requireClient();
     if (generation !== this.eventGeneration) {
-      client.disconnect();
       return;
     }
     const decoder = new HerdrApiBridgeDecoder();
@@ -232,7 +223,7 @@ export class HerdrClient {
       this.closeEventStream();
       onClosed?.(reason);
     };
-    client.on('Shell', data => {
+    const onData = (data: string) => {
       for (const message of decoder.push(data)) {
         const error = apiErrorMessage(message);
         if (error) {
@@ -243,23 +234,18 @@ export class HerdrClient {
           close('Herdr event bridge closed');
         }
       }
-    });
+    };
     try {
-      await client.startLineShell(PtyType.XTERM);
+      await client.startHerdrEventStream(`nc -U ${shellQuote(server.socket)}`, onData);
       if (generation !== this.eventGeneration) {
-        client.off('Shell');
-        client.disconnect();
+        client.closeHerdrEventStream();
         return;
       }
       this.eventClient = client;
-      await client.writeToShell(
-        `stty -echo; nc -U ${shellQuote(server.socket)}; printf '%s\\n' '{"herdr_android_bridge_closed":true}'\n`,
-      );
-      await client.writeToShell(apiRequestLine(eventsSubscribeRequest(paneIds)));
+      await client.writeHerdrEventStream(apiRequestLine(eventsSubscribeRequest(paneIds)));
     } catch (error) {
       if (this.eventClient === client) this.eventClient = null;
-      client.off('Shell');
-      client.disconnect();
+      client.closeHerdrEventStream();
       throw error;
     }
   }
@@ -268,8 +254,7 @@ export class HerdrClient {
     this.eventGeneration += 1;
     const client = this.eventClient;
     this.eventClient = null;
-    client?.off('Shell');
-    client?.disconnect();
+    client?.closeHerdrEventStream();
   }
 
   async startServer(): Promise<void> {
@@ -413,79 +398,81 @@ export class HerdrClient {
         );
   }
 
-  private async executeFresh(command: string): Promise<string> {
-    const client = await this.connectSsh(this.requireProfile());
-    try {
-      return await client.execute(command);
-    } finally {
-      client.disconnect();
-    }
-  }
-
-  private async createTerminal(
-    terminalId: string,
-    onFrame: TerminalFrameHandler,
-    onClosed?: TerminalClosedHandler,
-  ): Promise<void> {
-    const profile = this.profile;
-    if (!profile) {
-      throw new Error('SSH connection is not active');
-    }
-
-    const client = await this.connectSsh(profile);
-    const decoder = new TerminalBridgeDecoder();
-    const onData = (data: string) => {
-      const events = decoder.push(data);
-      for (const event of events) {
-        if (event.type === 'terminal.frame') {
-          onFrame(event);
-        } else {
-          client.off('Shell');
-          client.disconnect();
-          this.terminalConnections.delete(terminalId);
-          onClosed?.(event.reason);
-        }
-      }
+  private async attachTerminal(terminalId: string): Promise<void> {
+    const size = this.terminalSizes.get(terminalId) || {
+      columns: 80,
+      rows: 24,
+      cellWidthPx: 0,
+      cellHeightPx: 0,
     };
+    await this.ensureHerdrBridge(size);
+    await this.requireClient().herdrBridgeAttach(terminalId, true);
+    this.activeTerminalId = terminalId;
+    await this.requireClient().herdrBridgeResize(
+      size.columns,
+      size.rows,
+      size.cellWidthPx,
+      size.cellHeightPx,
+    );
+  }
+
+  private async ensureHerdrBridge(size: TerminalSize): Promise<void> {
+    if (this.bridgeStarted) return;
+    if (this.bridgeOpening) return this.bridgeOpening;
+    const task = (async () => {
+      const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
+      this.apiServer = server;
+      if (!server.running || typeof server.protocol !== 'number') {
+        throw new Error('Herdr server protocol is unavailable');
+      }
+      await this.requireClient().startHerdrBridge(
+        `${this.baseCommand()} remote-client-bridge`,
+        server.protocol,
+        size.columns,
+        size.rows,
+        size.cellWidthPx,
+        size.cellHeightPx,
+        event => this.handleHerdrBridgeEvent(event),
+      );
+      this.bridgeStarted = true;
+    })();
+    this.bridgeOpening = task;
     try {
-      client.on('Shell', onData);
-      // Herdr's first full redraw is a large newline-delimited JSON record.
-      // The native reader preserves its line boundary while forwarding bounded
-      // chunks that the JavaScript decoder reassembles.
-      await client.startLineShell(PtyType.XTERM);
-      this.terminalConnections.set(terminalId, { client });
-      const size = this.terminalSizes.get(terminalId) || {
-        columns: 80,
-        rows: 24,
-        cellWidthPx: 0,
-        cellHeightPx: 0,
-      };
-      client.resizeShell(size.columns, size.rows);
-      await client.writeToShell(
-        `stty -echo; exec ${this.baseCommand()} terminal session control ${shellQuote(terminalId)} --takeover --cols ${size.columns} --rows ${size.rows}\n`,
-      );
-      // The controller's initial full frame can be emitted while the shell is
-      // still handing the channel over to `exec`. Give it one turn to begin
-      // reading stdin, then request a deterministic second full redraw.
-      await new Promise<void>(resolve => setTimeout(resolve, 1000));
-      if (this.terminalConnections.get(terminalId)?.client !== client) return;
-      client.resizeShell(size.columns, size.rows);
-      await client.writeToShell(
-        terminalResizeCommand(size.columns, size.rows, size.cellWidthPx, size.cellHeightPx),
-      );
-    } catch (error) {
-      client.off('Shell');
-      client.disconnect();
-      this.terminalConnections.delete(terminalId);
-      throw error;
+      await task;
+    } finally {
+      if (this.bridgeOpening === task) this.bridgeOpening = null;
     }
   }
 
-  private requireTerminal(terminalId: string): SSHClient {
-    const connection = this.terminalConnections.get(terminalId);
-    if (!connection) {
-      throw new Error(`Terminal ${terminalId} is not connected`);
+  private handleHerdrBridgeEvent(event: HerdrBridgeEvent): void {
+    if (event.type === 'terminal') {
+      if (
+        this.activeTerminalId
+        && typeof event.seq === 'number'
+        && typeof event.width === 'number'
+        && typeof event.height === 'number'
+        && typeof event.bytes === 'string'
+      ) {
+        this.terminalConnections.get(this.activeTerminalId)?.onFrame({
+          type: 'terminal.frame',
+          seq: event.seq,
+          encoding: 'ansi',
+          width: event.width,
+          height: event.height,
+          full: Boolean(event.full),
+          bytes: event.bytes,
+          final: event.final !== false,
+        });
+      }
+      return;
     }
-    return connection.client;
+    if (event.type === 'closed') {
+      this.bridgeStarted = false;
+      this.bridgeOpening = null;
+      this.activeTerminalId = null;
+      for (const connection of this.terminalConnections.values()) {
+        connection.onClosed?.(event.text || 'Herdr remote-client-bridge closed');
+      }
+    }
   }
 }

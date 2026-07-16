@@ -9,6 +9,11 @@ Herdr-specific changes:
 
 - preserve the raw PTY stream and expose a line-shell mode that forwards large
   newline-delimited Herdr frames in bounded React Native event chunks;
+- run Herdr protocol 16 `remote-client-bridge` as a binary exec channel on the
+  existing authenticated SSH session, including handshake, terminal attach,
+  input, resize, scrolling, and chunked ANSI frame events;
+- run the newline-delimited `nc -U` event subscription as a separate exec
+  channel on that same authenticated session;
 - expose PTY resizing on Android and in the JavaScript API;
 - close shell/SFTP streams synchronously during disconnect so asynchronous
   cleanup cannot race client-pool removal and crash the Android process;

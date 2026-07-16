@@ -22,6 +22,19 @@ export type CallbackFunction<T> = (error: CBError, response?: T) => void;
  * @param value - The value passed to the event handler.
  */
 export type EventHandler = (value: any) => void;
+export interface HerdrBridgeEvent {
+    type: 'terminal' | 'closed' | 'graphics' | 'notify' | 'clipboard' | 'title' | 'reload_sound_config' | 'mouse_capture' | 'prefix_input_source' | 'ignored';
+    seq?: number;
+    width?: number;
+    height?: number;
+    full?: boolean;
+    bytes?: string;
+    final?: boolean;
+    text?: string;
+    body?: string;
+    flag?: boolean;
+    kind?: number;
+}
 /**
  * Represents the result of a directory listing operation.
  */
@@ -231,6 +244,16 @@ export default class SSHClient {
      * Closes the SSH shell.
      */
     closeShell(): void;
+    /** Starts Herdr's protocol-16 remote-client-bridge on a dedicated channel of this SSH session. */
+    startHerdrBridge(command: string, protocol: number, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
+    herdrBridgeAttach(terminalId: string, takeover?: boolean): Promise<void>;
+    herdrBridgeInput(text: string): Promise<void>;
+    herdrBridgeResize(columns: number, rows: number, cellWidthPx?: number, cellHeightPx?: number): Promise<void>;
+    herdrBridgeScroll(direction: 'up' | 'down', lines: number): Promise<void>;
+    closeHerdrBridge(): void;
+    startHerdrEventStream(command: string, handler: (data: string) => void, callback?: CallbackFunction<void>): Promise<void>;
+    writeHerdrEventStream(value: string): Promise<void>;
+    closeHerdrEventStream(): void;
     /**
      * Connects to the SFTP server.
      *
