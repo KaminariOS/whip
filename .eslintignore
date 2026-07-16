@@ -1,0 +1,4 @@
+android/app/src/main/assets/
+android/app/build/
+dist/
+packages/react-native-ssh-sftp/lib/
