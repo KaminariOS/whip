@@ -1,4 +1,13 @@
 {
-  "name": "HerdR",
-  "displayName": "HerdR"
+  "expo": {
+    "name": "HerdR Remote",
+    "slug": "herdr-remote",
+    "version": "0.1.0",
+    "extra": {
+      "eas": {
+        "projectId": "abffa698-56c9-41c1-9b61-3312006a895d"
+      }
+    },
+    "owner": "kant64"
+  }
 }

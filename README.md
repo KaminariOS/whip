@@ -1,97 +1,99 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# HerdR Remote
 
-# Getting Started
+Expo Android client for supervising and controlling [Herdr](https://github.com/ogulcancelik/herdr) over SSH on a Tailscale network.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+Herdr itself is not exposed to the network and does not need to be modified. Herdr's management UI is rebuilt as native Android screens. The xterm-compatible view is used only when the user attaches directly to a selected agent or shell pane.
 
-## Step 1: Start Metro
+## Features
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- Native attention queue for working, blocked, done, idle, and unknown agents
+- Native spaces, tabs, panes, and agent navigation
+- Create, focus, rename, and close spaces and tabs
+- Split, zoom, rename, inspect, send keys to, and close panes
+- Launch agents and send direct prompts or pane commands
+- Immersive Voltius-style workspace, tab, and pane terminal navigation
+- Direct interactive terminal bridge for each selected pane
+- ANSI colors, modifier/special keys, touch scrolling, double-tap Tab, and live resizing
+- Android vibration and local notifications for blocked/done transitions
+- Optional Expo Speech announcements
+- Password and private-key authentication
+- Optional credential storage in Android Keystore
+- Named Herdr sessions and configurable Herdr executable path
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## Requirements
 
-```sh
-# Using npm
+- Android phone and laptop connected to the same Tailscale network
+- SSH server running on the laptop
+- Herdr installed on the laptop
+- Node.js 22+
+- Android SDK and JDK 17 for local native builds
+
+Confirm the same connection outside the app first:
+
+```bash
+ssh user@laptop.tailnet.ts.net 'herdr status server --json'
+```
+
+If `herdr` is not in the non-interactive SSH `PATH`, enter its absolute path in the app's **Command** field, for example `/home/user/.local/bin/herdr`.
+
+## Development
+
+This project uses Expo SDK 57 with a custom development build. It cannot run in Expo Go because SSH, Android Keystore, and the patched PTY stream use native modules.
+
+```bash
+npm install
 npm start
-
-# OR using Yarn
-yarn start
 ```
 
-## Step 2: Build and run your app
+In another terminal, build and install the Expo development client:
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
+```bash
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
+On NixOS, enter the included shell first:
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```bash
+nix develop
+npm run android
 ```
 
-Then, and every time you update your native dependencies, run:
+The Android SDK still needs to be installed and exposed through `ANDROID_HOME`.
 
-```sh
-bundle exec pod install
+## EAS builds
+
+After authenticating and initializing the Expo project:
+
+```bash
+npx eas-cli build --profile development --platform android
+npx eas-cli build --profile preview --platform android
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+The `development` profile creates an Expo development client. The `preview` profile creates an installable APK.
 
-```sh
-# Using npm
-npm run ios
+## Connection behavior
 
-# OR using Yarn
-yarn ios
+1. Enter the laptop's Tailscale DNS name or `100.x.y.z` address.
+2. Authenticate with the same SSH user and credentials used by Termius.
+3. The app polls Herdr's workspace, tab, pane, and agent CLI surfaces every 2.5 seconds while foregrounded.
+4. Herdr session management stays in native Android screens; only the selected pane's shell or agent TUI is rendered as a terminal.
+5. Opening **Session** runs `herdr terminal session control <terminal_id> --takeover` and exchanges Herdr's JSON frame/input/resize protocol over an SSH PTY.
+6. Native actions call existing commands such as `herdr agent send`, `herdr pane split`, and `herdr workspace focus`.
+
+The current SSH dependency does not pin host keys. Use the app only over a trusted Tailscale network until host-key verification is added.
+
+## Validation
+
+```bash
+npx expo-doctor
+npx tsc --noEmit
+npm run lint
+npm test -- --runInBand
+npx expo export --platform android
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+The SSH bridge is a project-owned local package at
+`packages/react-native-ssh-sftp`. It preserves raw PTY chunks, supports terminal
+resizing, and uses current Android SSH crypto for OpenSSH Ed25519 keys. The root
+dependency uses `file:packages/react-native-ssh-sftp`; do not edit or patch the
+symlink under `node_modules`.

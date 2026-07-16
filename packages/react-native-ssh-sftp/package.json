@@ -1,0 +1,12 @@
+{
+  "name": "@dylankenneally/react-native-ssh-sftp",
+  "version": "1.11.0-herdr.1",
+  "description": "Herdr-owned fork with raw PTY streaming, terminal resizing, and current Android SSH crypto",
+  "main": "lib/sshclient.js",
+  "types": "lib/sshclient.d.ts",
+  "private": true,
+  "license": "MIT",
+  "peerDependencies": {
+    "react-native": "*"
+  }
+}
