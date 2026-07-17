@@ -337,18 +337,21 @@ export function SessionScreen({
       )}
 
       <View style={styles.terminalStage}>
-        {visible && activeTerminalSession && (
-          <TerminalScreen
-            key={activeTerminalSession.terminalId}
-            client={client}
-            compact
-            visible
-            session={activeTerminalSession}
-            preferences={terminalPreferences}
-            onClose={() => onCloseTerminal(activeTerminalSession.terminalId)}
-            onStatus={(status, error, reconnectAttempt) => onTerminalStatus(activeTerminalSession.terminalId, status, error, reconnectAttempt)}
-          />
-        )}
+        <TerminalScreen
+          client={client}
+          compact
+          visible={visible && Boolean(activeTerminalSession)}
+          session={activeTerminalSession || null}
+          preferences={terminalPreferences}
+          onClose={() => {
+            if (activeTerminalSession) onCloseTerminal(activeTerminalSession.terminalId);
+          }}
+          onStatus={(status, error, reconnectAttempt) => {
+            if (activeTerminalSession) {
+              onTerminalStatus(activeTerminalSession.terminalId, status, error, reconnectAttempt);
+            }
+          }}
+        />
         {!selectedTab && (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>{workspace ? 'EMPTY WORKSPACE' : 'NO WORKSPACES'}</Text>

@@ -34,10 +34,25 @@ describe('Android SSH terminal protocol stream', () => {
 
     expect(client).toContain('remote-client-bridge');
     expect(client).toContain('this.requireClient().startHerdrBridge');
-    expect(client).toContain('this.requireClient().herdrBridgeAttach');
+    expect(client).toContain('this.requireClient().prepareHerdrBridge');
+    expect(client).toContain('private terminalBridges = new Set<string>()');
     expect(codec).toContain('ClientMessage::Hello');
     expect(codec).toContain('RenderEncoding::TerminalAnsi');
     expect(codec).toContain('ClientLaunchMode::TerminalAttach');
     expect(terminalScreen).toContain('window.herdrWriteBase64Chunk');
+  });
+
+  test('keeps one direct-attach bridge per terminal inside the primary SSH session', () => {
+    const javascript = readFileSync(resolve(packageRoot, 'lib/sshclient.js'), 'utf8');
+    const android = readFileSync(
+      resolve(packageRoot, 'android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java'),
+      'utf8',
+    );
+
+    expect(javascript).toContain('this._herdrBridgeHandlers = new Map()');
+    expect(javascript).toContain('RNSSHClient.startHerdrBridge(command, protocol, terminalId, takeover');
+    expect(android).toContain('final Map<String, HerdrBridgeConnection> _herdrBridges');
+    expect(android).toContain('value.putString("terminalId", terminalId)');
+    expect(android).not.toContain('ChannelExec _herdrBridgeChannel');
   });
 });

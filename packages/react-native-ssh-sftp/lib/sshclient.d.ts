@@ -24,6 +24,7 @@ export type CallbackFunction<T> = (error: CBError, response?: T) => void;
 export type EventHandler = (value: any) => void;
 export interface HerdrBridgeEvent {
     type: 'terminal' | 'closed' | 'graphics' | 'notify' | 'clipboard' | 'title' | 'reload_sound_config' | 'mouse_capture' | 'prefix_input_source' | 'ignored';
+    terminalId?: string;
     seq?: number;
     width?: number;
     height?: number;
@@ -245,12 +246,13 @@ export default class SSHClient {
      */
     closeShell(): void;
     /** Starts Herdr's protocol-16 remote-client-bridge on a dedicated channel of this SSH session. */
-    startHerdrBridge(command: string, protocol: number, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
-    herdrBridgeAttach(terminalId: string, takeover?: boolean): Promise<void>;
-    herdrBridgeInput(text: string): Promise<void>;
-    herdrBridgeResize(columns: number, rows: number, cellWidthPx?: number, cellHeightPx?: number): Promise<void>;
-    herdrBridgeScroll(direction: 'up' | 'down', lines: number): Promise<void>;
-    closeHerdrBridge(): void;
+    prepareHerdrBridge(command: string, protocol: number, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, callback?: CallbackFunction<void>): Promise<void>;
+    startHerdrBridge(command: string, protocol: number, terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
+    herdrBridgeInput(terminalId: string, text: string): Promise<void>;
+    herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx?: number, cellHeightPx?: number): Promise<void>;
+    herdrBridgeScroll(terminalId: string, direction: 'up' | 'down', lines: number): Promise<void>;
+    closeHerdrBridge(terminalId: string): void;
+    closeAllHerdrBridges(): void;
     startHerdrEventStream(command: string, handler: (data: string) => void, callback?: CallbackFunction<void>): Promise<void>;
     writeHerdrEventStream(value: string): Promise<void>;
     closeHerdrEventStream(): void;

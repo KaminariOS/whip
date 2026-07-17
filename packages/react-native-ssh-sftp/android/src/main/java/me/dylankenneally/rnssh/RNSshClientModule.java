@@ -39,6 +39,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Vector;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.json.JSONObject;
 
@@ -54,14 +55,26 @@ import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 
 public class RNSshClientModule extends ReactContextBaseJavaModule {
+  private class HerdrBridgeConnection {
+    volatile String terminalId;
+    volatile boolean handshakeComplete = false;
+    volatile boolean closedByClient = false;
+    ChannelExec channel = null;
+    DataOutputStream outputStream = null;
+
+    HerdrBridgeConnection(@Nullable String terminalId) {
+      this.terminalId = terminalId;
+    }
+  }
+
   private class SSHClient {
     Session _session;
     String _key;
     BufferedReader _bufferedReader;
     DataOutputStream _dataOutputStream;
     Channel _channel = null;
-    ChannelExec _herdrBridgeChannel = null;
-    DataOutputStream _herdrBridgeOutputStream = null;
+    final Map<String, HerdrBridgeConnection> _herdrBridges = new ConcurrentHashMap<>();
+    HerdrBridgeConnection _preparedHerdrBridge = null;
     ChannelExec _herdrEventChannel = null;
     DataOutputStream _herdrEventOutputStream = null;
     ChannelSftp _sftpSession = null;
@@ -421,7 +434,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
-  public void startHerdrBridge(
+  public void prepareHerdrBridge(
       final String command,
       final int protocol,
       final int columns,
@@ -433,85 +446,210 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   ) {
     new Thread(new Runnable() {
       public void run() {
-        boolean handshakeComplete = false;
         try {
           SSHClient client = clientPool.get(key);
           if (client == null) throw new Exception("client is null");
-          if (client._herdrBridgeChannel != null && client._herdrBridgeChannel.isConnected()) {
-            callback.invoke();
-            return;
+          HerdrBridgeConnection connection;
+          synchronized (client) {
+            if (client._preparedHerdrBridge != null) {
+              if (
+                  client._preparedHerdrBridge.handshakeComplete
+                  && bridgeIsConnected(client._preparedHerdrBridge)
+              ) {
+                callback.invoke();
+              } else {
+                callback.invoke("Herdr bridge preparation is already in progress");
+              }
+              return;
+            }
+            connection = new HerdrBridgeConnection(null);
+            client._preparedHerdrBridge = connection;
           }
-
-          ChannelExec channel = (ChannelExec) client._session.openChannel("exec");
-          channel.setCommand(command);
-          InputStream input = channel.getInputStream();
-          InputStream errorInput = channel.getErrStream();
-          DataOutputStream output = new DataOutputStream(channel.getOutputStream());
-          client._herdrBridgeChannel = channel;
-          client._herdrBridgeOutputStream = output;
-          channel.connect();
-          startHerdrBridgeErrorReader(errorInput);
-          writeHerdrMessage(client, HerdrBridgeCodec.hello(
+          runHerdrBridgeConnection(
+              client,
+              connection,
+              command,
               protocol,
               columns,
               rows,
               cellWidthPx,
-              cellHeightPx
-          ));
-
-          while (clientPool.get(key) == client && channel.isConnected()) {
-            byte[] payload = readHerdrPayload(input);
-            if (payload == null) break;
-            HerdrBridgeCodec.Message message = HerdrBridgeCodec.decode(payload);
-            if ("welcome".equals(message.type)) {
-              if (message.text != null) {
-                throw new IOException("Herdr bridge rejected protocol " + protocol + ": " + message.text);
-              }
-              if (message.sequence != protocol) {
-                throw new IOException(
-                    "Herdr bridge protocol mismatch: expected " + protocol + ", received " + message.sequence
-                );
-              }
-              if (message.width != 1) {
-                throw new IOException("Herdr bridge did not negotiate terminal ANSI rendering");
-              }
-              handshakeComplete = true;
-              callback.invoke();
-            } else if (handshakeComplete) {
-              sendHerdrBridgeMessage(key, message);
-            }
-          }
-          if (!handshakeComplete) throw new IOException("Herdr bridge closed before Welcome");
-          sendHerdrBridgeClosed(key, "Herdr remote-client-bridge closed");
+              cellHeightPx,
+              false,
+              true,
+              key,
+              callback
+          );
         } catch (Exception error) {
-          Log.e(LOGTAG, "Herdr bridge failed: " + error.getMessage());
-          if (!handshakeComplete) callback.invoke(error.getMessage());
-          else sendHerdrBridgeClosed(key, error.getMessage());
-        } finally {
-          SSHClient client = clientPool.get(key);
-          if (client != null) closeHerdrBridgeClient(client);
+          callback.invoke(error.getMessage());
         }
       }
     }).start();
   }
 
   @ReactMethod
-  public void herdrBridgeAttach(
+  public void startHerdrBridge(
+      final String command,
+      final int protocol,
       final String terminalId,
       final boolean takeover,
+      final int columns,
+      final int rows,
+      final int cellWidthPx,
+      final int cellHeightPx,
       final String key,
       final Callback callback
   ) {
-    writeHerdrMessageWithCallback(key, callback, new HerdrMessageFactory() {
-      public byte[] create() throws IOException {
-        return HerdrBridgeCodec.attachTerminal(terminalId, takeover);
+    new Thread(new Runnable() {
+      public void run() {
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client == null) throw new Exception("client is null");
+          HerdrBridgeConnection existing = client._herdrBridges.get(terminalId);
+          if (bridgeIsConnected(existing)) {
+            callback.invoke();
+            return;
+          }
+
+          HerdrBridgeConnection prepared = null;
+          synchronized (client) {
+            if (
+                client._preparedHerdrBridge != null
+                && client._preparedHerdrBridge.handshakeComplete
+                && bridgeIsConnected(client._preparedHerdrBridge)
+            ) {
+              prepared = client._preparedHerdrBridge;
+              client._preparedHerdrBridge = null;
+              prepared.terminalId = terminalId;
+              client._herdrBridges.put(terminalId, prepared);
+            }
+          }
+          if (prepared != null) {
+            try {
+              writeHerdrMessage(prepared, HerdrBridgeCodec.attachTerminal(terminalId, takeover));
+              callback.invoke();
+            } catch (Exception error) {
+              prepared.closedByClient = true;
+              client._herdrBridges.remove(terminalId, prepared);
+              closeHerdrBridgeConnection(prepared);
+              callback.invoke(error.getMessage());
+            }
+            return;
+          }
+
+          HerdrBridgeConnection connection = new HerdrBridgeConnection(terminalId);
+          client._herdrBridges.put(terminalId, connection);
+          runHerdrBridgeConnection(
+              client,
+              connection,
+              command,
+              protocol,
+              columns,
+              rows,
+              cellWidthPx,
+              cellHeightPx,
+              true,
+              takeover,
+              key,
+              callback
+          );
+        } catch (Exception error) {
+          callback.invoke(error.getMessage());
+        }
       }
-    });
+    }).start();
+  }
+
+  private void runHerdrBridgeConnection(
+      SSHClient client,
+      HerdrBridgeConnection connection,
+      String command,
+      int protocol,
+      int columns,
+      int rows,
+      int cellWidthPx,
+      int cellHeightPx,
+      boolean attachAfterHandshake,
+      boolean takeover,
+      String key,
+      Callback callback
+  ) {
+    boolean callbackInvoked = false;
+    try {
+      ChannelExec channel = (ChannelExec) client._session.openChannel("exec");
+      channel.setCommand(command);
+      InputStream input = channel.getInputStream();
+      InputStream errorInput = channel.getErrStream();
+      DataOutputStream output = new DataOutputStream(channel.getOutputStream());
+      connection.channel = channel;
+      connection.outputStream = output;
+      channel.connect();
+      startHerdrBridgeErrorReader(errorInput, connection);
+      writeHerdrMessage(connection, HerdrBridgeCodec.hello(
+          protocol,
+          columns,
+          rows,
+          cellWidthPx,
+          cellHeightPx
+      ));
+
+      while (clientPool.get(key) == client && channel.isConnected()) {
+        byte[] payload = readHerdrPayload(input);
+        if (payload == null) break;
+        HerdrBridgeCodec.Message message = HerdrBridgeCodec.decode(payload);
+        if ("welcome".equals(message.type)) {
+          if (message.text != null) {
+            throw new IOException("Herdr bridge rejected protocol " + protocol + ": " + message.text);
+          }
+          if (message.sequence != protocol) {
+            throw new IOException(
+                "Herdr bridge protocol mismatch: expected " + protocol + ", received " + message.sequence
+            );
+          }
+          if (message.width != 1) {
+            throw new IOException("Herdr bridge did not negotiate terminal ANSI rendering");
+          }
+          connection.handshakeComplete = true;
+          String terminalId = connection.terminalId;
+          if (attachAfterHandshake && terminalId != null) {
+            writeHerdrMessage(connection, HerdrBridgeCodec.attachTerminal(terminalId, takeover));
+          }
+          callback.invoke();
+          callbackInvoked = true;
+        } else if (connection.handshakeComplete && connection.terminalId != null) {
+          sendHerdrBridgeMessage(key, connection.terminalId, message);
+        }
+      }
+      if (!connection.handshakeComplete) throw new IOException("Herdr bridge closed before Welcome");
+      if (!connection.closedByClient && connection.terminalId != null) {
+        sendHerdrBridgeClosed(key, connection.terminalId, "Herdr remote-client-bridge closed");
+      }
+    } catch (Exception error) {
+      Log.e(LOGTAG, "Herdr bridge failed: " + error.getMessage());
+      if (!callbackInvoked) callback.invoke(error.getMessage());
+      else if (!connection.closedByClient && connection.terminalId != null) {
+        sendHerdrBridgeClosed(key, connection.terminalId, error.getMessage());
+      }
+    } finally {
+      synchronized (client) {
+        if (client._preparedHerdrBridge == connection) client._preparedHerdrBridge = null;
+      }
+      if (connection.terminalId != null) {
+        client._herdrBridges.remove(connection.terminalId, connection);
+      }
+      closeHerdrBridgeConnection(connection);
+    }
+  }
+
+  private boolean bridgeIsConnected(@Nullable HerdrBridgeConnection connection) {
+    return connection != null
+        && connection.channel != null
+        && connection.channel.isConnected()
+        && connection.outputStream != null;
   }
 
   @ReactMethod
-  public void herdrBridgeInput(final String text, final String key, final Callback callback) {
-    writeHerdrMessageWithCallback(key, callback, new HerdrMessageFactory() {
+  public void herdrBridgeInput(final String terminalId, final String text, final String key, final Callback callback) {
+    writeHerdrMessageWithCallback(key, terminalId, callback, new HerdrMessageFactory() {
       public byte[] create() throws IOException {
         return HerdrBridgeCodec.input(text);
       }
@@ -524,10 +662,11 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
       final int rows,
       final int cellWidthPx,
       final int cellHeightPx,
+      final String terminalId,
       final String key,
       final Callback callback
   ) {
-    writeHerdrMessageWithCallback(key, callback, new HerdrMessageFactory() {
+    writeHerdrMessageWithCallback(key, terminalId, callback, new HerdrMessageFactory() {
       public byte[] create() throws IOException {
         return HerdrBridgeCodec.resize(columns, rows, cellWidthPx, cellHeightPx);
       }
@@ -538,10 +677,11 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   public void herdrBridgeScroll(
       final boolean up,
       final int lines,
+      final String terminalId,
       final String key,
       final Callback callback
   ) {
-    writeHerdrMessageWithCallback(key, callback, new HerdrMessageFactory() {
+    writeHerdrMessageWithCallback(key, terminalId, callback, new HerdrMessageFactory() {
       public byte[] create() throws IOException {
         return HerdrBridgeCodec.scroll(up, lines);
       }
@@ -549,14 +689,23 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
-  public void closeHerdrBridge(final String key) {
+  public void closeHerdrBridge(final String terminalId, final String key) {
     SSHClient client = clientPool.get(key);
     if (client == null) return;
+    HerdrBridgeConnection connection = client._herdrBridges.remove(terminalId);
+    if (connection == null) return;
+    connection.closedByClient = true;
     try {
-      writeHerdrMessage(client, HerdrBridgeCodec.detach());
+      writeHerdrMessage(connection, HerdrBridgeCodec.detach());
     } catch (Exception ignored) {
     }
-    closeHerdrBridgeClient(client);
+    closeHerdrBridgeConnection(connection);
+  }
+
+  @ReactMethod
+  public void closeAllHerdrBridges(final String key) {
+    SSHClient client = clientPool.get(key);
+    if (client != null) closeHerdrBridgeClient(client);
   }
 
   private interface HerdrMessageFactory {
@@ -565,26 +714,31 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
   private void writeHerdrMessageWithCallback(
       String key,
+      String terminalId,
       Callback callback,
       HerdrMessageFactory factory
   ) {
     try {
       SSHClient client = clientPool.get(key);
       if (client == null) throw new IOException("client is null");
-      writeHerdrMessage(client, factory.create());
+      HerdrBridgeConnection connection = client._herdrBridges.get(terminalId);
+      if (!bridgeIsConnected(connection)) {
+        throw new IOException("Herdr bridge is not active for terminal " + terminalId);
+      }
+      writeHerdrMessage(connection, factory.create());
       callback.invoke();
     } catch (Exception error) {
       callback.invoke(error.getMessage());
     }
   }
 
-  private void writeHerdrMessage(SSHClient client, byte[] message) throws IOException {
-    synchronized (client) {
-      if (client._herdrBridgeOutputStream == null) {
+  private void writeHerdrMessage(HerdrBridgeConnection connection, byte[] message) throws IOException {
+    synchronized (connection) {
+      if (connection.outputStream == null) {
         throw new IOException("Herdr bridge is not active");
       }
-      client._herdrBridgeOutputStream.write(message);
-      client._herdrBridgeOutputStream.flush();
+      connection.outputStream.write(message);
+      connection.outputStream.flush();
     }
   }
 
@@ -606,17 +760,20 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     return payload;
   }
 
-  private void startHerdrBridgeErrorReader(final InputStream errorInput) {
+  private void startHerdrBridgeErrorReader(
+      final InputStream errorInput,
+      final HerdrBridgeConnection connection
+  ) {
     new Thread(new Runnable() {
       public void run() {
         try {
           BufferedReader reader = new BufferedReader(new InputStreamReader(errorInput));
           String line;
           while ((line = reader.readLine()) != null) {
-            Log.e(LOGTAG, "Herdr bridge stderr: " + line);
+            Log.e(LOGTAG, "Herdr bridge stderr [" + connection.terminalId + "]: " + line);
           }
         } catch (IOException error) {
-          Log.d(LOGTAG, "Herdr bridge stderr closed: " + error.getMessage());
+          Log.d(LOGTAG, "Herdr bridge stderr closed [" + connection.terminalId + "]: " + error.getMessage());
         }
       }
     }).start();
@@ -631,24 +788,25 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     }
   }
 
-  private void sendHerdrBridgeMessage(String key, HerdrBridgeCodec.Message message) {
+  private void sendHerdrBridgeMessage(String key, String terminalId, HerdrBridgeCodec.Message message) {
     if ("terminal".equals(message.type)) {
       byte[] bytes = message.bytes == null ? new byte[0] : message.bytes;
       int chunkSize = 6144;
       if (bytes.length == 0) {
-        sendHerdrTerminalChunk(key, message, "", true);
+        sendHerdrTerminalChunk(key, terminalId, message, "", true);
         return;
       }
       for (int start = 0; start < bytes.length; start += chunkSize) {
         int length = Math.min(chunkSize, bytes.length - start);
         String encoded = Base64.encodeToString(bytes, start, length, Base64.NO_WRAP);
-        sendHerdrTerminalChunk(key, message, encoded, start + length >= bytes.length);
+        sendHerdrTerminalChunk(key, terminalId, message, encoded, start + length >= bytes.length);
       }
       return;
     }
 
     WritableMap value = Arguments.createMap();
     value.putString("type", message.type);
+    value.putString("terminalId", terminalId);
     if (message.text != null) value.putString("text", message.text);
     if (message.body != null) value.putString("body", message.body);
     value.putBoolean("flag", message.flag);
@@ -658,12 +816,14 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
   private void sendHerdrTerminalChunk(
       String key,
+      String terminalId,
       HerdrBridgeCodec.Message message,
       String bytes,
       boolean finalChunk
   ) {
     WritableMap value = Arguments.createMap();
     value.putString("type", "terminal");
+    value.putString("terminalId", terminalId);
     value.putDouble("seq", (double) message.sequence);
     value.putInt("width", message.width);
     value.putInt("height", message.height);
@@ -673,9 +833,10 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     sendHerdrBridgeEvent(key, value);
   }
 
-  private void sendHerdrBridgeClosed(String key, String reason) {
+  private void sendHerdrBridgeClosed(String key, String terminalId, String reason) {
     WritableMap value = Arguments.createMap();
     value.putString("type", "closed");
+    value.putString("terminalId", terminalId);
     value.putString("text", reason == null ? "Herdr bridge closed" : reason);
     sendHerdrBridgeEvent(key, value);
   }
@@ -689,19 +850,36 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   }
 
   private void closeHerdrBridgeClient(SSHClient client) {
+    HerdrBridgeConnection prepared;
     synchronized (client) {
+      prepared = client._preparedHerdrBridge;
+      client._preparedHerdrBridge = null;
+    }
+    if (prepared != null) {
+      prepared.closedByClient = true;
+      closeHerdrBridgeConnection(prepared);
+    }
+    for (HerdrBridgeConnection connection : client._herdrBridges.values()) {
+      connection.closedByClient = true;
+      closeHerdrBridgeConnection(connection);
+    }
+    client._herdrBridges.clear();
+  }
+
+  private void closeHerdrBridgeConnection(HerdrBridgeConnection connection) {
+    synchronized (connection) {
       try {
-        if (client._herdrBridgeOutputStream != null) {
-          client._herdrBridgeOutputStream.flush();
-          client._herdrBridgeOutputStream.close();
-          client._herdrBridgeOutputStream = null;
+        if (connection.outputStream != null) {
+          connection.outputStream.flush();
+          connection.outputStream.close();
+          connection.outputStream = null;
         }
       } catch (IOException error) {
         Log.e(LOGTAG, "Error closing Herdr bridge output: " + error.getMessage());
       }
-      if (client._herdrBridgeChannel != null) {
-        client._herdrBridgeChannel.disconnect();
-        client._herdrBridgeChannel = null;
+      if (connection.channel != null) {
+        connection.channel.disconnect();
+        connection.channel = null;
       }
     }
   }

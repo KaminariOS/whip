@@ -128,10 +128,10 @@ class SSHClient {
         this._activeStream = {
             sftp: false,
             shell: false,
-            herdrBridge: false,
             herdrEventStream: false,
         };
         this._handlers = {};
+        this._herdrBridgeHandlers = new Map();
         this.host = host;
         this.port = port;
         this.username = username;
@@ -158,8 +158,19 @@ class SSHClient {
      * @param event The native event to handle.
      */
     handleEvent(event) {
-        if (event.name === NATIVE_EVENT_HERDR_BRIDGE && event.value?.type === 'closed') {
-            this._activeStream.herdrBridge = false;
+        if (event.name === NATIVE_EVENT_HERDR_BRIDGE && this._key === event.key) {
+            const terminalId = event.value?.terminalId;
+            const handler = terminalId ? this._herdrBridgeHandlers.get(terminalId) : undefined;
+            if (handler) {
+                handler(event.value);
+            }
+            if (terminalId && event.value?.type === 'closed') {
+                this._herdrBridgeHandlers.delete(terminalId);
+                if (this._herdrBridgeHandlers.size === 0) {
+                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
+                }
+            }
+            return;
         }
         if (event.name === NATIVE_EVENT_HERDR_EVENT_STREAM && event.value?.includes?.('herdr_android_bridge_closed')) {
             this._activeStream.herdrEventStream = false;
@@ -361,54 +372,70 @@ class SSHClient {
         RNSSHClient.closeShell(this._key);
         this._activeStream.shell = false;
     }
-    startHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, handler, callback) {
+    prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
         if (Platform.OS !== 'android') {
             return Promise.reject(new Error('Herdr remote-client-bridge is currently Android-only'));
         }
-        if (this._activeStream.herdrBridge) {
-            this.on(NATIVE_EVENT_HERDR_BRIDGE, handler);
-            return Promise.resolve();
-        }
         return new Promise((resolve, reject) => {
-            this.on(NATIVE_EVENT_HERDR_BRIDGE, handler);
-            this.registerNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-            RNSSHClient.startHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
+            RNSSHClient.prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, this._key, error => {
                 if (callback) callback(error);
-                if (error) {
-                    this.off(NATIVE_EVENT_HERDR_BRIDGE);
-                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-                    return reject(error);
-                }
-                this._activeStream.herdrBridge = true;
+                if (error) return reject(error);
                 resolve();
             });
         });
     }
-    herdrBridgeAttach(terminalId, takeover = true) {
+    startHerdrBridge(command, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, handler, callback) {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('Herdr remote-client-bridge is currently Android-only'));
+        }
+        if (this._herdrBridgeHandlers.has(terminalId)) {
+            this._herdrBridgeHandlers.set(terminalId, handler);
+            return Promise.resolve();
+        }
         return new Promise((resolve, reject) => {
-            RNSSHClient.herdrBridgeAttach(terminalId, takeover, this._key, error => error ? reject(error) : resolve());
+            this._herdrBridgeHandlers.set(terminalId, handler);
+            if (!this._listeners[NATIVE_EVENT_HERDR_BRIDGE]) {
+                this.registerNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
+            }
+            RNSSHClient.startHerdrBridge(command, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
+                if (callback) callback(error);
+                if (error) {
+                    this._herdrBridgeHandlers.delete(terminalId);
+                    if (this._herdrBridgeHandlers.size === 0) {
+                        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
+                    }
+                    return reject(error);
+                }
+                resolve();
+            });
         });
     }
-    herdrBridgeInput(text) {
+    herdrBridgeInput(terminalId, text) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.herdrBridgeInput(text, this._key, error => error ? reject(error) : resolve());
+            RNSSHClient.herdrBridgeInput(terminalId, text, this._key, error => error ? reject(error) : resolve());
         });
     }
-    herdrBridgeResize(columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
+    herdrBridgeResize(terminalId, columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.herdrBridgeResize(columns, rows, cellWidthPx, cellHeightPx, this._key, error => error ? reject(error) : resolve());
+            RNSSHClient.herdrBridgeResize(columns, rows, cellWidthPx, cellHeightPx, terminalId, this._key, error => error ? reject(error) : resolve());
         });
     }
-    herdrBridgeScroll(direction, lines) {
+    herdrBridgeScroll(terminalId, direction, lines) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.herdrBridgeScroll(direction === 'up', lines, this._key, error => error ? reject(error) : resolve());
+            RNSSHClient.herdrBridgeScroll(direction === 'up', lines, terminalId, this._key, error => error ? reject(error) : resolve());
         });
     }
-    closeHerdrBridge() {
-        this.off(NATIVE_EVENT_HERDR_BRIDGE);
+    closeHerdrBridge(terminalId) {
+        this._herdrBridgeHandlers.delete(terminalId);
+        RNSSHClient.closeHerdrBridge(terminalId, this._key);
+        if (this._herdrBridgeHandlers.size === 0) {
+            this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
+        }
+    }
+    closeAllHerdrBridges() {
+        this._herdrBridgeHandlers.clear();
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-        RNSSHClient.closeHerdrBridge(this._key);
-        this._activeStream.herdrBridge = false;
+        RNSSHClient.closeAllHerdrBridges(this._key);
     }
     startHerdrEventStream(command, handler, callback) {
         if (Platform.OS !== 'android') {
@@ -720,15 +747,14 @@ class SSHClient {
      */
     disconnect() {
         this.off(NATIVE_EVENT_SHELL);
-        this.off(NATIVE_EVENT_HERDR_BRIDGE);
         this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
+        this._herdrBridgeHandlers.clear();
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
         this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
         this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
         this._activeStream.shell = false;
         this._activeStream.sftp = false;
-        this._activeStream.herdrBridge = false;
         this._activeStream.herdrEventStream = false;
         RNSSHClient.disconnect(this._key);
     }

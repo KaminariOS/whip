@@ -6,7 +6,7 @@ const assets = resolve(__dirname, '../android/app/src/main/assets');
 const generated = resolve(__dirname, '../src/generated/terminalHtml.ts');
 
 describe('Android terminal assets', () => {
-  it('bundles JetBrains Mono and waits for it before announcing readiness', () => {
+  it('bundles JetBrains Mono without blocking terminal readiness on font loading', () => {
     const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
 
     expect(html).toContain("url('jetbrains-mono-regular.ttf')");
@@ -16,6 +16,9 @@ describe('Android terminal assets', () => {
     expect(html).toContain('Math.max(8, Math.min(16');
     expect(html).toContain('document.fonts.load');
     expect(html).toContain("send({ type: 'ready' })");
+    expect(html).toContain('font-display: swap');
+    expect(html.indexOf('announceReady();')).toBeLessThan(html.indexOf('document.fonts?.load'));
+    expect(html).toContain('pendingFrames.clear();');
 
     const inlineScript = html.match(/<script>\n([\s\S]*?)\n {2}<\/script>/)?.[1];
     expect(inlineScript).toBeDefined();
