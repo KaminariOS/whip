@@ -2,12 +2,23 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('terminal renderer lifecycle', () => {
-  it('keeps one terminal WebView mounted per live host and retargets it', () => {
+  it('keeps one terminal WebView mounted per opened terminal', () => {
     const source = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
 
-    expect(source).toContain('session={activeTerminalSession || null}');
-    expect(source).not.toContain('key={activeTerminalSession.terminalId}');
-    expect(source).not.toContain('{visible && activeTerminalSession && (');
+    expect(source).toContain('terminalState.sessions.map(terminalSession => (');
+    expect(source).toContain('key={terminalSession.terminalId}');
+    expect(source).toContain('session={terminalSession}');
+    expect(source).toContain("hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 }");
+    expect(source).not.toContain("hidden: { display: 'none' }");
+  });
+
+  it('hands keyboard focus between persistent terminal renderers', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+    const assets = readFileSync(resolve(__dirname, '../scripts/sync-terminal-assets.mjs'), 'utf8');
+
+    expect(screen).toContain("window.herdrBlur(); true;");
+    expect(screen).toContain("window.herdrFocus();");
+    expect(assets).toContain('window.herdrBlur = () => terminal.blur();');
   });
 
   it('starts the remote bridge before a terminal is opened', () => {

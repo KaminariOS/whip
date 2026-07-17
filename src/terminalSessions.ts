@@ -68,6 +68,37 @@ export function updateTerminalSession(
   };
 }
 
+export function reconcileTerminalSessions(
+  state: TerminalSessionsState,
+  panes: PaneInfo[],
+): TerminalSessionsState {
+  const panesByTerminal = new Map(panes.map(pane => [pane.terminal_id, pane]));
+  const sessions = state.sessions
+    .filter(session => panesByTerminal.has(session.terminalId))
+    .map(session => {
+      const pane = panesByTerminal.get(session.terminalId)!;
+      return {
+        ...session,
+        paneId: pane.pane_id,
+        title: titleForPane(pane),
+      };
+    });
+
+  if (sessions.length === state.sessions.length && sessions.every((session, index) => (
+    session.paneId === state.sessions[index].paneId
+      && session.title === state.sessions[index].title
+  ))) {
+    return state;
+  }
+
+  const previousActiveIndex = state.sessions.findIndex(session => session.terminalId === state.activeTerminalId);
+  const fallback = sessions[Math.min(Math.max(0, previousActiveIndex), sessions.length - 1)];
+  const activeTerminalId = sessions.some(session => session.terminalId === state.activeTerminalId)
+    ? state.activeTerminalId
+    : fallback?.terminalId ?? null;
+  return { sessions, activeTerminalId };
+}
+
 export function selectTerminalSession(
   state: TerminalSessionsState,
   terminalId: string,
