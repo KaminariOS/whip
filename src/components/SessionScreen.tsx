@@ -30,6 +30,7 @@ interface Props {
   onCloseTerminal: (terminalId: string) => void;
   onTerminalStatus: (terminalId: string, status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
   terminalPreferences: TerminalPreferences;
+  onTerminalFontSizeChange: (fontSize: number) => void;
   onExit: () => void;
   showExit?: boolean;
 }
@@ -52,6 +53,7 @@ export function SessionScreen({
   onCloseTerminal,
   onTerminalStatus,
   terminalPreferences,
+  onTerminalFontSizeChange,
   onExit,
   showExit = true,
 }: Props) {
@@ -370,6 +372,7 @@ export function SessionScreen({
             visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
             session={terminalSession}
             preferences={terminalPreferences}
+            onFontSizeChange={onTerminalFontSizeChange}
             onClose={() => onCloseTerminal(terminalSession.terminalId)}
             onStatus={(status, error, reconnectAttempt) => {
               onTerminalStatus(terminalSession.terminalId, status, error, reconnectAttempt);

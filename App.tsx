@@ -159,6 +159,15 @@ function AppContent() {
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
 
+  const updateTerminalFontSize = useCallback((fontSize: number) => {
+    const nextFontSize = Math.max(8, Math.min(16, Math.round(fontSize)));
+    setTerminalPreferences(current => (
+      current.fontSize === nextFontSize
+        ? current
+        : { ...current, fontSize: nextFontSize }
+    ));
+  }, []);
+
   liveSessionsRef.current = liveSessions;
   hostsRef.current = hosts;
   alertsEnabledRef.current = alertsEnabled;
@@ -882,6 +891,7 @@ function AppContent() {
                 client={runtime.client}
                 visible={terminalVisible && session.id === activeSession?.id}
                 terminalPreferences={terminalPreferences}
+                onTerminalFontSizeChange={updateTerminalFontSize}
                 onRefresh={refreshHost}
                 onOpenPane={(sessionId, pane) => {
                   setLiveSessions(current => selectLiveHostSession(current, sessionId));
@@ -952,6 +962,7 @@ function LiveSessionView({
   client,
   visible,
   terminalPreferences,
+  onTerminalFontSizeChange,
   onRefresh,
   onOpenPane,
   onActivateTerminal,
@@ -962,6 +973,7 @@ function LiveSessionView({
   client: HerdrClient;
   visible: boolean;
   terminalPreferences: TerminalPreferences;
+  onTerminalFontSizeChange: (fontSize: number) => void;
   onRefresh: (sessionId: string) => Promise<void>;
   onOpenPane: (sessionId: string, pane: PaneInfo) => void;
   onActivateTerminal: (sessionId: string, pane: PaneInfo) => void;
@@ -989,6 +1001,7 @@ function LiveSessionView({
       onCloseTerminal={closeTerminal}
       onTerminalStatus={terminalStatus}
       terminalPreferences={terminalPreferences}
+      onTerminalFontSizeChange={onTerminalFontSizeChange}
       onExit={() => undefined}
       showExit={false}
     />

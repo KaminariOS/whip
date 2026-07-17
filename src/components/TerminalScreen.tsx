@@ -22,6 +22,7 @@ interface Props {
   session: TerminalSession | null;
   preferences: TerminalPreferences;
   compact?: boolean;
+  onFontSizeChange: (fontSize: number) => void;
   onClose: () => void;
   onStatus: (status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
 }
@@ -55,7 +56,7 @@ const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 
-export function TerminalScreen({ client, visible, session, preferences, compact = false, onClose, onStatus }: Props) {
+export function TerminalScreen({ client, visible, session, preferences, compact = false, onFontSizeChange, onClose, onStatus }: Props) {
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
   const status = session?.status || 'connecting';
@@ -270,6 +271,11 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
         await client.scrollTerminal(terminalId, message.direction, message.lines);
       } catch (reason) {
         setError(String(reason));
+      }
+    } else if (message.type === 'font-size-change') {
+      const fontSize = Number(message.fontSize);
+      if (Number.isFinite(fontSize)) {
+        onFontSizeChange(Math.max(8, Math.min(16, Math.round(fontSize))));
       }
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(message.text || '');
