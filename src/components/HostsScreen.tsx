@@ -2,6 +2,7 @@ import { AlertCircle, LockKeyhole, Plus, Server } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 
 import { hostDisplayName } from '@/src/lib/hostProfiles';
+import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
 import type { HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, StatusBadge } from './app-ui';
 import { Button } from './ui/button';
@@ -14,12 +15,15 @@ interface Props {
   error: string | null;
   activeHostId?: string | null;
   connectedHostIds?: string[];
+  credentialRecovery: CredentialRecoveryStatus;
+  credentialRecoveryBusy: boolean;
   onAdd: () => void;
   onConnect: (host: HostProfile) => void;
   onEdit: (host: HostProfile) => void;
+  onUnlockCredentials: () => Promise<boolean>;
 }
 
-export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], onAdd, onConnect, onEdit }: Props) {
+export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onEdit, onUnlockCredentials }: Props) {
   return (
     <View className="flex-1 bg-background">
       <ScreenHeader
@@ -33,6 +37,21 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
         <View className="mx-4 mt-4 flex-row items-start gap-2 rounded-md bg-destructive/10 p-3">
           <Icon as={AlertCircle} className="text-destructive" size={18} />
           <Text className="flex-1 text-[13px] leading-[18px] text-destructive">{error}</Text>
+        </View>
+      ) : null}
+
+      {credentialRecovery.state === 'locked' ? (
+        <View className="mx-4 mt-4 flex-row items-center gap-3 rounded-lg border border-border bg-card p-3.5">
+          <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={LockKeyhole} className="text-primary" size={19} /></View>
+          <View className="min-w-0 flex-1"><Text className="text-sm font-semibold">Restored credentials are locked</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">Unlock {credentialRecovery.count} {credentialRecovery.count === 1 ? 'credential' : 'credentials'} with fingerprint, face, or device PIN.</Text></View>
+          <Button className="rounded-full px-3.5" size="sm" disabled={credentialRecoveryBusy} onPress={hapticPress(() => { void onUnlockCredentials(); })}><Text>{credentialRecoveryBusy ? 'Unlocking…' : 'Unlock'}</Text></Button>
+        </View>
+      ) : null}
+
+      {credentialRecovery.state === 'unavailable' ? (
+        <View className="mx-4 mt-4 flex-row items-start gap-2 rounded-md bg-destructive/10 p-3">
+          <Icon as={AlertCircle} className="text-destructive" size={18} />
+          <Text className="flex-1 text-[13px] leading-[18px] text-destructive">Encrypted credentials were restored, but this app build does not include the Android recovery module.</Text>
         </View>
       ) : null}
 
@@ -83,7 +102,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
 
       <View className="min-h-11 flex-row items-center gap-2 border-t border-border px-[18px]">
         <Icon as={LockKeyhole} className="text-muted-foreground" size={14} />
-        <Text className="flex-1 text-[11px] leading-[15px] text-muted-foreground">Credentials are isolated per host in Android Keystore.</Text>
+        <Text className="flex-1 text-[11px] leading-[15px] text-muted-foreground">Credentials use Android Keystore with encrypted Block Store recovery.</Text>
       </View>
     </View>
   );

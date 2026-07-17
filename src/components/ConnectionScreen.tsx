@@ -55,7 +55,7 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
         )}
         {profile.authMode === 'key' ? <Field label="Key passphrase (optional)" value={profile.passphrase} onChangeText={value => update('passphrase', value)} secureTextEntry /> : null}
 
-        <View className="mb-3.5 mt-0.5 min-h-[74px] flex-row items-center gap-4 border-y border-border"><View className="flex-1"><Text className="text-[15px] font-semibold leading-5">Remember credentials</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">Stored in Android Keystore, not plain app storage.</Text></View><Switch checked={profile.rememberCredentials} onCheckedChange={value => update('rememberCredentials', value)} /></View>
+        <View className="mb-3.5 mt-0.5 min-h-[74px] flex-row items-center gap-4 border-y border-border"><View className="flex-1"><Text className="text-[15px] font-semibold leading-5">Remember credentials</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">Keystore protected, with encrypted recovery unlocked by device security.</Text></View><Switch checked={profile.rememberCredentials} onCheckedChange={value => update('rememberCredentials', value)} /></View>
 
         <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">Herdr target</Text>
         <View className="flex-row gap-2.5"><Field label="Command" value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label="Session" value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>

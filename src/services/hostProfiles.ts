@@ -13,6 +13,12 @@ import {
   upsertHost,
 } from '../lib/hostProfiles';
 import type { ConnectionProfile, HostProfile } from '../types';
+import {
+  backupCredential,
+  ensureCredentialBackup,
+  recoverCredentialForHost,
+  removeCredentialBackup,
+} from './credentialVault';
 
 interface StoredCredential {
   secret?: string;
@@ -21,7 +27,11 @@ interface StoredCredential {
 
 export async function loadHostProfiles(): Promise<HostProfile[]> {
   const stored = await AsyncStorage.getItem(HOSTS_STORAGE_KEY);
-  if (stored !== null) return parseHosts(stored);
+  if (stored !== null) {
+    const hosts = parseHosts(stored);
+    await migrateStoredCredentialBackups(hosts);
+    return hosts;
+  }
 
   const legacyValue = await AsyncStorage.getItem(LEGACY_PROFILE_KEY);
   const legacy = migrateLegacyProfile(legacyValue);
@@ -41,9 +51,12 @@ export async function loadHostProfiles(): Promise<HostProfile[]> {
 
 export async function loadConnectionProfile(host: HostProfile): Promise<ConnectionProfile> {
   const credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
+  const secrets = credential
+    ? parseCredential(credential.password)
+    : await recoverCredentialForHost(host) || { secret: '', passphrase: '' };
   return {
     ...host,
-    ...parseCredential(credential ? credential.password : null),
+    ...secrets,
   };
 }
 
@@ -60,6 +73,7 @@ export async function saveConnectionProfile(
     await writeCredential(profile);
   } else if (!profile.rememberCredentials) {
     await Keychain.resetGenericPassword({ service: hostCredentialService(profile.id) });
+    await removeCredentialBackup(profile.id);
   }
   return { hosts: nextHosts, host };
 }
@@ -77,6 +91,7 @@ export async function deleteHostProfile(hosts: HostProfile[], id: string): Promi
   const next = hosts.filter(host => host.id !== id);
   await AsyncStorage.setItem(HOSTS_STORAGE_KEY, JSON.stringify(next));
   await Keychain.resetGenericPassword({ service: hostCredentialService(id) });
+  await removeCredentialBackup(id);
   return next;
 }
 
@@ -85,6 +100,23 @@ async function writeCredential(profile: ConnectionProfile): Promise<void> {
     secret: profile.secret,
     passphrase: profile.passphrase,
   }), { service: hostCredentialService(profile.id) });
+  await backupCredential(profile.id, {
+    secret: profile.secret,
+    passphrase: profile.passphrase,
+  });
+}
+
+async function migrateStoredCredentialBackups(hosts: HostProfile[]): Promise<void> {
+  for (const host of hosts) {
+    if (!host.rememberCredentials) continue;
+    try {
+      const credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
+      const secrets = parseCredential(credential ? credential.password : null);
+      if (secrets.secret) await ensureCredentialBackup(host.id, secrets);
+    } catch {
+      // Local credentials remain usable even when Block Store is unavailable.
+    }
+  }
 }
 
 function parseCredential(value: string | null): Required<StoredCredential> {

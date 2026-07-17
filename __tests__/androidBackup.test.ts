@@ -25,7 +25,7 @@ describe('Android host backup', () => {
     expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
   });
 
-  it('backs up AsyncStorage and terminal backgrounds without backing up credentials', () => {
+  it('backs up encrypted app data without backing up local Keychain files', () => {
     expect(legacyRules).toContain('<include domain="database" path="." />');
     expect(extractionRules.match(/<include domain="database" path="\." \/>/g)).toHaveLength(2);
     expect(legacyRules).toContain('<include domain="file" path="terminal-backgrounds/" />');
