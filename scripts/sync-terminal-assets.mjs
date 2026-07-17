@@ -1,4 +1,4 @@
-import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +8,10 @@ const terminalFonts = resolve(root, 'assets/terminal-fonts');
 const jetBrainsMonoRegular = resolve(terminalFonts, 'JetBrainsMono-Regular.ttf');
 const jetBrainsMonoBold = resolve(terminalFonts, 'JetBrainsMono-Bold.ttf');
 const jetBrainsMonoLicense = resolve(terminalFonts, 'OFL.txt');
+const [jetBrainsMonoRegularData, jetBrainsMonoBoldData] = await Promise.all([
+  readFile(jetBrainsMonoRegular).then(font => font.toString('base64')),
+  readFile(jetBrainsMonoBold).then(font => font.toString('base64')),
+]);
 
 await mkdir(assets, { recursive: true });
 await Promise.all([
@@ -27,18 +31,18 @@ const terminalHtml = `<!doctype html>
   <link rel="stylesheet" href="xterm.css">
   <style>
     @font-face {
-      font-family: 'JetBrains Mono';
-      src: url('jetbrains-mono-regular.ttf') format('truetype');
+      font-family: 'Herdr Terminal Mono';
+      src: url('data:font/ttf;base64,${jetBrainsMonoRegularData}') format('truetype');
       font-style: normal;
       font-weight: 400;
-      font-display: swap;
+      font-display: block;
     }
     @font-face {
-      font-family: 'JetBrains Mono';
-      src: url('jetbrains-mono-bold.ttf') format('truetype');
+      font-family: 'Herdr Terminal Mono';
+      src: url('data:font/ttf;base64,${jetBrainsMonoBoldData}') format('truetype');
       font-style: normal;
       font-weight: 700;
-      font-display: swap;
+      font-display: block;
     }
     html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #212121; }
     html { -webkit-text-size-adjust: none; text-size-adjust: none; }
@@ -47,7 +51,7 @@ const terminalHtml = `<!doctype html>
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #2f2f2f; border: 1px solid #424242; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
-    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #ececec; padding: 8px 10px; font: 700 10px 'JetBrains Mono', monospace; }
+    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #ececec; padding: 8px 10px; font: 700 10px 'Herdr Terminal Mono', monospace; }
     #selection-toolbar button:active { background: #ffffff; color: #0d0d0d; }
   </style>
 </head>
@@ -57,8 +61,15 @@ const terminalHtml = `<!doctype html>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
   <script>
-    const terminalFontFamily = '"JetBrains Mono", "Droid Sans Mono", monospace';
-    const terminal = new Terminal({
+    const terminalFontFamily = '"Herdr Terminal Mono", monospace';
+    const fontReady = document.fonts?.load
+      ? Promise.all([
+          document.fonts.load('400 8px "Herdr Terminal Mono"'),
+          document.fonts.load('700 8px "Herdr Terminal Mono"'),
+        ]).then(() => document.fonts.ready)
+      : Promise.resolve();
+    const initializeTerminal = () => {
+      const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
       fontFamily: terminalFontFamily,
@@ -299,21 +310,12 @@ const terminalHtml = `<!doctype html>
         send({ type: 'ready' });
       }
     };
-    const refreshFont = () => {
-      terminal.options.fontFamily = terminalFontFamily;
-      terminal.refresh(0, terminal.rows - 1);
-      resize();
+      announceReady();
     };
-    announceReady();
-    const fontReady = document.fonts?.load
-      ? Promise.all([
-          document.fonts.load('400 8px "JetBrains Mono"'),
-          document.fonts.load('700 8px "JetBrains Mono"'),
-        ]).then(() => document.fonts.ready)
-      : Promise.resolve();
-    fontReady.then(() => {
-      refreshFont();
-    }).catch(() => {});
+    Promise.race([
+      fontReady.catch(() => undefined),
+      new Promise(resolve => setTimeout(resolve, 1500)),
+    ]).then(initializeTerminal);
   </script>
 </body>
 </html>`;
