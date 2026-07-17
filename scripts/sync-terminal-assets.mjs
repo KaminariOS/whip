@@ -44,9 +44,12 @@ const terminalHtml = `<!doctype html>
       font-weight: 700;
       font-display: block;
     }
-    html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #212121; }
+    html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
     html { -webkit-text-size-adjust: none; text-size-adjust: none; }
-    #terminal { box-sizing: border-box; }
+    #terminal-background-layer { position: fixed; inset: 0; z-index: 2; display: none; mix-blend-mode: screen; pointer-events: none; }
+    #terminal-background-image { width: 100%; height: 100%; object-fit: cover; }
+    #terminal-background-glass { position: absolute; inset: 0; }
+    #terminal { position: relative; z-index: 1; box-sizing: border-box; }
     .xterm { height: 100%; }
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
@@ -56,6 +59,10 @@ const terminalHtml = `<!doctype html>
   </style>
 </head>
 <body>
+  <div id="terminal-background-layer">
+    <img id="terminal-background-image" alt="" />
+    <div id="terminal-background-glass"></div>
+  </div>
   <div id="terminal"></div>
   <div id="selection-toolbar"><button id="copy-selection">COPY</button><button id="paste-selection">PASTE</button></div>
   <script src="xterm.js"></script>
@@ -72,6 +79,7 @@ const terminalHtml = `<!doctype html>
       const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
+      allowTransparency: true,
       fontFamily: terminalFontFamily,
       fontSize: 8,
       fontWeight: '400',
@@ -80,7 +88,7 @@ const terminalHtml = `<!doctype html>
       letterSpacing: 0,
       scrollback: 5000,
       theme: {
-        background: '#212121', foreground: '#ececec', cursor: '#ffffff', selectionBackground: '#67676780',
+        background: 'rgba(0,0,0,0)', foreground: '#ececec', cursor: '#ffffff', selectionBackground: '#67676780',
         black: '#181818', red: '#ff6b6b', green: '#42c59a', yellow: '#f2a94a',
         blue: '#6ea8ff', magenta: '#c792ea', cyan: '#56c7d9', white: '#ececec',
         brightBlack: '#8e8e8e', brightRed: '#ff8b8b', brightGreen: '#70ddb6',
@@ -139,6 +147,14 @@ const terminalHtml = `<!doctype html>
       terminal.options.fontSize = Math.max(8, Math.min(16, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
+      const backgroundUri = options.backgroundImageUri || '';
+      const dimming = Math.max(0, Math.min(100, Number(options.backgroundDimming) || 0)) / 100;
+      const backgroundLayer = document.getElementById('terminal-background-layer');
+      const backgroundImage = document.getElementById('terminal-background-image');
+      const backgroundGlass = document.getElementById('terminal-background-glass');
+      backgroundLayer.style.display = backgroundUri ? 'block' : 'none';
+      backgroundImage.src = backgroundUri;
+      backgroundGlass.style.backgroundColor = 'rgba(0,0,0,' + dimming + ')';
       setTimeout(resize, 0);
     };
     window.herdrPaste = data => { terminal.paste(data); hideToolbar(); };

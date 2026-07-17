@@ -1,7 +1,9 @@
-import { LogOut, ShieldCheck } from 'lucide-react-native';
-import { ScrollView, View } from 'react-native';
+import { ImagePlus, LogOut, ShieldCheck, Trash2 } from 'lucide-react-native';
+import { useState } from 'react';
+import { Alert, Image, ScrollView, StyleSheet, View } from 'react-native';
 
 import type { TerminalPreferences } from '@/src/services/devicePreferences';
+import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
 import { hapticPress, IconButton, ScreenHeader } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -21,6 +23,32 @@ interface Props {
 }
 
 export function SettingsScreen(props: Props) {
+  const [backgroundBusy, setBackgroundBusy] = useState(false);
+
+  const chooseBackground = async () => {
+    setBackgroundBusy(true);
+    try {
+      const uri = await selectTerminalBackgroundImage(props.terminalPreferences.backgroundImageUri);
+      if (uri) props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundImageUri: uri });
+    } catch (error) {
+      Alert.alert('Could not use image', String(error));
+    } finally {
+      setBackgroundBusy(false);
+    }
+  };
+
+  const removeBackground = async () => {
+    setBackgroundBusy(true);
+    try {
+      await removeTerminalBackgroundImage(props.terminalPreferences.backgroundImageUri);
+      props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundImageUri: null });
+    } catch (error) {
+      Alert.alert('Could not remove image', String(error));
+    } finally {
+      setBackgroundBusy(false);
+    }
+  };
+
   return (
     <View className="flex-1 bg-background">
       <ScreenHeader title="Settings" left={<IconButton icon="chevron-back" accessibilityLabel="Back" onPress={props.onBack} />} />
@@ -38,6 +66,21 @@ export function SettingsScreen(props: Props) {
           <ValueRow title="Font size" value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(16, props.terminalPreferences.fontSize + 1) })} />
           <ValueRow title="Scrollback" value={`${props.terminalPreferences.scrollback} lines`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
           <SettingRow title="Blinking cursor" copy="Animate the terminal cursor while the pane is active." value={props.terminalPreferences.cursorBlink} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, cursorBlink: value })} divided />
+          <TerminalBackgroundRow
+            busy={backgroundBusy}
+            uri={props.terminalPreferences.backgroundImageUri}
+            dimming={props.terminalPreferences.backgroundDimming}
+            onChoose={chooseBackground}
+            onRemove={removeBackground}
+          />
+          <ValueRow
+            title="Background dimming"
+            value={`${props.terminalPreferences.backgroundDimming}%`}
+            disabled={!props.terminalPreferences.backgroundImageUri}
+            onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming: Math.max(0, props.terminalPreferences.backgroundDimming - 5) })}
+            onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming: Math.min(100, props.terminalPreferences.backgroundDimming + 5) })}
+            divided
+          />
         </View>
 
         <View className="mt-7 flex-row items-start gap-3 rounded-lg bg-muted p-4"><Icon as={ShieldCheck} size={21} /><View className="flex-1"><Text className="text-sm font-semibold leading-[19px]">Private SSH boundary</Text><Text className="mt-1 text-xs leading-[18px] text-muted-foreground">Herdr is not exposed to the network. Dashboard actions and terminal bytes travel through SSH to your device.</Text></View></View>
@@ -48,10 +91,31 @@ export function SettingsScreen(props: Props) {
   );
 }
 
-function ValueRow({ title, value, onDecrease, onIncrease, divided = false }: { title: string; value: string; onDecrease: () => void; onIncrease: () => void; divided?: boolean }) {
-  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5' : 'min-h-16 flex-row items-center px-3.5'}><Text className="text-[15px] font-semibold leading-5">{title}</Text><View className="ml-auto flex-row items-center"><IconButton icon="remove" accessibilityLabel={`Decrease ${title}`} className="size-9" onPress={onDecrease} /><Text className="min-w-[92px] text-center text-xs text-muted-foreground">{value}</Text><IconButton icon="add" accessibilityLabel={`Increase ${title}`} className="size-9" onPress={onIncrease} /></View></View>;
+function ValueRow({ title, value, onDecrease, onIncrease, divided = false, disabled = false }: { title: string; value: string; onDecrease: () => void; onIncrease: () => void; divided?: boolean; disabled?: boolean }) {
+  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5' : 'min-h-16 flex-row items-center px-3.5'}><Text className="text-[15px] font-semibold leading-5">{title}</Text><View className="ml-auto flex-row items-center"><IconButton icon="remove" accessibilityLabel={`Decrease ${title}`} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[92px] text-center text-xs text-muted-foreground/50' : 'min-w-[92px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon="add" accessibilityLabel={`Increase ${title}`} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
+}
+
+function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {
+  return (
+    <View className="border-t border-border p-3.5">
+      <View className="mb-3"><Text className="text-[15px] font-semibold leading-5">Background image</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">A local image stored only on this device.</Text></View>
+      <View className="relative h-28 overflow-hidden rounded-md bg-[#212121]">
+        {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
+        {uri ? <View className="absolute inset-0" style={{ backgroundColor: `rgba(24, 24, 24, ${dimming / 100})` }} /> : null}
+        <View className="absolute inset-0 justify-end p-3"><Text style={styles.terminalPreviewText} className="text-xs text-white">user@host:~ $ herdr status</Text><Text style={styles.terminalPreviewText} className="mt-1 text-[10px] text-[#B4B4B4]">terminal preview</Text></View>
+      </View>
+      <View className="mt-3 flex-row gap-2">
+        <Button className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(onChoose)}><Icon as={ImagePlus} size={16} /><Text>{uri ? 'Replace image' : 'Choose image'}</Text></Button>
+        {uri ? <Button className="rounded-full px-4" variant="ghost" disabled={busy} onPress={hapticPress(onRemove)}><Icon as={Trash2} className="text-destructive" size={16} /><Text className="text-destructive">Remove</Text></Button> : null}
+      </View>
+    </View>
+  );
 }
 
 function SettingRow({ title, copy, value, onChange, divided = false }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; divided?: boolean }) {
   return <View className={divided ? 'min-h-[82px] flex-row items-center border-t border-border p-3.5' : 'min-h-[82px] flex-row items-center p-3.5'}><View className="flex-1 pr-[18px]"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View><Switch checked={value} onCheckedChange={onChange} /></View>;
 }
+
+const styles = StyleSheet.create({
+  terminalPreviewText: { fontFamily: 'monospace' },
+});
