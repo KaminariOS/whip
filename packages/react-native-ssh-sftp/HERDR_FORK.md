@@ -15,6 +15,9 @@ Herdr-specific changes:
   terminal-id-tagged chunked ANSI frame events;
 - run the newline-delimited `nc -U` event subscription as a separate exec
   channel on that same authenticated session;
+- configure JSch server-alive probes so a half-open mobile SSH connection is
+  closed after three missed 5-second probes, allowing the app to reconnect
+  instead of leaving terminal and event streams frozen;
 - subscribe to exec-channel output before starting short-lived Herdr commands,
   preventing their first response from being lost on fast remote hosts;
 - expose PTY resizing on Android and in the JavaScript API;
