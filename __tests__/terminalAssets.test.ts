@@ -5,6 +5,7 @@ import { Script } from 'node:vm';
 const assets = resolve(__dirname, '../android/app/src/main/assets');
 const sourceFonts = resolve(__dirname, '../assets/terminal-fonts');
 const generated = resolve(__dirname, '../src/generated/terminalHtml.ts');
+const terminalScreen = resolve(__dirname, '../src/components/TerminalScreen.tsx');
 
 describe('Android terminal assets', () => {
   it('embeds the WezTerm font stack and loads it before xterm initialization', () => {
@@ -112,5 +113,11 @@ describe('Android terminal assets', () => {
 
     expect(encoded).toBeDefined();
     expect(JSON.parse(encoded!)).toBe(html);
+  });
+
+  it('keeps Android text scaling from corrupting xterm character measurements', () => {
+    const screen = readFileSync(terminalScreen, 'utf8');
+
+    expect(screen).toContain('textZoom={100}');
   });
 });
