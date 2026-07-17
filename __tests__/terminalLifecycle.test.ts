@@ -56,6 +56,16 @@ describe('terminal renderer lifecycle', () => {
     expect(client).not.toContain("connection.onClosed?.('SSH control connection was replaced')");
   });
 
+  it('does not replace the SSH client while its initial handshake is running', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
+
+    expect(app).toContain('if (!runtime || !canRefreshLiveHostSession(session)) return;');
+    expect(client).toContain('private controlConnect: Promise<void> | null = null;');
+    expect(client).toContain('const connecting = this.controlConnect;');
+    expect(client).toContain('await connecting;\n        return;');
+  });
+
   it('attaches before WebView readiness and keeps terminal bridges after UI release', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');

@@ -46,6 +46,7 @@ export class HerdrClient {
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
+  private controlConnect: Promise<void> | null = null;
   private controlReconnect: Promise<void> | null = null;
 
   async connect(profile: ConnectionProfile): Promise<void> {
@@ -54,13 +55,31 @@ export class HerdrClient {
       throw new Error('SSH port must be between 1 and 65535');
     }
 
-    this.client = await this.connectSsh(profile, port);
-    this.profile = profile;
-    this.apiServer = null;
+    if (this.controlConnect) return this.controlConnect;
+    const task = (async () => {
+      this.client = await this.connectSsh(profile, port);
+      this.profile = profile;
+      this.apiServer = null;
+    })();
+    this.controlConnect = task;
+    try {
+      await task;
+    } finally {
+      if (this.controlConnect === task) this.controlConnect = null;
+    }
   }
 
   /** Replace the single authenticated SSH session and recreate its channels. */
   async reconnectControl(profile: ConnectionProfile = this.requireProfile()): Promise<void> {
+    const connecting = this.controlConnect;
+    if (connecting) {
+      try {
+        await connecting;
+        return;
+      } catch {
+        // The initial handshake failed, so continue with the normal reconnect.
+      }
+    }
     if (this.controlReconnect) return this.controlReconnect;
     const task = this.replaceControlConnection(profile);
     this.controlReconnect = task;

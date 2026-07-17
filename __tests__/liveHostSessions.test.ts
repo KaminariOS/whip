@@ -2,6 +2,7 @@ import {
   applyLiveHostFocus,
   applyLiveHostSnapshot,
   beginLiveHostSync,
+  canRefreshLiveHostSession,
   closeLiveHostSession,
   emptyLiveHostSessions,
   failLiveHostSync,
@@ -101,6 +102,19 @@ function syncSnapshot(
 }
 
 describe('live host session state', () => {
+  test('does not refresh a host until its initial SSH connection is ready', () => {
+    const connecting = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const session = findLiveHostSession(connecting, 'live-1');
+
+    expect(canRefreshLiveHostSession(session)).toBe(false);
+    expect(canRefreshLiveHostSession(
+      findLiveHostSession(updateLiveHostConnection(connecting, 'live-1', { status: 'connected' }), 'live-1'),
+    )).toBe(true);
+    expect(canRefreshLiveHostSession(
+      findLiveHostSession(updateLiveHostConnection(connecting, 'live-1', { status: 'reconnecting' }), 'live-1'),
+    )).toBe(true);
+  });
+
   test('opens multiple hosts concurrently and keeps their state independent', () => {
     const first = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const second = openLiveHostSession(first, host('builder'), 'live-2');

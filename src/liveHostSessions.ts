@@ -58,6 +58,13 @@ export const emptyLiveHostSessions: LiveHostSessionsState = {
   activeSessionId: null,
 };
 
+/** A connecting host has no usable control channel for snapshot refreshes yet. */
+export function canRefreshLiveHostSession(
+  session: LiveHostSession | null | undefined,
+): session is LiveHostSession {
+  return Boolean(session && session.status !== 'connecting');
+}
+
 export function createEmptyHerdrSnapshot(): HerdrSnapshot {
   return {
     server: { running: false },
