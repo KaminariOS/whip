@@ -30,8 +30,8 @@ export function SettingsScreen(props: Props) {
 
       <View style={styles.section}>
         <SettingRow
-          title="Agent notifications"
-          copy="Notify and vibrate when an agent is blocked or done."
+          title="Background agent notifications"
+          copy="Keep SSH monitoring active with an ongoing Android notification, then notify and vibrate when an agent is blocked or done."
           value={props.alertsEnabled}
           onChange={props.onAlertsChange}
         />
