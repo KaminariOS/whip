@@ -3,6 +3,7 @@ import * as Speech from 'expo-speech';
 import { Platform, Vibration } from 'react-native';
 
 import type { AgentInfo } from '../types';
+import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 
 const CHANNEL_ID = 'agent-state';
 
@@ -26,7 +27,11 @@ export async function prepareAlerts(): Promise<void> {
   await Notifications.requestPermissionsAsync();
 }
 
-export async function alertAgent(agent: AgentInfo, speak: boolean): Promise<void> {
+export async function alertAgent(
+  agent: AgentInfo,
+  speak: boolean,
+  target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
+): Promise<void> {
   const name = agent.display_agent || agent.name || agent.agent || agent.pane_id;
   const blocked = agent.agent_status === 'blocked';
   const title = blocked ? `${name} needs you` : `${name} finished`;
@@ -34,7 +39,7 @@ export async function alertAgent(agent: AgentInfo, speak: boolean): Promise<void
 
   Vibration.vibrate(blocked ? [0, 100, 90, 180] : [0, 80]);
   await Notifications.scheduleNotificationAsync({
-    content: { title, body, sound: 'default', data: { paneId: agent.pane_id } },
+    content: { title, body, sound: 'default', data: target },
     trigger: { channelId: CHANNEL_ID },
   });
   if (speak) {
