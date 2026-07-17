@@ -14,9 +14,9 @@
     }
     @font-face {
       font-family: 'JetBrains Mono';
-      src: url('jetbrains-mono-medium.ttf') format('truetype');
+      src: url('jetbrains-mono-bold.ttf') format('truetype');
       font-style: normal;
-      font-weight: 500;
+      font-weight: 700;
       font-display: swap;
     }
     html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090b0a; }
@@ -26,7 +26,7 @@
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 2px; background: #1a2019; border: 1px solid #485244; box-shadow: 0 4px 16px #000a; }
-    #selection-toolbar button { appearance: none; border: 0; background: transparent; color: #e9eadf; padding: 8px 10px; font: 500 10px 'JetBrains Mono', monospace; }
+    #selection-toolbar button { appearance: none; border: 0; background: transparent; color: #e9eadf; padding: 8px 10px; font: 700 10px 'JetBrains Mono', monospace; }
     #selection-toolbar button:active { background: #d8ff63; color: #090b0a; }
   </style>
 </head>
@@ -43,7 +43,7 @@
       fontFamily: terminalFontFamily,
       fontSize: 8,
       fontWeight: '400',
-      fontWeightBold: '500',
+      fontWeightBold: '700',
       lineHeight: 1.12,
       letterSpacing: 0,
       scrollback: 5000,
@@ -273,7 +273,7 @@
     const fontReady = document.fonts?.load
       ? Promise.all([
           document.fonts.load('400 8px "JetBrains Mono"'),
-          document.fonts.load('500 8px "JetBrains Mono"'),
+          document.fonts.load('700 8px "JetBrains Mono"'),
         ]).then(() => document.fonts.ready)
       : Promise.resolve();
     fontReady.then(() => {
