@@ -53,7 +53,7 @@ jobs:
       - name: Install Android SDK packages
         if: matrix.language == 'java-kotlin'
         run: >-
-          sdkmanager
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           "platforms;android-36"
           "build-tools;36.0.0"
           "ndk;27.1.12297006"
