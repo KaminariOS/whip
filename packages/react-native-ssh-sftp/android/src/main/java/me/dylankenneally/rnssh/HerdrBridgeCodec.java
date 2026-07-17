@@ -39,6 +39,8 @@ final class HerdrBridgeCodec {
     encoder.unsigned(cellWidthPx);
     encoder.unsigned(cellHeightPx);
     encoder.variant(1); // RenderEncoding::TerminalAnsi
+    // TerminalAttach bypasses Herdr's app-level prefix router. This profile is
+    // required by Hello but is not applied to input after AttachTerminal.
     encoder.variant(0); // ClientKeybindings::Server
     encoder.variant(1); // ClientLaunchMode::TerminalAttach
     return frame(encoder.finish());
