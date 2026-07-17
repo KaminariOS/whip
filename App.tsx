@@ -20,6 +20,11 @@ import { hapticPress } from './src/components/app-ui';
 import { Button } from './src/components/ui/button';
 import { Text } from './src/components/ui/text';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
+import {
+  agentFromStatusEvent,
+  agentStatusFromEvent,
+  shouldNotifyAgentTransition,
+} from './src/lib/agentStatusEvents';
 import { nextReconnect } from './src/lib/reconnectPolicy';
 import {
   parseAgentNotificationTarget,
@@ -80,14 +85,14 @@ import {
   type TerminalSessionStatus,
 } from './src/terminalSessions';
 import { useTheme } from './src/theme';
-import type { AgentInfo, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
+import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 
 interface LiveRuntime {
   client: HerdrClient;
   profile: ConnectionProfile;
   refresh: RefreshCoordinator<HerdrSnapshot>;
-  previousStatuses: Map<string, string> | null;
+  previousStatuses: Map<string, AgentStatus> | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   eventPaneKey: string | null;
@@ -316,6 +321,25 @@ function AppContent() {
         if (event.event === 'workspace.focused' || event.event === 'tab.focused' || event.event === 'pane.focused') {
           setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId, tabId, paneId }));
         }
+        if (event.event === 'pane.agent_status_changed' && paneId) {
+          const agentStatus = agentStatusFromEvent(event.data.agent_status);
+          const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+          const currentAgent = session?.snapshot.agents.find(agent => agent.pane_id === paneId);
+          const agent = currentAgent ? agentFromStatusEvent(currentAgent, event.data) : null;
+          const previous = runtime.previousStatuses?.get(paneId);
+          if (
+            agentStatus
+            && agent
+            && alertsEnabledRef.current
+            && shouldNotifyAgentTransition(previous, agentStatus, AppState.currentState !== 'active')
+          ) {
+            alertAgent(agent, ttsEnabledRef.current, {
+              hostId: sessionId,
+              paneId,
+            }).catch(() => undefined);
+          }
+          if (agentStatus) runtime.previousStatuses?.set(paneId, agentStatus);
+        }
         if (runtime.eventRefreshTimer) return;
         runtime.eventRefreshTimer = setTimeout(() => {
           runtime.eventRefreshTimer = null;
@@ -391,7 +415,11 @@ function AppContent() {
         if (alertsEnabledRef.current && runtime.previousStatuses) {
           for (const agent of snapshot.agents) {
             const previous = runtime.previousStatuses.get(agent.pane_id);
-            if (previous && previous !== agent.agent_status && ['blocked', 'done'].includes(agent.agent_status)) {
+            if (shouldNotifyAgentTransition(
+              previous,
+              agent.agent_status,
+              AppState.currentState !== 'active',
+            )) {
               alertAgent(agent, ttsEnabledRef.current, {
                 hostId: sessionId,
                 paneId: agent.pane_id,
