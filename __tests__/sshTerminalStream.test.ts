@@ -70,4 +70,21 @@ describe('Android SSH terminal protocol stream', () => {
     expect(android).toContain('value.putString("terminalId", terminalId)');
     expect(android).not.toContain('ChannelExec _herdrBridgeChannel');
   });
+
+  test('detects half-open SSH sessions instead of leaving frozen streams', () => {
+    const android = readFileSync(
+      resolve(packageRoot, 'android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java'),
+      'utf8',
+    );
+    const connect = android.slice(
+      android.indexOf('private void connectToHost('),
+      android.indexOf('public void execute('),
+    );
+
+    expect(android).toContain('SSH_SERVER_ALIVE_INTERVAL_MS = 5_000');
+    expect(android).toContain('SSH_SERVER_ALIVE_COUNT_MAX = 3');
+    expect(connect).toContain('session.setServerAliveInterval(SSH_SERVER_ALIVE_INTERVAL_MS);');
+    expect(connect).toContain('session.setServerAliveCountMax(SSH_SERVER_ALIVE_COUNT_MAX);');
+    expect(connect.indexOf('session.setServerAliveInterval')).toBeLessThan(connect.indexOf('session.connect()'));
+  });
 });

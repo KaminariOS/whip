@@ -55,6 +55,9 @@ import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 
 public class RNSshClientModule extends ReactContextBaseJavaModule {
+  private static final int SSH_SERVER_ALIVE_INTERVAL_MS = 5_000;
+  private static final int SSH_SERVER_ALIVE_COUNT_MAX = 3;
+
   private class HerdrBridgeConnection {
     volatile String terminalId;
     volatile boolean handshakeComplete = false;
@@ -228,6 +231,11 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           Properties properties = new Properties();
           properties.setProperty("StrictHostKeyChecking", "no");
           session.setConfig(properties);
+          // Without SSH-level probes, a lost mobile network path can leave
+          // channel reads blocked forever: the TCP socket still appears open,
+          // so the terminal never receives a close event and looks frozen.
+          session.setServerAliveInterval(SSH_SERVER_ALIVE_INTERVAL_MS);
+          session.setServerAliveCountMax(SSH_SERVER_ALIVE_COUNT_MAX);
           session.connect();
 
           if (session.isConnected()) {
