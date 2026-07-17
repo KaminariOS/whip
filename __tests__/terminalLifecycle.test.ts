@@ -29,6 +29,13 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('if (preparing) await preparing.catch(() => undefined);');
   });
 
+  it('opens the active terminal immediately after selecting a saved host', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+
+    expect(app).toContain("if (navigate) setNavigation(current => selectMobileTab(current, 'terminal'));");
+    expect(app).toContain("selectLiveHost(existing.id, 'terminal');");
+  });
+
   it('keeps terminal focus bidirectional with Herdr', () => {
     const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
     const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
