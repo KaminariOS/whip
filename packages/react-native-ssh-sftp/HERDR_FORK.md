@@ -15,6 +15,8 @@ Herdr-specific changes:
   terminal-id-tagged chunked ANSI frame events;
 - run the newline-delimited `nc -U` event subscription as a separate exec
   channel on that same authenticated session;
+- subscribe to exec-channel output before starting short-lived Herdr commands,
+  preventing their first response from being lost on fast remote hosts;
 - expose PTY resizing on Android and in the JavaScript API;
 - close shell/SFTP streams synchronously during disconnect so asynchronous
   cleanup cannot race client-pool removal and crash the Android process;

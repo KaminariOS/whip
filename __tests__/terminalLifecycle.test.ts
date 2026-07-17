@@ -11,9 +11,11 @@ describe('terminal renderer lifecycle', () => {
   });
 
   it('starts the remote bridge before a terminal is opened', () => {
-    const source = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
 
-    expect(source).toContain('runtime.client.prepareTerminalBridge().catch(() => undefined);');
+    expect(app).toContain('runtime.client.prepareTerminalBridge().catch(() => undefined);');
+    expect(client).toContain('if (preparing) await preparing.catch(() => undefined);');
   });
 
   it('keeps terminal focus bidirectional with Herdr', () => {
@@ -45,5 +47,13 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('this.terminalConnections.delete(terminalId)');
     expect(client).toContain('this.client?.closeHerdrBridge(terminalId)');
     expect(client).toContain('this.requireClient().herdrBridgeResize(\n      terminalId,');
+  });
+
+  it('resets the renderer in the same injection as the first terminal frame', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+
+    expect(screen).toContain('const resetOnNextFrame = useRef(true);');
+    expect(screen).toContain("const resetScript = reset ? 'window.herdrReset(); ' : '';");
+    expect(screen).not.toContain("if (readyRef.current) webView.current?.injectJavaScript('window.herdrReset(); true;');");
   });
 });
