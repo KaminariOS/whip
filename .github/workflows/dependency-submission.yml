@@ -1,0 +1,56 @@
+name: Gradle Dependency Submission
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gradle-dependency-submission-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  submit:
+    name: Submit Gradle dependency graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK packages
+        run: >-
+          sdkmanager
+          "platforms;android-36"
+          "build-tools;36.0.0"
+          "ndk;27.1.12297006"
+          "cmake;3.22.1"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate and submit Gradle dependency graph
+        uses: gradle/actions/dependency-submission@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
+        with:
+          build-root-directory: android
+          cache-provider: basic
+          dependency-graph: generate-and-submit
+          validate-wrappers: true
