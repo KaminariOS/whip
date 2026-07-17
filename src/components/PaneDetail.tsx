@@ -14,8 +14,9 @@ import {
 
 import { AnsiOutput } from './AnsiOutput';
 import type { HerdrClient } from '../services/HerdrClient';
-import { colors, statusColor } from '../theme';
+import { colors, radii, spacing, useTheme } from '../theme';
 import type { PaneInfo } from '../types';
+import { Button, IconButton, Input, StatusBadge } from './ui';
 
 interface Props {
   pane: PaneInfo | null;
@@ -34,6 +35,7 @@ async function loadPane(client: HerdrClient, pane: PaneInfo, setOutput: (value: 
 }
 
 export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }: Props) {
+  const { colors: theme } = useTheme();
   const loadedPaneId = useRef<string | null>(null);
   const [output, setOutput] = useState('');
   const [command, setCommand] = useState('');
@@ -73,36 +75,33 @@ export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }:
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.backdrop}>
-        <View style={styles.sheet}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.backdrop, { backgroundColor: theme.scrim }]}>
+        <View style={[styles.sheet, { backgroundColor: theme.canvas }]}>
+          <View style={[styles.handle, { backgroundColor: theme.divider }]} />
           <View style={styles.header}>
             <View style={styles.headerBody}>
-              <Text style={styles.eyebrow}>{pane.workspace_id} / {pane.tab_id} / {pane.pane_id}</Text>
-              <Text numberOfLines={1} style={styles.title}>{pane.label || pane.display_agent || pane.agent || 'Terminal pane'}</Text>
+              <Text style={[styles.eyebrow, { color: theme.textSecondary }]}>{pane.workspace_id} · {pane.tab_id} · {pane.pane_id}</Text>
+              <Text numberOfLines={1} style={[styles.title, { color: theme.text }]}>{pane.label || pane.display_agent || pane.agent || 'Terminal pane'}</Text>
             </View>
-            <View style={[styles.badge, { borderColor: statusColor(pane.agent_status) }]}>
-              <Text style={[styles.badgeText, { color: statusColor(pane.agent_status) }]}>{pane.agent_status.toUpperCase()}</Text>
-            </View>
-            <Pressable onPress={onClose} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
+            <StatusBadge status={pane.agent_status} />
+            <IconButton icon="close" label="Close pane details" onPress={onClose} />
           </View>
 
           <View style={styles.renameRow}>
-            <TextInput value={label} onChangeText={setLabel} placeholder="Pane label" placeholderTextColor={colors.muted} style={styles.renameInput} />
-            <Pressable disabled={busy} onPress={() => run(() => client.renamePane(pane.pane_id, label))} style={styles.smallButton}>
-              <Text style={styles.smallText}>SAVE NAME</Text>
-            </Pressable>
+            <Input value={label} onChangeText={setLabel} placeholder="Pane label" style={styles.renameInput} />
+            <Button label="Save" variant="secondary" compact disabled={busy} onPress={() => run(() => client.renamePane(pane.pane_id, label))} />
           </View>
 
           <View style={styles.actionRail}>
-            <Action label="SPLIT →" onPress={() => run(() => client.splitPane(pane.pane_id, 'right'))} />
-            <Action label="SPLIT ↓" onPress={() => run(() => client.splitPane(pane.pane_id, 'down'))} />
-            <Action label="ZOOM" onPress={() => run(() => client.zoomPane(pane.pane_id))} />
-            <Action label="TERMINAL" accent onPress={() => onOpenTerminal(pane)} />
+            <Button label="Split right" icon="return-down-forward-outline" variant="secondary" compact onPress={() => run(() => client.splitPane(pane.pane_id, 'right'))} />
+            <Button label="Split down" icon="return-down-back-outline" variant="secondary" compact onPress={() => run(() => client.splitPane(pane.pane_id, 'down'))} />
+            <IconButton icon="expand-outline" label="Zoom pane" onPress={() => run(() => client.zoomPane(pane.pane_id))} />
+            <Button label="Open" icon="terminal-outline" compact onPress={() => onOpenTerminal(pane)} />
           </View>
 
           <View style={styles.outputHeader}>
-            <Text style={styles.outputLabel}>LIVE PANE OUTPUT</Text>
-            <Pressable onPress={read}><Text style={styles.refresh}>REFRESH</Text></Pressable>
+            <Text style={[styles.outputLabel, { color: theme.text }]}>Live pane output</Text>
+            <IconButton icon="refresh" label="Refresh pane output" size={34} onPress={read} />
           </View>
           <View style={styles.output}>
             {output ? <AnsiOutput value={output} /> : <ActivityIndicator color={colors.acid} style={styles.outputSpinner} />}
@@ -118,67 +117,46 @@ export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }:
             ))}
           </View>
 
-          <View style={styles.composer}>
-            <TextInput value={command} onChangeText={setCommand} placeholder="Send command or response..." placeholderTextColor={colors.muted} style={styles.commandInput} />
-            <Pressable disabled={!command.trim() || busy} onPress={() => run(async () => { await client.runInPane(pane.pane_id, command); setCommand(''); })} style={styles.send}>
-              <Text style={styles.sendText}>SEND ↵</Text>
-            </Pressable>
+          <View style={[styles.composer, { backgroundColor: theme.surface, borderColor: theme.divider }]}>
+            <TextInput value={command} onChangeText={setCommand} placeholder="Send a command or response" placeholderTextColor={theme.textSecondary} style={[styles.commandInput, { color: theme.text }]} />
+            <IconButton icon="arrow-up" label="Send command" disabled={!command.trim() || busy} selected={Boolean(command.trim())} onPress={() => run(async () => { await client.runInPane(pane.pane_id, command); setCommand(''); })} />
           </View>
 
-          <Pressable
+          <Button
+            label="Close pane"
+            icon="trash-outline"
+            variant="destructive"
             onPress={() => Alert.alert('Close pane?', pane.label || pane.pane_id, [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Close', style: 'destructive', onPress: () => run(() => client.closePane(pane.pane_id), true) },
             ])}
-            style={styles.closePane}>
-            <Text style={styles.closePaneText}>CLOSE PANE</Text>
-          </Pressable>
+            style={styles.closePane}
+          />
         </View>
       </KeyboardAvoidingView>
     </Modal>
   );
 }
 
-function Action({ label, onPress, accent = false }: { label: string; onPress: () => void; accent?: boolean }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.action, accent && styles.actionAccent]}>
-      <Text style={[styles.actionText, accent && styles.actionAccentText]}>{label}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000099' },
-  sheet: { height: '94%', backgroundColor: colors.panel, borderTopColor: colors.acid, borderTopWidth: 2, padding: 14 },
+  backdrop: { flex: 1, justifyContent: 'flex-end' },
+  sheet: { height: '94%', borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, padding: spacing.lg },
+  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerBody: { flex: 1 },
-  eyebrow: { color: colors.muted, fontFamily: 'monospace', fontSize: 8 },
-  title: { color: colors.text, fontSize: 21, fontWeight: '900', marginTop: 3 },
-  badge: { borderWidth: 1, paddingHorizontal: 7, paddingVertical: 4 },
-  badgeText: { fontFamily: 'monospace', fontSize: 8 },
-  close: { width: 32, alignItems: 'center' },
-  closeText: { color: colors.text, fontSize: 27 },
-  renameRow: { flexDirection: 'row', marginTop: 12 },
-  renameInput: { flex: 1, color: colors.text, backgroundColor: colors.ink, borderColor: colors.line, borderWidth: 1, paddingHorizontal: 10, fontSize: 12 },
-  smallButton: { backgroundColor: colors.panelRaised, borderColor: colors.line, borderWidth: 1, padding: 11 },
-  smallText: { color: colors.acid, fontFamily: 'monospace', fontSize: 8 },
-  actionRail: { flexDirection: 'row', gap: 6, marginVertical: 10 },
-  action: { borderColor: colors.line, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9 },
-  actionAccent: { marginLeft: 'auto', backgroundColor: colors.acid, borderColor: colors.acid },
-  actionText: { color: colors.text, fontFamily: 'monospace', fontSize: 8, fontWeight: '800' },
-  actionAccentText: { color: colors.ink },
-  outputHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  outputLabel: { color: colors.acid, fontFamily: 'monospace', fontSize: 9, letterSpacing: 1.1 },
-  refresh: { color: colors.muted, fontFamily: 'monospace', fontSize: 8 },
-  output: { flex: 1, backgroundColor: colors.ink, borderColor: colors.line, borderWidth: 1 },
+  eyebrow: { fontSize: 11, lineHeight: 15 },
+  title: { fontSize: 20, lineHeight: 26, fontWeight: '600', marginTop: 2 },
+  renameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
+  renameInput: { flex: 1 },
+  actionRail: { flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 12 },
+  outputHeader: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  outputLabel: { fontSize: 14, lineHeight: 19, fontWeight: '600' },
+  output: { flex: 1, backgroundColor: colors.ink, borderRadius: radii.md, overflow: 'hidden' },
   outputSpinner: { flex: 1 },
-  keyRail: { flexDirection: 'row', marginTop: 8 },
-  key: { flex: 1, paddingVertical: 9, alignItems: 'center', borderColor: colors.line, borderWidth: 1 },
+  keyRail: { flexDirection: 'row', gap: 4, marginTop: 8 },
+  key: { flex: 1, minHeight: 34, borderRadius: 8, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.panelRaised },
   keyText: { color: colors.text, fontFamily: 'monospace', fontSize: 8 },
-  composer: { flexDirection: 'row', marginTop: 8 },
-  commandInput: { flex: 1, color: colors.text, backgroundColor: colors.ink, borderColor: colors.line, borderWidth: 1, paddingHorizontal: 10, fontSize: 13 },
-  send: { backgroundColor: colors.acid, paddingHorizontal: 15, justifyContent: 'center' },
-  sendText: { color: colors.ink, fontFamily: 'monospace', fontSize: 9, fontWeight: '900' },
-  closePane: { alignItems: 'center', padding: 10, marginTop: 7 },
-  closePaneText: { color: colors.blocked, fontFamily: 'monospace', fontSize: 8 },
+  composer: { minHeight: 52, flexDirection: 'row', alignItems: 'center', borderRadius: 26, borderWidth: StyleSheet.hairlineWidth, paddingLeft: 14, paddingRight: 6, marginTop: 10 },
+  commandInput: { flex: 1, fontSize: 15, lineHeight: 21 },
+  closePane: { marginTop: 8 },
 });

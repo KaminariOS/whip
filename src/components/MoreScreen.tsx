@@ -1,6 +1,9 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../theme';
+import { radii, spacing, useTheme } from '../theme';
+import type { IconName } from './ui';
+import { ScreenHeader, SectionLabel } from './ui';
 
 interface Props {
   connectedHost: string | null;
@@ -8,43 +11,43 @@ interface Props {
 }
 
 export function MoreScreen({ connectedHost, onOpenSettings }: Props) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.page}>
-      <View style={styles.header}>
-        <Text style={styles.title}>MORE</Text>
-        <Text style={styles.subtitle}>{connectedHost ? `CONNECTED · ${connectedHost}` : 'NO ACTIVE HERDR SERVER'}</Text>
+    <View style={[styles.page, { backgroundColor: colors.canvas }]}>
+      <ScreenHeader title="More" subtitle={connectedHost ? `Connected to ${connectedHost}` : 'Device and connection options'} />
+      <View style={styles.content}>
+        <SectionLabel>Preferences</SectionLabel>
+        <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.divider }]}>
+          <MoreRow icon="settings-outline" title="Settings" copy="Notifications, speech, terminal and connection preferences" onPress={onOpenSettings} />
+        </View>
+        <Text style={[styles.version, { color: colors.textTertiary }]}>Herdr Remote · Android client</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        <MoreRow symbol="⚙" title="Settings" copy="Device preferences, notifications, speech, and connection controls." onPress={onOpenSettings} />
-      </ScrollView>
     </View>
   );
 }
 
-function MoreRow({ symbol, title, copy, onPress }: { symbol: string; title: string; copy: string; onPress: () => void }) {
+function MoreRow({ icon, title, copy, onPress }: { icon: IconName; title: string; copy: string; onPress: () => void }) {
+  const { colors } = useTheme();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-      <Text style={styles.rowSymbol}>{symbol}</Text>
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && { opacity: 0.65 }]}>
+      <View style={[styles.rowIcon, { backgroundColor: colors.surfaceRaised }]}><Ionicons name={icon} size={20} color={colors.text} /></View>
       <View style={styles.rowBody}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowCopy}>{copy}</Text>
+        <Text style={[styles.rowTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.rowCopy, { color: colors.textSecondary }]}>{copy}</Text>
       </View>
-      <Text style={styles.chevron}>›</Text>
+      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.ink },
-  header: { height: 88, justifyContent: 'center', paddingHorizontal: 18, backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: 1 },
-  title: { color: colors.text, fontSize: 20, fontWeight: '900', letterSpacing: 1 },
-  subtitle: { color: colors.muted, fontFamily: 'monospace', fontSize: 8, letterSpacing: 0.8, marginTop: 5 },
-  content: { paddingVertical: 8 },
-  row: { minHeight: 78, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18 },
-  rowPressed: { backgroundColor: colors.panelRaised },
-  rowSymbol: { width: 42, color: colors.acid, fontSize: 19 },
+  page: { flex: 1 },
+  content: { flex: 1, padding: spacing.lg },
+  group: { borderRadius: radii.lg, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  row: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  rowIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   rowBody: { flex: 1 },
-  rowTitle: { color: colors.text, fontSize: 15, fontWeight: '800' },
-  rowCopy: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 4 },
-  chevron: { color: colors.muted, fontSize: 24, marginLeft: 12 },
+  rowTitle: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
+  rowCopy: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  version: { marginTop: 18, fontSize: 12, lineHeight: 16, textAlign: 'center' },
 });

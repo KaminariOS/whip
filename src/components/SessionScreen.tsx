@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   Alert,
   Pressable,
@@ -273,11 +274,15 @@ export function SessionScreen({
   };
 
   return (
-    <View style={[styles.page, !visible && styles.hidden]}>
+    <View
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={visible ? 'auto' : 'none'}
+      style={[styles.page, !visible && styles.hidden]}>
       <View style={styles.topBar}>
         {showExit && (
           <Pressable accessibilityLabel="Back to herd" onPress={onExit} style={styles.back}>
-            <Text style={styles.backText}>‹</Text>
+            <Ionicons name="chevron-back" size={21} color={colors.text} />
           </Pressable>
         )}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sessionScroll} contentContainerStyle={styles.sessionRail}>
@@ -295,10 +300,10 @@ export function SessionScreen({
           })}
         </ScrollView>
         <Pressable accessibilityLabel="New workspace" disabled={busy} onPress={() => setEditorMode('workspace')} style={[styles.headerAction, styles.newSpaceAction]}>
-          <Text style={styles.headerActionText}>+ SPACE</Text>
+          <Ionicons name="add" size={15} color={colors.text} /><Text style={styles.headerActionText}>Space</Text>
         </Pressable>
         <Pressable accessibilityLabel="Session actions" onPress={() => setMenuOpen(value => !value)} style={styles.headerAction}>
-          <Text style={styles.menuText}>•••</Text>
+          <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
         </Pressable>
       </View>
 
@@ -319,7 +324,7 @@ export function SessionScreen({
             })}
           </ScrollView>
           <Pressable accessibilityLabel="New tab" disabled={busy} onPress={() => setEditorMode('tab')} style={styles.addTab}>
-            <Text style={styles.headerActionText}>+ TAB</Text>
+            <Ionicons name="add" size={14} color={colors.text} /><Text style={styles.headerActionText}>Tab</Text>
           </Pressable>
         </View>
       )}
@@ -363,21 +368,20 @@ export function SessionScreen({
       )}
 
       <View style={styles.terminalStage}>
-        <TerminalScreen
-          client={client}
-          compact
-          visible={visible && Boolean(activeTerminalSession)}
-          session={activeTerminalSession || null}
-          preferences={terminalPreferences}
-          onClose={() => {
-            if (activeTerminalSession) onCloseTerminal(activeTerminalSession.terminalId);
-          }}
-          onStatus={(status, error, reconnectAttempt) => {
-            if (activeTerminalSession) {
-              onTerminalStatus(activeTerminalSession.terminalId, status, error, reconnectAttempt);
-            }
-          }}
-        />
+        {terminalState.sessions.map(terminalSession => (
+          <TerminalScreen
+            key={terminalSession.terminalId}
+            client={client}
+            compact
+            visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
+            session={terminalSession}
+            preferences={terminalPreferences}
+            onClose={() => onCloseTerminal(terminalSession.terminalId)}
+            onStatus={(status, error, reconnectAttempt) => {
+              onTerminalStatus(terminalSession.terminalId, status, error, reconnectAttempt);
+            }}
+          />
+        ))}
         {!selectedTab && (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>{workspace ? 'EMPTY WORKSPACE' : 'NO WORKSPACES'}</Text>
@@ -412,35 +416,35 @@ function terminalStatusColor(status: TerminalSessionStatus): string {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.ink },
-  hidden: { display: 'none' },
-  topBar: { height: 44, flexDirection: 'row', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: 1 },
+  hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
+  topBar: { height: 48, flexDirection: 'row', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
   back: { width: 42, alignItems: 'center', justifyContent: 'center' },
   backText: { color: colors.text, fontSize: 30, fontWeight: '300', marginTop: -3 },
   sessionScroll: { flex: 1, minWidth: 0 },
   sessionRail: { alignItems: 'center', paddingHorizontal: 4, gap: 6 },
-  sessionChip: { maxWidth: 180, height: 28, flexDirection: 'row', alignItems: 'center', borderRadius: 14, backgroundColor: colors.panelRaised, borderColor: colors.line, borderWidth: 1, overflow: 'hidden' },
+  sessionChip: { maxWidth: 180, height: 32, flexDirection: 'row', alignItems: 'center', borderRadius: 16, backgroundColor: colors.panelRaised, overflow: 'hidden' },
   sessionChipActive: { backgroundColor: colors.acid, borderColor: colors.acid },
-  sessionMain: { minWidth: 0, flexShrink: 1, height: 28, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10 },
-  sessionText: { color: colors.muted, fontSize: 10, fontWeight: '700', maxWidth: 128 },
+  sessionMain: { minWidth: 0, flexShrink: 1, height: 32, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11 },
+  sessionText: { color: colors.muted, fontSize: 11, fontWeight: '600', maxWidth: 128 },
   sessionTextActive: { color: colors.ink },
   sessionCount: { color: colors.muted, fontFamily: 'monospace', fontSize: 8 },
   sessionCountActive: { color: colors.ink },
   dot: { width: 6, height: 6, borderRadius: 3 },
-  headerAction: { width: 42, alignItems: 'center', justifyContent: 'center', borderLeftColor: colors.line, borderLeftWidth: 1 },
-  newSpaceAction: { width: 74 },
-  headerActionText: { color: colors.acid, fontFamily: 'monospace', fontSize: 9, fontWeight: '900', letterSpacing: 0.3 },
+  headerAction: { width: 44, flexDirection: 'row', gap: 2, alignItems: 'center', justifyContent: 'center' },
+  newSpaceAction: { width: 72 },
+  headerActionText: { color: colors.text, fontSize: 10, fontWeight: '600' },
   menuText: { color: colors.text, fontSize: 12, letterSpacing: 1 },
-  tabBar: { height: 39, flexDirection: 'row', backgroundColor: colors.panelRaised, borderBottomColor: colors.line, borderBottomWidth: 1 },
+  tabBar: { height: 42, flexDirection: 'row', backgroundColor: colors.panelRaised, borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
   tabRail: { alignItems: 'center', paddingHorizontal: 6, gap: 5 },
-  tab: { maxWidth: 170, height: 27, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: 14, borderColor: colors.line, borderWidth: 1, backgroundColor: colors.ink },
+  tab: { maxWidth: 170, height: 30, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, borderRadius: 15, backgroundColor: colors.ink },
   tabActive: { backgroundColor: colors.acid, borderColor: colors.acid },
-  tabText: { color: colors.muted, fontSize: 10, fontWeight: '700', maxWidth: 122 },
+  tabText: { color: colors.muted, fontSize: 11, fontWeight: '600', maxWidth: 122 },
   tabTextActive: { color: colors.ink },
-  addTab: { width: 62, alignItems: 'center', justifyContent: 'center', borderLeftColor: colors.line, borderLeftWidth: 1 },
+  addTab: { width: 58, flexDirection: 'row', gap: 2, alignItems: 'center', justifyContent: 'center' },
   actionMenu: { minHeight: 42, flexDirection: 'row', alignItems: 'stretch', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: 1 },
   menuAction: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderRightColor: colors.line, borderRightWidth: 1 },
   menuActionDisabled: { opacity: 0.35 },
-  menuActionText: { color: colors.text, fontFamily: 'monospace', fontSize: 7, fontWeight: '800', textAlign: 'center' },
+  menuActionText: { color: colors.text, fontSize: 9, fontWeight: '600', textAlign: 'center' },
   menuActionDanger: { color: colors.blocked },
   editor: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 7, backgroundColor: colors.panelRaised, borderBottomColor: colors.acid, borderBottomWidth: 1 },
   editorLabel: { color: colors.acid, fontFamily: 'monospace', fontSize: 8 },
@@ -451,10 +455,10 @@ const styles = StyleSheet.create({
   editorSaveText: { color: colors.ink, fontFamily: 'monospace', fontSize: 8, fontWeight: '900' },
   paneBar: { height: 37, flexDirection: 'row', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: 1 },
   paneRail: { alignItems: 'center', paddingHorizontal: 6, gap: 5 },
-  pane: { maxWidth: 160, height: 25, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, borderRadius: 13, backgroundColor: colors.panelRaised },
+  pane: { maxWidth: 160, height: 28, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: 14, backgroundColor: colors.panelRaised },
   paneActive: { backgroundColor: colors.acid },
   paneDot: { width: 5, height: 5, borderRadius: 3 },
-  paneText: { color: colors.muted, fontSize: 10, fontWeight: '700', maxWidth: 126 },
+  paneText: { color: colors.muted, fontSize: 11, fontWeight: '600', maxWidth: 126 },
   paneTextActive: { color: colors.ink },
   terminalStage: { flex: 1, backgroundColor: colors.ink },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },

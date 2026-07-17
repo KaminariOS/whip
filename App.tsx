@@ -68,10 +68,11 @@ import {
 import {
   closeTerminalSession,
   openTerminalSession,
+  reconcileTerminalSessions,
   updateTerminalSession,
   type TerminalSessionStatus,
 } from './src/terminalSessions';
-import { colors } from './src/theme';
+import { colors, useTheme } from './src/theme';
 import type { AgentInfo, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 
@@ -110,15 +111,17 @@ function disposeRuntimes(target: Map<string, LiveRuntime>): void {
 }
 
 function App() {
+  const { colors: theme, isDark } = useTheme();
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor={colors.ink} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.canvas} />
       <AppContent />
     </SafeAreaProvider>
   );
 }
 
 function AppContent() {
+  const { colors: theme } = useTheme();
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const hostsRef = useRef<HostProfile[]>([]);
@@ -393,7 +396,13 @@ function AppContent() {
         setLiveSessions(current => {
           const session = findLiveHostSession(current, sessionId);
           if (!session) return current;
-          return applyLiveHostSnapshot(current, sessionId, session.sync.generation, snapshot, new Date().toISOString());
+          const updated = applyLiveHostSnapshot(current, sessionId, session.sync.generation, snapshot, new Date().toISOString());
+          if (updated === current) return current;
+          return updateLiveHostTerminals(
+            updated,
+            sessionId,
+            terminals => reconcileTerminalSessions(terminals, snapshot.panes),
+          );
         });
       },
     );
@@ -744,7 +753,7 @@ function AppContent() {
   };
 
   if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !liveHostRestoreComplete) {
-    return <View style={styles.loading}><Text style={styles.loadingMark}>H/</Text></View>;
+    return <View style={[styles.loading, { backgroundColor: theme.canvas }]}><View style={[styles.loadingBadge, { backgroundColor: theme.primary }]}><Text style={[styles.loadingMark, { color: theme.onPrimary }]}>H</Text></View></View>;
   }
 
   const topScreen = navigation.stack[navigation.stack.length - 1];
@@ -759,9 +768,9 @@ function AppContent() {
   }));
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
-      <View style={styles.shell}>
-        <View style={styles.body}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.canvas }]} edges={['top', 'bottom', 'left', 'right']}>
+      <View style={[styles.shell, { backgroundColor: theme.canvas }]}>
+        <View style={[styles.body, { backgroundColor: theme.canvas }]}>
           {navigation.tab === 'hosts' && (
             <HostsScreen
               hosts={hosts}
@@ -780,16 +789,16 @@ function AppContent() {
 
           {navigation.tab === 'herd' && (
             activeSession && activeClient ? (
-              <View style={styles.connectedPage}>
+              <View style={[styles.connectedPage, { backgroundColor: theme.canvas }]}>
                 <ConnectedHeader session={activeSession} />
                 <View style={styles.connectedBody}>
                   {!activeSession.snapshot.server.running ? (
-                    <View style={styles.offline}>
-                      <Text style={styles.offlineNumber}>00</Text>
-                      <Text style={styles.offlineTitle}>HERDR SERVER IS OFFLINE</Text>
-                      <Text style={styles.offlineCopy}>Start the headless runtime on the host, then manage the session from this client.</Text>
-                      <Pressable disabled={activeSession.sync.status === 'syncing'} onPress={startServer} style={styles.startServer}>
-                        <Text style={styles.startServerText}>{activeSession.sync.status === 'syncing' ? 'STARTING...' : 'START HERDR SERVER'}</Text>
+                    <View style={[styles.offline, { backgroundColor: theme.canvas }]}>
+                      <View style={[styles.offlineIcon, { backgroundColor: `${theme.error}14` }]}><Text style={[styles.offlineNumber, { color: theme.error }]}>!</Text></View>
+                      <Text style={[styles.offlineTitle, { color: theme.text }]}>Herdr server is offline</Text>
+                      <Text style={[styles.offlineCopy, { color: theme.textSecondary }]}>Start the headless runtime on the host, then manage the session from this client.</Text>
+                      <Pressable disabled={activeSession.sync.status === 'syncing'} onPress={startServer} style={[styles.startServer, { backgroundColor: theme.primary }]}>
+                        <Text style={[styles.startServerText, { color: theme.onPrimary }]}>{activeSession.sync.status === 'syncing' ? 'Starting…' : 'Start Herdr server'}</Text>
                       </Pressable>
                     </View>
                   ) : (
@@ -856,7 +865,7 @@ function AppContent() {
         )}
 
         {topScreen === 'settings' && (
-          <View style={styles.overlay}>
+          <View style={[styles.overlay, { backgroundColor: theme.canvas }]}>
             <SettingsScreen
               host={activeSession?.host.host || null}
               alertsEnabled={alertsEnabled}
@@ -872,7 +881,7 @@ function AppContent() {
         )}
 
         {editorProfile && (
-          <View style={styles.overlay}>
+          <View style={[styles.overlay, { backgroundColor: theme.canvas }]}>
             <ConnectionScreen
               key={editorProfile.id}
               initialProfile={editorProfile}
@@ -952,16 +961,17 @@ function LiveSessionView({
 }
 
 function ConnectedHeader({ session }: { session: LiveHostSession }) {
+  const { colors: theme } = useTheme();
   const syncError = session.sync.error || session.connectionError;
   return (
-    <View style={styles.topbar}>
+    <View style={[styles.topbar, { backgroundColor: theme.canvas, borderBottomColor: theme.divider }]}>
       <View style={styles.headerBody}>
-        <Text numberOfLines={1} style={styles.topTitle}>{hostDisplayName(session.host).toUpperCase()} / HERD</Text>
-        <Text numberOfLines={1} style={styles.topMeta}>{session.host.host} · {session.snapshot.server.running ? `v${session.snapshot.server.version || '?'}` : 'SERVER OFFLINE'}</Text>
+        <Text numberOfLines={1} style={[styles.topTitle, { color: theme.text }]}>{hostDisplayName(session.host)}</Text>
+        <Text numberOfLines={1} style={[styles.topMeta, { color: theme.textSecondary }]}>{session.host.host} · {session.snapshot.server.running ? `Herdr ${session.snapshot.server.version || ''}`.trim() : 'Server offline'}</Text>
       </View>
-      <View style={[styles.link, syncError && styles.linkError]}>
-        <View style={[styles.linkDot, syncError && styles.linkDotError]} />
-        <Text style={[styles.linkText, syncError && styles.linkTextError]}>{syncError ? 'SYNC LOST' : 'SSH LIVE'}</Text>
+      <View style={[styles.link, { backgroundColor: syncError ? `${theme.error}14` : `${theme.done}14` }]}>
+        <View style={[styles.linkDot, { backgroundColor: syncError ? theme.error : theme.done }]} />
+        <Text style={[styles.linkText, { color: syncError ? theme.error : theme.done }]}>{syncError ? 'Sync lost' : 'SSH live'}</Text>
       </View>
     </View>
   );
@@ -972,26 +982,25 @@ const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.ink },
   body: { flex: 1, backgroundColor: colors.ink },
   overlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 40, backgroundColor: colors.ink },
-  loading: { flex: 1, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  loadingMark: { color: colors.acid, fontFamily: 'monospace', fontSize: 52, fontWeight: '900' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadingBadge: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  loadingMark: { fontSize: 27, fontWeight: '700' },
   connectedPage: { flex: 1, backgroundColor: colors.ink },
   connectedBody: { flex: 1 },
-  topbar: { height: 62, backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: 1, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topbar: { minHeight: 64, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerBody: { flex: 1, minWidth: 0, paddingRight: 10 },
-  topTitle: { color: colors.text, fontSize: 14, fontWeight: '900', letterSpacing: 0.8 },
-  topMeta: { color: colors.muted, fontFamily: 'monospace', fontSize: 8, marginTop: 4 },
-  link: { flexDirection: 'row', alignItems: 'center', gap: 6, borderColor: '#47552a', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 5 },
-  linkError: { borderColor: colors.blocked },
-  linkDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.acid },
-  linkDotError: { backgroundColor: colors.blocked },
-  linkText: { color: colors.acid, fontFamily: 'monospace', fontSize: 8 },
-  linkTextError: { color: colors.blocked },
-  offline: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: colors.ink },
-  offlineNumber: { color: colors.blocked, fontFamily: 'monospace', fontSize: 48, fontWeight: '900' },
-  offlineTitle: { color: colors.text, fontFamily: 'monospace', fontSize: 16, fontWeight: '900', marginTop: 12 },
-  offlineCopy: { color: colors.muted, textAlign: 'center', lineHeight: 20, marginTop: 9, maxWidth: 330 },
-  startServer: { backgroundColor: colors.acid, paddingHorizontal: 20, paddingVertical: 13, marginTop: 22 },
-  startServerText: { color: colors.ink, fontFamily: 'monospace', fontSize: 10, fontWeight: '900' },
+  topTitle: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
+  topMeta: { fontSize: 12, lineHeight: 16, marginTop: 1 },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  linkDot: { width: 6, height: 6, borderRadius: 3 },
+  linkText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  offline: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  offlineIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  offlineNumber: { fontSize: 28, fontWeight: '700' },
+  offlineTitle: { fontSize: 21, lineHeight: 27, fontWeight: '600', marginTop: 18 },
+  offlineCopy: { textAlign: 'center', fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 330 },
+  startServer: { minHeight: 44, borderRadius: 999, paddingHorizontal: 20, justifyContent: 'center', marginTop: 24 },
+  startServerText: { fontSize: 14, fontWeight: '600' },
 });
 
 export default App;

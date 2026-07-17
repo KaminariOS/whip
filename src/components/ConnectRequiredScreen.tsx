@@ -1,30 +1,27 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../theme';
+import { useTheme } from '../theme';
+import { Button } from './ui';
 
-interface Props {
-  destination: 'HERD' | 'TERMINAL';
-  onPickHost: () => void;
-}
-
-export function ConnectRequiredScreen({ destination, onPickHost }: Props) {
+export function ConnectRequiredScreen({ destination, onPickHost }: { destination: string; onPickHost: () => void }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.page}>
-      <Text style={styles.symbol}>{destination === 'HERD' ? '●' : '>_'}</Text>
-      <Text style={styles.title}>NO ACTIVE SERVER</Text>
-      <Text style={styles.copy}>Connect a saved Herdr host before opening {destination.toLowerCase()}.</Text>
-      <Pressable onPress={onPickHost} style={styles.button}>
-        <Text style={styles.buttonText}>PICK A HOST  →</Text>
-      </Pressable>
+    <View style={[styles.page, { backgroundColor: colors.canvas }]}>
+      <View style={[styles.symbol, { backgroundColor: colors.surface }]}>
+        <Ionicons name="server-outline" size={28} color={colors.text} />
+      </View>
+      <Text style={[styles.title, { color: colors.text }]}>Connect a host</Text>
+      <Text style={[styles.copy, { color: colors.textSecondary }]}>Choose a saved Herdr server before opening {destination.toLowerCase()}.</Text>
+      <Button label="Choose host" icon="arrow-forward" onPress={onPickHost} style={styles.button} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: colors.ink },
-  symbol: { color: colors.acid, fontFamily: 'monospace', fontSize: 34, fontWeight: '900' },
-  title: { color: colors.text, fontFamily: 'monospace', fontSize: 15, fontWeight: '900', letterSpacing: 1, marginTop: 16 },
-  copy: { color: colors.muted, textAlign: 'center', lineHeight: 19, marginTop: 9, maxWidth: 300 },
-  button: { backgroundColor: colors.acid, paddingHorizontal: 18, paddingVertical: 13, marginTop: 22 },
-  buttonText: { color: colors.ink, fontFamily: 'monospace', fontSize: 10, fontWeight: '900' },
+  page: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  symbol: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 22, lineHeight: 28, fontWeight: '600', marginTop: 20 },
+  copy: { textAlign: 'center', fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 320 },
+  button: { marginTop: 24 },
 });

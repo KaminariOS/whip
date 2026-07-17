@@ -1,8 +1,10 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { colors, statusColor } from '../theme';
+import { radii, spacing, statusColor, useTheme } from '../theme';
 import type { AgentInfo } from '../types';
+import { Button, Input, SectionLabel, StatusBadge } from './ui';
 
 interface Props {
   agents: AgentInfo[];
@@ -13,6 +15,7 @@ interface Props {
 }
 
 export function HerdScreen({ agents, refreshing, onRefresh, onOpenTerminal, onStart }: Props) {
+  const { colors } = useTheme();
   const blocked = agents.filter(agent => agent.agent_status === 'blocked').length;
   const working = agents.filter(agent => agent.agent_status === 'working').length;
   const done = agents.filter(agent => agent.agent_status === 'done').length;
@@ -28,85 +31,86 @@ export function HerdScreen({ agents, refreshing, onRefresh, onOpenTerminal, onSt
     setCreating(false);
   };
 
+  const sorted = [...agents].sort((a, b) => priority(a.agent_status) - priority(b.agent_status));
   return (
     <ScrollView
-      style={styles.page}
+      style={[styles.page, { backgroundColor: colors.canvas }]}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.acid} />}>
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} colors={[colors.text]} />}>
       <View style={styles.summary}>
-        <Metric value={agents.length} label="IN HERD" />
-        <Metric value={working} label="RUNNING" color={colors.working} />
-        <Metric value={blocked} label="NEEDS YOU" color={colors.blocked} />
-        <Metric value={done} label="DONE" color={colors.done} />
+        <Metric value={agents.length} label="Agents" />
+        <Metric value={working} label="Working" status="working" />
+        <Metric value={blocked} label="Need you" status="blocked" />
+        <Metric value={done} label="Done" status="done" />
       </View>
 
       <View style={styles.headingRow}>
-        <Text style={styles.heading}>ATTENTION QUEUE</Text>
-        <Pressable onPress={() => setCreating(value => !value)}><Text style={styles.startAgent}>+ START AGENT</Text></Pressable>
+        <SectionLabel>Attention queue</SectionLabel>
+        <Button label={creating ? 'Close' : 'Start agent'} icon={creating ? 'close' : 'add'} variant="ghost" compact onPress={() => setCreating(value => !value)} />
       </View>
 
       {creating && (
-        <View style={styles.createPanel}>
-          <TextInput value={name} onChangeText={setName} placeholder="Agent name" placeholderTextColor={colors.muted} style={styles.input} />
-          <TextInput value={command} onChangeText={setCommand} placeholder="Command, e.g. claude" placeholderTextColor={colors.muted} autoCapitalize="none" style={styles.input} />
-          <TextInput value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" placeholderTextColor={colors.muted} autoCapitalize="none" style={styles.input} />
+        <View style={[styles.createPanel, { backgroundColor: colors.surface, borderColor: colors.divider }]}>
+          <Text style={[styles.createTitle, { color: colors.text }]}>Start an agent</Text>
+          <Input value={name} onChangeText={setName} placeholder="Agent name" />
+          <Input value={command} onChangeText={setCommand} placeholder="Command, e.g. claude" autoCapitalize="none" />
+          <Input value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" autoCapitalize="none" />
           <View style={styles.createActions}>
-            <Pressable onPress={() => setCreating(false)} style={styles.cancel}><Text style={styles.cancelText}>CANCEL</Text></Pressable>
-            <Pressable onPress={start} style={styles.create}><Text style={styles.createText}>LAUNCH</Text></Pressable>
+            <Button label="Cancel" variant="ghost" compact onPress={() => setCreating(false)} />
+            <Button label="Launch" icon="arrow-up" compact disabled={!name.trim() || !command.trim()} onPress={start} />
           </View>
         </View>
       )}
 
-      {agents.length === 0 ? (
+      {sorted.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>NO AGENTS DETECTED</Text>
-          <Text style={styles.emptyCopy}>Start an agent in a pane, then pull down to refresh.</Text>
+          <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}><Ionicons name="sparkles-outline" size={28} color={colors.text} /></View>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No agents detected</Text>
+          <Text style={[styles.emptyCopy, { color: colors.textSecondary }]}>Start an agent in a pane, then pull down to refresh.</Text>
         </View>
       ) : (
-        [...agents]
-          .sort((a, b) => priority(a.agent_status) - priority(b.agent_status))
-          .map((agent, index) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${agent.display_agent || agent.name || agent.agent || 'agent'} terminal`}
-              key={agent.terminal_id}
-              onPress={() => onOpenTerminal(agent)}
-              style={styles.agentCard}>
-              <View style={styles.agentIndex}>
-                <Text style={styles.indexText}>{String(index + 1).padStart(2, '0')}</Text>
-              </View>
-              <View style={styles.agentBody}>
-                <View style={styles.agentTop}>
-                  <Text numberOfLines={1} style={styles.agentName}>
-                    {agent.display_agent || agent.name || agent.agent || 'agent'}
-                  </Text>
-                  <View style={[styles.statusPill, { borderColor: statusColor(agent.agent_status) }]}>
-                    <View style={[styles.statusDot, { backgroundColor: statusColor(agent.agent_status) }]} />
-                    <Text style={[styles.statusText, { color: statusColor(agent.agent_status) }]}>
-                      {agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status}
-                    </Text>
-                  </View>
+        <View style={[styles.agentList, { borderColor: colors.divider }]}>
+          {sorted.map((agent, index) => {
+            const nameLabel = agent.display_agent || agent.name || agent.agent || 'agent';
+            const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
+            return (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${nameLabel} terminal`}
+                key={agent.terminal_id}
+                onPress={() => onOpenTerminal(agent)}
+                style={({ pressed }) => [
+                  styles.agentRow,
+                  { backgroundColor: pressed ? colors.surface : colors.canvas },
+                  index > 0 && { borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth },
+                ]}>
+                <View style={[styles.agentAvatar, { backgroundColor: `${statusColor(agent.agent_status, colors)}1F` }]}>
+                  <Ionicons name="sparkles" size={18} color={statusColor(agent.agent_status, colors)} />
                 </View>
-                <Text numberOfLines={1} style={styles.agentTitle}>
-                  {agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}
-                </Text>
-                <Text style={styles.agentMeta}>
-                  {agent.workspace_id} / {agent.pane_id} {agent.focused ? ' · FOCUSED' : ''}
-                </Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
-            </Pressable>
-          ))
+                <View style={styles.agentBody}>
+                  <View style={styles.agentTop}>
+                    <Text numberOfLines={1} style={[styles.agentName, { color: colors.text }]}>{nameLabel}</Text>
+                    <StatusBadge status={agent.agent_status} label={stateLabel} />
+                  </View>
+                  <Text numberOfLines={1} style={[styles.agentTitle, { color: colors.textSecondary }]}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text>
+                  <Text numberOfLines={1} style={[styles.agentMeta, { color: colors.textTertiary }]}>{agent.workspace_id} · {agent.pane_id}{agent.focused ? ' · Focused' : ''}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </Pressable>
+            );
+          })}
+        </View>
       )}
     </ScrollView>
   );
 }
 
-function Metric({ value, label, color = colors.text }: { value: number; label: string; color?: string }) {
+function Metric({ value, label, status }: { value: number; label: string; status?: string }) {
+  const { colors } = useTheme();
   return (
     <View style={styles.metric}>
-      <Text style={[styles.metricValue, { color }]}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={[styles.metricValue, { color: status ? statusColor(status, colors) : colors.text }]}>{value}</Text>
+      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
     </View>
   );
 }
@@ -116,42 +120,26 @@ function priority(status: string): number {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.ink },
-  content: { padding: 16, paddingBottom: 30 },
-  summary: { flexDirection: 'row', borderColor: colors.line, borderWidth: 1, marginBottom: 24 },
-  metric: { flex: 1, paddingVertical: 13, paddingHorizontal: 8, borderRightColor: colors.line, borderRightWidth: 1 },
-  metricValue: { fontFamily: 'monospace', fontWeight: '900', fontSize: 22 },
-  metricLabel: { color: colors.muted, fontFamily: 'monospace', fontSize: 7, marginTop: 4 },
-  headingRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 9 },
-  heading: { color: colors.acid, fontFamily: 'monospace', fontSize: 10, letterSpacing: 1.4 },
-  startAgent: { color: colors.acid, fontFamily: 'monospace', fontSize: 8, fontWeight: '900' },
-  createPanel: { borderColor: colors.acid, borderWidth: 1, backgroundColor: colors.panelRaised, padding: 10, marginBottom: 10 },
-  input: { color: colors.text, backgroundColor: colors.ink, borderColor: colors.line, borderWidth: 1, padding: 9, marginBottom: 7, fontFamily: 'monospace', fontSize: 11 },
-  createActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  cancel: { padding: 9 },
-  cancelText: { color: colors.muted, fontFamily: 'monospace', fontSize: 8 },
-  create: { backgroundColor: colors.acid, paddingHorizontal: 13, paddingVertical: 9 },
-  createText: { color: colors.ink, fontFamily: 'monospace', fontSize: 8, fontWeight: '900' },
-  agentCard: {
-    minHeight: 92,
-    backgroundColor: colors.panel,
-    borderBottomColor: colors.line,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  agentIndex: { width: 40, alignItems: 'center', paddingTop: 17 },
-  indexText: { color: colors.muted, fontFamily: 'monospace', fontSize: 10 },
-  agentBody: { flex: 1, paddingVertical: 14 },
+  page: { flex: 1 },
+  content: { padding: spacing.lg, paddingBottom: 32 },
+  summary: { flexDirection: 'row', marginBottom: 24 },
+  metric: { flex: 1 },
+  metricValue: { fontSize: 24, lineHeight: 30, fontWeight: '600' },
+  metricLabel: { fontSize: 11, lineHeight: 15, marginTop: 2 },
+  headingRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  createPanel: { borderRadius: radii.lg, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 10, marginBottom: 16 },
+  createTitle: { fontSize: 17, lineHeight: 22, fontWeight: '600', marginBottom: 2 },
+  createActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 2 },
+  agentList: { borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },
+  agentRow: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
+  agentAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  agentBody: { flex: 1, minWidth: 0 },
   agentTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  agentName: { color: colors.text, fontSize: 16, fontWeight: '800', flex: 1 },
-  statusPill: { borderWidth: 1, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  statusDot: { width: 5, height: 5, borderRadius: 3 },
-  statusText: { fontFamily: 'monospace', fontSize: 8, textTransform: 'uppercase' },
-  agentTitle: { color: colors.muted, fontSize: 12, marginTop: 8 },
-  agentMeta: { color: '#697063', fontFamily: 'monospace', fontSize: 8, marginTop: 6 },
-  chevron: { color: colors.acid, fontSize: 24, width: 28, alignSelf: 'center' },
-  empty: { borderColor: colors.line, borderWidth: 1, borderStyle: 'dashed', padding: 26 },
-  emptyTitle: { color: colors.text, fontFamily: 'monospace', fontWeight: '800' },
-  emptyCopy: { color: colors.muted, lineHeight: 20, marginTop: 8 },
+  agentName: { flex: 1, fontSize: 16, lineHeight: 21, fontWeight: '600' },
+  agentTitle: { fontSize: 13, lineHeight: 18, marginTop: 5 },
+  agentMeta: { fontSize: 11, lineHeight: 15, marginTop: 3 },
+  empty: { minHeight: 360, alignItems: 'center', justifyContent: 'center', padding: 28 },
+  emptyIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  emptyTitle: { fontSize: 20, lineHeight: 26, fontWeight: '600', marginTop: 18 },
+  emptyCopy: { fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 7 },
 });

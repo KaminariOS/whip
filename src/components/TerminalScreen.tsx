@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppState, Clipboard, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -58,6 +59,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const pendingFrames = useRef<TerminalFrame[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef(session?.reconnectAttempt || 0);
+  const wasVisible = useRef(visible);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ctrl, setCtrl] = useState<TerminalModifierState>('off');
@@ -180,10 +182,23 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   }, [session?.reconnectAttempt]);
 
   useEffect(() => {
-    if (visible && ready) {
-      webView.current?.injectJavaScript('setTimeout(() => window.herdrFit(), 32); true;');
+    if (!ready) {
+      wasVisible.current = visible;
+      return;
     }
-  }, [ready, visible]);
+    if (!visible) {
+      if (wasVisible.current) webView.current?.injectJavaScript('window.herdrBlur(); true;');
+      wasVisible.current = false;
+      return;
+    }
+    wasVisible.current = true;
+    const timer = setTimeout(() => {
+      webView.current?.injectJavaScript(
+        `window.herdrFit(); ${keyboardVisible ? 'window.herdrFocus();' : ''} true;`,
+      );
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [keyboardVisible, ready, visible]);
 
   useEffect(() => {
     if (!ready) return;
@@ -268,7 +283,11 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   };
 
   return (
-    <View style={[styles.page, (!visible || !session) && styles.hidden]}>
+    <View
+      accessibilityElementsHidden={!visible || !session}
+      importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={visible && session ? 'auto' : 'none'}
+      style={[styles.page, (!visible || !session) && styles.hidden]}>
       {!compact && (
         <View style={styles.statusBar}>
           <View style={styles.liveDot} />
@@ -301,9 +320,9 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
           <Text style={[styles.searchCount, (searchResult.invalid || (searchQuery && searchResult.count === 0)) && styles.searchCountError]}>
             {searchResult.invalid ? 'ERR' : searchQuery ? `${Math.max(0, searchResult.index + 1)}/${searchResult.count}` : ''}
           </Text>
-          <Pressable disabled={!searchResult.count} onPress={() => moveSearch(-1)} style={styles.searchAction}><Text style={styles.searchActionText}>↑</Text></Pressable>
-          <Pressable disabled={!searchResult.count} onPress={() => moveSearch(1)} style={styles.searchAction}><Text style={styles.searchActionText}>↓</Text></Pressable>
-          <Pressable onPress={closeSearch} style={styles.searchAction}><Text style={styles.searchActionText}>×</Text></Pressable>
+          <Pressable accessibilityLabel="Previous result" disabled={!searchResult.count} onPress={() => moveSearch(-1)} style={styles.searchAction}><Ionicons name="chevron-up" size={16} color={colors.text} /></Pressable>
+          <Pressable accessibilityLabel="Next result" disabled={!searchResult.count} onPress={() => moveSearch(1)} style={styles.searchAction}><Ionicons name="chevron-down" size={16} color={colors.text} /></Pressable>
+          <Pressable accessibilityLabel="Close search" onPress={closeSearch} style={styles.searchAction}><Ionicons name="close" size={17} color={colors.text} /></Pressable>
         </View>
       )}
       <WebView
@@ -321,19 +340,19 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
         <View style={styles.connectionOverlay}>
           <View style={[styles.connectionMark, status === 'error' && styles.connectionMarkError]} />
           <Text style={styles.connectionTitle}>
-            {status === 'connecting' ? 'CONNECTING TERMINAL' : status === 'disconnected' ? 'RECONNECTING TERMINAL' : 'TERMINAL CONNECTION FAILED'}
+            {status === 'connecting' ? 'Connecting terminal' : status === 'disconnected' ? 'Reconnecting terminal' : 'Terminal connection failed'}
           </Text>
           <Text numberOfLines={3} style={styles.connectionCopy}>
             {session.error || error || `Opening ${title}`}
           </Text>
           {status === 'disconnected' && session.reconnectAttempt > 0 && (
-            <Text style={styles.connectionAttempt}>ATTEMPT {session.reconnectAttempt} / {MAX_RECONNECT_ATTEMPTS}</Text>
+            <Text style={styles.connectionAttempt}>Attempt {session.reconnectAttempt} of {MAX_RECONNECT_ATTEMPTS}</Text>
           )}
           <View style={styles.connectionActions}>
             {status !== 'connecting' && (
-              <Pressable onPress={retryNow} style={styles.retryButton}><Text style={styles.retryText}>RETRY NOW</Text></Pressable>
+              <Pressable onPress={retryNow} style={styles.retryButton}><Text style={styles.retryText}>Retry now</Text></Pressable>
             )}
-            <Pressable onPress={onClose} style={styles.dismissButton}><Text style={styles.dismissText}>CLOSE SESSION</Text></Pressable>
+            <Pressable onPress={onClose} style={styles.dismissButton}><Text style={styles.dismissText}>Close session</Text></Pressable>
           </View>
         </View>
       )}
@@ -377,7 +396,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.ink },
-  hidden: { display: 'none' },
+  hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
   statusBar: {
     height: 30,
     backgroundColor: colors.panel,
@@ -393,10 +412,10 @@ const styles = StyleSheet.create({
   statusGrow: { flex: 1 },
   error: { color: colors.blocked, fontFamily: 'monospace', fontSize: 8 },
   compactError: { color: colors.blocked, backgroundColor: '#241211', paddingHorizontal: 8, paddingVertical: 4, fontFamily: 'monospace', fontSize: 8 },
-  searchBar: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 5, backgroundColor: colors.panelRaised, borderBottomColor: colors.line, borderBottomWidth: 1 },
-  searchInput: { minWidth: 100, flex: 1, height: 33, color: colors.text, backgroundColor: colors.ink, borderColor: colors.line, borderWidth: 1, paddingHorizontal: 9, fontFamily: 'monospace', fontSize: 10 },
-  searchToggle: { width: 31, height: 31, alignItems: 'center', justifyContent: 'center' },
-  searchToggleActive: { backgroundColor: colors.acid },
+  searchBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, backgroundColor: colors.panelRaised, borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
+  searchInput: { minWidth: 100, flex: 1, height: 36, color: colors.text, backgroundColor: colors.ink, borderRadius: 18, paddingHorizontal: 12, fontFamily: 'monospace', fontSize: 10 },
+  searchToggle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  searchToggleActive: { backgroundColor: colors.text },
   searchToggleText: { color: colors.muted, fontFamily: 'monospace', fontSize: 9, fontWeight: '800' },
   searchToggleTextActive: { color: colors.ink },
   searchCount: { minWidth: 34, color: colors.muted, textAlign: 'center', fontFamily: 'monospace', fontSize: 8 },
@@ -404,26 +423,26 @@ const styles = StyleSheet.create({
   searchAction: { width: 28, height: 31, alignItems: 'center', justifyContent: 'center' },
   searchActionText: { color: colors.text, fontFamily: 'monospace', fontSize: 15 },
   webview: { flex: 1, backgroundColor: colors.ink },
-  connectionOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 20, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: '#090b0af2' },
+  connectionOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 20, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: '#212121F2' },
   connectionMark: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.working },
   connectionMarkError: { backgroundColor: colors.blocked },
-  connectionTitle: { color: colors.text, fontFamily: 'monospace', fontSize: 13, fontWeight: '900', letterSpacing: 0.8, marginTop: 15, textAlign: 'center' },
+  connectionTitle: { color: colors.text, fontSize: 17, lineHeight: 22, fontWeight: '600', marginTop: 15, textAlign: 'center' },
   connectionCopy: { color: colors.muted, fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 8, maxWidth: 320 },
-  connectionAttempt: { color: colors.acid, fontFamily: 'monospace', fontSize: 8, marginTop: 10 },
+  connectionAttempt: { color: colors.muted, fontSize: 11, marginTop: 10 },
   connectionActions: { flexDirection: 'row', gap: 8, marginTop: 20 },
-  retryButton: { backgroundColor: colors.acid, paddingHorizontal: 14, paddingVertical: 11 },
-  retryText: { color: colors.ink, fontFamily: 'monospace', fontSize: 9, fontWeight: '900' },
-  dismissButton: { borderColor: colors.line, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 11 },
-  dismissText: { color: colors.text, fontFamily: 'monospace', fontSize: 9, fontWeight: '800' },
+  retryButton: { minHeight: 42, borderRadius: 21, backgroundColor: colors.text, paddingHorizontal: 16, justifyContent: 'center' },
+  retryText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  dismissButton: { minHeight: 42, borderRadius: 21, backgroundColor: colors.panelRaised, paddingHorizontal: 16, justifyContent: 'center' },
+  dismissText: { color: colors.text, fontSize: 13, fontWeight: '600' },
   keyRail: {
     flexGrow: 0,
     backgroundColor: colors.panel,
     borderTopColor: colors.line,
     borderTopWidth: 1,
   },
-  keyRailContent: { alignItems: 'center', paddingVertical: 6, paddingHorizontal: 5, gap: 4 },
-  key: { minWidth: 48, paddingHorizontal: 9, paddingVertical: 8, alignItems: 'center', backgroundColor: colors.panelRaised, borderColor: colors.line, borderWidth: 1 },
-  keyArmed: { borderColor: colors.acid, backgroundColor: '#29311e' },
+  keyRailContent: { alignItems: 'center', paddingVertical: 7, paddingHorizontal: 6, gap: 5 },
+  key: { minWidth: 48, minHeight: 34, borderRadius: 9, paddingHorizontal: 10, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.panelRaised },
+  keyArmed: { borderColor: colors.text, borderWidth: 1, backgroundColor: colors.panelRaised },
   keyActive: { backgroundColor: colors.acid, borderColor: colors.acid },
   keyText: { color: colors.text, fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
   keyTextArmed: { color: colors.acid },

@@ -1,7 +1,9 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../theme';
+import { radii, useTheme } from '../theme';
 import type { AppTab } from '../types';
+import type { IconName } from './ui';
 
 interface Props {
   activeTab: AppTab;
@@ -9,35 +11,35 @@ interface Props {
   onSelect: (tab: AppTab) => void;
 }
 
-const TABS: { id: AppTab; symbol: string; label: string }[] = [
-  { id: 'hosts', symbol: '▤', label: 'HOSTS' },
-  { id: 'herd', symbol: '●', label: 'HERD' },
-  { id: 'terminal', symbol: '>_', label: 'TERMINAL' },
-  { id: 'more', symbol: '☰', label: 'MORE' },
+const items: Array<{ tab: AppTab; label: string; icon: IconName; activeIcon: IconName }> = [
+  { tab: 'hosts', label: 'Hosts', icon: 'server-outline', activeIcon: 'server' },
+  { tab: 'herd', label: 'Herd', icon: 'people-outline', activeIcon: 'people' },
+  { tab: 'terminal', label: 'Terminal', icon: 'terminal-outline', activeIcon: 'terminal' },
+  { tab: 'more', label: 'More', icon: 'ellipsis-horizontal-circle-outline', activeIcon: 'ellipsis-horizontal-circle' },
 ];
 
 export function BottomNavigation({ activeTab, sessionCount, onSelect }: Props) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.bar}>
-      {TABS.map(tab => {
-        const active = tab.id === activeTab;
+    <View style={[styles.bar, { backgroundColor: colors.canvas, borderTopColor: colors.divider }]}>
+      {items.map(item => {
+        const active = item.tab === activeTab;
         return (
           <Pressable
-            key={tab.id}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
-            accessibilityLabel={tab.label}
-            onPress={() => onSelect(tab.id)}
-            style={[styles.item, active && styles.itemActive]}>
-            <View style={styles.symbolWrap}>
-              <Text style={[styles.symbol, active && styles.activeText]}>{tab.symbol}</Text>
-              {tab.id === 'terminal' && sessionCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{sessionCount}</Text>
+            key={item.tab}
+            onPress={() => onSelect(item.tab)}
+            style={({ pressed }) => [styles.item, pressed && { opacity: 0.6 }]}>
+            <View style={[styles.iconWrap, active && { backgroundColor: colors.surfaceRaised }]}>
+              <Ionicons name={active ? item.activeIcon : item.icon} size={20} color={active ? colors.text : colors.textSecondary} />
+              {item.tab === 'terminal' && sessionCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: colors.primary, borderColor: colors.canvas }]}>
+                  <Text style={[styles.badgeText, { color: colors.onPrimary }]}>{sessionCount > 9 ? '9+' : sessionCount}</Text>
                 </View>
               )}
             </View>
-            <Text style={[styles.label, active && styles.activeText]}>{tab.label}</Text>
+            <Text style={[styles.label, { color: active ? colors.text : colors.textSecondary }]}>{item.label}</Text>
           </Pressable>
         );
       })}
@@ -46,13 +48,10 @@ export function BottomNavigation({ activeTab, sessionCount, onSelect }: Props) {
 }
 
 const styles = StyleSheet.create({
-  bar: { height: 62, flexDirection: 'row', backgroundColor: colors.panel, borderTopColor: colors.line, borderTopWidth: 1 },
-  item: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, borderTopColor: 'transparent', borderTopWidth: 2 },
-  itemActive: { borderTopColor: colors.acid, backgroundColor: '#171c16' },
-  symbolWrap: { position: 'relative', minWidth: 24, alignItems: 'center' },
-  symbol: { color: colors.muted, fontFamily: 'monospace', fontSize: 14, fontWeight: '700' },
-  label: { color: colors.muted, fontFamily: 'monospace', fontSize: 7, letterSpacing: 0.7 },
-  activeText: { color: colors.acid },
-  badge: { position: 'absolute', top: -7, right: -9, minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.acid },
-  badgeText: { color: colors.ink, fontFamily: 'monospace', fontSize: 8, fontWeight: '900' },
+  bar: { minHeight: 66, flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 5 },
+  item: { flex: 1, minHeight: 56, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  iconWrap: { width: 44, height: 30, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 11, lineHeight: 15, fontWeight: '500' },
+  badge: { position: 'absolute', top: -3, right: 2, minWidth: 17, height: 17, paddingHorizontal: 4, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  badgeText: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
 });

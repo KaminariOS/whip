@@ -1,8 +1,10 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { hostDisplayName } from '../lib/hostProfiles';
-import { colors } from '../theme';
+import { radii, spacing, useTheme } from '../theme';
 import type { HostProfile } from '../types';
+import { Button, IconButton, ScreenHeader, SectionLabel, StatusBadge } from './ui';
 
 interface Props {
   hosts: HostProfile[];
@@ -16,92 +18,80 @@ interface Props {
 }
 
 export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], onAdd, onConnect, onEdit }: Props) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.page}>
-      <View style={styles.header}>
-        <View style={styles.brandRow}>
-          <Text style={styles.mark}>H/</Text>
-          <View>
-            <Text style={styles.brand}>HERDR REMOTE</Text>
-            <Text style={styles.kicker}>SAVED SERVERS</Text>
-          </View>
+    <View style={[styles.page, { backgroundColor: colors.canvas }]}>
+      <ScreenHeader
+        title="Herdr"
+        subtitle="Remote servers"
+        left={<View style={[styles.brandMark, { backgroundColor: colors.primary }]}><Text style={[styles.brandText, { color: colors.onPrimary }]}>H</Text></View>}
+        right={<IconButton icon="add" label="Add host" onPress={onAdd} />}
+      />
+
+      {error && (
+        <View style={[styles.error, { backgroundColor: `${colors.error}14` }]}>
+          <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+          <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Add host" onPress={onAdd} style={styles.addButton}>
-          <Text style={styles.addButtonText}>＋</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.ruleRow}>
-        <Text style={styles.ruleIndex}>{String(hosts.length).padStart(2, '0')}</Text>
-        <Text style={styles.ruleText}>HERDR SERVERS ON THIS DEVICE</Text>
-      </View>
-
-      {error && <Text style={styles.error}>{error}</Text>}
+      )}
 
       <ScrollView contentContainerStyle={styles.list}>
         {hosts.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyGlyph}>⌁</Text>
-            <Text style={styles.emptyTitle}>NO SERVERS SAVED</Text>
-            <Text style={styles.emptyCopy}>Add a Tailscale or SSH destination to start managing its Herdr session.</Text>
-            <Pressable onPress={onAdd} style={styles.emptyButton}>
-              <Text style={styles.emptyButtonText}>ADD FIRST HOST  →</Text>
-            </Pressable>
-          </View>
-        ) : hosts.map((host, index) => {
-          const connecting = connectingHostId === host.id;
-          const active = activeHostId === host.id;
-          const connected = connectedHostIds.includes(host.id);
-          return (
-            <View key={host.id} style={styles.hostRow}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Connect to ${hostDisplayName(host)}`}
-                disabled={Boolean(connectingHostId)}
-                onPress={() => onConnect(host)}
-                style={({ pressed }) => [styles.hostMain, pressed && styles.hostPressed]}>
-                <View style={styles.hostIndexBox}>
-                  <Text style={styles.hostIndex}>{String(index + 1).padStart(2, '0')}</Text>
-                  <View style={[styles.credentialDot, (host.rememberCredentials || active) && styles.credentialDotSaved]} />
-                </View>
-                <View style={styles.hostContent}>
-                  <View style={styles.hostTitleRow}>
-                    <Text numberOfLines={1} style={styles.hostName}>{hostDisplayName(host)}</Text>
-                    <Text style={[styles.connectLabel, (active || connected) && styles.activeLabel]}>{connecting ? 'OPENING…' : active ? 'ACTIVE' : connected ? 'OPEN' : 'CONNECT  ›'}</Text>
-                  </View>
-                  <Text numberOfLines={1} style={styles.hostAddress}>
-                    {host.username}@{host.host}{host.port !== '22' ? `:${host.port}` : ''}
-                  </Text>
-                  <View style={styles.hostMetaRow}>
-                    <Text style={styles.hostMeta}>{host.authMode === 'key' ? 'SSH KEY' : 'PASSWORD'}</Text>
-                    <Text style={styles.metaSeparator}>·</Text>
-                    <Text style={[styles.hostMeta, host.rememberCredentials && styles.hostMetaSaved]}>
-                      {host.rememberCredentials ? 'CREDENTIAL SAVED' : 'ASK ON CONNECT'}
-                    </Text>
-                    {host.lastConnectedAt && (
-                      <>
-                        <Text style={styles.metaSeparator}>·</Text>
-                        <Text style={styles.hostMeta}>{formatLastUsed(host.lastConnectedAt)}</Text>
-                      </>
-                    )}
-                  </View>
-                </View>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Edit ${hostDisplayName(host)}`}
-                onPress={() => onEdit(host)}
-                style={styles.editButton}>
-                <Text style={styles.editButtonText}>•••</Text>
-              </Pressable>
+            <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}>
+              <Ionicons name="server-outline" size={30} color={colors.text} />
             </View>
-          );
-        })}
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No servers yet</Text>
+            <Text style={[styles.emptyCopy, { color: colors.textSecondary }]}>Add a Tailscale or SSH destination to manage its Herdr session.</Text>
+            <Button label="Add your first host" icon="add" onPress={onAdd} style={styles.emptyButton} />
+          </View>
+        ) : (
+          <>
+            <SectionLabel>{hosts.length} {hosts.length === 1 ? 'server' : 'servers'} on this device</SectionLabel>
+            <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.divider }]}>
+              {hosts.map((host, index) => {
+                const connecting = connectingHostId === host.id;
+                const active = activeHostId === host.id;
+                const connected = connectedHostIds.includes(host.id);
+                const state = connecting ? 'working' : active || connected ? 'done' : 'idle';
+                const label = connecting ? 'Opening' : active ? 'Active' : connected ? 'Open' : 'Connect';
+                const displayName = hostDisplayName(host);
+                return (
+                  <View key={host.id} style={[styles.hostRow, index > 0 && { borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth }]}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Connect to ${displayName}`}
+                      disabled={Boolean(connectingHostId)}
+                      onPress={() => onConnect(host)}
+                      style={({ pressed }) => [styles.hostMain, pressed && { opacity: 0.65 }]}>
+                      <View style={[styles.avatar, { backgroundColor: colors.surfaceRaised }]}>
+                        <Text style={[styles.avatarText, { color: colors.text }]}>{displayName.slice(0, 1).toUpperCase()}</Text>
+                      </View>
+                      <View style={styles.hostContent}>
+                        <View style={styles.hostTitleRow}>
+                          <Text numberOfLines={1} style={[styles.hostName, { color: colors.text }]}>{displayName}</Text>
+                          <StatusBadge status={state} label={label} />
+                        </View>
+                        <Text numberOfLines={1} style={[styles.hostAddress, { color: colors.textSecondary }]}>
+                          {host.username}@{host.host}{host.port !== '22' ? `:${host.port}` : ''}
+                        </Text>
+                        <Text numberOfLines={1} style={[styles.hostMeta, { color: colors.textTertiary }]}>
+                          {host.authMode === 'key' ? 'SSH key' : 'Password'} · {host.rememberCredentials ? 'Credential saved' : 'Ask on connect'}{host.lastConnectedAt ? ` · ${formatLastUsed(host.lastConnectedAt)}` : ''}
+                        </Text>
+                      </View>
+                    </Pressable>
+                    <IconButton icon="ellipsis-horizontal" label={`Edit ${displayName}`} onPress={() => onEdit(host)} />
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        )}
       </ScrollView>
 
-      <View style={styles.footer}>
-        <View style={styles.footerDot} />
-        <Text style={styles.footerText}>CREDENTIALS ARE ISOLATED PER HOST IN ANDROID KEYSTORE</Text>
+      <View style={[styles.footer, { borderTopColor: colors.divider }]}>
+        <Ionicons name="lock-closed-outline" size={14} color={colors.textSecondary} />
+        <Text style={[styles.footerText, { color: colors.textSecondary }]}>Credentials are isolated per host in Android Keystore.</Text>
       </View>
     </View>
   );
@@ -109,54 +99,36 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
 
 function formatLastUsed(value: string): string {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'USED BEFORE';
+  if (Number.isNaN(date.getTime())) return 'Used before';
   const elapsed = Date.now() - date.getTime();
-  if (elapsed < 60_000) return 'JUST NOW';
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}M AGO`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}H AGO`;
-  return `${Math.floor(elapsed / 86_400_000)}D AGO`;
+  if (elapsed < 60_000) return 'Just now';
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
+  return `${Math.floor(elapsed / 86_400_000)}d ago`;
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.ink },
-  header: { height: 88, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomColor: colors.line, borderBottomWidth: 1 },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  mark: { color: colors.acid, fontFamily: 'monospace', fontSize: 34, fontWeight: '900' },
-  brand: { color: colors.text, fontSize: 18, fontWeight: '900', letterSpacing: 1 },
-  kicker: { color: colors.muted, fontFamily: 'monospace', fontSize: 8, letterSpacing: 1.5, marginTop: 2 },
-  addButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.acid, marginRight: 52 },
-  addButtonText: { color: colors.ink, fontSize: 27, lineHeight: 29, fontWeight: '400' },
-  ruleRow: { paddingHorizontal: 18, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.panel },
-  ruleIndex: { color: colors.acid, fontFamily: 'monospace', fontSize: 10, fontWeight: '900' },
-  ruleText: { color: colors.muted, fontFamily: 'monospace', fontSize: 9, letterSpacing: 1.2 },
-  error: { color: colors.blocked, fontFamily: 'monospace', fontSize: 11, lineHeight: 16, paddingHorizontal: 18, paddingVertical: 12, borderBottomColor: colors.line, borderBottomWidth: 1 },
-  list: { flexGrow: 1 },
-  hostRow: { minHeight: 92, flexDirection: 'row', borderBottomColor: colors.line, borderBottomWidth: 1 },
-  hostMain: { flex: 1, flexDirection: 'row', paddingLeft: 18 },
-  hostPressed: { backgroundColor: colors.panelRaised },
-  hostIndexBox: { width: 42, paddingTop: 19 },
-  hostIndex: { color: colors.muted, fontFamily: 'monospace', fontSize: 10 },
-  credentialDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.muted, marginTop: 10 },
-  credentialDotSaved: { backgroundColor: colors.acid },
-  hostContent: { flex: 1, paddingVertical: 16, minWidth: 0 },
-  hostTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  hostName: { flex: 1, color: colors.text, fontSize: 15, fontWeight: '800' },
-  connectLabel: { color: colors.acid, fontFamily: 'monospace', fontSize: 8, letterSpacing: 0.7 },
-  activeLabel: { color: colors.working },
-  hostAddress: { color: colors.muted, fontFamily: 'monospace', fontSize: 10, marginTop: 5 },
-  hostMetaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 7, gap: 5 },
-  hostMeta: { color: colors.muted, fontFamily: 'monospace', fontSize: 7, letterSpacing: 0.5 },
-  hostMetaSaved: { color: colors.acid },
-  metaSeparator: { color: colors.line, fontFamily: 'monospace', fontSize: 8 },
-  editButton: { width: 54, alignItems: 'center', justifyContent: 'center' },
-  editButtonText: { color: colors.muted, fontFamily: 'monospace', fontSize: 12, letterSpacing: 1 },
-  empty: { flex: 1, minHeight: 440, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34 },
-  emptyGlyph: { color: colors.acid, fontFamily: 'monospace', fontSize: 44 },
-  emptyTitle: { color: colors.text, fontFamily: 'monospace', fontSize: 15, fontWeight: '900', letterSpacing: 1, marginTop: 14 },
-  emptyCopy: { color: colors.muted, textAlign: 'center', fontSize: 12, lineHeight: 19, marginTop: 10, maxWidth: 300 },
-  emptyButton: { backgroundColor: colors.acid, paddingHorizontal: 18, paddingVertical: 13, marginTop: 22 },
-  emptyButtonText: { color: colors.ink, fontFamily: 'monospace', fontSize: 10, fontWeight: '900' },
-  footer: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, borderTopColor: colors.line, borderTopWidth: 1 },
-  footerDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.acid },
-  footerText: { flex: 1, color: colors.muted, fontFamily: 'monospace', fontSize: 7, letterSpacing: 0.5 },
+  page: { flex: 1 },
+  brandMark: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  brandText: { fontSize: 17, fontWeight: '700' },
+  error: { margin: spacing.lg, marginBottom: 0, borderRadius: radii.md, padding: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  errorText: { flex: 1, fontSize: 13, lineHeight: 18 },
+  list: { flexGrow: 1, padding: spacing.lg, paddingBottom: spacing.xl },
+  group: { borderRadius: radii.lg, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  hostRow: { minHeight: 88, flexDirection: 'row', alignItems: 'center', paddingRight: 8 },
+  hostMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12 },
+  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 17, fontWeight: '600' },
+  hostContent: { flex: 1, minWidth: 0 },
+  hostTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  hostName: { flex: 1, fontSize: 16, lineHeight: 21, fontWeight: '600' },
+  hostAddress: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  hostMeta: { fontSize: 11, lineHeight: 15, marginTop: 3 },
+  empty: { flex: 1, minHeight: 440, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
+  emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  emptyTitle: { fontSize: 22, lineHeight: 28, fontWeight: '600', marginTop: 20 },
+  emptyCopy: { textAlign: 'center', fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 310 },
+  emptyButton: { marginTop: 24 },
+  footer: { minHeight: 44, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18 },
+  footerText: { flex: 1, fontSize: 11, lineHeight: 15 },
 });
