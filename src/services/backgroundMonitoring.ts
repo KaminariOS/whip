@@ -3,6 +3,7 @@ import { NativeModules, Platform } from 'react-native';
 interface HerdrBackgroundNativeModule {
   start(hostCount: number): Promise<void>;
   stop(): Promise<void>;
+  armShakeToStop(notificationIdentifier: string, timeoutMs: number): Promise<void>;
 }
 
 function nativeModule(): HerdrBackgroundNativeModule | null {
@@ -24,4 +25,13 @@ export async function stopBackgroundMonitoring(): Promise<void> {
   const module = nativeModule();
   if (!module) return;
   await module.stop();
+}
+
+export async function armShakeToStopAlert(
+  notificationIdentifier: string,
+  timeoutMs: number,
+): Promise<void> {
+  const module = nativeModule();
+  if (!module) return;
+  await module.armShakeToStop(notificationIdentifier, timeoutMs);
 }
