@@ -6,6 +6,7 @@ import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes'
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import type { TerminalFrame } from '../lib/terminalBridge';
+import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import type { TerminalSession, TerminalSessionStatus } from '../terminalSessions';
 import { colors } from '../theme';
 import { terminalHtml } from '../generated/terminalHtml';
@@ -24,10 +25,9 @@ interface WebViewHandle {
   injectJavaScript: (script: string) => void;
 }
 
-type ModifierState = 'off' | 'armed' | 'locked';
-
 const KEYS = [
   ['ESC', '\u001b'],
+  ['CTRL+A', '\u0001'],
   ['CTRL+C', '\u0003'],
   ['TAB', '\t'],
   ['⇧TAB', '\u001b[Z'],
@@ -60,8 +60,8 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const reconnectAttempt = useRef(session?.reconnectAttempt || 0);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ctrl, setCtrl] = useState<ModifierState>('off');
-  const [alt, setAlt] = useState<ModifierState>('off');
+  const [ctrl, setCtrl] = useState<TerminalModifierState>('off');
+  const [alt, setAlt] = useState<TerminalModifierState>('off');
   const [connectionGeneration, setConnectionGeneration] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,9 +97,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   });
 
   const sendInput = async (data: string) => {
-    let value = data;
-    if (ctrl !== 'off' && value.length === 1) value = String.fromCharCode(value.toUpperCase().charCodeAt(0) % 32);
-    if (alt !== 'off') value = `\u001b${value}`;
+    const value = applyTerminalModifiers(data, ctrl, alt);
     if (ctrl === 'armed') setCtrl('off');
     if (alt === 'armed') setAlt('off');
     try {
