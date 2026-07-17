@@ -27,7 +27,6 @@ interface WebViewHandle {
 
 const KEYS = [
   ['ESC', '\u001b'],
-  ['CTRL+A', '\u0001'],
   ['CTRL+C', '\u0003'],
   ['TAB', '\t'],
   ['⇧TAB', '\u001b[Z'],

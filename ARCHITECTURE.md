@@ -40,13 +40,22 @@ If Herdr needs a new bridge command, it should be a neutral API/stdio bridge in 
 
 ### Terminal plane
 
-Each opened Herdr terminal owns an independent SSH connection/PTTY and runs Herdr's application bridge:
+Each opened Herdr terminal owns an independent SSH exec channel and runs Herdr's client-protocol bridge:
 
 ```text
-herdr [--session NAME] terminal session control <terminal_id> --takeover --cols N --rows N
+herdr [--session NAME] remote-client-bridge
 ```
 
-The bridge emits newline-delimited `terminal.frame` records containing base64 ANSI bytes and accepts `terminal.input`, `terminal.resize`, `terminal.scroll`, and `terminal.release` commands. Do not substitute the human-facing `terminal attach` command: nesting that interface inside an SSH PTY leaks shell chrome and breaks application-level input and resize behavior.
+The Android codec performs the binary `Hello` / `Welcome` handshake and then sends
+`AttachTerminal` for the selected terminal. Herdr emits terminal frames and accepts
+input, resize, scroll, and detach messages over that connection. Do not substitute
+the human-facing `terminal attach` command: nesting that interface inside an SSH PTY
+leaks shell chrome and breaks application-level input and resize behavior.
+
+`TerminalAttach` is a direct pane connection. Its input bypasses Herdr's management
+prefix router, so Android must expose workspace, tab, and pane operations as GUI
+actions. Ctrl/Alt and control bytes in the terminal key rail belong to the program
+inside the pane; they are not Herdr navigation shortcuts.
 
 Terminal sessions are identified by `terminal_id`, remain mounted while the user switches Herdr tabs and panes, and can be switched or closed independently. Input and resize events are routed to the exact terminal connection; metadata commands never share an interactive shell channel.
 
