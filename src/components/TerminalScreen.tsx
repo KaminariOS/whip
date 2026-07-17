@@ -335,6 +335,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
         originWhitelist={['file://*', 'about:blank']}
         allowFileAccess
         javaScriptEnabled
+        textZoom={100}
         onMessage={handleMessage}
         style={WEBVIEW_STYLE}
         containerStyle={WEBVIEW_CONTAINER_STYLE}
