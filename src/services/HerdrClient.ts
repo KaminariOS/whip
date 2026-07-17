@@ -230,9 +230,18 @@ export class HerdrClient {
   }
 
   async releaseTerminal(terminalId: string): Promise<void> {
+    const connection = this.terminalConnections.get(terminalId);
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening.catch(() => undefined);
-    this.closeTerminal(terminalId);
+
+    // A reconnect may have installed a new callback while the old bridge was
+    // still opening. In that case this is a stale effect cleanup and must not
+    // detach the replacement controller.
+    if (this.terminalConnections.get(terminalId) !== connection) return;
+
+    this.terminalConnections.delete(terminalId);
+    this.terminalBridges.delete(terminalId);
+    this.client?.closeHerdrBridge(terminalId);
   }
 
   async closeTerminalBridge(terminalId: string): Promise<void> {
@@ -247,6 +256,9 @@ export class HerdrClient {
 
   async releaseAllTerminals(): Promise<void> {
     this.terminalConnections.clear();
+    this.terminalOpenings.clear();
+    this.terminalBridges.clear();
+    this.client?.closeAllHerdrBridges();
   }
 
   async snapshot(): Promise<HerdrSnapshot> {
