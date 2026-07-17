@@ -1,27 +1,24 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { StyleSheet, Text, View } from 'react-native';
+import { Server } from 'lucide-react-native';
+import { View } from 'react-native';
 
-import { useTheme } from '../theme';
-import { Button } from './ui';
+import { hapticPress } from './app-ui';
+import { Button } from './ui/button';
+import { Icon } from './ui/icon';
+import { Text } from './ui/text';
 
 export function ConnectRequiredScreen({ destination, onPickHost }: { destination: string; onPickHost: () => void }) {
-  const { colors } = useTheme();
   return (
-    <View style={[styles.page, { backgroundColor: colors.canvas }]}>
-      <View style={[styles.symbol, { backgroundColor: colors.surface }]}>
-        <Ionicons name="server-outline" size={28} color={colors.text} />
+    <View className="flex-1 items-center justify-center bg-background px-8">
+      <View className="size-16 items-center justify-center rounded-full bg-muted">
+        <Icon as={Server} className="text-muted-foreground" size={27} />
       </View>
-      <Text style={[styles.title, { color: colors.text }]}>Connect a host</Text>
-      <Text style={[styles.copy, { color: colors.textSecondary }]}>Choose a saved Herdr server before opening {destination.toLowerCase()}.</Text>
-      <Button label="Choose host" icon="arrow-forward" onPress={onPickHost} style={styles.button} />
+      <Text className="mt-5 text-center text-xl font-semibold">Connect to continue</Text>
+      <Text className="mt-2 max-w-[320px] text-center text-[15px] leading-[22px] text-muted-foreground">
+        Choose a saved host before opening {destination.toLowerCase()}.
+      </Text>
+      <Button className="mt-6 rounded-full px-5" onPress={hapticPress(onPickHost)}>
+        <Text>Choose a host</Text>
+      </Button>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  page: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  symbol: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 22, lineHeight: 28, fontWeight: '600', marginTop: 20 },
-  copy: { textAlign: 'center', fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 320 },
-  button: { marginTop: 24 },
-});

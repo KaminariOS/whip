@@ -3,6 +3,9 @@
     "name": "HerdR Remote",
     "slug": "herdr-remote",
     "version": "0.1.0",
+    "web": {
+      "bundler": "metro"
+    },
     "extra": {
       "eas": {
         "projectId": "abffa698-56c9-41c1-9b61-3312006a895d"

@@ -1,10 +1,15 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Plus, Sparkles } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, View } from 'react-native';
 
-import { radii, spacing, statusColor, useTheme } from '../theme';
-import type { AgentInfo } from '../types';
-import { Button, Input, SectionLabel, StatusBadge } from './ui';
+import { statusColor, useTheme } from '@/src/theme';
+import type { AgentInfo } from '@/src/types';
+import { hapticPress, StatusBadge } from './app-ui';
+import { Button } from './ui/button';
+import { Icon } from './ui/icon';
+import { Input } from './ui/input';
+import { Text } from './ui/text';
 
 interface Props {
   agents: AgentInfo[];
@@ -33,113 +38,65 @@ export function HerdScreen({ agents, refreshing, onRefresh, onOpenTerminal, onSt
 
   const sorted = [...agents].sort((a, b) => priority(a.agent_status) - priority(b.agent_status));
   return (
-    <ScrollView
-      style={[styles.page, { backgroundColor: colors.canvas }]}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} colors={[colors.text]} />}>
-      <View style={styles.summary}>
-        <Metric value={agents.length} label="Agents" />
-        <Metric value={working} label="Working" status="working" />
-        <Metric value={blocked} label="Need you" status="blocked" />
-        <Metric value={done} label="Done" status="done" />
-      </View>
+    <ScrollView className="flex-1 bg-background" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} colors={[colors.text]} />}>
+      <View className="p-4 pb-8">
+        <View className="mb-6 flex-row">
+          <Metric value={agents.length} label="Agents" />
+          <Metric value={working} label="Working" status="working" />
+          <Metric value={blocked} label="Need you" status="blocked" />
+          <Metric value={done} label="Done" status="done" />
+        </View>
 
-      <View style={styles.headingRow}>
-        <SectionLabel>Attention queue</SectionLabel>
-        <Button label={creating ? 'Close' : 'Start agent'} icon={creating ? 'close' : 'add'} variant="ghost" compact onPress={() => setCreating(value => !value)} />
-      </View>
+        <View className="min-h-10 flex-row items-center justify-between">
+          <Text className="px-1 text-sm font-semibold text-muted-foreground">Attention queue</Text>
+          <Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(value => !value))}>
+            {creating ? <Ionicons name="close" size={16} color={colors.text} /> : <Icon as={Plus} size={16} />}
+            <Text>{creating ? 'Close' : 'Start agent'}</Text>
+          </Button>
+        </View>
 
-      {creating && (
-        <View style={[styles.createPanel, { backgroundColor: colors.surface, borderColor: colors.divider }]}>
-          <Text style={[styles.createTitle, { color: colors.text }]}>Start an agent</Text>
-          <Input value={name} onChangeText={setName} placeholder="Agent name" />
-          <Input value={command} onChangeText={setCommand} placeholder="Command, e.g. claude" autoCapitalize="none" />
-          <Input value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" autoCapitalize="none" />
-          <View style={styles.createActions}>
-            <Button label="Cancel" variant="ghost" compact onPress={() => setCreating(false)} />
-            <Button label="Launch" icon="arrow-up" compact disabled={!name.trim() || !command.trim()} onPress={start} />
+        {creating ? (
+          <View className="mb-4 gap-2.5 rounded-lg border border-border bg-card p-3.5">
+            <Text className="mb-0.5 text-[17px] font-semibold leading-[22px]">Start an agent</Text>
+            <Input value={name} onChangeText={setName} placeholder="Agent name" />
+            <Input value={command} onChangeText={setCommand} placeholder="Command, e.g. claude" autoCapitalize="none" />
+            <Input value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" autoCapitalize="none" />
+            <View className="mt-0.5 flex-row justify-end gap-2"><Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(false))}><Text>Cancel</Text></Button><Button size="sm" disabled={!name.trim() || !command.trim()} onPress={hapticPress(start)}><Text>Launch</Text></Button></View>
           </View>
-        </View>
-      )}
+        ) : null}
 
-      {sorted.length === 0 ? (
-        <View style={styles.empty}>
-          <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}><Ionicons name="sparkles-outline" size={28} color={colors.text} /></View>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No agents detected</Text>
-          <Text style={[styles.emptyCopy, { color: colors.textSecondary }]}>Start an agent in a pane, then pull down to refresh.</Text>
-        </View>
-      ) : (
-        <View style={[styles.agentList, { borderColor: colors.divider }]}>
-          {sorted.map((agent, index) => {
-            const nameLabel = agent.display_agent || agent.name || agent.agent || 'agent';
-            const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
-            return (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${nameLabel} terminal`}
-                key={agent.terminal_id}
-                onPress={() => onOpenTerminal(agent)}
-                style={({ pressed }) => [
-                  styles.agentRow,
-                  { backgroundColor: pressed ? colors.surface : colors.canvas },
-                  index > 0 && { borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth },
-                ]}>
-                <View style={[styles.agentAvatar, { backgroundColor: `${statusColor(agent.agent_status, colors)}1F` }]}>
-                  <Ionicons name="sparkles" size={18} color={statusColor(agent.agent_status, colors)} />
-                </View>
-                <View style={styles.agentBody}>
-                  <View style={styles.agentTop}>
-                    <Text numberOfLines={1} style={[styles.agentName, { color: colors.text }]}>{nameLabel}</Text>
-                    <StatusBadge status={agent.agent_status} label={stateLabel} />
-                  </View>
-                  <Text numberOfLines={1} style={[styles.agentTitle, { color: colors.textSecondary }]}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text>
-                  <Text numberOfLines={1} style={[styles.agentMeta, { color: colors.textTertiary }]}>{agent.workspace_id} · {agent.pane_id}{agent.focused ? ' · Focused' : ''}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
+        {sorted.length === 0 ? (
+          <View className="min-h-[360px] items-center justify-center p-7">
+            <View className="size-16 items-center justify-center rounded-full bg-muted"><Icon as={Sparkles} size={28} /></View>
+            <Text className="mt-[18px] text-xl font-semibold leading-[26px]">No agents detected</Text>
+            <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">Start an agent in a pane, then pull down to refresh.</Text>
+          </View>
+        ) : (
+          <View className="border-y border-border">
+            {sorted.map((agent, index) => {
+              const nameLabel = agent.display_agent || agent.name || agent.agent || 'agent';
+              const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
+              const tone = statusColor(agent.agent_status, colors);
+              return (
+                <Button accessibilityLabel={`Open ${nameLabel} terminal`} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} key={agent.terminal_id} variant="ghost" onPress={hapticPress(() => onOpenTerminal(agent))}>
+                  <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><Ionicons name="sparkles" size={18} color={tone} /></View>
+                  <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{nameLabel}</Text><StatusBadge status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{agent.workspace_id} · {agent.pane_id}{agent.focused ? ' · Focused' : ''}</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                </Button>
+              );
+            })}
+          </View>
+        )}
+      </View>
     </ScrollView>
   );
 }
 
 function Metric({ value, label, status }: { value: number; label: string; status?: string }) {
   const { colors } = useTheme();
-  return (
-    <View style={styles.metric}>
-      <Text style={[styles.metricValue, { color: status ? statusColor(status, colors) : colors.text }]}>{value}</Text>
-      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
-    </View>
-  );
+  return <View className="flex-1"><Text className="text-2xl font-semibold leading-[30px]" style={status ? { color: statusColor(status, colors) } : undefined}>{value}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground">{label}</Text></View>;
 }
 
 function priority(status: string): number {
   return ({ blocked: 0, done: 1, working: 2, idle: 3, unknown: 4 } as Record<string, number>)[status] ?? 5;
 }
-
-const styles = StyleSheet.create({
-  page: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: 32 },
-  summary: { flexDirection: 'row', marginBottom: 24 },
-  metric: { flex: 1 },
-  metricValue: { fontSize: 24, lineHeight: 30, fontWeight: '600' },
-  metricLabel: { fontSize: 11, lineHeight: 15, marginTop: 2 },
-  headingRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  createPanel: { borderRadius: radii.lg, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 10, marginBottom: 16 },
-  createTitle: { fontSize: 17, lineHeight: 22, fontWeight: '600', marginBottom: 2 },
-  createActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 2 },
-  agentList: { borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },
-  agentRow: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
-  agentAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  agentBody: { flex: 1, minWidth: 0 },
-  agentTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  agentName: { flex: 1, fontSize: 16, lineHeight: 21, fontWeight: '600' },
-  agentTitle: { fontSize: 13, lineHeight: 18, marginTop: 5 },
-  agentMeta: { fontSize: 11, lineHeight: 15, marginTop: 3 },
-  empty: { minHeight: 360, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  emptyIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 20, lineHeight: 26, fontWeight: '600', marginTop: 18 },
-  emptyCopy: { fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 7 },
-});

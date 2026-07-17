@@ -1,9 +1,10 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { AppState, Clipboard, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Clipboard, Keyboard, ScrollView, View } from 'react-native';
 import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
+import { cn } from '@/src/lib/utils';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import type { TerminalFrame } from '../lib/terminalBridge';
@@ -11,6 +12,9 @@ import { applyTerminalModifiers, type TerminalModifierState } from '../lib/termi
 import type { TerminalSession, TerminalSessionStatus } from '../terminalSessions';
 import { colors } from '../theme';
 import { terminalHtml } from '../generated/terminalHtml';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Text } from './ui/text';
 
 interface Props {
   client: HerdrClient;
@@ -48,6 +52,7 @@ const KEYS = [
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
+const WEBVIEW_STYLE = { flex: 1, backgroundColor: colors.ink } as const;
 
 export function TerminalScreen({ client, visible, session, preferences, compact = false, onClose, onStatus }: Props) {
   const terminalId = session?.terminalId || '';
@@ -287,20 +292,20 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
       accessibilityElementsHidden={!visible || !session}
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
-      style={[styles.page, (!visible || !session) && styles.hidden]}>
+      className={cn('flex-1 bg-[#212121]', (!visible || !session) && 'absolute inset-0 opacity-0')}>
       {!compact && (
-        <View style={styles.statusBar}>
-          <View style={styles.liveDot} />
-          <Text numberOfLines={1} style={[styles.statusText, styles.statusGrow]}>
+        <View className="h-[30px] flex-row items-center gap-2 border-b border-[#424242] bg-[#181818] px-3">
+          <View className="size-1.5 rounded-full bg-white" />
+          <Text numberOfLines={1} className="flex-1 font-mono text-[9px] tracking-[1px] text-[#B4B4B4]">
             AGENT TERMINAL · {title} · {terminalId}
           </Text>
-          {error && <Text style={styles.error}>ATTACH FAILED</Text>}
+          {error && <Text className="font-mono text-[8px] text-[#FF6B6B]">ATTACH FAILED</Text>}
         </View>
       )}
-      {compact && error && <Text style={styles.compactError}>ATTACH FAILED · {String(error)}</Text>}
+      {compact && error && <Text className="bg-[#241211] px-2 py-1 font-mono text-[8px] text-[#FF6B6B]">ATTACH FAILED · {String(error)}</Text>}
       {searchOpen && (
-        <View style={styles.searchBar}>
-          <TextInput
+        <View className="min-h-12 flex-row items-center gap-1 border-b border-[#424242] bg-[#2F2F2F] px-[7px]">
+          <Input
             autoFocus
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -309,20 +314,16 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
             placeholderTextColor={colors.muted}
             autoCapitalize="none"
             autoCorrect={false}
-            style={styles.searchInput}
+            className="h-9 min-w-[100px] flex-1 rounded-full border-0 bg-[#212121] px-3 font-mono text-[10px] text-[#ECECEC] shadow-none"
           />
-          <Pressable onPress={() => setSearchCase(value => !value)} style={[styles.searchToggle, searchCase && styles.searchToggleActive]}>
-            <Text style={[styles.searchToggleText, searchCase && styles.searchToggleTextActive]}>Aa</Text>
-          </Pressable>
-          <Pressable onPress={() => setSearchRegex(value => !value)} style={[styles.searchToggle, searchRegex && styles.searchToggleActive]}>
-            <Text style={[styles.searchToggleText, searchRegex && styles.searchToggleTextActive]}>.*</Text>
-          </Pressable>
-          <Text style={[styles.searchCount, (searchResult.invalid || (searchQuery && searchResult.count === 0)) && styles.searchCountError]}>
+          <Button className={cn('size-8 rounded-full px-0', searchCase && 'bg-white')} variant="ghost" onPress={() => setSearchCase(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-[#B4B4B4]', searchCase && 'text-[#212121]')}>Aa</Text></Button>
+          <Button className={cn('size-8 rounded-full px-0', searchRegex && 'bg-white')} variant="ghost" onPress={() => setSearchRegex(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-[#B4B4B4]', searchRegex && 'text-[#212121]')}>.*</Text></Button>
+          <Text className={cn('min-w-[34px] text-center font-mono text-[8px] text-[#B4B4B4]', (searchResult.invalid || (searchQuery && searchResult.count === 0)) && 'text-[#FF6B6B]')}>
             {searchResult.invalid ? 'ERR' : searchQuery ? `${Math.max(0, searchResult.index + 1)}/${searchResult.count}` : ''}
           </Text>
-          <Pressable accessibilityLabel="Previous result" disabled={!searchResult.count} onPress={() => moveSearch(-1)} style={styles.searchAction}><Ionicons name="chevron-up" size={16} color={colors.text} /></Pressable>
-          <Pressable accessibilityLabel="Next result" disabled={!searchResult.count} onPress={() => moveSearch(1)} style={styles.searchAction}><Ionicons name="chevron-down" size={16} color={colors.text} /></Pressable>
-          <Pressable accessibilityLabel="Close search" onPress={closeSearch} style={styles.searchAction}><Ionicons name="close" size={17} color={colors.text} /></Pressable>
+          <Button accessibilityLabel="Previous result" className="h-[31px] w-7 rounded-none px-0" disabled={!searchResult.count} variant="ghost" onPress={() => moveSearch(-1)}><Ionicons name="chevron-up" size={16} color={colors.text} /></Button>
+          <Button accessibilityLabel="Next result" className="h-[31px] w-7 rounded-none px-0" disabled={!searchResult.count} variant="ghost" onPress={() => moveSearch(1)}><Ionicons name="chevron-down" size={16} color={colors.text} /></Button>
+          <Button accessibilityLabel="Close search" className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><Ionicons name="close" size={17} color={colors.text} /></Button>
         </View>
       )}
       <WebView
@@ -334,25 +335,25 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
         allowFileAccess
         javaScriptEnabled
         onMessage={handleMessage}
-        style={styles.webview}
+        style={WEBVIEW_STYLE}
       />
       {session && status !== 'connected' && (
-        <View style={styles.connectionOverlay}>
-          <View style={[styles.connectionMark, status === 'error' && styles.connectionMarkError]} />
-          <Text style={styles.connectionTitle}>
+        <View className="absolute inset-0 z-20 items-center justify-center bg-[#212121F2] p-[30px]">
+          <View className={cn('size-2 rounded-full bg-[#42C59A]', status === 'error' && 'bg-[#FF6B6B]')} />
+          <Text className="mt-[15px] text-center text-[17px] font-semibold leading-[22px] text-[#ECECEC]">
             {status === 'connecting' ? 'Connecting terminal' : status === 'disconnected' ? 'Reconnecting terminal' : 'Terminal connection failed'}
           </Text>
-          <Text numberOfLines={3} style={styles.connectionCopy}>
+          <Text numberOfLines={3} className="mt-2 max-w-80 text-center text-[11px] leading-[17px] text-[#B4B4B4]">
             {session.error || error || `Opening ${title}`}
           </Text>
           {status === 'disconnected' && session.reconnectAttempt > 0 && (
-            <Text style={styles.connectionAttempt}>Attempt {session.reconnectAttempt} of {MAX_RECONNECT_ATTEMPTS}</Text>
+            <Text className="mt-2.5 text-[11px] text-[#B4B4B4]">Attempt {session.reconnectAttempt} of {MAX_RECONNECT_ATTEMPTS}</Text>
           )}
-          <View style={styles.connectionActions}>
+          <View className="mt-5 flex-row gap-2">
             {status !== 'connecting' && (
-              <Pressable onPress={retryNow} style={styles.retryButton}><Text style={styles.retryText}>Retry now</Text></Pressable>
+              <Button className="min-h-[42px] rounded-full bg-[#ECECEC] px-4" onPress={retryNow}><Text className="text-[13px] font-semibold text-[#212121]">Retry now</Text></Button>
             )}
-            <Pressable onPress={onClose} style={styles.dismissButton}><Text style={styles.dismissText}>Close session</Text></Pressable>
+            <Button className="min-h-[42px] rounded-full bg-[#2F2F2F] px-4" variant="secondary" onPress={onClose}><Text className="text-[13px] font-semibold text-[#ECECEC]">Close session</Text></Button>
           </View>
         </View>
       )}
@@ -360,91 +361,30 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
         horizontal
         keyboardShouldPersistTaps="always"
         showsHorizontalScrollIndicator={false}
-        style={styles.keyRail}
-        contentContainerStyle={styles.keyRailContent}>
-        <Pressable onPress={() => setSearchOpen(value => !value)} style={[styles.key, searchOpen && styles.keyArmed]}>
-          <Text style={[styles.keyText, searchOpen && styles.keyTextArmed]}>FIND</Text>
-        </Pressable>
-        <Pressable onPress={() => { pasteClipboard().catch(reason => setError(String(reason))); }} style={styles.key}>
-          <Text style={styles.keyText}>PASTE</Text>
-        </Pressable>
-        <Pressable
+        className="flex-grow-0 border-t border-[#424242] bg-[#181818]"
+        contentContainerClassName="items-center gap-[5px] px-1.5 py-[7px]">
+        <TerminalKey label="FIND" armed={searchOpen} onPress={() => setSearchOpen(value => !value)} />
+        <TerminalKey label="PASTE" onPress={() => { pasteClipboard().catch(reason => setError(String(reason))); }} />
+        <Button
           accessibilityState={{ selected: ctrl !== 'off' }}
           onPress={() => setCtrl(value => value === 'off' ? 'armed' : 'off')}
           onLongPress={() => setCtrl('locked')}
           delayLongPress={450}
-          style={[styles.key, ctrl === 'armed' && styles.keyArmed, ctrl === 'locked' && styles.keyActive]}>
-          <Text style={[styles.keyText, ctrl === 'armed' && styles.keyTextArmed, ctrl === 'locked' && styles.keyTextActive]}>CTRL</Text>
-        </Pressable>
-        <Pressable
+          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', ctrl === 'armed' && 'border border-white', ctrl === 'locked' && 'bg-white')} variant="secondary"><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', ctrl === 'armed' && 'text-white', ctrl === 'locked' && 'text-[#212121]')}>CTRL</Text></Button>
+        <Button
           accessibilityState={{ selected: alt !== 'off' }}
           onPress={() => setAlt(value => value === 'off' ? 'armed' : 'off')}
           onLongPress={() => setAlt('locked')}
           delayLongPress={450}
-          style={[styles.key, alt === 'armed' && styles.keyArmed, alt === 'locked' && styles.keyActive]}>
-          <Text style={[styles.keyText, alt === 'armed' && styles.keyTextArmed, alt === 'locked' && styles.keyTextActive]}>ALT</Text>
-        </Pressable>
+          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', alt === 'armed' && 'border border-white', alt === 'locked' && 'bg-white')} variant="secondary"><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', alt === 'armed' && 'text-white', alt === 'locked' && 'text-[#212121]')}>ALT</Text></Button>
         {KEYS.map(([labelText, value]) => (
-          <Pressable key={labelText} onPress={() => sendInput(value)} style={styles.key}>
-            <Text style={styles.keyText}>{labelText}</Text>
-          </Pressable>
+          <TerminalKey key={labelText} label={labelText} onPress={() => sendInput(value)} />
         ))}
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.ink },
-  hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
-  statusBar: {
-    height: 30,
-    backgroundColor: colors.panel,
-    borderBottomColor: colors.line,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.acid },
-  statusText: { color: colors.muted, fontFamily: 'monospace', fontSize: 9, letterSpacing: 1 },
-  statusGrow: { flex: 1 },
-  error: { color: colors.blocked, fontFamily: 'monospace', fontSize: 8 },
-  compactError: { color: colors.blocked, backgroundColor: '#241211', paddingHorizontal: 8, paddingVertical: 4, fontFamily: 'monospace', fontSize: 8 },
-  searchBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, backgroundColor: colors.panelRaised, borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
-  searchInput: { minWidth: 100, flex: 1, height: 36, color: colors.text, backgroundColor: colors.ink, borderRadius: 18, paddingHorizontal: 12, fontFamily: 'monospace', fontSize: 10 },
-  searchToggle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  searchToggleActive: { backgroundColor: colors.text },
-  searchToggleText: { color: colors.muted, fontFamily: 'monospace', fontSize: 9, fontWeight: '800' },
-  searchToggleTextActive: { color: colors.ink },
-  searchCount: { minWidth: 34, color: colors.muted, textAlign: 'center', fontFamily: 'monospace', fontSize: 8 },
-  searchCountError: { color: colors.blocked },
-  searchAction: { width: 28, height: 31, alignItems: 'center', justifyContent: 'center' },
-  searchActionText: { color: colors.text, fontFamily: 'monospace', fontSize: 15 },
-  webview: { flex: 1, backgroundColor: colors.ink },
-  connectionOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 20, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: '#212121F2' },
-  connectionMark: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.working },
-  connectionMarkError: { backgroundColor: colors.blocked },
-  connectionTitle: { color: colors.text, fontSize: 17, lineHeight: 22, fontWeight: '600', marginTop: 15, textAlign: 'center' },
-  connectionCopy: { color: colors.muted, fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 8, maxWidth: 320 },
-  connectionAttempt: { color: colors.muted, fontSize: 11, marginTop: 10 },
-  connectionActions: { flexDirection: 'row', gap: 8, marginTop: 20 },
-  retryButton: { minHeight: 42, borderRadius: 21, backgroundColor: colors.text, paddingHorizontal: 16, justifyContent: 'center' },
-  retryText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
-  dismissButton: { minHeight: 42, borderRadius: 21, backgroundColor: colors.panelRaised, paddingHorizontal: 16, justifyContent: 'center' },
-  dismissText: { color: colors.text, fontSize: 13, fontWeight: '600' },
-  keyRail: {
-    flexGrow: 0,
-    backgroundColor: colors.panel,
-    borderTopColor: colors.line,
-    borderTopWidth: 1,
-  },
-  keyRailContent: { alignItems: 'center', paddingVertical: 7, paddingHorizontal: 6, gap: 5 },
-  key: { minWidth: 48, minHeight: 34, borderRadius: 9, paddingHorizontal: 10, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.panelRaised },
-  keyArmed: { borderColor: colors.text, borderWidth: 1, backgroundColor: colors.panelRaised },
-  keyActive: { backgroundColor: colors.acid, borderColor: colors.acid },
-  keyText: { color: colors.text, fontFamily: 'monospace', fontSize: 9, fontWeight: '700' },
-  keyTextArmed: { color: colors.acid },
-  keyTextActive: { color: colors.ink },
-});
+function TerminalKey({ label, onPress, armed = false }: { label: string; onPress: () => void; armed?: boolean }) {
+  return <Button className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', armed && 'border border-white')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', armed && 'text-white')}>{label}</Text></Button>;
+}
