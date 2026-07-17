@@ -16,6 +16,8 @@ describe('Android terminal assets', () => {
     expect(html).toContain('fontSize: 8');
     expect(html).toContain('Math.max(8, Math.min(16');
     expect(html).toContain('document.fonts.load');
+    expect(html).toContain('terminal.attachCustomKeyEventHandler');
+    expect(html).toContain("send({ type: 'input', data: sequence })");
     expect(html).toContain("send({ type: 'ready' })");
     expect(html).toContain('font-display: swap');
     expect(html.indexOf('announceReady();')).toBeLessThan(html.indexOf('document.fonts?.load'));

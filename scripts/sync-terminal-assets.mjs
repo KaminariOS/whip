@@ -81,6 +81,19 @@ const terminalHtml = `<!doctype html>
     terminal.loadAddon(fit);
     terminal.open(document.getElementById('terminal'));
     const send = value => window.ReactNativeWebView.postMessage(JSON.stringify(value));
+    const controlSequenceForKey = key => {
+      const upper = key.length === 1 ? key.toUpperCase() : '';
+      return upper >= 'A' && upper <= 'Z' ? String.fromCharCode(upper.charCodeAt(0) - 64) : null;
+    };
+    terminal.attachCustomKeyEventHandler(event => {
+      if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return true;
+      const sequence = controlSequenceForKey(event.key);
+      if (sequence === null) return true;
+      event.preventDefault();
+      event.stopPropagation();
+      send({ type: 'input', data: sequence });
+      return false;
+    });
     terminal.onData(data => send({ type: 'input', data }));
     terminal.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }));
     terminal.parser.registerOscHandler(52, data => {
