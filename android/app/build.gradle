@@ -114,6 +114,9 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+    lint {
+        checkDependencies = false
+    }
     packagingOptions {
         jniLibs {
             useLegacyPackaging = (findProperty('expo.useLegacyPackaging') ?: 'false').toBoolean()

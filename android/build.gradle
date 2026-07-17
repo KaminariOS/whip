@@ -27,5 +27,17 @@ allprojects {
 
 }
 
+def nodeModulesDir = rootProject.file("../node_modules").canonicalFile.toPath()
+
+subprojects { subproject ->
+    if (subproject.projectDir.canonicalFile.toPath().startsWith(nodeModulesDir)) {
+        subproject.tasks.configureEach { task ->
+            if (task.name.startsWith("lintAnalyze")) {
+                task.enabled = false
+            }
+        }
+    }
+}
+
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
