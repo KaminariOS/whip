@@ -23,7 +23,14 @@ describe('Android terminal assets', () => {
     expect(html.indexOf('document.fonts?.load')).toBeLessThan(html.indexOf('const terminal = new Terminal'));
     expect(html).toContain('Promise.race([');
     expect(html).toContain('pendingFrames.clear();');
-    expect(html).toContain("background: '#212121'");
+    expect(html).toContain('background: transparent');
+    expect(html).toContain('allowTransparency: true');
+    expect(html).toContain("background: 'rgba(0,0,0,0)'");
+    expect(html).toContain('<img id="terminal-background-image" alt="" />');
+    expect(html).toContain('<div id="terminal-background-glass"></div>');
+    expect(html).toContain('mix-blend-mode: screen');
+    expect(html).toContain('backgroundImage.src = backgroundUri');
+    expect(html).toContain("backgroundGlass.style.backgroundColor = 'rgba(0,0,0,' + dimming");
     expect(html).toContain("foreground: '#ececec'");
     expect(html).toContain("cursor: '#ffffff'");
     expect(html).toContain("selectionBackground: '#67676780'");

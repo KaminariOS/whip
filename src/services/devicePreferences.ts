@@ -12,7 +12,13 @@ export interface TerminalPreferences {
   fontSize: number;
   scrollback: number;
   cursorBlink: boolean;
+  backgroundImageUri: string | null;
+  backgroundDimming: number;
 }
+
+type StoredTerminalPreferences = Partial<TerminalPreferences> & {
+  backgroundOpacity?: unknown;
+};
 
 export interface DevicePreferences {
   alertsEnabled: boolean;
@@ -29,6 +35,8 @@ export const defaultDevicePreferences: DevicePreferences = {
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
+    backgroundImageUri: null,
+    backgroundDimming: 60,
   },
 };
 
@@ -45,7 +53,7 @@ export async function loadDevicePreferences(): Promise<DevicePreferences> {
 function parseDevicePreferences(value: string, migratingLegacy = false): DevicePreferences {
   try {
     const parsed = JSON.parse(value) as Partial<DevicePreferences>;
-    const terminal = parsed.terminal || {} as Partial<TerminalPreferences>;
+    const terminal = (parsed.terminal || {}) as StoredTerminalPreferences;
     const fontSize = migratingLegacy && terminal.fontSize === 11
       ? defaultDevicePreferences.terminal.fontSize
       : clampNumber(terminal.fontSize, 8, 16, defaultDevicePreferences.terminal.fontSize);
@@ -57,6 +65,15 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         fontSize,
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),
         cursorBlink: terminal.cursorBlink ?? defaultDevicePreferences.terminal.cursorBlink,
+        backgroundImageUri: typeof terminal.backgroundImageUri === 'string' && terminal.backgroundImageUri
+          ? terminal.backgroundImageUri
+          : null,
+        backgroundDimming: clampNumber(
+          terminal.backgroundDimming ?? terminal.backgroundOpacity,
+          0,
+          100,
+          defaultDevicePreferences.terminal.backgroundDimming,
+        ),
       },
     };
   } catch {

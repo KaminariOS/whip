@@ -23,6 +23,8 @@ test('terminal preference defaults match the mobile renderer', () => {
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
+    backgroundImageUri: null,
+    backgroundDimming: 60,
   });
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
 });
@@ -41,8 +43,27 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     alertsEnabled: false,
     ttsEnabled: true,
     lastTab: 'terminal',
-    terminal: { fontSize: 8, scrollback: 9000, cursorBlink: false },
+    terminal: {
+      fontSize: 8,
+      scrollback: 9000,
+      cursorBlink: false,
+      backgroundImageUri: null,
+      backgroundDimming: 60,
+    },
   });
+});
+
+test('sanitizes persisted terminal background preferences', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    terminal: {
+      backgroundImageUri: 'file:///data/user/0/dev.herdr.remote/files/background.webp',
+      backgroundOpacity: 150,
+    },
+  }));
+
+  const preferences = await loadDevicePreferences();
+  expect(preferences.terminal.backgroundImageUri).toBe('file:///data/user/0/dev.herdr.remote/files/background.webp');
+  expect(preferences.terminal.backgroundDimming).toBe(100);
 });
 
 test('persists new preferences under the v3 key', async () => {

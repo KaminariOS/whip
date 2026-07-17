@@ -361,7 +361,7 @@ export function SessionScreen({
         </View>
       )}
 
-      <View className="flex-1 bg-[#212121]">
+      <View className="relative flex-1 overflow-hidden bg-[#212121]">
         {terminalState.sessions.map(terminalSession => (
           <TerminalScreen
             key={terminalSession.terminalId}

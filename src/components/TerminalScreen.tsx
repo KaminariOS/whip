@@ -52,7 +52,8 @@ const KEYS = [
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
-const WEBVIEW_STYLE = { flex: 1, backgroundColor: colors.ink } as const;
+const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
+const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 
 export function TerminalScreen({ client, visible, session, preferences, compact = false, onClose, onStatus }: Props) {
   const terminalId = session?.terminalId || '';
@@ -292,7 +293,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
       accessibilityElementsHidden={!visible || !session}
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
-      className={cn('flex-1 bg-[#212121]', (!visible || !session) && 'absolute inset-0 opacity-0')}>
+      className={cn('flex-1 bg-transparent', (!visible || !session) && 'absolute inset-0 opacity-0')}>
       {!compact && (
         <View className="h-[30px] flex-row items-center gap-2 border-b border-[#424242] bg-[#181818] px-3">
           <View className="size-1.5 rounded-full bg-white" />
@@ -336,6 +337,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
         javaScriptEnabled
         onMessage={handleMessage}
         style={WEBVIEW_STYLE}
+        containerStyle={WEBVIEW_CONTAINER_STYLE}
       />
       {session && status !== 'connected' && (
         <View className="absolute inset-0 z-20 items-center justify-center bg-[#212121F2] p-[30px]">
