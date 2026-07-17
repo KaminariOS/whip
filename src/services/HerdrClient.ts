@@ -482,6 +482,12 @@ export class HerdrClient {
     if (this.terminalBridges.has(terminalId)) return;
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) return opening;
+    // A first tap commonly lands while the post-connect bridge prewarm is
+    // handshaking. Let it finish so startHerdrBridge can atomically claim that
+    // prepared connection instead of opening a competing bridge.
+    const preparing = this.bridgePrepareOpening;
+    if (preparing) await preparing.catch(() => undefined);
+    if (this.terminalBridges.has(terminalId)) return;
     const size = requestedSize || this.terminalSizes.get(terminalId) || {
       columns: 80,
       rows: 24,

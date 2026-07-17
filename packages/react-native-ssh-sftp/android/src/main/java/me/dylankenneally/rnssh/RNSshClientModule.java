@@ -255,6 +255,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   public void execute(final String command, final String key, final Callback callback) {
     new Thread(new Runnable() {
       public void run() {
+        ChannelExec channel = null;
         try {
           SSHClient client = clientPool.get(key);
           if (client == null) {
@@ -262,24 +263,27 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           }
           Session session = client._session;
 
-          ChannelExec channel = (ChannelExec) session.openChannel("exec");
+          channel = (ChannelExec) session.openChannel("exec");
           channel.setCommand(command);
+          InputStream in = channel.getInputStream();
           channel.connect();
 
-          String line, response = "";
-          InputStream in = channel.getInputStream();
-          BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+          String line;
+          StringBuilder response = new StringBuilder();
+          BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
           while ((line = reader.readLine()) != null) {
-            response += line + "\r\n";
+            response.append(line).append("\r\n");
           }
 
-          callback.invoke(null, response);
+          callback.invoke(null, response.toString());
         } catch (JSchException error) {
           Log.e(LOGTAG, "Error executing command: " + error.getMessage());
           callback.invoke(error.getMessage());
         } catch (Exception error) {
           Log.e(LOGTAG, "Error executing command: " + error.getMessage());
           callback.invoke(error.getMessage());
+        } finally {
+          if (channel != null) channel.disconnect();
         }
       }
     }).start();

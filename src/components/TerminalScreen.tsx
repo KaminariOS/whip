@@ -54,6 +54,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const status = session?.status || 'connecting';
   const webView = useRef<WebViewHandle | null>(null);
   const readyRef = useRef(false);
+  const resetOnNextFrame = useRef(true);
   const pendingFrames = useRef<TerminalFrame[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef(session?.reconnectAttempt || 0);
@@ -72,9 +73,12 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const reportStatus = useEffectEvent(onStatus);
 
   const injectFrame = (frame: TerminalFrame) => {
+    const reset = resetOnNextFrame.current;
+    if (reset) resetOnNextFrame.current = false;
+    const resetScript = reset ? 'window.herdrReset(); ' : '';
     if (typeof frame.final === 'boolean') {
       webView.current?.injectJavaScript(
-        `window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}); true;`,
+        `${resetScript}window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}); true;`,
       );
       return;
     }
@@ -82,7 +86,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
       const chunk = frame.bytes.slice(offset, offset + FRAME_CHUNK_SIZE);
       const final = offset + FRAME_CHUNK_SIZE >= frame.bytes.length;
       webView.current?.injectJavaScript(
-        `window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(chunk)}, ${final}); true;`,
+        `${offset === 0 ? resetScript : ''}window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(chunk)}, ${final}); true;`,
       );
     }
   };
@@ -111,10 +115,10 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
     if (!terminalId) return;
     if (AppState.currentState !== 'active') return;
     let active = true;
+    resetOnNextFrame.current = true;
     pendingFrames.current = [];
     setError(null);
     reportStatus('connecting', undefined, reconnectAttempt.current);
-    if (readyRef.current) webView.current?.injectJavaScript('window.herdrReset(); true;');
     const scheduleReconnect = (reason: string) => {
       if (!active || AppState.currentState !== 'active') return;
       const nextAttempt = reconnectAttempt.current + 1;
@@ -224,7 +228,6 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
     if (message.type === 'ready') {
       readyRef.current = true;
       setReady(true);
-      webView.current?.injectJavaScript('window.herdrReset(); true;');
       const frames = pendingFrames.current;
       pendingFrames.current = [];
       for (const frame of frames) injectFrame(frame);

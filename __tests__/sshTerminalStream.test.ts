@@ -24,6 +24,21 @@ describe('Android SSH terminal protocol stream', () => {
     expect(android).toContain('public void startHerdrEventStream');
   });
 
+  test('subscribes to exec output before starting short-lived remote commands', () => {
+    const android = readFileSync(
+      resolve(packageRoot, 'android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java'),
+      'utf8',
+    );
+    const execute = android.slice(
+      android.indexOf('public void execute('),
+      android.indexOf('public void startShell('),
+    );
+
+    expect(execute.indexOf('channel.getInputStream()')).toBeGreaterThan(-1);
+    expect(execute.indexOf('channel.getInputStream()')).toBeLessThan(execute.indexOf('channel.connect()'));
+    expect(execute).toContain('if (channel != null) channel.disconnect();');
+  });
+
   test('Herdr terminals use protocol 16 remote-client-bridge on the primary SSH client', () => {
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
     const terminalScreen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
