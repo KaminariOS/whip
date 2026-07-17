@@ -39,7 +39,13 @@ export async function alertAgent(
 
   Vibration.vibrate(blocked ? [0, 100, 90, 180] : [0, 80]);
   await Notifications.scheduleNotificationAsync({
-    content: { title, body, sound: 'default', data: target },
+    content: {
+      title,
+      body,
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      data: target,
+    },
     trigger: { channelId: CHANNEL_ID },
   });
   if (speak) {
