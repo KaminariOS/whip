@@ -12,6 +12,12 @@ export interface HerdrApiMessage {
   error?: { code?: string; message?: string; details?: unknown };
   subscription_id?: string;
   event?: unknown;
+  data?: unknown;
+}
+
+export interface HerdrApiEvent {
+  event: string;
+  data: Record<string, unknown>;
 }
 
 export interface SessionSnapshot {
@@ -81,6 +87,27 @@ export function apiRequestLine(request: HerdrApiRequest): string {
 export function apiErrorMessage(message: HerdrApiMessage): string | null {
   if (!message.error) return null;
   return message.error.message || message.error.code || JSON.stringify(message.error);
+}
+
+/** Accepts Herdr's direct event envelope and the legacy wrapped event shape. */
+export function apiEvent(message: HerdrApiMessage): HerdrApiEvent | null {
+  if (typeof message.event === 'string') {
+    return {
+      event: message.event,
+      data: isRecord(message.data) ? message.data : {},
+    };
+  }
+  if (isRecord(message.event) && typeof message.event.event === 'string') {
+    return {
+      event: message.event.event,
+      data: isRecord(message.event.data) ? message.event.data : {},
+    };
+  }
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** Decodes newline-delimited socket JSON while ignoring PTY shell banners/echo. */

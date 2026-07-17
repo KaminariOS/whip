@@ -16,6 +16,7 @@ import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles'
 import { nextReconnect } from './src/lib/reconnectPolicy';
 import { createRefreshCoordinator, type RefreshCoordinator } from './src/lib/refreshCoordinator';
 import {
+  applyLiveHostFocus,
   applyLiveHostSnapshot,
   beginLiveHostSync,
   closeLiveHostSession,
@@ -66,6 +67,7 @@ import {
 } from './src/terminalSessions';
 import { colors } from './src/theme';
 import type { AgentInfo, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
+import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 
 interface LiveRuntime {
   client: HerdrClient;
@@ -240,8 +242,15 @@ function AppContent() {
     runtime.eventStatus = 'opening';
     await runtime.client.openEventStream(
       paneIds,
-      () => {
-        if (runtimes.current.get(sessionId) !== runtime || runtime.eventRefreshTimer) return;
+      (event: HerdrApiEvent) => {
+        if (runtimes.current.get(sessionId) !== runtime) return;
+        const workspaceId = typeof event.data.workspace_id === 'string' ? event.data.workspace_id : undefined;
+        const tabId = typeof event.data.tab_id === 'string' ? event.data.tab_id : undefined;
+        const paneId = typeof event.data.pane_id === 'string' ? event.data.pane_id : undefined;
+        if (event.event === 'workspace.focused' || event.event === 'tab.focused' || event.event === 'pane.focused') {
+          setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId, tabId, paneId }));
+        }
+        if (runtime.eventRefreshTimer) return;
         runtime.eventRefreshTimer = setTimeout(() => {
           runtime.eventRefreshTimer = null;
           refreshHost(sessionId).catch(() => undefined);
@@ -591,8 +600,15 @@ function AppContent() {
 
   const openPaneTerminal = (sessionId: string, pane: PaneInfo) => {
     setSelectedPaneId(null);
-    activatePaneTerminal(sessionId, pane);
+    setLiveSessions(current => {
+      const activated = updateLiveHostTerminals(current, sessionId, terminals => openTerminalSession(terminals, pane));
+      return applyLiveHostFocus(activated, sessionId, { paneId: pane.pane_id });
+    });
     selectLiveHost(sessionId, 'terminal');
+    const runtime = runtimes.current.get(sessionId);
+    runtime?.client.focusPane(pane.pane_id)
+      .then(() => refreshHost(sessionId))
+      .catch(() => undefined);
   };
 
   const closeTerminal = useCallback((sessionId: string, terminalId: string) => {

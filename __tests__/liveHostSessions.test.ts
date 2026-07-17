@@ -1,4 +1,5 @@
 import {
+  applyLiveHostFocus,
   applyLiveHostSnapshot,
   beginLiveHostSync,
   closeLiveHostSession,
@@ -179,6 +180,51 @@ describe('live host session state', () => {
       tabId: 'savior-tab',
       paneId: 'savior-pane',
     });
+  });
+
+  test('follows authoritative focus when a newer snapshot arrives', () => {
+    const first: HerdrSnapshot = {
+      server: { running: true },
+      agents: [],
+      workspaces: [workspace('w1', 't1', true)],
+      tabs: [tab('t1', 'w1', true), tab('t2', 'w1')],
+      panes: [pane('p1', 'term-1', 'w1', 't1', true), pane('p2', 'term-2', 'w1', 't2')],
+    };
+    const second: HerdrSnapshot = {
+      ...first,
+      workspaces: [workspace('w1', 't2', true)],
+      tabs: [tab('t1', 'w1'), tab('t2', 'w1', true)],
+      panes: [pane('p1', 'term-1', 'w1', 't1'), pane('p2', 'term-2', 'w1', 't2', true)],
+    };
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const synced = syncSnapshot(opened, 'live-1', first);
+    const request = beginLiveHostSync(synced, 'live-1');
+    const focused = applyLiveHostSnapshot(request.state, 'live-1', request.generation, second);
+
+    expect(findLiveHostSession(focused, 'live-1')?.selection).toEqual({
+      workspaceId: 'w1',
+      tabId: 't2',
+      paneId: 'p2',
+    });
+  });
+
+  test('applies pane focus events immediately and updates the full hierarchy', () => {
+    const value: HerdrSnapshot = {
+      server: { running: true },
+      agents: [],
+      workspaces: [workspace('w1', 't1', true)],
+      tabs: [tab('t1', 'w1', true), tab('t2', 'w1')],
+      panes: [pane('p1', 'term-1', 'w1', 't1', true), pane('p2', 'term-2', 'w1', 't2')],
+    };
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const synced = syncSnapshot(opened, 'live-1', value);
+    const focused = applyLiveHostFocus(synced, 'live-1', { paneId: 'p2' });
+    const session = findLiveHostSession(focused, 'live-1');
+
+    expect(session?.selection).toEqual({ workspaceId: 'w1', tabId: 't2', paneId: 'p2' });
+    expect(session?.snapshot.workspaces[0].active_tab_id).toBe('t2');
+    expect(session?.snapshot.tabs.find(item => item.tab_id === 't2')?.focused).toBe(true);
+    expect(session?.snapshot.panes.find(item => item.pane_id === 'p2')?.focused).toBe(true);
   });
 
   test('selecting workspace, tab, or pane keeps the hierarchy internally consistent', () => {
