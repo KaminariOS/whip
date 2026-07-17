@@ -541,7 +541,7 @@ function AppContent() {
         const usedHosts = await markHostConnected(saved.hosts, nextProfile.id);
         setHosts(usedHosts);
       }
-      if (navigate) setNavigation(current => selectMobileTab(current, 'herd'));
+      if (navigate) setNavigation(current => selectMobileTab(current, 'terminal'));
       return true;
     } catch (error) {
       setConnectError(String(error));
@@ -614,7 +614,7 @@ function AppContent() {
   const connectSavedHost = async (host: HostProfile) => {
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === host.id);
     if (existing) {
-      selectLiveHost(existing.id, 'herd');
+      selectLiveHost(existing.id, 'terminal');
       return;
     }
     setConnectError(null);
