@@ -72,6 +72,11 @@ import {
   markHostConnected,
   saveConnectionProfile,
 } from './src/services/hostProfiles';
+import {
+  credentialRecoveryStatus,
+  restoreCredentialBackups,
+  type CredentialRecoveryStatus,
+} from './src/services/credentialVault';
 import { loadPersistedTerminals, savePersistedTerminals } from './src/services/persistedTerminals';
 import {
   loadPersistedLiveHosts,
@@ -159,6 +164,8 @@ function AppContent() {
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
+  const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
+  const [credentialRecoveryBusy, setCredentialRecoveryBusy] = useState(false);
 
   const updateTerminalFontSize = useCallback((fontSize: number) => {
     const nextFontSize = Math.max(8, Math.min(16, Math.round(fontSize)));
@@ -201,7 +208,10 @@ function AppContent() {
 
   useEffect(() => {
     loadHostProfiles()
-      .then(setHosts)
+      .then(async value => {
+        setHosts(value);
+        setCredentialRecovery(await credentialRecoveryStatus());
+      })
       .catch(error => setConnectError(`Could not load saved hosts: ${String(error)}`))
       .finally(() => setProfilesLoaded(true));
     prepareAlerts().catch(() => undefined);
@@ -637,6 +647,7 @@ function AppContent() {
     try {
       const saved = await saveConnectionProfile(hosts, nextProfile);
       setHosts(saved.hosts);
+      setCredentialRecovery(await credentialRecoveryStatus());
       setEditorProfile(null);
     } catch (error) {
       setConnectError(`Could not save host: ${String(error)}`);
@@ -649,6 +660,28 @@ function AppContent() {
       setEditorProfile(await loadConnectionProfile(host));
     } catch (error) {
       setConnectError(`Could not load credentials: ${String(error)}`);
+    }
+  };
+
+  const unlockCredentialRecovery = async (): Promise<boolean> => {
+    setCredentialRecoveryBusy(true);
+    setConnectError(null);
+    try {
+      const result = await restoreCredentialBackups(hostsRef.current);
+      setCredentialRecovery(await credentialRecoveryStatus());
+      if (result.failed > 0) {
+        setConnectError(`Restored ${result.restored} credentials; ${result.failed} could not be decrypted.`);
+      }
+      return result.restored > 0;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== 'E_CREDENTIAL_VAULT_CANCELLED') {
+        setConnectError(`Could not restore credentials: ${String(error)}`);
+      }
+      setCredentialRecovery(await credentialRecoveryStatus());
+      return false;
+    } finally {
+      setCredentialRecoveryBusy(false);
     }
   };
 
@@ -667,7 +700,11 @@ function AppContent() {
     setConnectError(null);
     setConnectingHostId(host.id);
     try {
-      const nextProfile = await loadConnectionProfile(host);
+      let nextProfile = await loadConnectionProfile(host);
+      if (!nextProfile.secret && credentialRecovery.state === 'locked') {
+        const restored = await unlockCredentialRecovery();
+        if (restored) nextProfile = await loadConnectionProfile(host);
+      }
       if (!nextProfile.secret) {
         setEditorProfile(nextProfile);
         setConnectError('Enter this host credential before connecting. Enable Remember credentials to use one-tap connect next time.');
@@ -691,8 +728,9 @@ function AppContent() {
           const live = liveSessionsRef.current.sessions.find(session => session.hostId === target.id);
           if (live) closeLiveHost(live.id);
           deleteHostProfile(hosts, target.id)
-            .then(next => {
+            .then(async next => {
               setHosts(next);
+              setCredentialRecovery(await credentialRecoveryStatus());
               setEditorProfile(null);
               setConnectError(null);
             })
@@ -825,12 +863,15 @@ function AppContent() {
               connectedHostIds={liveSessions.sessions.map(session => session.hostId)}
               connectingHostId={connectingHostId}
               error={connectError}
+              credentialRecovery={credentialRecovery}
+              credentialRecoveryBusy={credentialRecoveryBusy}
               onAdd={() => {
                 setConnectError(null);
                 setEditorProfile(emptyConnectionProfile());
               }}
               onConnect={host => connectSavedHost(host).catch(error => setConnectError(String(error)))}
               onEdit={openHostEditor}
+              onUnlockCredentials={unlockCredentialRecovery}
             />
           )}
 

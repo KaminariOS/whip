@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <!-- Keychain's Keystore-encrypted DataStore is intentionally excluded. -->
+        <!-- Keychain and the locally wrapped recovery key remain intentionally excluded. -->
         <include domain="database" path="." />
         <include domain="file" path="terminal-backgrounds/" />
     </cloud-backup>

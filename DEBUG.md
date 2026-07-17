@@ -311,6 +311,42 @@ ssh user@laptop.tailnet.ts.net 'herdr status server --json'
 
 Never put SSH passwords, private keys, Tailnet credentials, or captured secrets into logs, screenshots, fixtures, or commits. The current SSH dependency also does not pin host keys, so end-to-end tests should only use a trusted Tailnet.
 
+## Credential recovery
+
+Remembered SSH passwords, private keys, and key passphrases remain in
+`react-native-keychain` for normal use. `CredentialVaultModule` also encrypts a
+backup with a random 256-bit AES-GCM recovery key. Only the ciphertext is stored
+in AsyncStorage and included in Android Auto Backup. The recovery key is wrapped
+locally by Android Keystore and separately stored as a small Android Block Store
+token.
+
+The local wrapped key and Keychain files are excluded from Android Auto Backup.
+After reinstall, the restored ciphertext therefore stays locked until the user
+approves Android's biometric/device-credential prompt. The app then retrieves
+the Block Store token, decrypts each credential, and imports it back into
+Keychain. This is device authentication, not a FIDO passkey or relying-party
+login.
+
+Block Store cloud backup is enabled only when Google Play services reports that
+end-to-end encryption is available. Otherwise the token is stored for supported
+same-device/device-transfer restore only. Backup services must be enabled, and
+both Auto Backup and Block Store sync are asynchronous, so recovery is not an
+immediate guaranteed snapshot.
+
+Native vault changes require a rebuild. Validate without exposing secrets:
+
+```bash
+npm test -- --runInBand __tests__/credentialVault.test.ts __tests__/credentialVaultNative.test.ts
+nix develop --command android/gradlew -p android :app:compileDebugKotlin --console=plain
+```
+
+Do not uninstall the user's active app to exercise recovery. Use a disposable
+emulator signed with the same debug certificate, save a test-only credential,
+confirm `herdr.credential.backups.v1` contains ciphertext rather than plaintext,
+then follow the same-device uninstall/reinstall flow. A differently signed APK
+cannot update an existing installation and must never be worked around by
+uninstalling the user's app.
+
 ## Herdr terminal architecture
 
 The Android session view follows Voltius's mobile terminal model: selecting a Herdr tab enters an immersive terminal workspace, the normal bottom navigation disappears, the session rails stay compact, and every opened terminal WebView remains mounted while hidden. Keeping the WebViews mounted preserves xterm state when switching panes.

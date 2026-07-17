@@ -7,7 +7,10 @@ import com.facebook.react.uimanager.ViewManager
 
 class HerdrBackgroundPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
-    listOf(HerdrBackgroundModule(reactContext))
+    listOf(
+      CredentialVaultModule(reactContext),
+      HerdrBackgroundModule(reactContext),
+    )
 
   override fun createViewManagers(
     reactContext: ReactApplicationContext,

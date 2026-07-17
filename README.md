@@ -17,7 +17,7 @@ Herdr itself is not exposed to the network and does not need to be modified. Her
 - Android vibration and local notifications for blocked/done transitions
 - Optional Expo Speech announcements
 - Password and private-key authentication
-- Optional credential storage in Android Keystore
+- Android Keystore credential storage with encrypted, device-authenticated Block Store recovery
 - Named Herdr sessions and configurable Herdr executable path
 
 ## Requirements
