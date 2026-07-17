@@ -61,6 +61,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const title = session?.title || '';
   const status = session?.status || 'connecting';
   const webView = useRef<WebViewHandle | null>(null);
+  const controlsRef = useRef<View | null>(null);
   const readyRef = useRef(false);
   const resetOnNextFrame = useRef(true);
   const pendingFrames = useRef<TerminalFrame[]>([]);
@@ -78,6 +79,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ count: 0, index: -1, invalid: false });
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
   const reportStatus = useEffectEvent(onStatus);
 
@@ -213,9 +215,29 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   }, [preferences, ready]);
 
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
-    return () => { show.remove(); hide.remove(); };
+    let insetTimer: ReturnType<typeof setTimeout> | null = null;
+    const show = Keyboard.addListener('keyboardDidShow', event => {
+      if (insetTimer) clearTimeout(insetTimer);
+      setKeyboardVisible(true);
+      setKeyboardInset(0);
+      insetTimer = setTimeout(() => {
+        const keyboardTop = event.endCoordinates.screenY;
+        controlsRef.current?.measureInWindow((_x, y, _width, height) => {
+          setKeyboardInset(Math.max(0, Math.ceil(y + height - keyboardTop)));
+        });
+      }, 50);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      if (insetTimer) clearTimeout(insetTimer);
+      insetTimer = null;
+      setKeyboardVisible(false);
+      setKeyboardInset(0);
+    });
+    return () => {
+      if (insetTimer) clearTimeout(insetTimer);
+      show.remove();
+      hide.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -366,30 +388,35 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
           </View>
         </View>
       )}
-      <ScrollView
-        horizontal
-        keyboardShouldPersistTaps="always"
-        showsHorizontalScrollIndicator={false}
-        className="flex-grow-0 border-t border-[#424242] bg-[#181818]"
-        contentContainerClassName="items-center gap-[5px] px-1.5 py-[7px]">
-        <TerminalKey label="FIND" armed={searchOpen} onPress={() => setSearchOpen(value => !value)} />
-        <TerminalKey label="PASTE" onPress={() => { pasteClipboard().catch(reason => setError(String(reason))); }} />
-        <Button
-          accessibilityState={{ selected: ctrl !== 'off' }}
-          onPress={() => setCtrl(value => value === 'off' ? 'armed' : 'off')}
-          onLongPress={() => setCtrl('locked')}
-          delayLongPress={450}
-          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', ctrl === 'armed' && 'border border-white', ctrl === 'locked' && 'bg-white')} variant="secondary"><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', ctrl === 'armed' && 'text-white', ctrl === 'locked' && 'text-[#212121]')}>CTRL</Text></Button>
-        <Button
-          accessibilityState={{ selected: alt !== 'off' }}
-          onPress={() => setAlt(value => value === 'off' ? 'armed' : 'off')}
-          onLongPress={() => setAlt('locked')}
-          delayLongPress={450}
-          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', alt === 'armed' && 'border border-white', alt === 'locked' && 'bg-white')} variant="secondary"><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', alt === 'armed' && 'text-white', alt === 'locked' && 'text-[#212121]')}>ALT</Text></Button>
-        {KEYS.map(([labelText, value]) => (
-          <TerminalKey key={labelText} label={labelText} onPress={() => sendInput(value)} />
-        ))}
-      </ScrollView>
+      <View
+        ref={controlsRef}
+        collapsable={false}
+        style={keyboardInset > 0 ? { marginBottom: keyboardInset } : undefined}>
+        <ScrollView
+          horizontal
+          keyboardShouldPersistTaps="always"
+          showsHorizontalScrollIndicator={false}
+          className="flex-grow-0 border-t border-[#424242] bg-[#181818]"
+          contentContainerClassName="items-center gap-[5px] px-1.5 py-[7px]">
+          <TerminalKey label="FIND" armed={searchOpen} onPress={() => setSearchOpen(value => !value)} />
+          <TerminalKey label="PASTE" onPress={() => { pasteClipboard().catch(reason => setError(String(reason))); }} />
+          <Button
+            accessibilityState={{ selected: ctrl !== 'off' }}
+            onPress={() => setCtrl(value => value === 'off' ? 'armed' : 'off')}
+            onLongPress={() => setCtrl('locked')}
+            delayLongPress={450}
+            className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', ctrl === 'armed' && 'border border-white', ctrl === 'locked' && 'bg-white')} variant="secondary"><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', ctrl === 'armed' && 'text-white', ctrl === 'locked' && 'text-[#212121]')}>CTRL</Text></Button>
+          <Button
+            accessibilityState={{ selected: alt !== 'off' }}
+            onPress={() => setAlt(value => value === 'off' ? 'armed' : 'off')}
+            onLongPress={() => setAlt('locked')}
+            delayLongPress={450}
+            className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', alt === 'armed' && 'border border-white', alt === 'locked' && 'bg-white')} variant="secondary"><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', alt === 'armed' && 'text-white', alt === 'locked' && 'text-[#212121]')}>ALT</Text></Button>
+          {KEYS.map(([labelText, value]) => (
+            <TerminalKey key={labelText} label={labelText} onPress={() => sendInput(value)} />
+          ))}
+        </ScrollView>
+      </View>
     </View>
   );
 }
