@@ -3,15 +3,16 @@ import { resolve } from 'node:path';
 import { Script } from 'node:vm';
 
 const assets = resolve(__dirname, '../android/app/src/main/assets');
+const sourceFonts = resolve(__dirname, '../assets/terminal-fonts');
 const generated = resolve(__dirname, '../src/generated/terminalHtml.ts');
 
 describe('Android terminal assets', () => {
-  it('bundles JetBrains Mono without blocking terminal readiness on font loading', () => {
+  it('bundles the WezTerm JetBrains Mono faces without blocking terminal readiness on font loading', () => {
     const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
 
     expect(html).toContain("url('jetbrains-mono-regular.ttf')");
-    expect(html).toContain("url('jetbrains-mono-medium.ttf')");
-    expect(html).toContain("fontWeightBold: '500'");
+    expect(html).toContain("url('jetbrains-mono-bold.ttf')");
+    expect(html).toContain("fontWeightBold: '700'");
     expect(html).toContain('fontSize: 8');
     expect(html).toContain('Math.max(8, Math.min(16');
     expect(html).toContain('document.fonts.load');
@@ -25,11 +26,24 @@ describe('Android terminal assets', () => {
     expect(() => new Script(inlineScript!)).not.toThrow();
   });
 
-  it.each(['jetbrains-mono-regular.ttf', 'jetbrains-mono-medium.ttf'])('%s is a real TrueType font', file => {
+  it.each(['jetbrains-mono-regular.ttf', 'jetbrains-mono-bold.ttf'])('%s is a real TrueType font', file => {
     const font = readFileSync(resolve(assets, file));
 
     expect(font.length).toBeGreaterThan(100_000);
     expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
+  });
+
+  it.each([
+    ['JetBrainsMono-Regular.ttf', 'jetbrains-mono-regular.ttf'],
+    ['JetBrainsMono-Bold.ttf', 'jetbrains-mono-bold.ttf'],
+  ])('copies the vendored WezTerm face %s unchanged', (source, bundled) => {
+    expect(readFileSync(resolve(assets, bundled))).toEqual(readFileSync(resolve(sourceFonts, source)));
+  });
+
+  it('packages the JetBrains Mono license with the Android font assets', () => {
+    expect(readFileSync(resolve(assets, 'jetbrains-mono-OFL.txt'))).toEqual(
+      readFileSync(resolve(sourceFonts, 'OFL.txt')),
+    );
   });
 
   it('generates the same HTML for Metro so terminal changes do not require an APK rebuild', () => {

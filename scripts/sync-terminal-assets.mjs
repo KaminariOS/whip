@@ -1,29 +1,13 @@
-import { access, copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = resolve(root, 'android/app/src/main/assets');
-
-const findFirstExisting = async paths => {
-  for (const path of paths) {
-    try {
-      await access(path);
-      return path;
-    } catch {}
-  }
-  throw new Error(`Unable to find a bundled JetBrains Mono font. Checked:\n${paths.join('\n')}`);
-};
-
-const expoDevMenuFont = weight => findFirstExisting([
-  resolve(root, `node_modules/expo-dev-menu/android/src/debug/res/font/jetbrains_mono_${weight}.ttf`),
-  resolve(root, `node_modules/expo-dev-menu/android/src/main/res/font/jetbrains_mono_${weight}.ttf`),
-]);
-
-const [jetBrainsMonoRegular, jetBrainsMonoMedium] = await Promise.all([
-  expoDevMenuFont('regular'),
-  expoDevMenuFont('medium'),
-]);
+const terminalFonts = resolve(root, 'assets/terminal-fonts');
+const jetBrainsMonoRegular = resolve(terminalFonts, 'JetBrainsMono-Regular.ttf');
+const jetBrainsMonoBold = resolve(terminalFonts, 'JetBrainsMono-Bold.ttf');
+const jetBrainsMonoLicense = resolve(terminalFonts, 'OFL.txt');
 
 await mkdir(assets, { recursive: true });
 await Promise.all([
@@ -31,7 +15,8 @@ await Promise.all([
   copyFile(resolve(root, 'node_modules/@xterm/xterm/css/xterm.css'), resolve(assets, 'xterm.css')),
   copyFile(resolve(root, 'node_modules/@xterm/addon-fit/lib/addon-fit.js'), resolve(assets, 'addon-fit.js')),
   copyFile(jetBrainsMonoRegular, resolve(assets, 'jetbrains-mono-regular.ttf')),
-  copyFile(jetBrainsMonoMedium, resolve(assets, 'jetbrains-mono-medium.ttf')),
+  copyFile(jetBrainsMonoBold, resolve(assets, 'jetbrains-mono-bold.ttf')),
+  copyFile(jetBrainsMonoLicense, resolve(assets, 'jetbrains-mono-OFL.txt')),
 ]);
 
 const terminalHtml = `<!doctype html>
@@ -50,9 +35,9 @@ const terminalHtml = `<!doctype html>
     }
     @font-face {
       font-family: 'JetBrains Mono';
-      src: url('jetbrains-mono-medium.ttf') format('truetype');
+      src: url('jetbrains-mono-bold.ttf') format('truetype');
       font-style: normal;
-      font-weight: 500;
+      font-weight: 700;
       font-display: swap;
     }
     html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090b0a; }
@@ -62,7 +47,7 @@ const terminalHtml = `<!doctype html>
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 2px; background: #1a2019; border: 1px solid #485244; box-shadow: 0 4px 16px #000a; }
-    #selection-toolbar button { appearance: none; border: 0; background: transparent; color: #e9eadf; padding: 8px 10px; font: 500 10px 'JetBrains Mono', monospace; }
+    #selection-toolbar button { appearance: none; border: 0; background: transparent; color: #e9eadf; padding: 8px 10px; font: 700 10px 'JetBrains Mono', monospace; }
     #selection-toolbar button:active { background: #d8ff63; color: #090b0a; }
   </style>
 </head>
@@ -79,7 +64,7 @@ const terminalHtml = `<!doctype html>
       fontFamily: terminalFontFamily,
       fontSize: 8,
       fontWeight: '400',
-      fontWeightBold: '500',
+      fontWeightBold: '700',
       lineHeight: 1.12,
       letterSpacing: 0,
       scrollback: 5000,
@@ -309,7 +294,7 @@ const terminalHtml = `<!doctype html>
     const fontReady = document.fonts?.load
       ? Promise.all([
           document.fonts.load('400 8px "JetBrains Mono"'),
-          document.fonts.load('500 8px "JetBrains Mono"'),
+          document.fonts.load('700 8px "JetBrains Mono"'),
         ]).then(() => document.fonts.ready)
       : Promise.resolve();
     fontReady.then(() => {
