@@ -40,9 +40,8 @@ export class HerdrClient {
   private terminalConnections = new Map<string, TerminalConnection>();
   private terminalOpenings = new Map<string, Promise<void>>();
   private terminalSizes = new Map<string, TerminalSize>();
-  private bridgeStarted = false;
-  private bridgeOpening: Promise<void> | null = null;
-  private activeTerminalId: string | null = null;
+  private terminalBridges = new Set<string>();
+  private bridgePrepareOpening: Promise<void> | null = null;
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
@@ -71,9 +70,8 @@ export class HerdrClient {
     this.profile = profile;
     this.apiServer = null;
     this.eventClient = null;
-    this.bridgeStarted = false;
-    this.bridgeOpening = null;
-    this.activeTerminalId = null;
+    this.terminalBridges.clear();
+    this.bridgePrepareOpening = null;
     for (const connection of this.terminalConnections.values()) {
       connection.onClosed?.('SSH control connection was replaced');
     }
@@ -83,7 +81,7 @@ export class HerdrClient {
 
   disconnect(): void {
     this.closeEventStream();
-    this.client?.closeHerdrBridge();
+    this.client?.closeAllHerdrBridges();
     this.client?.off('Shell');
     this.client?.disconnect();
     this.client = null;
@@ -92,9 +90,8 @@ export class HerdrClient {
     this.terminalOpenings.clear();
     this.terminalConnections.clear();
     this.terminalSizes.clear();
-    this.bridgeStarted = false;
-    this.bridgeOpening = null;
-    this.activeTerminalId = null;
+    this.terminalBridges.clear();
+    this.bridgePrepareOpening = null;
   }
 
   async openTerminal(
@@ -118,11 +115,32 @@ export class HerdrClient {
     }
   }
 
+  async prepareTerminalBridge(): Promise<void> {
+    if (this.bridgePrepareOpening) return this.bridgePrepareOpening;
+    const task = (async () => {
+      const server = await this.requireBridgeServer();
+      await this.requireClient().prepareHerdrBridge(
+        `${this.baseCommand()} remote-client-bridge`,
+        server.protocol,
+        80,
+        24,
+        0,
+        0,
+      );
+    })();
+    this.bridgePrepareOpening = task;
+    try {
+      await task;
+    } finally {
+      if (this.bridgePrepareOpening === task) this.bridgePrepareOpening = null;
+    }
+  }
+
   async writeToTerminal(terminalId: string, data: string): Promise<string> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening;
-    if (this.activeTerminalId !== terminalId) await this.attachTerminal(terminalId);
-    await this.requireClient().herdrBridgeInput(data);
+    await this.ensureTerminalBridge(terminalId);
+    await this.requireClient().herdrBridgeInput(terminalId, data);
     return '';
   }
 
@@ -140,8 +158,9 @@ export class HerdrClient {
       cellHeightPx: Math.max(0, Math.round(cellHeightPx)),
     };
     this.terminalSizes.set(terminalId, size);
-    if (this.activeTerminalId === terminalId && this.bridgeStarted) {
+    if (this.terminalBridges.has(terminalId)) {
       this.requireClient().herdrBridgeResize(
+        terminalId,
         size.columns,
         size.rows,
         size.cellWidthPx,
@@ -153,8 +172,8 @@ export class HerdrClient {
   async scrollTerminal(terminalId: string, direction: 'up' | 'down', lines: number): Promise<string> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening;
-    if (this.activeTerminalId !== terminalId) await this.attachTerminal(terminalId);
-    await this.requireClient().herdrBridgeScroll(direction, Math.max(1, Math.round(lines)));
+    await this.ensureTerminalBridge(terminalId);
+    await this.requireClient().herdrBridgeScroll(terminalId, direction, Math.max(1, Math.round(lines)));
     return '';
   }
 
@@ -166,6 +185,16 @@ export class HerdrClient {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening.catch(() => undefined);
     this.closeTerminal(terminalId);
+  }
+
+  async closeTerminalBridge(terminalId: string): Promise<void> {
+    const opening = this.terminalOpenings.get(terminalId);
+    if (opening) await opening.catch(() => undefined);
+    this.terminalConnections.delete(terminalId);
+    this.terminalOpenings.delete(terminalId);
+    this.terminalSizes.delete(terminalId);
+    this.terminalBridges.delete(terminalId);
+    this.client?.closeHerdrBridge(terminalId);
   }
 
   async releaseAllTerminals(): Promise<void> {
@@ -405,10 +434,9 @@ export class HerdrClient {
       cellWidthPx: 0,
       cellHeightPx: 0,
     };
-    await this.ensureHerdrBridge(size);
-    await this.requireClient().herdrBridgeAttach(terminalId, true);
-    this.activeTerminalId = terminalId;
+    await this.ensureTerminalBridge(terminalId, size);
     await this.requireClient().herdrBridgeResize(
+      terminalId,
       size.columns,
       size.rows,
       size.cellWidthPx,
@@ -416,44 +444,50 @@ export class HerdrClient {
     );
   }
 
-  private async ensureHerdrBridge(size: TerminalSize): Promise<void> {
-    if (this.bridgeStarted) return;
-    if (this.bridgeOpening) return this.bridgeOpening;
-    const task = (async () => {
-      const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
-      this.apiServer = server;
-      if (!server.running || typeof server.protocol !== 'number') {
-        throw new Error('Herdr server protocol is unavailable');
-      }
-      await this.requireClient().startHerdrBridge(
-        `${this.baseCommand()} remote-client-bridge`,
-        server.protocol,
-        size.columns,
-        size.rows,
-        size.cellWidthPx,
-        size.cellHeightPx,
-        event => this.handleHerdrBridgeEvent(event),
-      );
-      this.bridgeStarted = true;
-    })();
-    this.bridgeOpening = task;
-    try {
-      await task;
-    } finally {
-      if (this.bridgeOpening === task) this.bridgeOpening = null;
-    }
+  private async ensureTerminalBridge(terminalId: string, requestedSize?: TerminalSize): Promise<void> {
+    if (this.terminalBridges.has(terminalId)) return;
+    const opening = this.terminalOpenings.get(terminalId);
+    if (opening) return opening;
+    const size = requestedSize || this.terminalSizes.get(terminalId) || {
+      columns: 80,
+      rows: 24,
+      cellWidthPx: 0,
+      cellHeightPx: 0,
+    };
+    const server = await this.requireBridgeServer();
+    await this.requireClient().startHerdrBridge(
+      `${this.baseCommand()} remote-client-bridge`,
+      server.protocol,
+      terminalId,
+      true,
+      size.columns,
+      size.rows,
+      size.cellWidthPx,
+      size.cellHeightPx,
+      event => this.handleHerdrBridgeEvent(terminalId, event),
+    );
+    this.terminalBridges.add(terminalId);
+    this.prepareTerminalBridge().catch(() => undefined);
   }
 
-  private handleHerdrBridgeEvent(event: HerdrBridgeEvent): void {
+  private async requireBridgeServer(): Promise<ServerInfo & { protocol: number }> {
+    const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
+    this.apiServer = server;
+    if (!server.running || typeof server.protocol !== 'number') {
+      throw new Error('Herdr server protocol is unavailable');
+    }
+    return server as ServerInfo & { protocol: number };
+  }
+
+  private handleHerdrBridgeEvent(terminalId: string, event: HerdrBridgeEvent): void {
     if (event.type === 'terminal') {
       if (
-        this.activeTerminalId
-        && typeof event.seq === 'number'
+        typeof event.seq === 'number'
         && typeof event.width === 'number'
         && typeof event.height === 'number'
         && typeof event.bytes === 'string'
       ) {
-        this.terminalConnections.get(this.activeTerminalId)?.onFrame({
+        this.terminalConnections.get(terminalId)?.onFrame({
           type: 'terminal.frame',
           seq: event.seq,
           encoding: 'ansi',
@@ -467,12 +501,10 @@ export class HerdrClient {
       return;
     }
     if (event.type === 'closed') {
-      this.bridgeStarted = false;
-      this.bridgeOpening = null;
-      this.activeTerminalId = null;
-      for (const connection of this.terminalConnections.values()) {
-        connection.onClosed?.(event.text || 'Herdr remote-client-bridge closed');
-      }
+      this.terminalBridges.delete(terminalId);
+      this.terminalConnections.get(terminalId)?.onClosed?.(
+        event.text || 'Herdr remote-client-bridge closed',
+      );
     }
   }
 }

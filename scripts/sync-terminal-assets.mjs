@@ -46,14 +46,14 @@ const terminalHtml = `<!doctype html>
       src: url('jetbrains-mono-regular.ttf') format('truetype');
       font-style: normal;
       font-weight: 400;
-      font-display: block;
+      font-display: swap;
     }
     @font-face {
       font-family: 'JetBrains Mono';
       src: url('jetbrains-mono-medium.ttf') format('truetype');
       font-style: normal;
       font-weight: 500;
-      font-display: block;
+      font-display: swap;
     }
     html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090b0a; }
     html { -webkit-text-size-adjust: none; text-size-adjust: none; }
@@ -122,7 +122,10 @@ const terminalHtml = `<!doctype html>
       pendingFrames.delete(sequence);
       window.herdrWriteBase64(encoded);
     };
-    window.herdrReset = () => terminal.reset();
+    window.herdrReset = () => {
+      pendingFrames.clear();
+      terminal.reset();
+    };
     window.herdrConfigure = options => {
       terminal.options.fontSize = Math.max(8, Math.min(16, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
@@ -290,25 +293,27 @@ const terminalHtml = `<!doctype html>
     window.visualViewport?.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('scroll', resize);
     let readySent = false;
-    const finishSetup = () => {
-      terminal.options.fontFamily = terminalFontFamily;
-      terminal.refresh(0, terminal.rows - 1);
+    const announceReady = () => {
       resize();
       if (!readySent) {
         readySent = true;
         send({ type: 'ready' });
       }
     };
+    const refreshFont = () => {
+      terminal.options.fontFamily = terminalFontFamily;
+      terminal.refresh(0, terminal.rows - 1);
+      resize();
+    };
+    announceReady();
     const fontReady = document.fonts?.load
       ? Promise.all([
           document.fonts.load('400 8px "JetBrains Mono"'),
           document.fonts.load('500 8px "JetBrains Mono"'),
         ]).then(() => document.fonts.ready)
       : Promise.resolve();
-    const fontFallback = setTimeout(finishSetup, 1000);
     fontReady.then(() => {
-      clearTimeout(fontFallback);
-      finishSetup();
+      refreshFont();
     }).catch(() => {});
   </script>
 </body>

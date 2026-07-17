@@ -13,7 +13,7 @@ import { terminalHtml } from '../generated/terminalHtml';
 interface Props {
   client: HerdrClient;
   visible: boolean;
-  session: TerminalSession;
+  session: TerminalSession | null;
   preferences: TerminalPreferences;
   compact?: boolean;
   onClose: () => void;
@@ -50,10 +50,14 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
 
 export function TerminalScreen({ client, visible, session, preferences, compact = false, onClose, onStatus }: Props) {
-  const { terminalId, title, status } = session;
+  const terminalId = session?.terminalId || '';
+  const title = session?.title || '';
+  const status = session?.status || 'connecting';
   const webView = useRef<WebViewHandle | null>(null);
+  const readyRef = useRef(false);
+  const pendingFrames = useRef<TerminalFrame[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAttempt = useRef(session.reconnectAttempt);
+  const reconnectAttempt = useRef(session?.reconnectAttempt || 0);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ctrl, setCtrl] = useState<ModifierState>('off');
@@ -68,7 +72,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
 
   const reportStatus = useEffectEvent(onStatus);
 
-  const writeFrame = useEffectEvent((frame: TerminalFrame) => {
+  const injectFrame = (frame: TerminalFrame) => {
     if (typeof frame.final === 'boolean') {
       webView.current?.injectJavaScript(
         `window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}); true;`,
@@ -82,6 +86,14 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
         `window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(chunk)}, ${final}); true;`,
       );
     }
+  };
+
+  const writeFrame = useEffectEvent((frame: TerminalFrame) => {
+    if (!readyRef.current) {
+      pendingFrames.current.push(frame);
+      return;
+    }
+    injectFrame(frame);
   });
 
   const sendInput = async (data: string) => {
@@ -99,14 +111,13 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   };
 
   useEffect(() => {
-    if (!ready || !terminalId) {
-      return;
-    }
+    if (!terminalId) return;
     if (AppState.currentState !== 'active') return;
     let active = true;
+    pendingFrames.current = [];
     setError(null);
     reportStatus('connecting', undefined, reconnectAttempt.current);
-    webView.current?.injectJavaScript('window.herdrReset(); true;');
+    if (readyRef.current) webView.current?.injectJavaScript('window.herdrReset(); true;');
     const scheduleReconnect = (reason: string) => {
       if (!active || AppState.currentState !== 'active') return;
       const nextAttempt = reconnectAttempt.current + 1;
@@ -142,7 +153,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
     };
-  }, [client, connectionGeneration, ready, terminalId]);
+  }, [client, connectionGeneration, terminalId]);
 
   useEffect(() => {
     let previous = AppState.currentState;
@@ -151,9 +162,11 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
       previous = state;
       if (state !== 'active' && wasActive) {
         if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-        client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
-        reportStatus('disconnected', 'Terminal released while the app is in the background.', 0);
-      } else if (state === 'active' && !wasActive) {
+        if (terminalId) {
+          client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
+          reportStatus('disconnected', 'Terminal released while the app is in the background.', 0);
+        }
+      } else if (state === 'active' && !wasActive && terminalId) {
         reconnectAttempt.current = 0;
         setConnectionGeneration(value => value + 1);
       }
@@ -162,8 +175,8 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   }, [client, terminalId]);
 
   useEffect(() => {
-    reconnectAttempt.current = session.reconnectAttempt;
-  }, [session.reconnectAttempt]);
+    reconnectAttempt.current = session?.reconnectAttempt || 0;
+  }, [session?.reconnectAttempt]);
 
   useEffect(() => {
     if (visible && ready) {
@@ -212,12 +225,18 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const handleMessage = async (event: WebViewMessageEvent) => {
     const message = JSON.parse(event.nativeEvent.data);
     if (message.type === 'ready') {
+      readyRef.current = true;
       setReady(true);
+      webView.current?.injectJavaScript('window.herdrReset(); true;');
+      const frames = pendingFrames.current;
+      pendingFrames.current = [];
+      for (const frame of frames) injectFrame(frame);
       return;
     }
     if (message.type === 'input') {
       await sendInput(message.data);
     } else if (message.type === 'resize') {
+      if (!terminalId) return;
       client.resizeTerminal(
         terminalId,
         message.cols,
@@ -249,7 +268,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   };
 
   return (
-    <View style={[styles.page, !visible && styles.hidden]}>
+    <View style={[styles.page, (!visible || !session) && styles.hidden]}>
       {!compact && (
         <View style={styles.statusBar}>
           <View style={styles.liveDot} />
@@ -298,7 +317,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
         onMessage={handleMessage}
         style={styles.webview}
       />
-      {status !== 'connected' && (
+      {session && status !== 'connected' && (
         <View style={styles.connectionOverlay}>
           <View style={[styles.connectionMark, status === 'error' && styles.connectionMarkError]} />
           <Text style={styles.connectionTitle}>

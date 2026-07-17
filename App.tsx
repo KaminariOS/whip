@@ -340,6 +340,7 @@ function AppContent() {
       clearReconnect(runtime);
       runtime.reconnectAttempts = 0;
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
+      runtime.client.prepareTerminalBridge().catch(() => undefined);
       try {
         await ensureEventStream(sessionId, result.value);
       } catch (error) {
@@ -450,6 +451,7 @@ function AppContent() {
       setLiveSessions(current => openLiveHostSession(current, savedHost, sessionId));
       await runtime.client.connect(nextProfile);
       const initial = await runtime.client.snapshot();
+      runtime.client.prepareTerminalBridge().catch(() => undefined);
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
       setLiveSessions(current => {
@@ -594,7 +596,7 @@ function AppContent() {
   };
 
   const closeTerminal = useCallback((sessionId: string, terminalId: string) => {
-    runtimes.current.get(sessionId)?.client.releaseTerminal(terminalId).catch(() => undefined);
+    runtimes.current.get(sessionId)?.client.closeTerminalBridge(terminalId).catch(() => undefined);
     setLiveSessions(current => updateLiveHostTerminals(current, sessionId, terminals => closeTerminalSession(terminals, terminalId)));
   }, []);
 
