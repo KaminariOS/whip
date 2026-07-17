@@ -228,13 +228,61 @@ export function applyLiveHostSnapshot(
     return {
       ...session,
       snapshot,
-      selection: reconcileSelection(session.selection, snapshot),
+      selection: serverFocusSelection(snapshot),
       sync: {
         status: 'synced',
         generation,
         error: null,
         lastSyncedAt: syncedAt,
       },
+    };
+  });
+}
+
+/** Apply a focus event immediately while the authoritative snapshot refresh runs. */
+export function applyLiveHostFocus(
+  state: LiveHostSessionsState,
+  sessionId: string,
+  target: { workspaceId?: string; tabId?: string; paneId?: string },
+): LiveHostSessionsState {
+  return updateSession(state, sessionId, session => {
+    const pane = target.paneId
+      ? session.snapshot.panes.find(item => item.pane_id === target.paneId)
+      : undefined;
+    const tabId = pane?.tab_id ?? target.tabId;
+    const tab = tabId
+      ? session.snapshot.tabs.find(item => item.tab_id === tabId)
+      : undefined;
+    const workspaceId = pane?.workspace_id ?? tab?.workspace_id ?? target.workspaceId;
+    const workspace = workspaceId
+      ? session.snapshot.workspaces.find(item => item.workspace_id === workspaceId)
+      : undefined;
+    if (!workspace) return session;
+
+    const activeTabId = tab?.tab_id ?? workspace.active_tab_id;
+    const focusedPane = pane
+      ?? session.snapshot.panes.find(item => item.tab_id === activeTabId && item.focused)
+      ?? session.snapshot.panes.find(item => item.tab_id === activeTabId);
+    const snapshot: HerdrSnapshot = {
+      ...session.snapshot,
+      workspaces: session.snapshot.workspaces.map(item => ({
+        ...item,
+        focused: item.workspace_id === workspace.workspace_id,
+        active_tab_id: item.workspace_id === workspace.workspace_id ? activeTabId : item.active_tab_id,
+      })),
+      tabs: session.snapshot.tabs.map(item => ({
+        ...item,
+        focused: item.tab_id === activeTabId,
+      })),
+      panes: session.snapshot.panes.map(item => ({
+        ...item,
+        focused: focusedPane ? item.pane_id === focusedPane.pane_id : item.focused,
+      })),
+    };
+    return {
+      ...session,
+      snapshot,
+      selection: serverFocusSelection(snapshot),
     };
   });
 }
@@ -366,23 +414,15 @@ function updateSession(
   return { ...state, sessions };
 }
 
-function reconcileSelection(
-  selection: LiveHostSelection,
-  snapshot: HerdrSnapshot,
-): LiveHostSelection {
-  const workspace = snapshot.workspaces.find(item => item.workspace_id === selection.workspaceId)
-    ?? snapshot.workspaces.find(item => item.focused)
+function serverFocusSelection(snapshot: HerdrSnapshot): LiveHostSelection {
+  const workspace = snapshot.workspaces.find(item => item.focused)
     ?? snapshot.workspaces[0];
   if (!workspace) return { workspaceId: null, tabId: null, paneId: null };
 
-  const tab = snapshot.tabs.find(item => (
-    item.tab_id === selection.tabId && item.workspace_id === workspace.workspace_id
-  )) ?? preferredTab(snapshot, workspace);
+  const tab = preferredTab(snapshot, workspace);
   if (!tab) return { workspaceId: workspace.workspace_id, tabId: null, paneId: null };
 
-  const pane = snapshot.panes.find(item => (
-    item.pane_id === selection.paneId && item.tab_id === tab.tab_id
-  )) ?? preferredPane(snapshot, tab);
+  const pane = preferredPane(snapshot, tab);
   return {
     workspaceId: workspace.workspace_id,
     tabId: tab.tab_id,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -68,6 +68,16 @@ export function SessionScreen({
   const tabs = snapshot.tabs.filter(item => item.workspace_id === workspace?.workspace_id);
   const selectedTab = tabs.find(item => item.tab_id === tabId) || tabs.find(item => item.focused) || tabs[0];
   const panes = snapshot.panes.filter(item => item.tab_id === selectedTab?.tab_id);
+  const serverWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
+  const serverTab = snapshot.tabs.find(item => (
+    item.workspace_id === serverWorkspace?.workspace_id
+      && item.tab_id === serverWorkspace.active_tab_id
+  )) || snapshot.tabs.find(item => item.workspace_id === serverWorkspace?.workspace_id && item.focused);
+  const serverPane = snapshot.panes.find(item => item.tab_id === serverTab?.tab_id && item.focused)
+    || snapshot.panes.find(item => item.tab_id === serverTab?.tab_id);
+  const serverWorkspaceId = serverWorkspace?.workspace_id || '';
+  const serverTabId = serverTab?.tab_id || '';
+  const serverPaneId = serverPane?.pane_id || '';
   const selectedPane = panes.find(item => item.terminal_id === terminalState.activeTerminalId)
     || panes.find(item => item.focused)
     || panes[0];
@@ -98,14 +108,14 @@ export function SessionScreen({
     }
     if (pending?.kind === 'tab') {
       const previousStillPresent = snapshot.tabs.some(item => item.tab_id === pending.previousId);
-      const serverWorkspace = snapshot.workspaces.find(item => item.focused) || workspace;
-      const serverTabs = snapshot.tabs.filter(item => item.workspace_id === serverWorkspace?.workspace_id);
+      const focusedServerWorkspace = snapshot.workspaces.find(item => item.focused) || workspace;
+      const serverTabs = snapshot.tabs.filter(item => item.workspace_id === focusedServerWorkspace?.workspace_id);
       const nextTab = serverTabs.find(item => item.focused)
-        || serverTabs.find(item => item.tab_id === serverWorkspace?.active_tab_id)
+        || serverTabs.find(item => item.tab_id === focusedServerWorkspace?.active_tab_id)
         || serverTabs[0];
       const focusUnchanged = nextTab?.tab_id === pending.previousId;
       if ((pending.mode === 'create' && focusUnchanged) || (pending.mode === 'close' && previousStillPresent)) return;
-      if (serverWorkspace) setWorkspaceId(serverWorkspace.workspace_id);
+      if (focusedServerWorkspace) setWorkspaceId(focusedServerWorkspace.workspace_id);
       setTabId(nextTab?.tab_id || '');
       pendingFocus.current = null;
       return;
@@ -113,6 +123,13 @@ export function SessionScreen({
     if (workspace && workspace.workspace_id !== workspaceId) setWorkspaceId(workspace.workspace_id);
     if (selectedTab && selectedTab.tab_id !== tabId) setTabId(selectedTab.tab_id);
   }, [selectedTab, snapshot.tabs, snapshot.workspaces, tabId, workspace, workspaceId]);
+
+  // Herdr owns focus. Follow focus changes made by the native or another remote client.
+  useEffect(() => {
+    if (!serverWorkspaceId || !serverTabId) return;
+    setWorkspaceId(serverWorkspaceId);
+    setTabId(serverTabId);
+  }, [serverTabId, serverWorkspaceId]);
 
   // Opening a pane from Herd/Agent detail should land in the matching Herdr tab.
   useEffect(() => {
@@ -127,12 +144,16 @@ export function SessionScreen({
     wasVisible.current = visible;
   }, [snapshot.panes, terminalState.activeTerminalId, terminalState.sessions, visible]);
 
-  // A Herdr tab is a live terminal surface. Attach its focused pane immediately.
+  const activateServerPane = useEffectEvent((paneId: string) => {
+    const pane = snapshot.panes.find(item => item.pane_id === paneId);
+    if (pane) onActivateTerminal(pane);
+  });
+
+  // A Herdr tab is a live terminal surface. Attach its server-focused pane immediately.
   useEffect(() => {
-    if (!visible || !selectedTab || panes.length === 0) return;
-    const activeBelongsToTab = panes.some(item => item.terminal_id === terminalState.activeTerminalId);
-    if (!activeBelongsToTab) onActivateTerminal(panes.find(item => item.focused) || panes[0]);
-  }, [onActivateTerminal, panes, selectedTab, terminalState.activeTerminalId, visible]);
+    if (!visible || !serverPaneId) return;
+    activateServerPane(serverPaneId);
+  }, [serverPaneId, visible]);
 
   const run = async (action: () => Promise<void>): Promise<boolean> => {
     setBusy(true);
@@ -171,6 +192,11 @@ export function SessionScreen({
       if (item.workspace_id !== workspace?.workspace_id) await client.focusWorkspace(item.workspace_id);
       await client.focusTab(item.tab_id);
     });
+  };
+
+  const choosePane = (pane: PaneInfo) => {
+    onActivateTerminal(pane);
+    run(() => client.focusPane(pane.pane_id));
   };
 
   const create = async () => {
@@ -326,7 +352,7 @@ export function SessionScreen({
             {panes.map(pane => {
               const active = pane.terminal_id === selectedPane?.terminal_id;
               return (
-                <Pressable key={pane.pane_id} onPress={() => onActivateTerminal(pane)} onLongPress={() => onOpenPane(pane)} style={[styles.pane, active && styles.paneActive]}>
+                <Pressable key={pane.pane_id} onPress={() => choosePane(pane)} onLongPress={() => onOpenPane(pane)} style={[styles.pane, active && styles.paneActive]}>
                   <View style={[styles.paneDot, { backgroundColor: statusColor(pane.agent_status) }]} />
                   <Text numberOfLines={1} style={[styles.paneText, active && styles.paneTextActive]}>{pane.label || pane.display_agent || pane.agent || 'shell'}</Text>
                 </Pressable>

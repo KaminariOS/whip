@@ -4,12 +4,13 @@ import SSHClient, {
 
 import { normalizePrivateKey } from '../lib/privateKey';
 import {
+  apiEvent,
   apiErrorMessage,
   apiRequestLine,
   eventsSubscribeRequest,
   HerdrApiBridgeDecoder,
   sessionSnapshotRequest,
-  type HerdrApiMessage,
+  type HerdrApiEvent,
   type SessionSnapshotResult,
 } from '../lib/herdrApiBridge';
 import { parseJsonResponse, shellQuote } from '../lib/shell';
@@ -20,7 +21,7 @@ import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
-type ApiEventHandler = (message: HerdrApiMessage) => void;
+type ApiEventHandler = (event: HerdrApiEvent) => void;
 
 interface TerminalConnection {
   onFrame: TerminalFrameHandler;
@@ -255,10 +256,11 @@ export class HerdrClient {
     const onData = (data: string) => {
       for (const message of decoder.push(data)) {
         const error = apiErrorMessage(message);
+        const event = apiEvent(message);
         if (error) {
           close(error);
-        } else if ('subscription_id' in message && message.event) {
-          onEvent(message);
+        } else if (event) {
+          onEvent(event);
         } else if ((message as { herdr_android_bridge_closed?: boolean }).herdr_android_bridge_closed) {
           close('Herdr event bridge closed');
         }
@@ -345,6 +347,10 @@ export class HerdrClient {
 
   async focusTab(tabId: string): Promise<void> {
     await this.executeJson(`tab focus ${shellQuote(tabId)}`);
+  }
+
+  async focusPane(paneId: string): Promise<void> {
+    await this.executeJson(`pane focus ${shellQuote(paneId)}`);
   }
 
   async renameTab(tabId: string, label: string): Promise<void> {

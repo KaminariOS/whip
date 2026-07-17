@@ -1,4 +1,5 @@
 import {
+  apiEvent,
   apiErrorMessage,
   apiRequestLine,
   eventsSubscribeRequest,
@@ -55,5 +56,22 @@ describe('Herdr API bridge', () => {
   it('extracts bridge errors', () => {
     expect(apiErrorMessage({ error: { code: 'bad_request', message: 'No session' } })).toBe('No session');
     expect(apiErrorMessage({ id: 'ok', result: {} })).toBeNull();
+  });
+
+  it('decodes direct and legacy-wrapped focus events', () => {
+    expect(apiEvent({
+      event: 'tab.focused',
+      data: { workspace_id: 'w1', tab_id: 't2' },
+    })).toEqual({
+      event: 'tab.focused',
+      data: { workspace_id: 'w1', tab_id: 't2' },
+    });
+    expect(apiEvent({
+      subscription_id: 'focus',
+      event: { event: 'pane.focused', data: { pane_id: 'p2' } },
+    })).toEqual({
+      event: 'pane.focused',
+      data: { pane_id: 'p2' },
+    });
   });
 });
