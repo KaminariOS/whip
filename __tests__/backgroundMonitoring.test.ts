@@ -40,12 +40,15 @@ describe('Android background monitoring', () => {
     expect(app).toContain(': stopBackgroundMonitoring()');
   });
 
-  it('arms shake detection only for an active agent alert', () => {
-    expect(alerts).toContain('armShakeToStopAlert(notificationIdentifier');
+  it('runs an insistent alert only while its notification is active', () => {
+    expect(alerts).toContain('armPersistentAgentAlert(');
     expect(module).toContain('Sensor.TYPE_ACCELEROMETER');
-    expect(module).toContain('mainHandler.postDelayed(');
+    expect(module).toContain('AudioAttributes.USAGE_ALARM');
+    expect(module).toContain('isLooping = true');
+    expect(module).toContain('notificationManager.activeNotifications.any { it.tag == identifier }');
     expect(module).toContain('notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)');
     expect(module).toContain('sensorManager.unregisterListener(this)');
+    expect(module).toContain('MAX_ALERT_WINDOW_MS = 60_000L');
   });
 
   it('does not close Herdr event monitoring when the activity is backgrounded', () => {

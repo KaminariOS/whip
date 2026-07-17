@@ -6,6 +6,10 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -26,8 +30,21 @@ class HerdrBackgroundModule(
   private val notificationManager = context.getSystemService(NotificationManager::class.java)
   private val mainHandler = Handler(Looper.getMainLooper())
   private var activeAlertIdentifier: String? = null
+  private var activeAlertChannelId: String? = null
+  private var mediaPlayer: MediaPlayer? = null
   private var lastShakeAtMs = 0L
-  private val disarmRunnable = Runnable { disarmShakeDetector() }
+  private val startSoundRunnable = Runnable { startLoopingSound() }
+  private val stopAlertRunnable = Runnable { stopPersistentAlert("Agent alert timed out") }
+  private val notificationWatchRunnable = object : Runnable {
+    override fun run() {
+      val identifier = activeAlertIdentifier ?: return
+      if (notificationManager.activeNotifications.any { it.tag == identifier }) {
+        mainHandler.postDelayed(this, NOTIFICATION_CHECK_INTERVAL_MS)
+      } else {
+        stopPersistentAlert("Agent notification was dismissed")
+      }
+    }
+  }
 
   override fun getName(): String = "HerdrBackground"
 
@@ -60,8 +77,9 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
-  fun armShakeToStop(
+  fun armPersistentAlert(
     notificationIdentifier: String,
+    channelId: String,
     timeoutMs: Double,
     promise: Promise,
   ) {
@@ -69,8 +87,9 @@ class HerdrBackgroundModule(
       try {
         val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
           ?: throw IllegalStateException("This device has no accelerometer")
-        disarmShakeDetector()
+        stopPersistentAlert()
         activeAlertIdentifier = notificationIdentifier
+        activeAlertChannelId = channelId
         lastShakeAtMs = 0L
         val registered = sensorManager.registerListener(
           this,
@@ -79,14 +98,16 @@ class HerdrBackgroundModule(
           mainHandler,
         )
         if (!registered) throw IllegalStateException("Could not start accelerometer listener")
+        mainHandler.postDelayed(startSoundRunnable, SOUND_START_DELAY_MS)
+        mainHandler.postDelayed(notificationWatchRunnable, NOTIFICATION_POST_GRACE_MS)
         mainHandler.postDelayed(
-          disarmRunnable,
-          timeoutMs.toLong().coerceIn(MIN_SHAKE_WINDOW_MS, MAX_SHAKE_WINDOW_MS),
+          stopAlertRunnable,
+          timeoutMs.toLong().coerceIn(MIN_ALERT_WINDOW_MS, MAX_ALERT_WINDOW_MS),
         )
         promise.resolve(null)
       } catch (error: Throwable) {
-        disarmShakeDetector()
-        promise.reject("E_SHAKE_TO_STOP_ARM", error)
+        stopPersistentAlert()
+        promise.reject("E_PERSISTENT_ALERT_ARM", error)
       }
     }
   }
@@ -104,21 +125,73 @@ class HerdrBackgroundModule(
     val identifier = activeAlertIdentifier ?: return
     notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
     cancelVibration()
-    Log.i(TAG, "Shake detected; stopped agent alert $identifier")
-    disarmShakeDetector()
+    stopPersistentAlert("Shake detected; stopped agent alert $identifier")
   }
 
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
   override fun invalidate() {
-    mainHandler.post { disarmShakeDetector() }
+    mainHandler.post { stopPersistentAlert() }
     super.invalidate()
   }
 
-  private fun disarmShakeDetector() {
-    mainHandler.removeCallbacks(disarmRunnable)
+  private fun startLoopingSound() {
+    val channelId = activeAlertChannelId ?: return
+    val sound = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      notificationManager.getNotificationChannel(channelId)?.sound
+    } else {
+      RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+    }
+    if (sound == null) {
+      Log.i(TAG, "Agent alert channel is muted; persistent sound not started")
+      return
+    }
+    val audioManager = context.getSystemService(AudioManager::class.java)
+    if (audioManager.getStreamVolume(AudioManager.STREAM_ALARM) == 0) {
+      Log.i(TAG, "Alarm volume is zero; persistent sound not started")
+      return
+    }
+    try {
+      mediaPlayer = MediaPlayer().apply {
+        setDataSource(context, sound)
+        setAudioAttributes(
+          AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build(),
+        )
+        isLooping = true
+        prepare()
+        start()
+      }
+      Log.i(TAG, "Persistent agent alert sound started")
+    } catch (error: Throwable) {
+      Log.w(TAG, "Could not start persistent agent alert sound", error)
+      releaseMediaPlayer()
+    }
+  }
+
+  private fun stopPersistentAlert(reason: String? = null) {
+    mainHandler.removeCallbacks(startSoundRunnable)
+    mainHandler.removeCallbacks(stopAlertRunnable)
+    mainHandler.removeCallbacks(notificationWatchRunnable)
     sensorManager.unregisterListener(this)
     activeAlertIdentifier = null
+    activeAlertChannelId = null
+    releaseMediaPlayer()
+    reason?.let { Log.i(TAG, it) }
+  }
+
+  private fun releaseMediaPlayer() {
+    mediaPlayer?.let { player ->
+      try {
+        player.stop()
+      } catch (_: IllegalStateException) {
+        // The player may not have reached its prepared state.
+      }
+      player.release()
+    }
+    mediaPlayer = null
   }
 
   @Suppress("DEPRECATION")
@@ -131,11 +204,14 @@ class HerdrBackgroundModule(
   }
 
   companion object {
-    private const val TAG = "HerdrShakeToStop"
+    private const val TAG = "HerdrPersistentAlert"
     private const val EXPO_NOTIFICATION_ID = 0
     private const val SHAKE_GRAVITY_THRESHOLD = 2.7f
     private const val SHAKE_SLOP_MS = 750L
-    private const val MIN_SHAKE_WINDOW_MS = 1_000L
-    private const val MAX_SHAKE_WINDOW_MS = 60_000L
+    private const val SOUND_START_DELAY_MS = 800L
+    private const val NOTIFICATION_POST_GRACE_MS = 1_500L
+    private const val NOTIFICATION_CHECK_INTERVAL_MS = 300L
+    private const val MIN_ALERT_WINDOW_MS = 1_000L
+    private const val MAX_ALERT_WINDOW_MS = 60_000L
   }
 }

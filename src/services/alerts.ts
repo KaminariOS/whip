@@ -5,7 +5,7 @@ import { Platform, Vibration } from 'react-native';
 import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
-import { armShakeToStopAlert } from './backgroundMonitoring';
+import { armPersistentAgentAlert } from './backgroundMonitoring';
 
 const CHANNEL_ID = 'agent-state-v3';
 const ALERT_VIBRATION_PATTERN = [
@@ -13,7 +13,7 @@ const ALERT_VIBRATION_PATTERN = [
   300, 100, 300, 100, 300, 100, 300, 2000,
   300, 100, 300, 100, 300, 100, 300, 2000,
 ];
-const SHAKE_TO_STOP_WINDOW_MS = 12_000;
+const PERSISTENT_ALERT_TIMEOUT_MS = 60_000;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -61,7 +61,11 @@ export async function alertAgent(
     trigger: { channelId: CHANNEL_ID },
   });
   if (Platform.OS === 'android') {
-    armShakeToStopAlert(notificationIdentifier, SHAKE_TO_STOP_WINDOW_MS).catch(() => undefined);
+    armPersistentAgentAlert(
+      notificationIdentifier,
+      CHANNEL_ID,
+      PERSISTENT_ALERT_TIMEOUT_MS,
+    ).catch(() => undefined);
   }
   if (speak) {
     Speech.stop();
