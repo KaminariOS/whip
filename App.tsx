@@ -24,6 +24,7 @@ import {
   applyLiveHostFocus,
   applyLiveHostSnapshot,
   beginLiveHostSync,
+  canRefreshLiveHostSession,
   closeLiveHostSession,
   emptyLiveHostSessions,
   failLiveHostSync,
@@ -411,11 +412,13 @@ function AppContent() {
 
   async function refreshHost(sessionId: string): Promise<void> {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime) return;
+    const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+    if (!runtime || !canRefreshLiveHostSession(session)) return;
     const result = await runtime.refresh.request();
     if (result.status === 'applied') {
       clearReconnect(runtime);
       runtime.reconnectAttempts = 0;
+      setConnectError(null);
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
       runtime.client.prepareTerminalBridge().catch(() => undefined);
       try {
@@ -426,9 +429,9 @@ function AppContent() {
       }
     } else if (result.status === 'failed') {
       setLiveSessions(current => {
-        const session = findLiveHostSession(current, sessionId);
-        if (!session) return current;
-        return failLiveHostSync(current, sessionId, session.sync.generation, String(result.error));
+        const currentSession = findLiveHostSession(current, sessionId);
+        if (!currentSession) return current;
+        return failLiveHostSync(current, sessionId, currentSession.sync.generation, String(result.error));
       });
       scheduleReconnect(sessionId, result.error);
     }
