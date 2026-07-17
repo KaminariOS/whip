@@ -8,6 +8,11 @@ describe('Android background monitoring', () => {
     resolve(__dirname, '../android/app/src/main/java/com/herdr/HerdrBackgroundService.kt'),
     'utf8',
   );
+  const module = readFileSync(
+    resolve(__dirname, '../android/app/src/main/java/com/herdr/HerdrBackgroundModule.kt'),
+    'utf8',
+  );
+  const alerts = readFileSync(resolve(__dirname, '../src/services/alerts.ts'), 'utf8');
   const application = readFileSync(
     resolve(__dirname, '../android/app/src/main/java/com/herdr/MainApplication.kt'),
     'utf8',
@@ -33,6 +38,14 @@ describe('Android background monitoring', () => {
     expect(application).toContain('add(HerdrBackgroundPackage())');
     expect(app).toContain('startBackgroundMonitoring(hostCount)');
     expect(app).toContain(': stopBackgroundMonitoring()');
+  });
+
+  it('arms shake detection only for an active agent alert', () => {
+    expect(alerts).toContain('armShakeToStopAlert(notificationIdentifier');
+    expect(module).toContain('Sensor.TYPE_ACCELEROMETER');
+    expect(module).toContain('mainHandler.postDelayed(');
+    expect(module).toContain('notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)');
+    expect(module).toContain('sensorManager.unregisterListener(this)');
   });
 
   it('does not close Herdr event monitoring when the activity is backgrounded', () => {
