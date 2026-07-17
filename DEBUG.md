@@ -127,6 +127,40 @@ cd android
   -PreactNativeArchitectures=x86_64
 ```
 
+### Reuse the writable Android SDK cache
+
+This machine already has a writable SDK cache at:
+
+```text
+/home/kosumi/repos/.android-sdk-herdr
+```
+
+It contains Build Tools 36, CMake 3.22.1, and the 2 GB NDK
+`27.1.12297006` used by previous successful builds. If entering `nix develop`
+would download the Android closure again, compile directly with the cached SDK
+and an installed Nix JDK 17:
+
+```bash
+cd android
+env \
+  JAVA_HOME=/nix/store/<jdk17-path> \
+  ANDROID_HOME=/home/kosumi/repos/.android-sdk-herdr \
+  ANDROID_SDK_ROOT=/home/kosumi/repos/.android-sdk-herdr \
+  ANDROID_NDK_ROOT=/home/kosumi/repos/.android-sdk-herdr/ndk/27.1.12297006 \
+  GRADLE_OPTS=-Dorg.gradle.project.android.aapt2FromMavenOverride=/home/kosumi/repos/.android-sdk-herdr/build-tools/36.0.0/aapt2 \
+  ./gradlew :app:installDebug --console=plain \
+  -PreactNativeArchitectures=x86_64
+```
+
+Find the current JDK 17 store path instead of copying a stale hash:
+
+```bash
+fd -t d 'openjdk-17' /nix/store --max-depth 1
+```
+
+The full JDK path must be used. A partially realized `openjdk-headless` path may
+fail to start with a missing `libjli.so` until its complete Nix closure exists.
+
 Use `x86_64` for this emulator. A physical ARM64 phone needs the matching architecture or the normal multi-architecture build.
 
 ## Relaunch deterministically

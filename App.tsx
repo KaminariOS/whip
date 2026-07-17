@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
-import { Alert, AppState, BackHandler, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, BackHandler, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
@@ -39,6 +39,7 @@ import {
   selectMobileTab,
 } from './src/mobileNavigation';
 import { alertAgent, prepareAlerts } from './src/services/alerts';
+import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
 import {
   defaultDevicePreferences,
   loadDevicePreferences,
@@ -89,6 +90,20 @@ interface ConnectOptions {
   markUsed?: boolean;
 }
 
+let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;
+
+function disposeRuntimes(target: Map<string, LiveRuntime>): void {
+  for (const runtime of target.values()) {
+    if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
+    if (runtime.eventReconnectTimer) clearTimeout(runtime.eventReconnectTimer);
+    if (runtime.eventRefreshTimer) clearTimeout(runtime.eventRefreshTimer);
+    runtime.refresh.invalidate();
+    runtime.client.releaseAllTerminals()
+      .finally(() => runtime.client.disconnect());
+  }
+  target.clear();
+}
+
 function App() {
   return (
     <SafeAreaProvider>
@@ -126,6 +141,13 @@ function AppContent() {
   hostsRef.current = hosts;
   alertsEnabledRef.current = alertsEnabled;
   ttsEnabledRef.current = ttsEnabled;
+
+  useEffect(() => {
+    const retained = retainedBackgroundRuntimes;
+    if (!retained) return;
+    retainedBackgroundRuntimes = null;
+    disposeRuntimes(retained);
+  }, []);
 
   useEffect(() => {
     loadHostProfiles()
@@ -174,16 +196,25 @@ function AppContent() {
     }).catch(() => undefined);
   }, [liveHostRestoreComplete, liveSessions]);
 
+  useEffect(() => {
+    if (!liveHostRestoreComplete) return;
+    const hostCount = liveSessions.sessions.length;
+    const operation = alertsEnabled && hostCount > 0
+      ? startBackgroundMonitoring(hostCount)
+      : stopBackgroundMonitoring();
+    operation.catch(error => setConnectError(`Background monitoring unavailable: ${String(error)}`));
+  }, [alertsEnabled, liveHostRestoreComplete, liveSessions.sessions.length]);
+
   useEffect(() => () => {
-    for (const runtime of runtimes.current.values()) {
-      if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
-      if (runtime.eventReconnectTimer) clearTimeout(runtime.eventReconnectTimer);
-      if (runtime.eventRefreshTimer) clearTimeout(runtime.eventRefreshTimer);
-      runtime.refresh.invalidate();
-      runtime.client.releaseAllTerminals()
-        .finally(() => runtime.client.disconnect());
+    if (
+      Platform.OS === 'android'
+      && alertsEnabledRef.current
+      && liveSessionsRef.current.sessions.length > 0
+    ) {
+      retainedBackgroundRuntimes = runtimes.current;
+      return;
     }
-    runtimes.current.clear();
+    disposeRuntimes(runtimes.current);
   }, []);
 
   const clearReconnect = (runtime: LiveRuntime) => {
@@ -200,7 +231,7 @@ function AppContent() {
 
   const scheduleEventReconnect = (sessionId: string, cause: unknown) => {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime || runtime.eventReconnectTimer || AppState.currentState !== 'active') return;
+    if (!runtime || runtime.eventReconnectTimer) return;
     const decision = nextReconnect(runtime.eventReconnectAttempts);
     if (decision.action === 'stop') {
       runtime.eventReconnectAttempts = 0;
@@ -224,7 +255,7 @@ function AppContent() {
     force = false,
   ): Promise<void> {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime || AppState.currentState !== 'active') return;
+    if (!runtime) return;
     if (!snapshot.server.running) {
       clearEventTimers(runtime);
       runtime.eventStatus = 'closed';
@@ -367,7 +398,6 @@ function AppContent() {
   }
 
   const resumeLiveConnections = useEffectEvent(() => {
-    if (AppState.currentState !== 'active') return;
     for (const sessionId of runtimes.current.keys()) {
       refreshHost(sessionId).catch(() => undefined);
     }
@@ -378,12 +408,6 @@ function AppContent() {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
         resumeLiveConnections();
-      } else {
-        for (const runtime of runtimes.current.values()) {
-          clearEventTimers(runtime);
-          runtime.eventStatus = 'closed';
-          runtime.client.closeEventStream();
-        }
       }
     });
     return () => {
