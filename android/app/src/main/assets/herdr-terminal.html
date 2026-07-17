@@ -239,11 +239,30 @@
       return true;
     };
     let touch = null;
+    let pinch = null;
     let lastTap = null;
     let longPressTimer = null;
+    const touchDistance = touches => Math.hypot(
+      touches[1].clientX - touches[0].clientX,
+      touches[1].clientY - touches[0].clientY,
+    );
     document.getElementById('terminal').addEventListener('touchstart', event => {
       if (event.target.closest?.('#selection-toolbar')) return;
-      if (event.touches.length !== 1) { touch = null; return; }
+      if (event.touches.length === 2) {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        event.preventDefault();
+        event.stopPropagation();
+        hideToolbar();
+        touch = null;
+        lastTap = null;
+        pinch = {
+          distance: Math.max(1, touchDistance(event.touches)),
+          initialFontSize: terminal.options.fontSize,
+          fontSize: terminal.options.fontSize,
+        };
+        return;
+      }
+      if (event.touches.length !== 1) { touch = null; pinch = null; return; }
       const point = event.touches[0];
       hideToolbar();
       touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false };
@@ -257,6 +276,23 @@
       }, 420);
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchmove', event => {
+      if (pinch && event.touches.length === 2) {
+        event.preventDefault();
+        event.stopPropagation();
+        const ratio = touchDistance(event.touches) / pinch.distance;
+        const fontSize = Math.max(8, Math.min(16, Math.round(pinch.initialFontSize * ratio)));
+        if (fontSize !== pinch.fontSize) {
+          pinch.fontSize = fontSize;
+          terminal.options.fontSize = fontSize;
+          resize();
+        }
+        return;
+      }
+      if (pinch) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (!touch || event.touches.length !== 1) return;
       const point = event.touches[0];
       if (!touch.moved && Math.hypot(point.clientX - touch.x, point.clientY - touch.y) < 10) return;
@@ -273,6 +309,18 @@
       if (lines !== 0) send({ type: 'scroll', direction: lines > 0 ? 'up' : 'down', lines: Math.abs(lines) });
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchend', event => {
+      if (pinch) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.touches.length < 2) {
+          const fontSize = pinch.fontSize;
+          pinch = null;
+          terminal.options.fontSize = fontSize;
+          resize();
+          send({ type: 'font-size-change', fontSize });
+        }
+        return;
+      }
       if (!touch) return;
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
       const point = event.changedTouches[0];
@@ -297,6 +345,7 @@
       if (longPressTimer) clearTimeout(longPressTimer);
       longPressTimer = null;
       touch = null;
+      pinch = null;
     }, { capture: true });
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);
