@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import * as Notifications from 'expo-notifications';
 import { Alert, AppState, BackHandler, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
@@ -14,6 +15,10 @@ import { SessionScreen } from './src/components/SessionScreen';
 import { SettingsScreen } from './src/components/SettingsScreen';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import { nextReconnect } from './src/lib/reconnectPolicy';
+import {
+  parseAgentNotificationTarget,
+  resolveAgentNotificationTarget,
+} from './src/lib/notificationNavigation';
 import { createRefreshCoordinator, type RefreshCoordinator } from './src/lib/refreshCoordinator';
 import {
   applyLiveHostFocus,
@@ -121,6 +126,8 @@ function AppContent() {
   const restoreStarted = useRef(false);
   const alertsEnabledRef = useRef(true);
   const ttsEnabledRef = useRef(false);
+  const handledNotificationIdRef = useRef<string | null>(null);
+  const [notificationResponse, setNotificationResponse] = useState<Notifications.NotificationResponse | null>(null);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
@@ -147,6 +154,24 @@ function AppContent() {
     if (!retained) return;
     retainedBackgroundRuntimes = null;
     disposeRuntimes(retained);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let receivedResponse = false;
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      receivedResponse = true;
+      setNotificationResponse(response);
+    });
+    Notifications.getLastNotificationResponseAsync()
+      .then(response => {
+        if (active && !receivedResponse && response) setNotificationResponse(response);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -357,7 +382,10 @@ function AppContent() {
           for (const agent of snapshot.agents) {
             const previous = runtime.previousStatuses.get(agent.pane_id);
             if (previous && previous !== agent.agent_status && ['blocked', 'done'].includes(agent.agent_status)) {
-              alertAgent(agent, ttsEnabledRef.current).catch(() => undefined);
+              alertAgent(agent, ttsEnabledRef.current, {
+                hostId: sessionId,
+                paneId: agent.pane_id,
+              }).catch(() => undefined);
             }
           }
         }
@@ -622,7 +650,7 @@ function AppContent() {
     setLiveSessions(current => updateLiveHostTerminals(current, sessionId, terminals => openTerminalSession(terminals, pane)));
   }, []);
 
-  const openPaneTerminal = (sessionId: string, pane: PaneInfo) => {
+  const openPaneTerminal = (sessionId: string, pane: PaneInfo, focusAgent = false) => {
     setSelectedPaneId(null);
     setLiveSessions(current => {
       const activated = updateLiveHostTerminals(current, sessionId, terminals => openTerminalSession(terminals, pane));
@@ -630,10 +658,35 @@ function AppContent() {
     });
     selectLiveHost(sessionId, 'terminal');
     const runtime = runtimes.current.get(sessionId);
-    runtime?.client.focusPane(pane.pane_id)
-      .then(() => refreshHost(sessionId))
+    const focus = focusAgent
+      ? runtime?.client.focusAgent(pane.pane_id)
+      : runtime?.client.focusPane(pane.pane_id);
+    focus?.then(() => refreshHost(sessionId))
       .catch(() => undefined);
   };
+
+  const openNotificationTarget = useEffectEvent((): boolean => {
+    if (!notificationResponse) return false;
+    const target = parseAgentNotificationTarget(
+      notificationResponse,
+      Notifications.DEFAULT_ACTION_IDENTIFIER,
+    );
+    if (!target || handledNotificationIdRef.current === target.notificationId) return false;
+    const resolved = resolveAgentNotificationTarget(liveSessionsRef.current, target);
+    if (!resolved) return false;
+    handledNotificationIdRef.current = target.notificationId;
+    setEditorProfile(null);
+    setConnectError(null);
+    openPaneTerminal(resolved.sessionId, resolved.pane, true);
+    Notifications.clearLastNotificationResponse();
+    setNotificationResponse(null);
+    return true;
+  });
+
+  useEffect(() => {
+    if (!liveHostRestoreComplete || !notificationResponse) return;
+    openNotificationTarget();
+  }, [liveHostRestoreComplete, liveSessions, notificationResponse]);
 
   const closeTerminal = useCallback((sessionId: string, terminalId: string) => {
     runtimes.current.get(sessionId)?.client.closeTerminalBridge(terminalId).catch(() => undefined);
