@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- AsyncStorage databases contain host metadata, but no SSH credentials. -->
+    <include domain="database" path="." />
+</full-backup-content>

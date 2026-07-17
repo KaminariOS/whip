@@ -3,6 +3,9 @@
     "name": "HerdR Remote",
     "slug": "herdr-remote",
     "version": "0.1.0",
+    "android": {
+      "allowBackup": true
+    },
     "web": {
       "bundler": "metro"
     },
