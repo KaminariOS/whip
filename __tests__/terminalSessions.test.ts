@@ -2,6 +2,7 @@ import {
   closeTerminalSession,
   emptyTerminalSessions,
   openTerminalSession,
+  reconcileTerminalSessions,
   selectTerminalSession,
   updateTerminalSession,
 } from '../src/terminalSessions';
@@ -61,5 +62,34 @@ describe('terminal session state', () => {
 
     expect(failed.sessions[0]).toMatchObject({ status: 'error', error: 'connection lost', reconnectAttempt: 2 });
     expect(failed.sessions[1]).toMatchObject({ status: 'connecting', reconnectAttempt: 0 });
+  });
+
+  test('removes closed panes and keeps surviving renderer state', () => {
+    const first = openTerminalSession(emptyTerminalSessions, pane('term-1', 'pane-1', 'api'));
+    const second = openTerminalSession(first, pane('term-2', 'pane-2', 'tests'));
+    const connected = updateTerminalSession(second, 'term-2', { status: 'connected' });
+    const reconciled = reconcileTerminalSessions(connected, [pane('term-2', 'pane-2b', 'renamed')]);
+
+    expect(reconciled.sessions).toEqual([expect.objectContaining({
+      terminalId: 'term-2',
+      paneId: 'pane-2b',
+      title: 'renamed',
+      status: 'connected',
+    })]);
+    expect(reconciled.activeTerminalId).toBe('term-2');
+  });
+
+  test('selects the nearest renderer when the active pane disappears', () => {
+    const one = openTerminalSession(emptyTerminalSessions, pane('term-1', 'pane-1', 'one'));
+    const two = openTerminalSession(one, pane('term-2', 'pane-2', 'two'));
+    const three = openTerminalSession(two, pane('term-3', 'pane-3', 'three'));
+    const selected = selectTerminalSession(three, 'term-2');
+    const reconciled = reconcileTerminalSessions(selected, [
+      pane('term-1', 'pane-1', 'one'),
+      pane('term-3', 'pane-3', 'three'),
+    ]);
+
+    expect(reconciled.sessions.map(session => session.terminalId)).toEqual(['term-1', 'term-3']);
+    expect(reconciled.activeTerminalId).toBe('term-3');
   });
 });
