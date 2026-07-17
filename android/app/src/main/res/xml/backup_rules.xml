@@ -2,4 +2,6 @@
 <full-backup-content>
     <!-- AsyncStorage databases contain host metadata, but no SSH credentials. -->
     <include domain="database" path="." />
+    <!-- Only user-selected terminal backgrounds are backed up from app files. -->
+    <include domain="file" path="terminal-backgrounds/" />
 </full-backup-content>

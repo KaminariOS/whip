@@ -98,7 +98,7 @@ function ValueRow({ title, value, onDecrease, onIncrease, divided = false, disab
 function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {
   return (
     <View className="border-t border-border p-3.5">
-      <View className="mb-3"><Text className="text-[15px] font-semibold leading-5">Background image</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">A local image stored only on this device.</Text></View>
+      <View className="mb-3"><Text className="text-[15px] font-semibold leading-5">Background image</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">Stored privately and included in Android backup.</Text></View>
       <View className="relative h-28 overflow-hidden rounded-md bg-[#212121]">
         {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
         {uri ? <View className="absolute inset-0" style={{ backgroundColor: `rgba(24, 24, 24, ${dimming / 100})` }} /> : null}

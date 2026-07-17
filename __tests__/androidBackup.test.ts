@@ -25,12 +25,14 @@ describe('Android host backup', () => {
     expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
   });
 
-  it('backs up AsyncStorage databases without backing up Keystore-encrypted credentials', () => {
+  it('backs up AsyncStorage and terminal backgrounds without backing up credentials', () => {
     expect(legacyRules).toContain('<include domain="database" path="." />');
     expect(extractionRules.match(/<include domain="database" path="\." \/>/g)).toHaveLength(2);
+    expect(legacyRules).toContain('<include domain="file" path="terminal-backgrounds/" />');
+    expect(extractionRules.match(/<include domain="file" path="terminal-backgrounds\/" \/>/g)).toHaveLength(2);
 
     for (const rules of [legacyRules, extractionRules]) {
-      expect(rules).not.toContain('domain="file"');
+      expect(rules).not.toContain('domain="file" path="."');
       expect(rules).not.toContain('domain="sharedpref"');
       expect(rules).not.toContain('domain="root"');
     }

@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { AppTab } from '../types';
+import {
+  migrateTerminalBackgroundImage,
+  removeTerminalBackgroundImage,
+} from './terminalBackground';
 
 const DEVICE_PREFERENCES_KEY = 'herdr.device.preferences.v3';
 const LEGACY_DEVICE_PREFERENCES_KEYS = [
@@ -42,12 +46,31 @@ export const defaultDevicePreferences: DevicePreferences = {
 
 export async function loadDevicePreferences(): Promise<DevicePreferences> {
   const current = await AsyncStorage.getItem(DEVICE_PREFERENCES_KEY);
-  if (current) return parseDevicePreferences(current);
+  if (current) return migrateDevicePreferences(parseDevicePreferences(current));
   for (const key of LEGACY_DEVICE_PREFERENCES_KEYS) {
     const value = await AsyncStorage.getItem(key);
-    if (value) return parseDevicePreferences(value, true);
+    if (value) return migrateDevicePreferences(parseDevicePreferences(value, true));
   }
   return defaultDevicePreferences;
+}
+
+async function migrateDevicePreferences(preferences: DevicePreferences): Promise<DevicePreferences> {
+  const previousUri = preferences.terminal.backgroundImageUri;
+  try {
+    const backgroundImageUri = await migrateTerminalBackgroundImage(previousUri);
+    if (backgroundImageUri === previousUri) return preferences;
+
+    const migrated = {
+      ...preferences,
+      terminal: { ...preferences.terminal, backgroundImageUri },
+    };
+    await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(migrated));
+    await removeTerminalBackgroundImage(previousUri);
+    return migrated;
+  } catch {
+    // Keep using the previous setting and retry the migration next launch.
+    return preferences;
+  }
 }
 
 function parseDevicePreferences(value: string, migratingLegacy = false): DevicePreferences {
