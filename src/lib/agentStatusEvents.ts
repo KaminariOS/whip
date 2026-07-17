@@ -1,4 +1,4 @@
-import type { AgentInfo, AgentStatus } from '../types';
+import type { AgentInfo, AgentStatus, TabInfo } from '../types';
 
 const AGENT_STATUSES = new Set<AgentStatus>([
   'idle',
@@ -24,6 +24,21 @@ export function shouldNotifyAgentTransition(
   return appIsBackgrounded
     && next === 'idle'
     && (previous === 'working' || previous === 'blocked');
+}
+
+export function tabNameForAgent(
+  agent: Pick<AgentInfo, 'tab_id'>,
+  tabs: TabInfo[],
+): string {
+  const label = tabs.find(tab => tab.tab_id === agent.tab_id)?.label.trim();
+  return label || agent.tab_id;
+}
+
+export function agentNotificationTitle(agent: AgentInfo, tabName?: string): string {
+  const name = agent.display_agent || agent.name || agent.agent || agent.pane_id;
+  const action = agent.agent_status === 'blocked' ? `${name} needs you` : `${name} finished`;
+  const label = tabName?.trim();
+  return label ? `${label} · ${action}` : action;
 }
 
 export function agentFromStatusEvent(

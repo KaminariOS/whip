@@ -4,8 +4,14 @@ import { Platform, Vibration } from 'react-native';
 
 import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
+import { agentNotificationTitle } from '../lib/agentStatusEvents';
 
-const CHANNEL_ID = 'agent-state';
+const CHANNEL_ID = 'agent-state-v3';
+const ALERT_VIBRATION_PATTERN = [
+  300, 100, 300, 100, 300, 100, 300, 2000,
+  300, 100, 300, 100, 300, 100, 300, 2000,
+  300, 100, 300, 100, 300, 100, 300, 2000,
+];
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -13,6 +19,7 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
     shouldShowBanner: true,
     shouldShowList: true,
+    priority: Notifications.AndroidNotificationPriority.MAX,
   }),
 });
 
@@ -21,7 +28,10 @@ export async function prepareAlerts(): Promise<void> {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Agent state',
       importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 120, 90, 180],
+      bypassDnd: true,
+      enableLights: true,
+      enableVibrate: true,
+      vibrationPattern: ALERT_VIBRATION_PATTERN,
     });
   }
   await Notifications.requestPermissionsAsync();
@@ -31,18 +41,18 @@ export async function alertAgent(
   agent: AgentInfo,
   speak: boolean,
   target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
+  tabName?: string,
 ): Promise<void> {
-  const name = agent.display_agent || agent.name || agent.agent || agent.pane_id;
-  const blocked = agent.agent_status === 'blocked';
-  const title = blocked ? `${name} needs you` : `${name} finished`;
+  const title = agentNotificationTitle(agent, tabName);
   const body = agent.title || agent.custom_status || `Agent is ${agent.agent_status}`;
 
-  Vibration.vibrate(blocked ? [0, 100, 90, 180] : [0, 80]);
+  if (Platform.OS !== 'android') Vibration.vibrate();
   await Notifications.scheduleNotificationAsync({
     content: {
       title,
       body,
       sound: 'default',
+      vibrate: ALERT_VIBRATION_PATTERN,
       priority: Notifications.AndroidNotificationPriority.MAX,
       data: target,
     },

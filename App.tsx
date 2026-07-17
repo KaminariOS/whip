@@ -22,6 +22,7 @@ import { Text } from './src/components/ui/text';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import {
   agentFromStatusEvent,
+  tabNameForAgent,
   agentStatusFromEvent,
   shouldNotifyAgentTransition,
 } from './src/lib/agentStatusEvents';
@@ -345,7 +346,7 @@ function AppContent() {
             alertAgent(agent, ttsEnabledRef.current, {
               hostId: sessionId,
               paneId,
-            }).catch(() => undefined);
+            }, session ? tabNameForAgent(agent, session.snapshot.tabs) : undefined).catch(() => undefined);
           }
           if (agentStatus) runtime.previousStatuses?.set(paneId, agentStatus);
         }
@@ -432,7 +433,7 @@ function AppContent() {
               alertAgent(agent, ttsEnabledRef.current, {
                 hostId: sessionId,
                 paneId: agent.pane_id,
-              }).catch(() => undefined);
+              }, tabNameForAgent(agent, snapshot.tabs)).catch(() => undefined);
             }
           }
         }
