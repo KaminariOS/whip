@@ -2,20 +2,21 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   Alert,
-  Pressable,
   ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 
+import { cn } from '@/src/lib/utils';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { colors, statusColor } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo, WorkspaceInfo } from '../types';
+import { hapticPress } from './app-ui';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Text } from './ui/text';
 import { TerminalScreen } from './TerminalScreen';
 
 interface Props {
@@ -278,59 +279,55 @@ export function SessionScreen({
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible ? 'auto' : 'none'}
-      style={[styles.page, !visible && styles.hidden]}>
-      <View style={styles.topBar}>
+      className={cn('flex-1 bg-[#212121]', !visible && 'absolute inset-0 opacity-0')}>
+      <View className="h-12 flex-row border-b border-[#424242] bg-[#181818]">
         {showExit && (
-          <Pressable accessibilityLabel="Back to herd" onPress={onExit} style={styles.back}>
+          <Button accessibilityLabel="Back to herd" className="h-12 w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
             <Ionicons name="chevron-back" size={21} color={colors.text} />
-          </Pressable>
+          </Button>
         )}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sessionScroll} contentContainerStyle={styles.sessionRail}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5">
           {snapshot.workspaces.map(item => {
             const active = item.workspace_id === workspace?.workspace_id;
             return (
-              <View key={item.workspace_id} style={[styles.sessionChip, active && styles.sessionChipActive]}>
-                <Pressable onPress={() => chooseWorkspace(item)} onLongPress={active ? openRenameWorkspace : undefined} style={styles.sessionMain}>
-                  <View style={[styles.dot, { backgroundColor: statusColor(item.agent_status) }]} />
-                  <Text numberOfLines={1} style={[styles.sessionText, active && styles.sessionTextActive]}>{item.label || item.workspace_id}</Text>
-                  <Text style={[styles.sessionCount, active && styles.sessionCountActive]}>{item.tab_count}</Text>
-                </Pressable>
-              </View>
+              <Button key={item.workspace_id} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px]', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseWorkspace(item))} onLongPress={active ? openRenameWorkspace : undefined}>
+                <View className="size-1.5 rounded-full" style={{ backgroundColor: statusColor(item.agent_status) }} />
+                <Text numberOfLines={1} className={cn('max-w-32 text-[11px] font-semibold text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.workspace_id}</Text>
+                <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.tab_count}</Text>
+              </Button>
             );
           })}
         </ScrollView>
-        <Pressable accessibilityLabel="New workspace" disabled={busy} onPress={() => setEditorMode('workspace')} style={[styles.headerAction, styles.newSpaceAction]}>
-          <Ionicons name="add" size={15} color={colors.text} /><Text style={styles.headerActionText}>Space</Text>
-        </Pressable>
-        <Pressable accessibilityLabel="Session actions" onPress={() => setMenuOpen(value => !value)} style={styles.headerAction}>
+        <Button accessibilityLabel="New workspace" className="h-12 w-[72px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('workspace'))}>
+          <Ionicons name="add" size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">Space</Text>
+        </Button>
+        <Button accessibilityLabel="Session actions" className="h-12 w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
           <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
-        </Pressable>
+        </Button>
       </View>
 
       {workspace && (
-        <View style={styles.tabBar}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRail}>
+        <View className="h-[42px] flex-row border-b border-[#424242] bg-[#2F2F2F]">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
             {tabs.map(item => {
               const active = item.tab_id === selectedTab?.tab_id;
               const itemPanes = snapshot.panes.filter(pane => pane.tab_id === item.tab_id);
               const itemSession = terminalState.sessions.find(session => itemPanes.some(pane => pane.terminal_id === session.terminalId));
               return (
-                <Pressable key={item.tab_id} onPress={() => chooseTab(item)} onLongPress={active ? openRenameTab : undefined} style={[styles.tab, active && styles.tabActive]}>
-                  <View style={[styles.dot, { backgroundColor: itemSession ? terminalStatusColor(itemSession.status) : statusColor(item.agent_status) }]} />
-                  <Text numberOfLines={1} style={[styles.tabText, active && styles.tabTextActive]}>{item.label || item.tab_id}</Text>
-                  {item.pane_count > 1 && <Text style={[styles.sessionCount, active && styles.sessionCountActive]}>{item.pane_count}</Text>}
-                </Pressable>
+                <Button key={item.tab_id} className={cn('h-[30px] max-w-[170px] rounded-full bg-[#212121] px-[11px]', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
+                  <View className="size-1.5 rounded-full" style={{ backgroundColor: itemSession ? terminalStatusColor(itemSession.status) : statusColor(item.agent_status) }} />
+                  <Text numberOfLines={1} className={cn('max-w-[122px] text-[11px] font-semibold text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.tab_id}</Text>
+                  {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
+                </Button>
               );
             })}
           </ScrollView>
-          <Pressable accessibilityLabel="New tab" disabled={busy} onPress={() => setEditorMode('tab')} style={styles.addTab}>
-            <Ionicons name="add" size={14} color={colors.text} /><Text style={styles.headerActionText}>Tab</Text>
-          </Pressable>
+          <Button accessibilityLabel="New tab" className="h-[42px] w-[58px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Ionicons name="add" size={14} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">Tab</Text></Button>
         </View>
       )}
 
       {menuOpen && (
-        <View style={styles.actionMenu}>
+        <View className="min-h-[42px] flex-row items-stretch border-b border-[#424242] bg-[#181818]">
           <MenuAction label="RENAME SPACE" disabled={!workspace} onPress={openRenameWorkspace} />
           <MenuAction label="RENAME TAB" disabled={!selectedTab} onPress={openRenameTab} />
           <MenuAction label="PANE ACTIONS" disabled={!selectedPane} onPress={() => { if (selectedPane) onOpenPane(selectedPane); setMenuOpen(false); }} />
@@ -340,34 +337,31 @@ export function SessionScreen({
       )}
 
       {editorMode && (
-        <View style={styles.editor}>
-          <Text style={styles.editorLabel}>{editorMode.startsWith('rename') ? 'RENAME' : 'NEW'} {editorMode.replace('rename-', '').toUpperCase()}</Text>
-          <TextInput value={name} onChangeText={setName} placeholder="Label (optional)" placeholderTextColor={colors.muted} style={styles.input} />
+        <View className="flex-row items-center gap-1.5 border-b border-white bg-[#2F2F2F] p-[7px]">
+          <Text className="font-mono text-[8px] text-white">{editorMode.startsWith('rename') ? 'RENAME' : 'NEW'} {editorMode.replace('rename-', '').toUpperCase()}</Text>
+          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={name} onChangeText={setName} placeholder="Label (optional)" placeholderTextColor={colors.muted} />
           {editorMode === 'workspace' && (
-            <TextInput value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" placeholderTextColor={colors.muted} autoCapitalize="none" style={styles.input} />
+            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" placeholderTextColor={colors.muted} autoCapitalize="none" />
           )}
-          <Pressable onPress={() => setEditorMode(null)} style={styles.editorButton}><Text style={styles.editorCancel}>CANCEL</Text></Pressable>
-          <Pressable onPress={create} style={[styles.editorButton, styles.editorSave]}><Text style={styles.editorSaveText}>SAVE</Text></Pressable>
+          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setEditorMode(null))}><Text className="font-mono text-[8px] text-[#B4B4B4]">CANCEL</Text></Button>
+          <Button className="h-[34px] rounded-none bg-white px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black text-[#212121]">SAVE</Text></Button>
         </View>
       )}
 
       {selectedTab && panes.length > 1 && (
-        <View style={styles.paneBar}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.paneRail}>
+        <View className="h-[37px] flex-row border-b border-[#424242] bg-[#181818]">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
             {panes.map(pane => {
               const active = pane.terminal_id === selectedPane?.terminal_id;
               return (
-                <Pressable key={pane.pane_id} onPress={() => choosePane(pane)} onLongPress={() => onOpenPane(pane)} style={[styles.pane, active && styles.paneActive]}>
-                  <View style={[styles.paneDot, { backgroundColor: statusColor(pane.agent_status) }]} />
-                  <Text numberOfLines={1} style={[styles.paneText, active && styles.paneTextActive]}>{pane.label || pane.display_agent || pane.agent || 'shell'}</Text>
-                </Pressable>
+                <Button key={pane.pane_id} className={cn('h-7 max-w-40 rounded-full bg-[#2F2F2F] px-2.5', active && 'bg-white')} variant="ghost" onPress={hapticPress(() => choosePane(pane))} onLongPress={() => onOpenPane(pane)}><View className="size-[5px] rounded-full" style={{ backgroundColor: statusColor(pane.agent_status) }} /><Text numberOfLines={1} className={cn('max-w-[126px] text-[11px] font-semibold text-[#B4B4B4]', active && 'text-[#212121]')}>{pane.label || pane.display_agent || pane.agent || 'shell'}</Text></Button>
               );
             })}
           </ScrollView>
         </View>
       )}
 
-      <View style={styles.terminalStage}>
+      <View className="flex-1 bg-[#212121]">
         {terminalState.sessions.map(terminalSession => (
           <TerminalScreen
             key={terminalSession.terminalId}
@@ -383,15 +377,15 @@ export function SessionScreen({
           />
         ))}
         {!selectedTab && (
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{workspace ? 'EMPTY WORKSPACE' : 'NO WORKSPACES'}</Text>
-            <Text style={styles.emptyText}>{workspace ? 'Create a Herdr tab to open a terminal.' : 'Create a Herdr workspace to begin.'}</Text>
+          <View className="flex-1 items-center justify-center p-[30px]">
+            <Text className="font-mono font-black text-[#ECECEC]">{workspace ? 'EMPTY WORKSPACE' : 'NO WORKSPACES'}</Text>
+            <Text className="mt-2 text-center text-[#B4B4B4]">{workspace ? 'Create a Herdr tab to open a terminal.' : 'Create a Herdr workspace to begin.'}</Text>
           </View>
         )}
         {selectedTab && panes.length === 0 && (
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>EMPTY TAB</Text>
-            <Text style={styles.emptyText}>Create or move a pane here from Herdr.</Text>
+          <View className="flex-1 items-center justify-center p-[30px]">
+            <Text className="font-mono font-black text-[#ECECEC]">EMPTY TAB</Text>
+            <Text className="mt-2 text-center text-[#B4B4B4]">Create or move a pane here from Herdr.</Text>
           </View>
         )}
       </View>
@@ -401,9 +395,7 @@ export function SessionScreen({
 
 function MenuAction({ label, onPress, disabled = false, danger = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
   return (
-    <Pressable disabled={disabled} onPress={onPress} style={[styles.menuAction, disabled && styles.menuActionDisabled]}>
-      <Text style={[styles.menuActionText, danger && styles.menuActionDanger]}>{label}</Text>
-    </Pressable>
+    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-[#424242] px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={cn('text-center text-[9px] font-semibold text-[#ECECEC]', danger && 'text-[#FF6B6B]')}>{label}</Text></Button>
   );
 }
 
@@ -413,55 +405,3 @@ function terminalStatusColor(status: TerminalSessionStatus): string {
   if (status === 'error') return colors.blocked;
   return colors.idle;
 }
-
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.ink },
-  hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
-  topBar: { height: 48, flexDirection: 'row', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
-  back: { width: 42, alignItems: 'center', justifyContent: 'center' },
-  backText: { color: colors.text, fontSize: 30, fontWeight: '300', marginTop: -3 },
-  sessionScroll: { flex: 1, minWidth: 0 },
-  sessionRail: { alignItems: 'center', paddingHorizontal: 4, gap: 6 },
-  sessionChip: { maxWidth: 180, height: 32, flexDirection: 'row', alignItems: 'center', borderRadius: 16, backgroundColor: colors.panelRaised, overflow: 'hidden' },
-  sessionChipActive: { backgroundColor: colors.acid, borderColor: colors.acid },
-  sessionMain: { minWidth: 0, flexShrink: 1, height: 32, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11 },
-  sessionText: { color: colors.muted, fontSize: 11, fontWeight: '600', maxWidth: 128 },
-  sessionTextActive: { color: colors.ink },
-  sessionCount: { color: colors.muted, fontFamily: 'monospace', fontSize: 8 },
-  sessionCountActive: { color: colors.ink },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  headerAction: { width: 44, flexDirection: 'row', gap: 2, alignItems: 'center', justifyContent: 'center' },
-  newSpaceAction: { width: 72 },
-  headerActionText: { color: colors.text, fontSize: 10, fontWeight: '600' },
-  menuText: { color: colors.text, fontSize: 12, letterSpacing: 1 },
-  tabBar: { height: 42, flexDirection: 'row', backgroundColor: colors.panelRaised, borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
-  tabRail: { alignItems: 'center', paddingHorizontal: 6, gap: 5 },
-  tab: { maxWidth: 170, height: 30, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, borderRadius: 15, backgroundColor: colors.ink },
-  tabActive: { backgroundColor: colors.acid, borderColor: colors.acid },
-  tabText: { color: colors.muted, fontSize: 11, fontWeight: '600', maxWidth: 122 },
-  tabTextActive: { color: colors.ink },
-  addTab: { width: 58, flexDirection: 'row', gap: 2, alignItems: 'center', justifyContent: 'center' },
-  actionMenu: { minHeight: 42, flexDirection: 'row', alignItems: 'stretch', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: 1 },
-  menuAction: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderRightColor: colors.line, borderRightWidth: 1 },
-  menuActionDisabled: { opacity: 0.35 },
-  menuActionText: { color: colors.text, fontSize: 9, fontWeight: '600', textAlign: 'center' },
-  menuActionDanger: { color: colors.blocked },
-  editor: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 7, backgroundColor: colors.panelRaised, borderBottomColor: colors.acid, borderBottomWidth: 1 },
-  editorLabel: { color: colors.acid, fontFamily: 'monospace', fontSize: 8 },
-  input: { minWidth: 110, flex: 1, height: 34, color: colors.text, backgroundColor: colors.ink, borderColor: colors.line, borderWidth: 1, paddingHorizontal: 8, fontFamily: 'monospace', fontSize: 10 },
-  editorButton: { height: 34, paddingHorizontal: 8, justifyContent: 'center' },
-  editorCancel: { color: colors.muted, fontFamily: 'monospace', fontSize: 8 },
-  editorSave: { backgroundColor: colors.acid },
-  editorSaveText: { color: colors.ink, fontFamily: 'monospace', fontSize: 8, fontWeight: '900' },
-  paneBar: { height: 37, flexDirection: 'row', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: 1 },
-  paneRail: { alignItems: 'center', paddingHorizontal: 6, gap: 5 },
-  pane: { maxWidth: 160, height: 28, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: 14, backgroundColor: colors.panelRaised },
-  paneActive: { backgroundColor: colors.acid },
-  paneDot: { width: 5, height: 5, borderRadius: 3 },
-  paneText: { color: colors.muted, fontSize: 11, fontWeight: '600', maxWidth: 126 },
-  paneTextActive: { color: colors.ink },
-  terminalStage: { flex: 1, backgroundColor: colors.ink },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
-  emptyTitle: { color: colors.text, fontFamily: 'monospace', fontWeight: '900' },
-  emptyText: { color: colors.muted, textAlign: 'center', marginTop: 8 },
-});

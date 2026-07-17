@@ -1,6 +1,9 @@
+import './global.css';
+
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
-import { Alert, AppState, BackHandler, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { PortalHost } from '@rn-primitives/portal';
+import { Alert, AppState, BackHandler, Platform, StatusBar, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
@@ -13,6 +16,9 @@ import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
 import { SettingsScreen } from './src/components/SettingsScreen';
+import { hapticPress } from './src/components/app-ui';
+import { Button } from './src/components/ui/button';
+import { Text } from './src/components/ui/text';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import { nextReconnect } from './src/lib/reconnectPolicy';
 import {
@@ -73,7 +79,7 @@ import {
   updateTerminalSession,
   type TerminalSessionStatus,
 } from './src/terminalSessions';
-import { colors, useTheme } from './src/theme';
+import { useTheme } from './src/theme';
 import type { AgentInfo, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 
@@ -117,12 +123,12 @@ function App() {
     <SafeAreaProvider>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.canvas} />
       <AppContent />
+      <PortalHost />
     </SafeAreaProvider>
   );
 }
 
 function AppContent() {
-  const { colors: theme } = useTheme();
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const hostsRef = useRef<HostProfile[]>([]);
@@ -756,7 +762,7 @@ function AppContent() {
   };
 
   if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !liveHostRestoreComplete) {
-    return <View style={[styles.loading, { backgroundColor: theme.canvas }]}><View style={[styles.loadingBadge, { backgroundColor: theme.primary }]}><Text style={[styles.loadingMark, { color: theme.onPrimary }]}>H</Text></View></View>;
+    return <View className="flex-1 items-center justify-center bg-background"><View className="size-16 items-center justify-center rounded-full bg-primary"><Text className="text-[27px] font-bold text-primary-foreground">H</Text></View></View>;
   }
 
   const topScreen = navigation.stack[navigation.stack.length - 1];
@@ -771,9 +777,9 @@ function AppContent() {
   }));
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.canvas }]} edges={['top', 'bottom', 'left', 'right']}>
-      <View style={[styles.shell, { backgroundColor: theme.canvas }]}>
-        <View style={[styles.body, { backgroundColor: theme.canvas }]}>
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom', 'left', 'right']}>
+      <View className="flex-1 bg-background">
+        <View className="flex-1 bg-background">
           {navigation.tab === 'hosts' && (
             <HostsScreen
               hosts={hosts}
@@ -792,17 +798,15 @@ function AppContent() {
 
           {navigation.tab === 'herd' && (
             activeSession && activeClient ? (
-              <View style={[styles.connectedPage, { backgroundColor: theme.canvas }]}>
+              <View className="flex-1 bg-background">
                 <ConnectedHeader session={activeSession} />
-                <View style={styles.connectedBody}>
+                <View className="flex-1">
                   {!activeSession.snapshot.server.running ? (
-                    <View style={[styles.offline, { backgroundColor: theme.canvas }]}>
-                      <View style={[styles.offlineIcon, { backgroundColor: `${theme.error}14` }]}><Text style={[styles.offlineNumber, { color: theme.error }]}>!</Text></View>
-                      <Text style={[styles.offlineTitle, { color: theme.text }]}>Herdr server is offline</Text>
-                      <Text style={[styles.offlineCopy, { color: theme.textSecondary }]}>Start the headless runtime on the host, then manage the session from this client.</Text>
-                      <Pressable disabled={activeSession.sync.status === 'syncing'} onPress={startServer} style={[styles.startServer, { backgroundColor: theme.primary }]}>
-                        <Text style={[styles.startServerText, { color: theme.onPrimary }]}>{activeSession.sync.status === 'syncing' ? 'Starting…' : 'Start Herdr server'}</Text>
-                      </Pressable>
+                    <View className="flex-1 items-center justify-center bg-background p-8">
+                      <View className="size-16 items-center justify-center rounded-full bg-destructive/10"><Text className="text-[28px] font-bold text-destructive">!</Text></View>
+                      <Text className="mt-[18px] text-[21px] font-semibold leading-[27px]">Herdr server is offline</Text>
+                      <Text className="mt-2 max-w-[330px] text-center text-[15px] leading-[22px] text-muted-foreground">Start the headless runtime on the host, then manage the session from this client.</Text>
+                      <Button className="mt-6 rounded-full px-5" disabled={activeSession.sync.status === 'syncing'} onPress={hapticPress(startServer)}><Text>{activeSession.sync.status === 'syncing' ? 'Starting…' : 'Start Herdr server'}</Text></Button>
                     </View>
                   ) : (
                     <HerdScreen
@@ -868,7 +872,7 @@ function AppContent() {
         )}
 
         {topScreen === 'settings' && (
-          <View style={[styles.overlay, { backgroundColor: theme.canvas }]}>
+          <View className="absolute inset-0 z-40 bg-background">
             <SettingsScreen
               host={activeSession?.host.host || null}
               alertsEnabled={alertsEnabled}
@@ -884,7 +888,7 @@ function AppContent() {
         )}
 
         {editorProfile && (
-          <View style={[styles.overlay, { backgroundColor: theme.canvas }]}>
+          <View className="absolute inset-0 z-40 bg-background">
             <ConnectionScreen
               key={editorProfile.id}
               initialProfile={editorProfile}
@@ -964,46 +968,19 @@ function LiveSessionView({
 }
 
 function ConnectedHeader({ session }: { session: LiveHostSession }) {
-  const { colors: theme } = useTheme();
   const syncError = session.sync.error || session.connectionError;
   return (
-    <View style={[styles.topbar, { backgroundColor: theme.canvas, borderBottomColor: theme.divider }]}>
-      <View style={styles.headerBody}>
-        <Text numberOfLines={1} style={[styles.topTitle, { color: theme.text }]}>{hostDisplayName(session.host)}</Text>
-        <Text numberOfLines={1} style={[styles.topMeta, { color: theme.textSecondary }]}>{session.host.host} · {session.snapshot.server.running ? `Herdr ${session.snapshot.server.version || ''}`.trim() : 'Server offline'}</Text>
+    <View className="min-h-16 flex-row items-center justify-between border-b border-border bg-background px-4">
+      <View className="min-w-0 flex-1 pr-2.5">
+        <Text numberOfLines={1} className="text-[17px] font-semibold leading-[22px]">{hostDisplayName(session.host)}</Text>
+        <Text numberOfLines={1} className="mt-0.5 text-xs leading-4 text-muted-foreground">{session.host.host} · {session.snapshot.server.running ? `Herdr ${session.snapshot.server.version || ''}`.trim() : 'Server offline'}</Text>
       </View>
-      <View style={[styles.link, { backgroundColor: syncError ? `${theme.error}14` : `${theme.done}14` }]}>
-        <View style={[styles.linkDot, { backgroundColor: syncError ? theme.error : theme.done }]} />
-        <Text style={[styles.linkText, { color: syncError ? theme.error : theme.done }]}>{syncError ? 'Sync lost' : 'SSH live'}</Text>
+      <View className={syncError ? 'flex-row items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-1.5' : 'flex-row items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1.5'}>
+        <View className={syncError ? 'size-1.5 rounded-full bg-destructive' : 'size-1.5 rounded-full bg-success'} />
+        <Text className={syncError ? 'text-xs font-semibold text-destructive' : 'text-xs font-semibold text-success'}>{syncError ? 'Sync lost' : 'SSH live'}</Text>
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.ink },
-  shell: { flex: 1, backgroundColor: colors.ink },
-  body: { flex: 1, backgroundColor: colors.ink },
-  overlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 40, backgroundColor: colors.ink },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingBadge: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  loadingMark: { fontSize: 27, fontWeight: '700' },
-  connectedPage: { flex: 1, backgroundColor: colors.ink },
-  connectedBody: { flex: 1 },
-  topbar: { minHeight: 64, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerBody: { flex: 1, minWidth: 0, paddingRight: 10 },
-  topTitle: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
-  topMeta: { fontSize: 12, lineHeight: 16, marginTop: 1 },
-  link: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  linkDot: { width: 6, height: 6, borderRadius: 3 },
-  linkText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
-  offline: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  offlineIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  offlineNumber: { fontSize: 28, fontWeight: '700' },
-  offlineTitle: { fontSize: 21, lineHeight: 27, fontWeight: '600', marginTop: 18 },
-  offlineCopy: { textAlign: 'center', fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 330 },
-  startServer: { minHeight: 44, borderRadius: 999, paddingHorizontal: 20, justifyContent: 'center', marginTop: 24 },
-  startServerText: { fontSize: 14, fontWeight: '600' },
-});
 
 export default App;

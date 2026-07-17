@@ -1,9 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { View } from 'react-native';
 
-import { radii, useTheme } from '../theme';
-import type { AppTab } from '../types';
-import type { IconName } from './ui';
+import { cn } from '@/src/lib/utils';
+import { useTheme } from '@/src/theme';
+import type { AppTab } from '@/src/types';
+import { hapticPress, type IconName } from './app-ui';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Text } from './ui/text';
 
 interface Props {
   activeTab: AppTab;
@@ -21,37 +25,29 @@ const items: Array<{ tab: AppTab; label: string; icon: IconName; activeIcon: Ico
 export function BottomNavigation({ activeTab, sessionCount, onSelect }: Props) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.bar, { backgroundColor: colors.canvas, borderTopColor: colors.divider }]}>
+    <View className="min-h-[66px] flex-row border-t border-border bg-background pt-1">
       {items.map(item => {
         const active = item.tab === activeTab;
         return (
-          <Pressable
+          <Button
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
+            className="h-14 flex-1 flex-col gap-0 rounded-none px-1 py-1"
             key={item.tab}
-            onPress={() => onSelect(item.tab)}
-            style={({ pressed }) => [styles.item, pressed && { opacity: 0.6 }]}>
-            <View style={[styles.iconWrap, active && { backgroundColor: colors.surfaceRaised }]}>
+            variant="ghost"
+            onPress={hapticPress(() => onSelect(item.tab))}>
+            <View className={cn('h-[30px] w-11 items-center justify-center rounded-full', active && 'bg-accent')}>
               <Ionicons name={active ? item.activeIcon : item.icon} size={20} color={active ? colors.text : colors.textSecondary} />
-              {item.tab === 'terminal' && sessionCount > 0 && (
-                <View style={[styles.badge, { backgroundColor: colors.primary, borderColor: colors.canvas }]}>
-                  <Text style={[styles.badgeText, { color: colors.onPrimary }]}>{sessionCount > 9 ? '9+' : sessionCount}</Text>
-                </View>
-              )}
+              {item.tab === 'terminal' && sessionCount > 0 ? (
+                <Badge className="absolute -right-1 -top-1 min-w-[17px] border-2 border-background px-1 py-0">
+                  <Text className="text-[9px] font-bold leading-[13px]">{sessionCount > 9 ? '9+' : sessionCount}</Text>
+                </Badge>
+              ) : null}
             </View>
-            <Text style={[styles.label, { color: active ? colors.text : colors.textSecondary }]}>{item.label}</Text>
-          </Pressable>
+            <Text className={cn('text-[11px] font-medium leading-[15px] text-muted-foreground', active && 'text-foreground')}>{item.label}</Text>
+          </Button>
         );
       })}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  bar: { minHeight: 66, flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 5 },
-  item: { flex: 1, minHeight: 56, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  iconWrap: { width: 44, height: 30, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 11, lineHeight: 15, fontWeight: '500' },
-  badge: { position: 'absolute', top: -3, right: 2, minWidth: 17, height: 17, paddingHorizontal: 4, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
-});

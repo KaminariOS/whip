@@ -1,0 +1,71 @@
+import { darkColors, lightColors } from '../theme';
+
+export const THEME = {
+  light: {
+    background: lightColors.canvas,
+    foreground: lightColors.text,
+    card: lightColors.surface,
+    cardForeground: lightColors.text,
+    popover: lightColors.canvas,
+    popoverForeground: lightColors.text,
+    primary: lightColors.primary,
+    primaryForeground: lightColors.onPrimary,
+    secondary: lightColors.surfaceRaised,
+    secondaryForeground: lightColors.text,
+    muted: lightColors.surface,
+    mutedForeground: lightColors.textSecondary,
+    accent: lightColors.surfaceRaised,
+    accentForeground: lightColors.text,
+    destructive: lightColors.error,
+    border: lightColors.divider,
+    input: lightColors.divider,
+    ring: lightColors.textTertiary,
+    radius: '1rem',
+  },
+  dark: {
+    background: darkColors.canvas,
+    foreground: darkColors.text,
+    card: darkColors.surface,
+    cardForeground: darkColors.text,
+    popover: darkColors.surface,
+    popoverForeground: darkColors.text,
+    primary: darkColors.primary,
+    primaryForeground: darkColors.onPrimary,
+    secondary: darkColors.surface,
+    secondaryForeground: darkColors.text,
+    muted: darkColors.surface,
+    mutedForeground: darkColors.textSecondary,
+    accent: darkColors.surface,
+    accentForeground: darkColors.text,
+    destructive: darkColors.error,
+    border: darkColors.divider,
+    input: darkColors.divider,
+    ring: darkColors.textTertiary,
+    radius: '1rem',
+  },
+} as const;
+
+export const NAV_THEME = {
+  light: {
+    dark: false,
+    colors: {
+      background: THEME.light.background,
+      border: THEME.light.border,
+      card: THEME.light.card,
+      notification: THEME.light.destructive,
+      primary: THEME.light.primary,
+      text: THEME.light.foreground,
+    },
+  },
+  dark: {
+    dark: true,
+    colors: {
+      background: THEME.dark.background,
+      border: THEME.dark.border,
+      card: THEME.dark.card,
+      notification: THEME.dark.destructive,
+      primary: THEME.dark.primary,
+      text: THEME.dark.foreground,
+    },
+  },
+} as const;

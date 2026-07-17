@@ -1,53 +1,32 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ChevronRight, Settings } from 'lucide-react-native';
+import { View } from 'react-native';
 
-import { radii, spacing, useTheme } from '../theme';
-import type { IconName } from './ui';
-import { ScreenHeader, SectionLabel } from './ui';
+import { hapticPress } from './app-ui';
+import { Button } from './ui/button';
+import { Icon } from './ui/icon';
+import { Text } from './ui/text';
 
-interface Props {
-  connectedHost: string | null;
-  onOpenSettings: () => void;
-}
-
-export function MoreScreen({ connectedHost, onOpenSettings }: Props) {
-  const { colors } = useTheme();
+export function MoreScreen({ connectedHost, onOpenSettings }: { connectedHost: string | null; onOpenSettings: () => void }) {
   return (
-    <View style={[styles.page, { backgroundColor: colors.canvas }]}>
-      <ScreenHeader title="More" subtitle={connectedHost ? `Connected to ${connectedHost}` : 'Device and connection options'} />
-      <View style={styles.content}>
-        <SectionLabel>Preferences</SectionLabel>
-        <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.divider }]}>
-          <MoreRow icon="settings-outline" title="Settings" copy="Notifications, speech, terminal and connection preferences" onPress={onOpenSettings} />
-        </View>
-        <Text style={[styles.version, { color: colors.textTertiary }]}>Herdr Remote · Android client</Text>
+    <View className="flex-1 bg-background">
+      <View className="border-b border-border px-5 py-5">
+        <Text className="text-[22px] font-semibold leading-7">More</Text>
+        <Text className="mt-1 text-sm text-muted-foreground">{connectedHost ? `Connected to ${connectedHost}` : 'No active connection'}</Text>
+      </View>
+      <View className="px-4 py-5">
+        <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">Preferences</Text>
+        <Button className="h-auto w-full justify-start rounded-lg border border-border bg-card px-4 py-4" variant="outline" onPress={hapticPress(onOpenSettings)}>
+          <View className="size-11 items-center justify-center rounded-full bg-accent">
+            <Icon as={Settings} size={22} />
+          </View>
+          <View className="min-w-0 flex-1">
+            <Text className="text-lg font-semibold">Settings</Text>
+            <Text className="mt-0.5 text-sm leading-5 text-muted-foreground">Notifications, speech, terminal and connection preferences</Text>
+          </View>
+          <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
+        </Button>
+        <Text className="mt-5 text-center text-sm text-muted-foreground">Herdr Remote · Android client</Text>
       </View>
     </View>
   );
 }
-
-function MoreRow({ icon, title, copy, onPress }: { icon: IconName; title: string; copy: string; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && { opacity: 0.65 }]}>
-      <View style={[styles.rowIcon, { backgroundColor: colors.surfaceRaised }]}><Ionicons name={icon} size={20} color={colors.text} /></View>
-      <View style={styles.rowBody}>
-        <Text style={[styles.rowTitle, { color: colors.text }]}>{title}</Text>
-        <Text style={[styles.rowCopy, { color: colors.textSecondary }]}>{copy}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  page: { flex: 1 },
-  content: { flex: 1, padding: spacing.lg },
-  group: { borderRadius: radii.lg, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  row: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
-  rowIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  rowBody: { flex: 1 },
-  rowTitle: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
-  rowCopy: { fontSize: 13, lineHeight: 18, marginTop: 3 },
-  version: { marginTop: 18, fontSize: 12, lineHeight: 16, textAlign: 'center' },
-});

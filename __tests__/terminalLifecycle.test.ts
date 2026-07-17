@@ -8,8 +8,8 @@ describe('terminal renderer lifecycle', () => {
     expect(source).toContain('terminalState.sessions.map(terminalSession => (');
     expect(source).toContain('key={terminalSession.terminalId}');
     expect(source).toContain('session={terminalSession}');
-    expect(source).toContain("hidden: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0 }");
-    expect(source).not.toContain("hidden: { display: 'none' }");
+    expect(source).toContain("!visible && 'absolute inset-0 opacity-0'");
+    expect(source).not.toContain("!visible && 'hidden'");
   });
 
   it('hands keyboard focus between persistent terminal renderers', () => {
