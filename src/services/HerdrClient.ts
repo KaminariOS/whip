@@ -46,6 +46,7 @@ export class HerdrClient {
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
+  private controlReconnect: Promise<void> | null = null;
 
   async connect(profile: ConnectionProfile): Promise<void> {
     const port = Number(profile.port);
@@ -60,6 +61,17 @@ export class HerdrClient {
 
   /** Replace the single authenticated SSH session and recreate its channels. */
   async reconnectControl(profile: ConnectionProfile = this.requireProfile()): Promise<void> {
+    if (this.controlReconnect) return this.controlReconnect;
+    const task = this.replaceControlConnection(profile);
+    this.controlReconnect = task;
+    try {
+      await task;
+    } finally {
+      if (this.controlReconnect === task) this.controlReconnect = null;
+    }
+  }
+
+  private async replaceControlConnection(profile: ConnectionProfile): Promise<void> {
     const port = Number(profile.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error('SSH port must be between 1 and 65535');
@@ -72,12 +84,24 @@ export class HerdrClient {
     this.apiServer = null;
     this.eventClient = null;
     this.terminalBridges.clear();
+    this.terminalOpenings.clear();
     this.bridgePrepareOpening = null;
-    for (const connection of this.terminalConnections.values()) {
-      connection.onClosed?.('SSH control connection was replaced');
-    }
     previousClient?.off('Shell');
     previousClient?.disconnect();
+
+    // A control reconnect is transport maintenance, not a terminal failure.
+    // Restore the visible terminal on the replacement session while preserving
+    // its frame and close callbacks, then let inactive tabs attach on demand.
+    const terminalIds = [...this.terminalConnections.keys()];
+    await Promise.all(terminalIds.map(async terminalId => {
+      try {
+        await this.attachTerminal(terminalId);
+      } catch (error) {
+        this.terminalConnections.get(terminalId)?.onClosed?.(
+          `Terminal reattach failed: ${String(error)}`,
+        );
+      }
+    }));
   }
 
   disconnect(): void {
@@ -93,6 +117,7 @@ export class HerdrClient {
     this.terminalSizes.clear();
     this.terminalBridges.clear();
     this.bridgePrepareOpening = null;
+    this.controlReconnect = null;
   }
 
   async openTerminal(
@@ -101,6 +126,9 @@ export class HerdrClient {
     onClosed?: TerminalClosedHandler,
   ): Promise<void> {
     this.terminalConnections.set(terminalId, { onFrame, onClosed });
+
+    const reconnecting = this.controlReconnect;
+    if (reconnecting) await reconnecting;
 
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) {

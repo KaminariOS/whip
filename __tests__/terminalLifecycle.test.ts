@@ -27,6 +27,15 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('async focusPane(paneId: string)');
   });
 
+  it('reattaches terminals transparently when the SSH control session is replaced', () => {
+    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
+
+    expect(client).toContain('private controlReconnect: Promise<void> | null = null');
+    expect(client).toContain('await this.attachTerminal(terminalId)');
+    expect(client).toContain('if (reconnecting) await reconnecting');
+    expect(client).not.toContain("connection.onClosed?.('SSH control connection was replaced')");
+  });
+
   it('attaches before WebView readiness and keeps terminal bridges after UI release', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
