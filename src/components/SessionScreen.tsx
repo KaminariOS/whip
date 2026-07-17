@@ -316,9 +316,9 @@ export function SessionScreen({
               const itemPanes = snapshot.panes.filter(pane => pane.tab_id === item.tab_id);
               const itemSession = terminalState.sessions.find(session => itemPanes.some(pane => pane.terminal_id === session.terminalId));
               return (
-                <Button key={item.tab_id} className={cn('h-[30px] max-w-[170px] rounded-full bg-[#212121] px-[11px]', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
+                <Button key={item.tab_id} className={cn('h-[30px] max-w-[170px] rounded-full bg-[#212121] px-[11px] py-0', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
                   <View className="size-1.5 rounded-full" style={{ backgroundColor: itemSession ? terminalStatusColor(itemSession.status) : statusColor(item.agent_status) }} />
-                  <Text numberOfLines={1} className={cn('max-w-[122px] text-[11px] font-semibold text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.tab_id}</Text>
+                  <Text numberOfLines={1} className={cn('max-w-[122px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.tab_id}</Text>
                   {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
                 </Button>
               );
