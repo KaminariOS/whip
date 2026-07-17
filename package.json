@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@dylankenneally/react-native-ssh-sftp": "file:packages/react-native-ssh-sftp",
+    "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native/new-app-screen": "0.86.0",
     "@xterm/addon-fit": "^0.11.0",
@@ -19,6 +20,7 @@
     "babel-preset-expo": "~57.0.0",
     "expo": "~57.0.6",
     "expo-dev-client": "~57.0.6",
+    "expo-haptics": "~57.0.1",
     "expo-notifications": "~57.0.5",
     "expo-speech": "~57.0.1",
     "expo-status-bar": "~57.0.1",

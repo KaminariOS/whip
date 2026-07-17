@@ -1,6 +1,7 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../theme';
+import { colors, radii } from '../theme';
 
 export interface LiveSessionRailItem {
   hostId: string;
@@ -21,9 +22,7 @@ interface Props {
 export function LiveSessionRail({ sessions, activeHostId, onExit, onSelect, onClose, onNew }: Props) {
   return (
     <View style={styles.bar}>
-      <Pressable accessibilityLabel="Leave terminals" onPress={onExit} style={styles.exit}>
-        <Text style={styles.exitText}>‹</Text>
-      </Pressable>
+      <Pressable accessibilityLabel="Leave terminals" onPress={onExit} style={styles.iconButton}><Ionicons name="chevron-back" size={21} color={colors.text} /></Pressable>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.rail}>
         {sessions.map(session => {
           const active = session.hostId === activeHostId;
@@ -34,16 +33,12 @@ export function LiveSessionRail({ sessions, activeHostId, onExit, onSelect, onCl
                 <Text numberOfLines={1} style={[styles.label, active && styles.labelActive]}>{session.label}</Text>
                 {session.terminalCount > 0 && <Text style={[styles.count, active && styles.labelActive]}>{session.terminalCount}</Text>}
               </Pressable>
-              <Pressable accessibilityLabel={`Disconnect ${session.label}`} hitSlop={8} onPress={() => onClose(session.hostId)} style={styles.close}>
-                <Text style={[styles.closeText, active && styles.labelActive]}>×</Text>
-              </Pressable>
+              <Pressable accessibilityLabel={`Disconnect ${session.label}`} hitSlop={8} onPress={() => onClose(session.hostId)} style={styles.close}><Ionicons name="close" size={14} color={active ? colors.ink : colors.muted} /></Pressable>
             </View>
           );
         })}
       </ScrollView>
-      <Pressable accessibilityLabel="New host session" onPress={onNew} style={styles.newSession}>
-        <Text style={styles.newText}>＋</Text>
-      </Pressable>
+      <Pressable accessibilityLabel="New host session" onPress={onNew} style={styles.iconButton}><Ionicons name="add" size={22} color={colors.text} /></Pressable>
     </View>
   );
 }
@@ -55,20 +50,16 @@ function statusColor(status: LiveSessionRailItem['status']): string {
 }
 
 const styles = StyleSheet.create({
-  bar: { height: 44, flexDirection: 'row', alignItems: 'stretch', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: 1 },
-  exit: { width: 42, alignItems: 'center', justifyContent: 'center' },
-  exitText: { color: colors.text, fontSize: 30, fontWeight: '300', marginTop: -3 },
+  bar: { height: 48, flexDirection: 'row', alignItems: 'stretch', backgroundColor: colors.panel, borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
+  iconButton: { width: 46, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1, minWidth: 0 },
   rail: { alignItems: 'center', paddingHorizontal: 4, gap: 6 },
-  chip: { maxWidth: 190, height: 29, flexDirection: 'row', alignItems: 'center', borderRadius: 15, backgroundColor: colors.panelRaised, borderColor: colors.line, borderWidth: 1, overflow: 'hidden' },
-  chipActive: { backgroundColor: colors.acid, borderColor: colors.acid },
-  chipMain: { minWidth: 0, flexShrink: 1, height: 29, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 10, paddingRight: 5 },
+  chip: { maxWidth: 190, height: 32, flexDirection: 'row', alignItems: 'center', borderRadius: radii.full, backgroundColor: colors.panelRaised, overflow: 'hidden' },
+  chipActive: { backgroundColor: colors.text },
+  chipMain: { minWidth: 0, flexShrink: 1, height: 32, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 11, paddingRight: 5 },
   dot: { width: 6, height: 6, borderRadius: 3 },
-  label: { color: colors.text, fontSize: 10, fontWeight: '800', maxWidth: 125 },
+  label: { color: colors.text, fontSize: 11, lineHeight: 15, fontWeight: '600', maxWidth: 125 },
   labelActive: { color: colors.ink },
-  count: { color: colors.muted, fontFamily: 'monospace', fontSize: 8 },
-  close: { width: 25, height: 29, alignItems: 'center', justifyContent: 'center' },
-  closeText: { color: colors.muted, fontSize: 16, lineHeight: 18 },
-  newSession: { width: 44, alignItems: 'center', justifyContent: 'center', borderLeftColor: colors.line, borderLeftWidth: 1 },
-  newText: { color: colors.acid, fontSize: 24, lineHeight: 26 },
+  count: { color: colors.muted, fontSize: 10 },
+  close: { width: 27, height: 32, alignItems: 'center', justifyContent: 'center' },
 });

@@ -22,6 +22,11 @@ describe('Android terminal assets', () => {
     expect(html).toContain('font-display: swap');
     expect(html.indexOf('announceReady();')).toBeLessThan(html.indexOf('document.fonts?.load'));
     expect(html).toContain('pendingFrames.clear();');
+    expect(html).toContain("background: '#212121'");
+    expect(html).toContain("foreground: '#ececec'");
+    expect(html).toContain("cursor: '#ffffff'");
+    expect(html).toContain("selectionBackground: '#67676780'");
+    expect(html).not.toContain('#d8ff63');
 
     const inlineScript = html.match(/<script>\n([\s\S]*?)\n {2}<\/script>/)?.[1];
     expect(inlineScript).toBeDefined();

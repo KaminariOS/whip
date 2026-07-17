@@ -40,15 +40,15 @@ const terminalHtml = `<!doctype html>
       font-weight: 700;
       font-display: swap;
     }
-    html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090b0a; }
+    html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #212121; }
     html { -webkit-text-size-adjust: none; text-size-adjust: none; }
     #terminal { box-sizing: border-box; }
     .xterm { height: 100%; }
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
-    #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 2px; background: #1a2019; border: 1px solid #485244; box-shadow: 0 4px 16px #000a; }
-    #selection-toolbar button { appearance: none; border: 0; background: transparent; color: #e9eadf; padding: 8px 10px; font: 700 10px 'JetBrains Mono', monospace; }
-    #selection-toolbar button:active { background: #d8ff63; color: #090b0a; }
+    #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #2f2f2f; border: 1px solid #424242; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
+    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #ececec; padding: 8px 10px; font: 700 10px 'JetBrains Mono', monospace; }
+    #selection-toolbar button:active { background: #ffffff; color: #0d0d0d; }
   </style>
 </head>
 <body>
@@ -69,12 +69,12 @@ const terminalHtml = `<!doctype html>
       letterSpacing: 0,
       scrollback: 5000,
       theme: {
-        background: '#090b0a', foreground: '#e9eadf', cursor: '#d8ff63',
-        black: '#111411', red: '#ff6b66', green: '#b7db5b', yellow: '#e6bf62',
-        blue: '#7da6c9', magenta: '#c18bc8', cyan: '#73c6b6', white: '#e9eadf',
-        brightBlack: '#687064', brightRed: '#ff8984', brightGreen: '#d8ff63',
-        brightYellow: '#ffd981', brightBlue: '#9bc6e8', brightMagenta: '#dda8e4',
-        brightCyan: '#94e6d5', brightWhite: '#ffffff'
+        background: '#212121', foreground: '#ececec', cursor: '#ffffff', selectionBackground: '#67676780',
+        black: '#181818', red: '#ff6b6b', green: '#42c59a', yellow: '#f2a94a',
+        blue: '#6ea8ff', magenta: '#c792ea', cyan: '#56c7d9', white: '#ececec',
+        brightBlack: '#8e8e8e', brightRed: '#ff8b8b', brightGreen: '#70ddb6',
+        brightYellow: '#ffd080', brightBlue: '#9bc4ff', brightMagenta: '#dcb0f7',
+        brightCyan: '#87dce8', brightWhite: '#ffffff'
       }
     });
     const fit = new FitAddon.FitAddon();
@@ -191,6 +191,7 @@ const terminalHtml = `<!doctype html>
       });
     };
     window.herdrFocus = () => terminal.focus();
+    window.herdrBlur = () => terminal.blur();
     window.herdrFit = resize;
     const toolbar = document.getElementById('selection-toolbar');
     const hideToolbar = () => { toolbar.style.display = 'none'; };
