@@ -18,7 +18,7 @@ export const emptyConnectionProfile = (): ConnectionProfile => {
     passphrase: '',
     herdrCommand: 'herdr',
     sessionName: '',
-    rememberCredentials: false,
+    rememberCredentials: true,
     createdAt: now,
     updatedAt: now,
   };

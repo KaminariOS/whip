@@ -1,4 +1,5 @@
 import {
+  emptyConnectionProfile,
   hostCredentialService,
   hostDisplayName,
   migrateLegacyProfile,
@@ -23,6 +24,10 @@ const profile: ConnectionProfile = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
+
+test('remembers credentials by default for new hosts', () => {
+  expect(emptyConnectionProfile().rememberCredentials).toBe(true);
+});
 
 test('strips credentials from persisted host metadata', () => {
   const host = toHostProfile(profile);
