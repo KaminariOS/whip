@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a scoped improvement after discussing broad ideas
+title: 'feat: '
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use GitHub Discussions for early brainstorming or substantial architecture changes. Use this form when the user problem and desired outcome are clear.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the roadmap, existing issues, and Discussions.
+          required: true
+        - label: This request is for the Whip Android client rather than the upstream Herdr server/CLI.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What is difficult today, and who encounters it?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior without prescribing implementation unless necessary.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workarounds or simpler approaches
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, Herdr commands, accessibility considerations, or related discussions
