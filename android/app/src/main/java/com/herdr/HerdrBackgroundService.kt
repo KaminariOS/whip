@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import androidx.core.content.edit
 
 class HerdrBackgroundService : Service() {
   private var wakeLock: PowerManager.WakeLock? = null
@@ -27,7 +28,7 @@ class HerdrBackgroundService : Service() {
       ?.getIntExtra(EXTRA_HOST_COUNT, 0)
       ?.takeIf { it > 0 }
       ?: preferences.getInt(EXTRA_HOST_COUNT, 1)
-    preferences.edit().putInt(EXTRA_HOST_COUNT, hostCount).apply()
+    preferences.edit { putInt(EXTRA_HOST_COUNT, hostCount) }
     promoteToForeground(hostCount)
     // The React Native runtime owns the SSH monitor. Do not restart only the
     // notification after Android has killed the whole application process.
