@@ -40,6 +40,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     backgroundImageUri: null,
     backgroundDimming: 60,
   });
+  expect(defaultDevicePreferences.appearance).toBe('system');
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
 });
 
@@ -56,6 +57,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
   await expect(loadDevicePreferences()).resolves.toEqual({
     alertsEnabled: false,
     ttsEnabled: true,
+    appearance: 'system',
     lastTab: 'terminal',
     terminal: {
       fontSize: 8,
@@ -65,6 +67,14 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       backgroundDimming: 60,
     },
   });
+});
+
+test('loads a valid appearance preference and rejects invalid values', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ appearance: 'light' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ appearance: 'light' });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ appearance: 'sepia' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ appearance: 'system' });
 });
 
 test('sanitizes persisted terminal background preferences', async () => {
