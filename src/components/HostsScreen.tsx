@@ -44,7 +44,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
         <View className="mx-4 mt-4 flex-row items-center gap-3 rounded-lg border border-border bg-card p-3.5">
           <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={LockKeyhole} className="text-primary" size={19} /></View>
           <View className="min-w-0 flex-1"><Text className="text-sm font-semibold">Restored credentials are locked</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">Unlock {credentialRecovery.count} {credentialRecovery.count === 1 ? 'credential' : 'credentials'} with fingerprint, face, or device PIN.</Text></View>
-          <Button className="rounded-full px-3.5" size="sm" disabled={credentialRecoveryBusy} onPress={hapticPress(() => { void onUnlockCredentials(); })}><Text>{credentialRecoveryBusy ? 'Unlocking…' : 'Unlock'}</Text></Button>
+          <Button className="rounded-full px-3.5" size="sm" disabled={credentialRecoveryBusy} onPress={hapticPress(async () => { await onUnlockCredentials(); })}><Text>{credentialRecoveryBusy ? 'Unlocking…' : 'Unlock'}</Text></Button>
         </View>
       ) : null}
 
