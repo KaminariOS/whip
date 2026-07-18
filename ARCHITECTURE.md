@@ -1,8 +1,8 @@
-# Herdr Android client architecture
+# Whip architecture
 
 ## Product boundary
 
-Herdr Android is a remote client for a Herdr server running on another machine. It never starts a local Herdr runtime, local shell, or local PTY on the phone.
+Whip is a remote client for a Herdr server running on another machine. It never starts a local Herdr runtime, local shell, or local PTY on the phone.
 
 The app has two presentation modes:
 

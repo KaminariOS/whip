@@ -349,7 +349,7 @@ export class HerdrClient {
 
   async startServer(): Promise<void> {
     await this.requireClient().execute(
-      `nohup ${this.baseCommand()} server >/tmp/herdr-remote-server.log 2>&1 </dev/null &`,
+      `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`,
     );
     this.apiServer = null;
   }

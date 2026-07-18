@@ -5,16 +5,16 @@ describe('Android background monitoring', () => {
   const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
   const manifest = readFileSync(resolve(__dirname, '../android/app/src/main/AndroidManifest.xml'), 'utf8');
   const service = readFileSync(
-    resolve(__dirname, '../android/app/src/main/java/com/herdr/HerdrBackgroundService.kt'),
+    resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/HerdrBackgroundService.kt'),
     'utf8',
   );
   const module = readFileSync(
-    resolve(__dirname, '../android/app/src/main/java/com/herdr/HerdrBackgroundModule.kt'),
+    resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/HerdrBackgroundModule.kt'),
     'utf8',
   );
   const alerts = readFileSync(resolve(__dirname, '../src/services/alerts.ts'), 'utf8');
   const application = readFileSync(
-    resolve(__dirname, '../android/app/src/main/java/com/herdr/MainApplication.kt'),
+    resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/MainApplication.kt'),
     'utf8',
   );
 

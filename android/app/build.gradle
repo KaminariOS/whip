@@ -85,9 +85,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.herdr"
+    namespace "io.github.kaminarios.whip"
     defaultConfig {
-        applicationId "dev.herdr.remote"
+        applicationId "io.github.kaminarios.whip"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

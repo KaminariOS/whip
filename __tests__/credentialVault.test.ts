@@ -115,7 +115,7 @@ test('unlocks, decrypts, and reimports restored credentials into Keychain', asyn
   expect(Keychain.setGenericPassword).toHaveBeenCalledWith(
     host.username,
     JSON.stringify({ secret: 'PRIVATE KEY', passphrase: 'key phrase' }),
-    { service: 'dev.herdr.remote.ssh.host.host-1' },
+    { service: 'io.github.kaminarios.whip.ssh.host.host-1' },
   );
 });
 

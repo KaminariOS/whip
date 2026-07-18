@@ -70,13 +70,13 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
 test('sanitizes persisted terminal background preferences', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({
     terminal: {
-      backgroundImageUri: 'file:///data/user/0/dev.herdr.remote/files/background.webp',
+      backgroundImageUri: 'file:///data/user/0/io.github.kaminarios.whip/files/background.webp',
       backgroundOpacity: 150,
     },
   }));
 
   const preferences = await loadDevicePreferences();
-  expect(preferences.terminal.backgroundImageUri).toBe('file:///data/user/0/dev.herdr.remote/files/background.webp');
+  expect(preferences.terminal.backgroundImageUri).toBe('file:///data/user/0/io.github.kaminarios.whip/files/background.webp');
   expect(preferences.terminal.backgroundDimming).toBe(100);
 });
 
@@ -89,8 +89,8 @@ test('persists new preferences under the v3 key', async () => {
 });
 
 test('moves an existing terminal background into backed-up storage', async () => {
-  const previousUri = 'file:///data/user/0/dev.herdr.remote/files/herdr-terminal-background-1.webp';
-  const backedUpUri = 'file:///data/user/0/dev.herdr.remote/files/terminal-backgrounds/herdr-terminal-background-1.webp';
+  const previousUri = 'file:///data/user/0/io.github.kaminarios.whip/files/herdr-terminal-background-1.webp';
+  const backedUpUri = 'file:///data/user/0/io.github.kaminarios.whip/files/terminal-backgrounds/herdr-terminal-background-1.webp';
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { backgroundImageUri: previousUri } }));
   mockMigrateBackground.mockResolvedValueOnce(backedUpUri);
 

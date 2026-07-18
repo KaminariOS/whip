@@ -2,7 +2,7 @@
 
 ## Product goal
 
-Herdr Remote should preserve Voltius's Android interaction model while replacing
+Whip should preserve Voltius's Android interaction model while replacing
 generic SSH session management with Herdr-aware control surfaces:
 
 ```text
@@ -26,7 +26,7 @@ the current milestone.
 
 ## Port status
 
-| Voltius Android concept | Herdr Remote status | Main references |
+| Voltius Android concept | Whip status | Main references |
 | --- | --- | --- |
 | Saved hosts | Partial: add/edit/delete, per-host Keychain credentials, last-used ordering | `src/components/HostsScreen.tsx`, `src/services/hostProfiles.ts` |
 | Concurrent live sessions across hosts | Implemented: each live host owns an independent client, snapshot, selection, terminals, refresh generation, and reconnect state | `App.tsx`, `src/liveHostSessions.ts` |

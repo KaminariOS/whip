@@ -1,4 +1,4 @@
-package com.herdr
+package io.github.kaminarios.whip
 
 import android.annotation.SuppressLint
 import android.os.Build
@@ -352,8 +352,8 @@ class CredentialVaultModule(
     private const val RECOVERY_KEY_BYTES = 32
     private const val LOCAL_PREFERENCES = "herdr_credential_vault_local"
     private const val WRAPPED_RECOVERY_KEY = "wrapped_recovery_key_v1"
-    private const val WRAPPING_KEY_ALIAS = "dev.herdr.remote.credential-vault.wrap.v1"
-    private const val BLOCK_STORE_KEY = "dev.herdr.remote.credential-vault.recovery.v1"
-    private const val CREDENTIAL_AAD_PREFIX = "dev.herdr.remote.credential-backup.v1"
+    private const val WRAPPING_KEY_ALIAS = "io.github.kaminarios.whip.credential-vault.wrap.v1"
+    private const val BLOCK_STORE_KEY = "io.github.kaminarios.whip.credential-vault.recovery.v1"
+    private const val CREDENTIAL_AAD_PREFIX = "io.github.kaminarios.whip.credential-backup.v1"
   }
 }

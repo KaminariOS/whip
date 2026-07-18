@@ -2,8 +2,8 @@ import type { ConnectionProfile, HostProfile } from '../types';
 
 export const HOSTS_STORAGE_KEY = 'herdr.hosts.v2';
 export const LEGACY_PROFILE_KEY = 'herdr.connection.v1';
-export const LEGACY_CREDENTIAL_SERVICE = 'dev.herdr.remote.ssh';
-export const HOST_CREDENTIAL_SERVICE_PREFIX = 'dev.herdr.remote.ssh.host.';
+export const LEGACY_CREDENTIAL_SERVICE = 'io.github.kaminarios.whip.ssh';
+export const HOST_CREDENTIAL_SERVICE_PREFIX = 'io.github.kaminarios.whip.ssh.host.';
 
 export const emptyConnectionProfile = (): ConnectionProfile => {
   const now = new Date().toISOString();
