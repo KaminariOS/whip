@@ -53,4 +53,6 @@ jobs:
           build-root-directory: android
           cache-provider: basic
           dependency-graph: generate-and-submit
+          dependency-graph-include-projects: '^:app$'
+          dependency-graph-include-configurations: '^releaseRuntimeClasspath$'
           validate-wrappers: true
