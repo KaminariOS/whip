@@ -7,7 +7,7 @@ Whip is an independent, unofficial Android client for supervising and controllin
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
 > [!WARNING]
-> **Experimental preview. Connect only through a trusted Tailnet. SSH host keys are not yet verified.**
+> Whip is an experimental personal project developed for my own needs. I do not know React Native, and I have not read or manually reviewed the generated code. Do not assume the app is secure or production-ready; review it yourself before trusting it with sensitive systems or credentials. Connect only through a trusted Tailnet because SSH host keys are not yet verified.
 
 [![CI](https://github.com/KaminariOS/whip/actions/workflows/ci.yml/badge.svg)](https://github.com/KaminariOS/whip/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg)](https://github.com/KaminariOS/whip/actions/workflows/codeql.yml)
@@ -130,3 +130,7 @@ symlink under `node_modules`.
 - Review the [roadmap](ROADMAP.md) for current priorities.
 
 Whip is especially looking for feedback about Android device compatibility, real-world Herdr workflows, terminal ergonomics, and safe SSH trust UX.
+
+## License
+
+Whip is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
