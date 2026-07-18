@@ -11,6 +11,7 @@
     "preview": {
       "distribution": "internal",
       "android": {
+        "image": "sdk-57",
         "buildType": "apk"
       }
     },
