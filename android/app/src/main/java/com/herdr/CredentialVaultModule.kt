@@ -1,5 +1,6 @@
 package com.herdr
 
+import android.annotation.SuppressLint
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -9,6 +10,7 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.fragment.app.FragmentActivity
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -218,6 +220,7 @@ class CredentialVaultModule(
       .addOnFailureListener { Log.w(TAG, "Could not check Block Store encryption", it) }
   }
 
+  @SuppressLint("ApplySharedPref")
   @Synchronized
   private fun installLocalRecoveryKey(recoveryKey: ByteArray) {
     require(recoveryKey.size == RECOVERY_KEY_BYTES) { "Invalid recovery key size" }
@@ -228,7 +231,10 @@ class CredentialVaultModule(
     payload[0] = cipher.iv.size.toByte()
     cipher.iv.copyInto(payload, 1)
     encrypted.copyInto(payload, 1 + cipher.iv.size)
-    preferences.edit().putString(WRAPPED_RECOVERY_KEY, encode(payload)).commit()
+    // Persist before returning encrypted credentials so the recovery key cannot lag behind them.
+    preferences.edit(commit = true) {
+      putString(WRAPPED_RECOVERY_KEY, encode(payload))
+    }
   }
 
   @Synchronized
@@ -274,9 +280,11 @@ class CredentialVaultModule(
     return keyStore.getKey(WRAPPING_KEY_ALIAS, null) as? SecretKey
   }
 
+  @SuppressLint("ApplySharedPref")
   @Synchronized
   private fun clearLocalRecoveryKey() {
-    preferences.edit().clear().commit()
+    // Persist the clear before deleting the wrapping key to avoid leaving stale vault state.
+    preferences.edit(commit = true) { clear() }
     try {
       val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
       if (keyStore.containsAlias(WRAPPING_KEY_ALIAS)) keyStore.deleteEntry(WRAPPING_KEY_ALIAS)
