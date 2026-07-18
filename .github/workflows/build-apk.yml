@@ -2,9 +2,19 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag to create or update (for example, v1.0.0)
+        required: true
+        type: string
+      prerelease:
+        description: Mark the GitHub Release as a prerelease
+        required: false
+        default: false
+        type: boolean
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-apk-${{ github.ref }}
@@ -63,3 +73,27 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+      - name: Create GitHub Release and upload APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            release_args=(
+              "$RELEASE_TAG"
+              --target "$GITHUB_SHA"
+              --generate-notes
+            )
+
+            if [[ "$PRERELEASE" == "true" ]]; then
+              release_args+=(--prerelease)
+            fi
+
+            gh release create "${release_args[@]}"
+          fi
+
+          gh release upload "$RELEASE_TAG" \
+            "android/app/build/outputs/apk/release/app-release.apk#HerdR Android APK (arm64-v8a)" \
+            --clobber
