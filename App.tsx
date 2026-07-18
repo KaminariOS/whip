@@ -3,6 +3,7 @@ import './global.css';
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { PortalHost } from '@rn-primitives/portal';
+import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import { Alert, AppState, BackHandler, Platform, StatusBar, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
@@ -62,6 +63,7 @@ import {
   defaultDevicePreferences,
   loadDevicePreferences,
   saveDevicePreferences,
+  type AppearancePreference,
   type TerminalPreferences,
 } from './src/services/devicePreferences';
 import { HerdrClient } from './src/services/HerdrClient';
@@ -140,6 +142,7 @@ function App() {
 }
 
 function AppContent() {
+  const { setColorScheme } = useNativeWindColorScheme();
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const hostsRef = useRef<HostProfile[]>([]);
@@ -163,9 +166,11 @@ function AppContent() {
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
+  const [appearance, setAppearance] = useState<AppearancePreference>(defaultDevicePreferences.appearance);
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
   const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
   const [credentialRecoveryBusy, setCredentialRecoveryBusy] = useState(false);
+  const applyAppearance = useEffectEvent((value: AppearancePreference) => setColorScheme(value));
 
   const updateTerminalFontSize = useCallback((fontSize: number) => {
     const nextFontSize = Math.max(8, Math.min(16, Math.round(fontSize)));
@@ -219,6 +224,8 @@ function AppContent() {
       .then(preferences => {
         setAlertsEnabled(preferences.alertsEnabled);
         setTtsEnabled(preferences.ttsEnabled);
+        setAppearance(preferences.appearance);
+        applyAppearance(preferences.appearance);
         setTerminalPreferences(preferences.terminal);
         setNavigation(current => selectMobileTab(current, preferences.lastTab));
       })
@@ -235,10 +242,16 @@ function AppContent() {
     saveDevicePreferences({
       alertsEnabled,
       ttsEnabled,
+      appearance,
       lastTab: navigation.tab,
       terminal: terminalPreferences,
     }).catch(() => undefined);
-  }, [alertsEnabled, navigation.tab, preferencesLoaded, terminalPreferences, ttsEnabled]);
+  }, [alertsEnabled, appearance, navigation.tab, preferencesLoaded, terminalPreferences, ttsEnabled]);
+
+  const updateAppearance = useCallback((value: AppearancePreference) => {
+    setAppearance(value);
+    setColorScheme(value);
+  }, [setColorScheme]);
 
   useEffect(() => {
     for (const session of liveSessions.sessions) {
@@ -957,10 +970,12 @@ function AppContent() {
               host={activeSession?.host.host || null}
               alertsEnabled={alertsEnabled}
               ttsEnabled={ttsEnabled}
+              appearance={appearance}
               terminalPreferences={terminalPreferences}
               onBack={() => setNavigation(popMobileScreen)}
               onAlertsChange={setAlertsEnabled}
               onTtsChange={setTtsEnabled}
+              onAppearanceChange={updateAppearance}
               onTerminalPreferencesChange={setTerminalPreferences}
               onDisconnect={activeSession ? () => closeLiveHost(activeSession.id) : undefined}
             />

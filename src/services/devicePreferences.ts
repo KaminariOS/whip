@@ -20,6 +20,8 @@ export interface TerminalPreferences {
   backgroundDimming: number;
 }
 
+export type AppearancePreference = 'system' | 'light' | 'dark';
+
 type StoredTerminalPreferences = Partial<TerminalPreferences> & {
   backgroundOpacity?: unknown;
 };
@@ -27,6 +29,7 @@ type StoredTerminalPreferences = Partial<TerminalPreferences> & {
 export interface DevicePreferences {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
+  appearance: AppearancePreference;
   lastTab: AppTab;
   terminal: TerminalPreferences;
 }
@@ -34,6 +37,7 @@ export interface DevicePreferences {
 export const defaultDevicePreferences: DevicePreferences = {
   alertsEnabled: true,
   ttsEnabled: false,
+  appearance: 'system',
   lastTab: 'hosts',
   terminal: {
     fontSize: 8,
@@ -83,6 +87,9 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
     return {
       alertsEnabled: parsed.alertsEnabled ?? defaultDevicePreferences.alertsEnabled,
       ttsEnabled: parsed.ttsEnabled ?? defaultDevicePreferences.ttsEnabled,
+      appearance: isAppearancePreference(parsed.appearance)
+        ? parsed.appearance
+        : defaultDevicePreferences.appearance,
       lastTab: isAppTab(parsed.lastTab) ? parsed.lastTab : defaultDevicePreferences.lastTab,
       terminal: {
         fontSize,
@@ -116,4 +123,8 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 
 function isAppTab(value: unknown): value is AppTab {
   return value === 'hosts' || value === 'herd' || value === 'terminal' || value === 'more';
+}
+
+function isAppearancePreference(value: unknown): value is AppearancePreference {
+  return value === 'system' || value === 'light' || value === 'dark';
 }
