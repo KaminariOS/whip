@@ -1,4 +1,4 @@
-package com.herdr
+package io.github.kaminarios.whip
 
 import android.os.Bundle
 import com.facebook.react.ReactActivity

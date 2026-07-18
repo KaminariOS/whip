@@ -165,16 +165,16 @@ Use `x86_64` for this emulator. A physical ARM64 phone needs the matching archit
 
 ## Relaunch deterministically
 
-This app's Android package is `dev.herdr.remote`, its main activity is `com.herdr.MainActivity`, and its development-client scheme is `herdr-remote`.
+This app's Android package is `io.github.kaminarios.whip`, its main activity is `io.github.kaminarios.whip.MainActivity`, and its development-client scheme is `whip`.
 
 If Expo does not open the project automatically, force-stop it and launch the development client against the reverse-tunneled Metro server:
 
 ```bash
 adb reverse tcp:8081 tcp:8081
-adb shell am force-stop dev.herdr.remote
+adb shell am force-stop io.github.kaminarios.whip
 adb shell am start -W \
   -a android.intent.action.VIEW \
-  -d 'herdr-remote://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
+  -d 'whip://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
 ```
 
 Then wait for the UI to settle and inspect the screen.
@@ -193,12 +193,12 @@ Use this order:
 6. After an action, wait again and capture another screenshot/description.
 7. Inspect debugger/native logs when the screen is blank, stale, or showing an error.
 
-A valid launch for this repository visibly shows the **HERDR REMOTE** connection screen. The connection form includes Tailscale host/IP, SSH user, authentication, Herdr command, and session fields.
+A valid launch for this repository visibly shows the **Remote Herdr connection** screen. The connection form includes Tailscale host/IP, SSH user, authentication, Herdr command, and session fields.
 
 Do not treat these as sufficient proof of a working Expo launch:
 
 ```bash
-adb shell pidof dev.herdr.remote
+adb shell pidof io.github.kaminarios.whip
 adb shell dumpsys activity activities | rg 'mResumedActivity|topResumedActivity'
 ```
 
@@ -220,10 +220,10 @@ Repair and relaunch:
 
 ```bash
 adb reverse tcp:8081 tcp:8081
-adb shell am force-stop dev.herdr.remote
+adb shell am force-stop io.github.kaminarios.whip
 adb shell am start -W \
   -a android.intent.action.VIEW \
-  -d 'herdr-remote://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
+  -d 'whip://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
 ```
 
 Successful Android logs contain lines similar to:
@@ -257,9 +257,9 @@ adb logcat | rg -i 'ReactNativeJS|ReactNative|AndroidRuntime|FATAL EXCEPTION|Dev
 Useful state checks:
 
 ```bash
-adb shell pidof dev.herdr.remote
-adb shell dumpsys activity activities | rg 'mResumedActivity|topResumedActivity|dev.herdr.remote'
-adb shell pm list packages | rg 'dev.herdr.remote'
+adb shell pidof io.github.kaminarios.whip
+adb shell dumpsys activity activities | rg 'mResumedActivity|topResumedActivity|io.github.kaminarios.whip'
+adb shell pm list packages | rg 'io.github.kaminarios.whip'
 ```
 
 For a failed Gradle build, preserve the first meaningful exception and rerun the failing task with `--stacktrace --info`. The final cascade of Gradle errors is often less useful than the first missing package, compiler error, or native-linker error.

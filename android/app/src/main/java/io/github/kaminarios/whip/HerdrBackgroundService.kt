@@ -1,4 +1,4 @@
-package com.herdr
+package io.github.kaminarios.whip
 
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -110,7 +110,7 @@ class HerdrBackgroundService : Service() {
   }
 
   companion object {
-    const val ACTION_START = "com.herdr.action.START_BACKGROUND_MONITORING"
+    const val ACTION_START = "io.github.kaminarios.whip.action.START_BACKGROUND_MONITORING"
     const val EXTRA_HOST_COUNT = "host_count"
     private const val CHANNEL_ID = "herdr-background-monitoring"
     private const val NOTIFICATION_ID = 1937

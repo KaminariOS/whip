@@ -1,4 +1,4 @@
-package com.herdr
+package io.github.kaminarios.whip
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

@@ -1,5 +1,5 @@
 {
-  description = "HerdR Remote Expo Android development environment";
+  description = "Whip Expo Android development environment";
 
   # Match the host flake so the Android shell reuses its cached JDK/SDK closure.
   inputs.nixpkgs.url = "tarball+https://releases.nixos.org/nixos/unstable/nixos-26.11pre1034379.18b9261cb329/nixexprs.tar.xz";

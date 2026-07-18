@@ -25,7 +25,7 @@ export function MoreScreen({ connectedHost, onOpenSettings }: { connectedHost: s
           </View>
           <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
         </Button>
-        <Text className="mt-5 text-center text-sm text-muted-foreground">Herdr Remote · Android client</Text>
+        <Text className="mt-5 text-center text-sm text-muted-foreground">Whip · Unofficial Herdr client</Text>
       </View>
     </View>
   );

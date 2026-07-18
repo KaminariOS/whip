@@ -62,7 +62,7 @@ test('sorts most recently connected hosts first', () => {
 });
 
 test('uses isolated credential services per host', () => {
-  expect(hostCredentialService('host-1')).toBe('dev.herdr.remote.ssh.host.host-1');
+  expect(hostCredentialService('host-1')).toBe('io.github.kaminarios.whip.ssh.host.host-1');
   expect(hostDisplayName({ name: '', username: 'root', host: 'box' })).toBe('root@box');
   expect(parseHosts('not json')).toEqual([]);
 });

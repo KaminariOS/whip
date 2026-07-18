@@ -2,11 +2,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const nativeSource = readFileSync(
-  resolve(__dirname, '../android/app/src/main/java/com/herdr/CredentialVaultModule.kt'),
+  resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/CredentialVaultModule.kt'),
   'utf8',
 );
 const nativePackage = readFileSync(
-  resolve(__dirname, '../android/app/src/main/java/com/herdr/HerdrBackgroundPackage.kt'),
+  resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/HerdrBackgroundPackage.kt'),
   'utf8',
 );
 const gradle = readFileSync(resolve(__dirname, '../android/app/build.gradle'), 'utf8');

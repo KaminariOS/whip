@@ -1,4 +1,4 @@
-package com.herdr
+package io.github.kaminarios.whip
 
 import android.app.Application
 import android.content.res.Configuration
