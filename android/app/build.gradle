@@ -129,7 +129,7 @@ dependencies {
         implementation("com.google.code.gson:gson:2.8.9") {
             because("Gson versions before 2.8.9 have a deserialization vulnerability")
         }
-        implementation("commons-io:commons-io:2.7") {
+        implementation("commons-io:commons-io:2.14.0") {
             because("Commons IO versions before 2.7 have path traversal vulnerabilities")
         }
     }
