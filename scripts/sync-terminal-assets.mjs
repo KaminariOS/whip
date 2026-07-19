@@ -2,6 +2,10 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import androidImeBridge from './android-ime-bridge.cjs';
+
+const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = resolve(root, 'android/app/src/main/assets');
 const terminalFonts = resolve(root, 'assets/terminal-fonts');
@@ -105,6 +109,8 @@ const terminalHtml = `<!doctype html>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
   <script>
+    ${terminalInputDelta.toString()}
+    ${installAndroidImeBridge.toString()}
     const terminalFontFamily = '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", monospace';
     const fontReady = document.fonts?.load
       ? Promise.all([
@@ -138,6 +144,7 @@ const terminalHtml = `<!doctype html>
     terminal.loadAddon(fit);
     terminal.open(document.getElementById('terminal'));
     const send = value => window.ReactNativeWebView.postMessage(JSON.stringify(value));
+    installAndroidImeBridge(terminal, send, navigator.userAgent);
     const controlSequenceForKey = key => {
       const upper = key.length === 1 ? key.toUpperCase() : '';
       return upper >= 'A' && upper <= 'Z' ? String.fromCharCode(upper.charCodeAt(0) - 64) : null;
