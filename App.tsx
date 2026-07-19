@@ -903,6 +903,7 @@ function AppContent() {
                   ) : (
                     <HerdScreen
                       agents={activeSession.snapshot.agents}
+                      tabs={activeSession.snapshot.tabs}
                       refreshing={activeSession.sync.status === 'syncing'}
                       onRefresh={refreshActive}
                       onOpenTerminal={openAgentTerminal}

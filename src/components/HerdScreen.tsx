@@ -3,8 +3,9 @@ import { Plus, Sparkles } from 'lucide-react-native';
 import { useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 
+import { tabNameForAgent } from '@/src/lib/agentStatusEvents';
 import { statusColor, useTheme } from '@/src/theme';
-import type { AgentInfo } from '@/src/types';
+import type { AgentInfo, TabInfo } from '@/src/types';
 import { hapticPress, StatusBadge } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -13,13 +14,14 @@ import { Text } from './ui/text';
 
 interface Props {
   agents: AgentInfo[];
+  tabs: TabInfo[];
   refreshing: boolean;
   onRefresh: () => void;
   onOpenTerminal: (agent: AgentInfo) => void;
   onStart: (name: string, command: string, cwd: string) => Promise<void>;
 }
 
-export function HerdScreen({ agents, refreshing, onRefresh, onOpenTerminal, onStart }: Props) {
+export function HerdScreen({ agents, tabs, refreshing, onRefresh, onOpenTerminal, onStart }: Props) {
   const { colors } = useTheme();
   const blocked = agents.filter(agent => agent.agent_status === 'blocked').length;
   const working = agents.filter(agent => agent.agent_status === 'working').length;
@@ -74,13 +76,14 @@ export function HerdScreen({ agents, refreshing, onRefresh, onOpenTerminal, onSt
         ) : (
           <View className="border-y border-border">
             {sorted.map((agent, index) => {
-              const nameLabel = agent.display_agent || agent.name || agent.agent || 'agent';
+              const tabLabel = tabNameForAgent(agent, tabs);
+              const agentLabel = agent.display_agent || agent.name || agent.agent || 'agent';
               const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
               const tone = statusColor(agent.agent_status, colors);
               return (
-                <Button accessibilityLabel={`Open ${nameLabel} terminal`} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} key={agent.terminal_id} variant="ghost" onPress={hapticPress(() => onOpenTerminal(agent))}>
+                <Button accessibilityLabel={`Open ${tabLabel} terminal`} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} key={agent.terminal_id} variant="ghost" onPress={hapticPress(() => onOpenTerminal(agent))}>
                   <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><Ionicons name="sparkles" size={18} color={tone} /></View>
-                  <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{nameLabel}</Text><StatusBadge status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{agent.workspace_id} · {agent.pane_id}{agent.focused ? ' · Focused' : ''}</Text></View>
+                  <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{tabLabel}</Text><StatusBadge status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{agentLabel} · {agent.workspace_id} · {agent.pane_id}{agent.focused ? ' · Focused' : ''}</Text></View>
                   <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
                 </Button>
               );
