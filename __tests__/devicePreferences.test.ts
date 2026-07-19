@@ -40,6 +40,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     backgroundImageUri: null,
     backgroundDimming: 60,
   });
+  expect(defaultDevicePreferences.terminalControlUsage).toEqual({});
   expect(defaultDevicePreferences.appearance).toBe('system');
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
 });
@@ -59,6 +60,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     ttsEnabled: true,
     appearance: 'system',
     lastTab: 'terminal',
+    terminalControlUsage: {},
     terminal: {
       fontSize: 8,
       scrollback: 9000,
@@ -96,6 +98,21 @@ test('persists new preferences under the v3 key', async () => {
     'herdr.device.preferences.v3',
     JSON.stringify(defaultDevicePreferences),
   );
+});
+
+test('sanitizes persisted terminal control usage', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    terminalControlUsage: {
+      ctrl: 12,
+      paste: 4.6,
+      home: -1,
+      unknown: 99,
+    },
+  }));
+
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminalControlUsage: { ctrl: 12, paste: 5 },
+  });
 });
 
 test('moves an existing terminal background into backed-up storage', async () => {

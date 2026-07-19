@@ -29,6 +29,11 @@ import {
 } from './src/lib/agentStatusEvents';
 import { nextReconnect } from './src/lib/reconnectPolicy';
 import {
+  incrementTerminalControlUsage,
+  type TerminalControlId,
+  type TerminalControlUsage,
+} from './src/lib/terminalControls';
+import {
   parseAgentNotificationTarget,
   resolveAgentNotificationTarget,
 } from './src/lib/notificationNavigation';
@@ -168,6 +173,7 @@ function AppContent() {
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [appearance, setAppearance] = useState<AppearancePreference>(defaultDevicePreferences.appearance);
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
+  const [terminalControlUsage, setTerminalControlUsage] = useState<TerminalControlUsage>(defaultDevicePreferences.terminalControlUsage);
   const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
   const [credentialRecoveryBusy, setCredentialRecoveryBusy] = useState(false);
   const applyAppearance = useEffectEvent((value: AppearancePreference) => setColorScheme(value));
@@ -179,6 +185,10 @@ function AppContent() {
         ? current
         : { ...current, fontSize: nextFontSize }
     ));
+  }, []);
+
+  const recordTerminalControlUse = useCallback((control: TerminalControlId) => {
+    setTerminalControlUsage(current => incrementTerminalControlUsage(current, control));
   }, []);
 
   liveSessionsRef.current = liveSessions;
@@ -227,6 +237,7 @@ function AppContent() {
         setAppearance(preferences.appearance);
         applyAppearance(preferences.appearance);
         setTerminalPreferences(preferences.terminal);
+        setTerminalControlUsage(preferences.terminalControlUsage);
         setNavigation(current => selectMobileTab(current, preferences.lastTab));
       })
       .finally(() => setPreferencesLoaded(true));
@@ -245,8 +256,9 @@ function AppContent() {
       appearance,
       lastTab: navigation.tab,
       terminal: terminalPreferences,
+      terminalControlUsage,
     }).catch(() => undefined);
-  }, [alertsEnabled, appearance, navigation.tab, preferencesLoaded, terminalPreferences, ttsEnabled]);
+  }, [alertsEnabled, appearance, navigation.tab, preferencesLoaded, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
@@ -947,7 +959,9 @@ function AppContent() {
                 client={runtime.client}
                 visible={terminalVisible && session.id === activeSession?.id}
                 terminalPreferences={terminalPreferences}
+                terminalControlUsage={terminalControlUsage}
                 onTerminalFontSizeChange={updateTerminalFontSize}
+                onTerminalControlUse={recordTerminalControlUse}
                 onRefresh={refreshHost}
                 onOpenPane={(sessionId, pane) => {
                   setLiveSessions(current => selectLiveHostSession(current, sessionId));
@@ -1020,7 +1034,9 @@ function LiveSessionView({
   client,
   visible,
   terminalPreferences,
+  terminalControlUsage,
   onTerminalFontSizeChange,
+  onTerminalControlUse,
   onRefresh,
   onOpenPane,
   onActivateTerminal,
@@ -1031,7 +1047,9 @@ function LiveSessionView({
   client: HerdrClient;
   visible: boolean;
   terminalPreferences: TerminalPreferences;
+  terminalControlUsage: TerminalControlUsage;
   onTerminalFontSizeChange: (fontSize: number) => void;
+  onTerminalControlUse: (control: TerminalControlId) => void;
   onRefresh: (sessionId: string) => Promise<void>;
   onOpenPane: (sessionId: string, pane: PaneInfo) => void;
   onActivateTerminal: (sessionId: string, pane: PaneInfo) => void;
@@ -1059,7 +1077,9 @@ function LiveSessionView({
       onCloseTerminal={closeTerminal}
       onTerminalStatus={terminalStatus}
       terminalPreferences={terminalPreferences}
+      terminalControlUsage={terminalControlUsage}
       onTerminalFontSizeChange={onTerminalFontSizeChange}
+      onTerminalControlUse={onTerminalControlUse}
       onExit={() => undefined}
       showExit={false}
     />

@@ -5,6 +5,11 @@ import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import { cn } from '@/src/lib/utils';
+import {
+  orderTerminalControls,
+  type TerminalControlId,
+  type TerminalControlUsage,
+} from '../lib/terminalControls';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import type { TerminalFrame } from '../lib/terminalBridge';
@@ -21,8 +26,10 @@ interface Props {
   visible: boolean;
   session: TerminalSession | null;
   preferences: TerminalPreferences;
+  controlUsage: TerminalControlUsage;
   compact?: boolean;
   onFontSizeChange: (fontSize: number) => void;
+  onControlUse: (control: TerminalControlId) => void;
   onClose: () => void;
   onStatus: (status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
 }
@@ -31,32 +38,31 @@ interface WebViewHandle {
   injectJavaScript: (script: string) => void;
 }
 
-const KEYS = [
-  ['ESC', '\u001b'],
-  ['CTRL+C', '\u0003'],
-  ['TAB', '\t'],
-  ['⇧TAB', '\u001b[Z'],
-  ['↑', '\u001b[A'],
-  ['↓', '\u001b[B'],
-  ['←', '\u001b[D'],
-  ['→', '\u001b[C'],
-  ['HOME', '\u001b[H'],
-  ['END', '\u001b[F'],
-  ['PG↑', '\u001b[5~'],
-  ['PG↓', '\u001b[6~'],
-  ['-', '-'],
-  ['/', '/'],
-  ['|', '|'],
-  ['~', '~'],
-  ['ENTER', '\r'],
-] as const;
+const TERMINAL_KEYS: Partial<Record<TerminalControlId, readonly [string, string]>> = {
+  esc: ['ESC', '\u001b'],
+  tab: ['TAB', '\t'],
+  up: ['↑', '\u001b[A'],
+  left: ['←', '\u001b[D'],
+  right: ['→', '\u001b[C'],
+  down: ['↓', '\u001b[B'],
+  enter: ['ENTER', '\r'],
+  slash: ['/', '/'],
+  hyphen: ['-', '-'],
+  pipe: ['|', '|'],
+  tilde: ['~', '~'],
+  end: ['END', '\u001b[F'],
+  'page-up': ['PG↑', '\u001b[5~'],
+  'page-down': ['PG↓', '\u001b[6~'],
+  'shift-tab': ['⇧TAB', '\u001b[Z'],
+  home: ['HOME', '\u001b[H'],
+};
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 
-export function TerminalScreen({ client, visible, session, preferences, compact = false, onFontSizeChange, onClose, onStatus }: Props) {
+export function TerminalScreen({ client, visible, session, preferences, controlUsage, compact = false, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
   const status = session?.status || 'connecting';
@@ -80,6 +86,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
   const [searchResult, setSearchResult] = useState({ count: 0, index: -1, invalid: false });
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
+  const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
 
   const reportStatus = useEffectEvent(onStatus);
 
@@ -316,6 +323,80 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
     setConnectionGeneration(value => value + 1);
   };
 
+  const renderTerminalControl = (control: TerminalControlId) => {
+    const key = TERMINAL_KEYS[control];
+    if (key) {
+      return (
+        <TerminalKey
+          key={control}
+          label={key[0]}
+          onPress={() => {
+            onControlUse(control);
+            sendInput(key[1]);
+          }}
+        />
+      );
+    }
+    if (control === 'paste') {
+      return (
+        <TerminalKey
+          key={control}
+          label="PASTE"
+          onPress={() => {
+            onControlUse(control);
+            pasteClipboard().catch(reason => setError(String(reason)));
+          }}
+        />
+      );
+    }
+    if (control === 'find') {
+      return (
+        <TerminalKey
+          key={control}
+          label="FIND"
+          armed={searchOpen}
+          onPress={() => {
+            onControlUse(control);
+            setSearchOpen(value => !value);
+          }}
+        />
+      );
+    }
+    if (control === 'ctrl') {
+      return (
+        <Button
+          key={control}
+          accessibilityState={{ selected: ctrl !== 'off' }}
+          onPress={() => {
+            onControlUse(control);
+            setCtrl(value => value === 'off' ? 'armed' : 'off');
+          }}
+          onLongPress={() => setCtrl('locked')}
+          delayLongPress={450}
+          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', ctrl === 'armed' && 'border border-white', ctrl === 'locked' && 'bg-white')}
+          variant="secondary">
+          <Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', ctrl === 'armed' && 'text-white', ctrl === 'locked' && 'text-[#212121]')}>CTRL</Text>
+        </Button>
+      );
+    }
+    if (control !== 'alt') return null;
+    return (
+      <Button
+        key={control}
+        accessibilityState={{ selected: alt !== 'off' }}
+        onPress={() => {
+          onControlUse(control);
+          setAlt(value => value === 'off' ? 'armed' : 'off');
+        }}
+        onLongPress={() => setAlt('locked')}
+        delayLongPress={450}
+        className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', alt === 'armed' && 'border border-white', alt === 'locked' && 'bg-white')}
+        variant="secondary">
+        <Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', alt === 'armed' && 'text-white', alt === 'locked' && 'text-[#212121]')}>ALT</Text>
+      </Button>
+    );
+  };
+
   return (
     <View
       accessibilityElementsHidden={!visible || !session}
@@ -398,23 +479,7 @@ export function TerminalScreen({ client, visible, session, preferences, compact 
           showsHorizontalScrollIndicator={false}
           className="flex-grow-0 border-t border-[#424242] bg-[#181818]"
           contentContainerClassName="items-center gap-[5px] px-1.5 py-[7px]">
-          <TerminalKey label="FIND" armed={searchOpen} onPress={() => setSearchOpen(value => !value)} />
-          <TerminalKey label="PASTE" onPress={() => { pasteClipboard().catch(reason => setError(String(reason))); }} />
-          <Button
-            accessibilityState={{ selected: ctrl !== 'off' }}
-            onPress={() => setCtrl(value => value === 'off' ? 'armed' : 'off')}
-            onLongPress={() => setCtrl('locked')}
-            delayLongPress={450}
-            className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', ctrl === 'armed' && 'border border-white', ctrl === 'locked' && 'bg-white')} variant="secondary"><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', ctrl === 'armed' && 'text-white', ctrl === 'locked' && 'text-[#212121]')}>CTRL</Text></Button>
-          <Button
-            accessibilityState={{ selected: alt !== 'off' }}
-            onPress={() => setAlt(value => value === 'off' ? 'armed' : 'off')}
-            onLongPress={() => setAlt('locked')}
-            delayLongPress={450}
-            className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', alt === 'armed' && 'border border-white', alt === 'locked' && 'bg-white')} variant="secondary"><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', alt === 'armed' && 'text-white', alt === 'locked' && 'text-[#212121]')}>ALT</Text></Button>
-          {KEYS.map(([labelText, value]) => (
-            <TerminalKey key={labelText} label={labelText} onPress={() => sendInput(value)} />
-          ))}
+          {controlOrder.map(renderTerminalControl)}
         </ScrollView>
       </View>
     </View>
