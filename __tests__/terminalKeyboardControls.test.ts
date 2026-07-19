@@ -14,7 +14,7 @@ describe('terminal keyboard controls', () => {
 
     const webView = screen.indexOf('      <WebView\n');
     const controlsWrapper = screen.indexOf('ref={controlsRef}');
-    const controls = screen.indexOf('<TerminalKey label="FIND"');
+    const controls = screen.indexOf('{controlOrder.map(renderTerminalControl)}');
 
     expect(screen).toContain('event.endCoordinates.screenY');
     expect(screen).toContain('controlsRef.current?.measureInWindow');
@@ -28,5 +28,19 @@ describe('terminal keyboard controls', () => {
     expect(controlsWrapper).toBeGreaterThan(webView);
     expect(controls).toBeGreaterThan(controlsWrapper);
     expect(manifest).toContain('android:windowSoftInputMode="adjustResize"');
+  });
+
+  it('renders controls in their persisted frequency order and records presses', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/TerminalScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain(
+      'const [controlOrder] = useState(() => orderTerminalControls(controlUsage));',
+    );
+    expect(screen).toContain('{controlOrder.map(renderTerminalControl)}');
+    expect(screen).toContain('onControlUse(control);');
+    expect(screen).not.toContain('CTRL+C');
   });
 });

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { parseTerminalControlUsage, type TerminalControlUsage } from '../lib/terminalControls';
 import type { AppTab } from '../types';
 import {
   migrateTerminalBackgroundImage,
@@ -32,6 +33,7 @@ export interface DevicePreferences {
   appearance: AppearancePreference;
   lastTab: AppTab;
   terminal: TerminalPreferences;
+  terminalControlUsage: TerminalControlUsage;
 }
 
 export const defaultDevicePreferences: DevicePreferences = {
@@ -46,6 +48,7 @@ export const defaultDevicePreferences: DevicePreferences = {
     backgroundImageUri: null,
     backgroundDimming: 60,
   },
+  terminalControlUsage: {},
 };
 
 export async function loadDevicePreferences(): Promise<DevicePreferences> {
@@ -91,6 +94,7 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         ? parsed.appearance
         : defaultDevicePreferences.appearance,
       lastTab: isAppTab(parsed.lastTab) ? parsed.lastTab : defaultDevicePreferences.lastTab,
+      terminalControlUsage: parseTerminalControlUsage(parsed.terminalControlUsage),
       terminal: {
         fontSize,
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),

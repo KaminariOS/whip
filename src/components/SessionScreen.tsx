@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
+import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalControls';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
@@ -30,7 +31,9 @@ interface Props {
   onCloseTerminal: (terminalId: string) => void;
   onTerminalStatus: (terminalId: string, status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
   terminalPreferences: TerminalPreferences;
+  terminalControlUsage: TerminalControlUsage;
   onTerminalFontSizeChange: (fontSize: number) => void;
+  onTerminalControlUse: (control: TerminalControlId) => void;
   onExit: () => void;
   showExit?: boolean;
 }
@@ -53,7 +56,9 @@ export function SessionScreen({
   onCloseTerminal,
   onTerminalStatus,
   terminalPreferences,
+  terminalControlUsage,
   onTerminalFontSizeChange,
+  onTerminalControlUse,
   onExit,
   showExit = true,
 }: Props) {
@@ -372,7 +377,9 @@ export function SessionScreen({
             visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
             session={terminalSession}
             preferences={terminalPreferences}
+            controlUsage={terminalControlUsage}
             onFontSizeChange={onTerminalFontSizeChange}
+            onControlUse={onTerminalControlUse}
             onClose={() => onCloseTerminal(terminalSession.terminalId)}
             onStatus={(status, error, reconnectAttempt) => {
               onTerminalStatus(terminalSession.terminalId, status, error, reconnectAttempt);
