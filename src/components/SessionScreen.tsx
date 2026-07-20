@@ -249,11 +249,11 @@ export function SessionScreen({
     setMenuOpen(false);
   };
 
-  const closeTab = async () => {
-    if (!selectedTab) return;
+  const closeTab = async (item: TabInfo | undefined = selectedTab) => {
+    if (!item) return;
     setMenuOpen(false);
-    pendingFocus.current = { kind: 'tab', mode: 'close', previousId: selectedTab.tab_id };
-    if (!await run(() => client.closeTab(selectedTab.tab_id))) pendingFocus.current = null;
+    pendingFocus.current = { kind: 'tab', mode: 'close', previousId: item.tab_id };
+    if (!await run(() => client.closeTab(item.tab_id))) pendingFocus.current = null;
   };
 
   const confirmCloseWorkspace = () => {
@@ -311,12 +311,18 @@ export function SessionScreen({
               const active = item.tab_id === selectedTab?.tab_id;
               const itemPanes = snapshot.panes.filter(pane => pane.tab_id === item.tab_id);
               const itemSession = terminalState.sessions.find(session => itemPanes.some(pane => pane.terminal_id === session.terminalId));
+              const label = item.label || item.tab_id;
               return (
-                <Button key={item.tab_id} className={cn('h-[30px] max-w-[170px] rounded-full bg-[#212121] px-[11px] py-0', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
-                  <View className="size-1.5 rounded-full" style={{ backgroundColor: sessionTabStatusColor(item.agent_status, itemSession?.status) }} />
-                  <Text numberOfLines={1} className={cn('max-w-[122px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.tab_id}</Text>
-                  {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
-                </Button>
+                <View key={item.tab_id} className={cn('h-[30px] max-w-[170px] flex-row items-center overflow-hidden rounded-full bg-[#212121]', active && 'bg-[#FFFFFF]')}>
+                  <Button accessibilityLabel={`Open ${label} tab`} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
+                    <View className="size-1.5 rounded-full" style={{ backgroundColor: sessionTabStatusColor(item.agent_status, itemSession?.status) }} />
+                    <Text numberOfLines={1} className={cn('max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{label}</Text>
+                    {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
+                  </Button>
+                  <Button accessibilityLabel={`Close ${label} tab`} className="h-[30px] w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(() => closeTab(item))}>
+                    <Ionicons name="close" size={14} color={active ? colors.ink : colors.muted} />
+                  </Button>
+                </View>
               );
             })}
           </ScrollView>
