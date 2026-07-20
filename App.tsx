@@ -47,6 +47,7 @@ import {
   applyLiveHostLayoutUpdate,
   applyLiveHostPaneUpdate,
   applyLiveHostSnapshot,
+  aggregateAgentStatus,
   beginLiveHostSync,
   canRefreshLiveHostSession,
   closeLiveHostSession,
@@ -928,6 +929,7 @@ function AppContent() {
     hostId: session.id,
     label: hostDisplayName(session.host),
     status: session.status === 'disconnected' ? 'error' : session.status,
+    agentStatus: aggregateAgentStatus(session.snapshot.workspaces.map(workspace => workspace.agent_status)),
     terminalCount: session.terminals.sessions.length,
   }));
 

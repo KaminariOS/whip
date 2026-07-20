@@ -14,7 +14,7 @@ import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { colors, sessionTabStatusColor, statusColor } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo, WorkspaceInfo } from '../types';
-import { hapticPress } from './app-ui';
+import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
@@ -289,7 +289,7 @@ export function SessionScreen({
             const active = item.workspace_id === workspace?.workspace_id;
             return (
               <Button key={item.workspace_id} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px]', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseWorkspace(item))} onLongPress={active ? openRenameWorkspace : undefined}>
-                <View className="size-1.5 rounded-full" style={{ backgroundColor: statusColor(item.agent_status) }} />
+                <AnimatedAgentStatusGlyph status={item.agent_status} color={statusColor(item.agent_status)} size={12} />
                 <Text numberOfLines={1} className={cn('max-w-32 text-[11px] font-semibold text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.workspace_id}</Text>
                 <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.tab_count}</Text>
               </Button>
@@ -315,7 +315,7 @@ export function SessionScreen({
               return (
                 <View key={item.tab_id} className={cn('h-[30px] max-w-[170px] flex-row items-center overflow-hidden rounded-full bg-[#212121]', active && 'bg-[#FFFFFF]')}>
                   <Button accessibilityLabel={`Open ${label} tab`} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
-                    <View className="size-1.5 rounded-full" style={{ backgroundColor: sessionTabStatusColor(item.agent_status, itemSession?.status) }} />
+                    <AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status)} size={12} />
                     <Text numberOfLines={1} className={cn('max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{label}</Text>
                     {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
                   </Button>
