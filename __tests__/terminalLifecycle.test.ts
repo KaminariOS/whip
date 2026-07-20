@@ -29,6 +29,14 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('if (preparing) await preparing.catch(() => undefined);');
   });
 
+  it('reconciles a snapshot after an event stream reconnect', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+
+    expect(app).toContain('await ensureEventStream(sessionId, session.snapshot, true);');
+    expect(app).toContain('Events emitted while the stream was down cannot be replayed.');
+    expect(app).toContain('await refreshHost(sessionId);');
+  });
+
   it('opens the active terminal immediately after selecting a saved host', () => {
     const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
 
@@ -45,6 +53,7 @@ describe('terminal renderer lifecycle', () => {
     expect(screen).toContain('client.focusPane(pane.pane_id)');
     expect(screen).toContain('activateServerPane(serverPaneId)');
     expect(client).toContain('async focusPane(paneId: string)');
+    expect(app).toContain('.catch(error => scheduleReconnect(sessionId, error));');
   });
 
   it('reattaches terminals transparently when the SSH control session is replaced', () => {

@@ -3,6 +3,7 @@ import SSHClient, {
 } from '@dylankenneally/react-native-ssh-sftp';
 
 import { normalizePrivateKey } from '../lib/privateKey';
+import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import {
   apiEvent,
   apiErrorMessage,
@@ -265,8 +266,19 @@ export class HerdrClient {
     const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
     this.apiServer = server;
     if (!server.running) {
-      return { server, agents: [], workspaces: [], tabs: [], panes: [] };
+      return {
+        server,
+        focused_workspace_id: null,
+        focused_tab_id: null,
+        focused_pane_id: null,
+        agents: [],
+        workspaces: [],
+        tabs: [],
+        panes: [],
+        layouts: [],
+      };
     }
+    assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
     if (!server.socket) throw new Error('Herdr server status did not include its API socket');
     const request = JSON.stringify(sessionSnapshotRequest());
     let output: string;
@@ -283,12 +295,17 @@ export class HerdrClient {
       throw new Error('Herdr API socket did not return a session snapshot');
     }
     const snapshot = result.snapshot;
+    assertHerdrProtocolCompatible(snapshot.protocol);
     return {
       server: { ...server, version: snapshot.version, protocol: snapshot.protocol, compatible: true },
+      focused_workspace_id: snapshot.focused_workspace_id ?? null,
+      focused_tab_id: snapshot.focused_tab_id ?? null,
+      focused_pane_id: snapshot.focused_pane_id ?? null,
       agents: snapshot.agents,
       workspaces: snapshot.workspaces,
       tabs: snapshot.tabs,
       panes: snapshot.panes,
+      layouts: snapshot.layouts ?? [],
     };
   }
 
@@ -547,6 +564,7 @@ export class HerdrClient {
     if (!server.running || typeof server.protocol !== 'number') {
       throw new Error('Herdr server protocol is unavailable');
     }
+    assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
     return server as ServerInfo & { protocol: number };
   }
 

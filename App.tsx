@@ -22,11 +22,13 @@ import { Text } from './src/components/ui/text';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import { resolveColorScheme } from './src/lib/appearance';
 import {
+  activeTabSuppressesNotifications,
   agentFromStatusEvent,
   tabNameForAgent,
   agentStatusFromEvent,
   shouldNotifyAgentTransition,
 } from './src/lib/agentStatusEvents';
+import { isHerdrProtocolMismatch } from './src/lib/herdrProtocol';
 import { nextReconnect } from './src/lib/reconnectPolicy';
 import {
   incrementTerminalControlUsage,
@@ -39,7 +41,10 @@ import {
 } from './src/lib/notificationNavigation';
 import { createRefreshCoordinator, type RefreshCoordinator } from './src/lib/refreshCoordinator';
 import {
+  applyLiveHostAgentStatus,
   applyLiveHostFocus,
+  applyLiveHostLayoutUpdate,
+  applyLiveHostPaneUpdate,
   applyLiveHostSnapshot,
   beginLiveHostSync,
   canRefreshLiveHostSession,
@@ -325,13 +330,18 @@ function AppContent() {
       return;
     }
     runtime.eventReconnectAttempts = decision.attempt;
-    runtime.eventReconnectTimer = setTimeout(() => {
+    runtime.eventReconnectTimer = setTimeout(async () => {
       runtime.eventReconnectTimer = null;
       const session = findLiveHostSession(liveSessionsRef.current, sessionId);
       if (!session || runtimes.current.get(sessionId) !== runtime) return;
-      ensureEventStream(sessionId, session.snapshot, true).catch(error => {
+      try {
+        await ensureEventStream(sessionId, session.snapshot, true);
+        // Events emitted while the stream was down cannot be replayed. Reconcile
+        // immediately so closed tabs and completed agents do not remain stale.
+        await refreshHost(sessionId);
+      } catch (error) {
         scheduleEventReconnect(sessionId, error || cause);
-      });
+      }
     }, decision.delayMs);
   };
 
@@ -367,6 +377,26 @@ function AppContent() {
         if (event.event === 'workspace.focused' || event.event === 'tab.focused' || event.event === 'pane.focused') {
           setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId, tabId, paneId }));
         }
+        if (event.event === 'pane.updated') {
+          const pane = event.data.pane;
+          if (pane && typeof pane === 'object' && typeof (pane as PaneInfo).pane_id === 'string') {
+            setLiveSessions(current => applyLiveHostPaneUpdate(
+              current,
+              sessionId,
+              pane as PaneInfo,
+            ));
+          }
+        }
+        if (event.event === 'layout.updated') {
+          const layout = event.data.layout;
+          if (layout && typeof layout === 'object' && typeof (layout as { tab_id?: unknown }).tab_id === 'string') {
+            setLiveSessions(current => applyLiveHostLayoutUpdate(
+              current,
+              sessionId,
+              layout as HerdrSnapshot['layouts'][number],
+            ));
+          }
+        }
         if (event.event === 'pane.agent_status_changed' && paneId) {
           const agentStatus = agentStatusFromEvent(event.data.agent_status);
           const session = findLiveHostSession(liveSessionsRef.current, sessionId);
@@ -377,7 +407,15 @@ function AppContent() {
             agentStatus
             && agent
             && alertsEnabledRef.current
-            && shouldNotifyAgentTransition(previous, agentStatus, AppState.currentState !== 'active')
+            && shouldNotifyAgentTransition(
+              previous,
+              agentStatus,
+              activeTabSuppressesNotifications(
+                agent,
+                session?.snapshot.tabs ?? [],
+                AppState.currentState === 'active',
+              ),
+            )
           ) {
             alertAgent(agent, ttsEnabledRef.current, {
               hostId: sessionId,
@@ -385,6 +423,7 @@ function AppContent() {
             }, session ? tabNameForAgent(agent, session.snapshot.tabs) : undefined).catch(() => undefined);
           }
           if (agentStatus) runtime.previousStatuses?.set(paneId, agentStatus);
+          setLiveSessions(current => applyLiveHostAgentStatus(current, sessionId, paneId, event.data));
         }
         if (runtime.eventRefreshTimer) return;
         runtime.eventRefreshTimer = setTimeout(() => {
@@ -405,7 +444,16 @@ function AppContent() {
 
   const scheduleReconnect = (sessionId: string, cause: unknown) => {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime || runtime.reconnectTimer) return;
+    if (!runtime) return;
+    if (isHerdrProtocolMismatch(cause)) {
+      clearReconnect(runtime);
+      setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
+        status: 'error',
+        error: String(cause),
+      }));
+      return;
+    }
+    if (runtime.reconnectTimer) return;
     const decision = nextReconnect(runtime.reconnectAttempts);
     if (decision.action === 'stop') {
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
@@ -464,7 +512,11 @@ function AppContent() {
             if (shouldNotifyAgentTransition(
               previous,
               agent.agent_status,
-              AppState.currentState !== 'active',
+              activeTabSuppressesNotifications(
+                agent,
+                snapshot.tabs,
+                AppState.currentState === 'active',
+              ),
             )) {
               alertAgent(agent, ttsEnabledRef.current, {
                 hostId: sessionId,
@@ -782,7 +834,7 @@ function AppContent() {
       ? runtime?.client.focusAgent(pane.pane_id)
       : runtime?.client.focusPane(pane.pane_id);
     focus?.then(() => refreshHost(sessionId))
-      .catch(() => undefined);
+      .catch(error => scheduleReconnect(sessionId, error));
   };
 
   const openNotificationTarget = useEffectEvent((): boolean => {
