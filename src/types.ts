@@ -163,4 +163,4 @@ export interface HerdrSnapshot {
 }
 
 export type AppTab = 'hosts' | 'herd' | 'terminal' | 'more';
-export type AppScreen = 'settings';
+export type AppScreen = 'settings' | 'about';

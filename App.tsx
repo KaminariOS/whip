@@ -7,6 +7,7 @@ import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, View } f
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
+import { AboutScreen } from './src/components/AboutScreen';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
 import { HerdScreen } from './src/components/HerdScreen';
@@ -987,6 +988,7 @@ function AppContent() {
           {navigation.tab === 'more' && (
             <MoreScreen
               connectedHost={activeSession ? hostDisplayName(activeSession.host) : null}
+              onOpenAbout={() => setNavigation(current => pushMobileScreen(current, 'about'))}
               onOpenSettings={() => setNavigation(current => pushMobileScreen(current, 'settings'))}
             />
           )}
@@ -1046,6 +1048,15 @@ function AppContent() {
               onAppearanceChange={updateAppearance}
               onTerminalPreferencesChange={setTerminalPreferences}
               onDisconnect={activeSession ? () => closeLiveHost(activeSession.id) : undefined}
+            />
+          </View>
+        )}
+
+        {topScreen === 'about' && (
+          <View className="absolute inset-0 z-40 bg-background">
+            <AboutScreen
+              server={activeSession?.snapshot.server || null}
+              onBack={() => setNavigation(popMobileScreen)}
             />
           </View>
         )}
