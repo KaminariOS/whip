@@ -38,7 +38,7 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
         <View className="mb-[30px] flex-row items-center gap-3.5"><WhipMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">Remote Herdr connection</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">Herdr stays private on the host. This device connects over SSH and opens only the selected pane terminal.</Text></View></View>
 
         <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">Host identity</Text>
-        <Field label="Display name" value={profile.name} placeholder="Savior" onChangeText={value => update('name', value)} />
+        <Field label="Display name" value={profile.name} placeholder={profile.host.trim() || 'Savior'} onChangeText={value => update('name', value)} />
 
         <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">SSH destination</Text>
         <View className="flex-row gap-2.5"><Field label="Tailscale host or IP" value={profile.host} placeholder="laptop.tailnet.ts.net" onChangeText={value => update('host', value)} className="flex-1" autoCapitalize="none" /><Field label="Port" value={profile.port} onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-[88px]" /></View>
