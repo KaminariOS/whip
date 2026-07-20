@@ -535,13 +535,13 @@ function serverFocusSelection(snapshot: HerdrSnapshot): LiveHostSelection {
 
 const AGENT_STATUS_PRIORITY: Record<AgentStatus, number> = {
   blocked: 5,
-  working: 4,
-  done: 3,
+  done: 4,
+  working: 3,
   idle: 2,
   unknown: 1,
 };
 
-function aggregateAgentStatus(statuses: AgentStatus[]): AgentStatus {
+export function aggregateAgentStatus(statuses: AgentStatus[]): AgentStatus {
   return statuses.reduce<AgentStatus>((aggregate, status) => (
     AGENT_STATUS_PRIORITY[status] > AGENT_STATUS_PRIORITY[aggregate] ? status : aggregate
   ), 'unknown');

@@ -4,6 +4,7 @@ import {
   applyLiveHostLayoutUpdate,
   applyLiveHostPaneUpdate,
   applyLiveHostSnapshot,
+  aggregateAgentStatus,
   beginLiveHostSync,
   canRefreshLiveHostSession,
   closeLiveHostSession,
@@ -109,6 +110,13 @@ function syncSnapshot(
 }
 
 describe('live host session state', () => {
+  test('aggregates agent attention with native-client priority', () => {
+    expect(aggregateAgentStatus([])).toBe('unknown');
+    expect(aggregateAgentStatus(['idle', 'working'])).toBe('working');
+    expect(aggregateAgentStatus(['working', 'done'])).toBe('done');
+    expect(aggregateAgentStatus(['done', 'blocked'])).toBe('blocked');
+  });
+
   test('does not refresh a host until its initial SSH connection is ready', () => {
     const connecting = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const session = findLiveHostSession(connecting, 'live-1');
