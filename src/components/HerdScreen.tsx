@@ -6,7 +6,7 @@ import { RefreshControl, ScrollView, View } from 'react-native';
 import { tabNameForAgent } from '@/src/lib/agentStatusEvents';
 import { statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, TabInfo } from '@/src/types';
-import { hapticPress, StatusBadge } from './app-ui';
+import { AnimatedAgentStatusGlyph, AnimatedEntrance, hapticPress, StatusBadge } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -58,13 +58,15 @@ export function HerdScreen({ agents, tabs, refreshing, onRefresh, onOpenTerminal
         </View>
 
         {creating ? (
-          <View className="mb-4 gap-2.5 rounded-lg border border-border bg-card p-3.5">
-            <Text className="mb-0.5 text-[17px] font-semibold leading-[22px]">Start an agent</Text>
-            <Input value={name} onChangeText={setName} placeholder="Agent name" />
-            <Input value={command} onChangeText={setCommand} placeholder="Command, e.g. claude" autoCapitalize="none" />
-            <Input value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" autoCapitalize="none" />
-            <View className="mt-0.5 flex-row justify-end gap-2"><Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(false))}><Text>Cancel</Text></Button><Button size="sm" disabled={!name.trim() || !command.trim()} onPress={hapticPress(start)}><Text>Launch</Text></Button></View>
-          </View>
+          <AnimatedEntrance className="mb-4">
+            <View className="gap-2.5 rounded-lg border border-border bg-card p-3.5">
+              <Text className="mb-0.5 text-[17px] font-semibold leading-[22px]">Start an agent</Text>
+              <Input value={name} onChangeText={setName} placeholder="Agent name" />
+              <Input value={command} onChangeText={setCommand} placeholder="Command, e.g. claude" autoCapitalize="none" />
+              <Input value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" autoCapitalize="none" />
+              <View className="mt-0.5 flex-row justify-end gap-2"><Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(false))}><Text>Cancel</Text></Button><Button size="sm" disabled={!name.trim() || !command.trim()} onPress={hapticPress(start)}><Text>Launch</Text></Button></View>
+            </View>
+          </AnimatedEntrance>
         ) : null}
 
         {sorted.length === 0 ? (
@@ -81,11 +83,13 @@ export function HerdScreen({ agents, tabs, refreshing, onRefresh, onOpenTerminal
               const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
               const tone = statusColor(agent.agent_status, colors);
               return (
-                <Button accessibilityLabel={`Open ${tabLabel} terminal`} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} key={agent.terminal_id} variant="ghost" onPress={hapticPress(() => onOpenTerminal(agent))}>
-                  <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><Ionicons name="sparkles" size={18} color={tone} /></View>
-                  <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{tabLabel}</Text><StatusBadge status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{agentLabel} · {agent.workspace_id} · {agent.pane_id}{agent.focused ? ' · Focused' : ''}</Text></View>
-                  <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-                </Button>
+                <AnimatedEntrance delay={Math.min(index * 45, 225)} key={agent.terminal_id}>
+                  <Button accessibilityLabel={`Open ${tabLabel} terminal`} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} variant="ghost" onPress={hapticPress(() => onOpenTerminal(agent))}>
+                    <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
+                    <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{tabLabel}</Text><StatusBadge agentStatus status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{agentLabel} · {agent.workspace_id} · {agent.pane_id}{agent.focused ? ' · Focused' : ''}</Text></View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                  </Button>
+                </AnimatedEntrance>
               );
             })}
           </View>
