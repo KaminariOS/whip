@@ -34,7 +34,6 @@ export function hostCredentialService(id: string): string {
 
 export function hostDisplayName(profile: Pick<HostProfile, 'name' | 'host' | 'username'>): string {
   if (profile.name.trim()) return profile.name.trim();
-  if (profile.username.trim() && profile.host.trim()) return `${profile.username.trim()}@${profile.host.trim()}`;
   return profile.host.trim() || 'New host';
 }
 
