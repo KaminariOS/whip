@@ -56,6 +56,13 @@ describe('terminal renderer lifecycle', () => {
     expect(app).toContain('.catch(error => scheduleReconnect(sessionId, error));');
   });
 
+  it('closes tabs immediately without a confirmation prompt', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+
+    expect(screen).toContain('onPress={closeTab}');
+    expect(screen).not.toContain("Alert.alert('Close Herdr tab?'");
+  });
+
   it('reattaches terminals transparently when the SSH control session is replaced', () => {
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
 

@@ -249,20 +249,11 @@ export function SessionScreen({
     setMenuOpen(false);
   };
 
-  const confirmCloseTab = () => {
+  const closeTab = async () => {
     if (!selectedTab) return;
     setMenuOpen(false);
-    Alert.alert('Close Herdr tab?', selectedTab.label || selectedTab.tab_id, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Close',
-        style: 'destructive',
-        onPress: async () => {
-          pendingFocus.current = { kind: 'tab', mode: 'close', previousId: selectedTab.tab_id };
-          if (!await run(() => client.closeTab(selectedTab.tab_id))) pendingFocus.current = null;
-        },
-      },
-    ]);
+    pendingFocus.current = { kind: 'tab', mode: 'close', previousId: selectedTab.tab_id };
+    if (!await run(() => client.closeTab(selectedTab.tab_id))) pendingFocus.current = null;
   };
 
   const confirmCloseWorkspace = () => {
@@ -338,7 +329,7 @@ export function SessionScreen({
           <MenuAction label="RENAME SPACE" disabled={!workspace} onPress={openRenameWorkspace} />
           <MenuAction label="RENAME TAB" disabled={!selectedTab} onPress={openRenameTab} />
           <MenuAction label="PANE ACTIONS" disabled={!selectedPane} onPress={() => { if (selectedPane) onOpenPane(selectedPane); setMenuOpen(false); }} />
-          <MenuAction label="CLOSE TAB" danger disabled={!selectedTab} onPress={confirmCloseTab} />
+          <MenuAction label="CLOSE TAB" danger disabled={!selectedTab} onPress={closeTab} />
           <MenuAction label="CLOSE SPACE" danger disabled={!workspace} onPress={confirmCloseWorkspace} />
         </View>
       )}
