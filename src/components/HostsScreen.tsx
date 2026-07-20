@@ -81,8 +81,9 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                     <View className={index > 0 ? 'min-h-[88px] flex-row items-center border-t border-border pr-2' : 'min-h-[88px] flex-row items-center pr-2'} key={host.id}>
                       <Button
                         accessibilityLabel={`Connect to ${displayName}`}
-                        className="h-auto min-w-0 flex-1 justify-start gap-3 rounded-none px-3 py-3"
+                        className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
                         disabled={Boolean(connectingHostId)}
+                        size="content"
                         variant="ghost"
                         onPress={hapticPress(() => onConnect(host))}>
                         <View className="size-11 items-center justify-center rounded-full bg-accent"><Text className="text-[17px] font-semibold">{displayName.slice(0, 1).toUpperCase()}</Text></View>
