@@ -4,7 +4,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'rea
 
 import { cn } from '@/src/lib/utils';
 import type { ConnectionProfile } from '@/src/types';
-import { hapticPress, IconButton, ScreenHeader } from './app-ui';
+import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -35,7 +35,7 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 bg-background">
       <ScreenHeader title={profile.name.trim() ? 'Edit host' : 'New host'} left={<IconButton icon="chevron-back" accessibilityLabel="Back" onPress={onCancel} />} />
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled"><View className="p-4 pb-11">
-        <View className="mb-[30px] flex-row items-center gap-3.5"><View className="size-12 items-center justify-center rounded-full bg-primary"><Text className="text-[21px] font-bold text-primary-foreground">H</Text></View><View className="flex-1"><Text className="text-lg font-semibold leading-6">Remote Herdr connection</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">Herdr stays private on the host. This device connects over SSH and opens only the selected pane terminal.</Text></View></View>
+        <View className="mb-[30px] flex-row items-center gap-3.5"><WhipMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">Remote Herdr connection</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">Herdr stays private on the host. This device connects over SSH and opens only the selected pane terminal.</Text></View></View>
 
         <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">Host identity</Text>
         <Field label="Display name" value={profile.name} placeholder="Savior" onChangeText={value => update('name', value)} />

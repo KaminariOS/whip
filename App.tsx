@@ -16,7 +16,7 @@ import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
 import { SettingsScreen } from './src/components/SettingsScreen';
-import { hapticPress } from './src/components/app-ui';
+import { hapticPress, WhipMark } from './src/components/app-ui';
 import { Button } from './src/components/ui/button';
 import { Text } from './src/components/ui/text';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
@@ -864,7 +864,7 @@ function AppContent() {
   };
 
   if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !liveHostRestoreComplete) {
-    return <View className="flex-1 items-center justify-center bg-background"><View className="size-16 items-center justify-center rounded-full bg-primary"><Text className="text-[27px] font-bold text-primary-foreground">H</Text></View></View>;
+    return <View className="flex-1 items-center justify-center bg-background"><WhipMark accessibilityLabel="Whip is loading" size={64} /></View>;
   }
 
   const topScreen = navigation.stack[navigation.stack.length - 1];
