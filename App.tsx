@@ -416,6 +416,7 @@ function AppContent() {
                 agent,
                 session?.snapshot.tabs ?? [],
                 AppState.currentState === 'active',
+                liveSessionsRef.current.activeSessionId === sessionId,
               ),
             )
           ) {
@@ -521,6 +522,7 @@ function AppContent() {
                 agent,
                 snapshot.tabs,
                 AppState.currentState === 'active',
+                liveSessionsRef.current.activeSessionId === sessionId,
               ),
             )) {
               alertAgent(agent, ttsEnabledRef.current, {
