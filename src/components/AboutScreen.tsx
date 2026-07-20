@@ -1,23 +1,22 @@
 import { Code2, ExternalLink } from 'lucide-react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
-import { Alert, Linking, ScrollView, View } from 'react-native';
+import { Alert, Linking, View } from 'react-native';
 
 import { HERDR_PROTOCOL_VERSION } from '@/src/lib/herdrProtocol';
 import type { ServerInfo } from '@/src/types';
-import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
+import { hapticPress, WhipMark } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 export const WHIP_GITHUB_URL = 'https://github.com/KaminariOS/whip';
 
-interface Props {
+export interface AboutSectionProps {
   server: ServerInfo | null;
-  onBack: () => void;
 }
 
-export function AboutScreen({ server, onBack }: Props) {
+export function AboutSection({ server }: AboutSectionProps) {
   const whipVersion = Application.nativeApplicationVersion || Constants.expoConfig?.version || 'Unavailable';
   const openGitHub = () => {
     Linking.openURL(WHIP_GITHUB_URL).catch(error => {
@@ -33,10 +32,8 @@ export function AboutScreen({ server, onBack }: Props) {
   const connectedProtocol = server?.protocol === undefined ? null : `Protocol ${server.protocol}`;
 
   return (
-    <View className="flex-1 bg-background">
-      <ScreenHeader title="About" left={<IconButton icon="chevron-back" accessibilityLabel="Back" onPress={onBack} />} />
-      <ScrollView className="flex-1">
-        <View className="px-5 pb-11 pt-8">
+    <View className="border-t border-border px-5 pb-11 pt-8">
+          <Text className="mb-7 text-[22px] font-semibold leading-7">About</Text>
           <View className="items-center">
             <WhipMark size={82} accessibilityLabel="Whip app icon" />
             <Text className="mt-4 text-[28px] font-semibold leading-9">Whip</Text>
@@ -68,8 +65,6 @@ export function AboutScreen({ server, onBack }: Props) {
             </View>
             <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
           </Button>
-        </View>
-      </ScrollView>
     </View>
   );
 }

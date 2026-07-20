@@ -7,19 +7,14 @@ import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, View } f
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
-import { AboutScreen } from './src/components/AboutScreen';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
-import { HerdScreen } from './src/components/HerdScreen';
 import { HostsScreen } from './src/components/HostsScreen';
 import { LiveSessionRail, type LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
-import { SettingsScreen } from './src/components/SettingsScreen';
-import { hapticPress, WhipMark } from './src/components/app-ui';
-import { Button } from './src/components/ui/button';
-import { Text } from './src/components/ui/text';
+import { WhipMark } from './src/components/app-ui';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import { resolveColorScheme } from './src/lib/appearance';
 import {
@@ -65,8 +60,6 @@ import {
 import {
   handleMobileBack,
   initialMobileNavigation,
-  popMobileScreen,
-  pushMobileScreen,
   selectMobileTab,
 } from './src/mobileNavigation';
 import { alertAgent, prepareAlerts } from './src/services/alerts';
@@ -105,7 +98,7 @@ import {
   type TerminalSessionStatus,
 } from './src/terminalSessions';
 import { useTheme } from './src/theme';
-import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
+import type { AgentStatus, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 
 interface LiveRuntime {
@@ -940,36 +933,11 @@ function AppContent() {
     if (activeSession) await refreshHost(activeSession.id);
   };
 
-  const openAgentTerminal = (agent: AgentInfo) => {
-    if (!activeSession) return;
-    const pane = activeSession.snapshot.panes.find(item => item.pane_id === agent.pane_id);
-    if (!pane) return;
-    openPaneTerminal(activeSession.id, pane);
-  };
-
-  const startAgent = async (name: string, command: string, cwd: string) => {
-    if (!activeClient || !activeSession) return;
-    await activeClient.startAgent(name, command, cwd);
-    await refreshHost(activeSession.id);
-  };
-
-  const startServer = async () => {
-    if (!activeClient || !activeSession) return;
-    try {
-      await activeClient.startServer();
-      await new Promise<void>(resolve => setTimeout(resolve, 800));
-      await refreshHost(activeSession.id);
-    } catch (error) {
-      scheduleReconnect(activeSession.id, error);
-    }
-  };
-
   if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded) {
     return <View className="flex-1 items-center justify-center bg-background"><WhipMark accessibilityLabel="Whip is loading" size={64} /></View>;
   }
 
-  const topScreen = navigation.stack[navigation.stack.length - 1];
-  const terminalVisible = navigation.tab === 'terminal' && !topScreen && !editorProfile;
+  const terminalVisible = navigation.tab === 'terminal' && !editorProfile;
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
   const totalTerminalCount = liveSessions.sessions.reduce((total, session) => total + session.terminals.sessions.length, 0);
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
@@ -1007,33 +975,6 @@ function AppContent() {
             />
           )}
 
-          {navigation.tab === 'herd' && (
-            activeSession && activeClient ? (
-              <View className="flex-1 bg-background">
-                <ConnectedHeader session={activeSession} />
-                <View className="flex-1">
-                  {!activeSession.snapshot.server.running ? (
-                    <View className="flex-1 items-center justify-center bg-background p-8">
-                      <View className="size-16 items-center justify-center rounded-full bg-destructive/10"><Text className="text-[28px] font-bold text-destructive">!</Text></View>
-                      <Text className="mt-[18px] text-[21px] font-semibold leading-[27px]">Herdr server is offline</Text>
-                      <Text className="mt-2 max-w-[330px] text-center text-[15px] leading-[22px] text-muted-foreground">Start the headless runtime on the host, then manage the session from this client.</Text>
-                      <Button className="mt-6 rounded-full px-5" disabled={activeSession.sync.status === 'syncing'} onPress={hapticPress(startServer)}><Text>{activeSession.sync.status === 'syncing' ? 'Starting…' : 'Start Herdr server'}</Text></Button>
-                    </View>
-                  ) : (
-                    <HerdScreen
-                      agents={activeSession.snapshot.agents}
-                      tabs={activeSession.snapshot.tabs}
-                      refreshing={activeSession.sync.status === 'syncing'}
-                      onRefresh={refreshActive}
-                      onOpenTerminal={openAgentTerminal}
-                      onStart={startAgent}
-                    />
-                  )}
-                </View>
-              </View>
-            ) : <ConnectRequiredScreen destination="HERD" onPickHost={() => selectTab('hosts')} />
-          )}
-
           {!activeSession && navigation.tab === 'terminal' && (
             <ConnectRequiredScreen destination="TERMINAL" onPickHost={() => selectTab('hosts')} />
           )}
@@ -1041,8 +982,17 @@ function AppContent() {
           {navigation.tab === 'more' && (
             <MoreScreen
               connectedHost={activeSession ? hostDisplayName(activeSession.host) : null}
-              onOpenAbout={() => setNavigation(current => pushMobileScreen(current, 'about'))}
-              onOpenSettings={() => setNavigation(current => pushMobileScreen(current, 'settings'))}
+              host={activeSession?.host.host || null}
+              alertsEnabled={alertsEnabled}
+              ttsEnabled={ttsEnabled}
+              appearance={appearance}
+              terminalPreferences={terminalPreferences}
+              server={activeSession?.snapshot.server || null}
+              onAlertsChange={setAlertsEnabled}
+              onTtsChange={setTtsEnabled}
+              onAppearanceChange={updateAppearance}
+              onTerminalPreferencesChange={setTerminalPreferences}
+              onDisconnect={activeSession ? () => closeLiveHost(activeSession.id) : undefined}
             />
           )}
 
@@ -1083,35 +1033,8 @@ function AppContent() {
           })}
         </View>
 
-        {!immersiveTerminal && !topScreen && !editorProfile && (
+        {!immersiveTerminal && !editorProfile && (
           <BottomNavigation activeTab={navigation.tab} sessionCount={totalTerminalCount} onSelect={selectTab} />
-        )}
-
-        {topScreen === 'settings' && (
-          <View className="absolute inset-0 z-40 bg-background">
-            <SettingsScreen
-              host={activeSession?.host.host || null}
-              alertsEnabled={alertsEnabled}
-              ttsEnabled={ttsEnabled}
-              appearance={appearance}
-              terminalPreferences={terminalPreferences}
-              onBack={() => setNavigation(popMobileScreen)}
-              onAlertsChange={setAlertsEnabled}
-              onTtsChange={setTtsEnabled}
-              onAppearanceChange={updateAppearance}
-              onTerminalPreferencesChange={setTerminalPreferences}
-              onDisconnect={activeSession ? () => closeLiveHost(activeSession.id) : undefined}
-            />
-          </View>
-        )}
-
-        {topScreen === 'about' && (
-          <View className="absolute inset-0 z-40 bg-background">
-            <AboutScreen
-              server={activeSession?.snapshot.server || null}
-              onBack={() => setNavigation(popMobileScreen)}
-            />
-          </View>
         )}
 
         {editorProfile && (
@@ -1200,22 +1123,6 @@ function LiveSessionView({
       onExit={() => undefined}
       showExit={false}
     />
-  );
-}
-
-function ConnectedHeader({ session }: { session: LiveHostSession }) {
-  const syncError = session.sync.error || session.connectionError;
-  return (
-    <View className="min-h-16 flex-row items-center justify-between border-b border-border bg-background px-4">
-      <View className="min-w-0 flex-1 pr-2.5">
-        <Text numberOfLines={1} className="text-[17px] font-semibold leading-[22px]">{hostDisplayName(session.host)}</Text>
-        <Text numberOfLines={1} className="mt-0.5 text-xs leading-4 text-muted-foreground">{session.host.host} · {session.snapshot.server.running ? `Herdr ${session.snapshot.server.version || ''}`.trim() : 'Server offline'}</Text>
-      </View>
-      <View className={syncError ? 'flex-row items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-1.5' : 'flex-row items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1.5'}>
-        <View className={syncError ? 'size-1.5 rounded-full bg-destructive' : 'size-1.5 rounded-full bg-success'} />
-        <Text className={syncError ? 'text-xs font-semibold text-destructive' : 'text-xs font-semibold text-success'}>{syncError ? 'Sync lost' : 'SSH live'}</Text>
-      </View>
-    </View>
   );
 }
 
