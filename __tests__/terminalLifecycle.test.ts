@@ -12,6 +12,14 @@ describe('terminal renderer lifecycle', () => {
     expect(source).not.toContain("!visible && 'hidden'");
   });
 
+  it('defers terminal WebViews until their host terminal surface is first shown', () => {
+    const source = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+
+    expect(source).toContain('const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);');
+    expect(source).toContain('if (visible) setTerminalSurfaceMounted(true);');
+    expect(source).toContain('terminalSurfaceMounted && terminalState.sessions.map');
+  });
+
   it('hands keyboard focus between persistent terminal renderers', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
     const assets = readFileSync(resolve(__dirname, '../scripts/sync-terminal-assets.mjs'), 'utf8');

@@ -126,6 +126,7 @@ export function openLiveHostSession(
   state: LiveHostSessionsState,
   host: HostProfile,
   sessionId = host.id,
+  activate = true,
 ): LiveHostSessionsState {
   const existing = state.sessions.find(session => session.id === sessionId);
   if (existing) {
@@ -140,13 +141,13 @@ export function openLiveHostSession(
           reconnectAttempt: 0,
         }
         : session),
-      activeSessionId: sessionId,
+      activeSessionId: activate ? sessionId : state.activeSessionId,
     };
   }
 
   return {
     sessions: [...state.sessions, createLiveHostSession(host, sessionId)],
-    activeSessionId: sessionId,
+    activeSessionId: activate ? sessionId : state.activeSessionId,
   };
 }
 
