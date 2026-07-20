@@ -293,10 +293,10 @@ export function SessionScreen({
           {snapshot.workspaces.map(item => {
             const active = item.workspace_id === workspace?.workspace_id;
             return (
-              <Button key={item.workspace_id} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px]', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseWorkspace(item))} onLongPress={active ? openRenameWorkspace : undefined}>
+              <Button key={item.workspace_id} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px] py-0', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseWorkspace(item))} onLongPress={active ? openRenameWorkspace : undefined}>
                 <AnimatedAgentStatusGlyph status={item.agent_status} color={statusColor(item.agent_status)} size={12} />
-                <Text numberOfLines={1} className={cn('max-w-32 text-[11px] font-semibold text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.workspace_id}</Text>
-                <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.tab_count}</Text>
+                <Text numberOfLines={1} className={cn('max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.workspace_id}</Text>
+                <Text className={cn('font-mono text-[8px] leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.tab_count}</Text>
               </Button>
             );
           })}
