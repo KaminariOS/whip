@@ -193,7 +193,7 @@ Use this order:
 6. After an action, wait again and capture another screenshot/description.
 7. Inspect debugger/native logs when the screen is blank, stale, or showing an error.
 
-A valid launch for this repository visibly shows the **Remote Herdr connection** screen. The connection form includes Tailscale host/IP, SSH user, authentication, Herdr command, and session fields.
+A valid launch for this repository visibly shows the **Hosts** screen, either with the **No servers yet** empty state or with saved remote profiles. Opening **Add host** shows the **Remote Herdr connection** form with Tailscale host/IP, SSH user, authentication, Herdr command, and session fields.
 
 Do not treat these as sufficient proof of a working Expo launch:
 
