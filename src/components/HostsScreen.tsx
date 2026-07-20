@@ -15,6 +15,7 @@ interface Props {
   error: string | null;
   activeHostId?: string | null;
   connectedHostIds?: string[];
+  latencyMsByHostId?: Record<string, number | null | undefined>;
   credentialRecovery: CredentialRecoveryStatus;
   credentialRecoveryBusy: boolean;
   onAdd: () => void;
@@ -23,7 +24,7 @@ interface Props {
   onUnlockCredentials: () => Promise<boolean>;
 }
 
-export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onEdit, onUnlockCredentials }: Props) {
+export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onEdit, onUnlockCredentials }: Props) {
   return (
     <View className="flex-1 bg-background">
       <ScreenHeader
@@ -75,6 +76,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                   const state = connecting ? 'working' : active || connected ? 'done' : 'idle';
                   const label = connecting ? 'Opening' : active ? 'Active' : connected ? 'Open' : 'Connect';
                   const displayName = hostDisplayName(host);
+                  const latencyMs = latencyMsByHostId[host.id];
                   return (
                     <View className={index > 0 ? 'min-h-[88px] flex-row items-center border-t border-border pr-2' : 'min-h-[88px] flex-row items-center pr-2'} key={host.id}>
                       <Button
@@ -86,7 +88,10 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                         <View className="size-11 items-center justify-center rounded-full bg-accent"><Text className="text-[17px] font-semibold">{displayName.slice(0, 1).toUpperCase()}</Text></View>
                         <View className="min-w-0 flex-1">
                           <View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{displayName}</Text><StatusBadge status={state} label={label} /></View>
-                          <Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== '22' ? `:${host.port}` : ''}</Text>
+                          <View className="mt-1 flex-row items-center gap-2">
+                            <Text className="min-w-0 flex-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== '22' ? `:${host.port}` : ''}</Text>
+                            <Text accessibilityLabel={latencyMs == null ? 'Latency unavailable' : `Latency ${latencyMs} milliseconds`} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
+                          </View>
                           <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{host.authMode === 'key' ? 'SSH key' : 'Password'} · {host.rememberCredentials ? 'Credential saved' : 'Ask on connect'}{host.lastConnectedAt ? ` · ${formatLastUsed(host.lastConnectedAt)}` : ''}</Text>
                         </View>
                       </Button>

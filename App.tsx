@@ -111,7 +111,7 @@ import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 interface LiveRuntime {
   client: HerdrClient;
   profile: ConnectionProfile;
-  refresh: RefreshCoordinator<HerdrSnapshot>;
+  refresh: RefreshCoordinator<SnapshotMeasurement>;
   previousStatuses: Map<string, AgentStatus> | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
@@ -120,6 +120,11 @@ interface LiveRuntime {
   eventReconnectAttempts: number;
   eventReconnectTimer: ReturnType<typeof setTimeout> | null;
   eventRefreshTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface SnapshotMeasurement {
+  snapshot: HerdrSnapshot;
+  latencyMs: number;
 }
 
 interface ConnectOptions {
@@ -503,10 +508,13 @@ function AppContent() {
     runtime.refresh = createRefreshCoordinator(
       async () => {
         setLiveSessions(current => beginLiveHostSync(current, sessionId).state);
-        return runtime.client.snapshot();
+        const startedAt = Date.now();
+        const snapshot = await runtime.client.snapshot();
+        return { snapshot, latencyMs: elapsedLatencyMs(startedAt) };
       },
-      snapshot => {
+      measurement => {
         if (runtimes.current.get(sessionId) !== runtime) return;
+        const { snapshot, latencyMs } = measurement;
         const statuses = new Map(snapshot.agents.map(agent => [agent.pane_id, agent.agent_status]));
         if (alertsEnabledRef.current && runtime.previousStatuses) {
           for (const agent of snapshot.agents) {
@@ -531,7 +539,14 @@ function AppContent() {
         setLiveSessions(current => {
           const session = findLiveHostSession(current, sessionId);
           if (!session) return current;
-          const updated = applyLiveHostSnapshot(current, sessionId, session.sync.generation, snapshot, new Date().toISOString());
+          const updated = applyLiveHostSnapshot(
+            current,
+            sessionId,
+            session.sync.generation,
+            snapshot,
+            new Date().toISOString(),
+            latencyMs,
+          );
           if (updated === current) return current;
           return updateLiveHostTerminals(
             updated,
@@ -556,7 +571,7 @@ function AppContent() {
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
       runtime.client.prepareTerminalBridge().catch(() => undefined);
       try {
-        await ensureEventStream(sessionId, result.value);
+        await ensureEventStream(sessionId, result.value.snapshot);
       } catch (error) {
         runtime.eventStatus = 'closed';
         scheduleEventReconnect(sessionId, error);
@@ -657,14 +672,23 @@ function AppContent() {
       runtimes.current.set(sessionId, runtime);
       setLiveSessions(current => openLiveHostSession(current, savedHost, sessionId));
       await runtime.client.connect(nextProfile);
+      const initialSnapshotStartedAt = Date.now();
       const initial = await runtime.client.snapshot();
+      const initialLatencyMs = elapsedLatencyMs(initialSnapshotStartedAt);
       runtime.client.prepareTerminalBridge().catch(() => undefined);
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
       setLiveSessions(current => {
         let next = updateLiveHostConnection(current, sessionId, { status: 'connected' });
         const request = beginLiveHostSync(next, sessionId);
-        next = applyLiveHostSnapshot(request.state, sessionId, request.generation, initial, new Date().toISOString());
+        next = applyLiveHostSnapshot(
+          request.state,
+          sessionId,
+          request.generation,
+          initial,
+          new Date().toISOString(),
+          initialLatencyMs,
+        );
         return replaceLiveHostTerminals(next, sessionId, restoredTerminals);
       });
       try {
@@ -942,6 +966,10 @@ function AppContent() {
               hosts={hosts}
               activeHostId={activeSession?.hostId || null}
               connectedHostIds={liveSessions.sessions.map(session => session.hostId)}
+              latencyMsByHostId={Object.fromEntries(liveSessions.sessions.map(session => [
+                session.hostId,
+                session.status === 'connected' ? session.sync.latencyMs : null,
+              ]))}
               connectingHostId={connectingHostId}
               error={connectError}
               credentialRecovery={credentialRecovery}
@@ -1166,6 +1194,10 @@ function ConnectedHeader({ session }: { session: LiveHostSession }) {
       </View>
     </View>
   );
+}
+
+function elapsedLatencyMs(startedAt: number): number {
+  return Math.max(1, Date.now() - startedAt);
 }
 
 export default App;
