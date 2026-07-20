@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
 import { useTheme } from '@/src/theme';
@@ -10,6 +10,18 @@ import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+export function WhipMark({ size, accessibilityLabel }: { size: number; accessibilityLabel?: string }) {
+  return (
+    <Image
+      accessibilityIgnoresInvertColors
+      accessibilityLabel={accessibilityLabel}
+      accessible={Boolean(accessibilityLabel)}
+      source={require('../../assets/icon.png')}
+      style={{ width: size, height: size, borderRadius: size / 2 }}
+    />
+  );
+}
 
 export function hapticPress(handler?: () => void | Promise<void>) {
   return () => {

@@ -4,7 +4,7 @@ import { ScrollView, View } from 'react-native';
 import { hostDisplayName } from '@/src/lib/hostProfiles';
 import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
 import type { HostProfile } from '@/src/types';
-import { hapticPress, IconButton, ScreenHeader, StatusBadge } from './app-ui';
+import { hapticPress, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -29,7 +29,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
       <ScreenHeader
         title="Herdr"
         subtitle="Remote servers"
-        left={<View className="size-10 items-center justify-center rounded-full bg-primary"><Text className="text-[17px] font-bold text-primary-foreground">H</Text></View>}
+        left={<WhipMark size={40} />}
         right={<IconButton icon="add" accessibilityLabel="Add host" onPress={onAdd} />}
       />
 
