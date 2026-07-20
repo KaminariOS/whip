@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
-import type { ReactNode } from 'react';
-import { Image, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, Animated, Easing, Image, View } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
+import { agentStatusGlyph, statusMotionKind, statusTone } from '@/src/lib/statusMotion';
 import { useTheme } from '@/src/theme';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -61,22 +62,142 @@ export function IconButton({
   );
 }
 
-export function StatusBadge({ status, label }: { status: string; label?: string }) {
-  const tone = status === 'running' || status === 'done' || status === 'connected' || status === 'active'
-    ? 'success' as const
-    : status === 'error' || status === 'failed' || status === 'disconnected'
-      ? 'destructive' as const
-      : status === 'waiting' || status === 'connecting'
-        ? 'warning' as const
-        : 'muted' as const;
-  const dotClass = { success: 'bg-success', destructive: 'bg-destructive', warning: 'bg-warning', muted: 'bg-muted-foreground' }[tone];
+export function StatusBadge({ status, label, agentStatus = false }: { status: string; label?: string; agentStatus?: boolean }) {
+  const { colors } = useTheme();
+  const tone = statusTone(status);
+  const indicatorColor = { success: colors.working, destructive: colors.error, warning: colors.warning, muted: colors.textTertiary }[tone];
   const textClass = { success: 'text-success', destructive: 'text-destructive', warning: 'text-warning', muted: 'text-muted-foreground' }[tone];
   return (
     <Badge variant="secondary" className="gap-1.5 border-0 px-2.5 py-1">
-      <View className={cn('size-1.5 rounded-full', dotClass)} />
+      {agentStatus
+        ? <AnimatedAgentStatusGlyph status={status} color={indicatorColor} size={12} />
+        : <AnimatedStatusIndicator status={status} color={indicatorColor} />}
       <Text className={cn('text-xs font-semibold capitalize', textClass)}>{label || status}</Text>
     </Badge>
   );
+}
+
+export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: string; color: string; size?: number }) {
+  const { motion, style } = useStatusMotion(status);
+
+  if (motion === 'spin') {
+    return (
+      <Animated.View style={style}>
+        <Ionicons name="sync" size={Math.max(11, size)} color={color} />
+      </Animated.View>
+    );
+  }
+
+  return <Animated.View className="rounded-full" style={[{ width: size, height: size, backgroundColor: color }, style]} />;
+}
+
+export function AnimatedAgentStatusGlyph({ status, color, size = 18 }: { status: string; color: string; size?: number }) {
+  const { motion, style, reduceMotion } = useStatusMotion(status, false);
+  const frame = useSpinnerFrame(motion === 'spin' && !reduceMotion);
+  return (
+    <Animated.View className="items-center justify-center" style={[{ width: size, height: size + 2 }, style]}>
+      <Text style={{ color, fontSize: size, lineHeight: size + 2 }}>{agentStatusGlyph(status, frame)}</Text>
+    </Animated.View>
+  );
+}
+
+export function AnimatedEntrance({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
+  const reduceMotion = useReducedMotion();
+  const progress = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (reduceMotion) {
+      progress.setValue(1);
+      return;
+    }
+    const animation = Animated.timing(progress, {
+      toValue: 1,
+      duration: 220,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [delay, progress, reduceMotion]);
+
+  return (
+    <Animated.View
+      className={className}
+      style={{
+        opacity: progress,
+        transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+      }}>
+      {children}
+    </Animated.View>
+  );
+}
+
+function useStatusMotion(status: string, rotateSpinning = true) {
+  const motion = statusMotionKind(status);
+  const reduceMotion = useReducedMotion();
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    progress.stopAnimation();
+    progress.setValue(0);
+    if (reduceMotion || motion === 'static' || (motion === 'spin' && !rotateSpinning)) return;
+
+    const animation = motion === 'spin'
+      ? Animated.loop(Animated.timing(progress, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }))
+      : Animated.loop(Animated.sequence([
+          Animated.timing(progress, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(progress, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        ]));
+    animation.start();
+    return () => animation.stop();
+  }, [motion, progress, reduceMotion, rotateSpinning]);
+
+  const style = motion === 'spin' && rotateSpinning
+    ? { transform: [{ rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }
+    : motion === 'pulse'
+      ? {
+          opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.55] }),
+          transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.82] }) }],
+        }
+      : undefined;
+  return { motion, style, reduceMotion };
+}
+
+function useSpinnerFrame(enabled: boolean) {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    setFrame(0);
+    if (!enabled) return;
+    const interval = setInterval(() => setFrame(value => value + 1), 80);
+    return () => clearInterval(interval);
+  }, [enabled]);
+
+  return frame;
+}
+
+function useReducedMotion() {
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then(value => {
+      if (mounted) setReduceMotion(value);
+    }).catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  return reduceMotion;
 }
 
 export function ScreenHeader({ title, subtitle, left, right }: { title: string; subtitle?: string; left?: ReactNode; right?: ReactNode }) {
