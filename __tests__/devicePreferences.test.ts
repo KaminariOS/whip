@@ -79,6 +79,11 @@ test('loads a valid appearance preference and rejects invalid values', async () 
   await expect(loadDevicePreferences()).resolves.toMatchObject({ appearance: 'system' });
 });
 
+test('migrates the removed herd tab back to hosts', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ lastTab: 'herd' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ lastTab: 'hosts' });
+});
+
 test('sanitizes persisted terminal background preferences', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({
     terminal: {

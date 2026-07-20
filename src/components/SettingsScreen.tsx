@@ -1,21 +1,20 @@
 import { ImagePlus, LogOut, ShieldCheck, Trash2 } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Image, StyleSheet, View } from 'react-native';
 
 import type { AppearancePreference, TerminalPreferences } from '@/src/services/devicePreferences';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
-import { hapticPress, IconButton, ScreenHeader } from './app-ui';
+import { hapticPress, IconButton } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 
-interface Props {
+export interface SettingsSectionProps {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
   appearance: AppearancePreference;
   host: string | null;
-  onBack: () => void;
   onAlertsChange: (value: boolean) => void;
   onTtsChange: (value: boolean) => void;
   onAppearanceChange: (value: AppearancePreference) => void;
@@ -24,7 +23,7 @@ interface Props {
   onDisconnect?: () => void;
 }
 
-export function SettingsScreen(props: Props) {
+export function SettingsSection(props: SettingsSectionProps) {
   const [backgroundBusy, setBackgroundBusy] = useState(false);
 
   const chooseBackground = async () => {
@@ -52,10 +51,9 @@ export function SettingsScreen(props: Props) {
   };
 
   return (
-    <View className="flex-1 bg-background">
-      <ScreenHeader title="Settings" left={<IconButton icon="chevron-back" accessibilityLabel="Back" onPress={props.onBack} />} />
-      <ScrollView className="flex-1"><View className="p-4 pb-11">
-        <View className="mb-7 py-2"><Text className="text-[22px] font-semibold leading-7">{props.host || 'Not connected'}</Text><Text className="mt-1.5 text-sm leading-[21px] text-muted-foreground">{props.host ? 'Dashboard updates and terminal traffic use the authenticated SSH connection.' : 'Select a saved host to open a Herdr connection.'}</Text></View>
+    <View className="px-4 py-5">
+        <Text className="text-[22px] font-semibold leading-7">Settings</Text>
+        <View className="mb-7 mt-4 rounded-lg bg-muted p-4"><Text className="text-base font-semibold leading-6">{props.host || 'Not connected'}</Text><Text className="mt-1 text-sm leading-[21px] text-muted-foreground">{props.host ? 'Dashboard updates and terminal traffic use the authenticated SSH connection.' : 'Select a saved host to open a Herdr connection.'}</Text></View>
 
         <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">Notifications</Text>
         <View className="overflow-hidden rounded-lg border border-border bg-card">
@@ -91,8 +89,7 @@ export function SettingsScreen(props: Props) {
         <View className="mt-7 flex-row items-start gap-3 rounded-lg bg-muted p-4"><Icon as={ShieldCheck} size={21} /><View className="flex-1"><Text className="text-sm font-semibold leading-[19px]">Private SSH boundary</Text><Text className="mt-1 text-xs leading-[18px] text-muted-foreground">Herdr is not exposed to the network. Dashboard actions and terminal bytes travel through SSH to your device.</Text></View></View>
 
         {props.onDisconnect ? <Button className="mt-6 rounded-full" variant="destructive" onPress={hapticPress(props.onDisconnect)}><Icon as={LogOut} className="text-destructive-foreground" size={17} /><Text>Disconnect SSH</Text></Button> : null}
-      </View></ScrollView>
-    </View>
+      </View>
   );
 }
 

@@ -6,7 +6,7 @@ Whip is a remote client for a Herdr server running on another machine. It never 
 
 The app has two presentation modes:
 
-- **Herdr control surfaces become Android GUI.** Herd status, workspaces, tabs, panes, agent actions, settings, notifications, and connection state are React Native screens and sheets backed by structured Herdr state.
+- **Herdr control surfaces become Android GUI.** Workspaces, tabs, panes, settings, notifications, and connection state are React Native screens and sheets backed by structured Herdr state.
 - **Pane terminals remain terminals.** When a user opens a shell or agent pane, the app attaches to that pane's terminal stream and renders its ANSI/TUI output faithfully in the terminal renderer.
 
 The app must not render the full Herdr management TUI in a terminal and place Android controls around it. Herdr's TUI is one client presentation; Android is another client presentation over the same server-owned state.
@@ -78,17 +78,13 @@ Transport objects do not live in React component state. A service owns SSH/API l
 
 A Termius-style saved-server list is the entry surface. It shows identity, address, last connection result, and a primary connect action. Editing authentication is separate from operating a connected Herdr session.
 
-### Herd
-
-The attention surface orders agents by actionable status: blocked, done, working, idle, unknown. Each row exposes the task, workspace/pane context, recent output, prompt action, and terminal attachment.
-
 ### Workspaces
 
 Native workspace, tab, and pane navigation replaces the corresponding Herdr TUI chrome. Selection changes client navigation first; explicit focus actions change server focus. Closing a tab takes effect immediately, while other destructive operations require confirmation.
 
 ### Terminals
 
-An immersive terminal surface keeps a slim scrollable session rail, connection status, close/new actions, and a horizontally scrollable mobile key rail. Switching back to Herd or Workspaces must not disconnect or recreate terminal sessions.
+An immersive terminal surface keeps a slim scrollable session rail, connection status, close/new actions, and a horizontally scrollable mobile key rail. Switching back to Hosts or More must not disconnect or recreate terminal sessions.
 
 ### Settings
 
@@ -111,7 +107,7 @@ Implemented:
 - concurrent remote SSH control connections with an active-session selector;
 - structured Herdr snapshot and native management screens;
 - independent SSH/PTTY connection and Herdr bridge controller per opened terminal;
-- Voltius-style persistent Hosts, Herd, Terminal, and More mobile shell with Android back handling;
+- Voltius-style persistent Hosts, Terminal, and More mobile shell with Android back handling;
 - Voltius-style outer live-host rail plus nested Herdr workspace/tab/pane navigation;
 - multiple mounted, switchable terminal sessions per host with bounded reconnect backoff and same-host restoration;
 - serialized snapshot refresh, stale-response rejection, and bounded control-channel reconnect without tearing down terminal SSH clients;
