@@ -1,4 +1,6 @@
 import { Code2, ExternalLink } from 'lucide-react-native';
+import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import { Alert, Linking, ScrollView, View } from 'react-native';
 
 import { HERDR_PROTOCOL_VERSION } from '@/src/lib/herdrProtocol';
@@ -16,6 +18,7 @@ interface Props {
 }
 
 export function AboutScreen({ server, onBack }: Props) {
+  const whipVersion = Application.nativeApplicationVersion || Constants.expoConfig?.version || 'Unavailable';
   const openGitHub = () => {
     Linking.openURL(WHIP_GITHUB_URL).catch(error => {
       Alert.alert('Could not open GitHub', String(error));
@@ -38,6 +41,7 @@ export function AboutScreen({ server, onBack }: Props) {
             <WhipMark size={82} accessibilityLabel="Whip app icon" />
             <Text className="mt-4 text-[28px] font-semibold leading-9">Whip</Text>
             <Text className="mt-1 text-center text-sm leading-5 text-muted-foreground">Unofficial Android client for Herdr</Text>
+            <Text className="mt-1.5 text-center text-xs leading-[17px] text-muted-foreground/70">Version {whipVersion}</Text>
           </View>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">Compatibility</Text>
