@@ -84,7 +84,7 @@ The attention surface orders agents by actionable status: blocked, done, working
 
 ### Workspaces
 
-Native workspace, tab, and pane navigation replaces the corresponding Herdr TUI chrome. Selection changes client navigation first; explicit focus actions change server focus. Destructive operations require confirmation.
+Native workspace, tab, and pane navigation replaces the corresponding Herdr TUI chrome. Selection changes client navigation first; explicit focus actions change server focus. Closing a tab takes effect immediately, while other destructive operations require confirmation.
 
 ### Terminals
 
