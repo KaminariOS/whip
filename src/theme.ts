@@ -1,5 +1,7 @@
 import { useColorScheme } from 'react-native';
 
+import type { TerminalSessionStatus } from './terminalSessions';
+
 export const lightColors = {
   canvas: '#FFFFFF',
   sidebar: '#F9F9F9',
@@ -94,6 +96,27 @@ export function useTheme() {
 export function statusColor(status: string, palette: ThemeColors | typeof colors = colors): string {
   const key = status as 'working' | 'blocked' | 'done' | 'idle' | 'unknown';
   return palette[key] || palette.unknown;
+}
+
+export function terminalStatusColor(
+  status: TerminalSessionStatus,
+  palette: ThemeColors | typeof colors = colors,
+): string {
+  if (status === 'connected') return palette.done;
+  if (status === 'connecting') return palette.working;
+  if (status === 'error') return palette.blocked;
+  return palette.idle;
+}
+
+/** A healthy terminal must not mask the Herdr agent state shown by a tab. */
+export function sessionTabStatusColor(
+  agentStatus: string,
+  terminalStatus?: TerminalSessionStatus,
+  palette: ThemeColors | typeof colors = colors,
+): string {
+  return terminalStatus && terminalStatus !== 'connected'
+    ? terminalStatusColor(terminalStatus, palette)
+    : statusColor(agentStatus, palette);
 }
 
 export const radii = {

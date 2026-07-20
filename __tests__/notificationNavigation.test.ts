@@ -33,10 +33,14 @@ function pane(paneId: string, terminalId: string): PaneInfo {
 function snapshot(panes: PaneInfo[]): HerdrSnapshot {
   return {
     server: { running: true },
+    focused_workspace_id: null,
+    focused_tab_id: null,
+    focused_pane_id: null,
     agents: [],
     workspaces: [],
     tabs: [],
     panes,
+    layouts: [],
   };
 }
 

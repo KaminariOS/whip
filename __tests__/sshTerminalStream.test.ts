@@ -39,7 +39,7 @@ describe('Android SSH terminal protocol stream', () => {
     expect(execute).toContain('if (channel != null) channel.disconnect();');
   });
 
-  test('Herdr terminals use protocol 16 remote-client-bridge on the primary SSH client', () => {
+  test('Herdr terminals use protocol 17 remote-client-bridge on the primary SSH client', () => {
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
     const terminalScreen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
     const codec = readFileSync(
@@ -52,6 +52,7 @@ describe('Android SSH terminal protocol stream', () => {
     expect(client).toContain('this.requireClient().prepareHerdrBridge');
     expect(client).toContain('private terminalBridges = new Set<string>()');
     expect(codec).toContain('ClientMessage::Hello');
+    expect(codec).toContain('static final int PROTOCOL_VERSION = 17');
     expect(codec).toContain('RenderEncoding::TerminalAnsi');
     expect(codec).toContain('ClientLaunchMode::TerminalAttach');
     expect(terminalScreen).toContain('window.herdrWriteBase64Chunk');
@@ -68,6 +69,10 @@ describe('Android SSH terminal protocol stream', () => {
     expect(javascript).toContain('RNSSHClient.startHerdrBridge(command, protocol, terminalId, takeover');
     expect(android).toContain('final Map<String, HerdrBridgeConnection> _herdrBridges');
     expect(android).toContain('value.putString("terminalId", terminalId)');
+    expect(android).toContain('boolean clientWasReplaced = clientPool.get(key) != client;');
+    expect(android).toContain('boolean unusedPrewarm = connection.terminalId == null;');
+    expect(android).toContain('Herdr bridge cancelled because the SSH session was replaced');
+    expect(android).toContain('Log.d(LOGTAG, "Herdr bridge prewarm ended: " + error.getMessage());');
     expect(android).not.toContain('ChannelExec _herdrBridgeChannel');
   });
 

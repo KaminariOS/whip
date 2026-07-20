@@ -26,6 +26,8 @@ export interface AgentInfo {
   name?: string;
   agent?: string;
   title?: string;
+  terminal_title?: string;
+  terminal_title_stripped?: string;
   display_agent?: string;
   custom_status?: string;
   agent_status: AgentStatus;
@@ -35,6 +37,12 @@ export interface AgentInfo {
   focused: boolean;
   cwd?: string;
   foreground_cwd?: string;
+  screen_detection_skipped?: boolean;
+  tokens?: Record<string, string>;
+  agent_session?: AgentSessionInfo;
+  launch_pending?: boolean;
+  interactive_ready?: boolean;
+  state_change_seq?: number;
   revision: number;
   state_labels?: Record<string, string>;
 }
@@ -48,8 +56,11 @@ export interface WorkspaceInfo {
   tab_count: number;
   active_tab_id: string;
   agent_status: AgentStatus;
+  tokens?: Record<string, string>;
   worktree?: {
+    repo_key?: string;
     repo_name: string;
+    repo_root?: string;
     checkout_path: string;
     is_linked_worktree: boolean;
   };
@@ -76,11 +87,59 @@ export interface PaneInfo {
   label?: string;
   agent?: string;
   title?: string;
+  terminal_title?: string;
+  terminal_title_stripped?: string;
   display_agent?: string;
   agent_status: AgentStatus;
   custom_status?: string;
   state_labels?: Record<string, string>;
+  tokens?: Record<string, string>;
+  agent_session?: AgentSessionInfo;
+  scroll?: PaneScrollInfo;
   revision: number;
+}
+
+export interface AgentSessionInfo {
+  source: string;
+  agent: string;
+  kind: string;
+  value: string;
+}
+
+export interface PaneScrollInfo {
+  offset_from_bottom: number;
+  max_offset_from_bottom: number;
+  viewport_rows: number;
+}
+
+export interface PaneLayoutRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PaneLayoutPane {
+  pane_id: string;
+  focused: boolean;
+  rect: PaneLayoutRect;
+}
+
+export interface PaneLayoutSplit {
+  id: string;
+  direction: 'right' | 'down';
+  ratio: number;
+  rect: PaneLayoutRect;
+}
+
+export interface PaneLayoutSnapshot {
+  workspace_id: string;
+  tab_id: string;
+  zoomed: boolean;
+  area: PaneLayoutRect;
+  focused_pane_id: string;
+  panes: PaneLayoutPane[];
+  splits: PaneLayoutSplit[];
 }
 
 export interface ServerInfo {
@@ -93,10 +152,14 @@ export interface ServerInfo {
 
 export interface HerdrSnapshot {
   server: ServerInfo;
+  focused_workspace_id: string | null;
+  focused_tab_id: string | null;
+  focused_pane_id: string | null;
   agents: AgentInfo[];
   workspaces: WorkspaceInfo[];
   tabs: TabInfo[];
   panes: PaneInfo[];
+  layouts: PaneLayoutSnapshot[];
 }
 
 export type AppTab = 'hosts' | 'herd' | 'terminal' | 'more';

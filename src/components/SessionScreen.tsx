@@ -12,7 +12,7 @@ import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
-import { colors, statusColor } from '../theme';
+import { colors, sessionTabStatusColor, statusColor } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo, WorkspaceInfo } from '../types';
 import { hapticPress } from './app-ui';
 import { Button } from './ui/button';
@@ -322,7 +322,7 @@ export function SessionScreen({
               const itemSession = terminalState.sessions.find(session => itemPanes.some(pane => pane.terminal_id === session.terminalId));
               return (
                 <Button key={item.tab_id} className={cn('h-[30px] max-w-[170px] rounded-full bg-[#212121] px-[11px] py-0', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
-                  <View className="size-1.5 rounded-full" style={{ backgroundColor: itemSession ? terminalStatusColor(itemSession.status) : statusColor(item.agent_status) }} />
+                  <View className="size-1.5 rounded-full" style={{ backgroundColor: sessionTabStatusColor(item.agent_status, itemSession?.status) }} />
                   <Text numberOfLines={1} className={cn('max-w-[122px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.tab_id}</Text>
                   {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
                 </Button>
@@ -407,11 +407,4 @@ function MenuAction({ label, onPress, disabled = false, danger = false }: { labe
   return (
     <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-[#424242] px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={cn('text-center text-[9px] font-semibold text-[#ECECEC]', danger && 'text-[#FF6B6B]')}>{label}</Text></Button>
   );
-}
-
-function terminalStatusColor(status: TerminalSessionStatus): string {
-  if (status === 'connected') return colors.done;
-  if (status === 'connecting') return colors.working;
-  if (status === 'error') return colors.blocked;
-  return colors.idle;
 }

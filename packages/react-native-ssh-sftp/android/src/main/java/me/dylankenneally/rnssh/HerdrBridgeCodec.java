@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 final class HerdrBridgeCodec {
+  static final int PROTOCOL_VERSION = 17;
   static final int MAX_FRAME_SIZE = 32 * 1024 * 1024;
 
   static final class Message {
@@ -31,6 +32,14 @@ final class HerdrBridgeCodec {
       int cellWidthPx,
       int cellHeightPx
   ) throws IOException {
+    if (protocol != PROTOCOL_VERSION) {
+      throw new IOException(
+          "Herdr protocol mismatch: Android bridge supports "
+              + PROTOCOL_VERSION
+              + ", server reports "
+              + protocol
+      );
+    }
     Encoder encoder = new Encoder();
     encoder.variant(0); // ClientMessage::Hello
     encoder.unsigned(protocol);

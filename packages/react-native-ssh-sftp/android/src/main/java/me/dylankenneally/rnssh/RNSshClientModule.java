@@ -631,12 +631,34 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           sendHerdrBridgeMessage(key, connection.terminalId, message);
         }
       }
-      if (!connection.handshakeComplete) throw new IOException("Herdr bridge closed before Welcome");
+      if (!connection.handshakeComplete) {
+        boolean clientWasReplaced = clientPool.get(key) != client;
+        boolean unusedPrewarm = connection.terminalId == null;
+        if (connection.closedByClient || clientWasReplaced || unusedPrewarm) {
+          if (!callbackInvoked) {
+            callback.invoke(
+                unusedPrewarm
+                    ? "Herdr bridge prewarm ended before Welcome"
+                    : "Herdr bridge cancelled because the SSH session was replaced"
+            );
+            callbackInvoked = true;
+          }
+        } else {
+          throw new IOException("Herdr bridge closed before Welcome");
+        }
+      }
       if (!connection.closedByClient && connection.terminalId != null) {
         sendHerdrBridgeClosed(key, connection.terminalId, "Herdr remote-client-bridge closed");
       }
     } catch (Exception error) {
-      Log.e(LOGTAG, "Herdr bridge failed: " + error.getMessage());
+      if (!connection.handshakeComplete && connection.terminalId == null) {
+        // Prewarming is opportunistic. Channel pressure or a reconnect may end
+        // it without affecting any visible terminal, so do not report it as a
+        // terminal bridge failure. The callback still lets JavaScript retry.
+        Log.d(LOGTAG, "Herdr bridge prewarm ended: " + error.getMessage());
+      } else {
+        Log.e(LOGTAG, "Herdr bridge failed: " + error.getMessage());
+      }
       if (!callbackInvoked) callback.invoke(error.getMessage());
       else if (!connection.closedByClient && connection.terminalId != null) {
         sendHerdrBridgeClosed(key, connection.terminalId, error.getMessage());

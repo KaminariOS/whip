@@ -1,4 +1,4 @@
-import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from '../types';
+import type { AgentInfo, PaneInfo, PaneLayoutSnapshot, TabInfo, WorkspaceInfo } from '../types';
 
 export interface HerdrApiRequest {
   id: string;
@@ -23,9 +23,13 @@ export interface HerdrApiEvent {
 export interface SessionSnapshot {
   version: string;
   protocol: number;
+  focused_workspace_id?: string;
+  focused_tab_id?: string;
+  focused_pane_id?: string;
   workspaces: WorkspaceInfo[];
   tabs: TabInfo[];
   panes: PaneInfo[];
+  layouts: PaneLayoutSnapshot[];
   agents: AgentInfo[];
 }
 
@@ -37,6 +41,7 @@ export interface SessionSnapshotResult {
 const LIFECYCLE_SUBSCRIPTIONS = [
   'workspace.created',
   'workspace.updated',
+  'workspace.metadata_updated',
   'workspace.renamed',
   'workspace.moved',
   'workspace.closed',
@@ -51,10 +56,12 @@ const LIFECYCLE_SUBSCRIPTIONS = [
   'tab.moved',
   'pane.created',
   'pane.closed',
+  'pane.updated',
   'pane.focused',
   'pane.moved',
   'pane.exited',
   'pane.agent_detected',
+  'layout.updated',
 ] as const;
 
 export function sessionSnapshotRequest(id = 'android_snapshot'): HerdrApiRequest {
