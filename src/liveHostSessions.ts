@@ -31,6 +31,8 @@ export interface LiveHostSyncState {
   generation: number;
   error: string | null;
   lastSyncedAt: string | null;
+  /** Latest successful Herdr snapshot round-trip over the SSH control channel. */
+  latencyMs: number | null;
 }
 
 export interface LiveHostSession {
@@ -105,6 +107,7 @@ export function createLiveHostSession(
       generation: 0,
       error: null,
       lastSyncedAt: null,
+      latencyMs: null,
     },
     selection: {
       workspaceId: null,
@@ -242,6 +245,7 @@ export function applyLiveHostSnapshot(
   generation: number,
   snapshot: HerdrSnapshot,
   syncedAt: string | null = null,
+  latencyMs: number | null = null,
 ): LiveHostSessionsState {
   return updateSession(state, sessionId, session => {
     if (session.sync.generation !== generation) return session;
@@ -254,6 +258,7 @@ export function applyLiveHostSnapshot(
         generation,
         error: null,
         lastSyncedAt: syncedAt,
+        latencyMs,
       },
     };
   });

@@ -200,6 +200,21 @@ describe('live host session state', () => {
     });
   });
 
+  test('tracks the latest successful control-channel latency for each host', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const request = beginLiveHostSync(opened, 'live-1');
+    const synced = applyLiveHostSnapshot(
+      request.state,
+      'live-1',
+      request.generation,
+      snapshot('savior'),
+      '2026-02-02T00:00:00.000Z',
+      42,
+    );
+
+    expect(findLiveHostSession(synced, 'live-1')?.sync.latencyMs).toBe(42);
+  });
+
   test('derives workspace, tab, and pane selection from each snapshot', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const synced = syncSnapshot(opened, 'live-1', snapshot('savior'));
