@@ -3,8 +3,7 @@ import './global.css';
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { PortalHost } from '@rn-primitives/portal';
-import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
-import { Alert, AppState, BackHandler, Platform, StatusBar, View } from 'react-native';
+import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
@@ -21,6 +20,7 @@ import { hapticPress } from './src/components/app-ui';
 import { Button } from './src/components/ui/button';
 import { Text } from './src/components/ui/text';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
+import { resolveColorScheme } from './src/lib/appearance';
 import {
   agentFromStatusEvent,
   tabNameForAgent,
@@ -147,7 +147,6 @@ function App() {
 }
 
 function AppContent() {
-  const { setColorScheme } = useNativeWindColorScheme();
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const hostsRef = useRef<HostProfile[]>([]);
@@ -176,7 +175,9 @@ function AppContent() {
   const [terminalControlUsage, setTerminalControlUsage] = useState<TerminalControlUsage>(defaultDevicePreferences.terminalControlUsage);
   const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
   const [credentialRecoveryBusy, setCredentialRecoveryBusy] = useState(false);
-  const applyAppearance = useEffectEvent((value: AppearancePreference) => setColorScheme(value));
+  const applyAppearance = useEffectEvent((value: AppearancePreference) => {
+    Appearance.setColorScheme(resolveColorScheme(value));
+  });
 
   const updateTerminalFontSize = useCallback((fontSize: number) => {
     const nextFontSize = Math.max(8, Math.min(16, Math.round(fontSize)));
@@ -262,8 +263,8 @@ function AppContent() {
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
-    setColorScheme(value);
-  }, [setColorScheme]);
+    Appearance.setColorScheme(resolveColorScheme(value));
+  }, []);
 
   useEffect(() => {
     for (const session of liveSessions.sessions) {
