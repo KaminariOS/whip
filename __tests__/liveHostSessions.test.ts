@@ -141,6 +141,14 @@ describe('live host session state', () => {
     expect(findLiveHostSession(withFirstSnapshot, 'live-2')?.snapshot.server.running).toBe(false);
   });
 
+  test('can restore a background host without changing the active session', () => {
+    const first = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const second = openLiveHostSession(first, host('builder'), 'live-2', false);
+
+    expect(second.sessions.map(session => session.id)).toEqual(['live-1', 'live-2']);
+    expect(second.activeSessionId).toBe('live-1');
+  });
+
   test('selects sessions directly or by saved host without accepting unknown ids', () => {
     const first = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const second = openLiveHostSession(first, host('savior'), 'live-2');

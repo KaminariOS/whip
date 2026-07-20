@@ -35,7 +35,9 @@ describe('Android SSH terminal protocol stream', () => {
     );
 
     expect(execute.indexOf('channel.getInputStream()')).toBeGreaterThan(-1);
-    expect(execute.indexOf('channel.getInputStream()')).toBeLessThan(execute.indexOf('channel.connect()'));
+    expect(execute.indexOf('channel.getInputStream()')).toBeLessThan(
+      execute.indexOf('channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS)'),
+    );
     expect(execute).toContain('if (channel != null) channel.disconnect();');
   });
 
@@ -90,6 +92,21 @@ describe('Android SSH terminal protocol stream', () => {
     expect(android).toContain('SSH_SERVER_ALIVE_COUNT_MAX = 3');
     expect(connect).toContain('session.setServerAliveInterval(SSH_SERVER_ALIVE_INTERVAL_MS);');
     expect(connect).toContain('session.setServerAliveCountMax(SSH_SERVER_ALIVE_COUNT_MAX);');
-    expect(connect.indexOf('session.setServerAliveInterval')).toBeLessThan(connect.indexOf('session.connect()'));
+    expect(connect.indexOf('session.setServerAliveInterval')).toBeLessThan(
+      connect.indexOf('session.connect(SSH_CONNECT_TIMEOUT_MS)'),
+    );
+  });
+
+  test('bounds SSH and channel connection setup', () => {
+    const android = readFileSync(
+      resolve(packageRoot, 'android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java'),
+      'utf8',
+    );
+
+    expect(android).toContain('SSH_CONNECT_TIMEOUT_MS = 10_000');
+    expect(android).toContain('SSH_CHANNEL_CONNECT_TIMEOUT_MS = 5_000');
+    expect(android).toContain('session.connect(SSH_CONNECT_TIMEOUT_MS);');
+    expect(android).not.toContain('session.connect();');
+    expect(android).not.toContain('channel.connect();');
   });
 });

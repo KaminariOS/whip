@@ -131,6 +131,8 @@ interface ConnectOptions {
   persistProfile?: boolean;
   navigate?: boolean;
   markUsed?: boolean;
+  trackConnecting?: boolean;
+  activateSession?: boolean;
 }
 
 let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;
@@ -650,9 +652,17 @@ function AppContent() {
     nextProfile: ConnectionProfile,
     options: ConnectOptions = {},
   ): Promise<boolean> => {
-    const { persistProfile = true, navigate = true, markUsed = true } = options;
-    setConnecting(true);
-    setConnectingHostId(nextProfile.id);
+    const {
+      persistProfile = true,
+      navigate = true,
+      markUsed = true,
+      trackConnecting = true,
+      activateSession = true,
+    } = options;
+    if (trackConnecting) {
+      setConnecting(true);
+      setConnectingHostId(nextProfile.id);
+    }
     setConnectError(null);
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === nextProfile.id);
     if (existing) closeLiveHost(existing.id);
@@ -670,7 +680,12 @@ function AppContent() {
       const sessionId = nextProfile.id;
       runtime = createRuntime(sessionId, nextProfile);
       runtimes.current.set(sessionId, runtime);
-      setLiveSessions(current => openLiveHostSession(current, savedHost, sessionId));
+      setLiveSessions(current => openLiveHostSession(
+        current,
+        savedHost,
+        sessionId,
+        activateSession,
+      ));
       await runtime.client.connect(nextProfile);
       const initialSnapshotStartedAt = Date.now();
       const initial = await runtime.client.snapshot();
@@ -710,24 +725,32 @@ function AppContent() {
       if (navigate) setNavigation(current => selectMobileTab(current, 'hosts'));
       return false;
     } finally {
-      setConnecting(false);
-      setConnectingHostId(null);
+      if (trackConnecting) {
+        setConnecting(false);
+        setConnectingHostId(null);
+      }
     }
   };
 
   const restorePersistedLiveHosts = useEffectEvent(async () => {
     const persisted = persistedLiveHostsRef.current;
-    for (const hostId of persisted.hostIds) {
+    await Promise.allSettled(persisted.hostIds.map(async hostId => {
       const host = hostsRef.current.find(item => item.id === hostId);
-      if (!host) continue;
+      if (!host) return;
       try {
         const profile = await loadConnectionProfile(host);
-        if (!profile.secret) continue;
-        await connect(profile, { persistProfile: false, navigate: false, markUsed: false });
+        if (!profile.secret) return;
+        await connect(profile, {
+          persistProfile: false,
+          navigate: false,
+          markUsed: false,
+          trackConnecting: false,
+          activateSession: hostId === persisted.activeHostId,
+        });
       } catch (error) {
         setConnectError(`Could not restore ${hostDisplayName(host)}: ${String(error)}`);
       }
-    }
+    }));
     if (persisted.activeHostId) {
       setLiveSessions(current => {
         const active = current.sessions.find(session => session.hostId === persisted.activeHostId);
@@ -941,7 +964,7 @@ function AppContent() {
     }
   };
 
-  if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !liveHostRestoreComplete) {
+  if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded) {
     return <View className="flex-1 items-center justify-center bg-background"><WhipMark accessibilityLabel="Whip is loading" size={64} /></View>;
   }
 

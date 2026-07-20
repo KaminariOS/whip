@@ -70,8 +70,13 @@ export function SessionScreen({
   const [name, setName] = useState('');
   const [cwd, setCwd] = useState('');
   const [busy, setBusy] = useState(false);
+  const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);
   const wasVisible = useRef(false);
   const pendingFocus = useRef<PendingFocus | null>(null);
+
+  useEffect(() => {
+    if (visible) setTerminalSurfaceMounted(true);
+  }, [visible]);
 
   const workspace = snapshot.workspaces.find(item => item.workspace_id === workspaceId) || focusedWorkspace;
   const tabs = snapshot.tabs.filter(item => item.workspace_id === workspace?.workspace_id);
@@ -366,7 +371,7 @@ export function SessionScreen({
       )}
 
       <View className="relative flex-1 overflow-hidden bg-[#212121]">
-        {terminalState.sessions.map(terminalSession => (
+        {terminalSurfaceMounted && terminalState.sessions.map(terminalSession => (
           <TerminalScreen
             key={terminalSession.terminalId}
             client={client}

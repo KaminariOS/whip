@@ -55,6 +55,8 @@ import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 
 public class RNSshClientModule extends ReactContextBaseJavaModule {
+  private static final int SSH_CONNECT_TIMEOUT_MS = 10_000;
+  private static final int SSH_CHANNEL_CONNECT_TIMEOUT_MS = 5_000;
   private static final int SSH_SERVER_ALIVE_INTERVAL_MS = 5_000;
   private static final int SSH_SERVER_ALIVE_COUNT_MAX = 3;
 
@@ -236,7 +238,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           // so the terminal never receives a close event and looks frozen.
           session.setServerAliveInterval(SSH_SERVER_ALIVE_INTERVAL_MS);
           session.setServerAliveCountMax(SSH_SERVER_ALIVE_COUNT_MAX);
-          session.connect();
+          session.connect(SSH_CONNECT_TIMEOUT_MS);
 
           if (session.isConnected()) {
             SSHClient client = new SSHClient();
@@ -274,7 +276,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           channel = (ChannelExec) session.openChannel("exec");
           channel.setCommand(command);
           InputStream in = channel.getInputStream();
-          channel.connect();
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
 
           String line;
           StringBuilder response = new StringBuilder();
@@ -319,7 +321,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
           Channel channel = session.openChannel("shell");
           ((ChannelShell)channel).setPtyType(ptyType);
-          channel.connect();
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
 
           InputStream in = channel.getInputStream();
           client._channel = channel;
@@ -594,7 +596,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
       DataOutputStream output = new DataOutputStream(channel.getOutputStream());
       connection.channel = channel;
       connection.outputStream = output;
-      channel.connect();
+      channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
       startHerdrBridgeErrorReader(errorInput, connection);
       writeHerdrMessage(connection, HerdrBridgeCodec.hello(
           protocol,
@@ -940,7 +942,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           DataOutputStream output = new DataOutputStream(channel.getOutputStream());
           client._herdrEventChannel = channel;
           client._herdrEventOutputStream = output;
-          channel.connect();
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
           started = true;
           callback.invoke();
 
