@@ -9,12 +9,15 @@ Herdr-specific changes:
 
 - preserve the raw PTY stream and expose a line-shell mode that forwards large
   newline-delimited Herdr frames in bounded React Native event chunks;
-- run Herdr protocol 16 `remote-client-bridge` as persistent per-terminal binary
-  exec channels multiplexed through the existing authenticated SSH session,
-  including prewarmed handshake, terminal attach, input, resize, scrolling, and
-  terminal-id-tagged chunked ANSI frame events;
+- run Herdr protocol 17 `remote-client-bridge` as a persistent binary exec
+  channel for the visible terminal, including attach, input, resize, scrolling,
+  and terminal-id-tagged chunked ANSI frame events;
 - run the newline-delimited `nc -U` event subscription as a separate exec
   channel on that same authenticated session;
+- run sequential Herdr control commands through one persistent non-PTY shell
+  channel, with response markers framed across native event chunks, so normal
+  operation stays at three SSH channels instead of opening an exec channel for
+  every command;
 - configure JSch server-alive probes so a half-open mobile SSH connection is
   closed after three missed 5-second probes, allowing the app to reconnect
   instead of leaving terminal and event streams frozen;

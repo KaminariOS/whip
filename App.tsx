@@ -569,7 +569,6 @@ function AppContent() {
       runtime.reconnectAttempts = 0;
       setConnectError(null);
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
-      runtime.client.prepareTerminalBridge().catch(() => undefined);
       try {
         await ensureEventStream(sessionId, result.value.snapshot);
       } catch (error) {
@@ -689,7 +688,6 @@ function AppContent() {
       const initialSnapshotStartedAt = Date.now();
       const initial = await runtime.client.snapshot();
       const initialLatencyMs = elapsedLatencyMs(initialSnapshotStartedAt);
-      runtime.client.prepareTerminalBridge().catch(() => undefined);
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
       setLiveSessions(current => {

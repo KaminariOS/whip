@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 describe('Android SSH terminal protocol stream', () => {
   const packageRoot = resolve(__dirname, '../packages/react-native-ssh-sftp');
 
-  test('exposes an application line stream without changing the raw shell path', () => {
+  test('exposes dedicated event and command streams without changing the raw shell path', () => {
     const javascript = readFileSync(resolve(packageRoot, 'lib/sshclient.js'), 'utf8');
     const declarations = readFileSync(resolve(packageRoot, 'lib/sshclient.d.ts'), 'utf8');
     const android = readFileSync(
@@ -15,13 +15,17 @@ describe('Android SSH terminal protocol stream', () => {
     expect(javascript).toContain('startLineShell(ptyType, callback)');
     expect(javascript).toContain('RNSSHClient.startLineShell');
     expect(javascript).toContain('startHerdrEventStream(command, handler, callback)');
+    expect(javascript).toContain('startHerdrCommandStream(command, handler, callback)');
     expect(declarations).toContain('startLineShell(ptyType: PtyType');
+    expect(declarations).toContain('startHerdrCommandStream(command: string');
     expect(android).toContain('public void startLineShell');
     expect(android).toContain('client._bufferedReader.readLine()');
     expect(android).toContain('sendLineShellEvent(key, line)');
     expect(android).toContain('final int chunkSize = 8192');
     expect(android).toContain('client._bufferedReader.read(chars)');
     expect(android).toContain('public void startHerdrEventStream');
+    expect(android).toContain('public void startHerdrCommandStream');
+    expect(android).toContain('if (client._herdrCommandChannel == channel)');
   });
 
   test('subscribes to exec output before starting short-lived remote commands', () => {
@@ -51,7 +55,8 @@ describe('Android SSH terminal protocol stream', () => {
 
     expect(client).toContain('remote-client-bridge');
     expect(client).toContain('this.requireClient().startHerdrBridge');
-    expect(client).toContain('this.requireClient().prepareHerdrBridge');
+    expect(client).toContain("client.startHerdrCommandStream(\n      '/bin/sh'");
+    expect(client).not.toContain('this.requireClient().prepareHerdrBridge');
     expect(client).toContain('private terminalBridges = new Set<string>()');
     expect(codec).toContain('ClientMessage::Hello');
     expect(codec).toContain('static final int PROTOCOL_VERSION = 17');

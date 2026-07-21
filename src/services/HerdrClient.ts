@@ -1,5 +1,6 @@
 import SSHClient, {
   type HerdrBridgeEvent,
+  type HerdrCommandStreamEvent,
 } from '@dylankenneally/react-native-ssh-sftp';
 
 import { normalizePrivateKey } from '../lib/privateKey';
@@ -41,6 +42,12 @@ interface TerminalSize {
   cellHeightPx: number;
 }
 
+interface PendingCommand {
+  marker: string;
+  resolve: (output: string) => void;
+  reject: (error: unknown) => void;
+}
+
 export class HerdrClient {
   private client: SSHClient | null = null;
   private profile: ConnectionProfile | null = null;
@@ -48,12 +55,18 @@ export class HerdrClient {
   private terminalOpenings = new Map<string, Promise<void>>();
   private terminalSizes = new Map<string, TerminalSize>();
   private terminalBridges = new Set<string>();
-  private bridgePrepareOpening: Promise<void> | null = null;
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
   private controlConnect: Promise<void> | null = null;
   private controlReconnect: Promise<void> | null = null;
+  private commandStreamOpening: Promise<void> | null = null;
+  private commandStreamReady = false;
+  private commandGeneration = 0;
+  private commandSequence = 0;
+  private commandBuffer = '';
+  private pendingCommand: PendingCommand | null = null;
+  private commandQueue: Promise<void> = Promise.resolve();
 
   async connect(profile: ConnectionProfile): Promise<void> {
     const port = Number(profile.port);
@@ -104,14 +117,15 @@ export class HerdrClient {
 
     const nextClient = await this.connectSsh(profile, port);
     const previousClient = this.client;
+    this.resetCommandStream('SSH control connection was replaced');
     this.client = nextClient;
     this.profile = profile;
     this.apiServer = null;
     this.eventClient = null;
     this.terminalBridges.clear();
     this.terminalOpenings.clear();
-    this.bridgePrepareOpening = null;
     previousClient?.off('Shell');
+    previousClient?.closeHerdrCommandStream();
     previousClient?.disconnect();
 
     // A control reconnect is transport maintenance, not a terminal failure.
@@ -131,6 +145,8 @@ export class HerdrClient {
 
   disconnect(): void {
     this.closeEventStream();
+    this.resetCommandStream('SSH connection was closed');
+    this.client?.closeHerdrCommandStream();
     this.client?.closeAllHerdrBridges();
     this.client?.off('Shell');
     this.client?.disconnect();
@@ -141,7 +157,6 @@ export class HerdrClient {
     this.terminalConnections.clear();
     this.terminalSizes.clear();
     this.terminalBridges.clear();
-    this.bridgePrepareOpening = null;
     this.controlReconnect = null;
   }
 
@@ -166,27 +181,6 @@ export class HerdrClient {
       await task;
     } finally {
       this.terminalOpenings.delete(terminalId);
-    }
-  }
-
-  async prepareTerminalBridge(): Promise<void> {
-    if (this.bridgePrepareOpening) return this.bridgePrepareOpening;
-    const task = (async () => {
-      const server = await this.requireBridgeServer();
-      await this.requireClient().prepareHerdrBridge(
-        `${this.baseCommand()} remote-client-bridge`,
-        server.protocol,
-        80,
-        24,
-        0,
-        0,
-      );
-    })();
-    this.bridgePrepareOpening = task;
-    try {
-      await task;
-    } finally {
-      if (this.bridgePrepareOpening === task) this.bridgePrepareOpening = null;
     }
   }
 
@@ -288,7 +282,7 @@ export class HerdrClient {
     const request = JSON.stringify(sessionSnapshotRequest());
     let output: string;
     try {
-      output = await this.requireClient().execute(
+      output = await this.executeCommand(
         `printf '%s\\n' ${shellQuote(request)} | nc -N -U ${shellQuote(server.socket)} 2>&1`,
       );
     } catch (error) {
@@ -370,7 +364,7 @@ export class HerdrClient {
   }
 
   async startServer(): Promise<void> {
-    await this.requireClient().execute(
+    await this.executeCommand(
       `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`,
     );
     this.apiServer = null;
@@ -468,7 +462,7 @@ export class HerdrClient {
   }
 
   private async executeJson<T>(args: string, resultKey?: string): Promise<T> {
-    const output = await this.requireClient().execute(`${this.baseCommand()} ${args} 2>&1`);
+    const output = await this.executeCommand(`${this.baseCommand()} ${args} 2>&1`);
     return parseJsonResponse<T>(output, resultKey);
   }
 
@@ -485,7 +479,88 @@ export class HerdrClient {
   }
 
   private executeText(args: string): Promise<string> {
-    return this.requireClient().execute(`${this.baseCommand()} ${args} 2>&1`);
+    return this.executeCommand(`${this.baseCommand()} ${args} 2>&1`);
+  }
+
+  private executeCommand(command: string): Promise<string> {
+    const task = this.commandQueue.then(() => this.runCommand(command));
+    this.commandQueue = task.then(() => undefined, () => undefined);
+    return task;
+  }
+
+  private async runCommand(command: string): Promise<string> {
+    await this.ensureCommandStream();
+    const id = `${this.commandGeneration}_${++this.commandSequence}`;
+    const marker = `WHIP_COMMAND_${id}`;
+    const result = new Promise<string>((resolve, reject) => {
+      this.pendingCommand = { marker, resolve, reject };
+    });
+    const script = `${command}\n__whip_status=$?\nprintf '\\036${marker}:%s\\037\\n' "$__whip_status"\n`;
+    try {
+      await this.requireClient().writeHerdrCommandStream(script);
+    } catch (error) {
+      this.failPendingCommand(error);
+    }
+    return result;
+  }
+
+  private async ensureCommandStream(): Promise<void> {
+    if (this.commandStreamReady) return;
+    if (this.commandStreamOpening) return this.commandStreamOpening;
+    const client = this.requireClient();
+    const generation = ++this.commandGeneration;
+    const task = client.startHerdrCommandStream(
+      '/bin/sh',
+      event => {
+        if (generation === this.commandGeneration) this.handleCommandStreamEvent(event);
+      },
+    );
+    this.commandStreamOpening = task;
+    try {
+      await task;
+      if (generation === this.commandGeneration) this.commandStreamReady = true;
+    } finally {
+      if (this.commandStreamOpening === task) this.commandStreamOpening = null;
+    }
+  }
+
+  private handleCommandStreamEvent(event: HerdrCommandStreamEvent): void {
+    if (event.data) {
+      this.commandBuffer += event.data;
+      this.resolveCommandFrame();
+    }
+    if (event.closed) {
+      this.commandStreamReady = false;
+      this.failPendingCommand(event.error || 'Herdr command stream closed');
+    }
+  }
+
+  private resolveCommandFrame(): void {
+    const pending = this.pendingCommand;
+    if (!pending) return;
+    const markerStart = `\u001e${pending.marker}:`;
+    const start = this.commandBuffer.indexOf(markerStart);
+    if (start < 0) return;
+    const end = this.commandBuffer.indexOf('\u001f', start + markerStart.length);
+    if (end < 0) return;
+    const output = this.commandBuffer.slice(0, start);
+    this.commandBuffer = this.commandBuffer.slice(end + 1).replace(/^\r?\n/, '');
+    this.pendingCommand = null;
+    pending.resolve(output);
+  }
+
+  private failPendingCommand(error: unknown): void {
+    const pending = this.pendingCommand;
+    this.pendingCommand = null;
+    this.commandBuffer = '';
+    pending?.reject(error);
+  }
+
+  private resetCommandStream(reason: string): void {
+    this.commandGeneration += 1;
+    this.commandStreamReady = false;
+    this.commandStreamOpening = null;
+    this.failPendingCommand(reason);
   }
 
   private baseCommand(): string {
@@ -547,12 +622,6 @@ export class HerdrClient {
     if (this.terminalBridges.has(terminalId)) return;
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) return opening;
-    // A first tap commonly lands while the post-connect bridge prewarm is
-    // handshaking. Let it finish so startHerdrBridge can atomically claim that
-    // prepared connection instead of opening a competing bridge.
-    const preparing = this.bridgePrepareOpening;
-    if (preparing) await preparing.catch(() => undefined);
-    if (this.terminalBridges.has(terminalId)) return;
     const size = requestedSize || this.terminalSizes.get(terminalId) || {
       columns: 80,
       rows: 24,
@@ -572,7 +641,6 @@ export class HerdrClient {
       event => this.handleHerdrBridgeEvent(terminalId, event),
     );
     this.terminalBridges.add(terminalId);
-    this.prepareTerminalBridge().catch(() => undefined);
   }
 
   private async requireBridgeServer(): Promise<ServerInfo & { protocol: number }> {

@@ -82,6 +82,8 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     HerdrBridgeConnection _preparedHerdrBridge = null;
     ChannelExec _herdrEventChannel = null;
     DataOutputStream _herdrEventOutputStream = null;
+    ChannelExec _herdrCommandChannel = null;
+    DataOutputStream _herdrCommandOutputStream = null;
     ChannelSftp _sftpSession = null;
     Boolean _downloadContinue = false;
     Boolean _uploadContinue = false;
@@ -1014,6 +1016,135 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
+  public void startHerdrCommandStream(
+      final String command,
+      final String key,
+      final Callback callback
+  ) {
+    new Thread(new Runnable() {
+      public void run() {
+        boolean started = false;
+        ChannelExec channel = null;
+        DataOutputStream output = null;
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client == null) throw new Exception("client is null");
+          if (client._herdrCommandChannel != null && client._herdrCommandChannel.isConnected()) {
+            callback.invoke();
+            return;
+          }
+          channel = (ChannelExec) client._session.openChannel("exec");
+          channel.setCommand(command);
+          InputStream input = channel.getInputStream();
+          output = new DataOutputStream(channel.getOutputStream());
+          synchronized (client) {
+            client._herdrCommandChannel = channel;
+            client._herdrCommandOutputStream = output;
+          }
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
+          started = true;
+          callback.invoke();
+
+          InputStreamReader reader = new InputStreamReader(input, StandardCharsets.UTF_8);
+          char[] chars = new char[8192];
+          int count;
+          while (clientPool.get(key) == client && channel.isConnected() && (count = reader.read(chars)) >= 0) {
+            if (count > 0) sendHerdrCommandStreamEvent(key, new String(chars, 0, count), false, null);
+          }
+          sendHerdrCommandStreamEvent(key, null, true, null);
+        } catch (Exception error) {
+          Log.e(LOGTAG, "Herdr command stream failed: " + error.getMessage());
+          if (!started) callback.invoke(error.getMessage());
+          else sendHerdrCommandStreamEvent(key, null, true, error.getMessage());
+        } finally {
+          SSHClient client = clientPool.get(key);
+          closeHerdrCommandStreamConnection(client, channel, output);
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
+  public void writeHerdrCommandStream(final String value, final String key, final Callback callback) {
+    try {
+      SSHClient client = clientPool.get(key);
+      if (client == null) throw new IOException("client is null");
+      synchronized (client) {
+        if (client._herdrCommandOutputStream == null) throw new IOException("Herdr command stream is not active");
+        client._herdrCommandOutputStream.write(value.getBytes(StandardCharsets.UTF_8));
+        client._herdrCommandOutputStream.flush();
+      }
+      callback.invoke();
+    } catch (Exception error) {
+      callback.invoke(error.getMessage());
+    }
+  }
+
+  @ReactMethod
+  public void closeHerdrCommandStream(final String key) {
+    SSHClient client = clientPool.get(key);
+    if (client != null) closeHerdrCommandStreamClient(client);
+  }
+
+  private void sendHerdrCommandStreamEvent(
+      String key,
+      @Nullable String data,
+      boolean closed,
+      @Nullable String error
+  ) {
+    WritableMap value = Arguments.createMap();
+    if (data != null) value.putString("data", data);
+    value.putBoolean("closed", closed);
+    if (error != null) value.putString("error", error);
+
+    WritableMap event = Arguments.createMap();
+    event.putString("name", "HerdrCommandStream");
+    event.putString("key", key);
+    event.putMap("value", value);
+    sendEvent(reactContext, "HerdrCommandStream", event);
+  }
+
+  private void closeHerdrCommandStreamClient(SSHClient client) {
+    ChannelExec channel;
+    DataOutputStream output;
+    synchronized (client) {
+      channel = client._herdrCommandChannel;
+      output = client._herdrCommandOutputStream;
+      client._herdrCommandChannel = null;
+      client._herdrCommandOutputStream = null;
+    }
+    closeHerdrCommandStreamConnection(null, channel, output);
+  }
+
+  private void closeHerdrCommandStreamConnection(
+      @Nullable SSHClient client,
+      @Nullable ChannelExec channel,
+      @Nullable DataOutputStream output
+  ) {
+    if (client != null) {
+      synchronized (client) {
+        // A replacement stream may already own the client fields. The reader
+        // finishing for an older channel must never close that replacement.
+        if (client._herdrCommandChannel == channel) {
+          client._herdrCommandChannel = null;
+          client._herdrCommandOutputStream = null;
+        }
+      }
+    }
+    try {
+      if (output != null) {
+        output.flush();
+        output.close();
+      }
+    } catch (IOException error) {
+      Log.e(LOGTAG, "Error closing Herdr command output: " + error.getMessage());
+    }
+    if (channel != null) {
+      channel.disconnect();
+    }
+  }
+
+  @ReactMethod
   public void connectSFTP(final String key, final Callback callback) {
     new Thread(new Runnable()  {
       public void run() {
@@ -1291,8 +1422,9 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     SSHClient client = clientPool.remove(key);
     if (client != null) {
         closeShellClient(client);
-        closeHerdrBridgeClient(client);
-        closeHerdrEventStreamClient(client);
+      closeHerdrBridgeClient(client);
+      closeHerdrEventStreamClient(client);
+      closeHerdrCommandStreamClient(client);
         if (client._sftpSession != null) {
           client._sftpSession.disconnect();
           client._sftpSession = null;

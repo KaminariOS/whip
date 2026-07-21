@@ -4,6 +4,7 @@ const RNSSHClientEmitter = new NativeEventEmitter(RNSSHClient);
 const NATIVE_EVENT_SHELL = 'Shell';
 const NATIVE_EVENT_HERDR_BRIDGE = 'HerdrBridge';
 const NATIVE_EVENT_HERDR_EVENT_STREAM = 'HerdrEventStream';
+const NATIVE_EVENT_HERDR_COMMAND_STREAM = 'HerdrCommandStream';
 const NATIVE_EVENT_DOWNLOAD_PROGRESS = 'DownloadProgress';
 const NATIVE_EVENT_UPLOAD_PROGRESS = 'UploadProgress';
 /**
@@ -129,6 +130,7 @@ class SSHClient {
             sftp: false,
             shell: false,
             herdrEventStream: false,
+            herdrCommandStream: false,
         };
         this._handlers = {};
         this._herdrBridgeHandlers = new Map();
@@ -174,6 +176,9 @@ class SSHClient {
         }
         if (event.name === NATIVE_EVENT_HERDR_EVENT_STREAM && event.value?.includes?.('herdr_android_bridge_closed')) {
             this._activeStream.herdrEventStream = false;
+        }
+        if (event.name === NATIVE_EVENT_HERDR_COMMAND_STREAM && event.value?.closed) {
+            this._activeStream.herdrCommandStream = false;
         }
         if (this._handlers[event.name] && this._key === event.key) {
             this._handlers[event.name](event.value);
@@ -471,6 +476,40 @@ class SSHClient {
         RNSSHClient.closeHerdrEventStream(this._key);
         this._activeStream.herdrEventStream = false;
     }
+    startHerdrCommandStream(command, handler, callback) {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('Herdr command streams are currently Android-only'));
+        }
+        if (this._activeStream.herdrCommandStream) {
+            this.on(NATIVE_EVENT_HERDR_COMMAND_STREAM, handler);
+            return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => {
+            this.on(NATIVE_EVENT_HERDR_COMMAND_STREAM, handler);
+            this.registerNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
+            RNSSHClient.startHerdrCommandStream(command, this._key, error => {
+                if (callback) callback(error);
+                if (error) {
+                    this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
+                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
+                    return reject(error);
+                }
+                this._activeStream.herdrCommandStream = true;
+                resolve();
+            });
+        });
+    }
+    writeHerdrCommandStream(value) {
+        return new Promise((resolve, reject) => {
+            RNSSHClient.writeHerdrCommandStream(value, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    closeHerdrCommandStream() {
+        this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
+        this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
+        RNSSHClient.closeHerdrCommandStream(this._key);
+        this._activeStream.herdrCommandStream = false;
+    }
     /**
      * Connects to the SFTP server.
      *
@@ -748,14 +787,17 @@ class SSHClient {
     disconnect() {
         this.off(NATIVE_EVENT_SHELL);
         this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
+        this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
         this._herdrBridgeHandlers.clear();
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
+        this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
         this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
         this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
         this._activeStream.shell = false;
         this._activeStream.sftp = false;
         this._activeStream.herdrEventStream = false;
+        this._activeStream.herdrCommandStream = false;
         RNSSHClient.disconnect(this._key);
     }
 }

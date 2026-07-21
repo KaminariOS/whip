@@ -36,6 +36,11 @@ export interface HerdrBridgeEvent {
     flag?: boolean;
     kind?: number;
 }
+export interface HerdrCommandStreamEvent {
+    data?: string;
+    closed?: boolean;
+    error?: string;
+}
 /**
  * Represents the result of a directory listing operation.
  */
@@ -256,6 +261,9 @@ export default class SSHClient {
     startHerdrEventStream(command: string, handler: (data: string) => void, callback?: CallbackFunction<void>): Promise<void>;
     writeHerdrEventStream(value: string): Promise<void>;
     closeHerdrEventStream(): void;
+    startHerdrCommandStream(command: string, handler: (event: HerdrCommandStreamEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
+    writeHerdrCommandStream(value: string): Promise<void>;
+    closeHerdrCommandStream(): void;
     /**
      * Connects to the SFTP server.
      *

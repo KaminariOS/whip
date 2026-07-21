@@ -29,12 +29,13 @@ describe('terminal renderer lifecycle', () => {
     expect(assets).toContain('window.herdrBlur = () => terminal.blur();');
   });
 
-  it('starts the remote bridge before a terminal is opened', () => {
+  it('does not reserve a spare SSH channel for terminal prewarming', () => {
     const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
 
-    expect(app).toContain('runtime.client.prepareTerminalBridge().catch(() => undefined);');
-    expect(client).toContain('if (preparing) await preparing.catch(() => undefined);');
+    expect(app).not.toContain('runtime.client.prepareTerminalBridge');
+    expect(client).not.toContain('bridgePrepareOpening');
+    expect(client).not.toContain('prepareHerdrBridge');
   });
 
   it('reconciles a snapshot after an event stream reconnect', () => {
