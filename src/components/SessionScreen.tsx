@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
+import { serverFocusMatchesPendingPane } from '@/src/lib/terminalFocus';
 import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalControls';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSessionsState } from '../terminalSessions';
@@ -71,7 +72,8 @@ export function SessionScreen({
   const [cwd, setCwd] = useState('');
   const [busy, setBusy] = useState(false);
   const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);
-  const wasVisible = useRef(false);
+  const pendingPaneFocus = useRef<string | null>(null);
+  const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
 
   useEffect(() => {
@@ -141,21 +143,25 @@ export function SessionScreen({
   // Herdr owns focus. Follow focus changes made by the native or another remote client.
   useEffect(() => {
     if (!serverWorkspaceId || !serverTabId) return;
+    if (!serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)) return;
     setWorkspaceId(serverWorkspaceId);
     setTabId(serverTabId);
-  }, [serverTabId, serverWorkspaceId]);
+  }, [serverPaneId, serverTabId, serverWorkspaceId]);
 
-  // Opening a pane from Herd/Agent detail should land in the matching Herdr tab.
+  // Preserve an explicit terminal choice until Herdr confirms the same pane.
   useEffect(() => {
-    if (visible && !wasVisible.current && terminalState.activeTerminalId) {
-      const activeSession = terminalState.sessions.find(item => item.terminalId === terminalState.activeTerminalId);
-      const activePane = snapshot.panes.find(item => item.pane_id === activeSession?.paneId);
-      if (activePane) {
-        setWorkspaceId(activePane.workspace_id);
-        setTabId(activePane.tab_id);
-      }
+    if (!visible) {
+      pendingPaneFocus.current = null;
+      lastActivePaneId.current = null;
+      return;
     }
-    wasVisible.current = visible;
+    const activeSession = terminalState.sessions.find(item => item.terminalId === terminalState.activeTerminalId);
+    const activePane = snapshot.panes.find(item => item.pane_id === activeSession?.paneId);
+    if (!activePane || activePane.pane_id === lastActivePaneId.current) return;
+    lastActivePaneId.current = activePane.pane_id;
+    pendingPaneFocus.current = activePane.pane_id;
+    setWorkspaceId(activePane.workspace_id);
+    setTabId(activePane.tab_id);
   }, [snapshot.panes, terminalState.activeTerminalId, terminalState.sessions, visible]);
 
   const activateServerPane = useEffectEvent((paneId: string) => {
@@ -166,6 +172,8 @@ export function SessionScreen({
   // A Herdr tab is a live terminal surface. Attach its server-focused pane immediately.
   useEffect(() => {
     if (!visible || !serverPaneId) return;
+    if (!serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)) return;
+    pendingPaneFocus.current = null;
     activateServerPane(serverPaneId);
   }, [serverPaneId, visible]);
 

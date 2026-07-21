@@ -17,6 +17,7 @@ interface Props {
 
 const items: Array<{ tab: AppTab; label: string; icon: IconName; activeIcon: IconName }> = [
   { tab: 'hosts', label: 'Hosts', icon: 'server-outline', activeIcon: 'server' },
+  { tab: 'herd', label: 'Herd', icon: 'people-outline', activeIcon: 'people' },
   { tab: 'terminal', label: 'Terminal', icon: 'terminal-outline', activeIcon: 'terminal' },
   { tab: 'more', label: 'More', icon: 'ellipsis-horizontal-circle-outline', activeIcon: 'ellipsis-horizontal-circle' },
 ];

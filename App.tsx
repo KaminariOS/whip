@@ -9,12 +9,14 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNavigation } from './src/components/BottomNavigation';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
+import { HerdScreen } from './src/components/HerdScreen';
 import { HostsScreen } from './src/components/HostsScreen';
 import { LiveSessionRail, type LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
 import { WhipMark } from './src/components/app-ui';
+import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import { resolveColorScheme } from './src/lib/appearance';
 import {
@@ -98,7 +100,7 @@ import {
   type TerminalSessionStatus,
 } from './src/terminalSessions';
 import { useTheme } from './src/theme';
-import type { AgentStatus, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
+import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 
 interface LiveRuntime {
@@ -174,6 +176,7 @@ function AppContent() {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [liveSessions, setLiveSessions] = useState(emptyLiveHostSessions);
   const [navigation, setNavigation] = useState(initialMobileNavigation);
+  const [herdHostFilterId, setHerdHostFilterId] = useState<string | null>(null);
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
@@ -634,6 +637,7 @@ function AppContent() {
       runtimes.current.delete(sessionId);
     }
     setSelectedPaneId(null);
+    setHerdHostFilterId(current => current === sessionId ? null : current);
     setLiveSessions(current => {
       const next = closeLiveHostSession(current, sessionId);
       if (next.sessions.length === 0) {
@@ -868,10 +872,11 @@ function AppContent() {
 
   const openPaneTerminal = (sessionId: string, pane: PaneInfo, focusAgent = false) => {
     setSelectedPaneId(null);
-    setLiveSessions(current => {
-      const activated = updateLiveHostTerminals(current, sessionId, terminals => openTerminalSession(terminals, pane));
-      return applyLiveHostFocus(activated, sessionId, { paneId: pane.pane_id });
-    });
+    setLiveSessions(current => updateLiveHostTerminals(
+      current,
+      sessionId,
+      terminals => openTerminalSession(terminals, pane),
+    ));
     selectLiveHost(sessionId, 'terminal');
     const runtime = runtimes.current.get(sessionId);
     const focus = focusAgent
@@ -930,9 +935,54 @@ function AppContent() {
   const selectedPane = selectedPaneId && snapshot
     ? snapshot.panes.find(pane => pane.pane_id === selectedPaneId) || null
     : null;
+  const selectedHerdHostId = herdHostFilterId && liveSessions.sessions.some(session => session.id === herdHostFilterId)
+    ? herdHostFilterId
+    : null;
+  const herdQueues: HerdHostQueue[] = liveSessions.sessions.map(session => ({
+    id: session.id,
+    label: hostDisplayName(session.host),
+    address: session.host.host,
+    running: session.snapshot.server.running,
+    refreshing: session.sync.status === 'syncing',
+    agents: session.snapshot.agents,
+    tabs: session.snapshot.tabs,
+  }));
 
   const refreshActive = async () => {
     if (activeSession) await refreshHost(activeSession.id);
+  };
+
+  const refreshHerd = async () => {
+    const sessionIds = selectedHerdHostId
+      ? [selectedHerdHostId]
+      : liveSessions.sessions.map(session => session.id);
+    await Promise.all(sessionIds.map(refreshHost));
+  };
+
+  const openAgentTerminal = (sessionId: string, agent: AgentInfo) => {
+    const session = findLiveHostSession(liveSessions, sessionId);
+    const pane = session?.snapshot.panes.find(item => item.pane_id === agent.pane_id);
+    if (!pane) return;
+    openPaneTerminal(sessionId, pane, true);
+  };
+
+  const startAgent = async (sessionId: string, name: string, command: string, cwd: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) return;
+    await runtime.client.startAgent(name, command, cwd);
+    await refreshHost(sessionId);
+  };
+
+  const startServer = async (sessionId: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) return;
+    try {
+      await runtime.client.startServer();
+      await new Promise<void>(resolve => setTimeout(resolve, 800));
+      await refreshHost(sessionId);
+    } catch (error) {
+      scheduleReconnect(sessionId, error);
+    }
   };
 
   if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded) {
@@ -975,6 +1025,20 @@ function AppContent() {
               onEdit={openHostEditor}
               onUnlockCredentials={unlockCredentialRecovery}
             />
+          )}
+
+          {navigation.tab === 'herd' && (
+            liveSessions.sessions.length > 0 ? (
+              <HerdScreen
+                queues={herdQueues}
+                selectedHostId={selectedHerdHostId}
+                onSelectHost={setHerdHostFilterId}
+                onRefresh={refreshHerd}
+                onOpenTerminal={openAgentTerminal}
+                onStart={startAgent}
+                onStartServer={startServer}
+              />
+            ) : <ConnectRequiredScreen destination="HERD" onPickHost={() => selectTab('hosts')} />
           )}
 
           {!activeSession && navigation.tab === 'terminal' && (
