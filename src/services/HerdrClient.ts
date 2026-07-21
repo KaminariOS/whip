@@ -25,6 +25,14 @@ type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
 type ApiEventHandler = (event: HerdrApiEvent) => void;
 
+// Seed common Homebrew/Linux prefixes onto PATH for the command shell. A
+// non-login SSH shell on macOS omits /opt/homebrew/bin (Homebrew adds it only
+// in ~/.zprofile, sourced by login shells), so bare `herdr` isn't found. The
+// prefixes are harmless where they don't exist (e.g. Linux) and $PATH is kept.
+// See https://github.com/KaminariOS/whip/issues/15
+const COMMAND_STREAM_SHELL =
+  'PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$PATH" /bin/sh';
+
 export function isUnavailableSshChannel(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /channel (?:is )?not open(?:ed)?|session is down|socket is not established/i.test(message);
@@ -283,7 +291,13 @@ export class HerdrClient {
     let output: string;
     try {
       output = await this.executeCommand(
-        `printf '%s\\n' ${shellQuote(request)} | nc -N -U ${shellQuote(server.socket)} 2>&1`,
+        // Apple's netcat treats a bare `-N` as an adaptive-write-timeout flag
+        // that requires an integer argument, so passing it before `-U <sock>`
+        // aborts on macOS. Herdr closes the socket after replying, so the
+        // half-close that flag provided was never needed here. Plain `nc -U`
+        // is portable across Apple and OpenBSD/GNU netcat.
+        // See https://github.com/KaminariOS/whip/issues/15
+        `printf '%s\\n' ${shellQuote(request)} | nc -U ${shellQuote(server.socket)} 2>&1`,
       );
     } catch (error) {
       this.apiServer = null;
@@ -510,7 +524,7 @@ export class HerdrClient {
     const client = this.requireClient();
     const generation = ++this.commandGeneration;
     const task = client.startHerdrCommandStream(
-      '/bin/sh',
+      COMMAND_STREAM_SHELL,
       event => {
         if (generation === this.commandGeneration) this.handleCommandStreamEvent(event);
       },

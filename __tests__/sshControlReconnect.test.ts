@@ -77,7 +77,10 @@ describe('SSH control reconnects', () => {
     await client.focusWorkspace('space-1');
 
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
-    expect(stale.startHerdrCommandStream).toHaveBeenCalledWith('/bin/sh', expect.any(Function));
+    expect(stale.startHerdrCommandStream).toHaveBeenCalledWith(
+      'PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$PATH" /bin/sh',
+      expect.any(Function),
+    );
     expect(fresh.writeHerdrCommandStream).toHaveBeenCalledWith(
       expect.stringContaining("'herdr' --session 'main' workspace focus 'space-1' 2>&1"),
     );

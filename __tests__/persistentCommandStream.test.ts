@@ -66,7 +66,10 @@ describe('persistent SSH command stream', () => {
     await client.focusTab('tab-1');
 
     expect(native.startHerdrCommandStream).toHaveBeenCalledTimes(1);
-    expect(native.startHerdrCommandStream).toHaveBeenCalledWith('/bin/sh', expect.any(Function));
+    expect(native.startHerdrCommandStream).toHaveBeenCalledWith(
+      'PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$PATH" /bin/sh',
+      expect.any(Function),
+    );
     expect(native.writeHerdrCommandStream).toHaveBeenCalledTimes(2);
     expect(native.writeHerdrCommandStream).toHaveBeenNthCalledWith(
       1,
