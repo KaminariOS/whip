@@ -82,12 +82,14 @@ test('loads a valid appearance preference and rejects invalid values', async () 
 test('sanitizes persisted terminal background preferences', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({
     terminal: {
+      fontSize: 99,
       backgroundImageUri: 'file:///data/user/0/io.github.kaminarios.whip/files/background.webp',
       backgroundOpacity: 150,
     },
   }));
 
   const preferences = await loadDevicePreferences();
+  expect(preferences.terminal.fontSize).toBe(24);
   expect(preferences.terminal.backgroundImageUri).toBe('file:///data/user/0/io.github.kaminarios.whip/files/background.webp');
   expect(preferences.terminal.backgroundDimming).toBe(100);
 });

@@ -66,7 +66,7 @@ export function SettingsSection(props: SettingsSectionProps) {
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">Terminal</Text>
         <View className="overflow-hidden rounded-lg border border-border bg-card">
-          <ValueRow title="Font size" value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(16, props.terminalPreferences.fontSize + 1) })} />
+          <ValueRow title="Font size" value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(24, props.terminalPreferences.fontSize + 1) })} />
           <ValueRow title="Scrollback" value={`${props.terminalPreferences.scrollback} lines`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
           <SettingRow title="Blinking cursor" copy="Animate the terminal cursor while the pane is active." value={props.terminalPreferences.cursorBlink} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, cursorBlink: value })} divided />
           <TerminalBackgroundRow

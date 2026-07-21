@@ -304,7 +304,7 @@ export function TerminalScreen({ client, visible, session, preferences, controlU
     } else if (message.type === 'font-size-change') {
       const fontSize = Number(message.fontSize);
       if (Number.isFinite(fontSize)) {
-        onFontSizeChange(Math.max(8, Math.min(16, Math.round(fontSize))));
+        onFontSizeChange(Math.max(8, Math.min(24, Math.round(fontSize))));
       }
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(message.text || '');

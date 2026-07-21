@@ -190,7 +190,7 @@ function AppContent() {
   });
 
   const updateTerminalFontSize = useCallback((fontSize: number) => {
-    const nextFontSize = Math.max(8, Math.min(16, Math.round(fontSize)));
+    const nextFontSize = Math.max(8, Math.min(24, Math.round(fontSize)));
     setTerminalPreferences(current => (
       current.fontSize === nextFontSize
         ? current

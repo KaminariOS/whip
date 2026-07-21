@@ -22,7 +22,7 @@ describe('Android terminal assets', () => {
     );
     expect(html).toContain("fontWeightBold: '700'");
     expect(html).toContain('fontSize: 8');
-    expect(html).toContain('Math.max(8, Math.min(16');
+    expect(html).toContain('Math.max(8, Math.min(24');
     expect(html).toContain('document.fonts.load');
     expect(html).toContain('terminal.attachCustomKeyEventHandler');
     expect(html).toContain('installAndroidImeBridge(terminal, send, navigator.userAgent)');
