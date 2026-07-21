@@ -86,7 +86,7 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
     const terminal = (parsed.terminal || {}) as StoredTerminalPreferences;
     const fontSize = migratingLegacy && terminal.fontSize === 11
       ? defaultDevicePreferences.terminal.fontSize
-      : clampNumber(terminal.fontSize, 8, 16, defaultDevicePreferences.terminal.fontSize);
+      : clampNumber(terminal.fontSize, 8, 24, defaultDevicePreferences.terminal.fontSize);
     return {
       alertsEnabled: parsed.alertsEnabled ?? defaultDevicePreferences.alertsEnabled,
       ttsEnabled: parsed.ttsEnabled ?? defaultDevicePreferences.ttsEnabled,

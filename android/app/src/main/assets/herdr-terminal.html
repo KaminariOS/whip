@@ -260,7 +260,7 @@
       terminal.reset();
     };
     window.herdrConfigure = options => {
-      terminal.options.fontSize = Math.max(8, Math.min(16, Number(options.fontSize) || 8));
+      terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
       const backgroundUri = options.backgroundImageUri || '';
@@ -413,7 +413,7 @@
         event.preventDefault();
         event.stopPropagation();
         const ratio = touchDistance(event.touches) / pinch.distance;
-        const fontSize = Math.max(8, Math.min(16, Math.round(pinch.initialFontSize * ratio)));
+        const fontSize = Math.max(8, Math.min(24, Math.round(pinch.initialFontSize * ratio)));
         if (fontSize !== pinch.fontSize) {
           pinch.fontSize = fontSize;
           terminal.options.fontSize = fontSize;
