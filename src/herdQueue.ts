@@ -1,5 +1,5 @@
 import { tabNameForAgent } from './lib/agentStatusEvents';
-import type { AgentInfo, TabInfo } from './types';
+import type { AgentInfo, TabInfo, WorkspaceInfo } from './types';
 
 export interface HerdHostQueue {
   id: string;
@@ -8,6 +8,7 @@ export interface HerdHostQueue {
   running: boolean;
   refreshing: boolean;
   agents: AgentInfo[];
+  workspaces: WorkspaceInfo[];
   tabs: TabInfo[];
 }
 
@@ -16,6 +17,7 @@ export interface HerdQueueAgent {
   hostLabel: string;
   agent: AgentInfo;
   tabLabel: string;
+  primaryLabel: string;
 }
 
 export function resolveHerdHostFilter(
@@ -40,11 +42,22 @@ export function agentsForHerdFilter(
   selectedHostId: string | null,
 ): HerdQueueAgent[] {
   return queuesForHerdFilter(queues, selectedHostId).flatMap(queue => (
-    queue.agents.map(agent => ({
-      hostId: queue.id,
-      hostLabel: queue.label,
-      agent,
-      tabLabel: tabNameForAgent(agent, queue.tabs),
-    }))
+    queue.agents.map(agent => {
+      const tabLabel = tabNameForAgent(agent, queue.tabs);
+      const workspaceLabel = queue.workspaces
+        .find(workspace => workspace.workspace_id === agent.workspace_id)
+        ?.label.trim() || agent.workspace_id;
+      const hasMultipleTabs = queue.tabs.filter(
+        tab => tab.workspace_id === agent.workspace_id,
+      ).length > 1;
+
+      return {
+        hostId: queue.id,
+        hostLabel: queue.label,
+        agent,
+        tabLabel,
+        primaryLabel: hasMultipleTabs ? `${workspaceLabel} · ${tabLabel}` : workspaceLabel,
+      };
+    })
   ));
 }
