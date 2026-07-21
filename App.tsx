@@ -11,7 +11,7 @@ import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
 import { HerdScreen } from './src/components/HerdScreen';
 import { HostsScreen } from './src/components/HostsScreen';
-import { LiveSessionRail, type LiveSessionRailItem } from './src/components/LiveSessionRail';
+import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
@@ -965,6 +965,39 @@ function AppContent() {
     openPaneTerminal(sessionId, pane, true);
   };
 
+  const selectHerdHost = (sessionId: string | null) => {
+    setHerdHostFilterId(sessionId);
+    if (sessionId) setLiveSessions(current => selectLiveHostSession(current, sessionId));
+  };
+
+  const selectHerdWorkspace = async (sessionId: string, workspaceId: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error('Host session is unavailable');
+    await runtime.client.focusWorkspace(workspaceId);
+    await refreshHost(sessionId);
+  };
+
+  const createHerdWorkspace = async (sessionId: string, name: string, cwd: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error('Host session is unavailable');
+    await runtime.client.createWorkspace(name, cwd);
+    await refreshHost(sessionId);
+  };
+
+  const renameHerdWorkspace = async (sessionId: string, workspaceId: string, name: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error('Host session is unavailable');
+    await runtime.client.renameWorkspace(workspaceId, name);
+    await refreshHost(sessionId);
+  };
+
+  const closeHerdWorkspace = async (sessionId: string, workspaceId: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error('Host session is unavailable');
+    await runtime.client.closeWorkspace(workspaceId);
+    await refreshHost(sessionId);
+  };
+
   const startAgent = async (sessionId: string, name: string, command: string, cwd: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) return;
@@ -1030,8 +1063,15 @@ function AppContent() {
             liveSessions.sessions.length > 0 ? (
               <HerdScreen
                 queues={herdQueues}
+                sessions={railSessions}
                 selectedHostId={selectedHerdHostId}
-                onSelectHost={setHerdHostFilterId}
+                onSelectHost={selectHerdHost}
+                onCloseHost={closeLiveHost}
+                onNewHost={() => selectTab('hosts')}
+                onSelectWorkspace={selectHerdWorkspace}
+                onCreateWorkspace={createHerdWorkspace}
+                onRenameWorkspace={renameHerdWorkspace}
+                onCloseWorkspace={closeHerdWorkspace}
                 onRefresh={refreshHerd}
                 onOpenTerminal={openAgentTerminal}
                 onStart={startAgent}
@@ -1061,17 +1101,6 @@ function AppContent() {
             />
           )}
 
-          {activeSession && terminalVisible && (
-            <LiveSessionRail
-              sessions={railSessions}
-              activeHostId={activeSession.id}
-              onExit={() => setNavigation(current => selectMobileTab(current, current.lastNonTerminalTab))}
-              onSelect={selectLiveHost}
-              onClose={closeLiveHost}
-              onNew={() => selectTab('hosts')}
-            />
-          )}
-
           {liveSessions.sessions.map(session => {
             const runtime = runtimes.current.get(session.id);
             if (!runtime) return null;
@@ -1085,6 +1114,7 @@ function AppContent() {
                 terminalControlUsage={terminalControlUsage}
                 onTerminalFontSizeChange={updateTerminalFontSize}
                 onTerminalControlUse={recordTerminalControlUse}
+                onExit={() => selectTab('herd')}
                 onRefresh={refreshHost}
                 onOpenPane={(sessionId, pane) => {
                   setLiveSessions(current => selectLiveHostSession(current, sessionId));
@@ -1142,6 +1172,7 @@ function LiveSessionView({
   terminalControlUsage,
   onTerminalFontSizeChange,
   onTerminalControlUse,
+  onExit,
   onRefresh,
   onOpenPane,
   onActivateTerminal,
@@ -1155,6 +1186,7 @@ function LiveSessionView({
   terminalControlUsage: TerminalControlUsage;
   onTerminalFontSizeChange: (fontSize: number) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
+  onExit: () => void;
   onRefresh: (sessionId: string) => Promise<void>;
   onOpenPane: (sessionId: string, pane: PaneInfo) => void;
   onActivateTerminal: (sessionId: string, pane: PaneInfo) => void;
@@ -1185,8 +1217,7 @@ function LiveSessionView({
       terminalControlUsage={terminalControlUsage}
       onTerminalFontSizeChange={onTerminalFontSizeChange}
       onTerminalControlUse={onTerminalControlUse}
-      onExit={() => undefined}
-      showExit={false}
+      onExit={onExit}
     />
   );
 }

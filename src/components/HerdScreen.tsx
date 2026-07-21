@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Plus, Sparkles } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 
 import {
   agentsForHerdFilter,
@@ -11,17 +11,26 @@ import {
   type HerdQueueAgent,
 } from '@/src/herdQueue';
 import { statusColor, useTheme } from '@/src/theme';
-import type { AgentInfo } from '@/src/types';
+import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, AnimatedEntrance, hapticPress, StatusBadge } from './app-ui';
+import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
+import { WorkspaceRail } from './WorkspaceRail';
 
 interface Props {
   queues: HerdHostQueue[];
+  sessions: LiveSessionRailItem[];
   selectedHostId: string | null;
   onSelectHost: (hostId: string | null) => void;
+  onCloseHost: (hostId: string) => void;
+  onNewHost: () => void;
+  onSelectWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
+  onCreateWorkspace: (hostId: string, name: string, cwd: string) => Promise<void>;
+  onRenameWorkspace: (hostId: string, workspaceId: string, name: string) => Promise<void>;
+  onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
   onRefresh: () => void;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
   onStart: (hostId: string, name: string, command: string, cwd: string) => Promise<void>;
@@ -30,8 +39,15 @@ interface Props {
 
 export function HerdScreen({
   queues,
+  sessions,
   selectedHostId,
   onSelectHost,
+  onCloseHost,
+  onNewHost,
+  onSelectWorkspace,
+  onCreateWorkspace,
+  onRenameWorkspace,
+  onCloseWorkspace,
   onRefresh,
   onOpenTerminal,
   onStart,
@@ -54,6 +70,11 @@ export function HerdScreen({
   const [name, setName] = useState('agent');
   const [command, setCommand] = useState('');
   const [cwd, setCwd] = useState('');
+  const [workspaceEditorMode, setWorkspaceEditorMode] = useState<'create' | 'rename' | null>(null);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceCwd, setWorkspaceCwd] = useState('');
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
   useEffect(() => {
     if (workspaceFilterId && !selectedWorkspaceId) setWorkspaceFilterId(null);
@@ -61,8 +82,79 @@ export function HerdScreen({
 
   const selectHost = (hostId: string | null) => {
     setCreating(false);
+    setWorkspaceEditorMode(null);
+    setWorkspaceMenuOpen(false);
     setWorkspaceFilterId(null);
     onSelectHost(hostId);
+  };
+
+  const runWorkspaceAction = async (action: () => Promise<void>): Promise<boolean> => {
+    setWorkspaceBusy(true);
+    try {
+      await action();
+      return true;
+    } catch (error) {
+      Alert.alert('Herdr command failed', String(error));
+      return false;
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  };
+
+  const selectWorkspace = (workspaceId: string | null) => {
+    setCreating(false);
+    setWorkspaceEditorMode(null);
+    setWorkspaceMenuOpen(false);
+    setWorkspaceFilterId(workspaceId);
+    if (workspaceId && selectedQueue) {
+      runWorkspaceAction(() => onSelectWorkspace(selectedQueue.id, workspaceId));
+    }
+  };
+
+  const openNewWorkspace = () => {
+    setWorkspaceName('');
+    setWorkspaceCwd('');
+    setWorkspaceMenuOpen(false);
+    setWorkspaceEditorMode('create');
+  };
+
+  const openRenameWorkspace = (workspace: WorkspaceInfo | undefined = selectedWorkspace) => {
+    if (!workspace) return;
+    setWorkspaceFilterId(workspace.workspace_id);
+    setWorkspaceName(workspace.label);
+    setWorkspaceCwd('');
+    setWorkspaceMenuOpen(false);
+    setWorkspaceEditorMode('rename');
+  };
+
+  const saveWorkspace = async () => {
+    if (!selectedQueue) return;
+    const succeeded = workspaceEditorMode === 'create'
+      ? await runWorkspaceAction(() => onCreateWorkspace(selectedQueue.id, workspaceName, workspaceCwd))
+      : selectedWorkspace
+        ? await runWorkspaceAction(() => onRenameWorkspace(selectedQueue.id, selectedWorkspace.workspace_id, workspaceName))
+        : false;
+    if (!succeeded) return;
+    setWorkspaceEditorMode(null);
+    setWorkspaceName('');
+    setWorkspaceCwd('');
+  };
+
+  const confirmCloseWorkspace = () => {
+    if (!selectedQueue || !selectedWorkspace) return;
+    setWorkspaceMenuOpen(false);
+    Alert.alert('Close Herdr workspace?', selectedWorkspace.label || selectedWorkspace.workspace_id, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Close',
+        style: 'destructive',
+        onPress: async () => {
+          if (await runWorkspaceAction(() => onCloseWorkspace(selectedQueue.id, selectedWorkspace.workspace_id))) {
+            setWorkspaceFilterId(null);
+          }
+        },
+      },
+    ]);
   };
 
   const start = async () => {
@@ -78,44 +170,47 @@ export function HerdScreen({
   const hostCountLabel = `${queues.length} ${queues.length === 1 ? 'host' : 'hosts'}`;
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} colors={[colors.text]} />}
-    >
-      <View className="p-4 pb-8">
-        <View className="mb-6">
-          <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">Queue scope</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 px-1">
-            <ScopeButton selected={selectedHostId === null} label="All hosts" onPress={() => selectHost(null)} />
-            {queues.map(queue => (
-              <ScopeButton
-                key={queue.id}
-                selected={selectedHostId === queue.id}
-                label={queue.label}
-                onPress={() => selectHost(queue.id)}
-              />
-            ))}
-          </ScrollView>
-          <Text className="mt-3 px-1 text-xs leading-[17px] text-muted-foreground">
+    <View className="flex-1 bg-background">
+      <LiveSessionRail sessions={sessions} activeHostId={selectedHostId} onSelect={selectHost} onClose={onCloseHost} onNew={onNewHost} />
+      {selectedQueue ? (
+        <WorkspaceRail
+          workspaces={selectedQueue.workspaces}
+          selectedWorkspaceId={selectedWorkspaceId}
+          busy={workspaceBusy || !selectedQueue.running}
+          onSelect={selectWorkspace}
+          onNew={openNewWorkspace}
+          onActions={() => setWorkspaceMenuOpen(value => !value)}
+          onRename={openRenameWorkspace}
+        />
+      ) : null}
+
+      {workspaceMenuOpen && selectedQueue ? (
+        <View className="min-h-[42px] flex-row items-stretch border-b border-[#424242] bg-[#181818]">
+          <WorkspaceAction label="RENAME SPACE" disabled={!selectedWorkspace} onPress={() => openRenameWorkspace()} />
+          <WorkspaceAction label="CLOSE SPACE" danger disabled={!selectedWorkspace} onPress={confirmCloseWorkspace} />
+        </View>
+      ) : null}
+
+      {workspaceEditorMode && selectedQueue ? (
+        <View className="flex-row items-center gap-1.5 border-b border-white bg-[#2F2F2F] p-[7px]">
+          <Text className="font-mono text-[8px] text-white">{workspaceEditorMode === 'rename' ? 'RENAME' : 'NEW'} SPACE</Text>
+          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={workspaceName} onChangeText={setWorkspaceName} placeholder="Label (optional)" placeholderTextColor={colors.textTertiary} />
+          {workspaceEditorMode === 'create' ? (
+            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder="Working directory (optional)" placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
+          ) : null}
+          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-[#B4B4B4]">CANCEL</Text></Button>
+          <Button className="h-[34px] rounded-none bg-white px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black text-[#212121]">SAVE</Text></Button>
+        </View>
+      ) : null}
+
+      <ScrollView
+        className="flex-1 bg-background"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} colors={[colors.text]} />}
+      >
+        <View className="p-4 pb-8">
+          <Text className="mb-6 px-1 text-xs leading-[17px] text-muted-foreground">
             {selectedQueue ? selectedQueue.address : `${hostCountLabel} · merged queue`}
           </Text>
-          {selectedQueue ? (
-            <View className="mt-5">
-              <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">Space scope</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 px-1">
-                <ScopeButton selected={selectedWorkspaceId === null} label="All spaces" onPress={() => setWorkspaceFilterId(null)} />
-                {selectedQueue.workspaces.map(workspace => (
-                  <ScopeButton
-                    key={workspace.workspace_id}
-                    selected={selectedWorkspaceId === workspace.workspace_id}
-                    label={workspace.label.trim() || workspace.workspace_id}
-                    onPress={() => setWorkspaceFilterId(workspace.workspace_id)}
-                  />
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
-        </View>
 
         {selectedQueue && !selectedQueue.running ? (
           <View className="min-h-[360px] items-center justify-center p-7">
@@ -178,23 +273,9 @@ export function HerdScreen({
             )}
           </>
         )}
-      </View>
-    </ScrollView>
-  );
-}
-
-function ScopeButton({ selected, label, onPress }: { selected: boolean; label: string; onPress: () => void }) {
-  return (
-    <Button
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      className="rounded-full px-4"
-      size="sm"
-      variant={selected ? 'default' : 'outline'}
-      onPress={hapticPress(onPress)}
-    >
-      <Text>{label}</Text>
-    </Button>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -227,4 +308,10 @@ function Metric({ value, label, status }: { value: number; label: string; status
 
 function priority(status: string): number {
   return ({ blocked: 0, done: 1, working: 2, idle: 3, unknown: 4 } as Record<string, number>)[status] ?? 5;
+}
+
+function WorkspaceAction({ label, onPress, disabled = false, danger = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
+  return (
+    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-[#424242] px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={danger ? 'text-center text-[9px] font-semibold text-[#FF6B6B]' : 'text-center text-[9px] font-semibold text-[#ECECEC]'}>{label}</Text></Button>
+  );
 }

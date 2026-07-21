@@ -17,15 +17,15 @@ describe('session tab labels', () => {
   });
 
   it('removes inherited vertical padding from compact space labels', () => {
-    const screen = readFileSync(
-      resolve(__dirname, '../src/components/SessionScreen.tsx'),
+    const rail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
       'utf8',
     );
 
-    expect(screen).toContain(
+    expect(rail).toContain(
       "h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px] py-0",
     );
-    expect(screen).toContain(
+    expect(rail).toContain(
       'max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px]',
     );
   });
