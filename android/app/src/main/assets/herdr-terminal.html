@@ -35,6 +35,7 @@
     .xterm { height: 100%; }
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+    .xterm .scrollbar { display: none !important; }
     #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #2f2f2f; border: 1px solid #424242; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
     #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #ececec; padding: 8px 10px; font: 700 10px 'Herdr Terminal Mono', monospace; }
     #selection-toolbar button:active { background: #ffffff; color: #0d0d0d; }
@@ -202,6 +203,7 @@
       lineHeight: 1.12,
       letterSpacing: 0,
       scrollback: 5000,
+      overviewRuler: { width: 1 },
       theme: {
         background: 'rgba(0,0,0,0)', foreground: '#ececec', cursor: '#ffffff', selectionBackground: '#67676780',
         black: '#181818', red: '#ff6b6b', green: '#42c59a', yellow: '#f2a94a',

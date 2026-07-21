@@ -36,6 +36,8 @@ describe('Android terminal assets', () => {
     expect(html).toContain('Promise.race([');
     expect(html).toContain('pendingFrames.clear();');
     expect(html).toContain('background: transparent');
+    expect(html).toContain('.xterm .scrollbar { display: none !important; }');
+    expect(html).toContain('overviewRuler: { width: 1 }');
     expect(html).toContain('allowTransparency: true');
     expect(html).toContain("background: 'rgba(0,0,0,0)'");
     expect(html).toContain('<img id="terminal-background-image" alt="" />');

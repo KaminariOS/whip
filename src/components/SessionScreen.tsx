@@ -293,6 +293,7 @@ export function SessionScreen({
             compact
             visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
             session={terminalSession}
+            scroll={snapshot.panes.find(pane => pane.terminal_id === terminalSession.terminalId)?.scroll}
             preferences={terminalPreferences}
             controlUsage={terminalControlUsage}
             onFontSizeChange={onTerminalFontSizeChange}
