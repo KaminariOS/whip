@@ -29,9 +29,21 @@ const profile: ConnectionProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-function nativeClient(execute: jest.Mock) {
+function nativeClient(options: { output?: string; startError?: unknown } = {}) {
+  let handler: ((event: { data?: string; closed?: boolean; error?: string }) => void) | null = null;
+  const startHerdrCommandStream = jest.fn(async (_command: string, nextHandler: typeof handler) => {
+    if (options.startError) throw options.startError;
+    handler = nextHandler;
+  });
+  const writeHerdrCommandStream = jest.fn(async (script: string) => {
+    const marker = script.match(/WHIP_COMMAND_[A-Za-z0-9_]+/)?.[0];
+    if (!marker || !handler) throw new Error('command stream was not initialized');
+    handler({ data: `${options.output ?? '{"result":{}}\n'}\u001e${marker}:0\u001f\n` });
+  });
   return {
-    execute,
+    startHerdrCommandStream,
+    writeHerdrCommandStream,
+    closeHerdrCommandStream: jest.fn(),
     off: jest.fn(),
     disconnect: jest.fn(),
   } as unknown as SSHClient;
@@ -56,10 +68,8 @@ describe('SSH control reconnects', () => {
   });
 
   test('reconnects once and retries an idempotent workspace focus', async () => {
-    const staleExecute = jest.fn().mockRejectedValue('channel is not opened.');
-    const freshExecute = jest.fn().mockResolvedValue('{"result":{}}\n');
-    const stale = nativeClient(staleExecute);
-    const fresh = nativeClient(freshExecute);
+    const stale = nativeClient({ startError: 'channel is not opened.' });
+    const fresh = nativeClient();
     connectWithPassword.mockResolvedValueOnce(stale).mockResolvedValueOnce(fresh);
     const client = new HerdrClient();
 
@@ -67,20 +77,23 @@ describe('SSH control reconnects', () => {
     await client.focusWorkspace('space-1');
 
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
-    expect(staleExecute).toHaveBeenCalledWith("'herdr' --session 'main' workspace focus 'space-1' 2>&1");
-    expect(freshExecute).toHaveBeenCalledWith("'herdr' --session 'main' workspace focus 'space-1' 2>&1");
+    expect(stale.startHerdrCommandStream).toHaveBeenCalledWith('/bin/sh', expect.any(Function));
+    expect(fresh.writeHerdrCommandStream).toHaveBeenCalledWith(
+      expect.stringContaining("'herdr' --session 'main' workspace focus 'space-1' 2>&1"),
+    );
     expect(stale.disconnect).toHaveBeenCalledTimes(1);
   });
 
   test('does not replay a mutating command when its channel fails', async () => {
-    const staleExecute = jest.fn().mockRejectedValue('channel is not opened.');
-    connectWithPassword.mockResolvedValue(nativeClient(staleExecute));
+    const stale = nativeClient({ startError: 'channel is not opened.' });
+    connectWithPassword.mockResolvedValue(stale);
     const client = new HerdrClient();
 
     await client.connect(profile);
 
     await expect(client.createWorkspace('New space', '')).rejects.toBe('channel is not opened.');
     expect(connectWithPassword).toHaveBeenCalledTimes(1);
-    expect(staleExecute).toHaveBeenCalledTimes(1);
+    expect(stale.startHerdrCommandStream).toHaveBeenCalledTimes(1);
+    expect(stale.writeHerdrCommandStream).not.toHaveBeenCalled();
   });
 });
