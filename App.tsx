@@ -943,6 +943,7 @@ function AppContent() {
     running: session.snapshot.server.running,
     refreshing: session.sync.status === 'syncing',
     agents: session.snapshot.agents,
+    workspaces: session.snapshot.workspaces,
     tabs: session.snapshot.tabs,
   }));
 

@@ -180,15 +180,13 @@ function AgentRow({ item, index, showHost, onOpenTerminal }: { item: HerdQueueAg
   const context = [
     ...(showHost ? [item.hostLabel] : []),
     agentLabel,
-    agent.workspace_id,
-    agent.pane_id,
     ...(agent.focused ? ['Focused'] : []),
   ].join(' · ');
   return (
     <AnimatedEntrance delay={Math.min(index * 45, 225)}>
-      <Button accessibilityLabel={`Open ${item.tabLabel} terminal on ${item.hostLabel}`} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} variant="ghost" onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
+      <Button accessibilityLabel={`Open ${item.primaryLabel} terminal on ${item.hostLabel}`} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} variant="ghost" onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
         <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
-        <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.tabLabel}</Text><StatusBadge agentStatus status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
+        <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge agentStatus status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
         <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       </Button>
     </AnimatedEntrance>
