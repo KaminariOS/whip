@@ -112,6 +112,13 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('this.requireClient().herdrBridgeResize(\n      terminalId,');
   });
 
+  it('reserves SSH channels for the visible terminal and control commands', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+
+    expect(screen).toContain('if (!terminalId || !visible) return;');
+    expect(screen).toContain('[client, connectionGeneration, terminalId, visible]');
+  });
+
   it('resets the renderer in the same injection as the first terminal frame', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
 

@@ -130,7 +130,11 @@ export function TerminalScreen({ client, visible, session, preferences, controlU
   };
 
   useEffect(() => {
-    if (!terminalId) return;
+    // Keep each renderer mounted so it preserves its last frame, but only hold
+    // an SSH channel for the terminal the user can currently see. Opening a
+    // bridge for every visited pane exhausts the server's SSH MaxSessions limit
+    // and leaves no channel available for focus and refresh commands.
+    if (!terminalId || !visible) return;
     if (AppState.currentState !== 'active') return;
     let active = true;
     resetOnNextFrame.current = true;
@@ -172,7 +176,7 @@ export function TerminalScreen({ client, visible, session, preferences, controlU
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
     };
-  }, [client, connectionGeneration, terminalId]);
+  }, [client, connectionGeneration, terminalId, visible]);
 
   useEffect(() => {
     let previous = AppState.currentState;

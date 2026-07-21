@@ -24,6 +24,11 @@ type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
 type ApiEventHandler = (event: HerdrApiEvent) => void;
 
+export function isUnavailableSshChannel(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /channel (?:is )?not open(?:ed)?|session is down|socket is not established/i.test(message);
+}
+
 interface TerminalConnection {
   onFrame: TerminalFrameHandler;
   onClosed?: TerminalClosedHandler;
@@ -383,7 +388,7 @@ export class HerdrClient {
   }
 
   async focusAgent(target: string): Promise<void> {
-    await this.executeJson(`agent focus ${shellQuote(target)}`);
+    await this.executeFocusJson(`agent focus ${shellQuote(target)}`);
   }
 
   async startAgent(name: string, command: string, cwd: string): Promise<void> {
@@ -394,7 +399,7 @@ export class HerdrClient {
   }
 
   async focusWorkspace(workspaceId: string): Promise<void> {
-    await this.executeJson(`workspace focus ${shellQuote(workspaceId)}`);
+    await this.executeFocusJson(`workspace focus ${shellQuote(workspaceId)}`);
   }
 
   async createWorkspace(label: string, cwd: string): Promise<void> {
@@ -422,11 +427,11 @@ export class HerdrClient {
   }
 
   async focusTab(tabId: string): Promise<void> {
-    await this.executeJson(`tab focus ${shellQuote(tabId)}`);
+    await this.executeFocusJson(`tab focus ${shellQuote(tabId)}`);
   }
 
   async focusPane(paneId: string): Promise<void> {
-    await this.executeJson(`pane focus ${shellQuote(paneId)}`);
+    await this.executeFocusJson(`pane focus ${shellQuote(paneId)}`);
   }
 
   async renameTab(tabId: string, label: string): Promise<void> {
@@ -465,6 +470,18 @@ export class HerdrClient {
   private async executeJson<T>(args: string, resultKey?: string): Promise<T> {
     const output = await this.requireClient().execute(`${this.baseCommand()} ${args} 2>&1`);
     return parseJsonResponse<T>(output, resultKey);
+  }
+
+  private async executeFocusJson<T>(args: string, resultKey?: string): Promise<T> {
+    const reconnecting = this.controlReconnect;
+    if (reconnecting) await reconnecting;
+    try {
+      return await this.executeJson<T>(args, resultKey);
+    } catch (error) {
+      if (!isUnavailableSshChannel(error)) throw error;
+      await this.reconnectControl();
+      return this.executeJson<T>(args, resultKey);
+    }
   }
 
   private executeText(args: string): Promise<string> {
