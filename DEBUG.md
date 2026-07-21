@@ -349,7 +349,7 @@ uninstalling the user's app.
 
 ## Herdr terminal architecture
 
-The Android session view follows Voltius's mobile terminal model: selecting a Herdr tab enters an immersive terminal workspace, the normal bottom navigation disappears, the session rails stay compact, and every opened terminal WebView remains mounted while hidden. Keeping the WebViews mounted preserves xterm state when switching panes.
+The Android session view follows Voltius's mobile terminal model: selecting a Herdr tab enters an immersive terminal workspace, the normal bottom navigation disappears, the tab and pane rails stay compact, and every opened terminal WebView remains mounted while hidden. Host and space controls live in Herd's queue scopes so the terminal can stay focused. Keeping the WebViews mounted preserves xterm state when switching panes.
 
 Do not implement the live view by running `herdr terminal attach` inside the SSH shell. That command is the human-facing nested-PTY interface; it echoes the SSH login and attach command and does not behave reliably as an application transport.
 
@@ -394,7 +394,7 @@ cd android
 For a real smoke test, connect to a disposable or known-safe Herdr pane, open **Session**, and verify all of the following visually:
 
 1. The complete remote TUI appears, not an SSH banner or attach command.
-2. The workspace, Herdr tab, and pane rails match the selected terminal.
+2. The Herd host/space scopes and the Terminal tab/pane rails match the selected terminal.
 3. A tap focuses xterm and the Android keyboard causes the terminal to refit.
 4. Extra keys and typed input update the remote TUI.
 5. A vertical swipe scrolls the Herdr viewport and a double-tap sends Tab.

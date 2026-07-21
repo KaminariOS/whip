@@ -14,7 +14,7 @@ import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { colors, sessionTabStatusColor, statusColor } from '../theme';
-import type { HerdrSnapshot, PaneInfo, TabInfo, WorkspaceInfo } from '../types';
+import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -36,12 +36,10 @@ interface Props {
   onTerminalFontSizeChange: (fontSize: number) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onExit: () => void;
-  showExit?: boolean;
 }
 
-type EditorMode = 'workspace' | 'tab' | 'rename-workspace' | 'rename-tab';
+type EditorMode = 'tab' | 'rename-tab';
 type PendingFocus = {
-  kind: 'workspace' | 'tab';
   mode: 'create' | 'close';
   previousId: string | null;
 };
@@ -61,7 +59,6 @@ export function SessionScreen({
   onTerminalFontSizeChange,
   onTerminalControlUse,
   onExit,
-  showExit = true,
 }: Props) {
   const focusedWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const [workspaceId, setWorkspaceId] = useState(focusedWorkspace?.workspace_id || '');
@@ -69,7 +66,6 @@ export function SessionScreen({
   const [editorMode, setEditorMode] = useState<EditorMode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [name, setName] = useState('');
-  const [cwd, setCwd] = useState('');
   const [busy, setBusy] = useState(false);
   const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);
   const pendingPaneFocus = useRef<string | null>(null);
@@ -103,26 +99,7 @@ export function SessionScreen({
 
   useEffect(() => {
     const pending = pendingFocus.current;
-    if (pending?.kind === 'workspace') {
-      const previousStillPresent = snapshot.workspaces.some(item => item.workspace_id === pending.previousId);
-      const nextWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
-      const focusUnchanged = nextWorkspace?.workspace_id === pending.previousId;
-      if ((pending.mode === 'create' && focusUnchanged) || (pending.mode === 'close' && previousStillPresent)) return;
-      if (nextWorkspace) {
-        const nextTabs = snapshot.tabs.filter(item => item.workspace_id === nextWorkspace.workspace_id);
-        const nextTab = nextTabs.find(item => item.focused)
-          || nextTabs.find(item => item.tab_id === nextWorkspace.active_tab_id)
-          || nextTabs[0];
-        setWorkspaceId(nextWorkspace.workspace_id);
-        setTabId(nextTab?.tab_id || '');
-      } else {
-        setWorkspaceId('');
-        setTabId('');
-      }
-      pendingFocus.current = null;
-      return;
-    }
-    if (pending?.kind === 'tab') {
+    if (pending) {
       const previousStillPresent = snapshot.tabs.some(item => item.tab_id === pending.previousId);
       const focusedServerWorkspace = snapshot.workspaces.find(item => item.focused) || workspace;
       const serverTabs = snapshot.tabs.filter(item => item.workspace_id === focusedServerWorkspace?.workspace_id);
@@ -191,19 +168,6 @@ export function SessionScreen({
     }
   };
 
-  const chooseWorkspace = (item: WorkspaceInfo) => {
-    const nextTabs = snapshot.tabs.filter(tab => tab.workspace_id === item.workspace_id);
-    const nextTab = nextTabs.find(tab => tab.focused)
-      || nextTabs.find(tab => tab.tab_id === item.active_tab_id)
-      || nextTabs[0];
-    setWorkspaceId(item.workspace_id);
-    setTabId(nextTab?.tab_id || '');
-    const nextPanes = snapshot.panes.filter(pane => pane.tab_id === nextTab?.tab_id);
-    const nextPane = nextPanes.find(pane => pane.focused) || nextPanes[0];
-    if (nextPane) onActivateTerminal(nextPane);
-    run(() => client.focusWorkspace(item.workspace_id));
-  };
-
   const chooseTab = (item: TabInfo) => {
     setWorkspaceId(item.workspace_id);
     setTabId(item.tab_id);
@@ -223,20 +187,10 @@ export function SessionScreen({
 
   const create = async () => {
     let succeeded = true;
-    if (editorMode === 'workspace') {
-      pendingFocus.current = {
-        kind: 'workspace',
-        mode: 'create',
-        previousId: snapshot.workspaces.find(item => item.focused)?.workspace_id || workspace?.workspace_id || null,
-      };
-      succeeded = await run(() => client.createWorkspace(name, cwd));
-    } else if (editorMode === 'rename-workspace' && workspace) {
-      succeeded = await run(() => client.renameWorkspace(workspace.workspace_id, name));
-    } else if (editorMode === 'rename-tab' && selectedTab) {
+    if (editorMode === 'rename-tab' && selectedTab) {
       succeeded = await run(() => client.renameTab(selectedTab.tab_id, name));
     } else if (workspace) {
       pendingFocus.current = {
-        kind: 'tab',
         mode: 'create',
         previousId: snapshot.tabs.find(item => item.focused)?.tab_id || selectedTab?.tab_id || null,
       };
@@ -244,7 +198,6 @@ export function SessionScreen({
     }
     if (!succeeded) pendingFocus.current = null;
     setName('');
-    setCwd('');
     setEditorMode(null);
   };
 
@@ -255,34 +208,11 @@ export function SessionScreen({
     setMenuOpen(false);
   };
 
-  const openRenameWorkspace = () => {
-    if (!workspace) return;
-    setName(workspace.label);
-    setEditorMode('rename-workspace');
-    setMenuOpen(false);
-  };
-
   const closeTab = async (item: TabInfo | undefined = selectedTab) => {
     if (!item) return;
     setMenuOpen(false);
-    pendingFocus.current = { kind: 'tab', mode: 'close', previousId: item.tab_id };
+    pendingFocus.current = { mode: 'close', previousId: item.tab_id };
     if (!await run(() => client.closeTab(item.tab_id))) pendingFocus.current = null;
-  };
-
-  const confirmCloseWorkspace = () => {
-    if (!workspace) return;
-    setMenuOpen(false);
-    Alert.alert('Close Herdr workspace?', workspace.label || workspace.workspace_id, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Close',
-        style: 'destructive',
-        onPress: async () => {
-          pendingFocus.current = { kind: 'workspace', mode: 'close', previousId: workspace.workspace_id };
-          if (!await run(() => client.closeWorkspace(workspace.workspace_id))) pendingFocus.current = null;
-        },
-      },
-    ]);
   };
 
   return (
@@ -291,65 +221,45 @@ export function SessionScreen({
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible ? 'auto' : 'none'}
       className={cn('flex-1 bg-[#212121]', !visible && 'absolute inset-0 opacity-0')}>
-      <View className="h-12 flex-row border-b border-[#424242] bg-[#181818]">
-        {showExit && (
-          <Button accessibilityLabel="Back to herd" className="h-12 w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
-            <Ionicons name="chevron-back" size={21} color={colors.text} />
-          </Button>
-        )}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5">
-          {snapshot.workspaces.map(item => {
-            const active = item.workspace_id === workspace?.workspace_id;
-            return (
-              <Button key={item.workspace_id} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px] py-0', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(() => chooseWorkspace(item))} onLongPress={active ? openRenameWorkspace : undefined}>
-                <AnimatedAgentStatusGlyph status={item.agent_status} color={statusColor(item.agent_status)} size={12} />
-                <Text numberOfLines={1} className={cn('max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.label || item.workspace_id}</Text>
-                <Text className={cn('font-mono text-[8px] leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.tab_count}</Text>
-              </Button>
-            );
-          })}
-        </ScrollView>
-        <Button accessibilityLabel="New workspace" className="h-12 w-[72px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('workspace'))}>
-          <Ionicons name="add" size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">Space</Text>
+      <View className="h-[42px] flex-row border-b border-[#424242] bg-[#2F2F2F]">
+        <Button accessibilityLabel="Back to herd" className="h-[42px] w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
+          <Ionicons name="chevron-back" size={21} color={colors.text} />
         </Button>
-        <Button accessibilityLabel="Session actions" className="h-12 w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
-          <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
-        </Button>
+        {workspace ? (
+          <>
+            <ScrollView className="min-w-0 flex-1" horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
+              {tabs.map(item => {
+                const active = item.tab_id === selectedTab?.tab_id;
+                const itemPanes = snapshot.panes.filter(pane => pane.tab_id === item.tab_id);
+                const itemSession = terminalState.sessions.find(session => itemPanes.some(pane => pane.terminal_id === session.terminalId));
+                const label = item.label || item.tab_id;
+                return (
+                  <View key={item.tab_id} className={cn('h-[30px] max-w-[170px] flex-row items-center overflow-hidden rounded-full bg-[#212121]', active && 'bg-[#FFFFFF]')}>
+                    <Button accessibilityLabel={`Open ${label} tab`} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
+                      <AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status)} size={12} />
+                      <Text numberOfLines={1} className={cn('max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{label}</Text>
+                      {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
+                    </Button>
+                    <Button accessibilityLabel={`Close ${label} tab`} className="h-[30px] w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(() => closeTab(item))}>
+                      <Ionicons name="close" size={14} color={active ? colors.ink : colors.muted} />
+                    </Button>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <Button accessibilityLabel="New tab" className="h-[42px] w-[58px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Ionicons name="add" size={14} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">Tab</Text></Button>
+            <Button accessibilityLabel="Session actions" className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
+              <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
+            </Button>
+          </>
+        ) : null}
       </View>
-
-      {workspace && (
-        <View className="h-[42px] flex-row border-b border-[#424242] bg-[#2F2F2F]">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
-            {tabs.map(item => {
-              const active = item.tab_id === selectedTab?.tab_id;
-              const itemPanes = snapshot.panes.filter(pane => pane.tab_id === item.tab_id);
-              const itemSession = terminalState.sessions.find(session => itemPanes.some(pane => pane.terminal_id === session.terminalId));
-              const label = item.label || item.tab_id;
-              return (
-                <View key={item.tab_id} className={cn('h-[30px] max-w-[170px] flex-row items-center overflow-hidden rounded-full bg-[#212121]', active && 'bg-[#FFFFFF]')}>
-                  <Button accessibilityLabel={`Open ${label} tab`} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
-                    <AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status)} size={12} />
-                    <Text numberOfLines={1} className={cn('max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{label}</Text>
-                    {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
-                  </Button>
-                  <Button accessibilityLabel={`Close ${label} tab`} className="h-[30px] w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(() => closeTab(item))}>
-                    <Ionicons name="close" size={14} color={active ? colors.ink : colors.muted} />
-                  </Button>
-                </View>
-              );
-            })}
-          </ScrollView>
-          <Button accessibilityLabel="New tab" className="h-[42px] w-[58px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Ionicons name="add" size={14} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">Tab</Text></Button>
-        </View>
-      )}
 
       {menuOpen && (
         <View className="min-h-[42px] flex-row items-stretch border-b border-[#424242] bg-[#181818]">
-          <MenuAction label="RENAME SPACE" disabled={!workspace} onPress={openRenameWorkspace} />
           <MenuAction label="RENAME TAB" disabled={!selectedTab} onPress={openRenameTab} />
           <MenuAction label="PANE ACTIONS" disabled={!selectedPane} onPress={() => { if (selectedPane) onOpenPane(selectedPane); setMenuOpen(false); }} />
           <MenuAction label="CLOSE TAB" danger disabled={!selectedTab} onPress={closeTab} />
-          <MenuAction label="CLOSE SPACE" danger disabled={!workspace} onPress={confirmCloseWorkspace} />
         </View>
       )}
 
@@ -357,9 +267,6 @@ export function SessionScreen({
         <View className="flex-row items-center gap-1.5 border-b border-white bg-[#2F2F2F] p-[7px]">
           <Text className="font-mono text-[8px] text-white">{editorMode.startsWith('rename') ? 'RENAME' : 'NEW'} {editorMode.replace('rename-', '').toUpperCase()}</Text>
           <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={name} onChangeText={setName} placeholder="Label (optional)" placeholderTextColor={colors.muted} />
-          {editorMode === 'workspace' && (
-            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" placeholderTextColor={colors.muted} autoCapitalize="none" />
-          )}
           <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setEditorMode(null))}><Text className="font-mono text-[8px] text-[#B4B4B4]">CANCEL</Text></Button>
           <Button className="h-[34px] rounded-none bg-white px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black text-[#212121]">SAVE</Text></Button>
         </View>
