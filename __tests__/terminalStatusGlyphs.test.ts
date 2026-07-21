@@ -52,4 +52,11 @@ describe('terminal hierarchy status glyphs', () => {
       '<AnimatedAgentStatusGlyph status={session.agentStatus} color={sessionStatusColor(session)} size={12} />',
     );
   });
+
+  it('uses one status glyph per Herd attention row', () => {
+    const herd = readFileSync(resolve(__dirname, '../src/components/HerdScreen.tsx'), 'utf8');
+
+    expect(herd).toContain('<AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} />');
+    expect(herd).toContain('<StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} />');
+  });
 });
