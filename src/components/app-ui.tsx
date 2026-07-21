@@ -62,16 +62,16 @@ export function IconButton({
   );
 }
 
-export function StatusBadge({ status, label, agentStatus = false }: { status: string; label?: string; agentStatus?: boolean }) {
+export function StatusBadge({ status, label, agentStatus = false, showIndicator = true }: { status: string; label?: string; agentStatus?: boolean; showIndicator?: boolean }) {
   const { colors } = useTheme();
   const tone = statusTone(status);
   const indicatorColor = { success: colors.working, destructive: colors.error, warning: colors.warning, muted: colors.textTertiary }[tone];
   const textClass = { success: 'text-success', destructive: 'text-destructive', warning: 'text-warning', muted: 'text-muted-foreground' }[tone];
   return (
     <Badge variant="secondary" className="gap-1.5 border-0 px-2.5 py-1">
-      {agentStatus
+      {showIndicator && (agentStatus
         ? <AnimatedAgentStatusGlyph status={status} color={indicatorColor} size={12} />
-        : <AnimatedStatusIndicator status={status} color={indicatorColor} />}
+        : <AnimatedStatusIndicator status={status} color={indicatorColor} />)}
       <Text className={cn('text-xs font-semibold capitalize', textClass)}>{label || status}</Text>
     </Badge>
   );
