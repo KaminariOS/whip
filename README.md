@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Keep your Herdr agents within reach.</strong><br>
-  An independent Android client for supervising agents, navigating workspaces, and opening pane terminals over SSH.
+  An independent Android client for supervising agents, scoping hosts and spaces, and opening pane terminals over SSH.
 </p>
 
 <p align="center">
@@ -15,6 +15,8 @@
 </p>
 
 Whip gives [Herdr](https://github.com/ogulcancelik/herdr) a touch-friendly Android interface without exposing Herdr itself to the network or requiring changes on the host. It connects directly to your machine over SSH—ideally through Tailscale—and rebuilds the management experience as native screens. A terminal appears only when you choose to attach to a pane.
+
+The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints, **Herd** merges their agents into a scoped attention queue, **Terminal** lists open pane sessions, and **More** holds notification, appearance, and terminal preferences.
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
@@ -25,27 +27,34 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 
 <table>
   <tr>
-    <td align="center"><img src="assets/screenshots/hosts.png" alt="Whip Hosts screen showing several saved Herdr servers and connection status" width="260"></td>
-    <td align="center"><img src="assets/screenshots/terminal.png" alt="Whip terminal showing host, workspace, tab, agent output, and mobile controls" width="260"></td>
-    <td align="center"><img src="assets/screenshots/settings.png" alt="Whip Settings screen showing notifications, speech, appearance, and terminal preferences" width="260"></td>
+    <td align="center"><img src="assets/screenshots/hosts.png" alt="Whip Hosts screen showing saved Herdr servers, connection state, and latency" width="320"></td>
+    <td align="center"><img src="assets/screenshots/herd.png" alt="Whip Herd screen showing merged host scopes, agent totals, and the attention queue" width="320"></td>
   </tr>
   <tr>
     <td align="center"><strong>Manage every host</strong><br>See live connection state, latency, and saved authentication at a glance.</td>
-    <td align="center"><strong>Work from anywhere</strong><br>Switch hosts, spaces, and tabs while interacting with a live agent terminal.</td>
-    <td align="center"><strong>Tune your workflow</strong><br>Configure agent alerts, speech, appearance, and terminal behavior.</td>
+    <td align="center"><strong>Watch the whole herd</strong><br>Merge open hosts into one attention queue, then scope it to a host or space.</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/terminal.png" alt="Whip terminal showing live agent output, tab controls, a scroll indicator, and mobile keys" width="320"></td>
+    <td align="center"><img src="assets/screenshots/settings.png" alt="Whip Settings screen showing notifications, speech, appearance, and terminal preferences" width="320"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Work from anywhere</strong><br>Open a selected pane in the full-width terminal with touch scrolling and mobile controls.</td>
+    <td align="center"><strong>Tune your workflow</strong><br>Configure agent alerts, speech, appearance, font size, and scrollback.</td>
   </tr>
 </table>
 
-Screenshots were captured from the Whip 1.0 release build on a Pixel 9 Pro.
+Screenshots were captured from the current Whip Android build on a Pixel 9 Pro.
 
 ## What you can do
 
-- See working, blocked, done, idle, and unknown agents in a native attention queue.
+- Monitor every open host in one native attention queue, with per-host and per-space scopes.
+- See working, blocked, done, idle, and unknown agents, including their host and space context.
 - Move through Herdr hosts, spaces, tabs, panes, and agents without living in a terminal.
-- Create, focus, rename, split, zoom, inspect, and close workspace resources.
+- Create, focus, rename, split, zoom, inspect, and close space resources.
 - Launch agents, send direct prompts, and send commands or special keys to a pane.
 - Attach to any selected pane through an immersive, xterm-compatible terminal.
-- Use ANSI colors, modifier keys, touch scrolling, double-tap Tab, live resizing, and configurable terminal appearance.
+- Use ANSI colors, modifier keys, touch scrolling, Page Up/Down, a position indicator, double-tap Tab, live resizing, and configurable terminal appearance.
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
 - Save password or private-key credentials with Android Keystore and encrypted, device-authenticated Block Store recovery.
 - Keep several named Herdr hosts open and switch between their live sessions.
