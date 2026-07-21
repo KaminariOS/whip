@@ -37,27 +37,47 @@ export function queuesForHerdFilter(
   return resolved ? queues.filter(queue => queue.id === resolved) : queues;
 }
 
+export function resolveHerdWorkspaceFilter(
+  queue: HerdHostQueue | undefined,
+  requestedWorkspaceId: string | null,
+): string | null {
+  return requestedWorkspaceId && queue?.workspaces.some(
+    workspace => workspace.workspace_id === requestedWorkspaceId,
+  )
+    ? requestedWorkspaceId
+    : null;
+}
+
 export function agentsForHerdFilter(
   queues: HerdHostQueue[],
   selectedHostId: string | null,
+  selectedWorkspaceId: string | null = null,
 ): HerdQueueAgent[] {
-  return queuesForHerdFilter(queues, selectedHostId).flatMap(queue => (
-    queue.agents.map(agent => {
-      const tabLabel = tabNameForAgent(agent, queue.tabs);
-      const workspaceLabel = queue.workspaces
-        .find(workspace => workspace.workspace_id === agent.workspace_id)
-        ?.label.trim() || agent.workspace_id;
-      const hasMultipleTabs = queue.tabs.filter(
-        tab => tab.workspace_id === agent.workspace_id,
-      ).length > 1;
+  const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
+  const selectedQueue = resolveHerdHostFilter(queues, selectedHostId)
+    ? scopedQueues[0]
+    : undefined;
+  const resolvedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, selectedWorkspaceId);
 
-      return {
-        hostId: queue.id,
-        hostLabel: queue.label,
-        agent,
-        tabLabel,
-        primaryLabel: hasMultipleTabs ? `${workspaceLabel} · ${tabLabel}` : workspaceLabel,
-      };
-    })
+  return scopedQueues.flatMap(queue => (
+    queue.agents
+      .filter(agent => !resolvedWorkspaceId || agent.workspace_id === resolvedWorkspaceId)
+      .map(agent => {
+        const tabLabel = tabNameForAgent(agent, queue.tabs);
+        const workspaceLabel = queue.workspaces
+          .find(workspace => workspace.workspace_id === agent.workspace_id)
+          ?.label.trim() || agent.workspace_id;
+        const hasMultipleTabs = queue.tabs.filter(
+          tab => tab.workspace_id === agent.workspace_id,
+        ).length > 1;
+
+        return {
+          hostId: queue.id,
+          hostLabel: queue.label,
+          agent,
+          tabLabel,
+          primaryLabel: hasMultipleTabs ? `${workspaceLabel} · ${tabLabel}` : workspaceLabel,
+        };
+      })
   ));
 }

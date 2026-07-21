@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Plus, Sparkles } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 
 import {
   agentsForHerdFilter,
   queuesForHerdFilter,
+  resolveHerdWorkspaceFilter,
   type HerdHostQueue,
   type HerdQueueAgent,
 } from '@/src/herdQueue';
@@ -39,7 +40,12 @@ export function HerdScreen({
   const { colors } = useTheme();
   const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
   const selectedQueue = selectedHostId ? scopedQueues[0] : undefined;
-  const queueAgents = agentsForHerdFilter(queues, selectedHostId);
+  const [workspaceFilterId, setWorkspaceFilterId] = useState<string | null>(null);
+  const selectedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, workspaceFilterId);
+  const selectedWorkspace = selectedQueue?.workspaces.find(
+    workspace => workspace.workspace_id === selectedWorkspaceId,
+  );
+  const queueAgents = agentsForHerdFilter(queues, selectedHostId, selectedWorkspaceId);
   const blocked = queueAgents.filter(item => item.agent.agent_status === 'blocked').length;
   const working = queueAgents.filter(item => item.agent.agent_status === 'working').length;
   const done = queueAgents.filter(item => item.agent.agent_status === 'done').length;
@@ -49,8 +55,13 @@ export function HerdScreen({
   const [command, setCommand] = useState('');
   const [cwd, setCwd] = useState('');
 
+  useEffect(() => {
+    if (workspaceFilterId && !selectedWorkspaceId) setWorkspaceFilterId(null);
+  }, [selectedWorkspaceId, workspaceFilterId]);
+
   const selectHost = (hostId: string | null) => {
     setCreating(false);
+    setWorkspaceFilterId(null);
     onSelectHost(hostId);
   };
 
@@ -88,6 +99,22 @@ export function HerdScreen({
           <Text className="mt-3 px-1 text-xs leading-[17px] text-muted-foreground">
             {selectedQueue ? selectedQueue.address : `${hostCountLabel} · merged queue`}
           </Text>
+          {selectedQueue ? (
+            <View className="mt-5">
+              <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">Space scope</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 px-1">
+                <ScopeButton selected={selectedWorkspaceId === null} label="All spaces" onPress={() => setWorkspaceFilterId(null)} />
+                {selectedQueue.workspaces.map(workspace => (
+                  <ScopeButton
+                    key={workspace.workspace_id}
+                    selected={selectedWorkspaceId === workspace.workspace_id}
+                    label={workspace.label.trim() || workspace.workspace_id}
+                    onPress={() => setWorkspaceFilterId(workspace.workspace_id)}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
         </View>
 
         {selectedQueue && !selectedQueue.running ? (
@@ -134,7 +161,7 @@ export function HerdScreen({
               <View className="min-h-[360px] items-center justify-center p-7">
                 <View className="size-16 items-center justify-center rounded-full bg-muted"><Icon as={Sparkles} size={28} /></View>
                 <Text className="mt-[18px] text-xl font-semibold leading-[26px]">No agents detected</Text>
-                <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{selectedQueue ? `Start an agent on ${selectedQueue.label}, then pull down to refresh.` : 'No agents are active across the merged host queue.'}</Text>
+                <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{selectedWorkspace ? `No agents are active in ${selectedWorkspace.label || selectedWorkspace.workspace_id}.` : selectedQueue ? `Start an agent on ${selectedQueue.label}, then pull down to refresh.` : 'No agents are active across the merged host queue.'}</Text>
               </View>
             ) : (
               <View className="border-y border-border">
