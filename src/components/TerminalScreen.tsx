@@ -14,7 +14,9 @@ import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import type { TerminalFrame } from '../lib/terminalBridge';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
+import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
 import type { TerminalSession, TerminalSessionStatus } from '../terminalSessions';
+import type { PaneScrollInfo } from '../types';
 import { colors } from '../theme';
 import { terminalHtml } from '../generated/terminalHtml';
 import { Button } from './ui/button';
@@ -25,6 +27,7 @@ interface Props {
   client: HerdrClient;
   visible: boolean;
   session: TerminalSession | null;
+  scroll?: PaneScrollInfo;
   preferences: TerminalPreferences;
   controlUsage: TerminalControlUsage;
   compact?: boolean;
@@ -62,7 +65,7 @@ const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 
-export function TerminalScreen({ client, visible, session, preferences, controlUsage, compact = false, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
+export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
   const status = session?.status || 'connecting';
@@ -86,7 +89,13 @@ export function TerminalScreen({ client, visible, session, preferences, controlU
   const [searchResult, setSearchResult] = useState({ count: 0, index: -1, invalid: false });
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
+  const [scrollPosition, setScrollPosition] = useState(scroll);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
+  const scrollThumb = terminalScrollThumb(scrollPosition);
+
+  useEffect(() => {
+    setScrollPosition(scroll);
+  }, [scroll, terminalId]);
 
   const reportStatus = useEffectEvent(onStatus);
 
@@ -119,6 +128,7 @@ export function TerminalScreen({ client, visible, session, preferences, controlU
 
   const sendInput = async (data: string) => {
     const value = applyTerminalModifiers(data, ctrl, alt);
+    setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     if (ctrl === 'armed') setCtrl('off');
     if (alt === 'armed') setAlt('off');
     try {
@@ -300,6 +310,7 @@ export function TerminalScreen({ client, visible, session, preferences, controlU
         message.cellHeightPx,
       );
     } else if (message.type === 'scroll') {
+      setScrollPosition(current => moveTerminalScroll(current, message.direction, message.lines));
       try {
         await client.scrollTerminal(terminalId, message.direction, message.lines);
       } catch (reason) {
@@ -440,19 +451,32 @@ export function TerminalScreen({ client, visible, session, preferences, controlU
           <Button accessibilityLabel="Close search" className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><Ionicons name="close" size={17} color={colors.text} /></Button>
         </View>
       )}
-      <WebView
-        ref={value => {
-          webView.current = value as WebViewHandle | null;
-        }}
-        source={{ html: terminalHtml, baseUrl: 'file:///android_asset/' }}
-        originWhitelist={['file://*', 'about:blank']}
-        allowFileAccess
-        javaScriptEnabled
-        textZoom={100}
-        onMessage={handleMessage}
-        style={WEBVIEW_STYLE}
-        containerStyle={WEBVIEW_CONTAINER_STYLE}
-      />
+      <View className="relative flex-1">
+        <WebView
+          ref={value => {
+            webView.current = value as WebViewHandle | null;
+          }}
+          source={{ html: terminalHtml, baseUrl: 'file:///android_asset/' }}
+          originWhitelist={['file://*', 'about:blank']}
+          allowFileAccess
+          javaScriptEnabled
+          textZoom={100}
+          onMessage={handleMessage}
+          style={WEBVIEW_STYLE}
+          containerStyle={WEBVIEW_CONTAINER_STYLE}
+        />
+        {scrollThumb && (
+          <View
+            accessibilityElementsHidden
+            pointerEvents="none"
+            className="absolute inset-y-0 right-0.5 w-0.5">
+            <View
+              className="absolute inset-x-0 rounded-full bg-[#ECECECAA]"
+              style={{ height: `${scrollThumb.heightPercent}%`, top: `${scrollThumb.topPercent}%` }}
+            />
+          </View>
+        )}
+      </View>
       {session && status !== 'connected' && (
         <View className="absolute inset-0 z-20 items-center justify-center bg-[#212121F2] p-[30px]">
           <View className={cn('size-2 rounded-full bg-[#42C59A]', status === 'error' && 'bg-[#FF6B6B]')} />
