@@ -64,6 +64,15 @@ describe('terminal renderer lifecycle', () => {
     expect(app).toContain('.catch(error => scheduleReconnect(sessionId, error));');
   });
 
+  it('does not replace a Herd-selected terminal with stale server focus', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+
+    expect(app).toContain('openPaneTerminal(sessionId, pane, true)');
+    expect(screen).toContain('pendingPaneFocus.current = activePane.pane_id');
+    expect(screen).toContain('serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)');
+  });
+
   it('closes tabs immediately without a confirmation prompt', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
 

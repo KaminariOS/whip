@@ -162,4 +162,4 @@ export interface HerdrSnapshot {
   layouts: PaneLayoutSnapshot[];
 }
 
-export type AppTab = 'hosts' | 'terminal' | 'more';
+export type AppTab = 'hosts' | 'herd' | 'terminal' | 'more';

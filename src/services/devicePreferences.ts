@@ -126,7 +126,7 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 function isAppTab(value: unknown): value is AppTab {
-  return value === 'hosts' || value === 'terminal' || value === 'more';
+  return value === 'hosts' || value === 'herd' || value === 'terminal' || value === 'more';
 }
 
 function isAppearancePreference(value: unknown): value is AppearancePreference {
