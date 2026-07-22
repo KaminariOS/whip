@@ -44,6 +44,7 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.appearance).toBe('system');
   expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.biometricForKeys).toBe(false);
+  expect(defaultDevicePreferences.biometricOnResume).toBe(false);
   expect(defaultDevicePreferences.keepScreenOn).toBe(false);
   expect(defaultDevicePreferences.reopenTerminalOnLaunch).toBe(false);
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
@@ -63,6 +64,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     alertsEnabled: false,
     ttsEnabled: true,
     biometricForKeys: false,
+    biometricOnResume: false,
     appearance: 'system',
     language: 'system',
     keepScreenOn: false,
@@ -85,6 +87,14 @@ test('loads biometric key protection only when explicitly enabled', async () => 
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ biometricForKeys: 'yes' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ biometricForKeys: false });
+});
+
+test('loads biometric-on-resume protection only when explicitly enabled', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ biometricOnResume: true }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ biometricOnResume: true });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ biometricOnResume: 'yes' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ biometricOnResume: false });
 });
 
 test('loads a valid appearance preference and rejects invalid values', async () => {

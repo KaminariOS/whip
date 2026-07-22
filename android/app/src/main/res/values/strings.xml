@@ -9,4 +9,7 @@
     </plurals>
     <string name="credential_unlock_title">Unlock restored SSH credentials</string>
     <string name="credential_unlock_subtitle">Use your fingerprint, face, or device screen lock</string>
+    <string name="app_unlock_title">Unlock Whip</string>
+    <string name="app_unlock_subtitle">Use your fingerprint or face to continue</string>
+    <string name="biometric_cancel">Cancel</string>
 </resources>

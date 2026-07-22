@@ -36,6 +36,7 @@ class CredentialVaultModule(
   private val blockstore by lazy { Blockstore.getClient(context) }
   private var activePrompt: BiometricPrompt? = null
   private var pendingUnlock: Promise? = null
+  private var pendingAppAuthentication: Promise? = null
 
   override fun getName(): String = "HerdrCredentialVault"
 
@@ -99,7 +100,7 @@ class CredentialVaultModule(
       )
 
     context.runOnUiQueueThread {
-      if (pendingUnlock != null) {
+      if (pendingUnlock != null || pendingAppAuthentication != null) {
         promise.reject("E_CREDENTIAL_VAULT_BUSY", "Credential recovery is already in progress")
         return@runOnUiQueueThread
       }
@@ -133,6 +134,48 @@ class CredentialVaultModule(
   }
 
   @ReactMethod
+  fun authenticateAppAccess(promise: Promise) {
+    val activity = context.currentActivity as? FragmentActivity
+      ?: return promise.reject(
+        "E_APP_AUTH_ACTIVITY",
+        "Biometric authentication requires the active Whip screen",
+      )
+
+    context.runOnUiQueueThread {
+      if (pendingUnlock != null || pendingAppAuthentication != null) {
+        promise.reject("E_APP_AUTH_BUSY", "Biometric authentication is already in progress")
+        return@runOnUiQueueThread
+      }
+      pendingAppAuthentication = promise
+      val executor = ContextCompat.getMainExecutor(activity)
+      activePrompt = BiometricPrompt(
+        activity,
+        executor,
+        object : BiometricPrompt.AuthenticationCallback() {
+          override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+            finishAppAuthenticationSuccess()
+          }
+
+          override fun onAuthenticationError(errorCode: Int, errorMessage: CharSequence) {
+            finishAppAuthenticationError(
+              if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
+                errorCode == BiometricPrompt.ERROR_CANCELED
+              ) "E_APP_AUTH_CANCELLED" else "E_APP_AUTH_FAILED",
+              errorMessage.toString(),
+            )
+          }
+        },
+      )
+      try {
+        activePrompt?.authenticate(buildAppPromptInfo())
+      } catch (error: Throwable) {
+        finishAppAuthenticationError("E_APP_AUTH_FAILED", error)
+      }
+    }
+  }
+
+  @ReactMethod
   fun clearRecoveryKey(promise: Promise) {
     val request = DeleteBytesRequest.Builder().setDeleteAll(true).build()
     blockstore.deleteBytes(request).addOnCompleteListener { task ->
@@ -145,8 +188,10 @@ class CredentialVaultModule(
   override fun invalidate() {
     activePrompt?.cancelAuthentication()
     pendingUnlock?.reject("E_CREDENTIAL_VAULT_CANCELLED", "Credential recovery was interrupted")
+    pendingAppAuthentication?.reject("E_APP_AUTH_CANCELLED", "Biometric authentication was interrupted")
     activePrompt = null
     pendingUnlock = null
+    pendingAppAuthentication = null
     super.invalidate()
   }
 
@@ -162,6 +207,14 @@ class CredentialVaultModule(
     }
     return builder.build()
   }
+
+  private fun buildAppPromptInfo(): BiometricPrompt.PromptInfo =
+    BiometricPrompt.PromptInfo.Builder()
+      .setTitle(reactApplicationContext.getString(R.string.app_unlock_title))
+      .setSubtitle(reactApplicationContext.getString(R.string.app_unlock_subtitle))
+      .setAllowedAuthenticators(BIOMETRIC_STRONG)
+      .setNegativeButtonText(reactApplicationContext.getString(R.string.biometric_cancel))
+      .build()
 
   private fun retrieveRecoveryKey() {
     val request = RetrieveBytesRequest.Builder()
@@ -334,6 +387,27 @@ class CredentialVaultModule(
   private fun finishUnlockError(code: String, error: Throwable) {
     val promise = pendingUnlock
     pendingUnlock = null
+    activePrompt = null
+    promise?.reject(code, error)
+  }
+
+  private fun finishAppAuthenticationSuccess() {
+    val promise = pendingAppAuthentication
+    pendingAppAuthentication = null
+    activePrompt = null
+    promise?.resolve(true)
+  }
+
+  private fun finishAppAuthenticationError(code: String, message: String) {
+    val promise = pendingAppAuthentication
+    pendingAppAuthentication = null
+    activePrompt = null
+    promise?.reject(code, message)
+  }
+
+  private fun finishAppAuthenticationError(code: String, error: Throwable) {
+    val promise = pendingAppAuthentication
+    pendingAppAuthentication = null
     activePrompt = null
     promise?.reject(code, error)
   }
