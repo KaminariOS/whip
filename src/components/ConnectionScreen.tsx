@@ -22,6 +22,7 @@ interface Props {
   onSave: (profile: ConnectionProfile) => void;
   onConnect: (profile: ConnectionProfile) => void;
   onDelete?: () => void;
+  onAuthenticatePrivateKey?: () => Promise<boolean>;
 }
 
 type KeyInspection =
@@ -36,7 +37,7 @@ type PrivateKeyFilePickerModule = {
 
 const privateKeyFilePicker = NativeModules.PrivateKeyFilePicker as PrivateKeyFilePickerModule | undefined;
 
-export function ConnectionScreen({ initialProfile, connecting, error, onCancel, onSave, onConnect, onDelete }: Props) {
+export function ConnectionScreen({ initialProfile, connecting, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey }: Props) {
   const { t } = useTranslation();
   const [profile, setProfile] = useState(initialProfile);
   const [keyInspection, setKeyInspection] = useState<KeyInspection>({ state: 'idle' });
@@ -140,7 +141,8 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
     if (Platform.OS === 'android') ToastAndroid.show(t('connection.copied', { label }), ToastAndroid.SHORT);
     else Alert.alert(t('connection.copied', { label }));
   };
-  const copyPrivateKey = () => {
+  const copyPrivateKey = async () => {
+    if (onAuthenticatePrivateKey && !await onAuthenticatePrivateKey()) return;
     Clipboard.setString(profile.secret);
     copied(t('connection.privateKey'));
   };
