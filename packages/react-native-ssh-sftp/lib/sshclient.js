@@ -39,7 +39,8 @@ class SSHClient {
                 resolve({
                     keyType: result.keyType,
                     keySize: result.keySize || 0,
-                    fingerprint: result.fingerprint
+                    fingerprint: result.fingerprint,
+                    publicKey: result.publicKey
                 });
             })
                 .catch((error) => {

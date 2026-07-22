@@ -214,11 +214,14 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     }
     int keySize = kpair.getKeySize();
     String fingerprint = kpair.getFingerPrint();
+    ByteArrayOutputStream publicKeyOut = new ByteArrayOutputStream();
+    kpair.writePublicKey(publicKeyOut, "herdr");
 
     WritableMap result = Arguments.createMap();
     result.putString("keyType", keyType);
     result.putInt("keySize", keySize);
     result.putString("fingerprint", fingerprint);
+    result.putString("publicKey", publicKeyOut.toString("UTF-8").trim());
     promise.resolve(result);
   } catch (Exception e) {
     promise.reject("E_KEY_INVALID", e.getMessage(), e);
