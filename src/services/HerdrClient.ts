@@ -19,6 +19,7 @@ import { parseJsonResponse, shellQuote } from '../lib/shell';
 import {
   type TerminalFrame,
 } from '../lib/terminalBridge';
+import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
@@ -70,6 +71,7 @@ export class HerdrClient {
   private commandBuffer = '';
   private pendingCommand: PendingCommand | null = null;
   private commandQueue: Promise<void> = Promise.resolve();
+  private localForwards = new Map<number, SSHClient>();
 
   async connect(profile: ConnectionProfile): Promise<void> {
     const port = Number(profile.port);
@@ -134,6 +136,9 @@ export class HerdrClient {
     previousClient?.off('Shell');
     previousClient?.closeHerdrCommandStream();
     previousClient?.disconnect();
+    for (const [localPort, tunnelClient] of this.localForwards) {
+      if (tunnelClient === previousClient) this.localForwards.delete(localPort);
+    }
 
     // A control reconnect is transport maintenance, not a terminal failure.
     // Restore only the bounded LRU set on the replacement SSH session while
@@ -165,6 +170,22 @@ export class HerdrClient {
     this.terminalBridges.clear();
     this.terminalBridgeLru.clear();
     this.controlReconnect = null;
+    this.localForwards.clear();
+  }
+
+  async openWebTunnel(value: string): Promise<{ url: string; localPort: number } | null> {
+    const target = terminalWebLinkTarget(value);
+    if (!target.requiresSshTunnel) return null;
+    const client = this.requireClient();
+    const localPort = await client.openLocalForward(target.hostname, target.port);
+    this.localForwards.set(localPort, client);
+    return { url: localTunnelUrl(target.url, localPort), localPort };
+  }
+
+  async closeWebTunnel(localPort: number): Promise<void> {
+    const client = this.localForwards.get(localPort);
+    this.localForwards.delete(localPort);
+    if (client) await client.closeLocalForward(localPort);
   }
 
   async openTerminal(

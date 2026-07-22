@@ -445,6 +445,20 @@ class SSHClient {
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
         RNSSHClient.closeAllHerdrBridges(this._key);
     }
+    openLocalForward(remoteHost, remotePort) {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('SSH local forwarding is currently Android-only'));
+        }
+        return new Promise((resolve, reject) => {
+            RNSSHClient.openLocalForward(remoteHost, remotePort, this._key, (error, localPort) => error ? reject(error) : resolve(localPort));
+        });
+    }
+    closeLocalForward(localPort) {
+        if (Platform.OS !== 'android') return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            RNSSHClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
+        });
+    }
     startHerdrEventStream(command, handler, callback) {
         if (Platform.OS !== 'android') {
             return Promise.reject(new Error('Herdr event streams are currently Android-only'));
