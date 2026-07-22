@@ -67,7 +67,9 @@ describe('persistent SSH command stream', () => {
 
     expect(native.startHerdrCommandStream).toHaveBeenCalledTimes(1);
     expect(native.startHerdrCommandStream).toHaveBeenCalledWith(
-      'PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$PATH" /bin/sh',
+      // Seeds the Homebrew/usr-local PATH, preserves $PATH, launches /bin/sh —
+      // matched by intent so wrapping (e.g. `/bin/sh -c ...`) doesn't break it.
+      expect.stringMatching(/PATH="\/opt\/homebrew\/bin:.*:\$PATH".*\/bin\/sh/),
       expect.any(Function),
     );
     expect(native.writeHerdrCommandStream).toHaveBeenCalledTimes(2);

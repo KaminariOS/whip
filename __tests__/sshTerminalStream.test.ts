@@ -55,7 +55,7 @@ describe('Android SSH terminal protocol stream', () => {
 
     expect(client).toContain('remote-client-bridge');
     expect(client).toContain('this.requireClient().startHerdrBridge');
-    expect(client).toContain('client.startHerdrCommandStream(\n      COMMAND_STREAM_SHELL,');
+    expect(client).toMatch(/client\.startHerdrCommandStream\(\s*COMMAND_STREAM_SHELL\s*,/);
     expect(client).not.toContain('this.requireClient().prepareHerdrBridge');
     expect(client).toContain('private terminalBridges = new Set<string>()');
     expect(codec).toContain('ClientMessage::Hello');

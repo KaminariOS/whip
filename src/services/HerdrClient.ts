@@ -29,9 +29,14 @@ type ApiEventHandler = (event: HerdrApiEvent) => void;
 // non-login SSH shell on macOS omits /opt/homebrew/bin (Homebrew adds it only
 // in ~/.zprofile, sourced by login shells), so bare `herdr` isn't found. The
 // prefixes are harmless where they don't exist (e.g. Linux) and $PATH is kept.
+//
+// The command runs through an SSH exec channel, which the remote *login* shell
+// interprets. A bare `VAR=value command` prefix is POSIX-only (csh/tcsh reject
+// it), so wrap the assignment inside `/bin/sh -c` — a plain command every login
+// shell can launch — and let that sh do the PATH expansion, then exec the shell.
 // See https://github.com/KaminariOS/whip/issues/15
 const COMMAND_STREAM_SHELL =
-  'PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$PATH" /bin/sh';
+  '/bin/sh -c \'PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$PATH" exec /bin/sh\'';
 
 export function isUnavailableSshChannel(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);

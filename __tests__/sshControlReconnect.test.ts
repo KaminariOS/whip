@@ -78,7 +78,9 @@ describe('SSH control reconnects', () => {
 
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
     expect(stale.startHerdrCommandStream).toHaveBeenCalledWith(
-      'PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$PATH" /bin/sh',
+      // Seeds the Homebrew/usr-local PATH, preserves $PATH, launches /bin/sh —
+      // matched by intent so wrapping (e.g. `/bin/sh -c ...`) doesn't break it.
+      expect.stringMatching(/PATH="\/opt\/homebrew\/bin:.*:\$PATH".*\/bin\/sh/),
       expect.any(Function),
     );
     expect(fresh.writeHerdrCommandStream).toHaveBeenCalledWith(

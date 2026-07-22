@@ -12,15 +12,20 @@ const client = readFileSync(
 
 describe('issue #15: macOS host compatibility', () => {
   test('session snapshot uses portable `nc -U` (no bare `-N`)', () => {
-    expect(client).toContain('| nc -U ');
-    expect(client).not.toContain('nc -N');
+    // Whitespace-tolerant so reformatting can't silently disarm the guard.
+    expect(client).toMatch(/\|\s*nc\s+-U\s/);
+    // The core regression: never reintroduce Apple-hostile `nc -N`.
+    expect(client).not.toMatch(/\bnc\s+-N\b/);
   });
 
   test('command shell seeds Homebrew + /usr/local PATH so bare `herdr` resolves', () => {
     expect(client).toContain('/opt/homebrew/bin');
     expect(client).toContain('/opt/homebrew/sbin');
     expect(client).toContain('/usr/local/bin');
-    // still ends in /bin/sh and preserves the inherited PATH
-    expect(client).toContain(':$PATH" /bin/sh');
+    // Assert intent, not the exact launch string: the inherited PATH is
+    // preserved and `/bin/sh` is the launched shell — so a refactor that keeps
+    // both (e.g. wrapping in `/bin/sh -c ...`) doesn't spuriously fail.
+    expect(client).toMatch(/:\$PATH"/);
+    expect(client).toMatch(/\/bin\/sh/);
   });
 });
