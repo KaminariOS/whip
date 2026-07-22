@@ -18,6 +18,7 @@ import com.facebook.react.bridge.WritableNativeArray;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
 import com.jcraft.jsch.Channel;
+import com.jcraft.jsch.ChannelDirectStreamLocal;
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.ChannelSftp.LsEntry;
@@ -80,7 +81,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     Channel _channel = null;
     final Map<String, HerdrBridgeConnection> _herdrBridges = new ConcurrentHashMap<>();
     HerdrBridgeConnection _preparedHerdrBridge = null;
-    ChannelExec _herdrEventChannel = null;
+    ChannelDirectStreamLocal _herdrEventChannel = null;
     DataOutputStream _herdrEventOutputStream = null;
     ChannelExec _herdrCommandChannel = null;
     DataOutputStream _herdrCommandOutputStream = null;
@@ -941,7 +942,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void startHerdrEventStream(
-      final String command,
+      final String socketPath,
       final String key,
       final Callback callback
   ) {
@@ -955,8 +956,10 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
             callback.invoke();
             return;
           }
-          ChannelExec channel = (ChannelExec) client._session.openChannel("exec");
-          channel.setCommand(command);
+          ChannelDirectStreamLocal channel = (ChannelDirectStreamLocal) client._session.openChannel(
+              "direct-streamlocal@openssh.com"
+          );
+          channel.setSocketPath(socketPath);
           InputStream input = channel.getInputStream();
           DataOutputStream output = new DataOutputStream(channel.getOutputStream());
           client._herdrEventChannel = channel;
