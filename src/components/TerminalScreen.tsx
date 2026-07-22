@@ -407,7 +407,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           key={control}
           accessibilityLabel={t('terminal.compose')}
           accessibilityState={{ selected: composeOpen }}
-          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', composeOpen && 'border border-white')}
+          className={cn('min-h-[34px] min-w-12 rounded-sm bg-terminal-surface px-2.5', composeOpen && 'border border-terminal-accent')}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
@@ -446,9 +446,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           }}
           onLongPress={() => setCtrl('locked')}
           delayLongPress={450}
-          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', ctrl === 'armed' && 'border border-white', ctrl === 'locked' && 'bg-white')}
+          className={cn('min-h-[34px] min-w-12 rounded-sm bg-terminal-surface px-2.5', ctrl === 'armed' && 'border border-terminal-accent', ctrl === 'locked' && 'bg-terminal-accent')}
           variant="secondary">
-          <Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', ctrl === 'armed' && 'text-white', ctrl === 'locked' && 'text-[#212121]')}>CTRL</Text>
+          <Text className={cn('font-mono text-[9px] font-bold text-terminal-text', ctrl === 'armed' && 'text-terminal-accent', ctrl === 'locked' && 'text-terminal-ink')}>CTRL</Text>
         </Button>
       );
     }
@@ -463,9 +463,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         }}
         onLongPress={() => setAlt('locked')}
         delayLongPress={450}
-        className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', alt === 'armed' && 'border border-white', alt === 'locked' && 'bg-white')}
+        className={cn('min-h-[34px] min-w-12 rounded-sm bg-terminal-surface px-2.5', alt === 'armed' && 'border border-terminal-accent', alt === 'locked' && 'bg-terminal-accent')}
         variant="secondary">
-        <Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', alt === 'armed' && 'text-white', alt === 'locked' && 'text-[#212121]')}>ALT</Text>
+        <Text className={cn('font-mono text-[9px] font-bold text-terminal-text', alt === 'armed' && 'text-terminal-accent', alt === 'locked' && 'text-terminal-ink')}>ALT</Text>
       </Button>
     );
   };
@@ -495,17 +495,17 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         </View>
       )}
       {!compact && (
-        <View className="h-[30px] flex-row items-center gap-2 border-b border-[#424242] bg-[#181818] px-3">
+        <View className="h-[30px] flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-3">
           <View className="size-1.5 rounded-full bg-white" />
-          <Text numberOfLines={1} className="flex-1 font-mono text-[9px] tracking-[1px] text-[#B4B4B4]">
+          <Text numberOfLines={1} className="flex-1 font-mono text-[9px] tracking-[1px] text-terminal-muted">
             {t('terminal.agentTitle', { title, terminalId })}
           </Text>
-          {error && <Text className="font-mono text-[8px] text-[#FF6B6B]">{t('terminal.attachFailed')}</Text>}
+          {error && <Text className="font-mono text-[8px] text-terminal-error">{t('terminal.attachFailed')}</Text>}
         </View>
       )}
-      {compact && error && <Text className="bg-[#241211] px-2 py-1 font-mono text-[8px] text-[#FF6B6B]">{t('terminal.attachFailed')} · {String(error)}</Text>}
+      {compact && error && <Text className="bg-terminal-error/15 px-2 py-1 font-mono text-[8px] text-terminal-error">{t('terminal.attachFailed')} · {String(error)}</Text>}
       {searchOpen && (
-        <View className="min-h-12 flex-row items-center gap-1 border-b border-[#424242] bg-[#2F2F2F] px-[7px]">
+        <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
           <Input
             autoFocus
             value={searchQuery}
@@ -515,11 +515,11 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
             placeholderTextColor={colors.muted}
             autoCapitalize="none"
             autoCorrect={false}
-            className="h-9 min-w-[100px] flex-1 rounded-full border-0 bg-[#212121] px-3 font-mono text-[10px] text-[#ECECEC] shadow-none"
+            className="h-9 min-w-[100px] flex-1 rounded-full border-0 bg-terminal-canvas px-3 font-mono text-[10px] text-terminal-text shadow-none"
           />
-          <Button className={cn('size-8 rounded-full px-0', searchCase && 'bg-white')} variant="ghost" onPress={() => setSearchCase(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-[#B4B4B4]', searchCase && 'text-[#212121]')}>Aa</Text></Button>
-          <Button className={cn('size-8 rounded-full px-0', searchRegex && 'bg-white')} variant="ghost" onPress={() => setSearchRegex(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-[#B4B4B4]', searchRegex && 'text-[#212121]')}>.*</Text></Button>
-          <Text className={cn('min-w-[34px] text-center font-mono text-[8px] text-[#B4B4B4]', (searchResult.invalid || (searchQuery && searchResult.count === 0)) && 'text-[#FF6B6B]')}>
+          <Button className={cn('size-8 rounded-full px-0', searchCase && 'bg-terminal-accent')} variant="ghost" onPress={() => setSearchCase(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-terminal-muted', searchCase && 'text-terminal-ink')}>Aa</Text></Button>
+          <Button className={cn('size-8 rounded-full px-0', searchRegex && 'bg-terminal-accent')} variant="ghost" onPress={() => setSearchRegex(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-terminal-muted', searchRegex && 'text-terminal-ink')}>.*</Text></Button>
+          <Text className={cn('min-w-[34px] text-center font-mono text-[8px] text-terminal-muted', (searchResult.invalid || (searchQuery && searchResult.count === 0)) && 'text-terminal-error')}>
             {searchResult.invalid ? 'ERR' : searchQuery ? `${Math.max(0, searchResult.index + 1)}/${searchResult.count}` : ''}
           </Text>
           <Button accessibilityLabel={t('terminal.previousResult')} className="h-[31px] w-7 rounded-none px-0" disabled={!searchResult.count} variant="ghost" onPress={() => moveSearch(-1)}><ChevronUp size={16} color={colors.text} /></Button>
@@ -547,29 +547,29 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
             pointerEvents="none"
             className="absolute inset-y-0 right-0.5 w-0.5">
             <View
-              className="absolute inset-x-0 rounded-full bg-[#ECECECAA]"
+              className="absolute inset-x-0 rounded-full bg-terminal-text/70"
               style={{ height: `${scrollThumb.heightPercent}%`, top: `${scrollThumb.topPercent}%` }}
             />
           </View>
         )}
       </View>
       {session && status !== 'connected' && (
-        <View className="absolute inset-0 z-20 items-center justify-center bg-[#212121F2] p-[30px]">
-          <View className={cn('size-2 rounded-full bg-[#42C59A]', status === 'error' && 'bg-[#FF6B6B]')} />
-          <Text className="mt-[15px] text-center text-[17px] font-semibold leading-[22px] text-[#ECECEC]">
+        <View className="absolute inset-0 z-20 items-center justify-center bg-terminal-canvas/95 p-[30px]">
+          <View className={cn('size-2 rounded-full bg-terminal-success', status === 'error' && 'bg-terminal-error')} />
+          <Text className="mt-[15px] text-center text-[17px] font-semibold leading-[22px] text-terminal-text">
             {status === 'connecting' ? t('terminal.connecting') : status === 'disconnected' ? t('terminal.reconnecting') : t('terminal.failed')}
           </Text>
-          <Text numberOfLines={3} className="mt-2 max-w-80 text-center text-[11px] leading-[17px] text-[#B4B4B4]">
+          <Text numberOfLines={3} className="mt-2 max-w-80 text-center text-[11px] leading-[17px] text-terminal-muted">
             {session.error || error || t('terminal.opening', { title })}
           </Text>
           {status === 'disconnected' && session.reconnectAttempt > 0 && (
-            <Text className="mt-2.5 text-[11px] text-[#B4B4B4]">{t('terminal.attempt', { attempt: session.reconnectAttempt, total: MAX_RECONNECT_ATTEMPTS })}</Text>
+            <Text className="mt-2.5 text-[11px] text-terminal-muted">{t('terminal.attempt', { attempt: session.reconnectAttempt, total: MAX_RECONNECT_ATTEMPTS })}</Text>
           )}
           <View className="mt-5 flex-row gap-2">
             {status !== 'connecting' && (
-              <Button className="min-h-[42px] rounded-full bg-[#ECECEC] px-4" onPress={retryNow}><Text className="text-[13px] font-semibold text-[#212121]">{t('terminal.retry')}</Text></Button>
+              <Button className="min-h-[42px] rounded-full bg-terminal-accent px-4" onPress={retryNow}><Text className="text-[13px] font-semibold text-terminal-ink">{t('terminal.retry')}</Text></Button>
             )}
-            <Button className="min-h-[42px] rounded-full bg-[#2F2F2F] px-4" variant="secondary" onPress={onClose}><Text className="text-[13px] font-semibold text-[#ECECEC]">{t('terminal.closeSession')}</Text></Button>
+            <Button className="min-h-[42px] rounded-full bg-terminal-surface px-4" variant="secondary" onPress={onClose}><Text className="text-[13px] font-semibold text-terminal-text">{t('terminal.closeSession')}</Text></Button>
           </View>
         </View>
       )}
@@ -578,7 +578,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         collapsable={false}
         style={keyboardInset > 0 ? { marginBottom: keyboardInset } : undefined}>
         {composeOpen && (
-          <View className="flex-row items-end gap-2 border-t border-[#424242] bg-[#181818] p-2">
+          <View className="flex-row items-end gap-2 border-t border-terminal-divider bg-terminal-panel p-2">
             <Input
               autoFocus
               multiline
@@ -588,7 +588,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
               onChangeText={setComposeText}
               placeholder={t('terminal.composePlaceholder')}
               placeholderTextColor={colors.muted}
-              className="h-[76px] min-w-0 flex-1 rounded-lg border-[#424242] bg-[#212121] px-3 py-2 font-mono text-[12px] leading-[17px] text-[#ECECEC]"
+              className="h-[76px] min-w-0 flex-1 rounded-lg border-terminal-divider bg-terminal-canvas px-3 py-2 font-mono text-[12px] leading-[17px] text-terminal-text"
             />
             <View className="gap-1.5">
               <Button
@@ -600,7 +600,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
               </Button>
               <Button
                 accessibilityLabel={t('terminal.closeCompose')}
-                className="size-10 rounded-full bg-[#2F2F2F] px-0"
+                className="size-10 rounded-full bg-terminal-surface px-0"
                 variant="secondary"
                 onPress={closeCompose}>
                 <X size={17} color={colors.text} />
@@ -623,5 +623,5 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 }
 
 function TerminalKey({ label, onPress, armed = false }: { label: string; onPress: () => void; armed?: boolean }) {
-  return <Button className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', armed && 'border border-white')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', armed && 'text-white')}>{label}</Text></Button>;
+  return <Button className={cn('min-h-[34px] min-w-12 rounded-sm bg-terminal-surface px-2.5', armed && 'border border-terminal-accent')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-terminal-text', armed && 'text-terminal-accent')}>{label}</Text></Button>;
 }

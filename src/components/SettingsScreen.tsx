@@ -199,10 +199,10 @@ function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { bus
   return (
     <View className="border-t border-border p-3.5">
       <View className="mb-3"><Text className="text-[15px] font-semibold leading-5">{t('settings.backgroundImage')}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('settings.backgroundImageCopy')}</Text></View>
-      <View className="relative h-28 overflow-hidden rounded-md bg-[#212121]">
+      <View className="relative h-28 overflow-hidden rounded-md bg-terminal-canvas">
         {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
         {uri ? <View className="absolute inset-0" style={{ backgroundColor: `rgba(24, 24, 24, ${dimming / 100})` }} /> : null}
-        <View className="absolute inset-0 justify-end p-3"><Text style={styles.terminalPreviewText} className="text-xs text-white">user@host:~ $ herdr status</Text><Text style={styles.terminalPreviewText} className="mt-1 text-[10px] text-[#B4B4B4]">{t('settings.terminalPreview')}</Text></View>
+        <View className="absolute inset-0 justify-end p-3"><Text style={styles.terminalPreviewText} className="text-xs text-terminal-text">user@host:~ $ herdr status</Text><Text style={styles.terminalPreviewText} className="mt-1 text-[10px] text-terminal-muted">{t('settings.terminalPreview')}</Text></View>
       </View>
       <View className="mt-3 flex-row gap-2">
         <Button className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(onChoose)}><Icon as={ImagePlus} size={16} /><Text>{uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></Button>

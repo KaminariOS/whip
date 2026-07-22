@@ -14,10 +14,10 @@ export interface AnsiSegment {
 }
 
 const BASIC_COLORS = [
-  '#111411', '#ff6b66', '#b7db5b', '#e6bf62',
-  '#7da6c9', '#c18bc8', '#73c6b6', '#e9eadf',
-  '#687064', '#ff8984', '#d8ff63', '#ffd981',
-  '#9bc6e8', '#dda8e4', '#94e6d5', '#ffffff',
+  '#15161e', '#f7768e', '#9ece6a', '#e0af68',
+  '#7aa2f7', '#bb9af7', '#7dcfff', '#a9b1d6',
+  '#414868', '#ff899d', '#9fe044', '#faba4a',
+  '#8db0ff', '#c7a9ff', '#a4daff', '#c0caf5',
 ];
 
 // Terminal escape bytes are the subject of this parser.

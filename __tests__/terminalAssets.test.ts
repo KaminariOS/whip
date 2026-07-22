@@ -53,9 +53,12 @@ describe('Android terminal assets', () => {
     expect(html).toContain(
       "backgroundGlass.style.backgroundColor = 'rgba(0,0,0,' + dimming",
     );
-    expect(html).toContain("foreground: '#ececec'");
-    expect(html).toContain("cursor: '#ffffff'");
-    expect(html).toContain("selectionBackground: '#67676780'");
+    expect(html).toContain("foreground: '#c0caf5'");
+    expect(html).toContain("cursor: '#c0caf5'");
+    expect(html).toContain("selectionBackground: '#283457'");
+    expect(html).toContain("blue: '#7aa2f7'");
+    expect(html).toContain("magenta: '#bb9af7'");
+    expect(html).toContain("cyan: '#7dcfff'");
     expect(html).not.toContain('#d8ff63');
 
     const inlineScript = html.match(
