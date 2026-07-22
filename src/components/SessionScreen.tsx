@@ -457,7 +457,7 @@ export function SessionScreen({
                 );
               })}
             </ScrollView>
-            <Button accessibilityLabel={t('session.newTab')} className="h-[42px] w-[58px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Plus size={14} color={colors.text} /><Text className="text-[10px] font-semibold text-foreground">{t('session.tab')}</Text></Button>
+            <Button accessibilityLabel={t('session.newTab')} className="h-[42px] w-11 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Plus size={16} color={colors.text} /></Button>
             <Button accessibilityLabel={t('session.actions')} className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
               <Ellipsis size={18} color={colors.text} />
             </Button>

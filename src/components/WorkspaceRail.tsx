@@ -56,8 +56,8 @@ export function WorkspaceRail({
           />
         ))}
       </ScrollView>
-      <Button accessibilityLabel={t('rail.newWorkspace')} className="h-12 w-[72px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
-        <Plus size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-foreground">{t('rail.space')}</Text>
+      <Button accessibilityLabel={t('rail.newWorkspace')} className="h-12 w-12 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
+        <Plus size={17} color={colors.text} />
       </Button>
       <Button accessibilityLabel={t('rail.workspaceActions')} className="h-12 w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(onActions)}>
         <Ellipsis size={18} color={colors.text} />
