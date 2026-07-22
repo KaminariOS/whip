@@ -76,6 +76,7 @@ export interface KeyDetails {
     keyType: string;
     keySize?: number;
     fingerprint: string;
+    publicKey: string;
 }
 /**
  * @deprecated Use {@link GeneratedKeyPair} instead. This alias will be removed in a future major version.

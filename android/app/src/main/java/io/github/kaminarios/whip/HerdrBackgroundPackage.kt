@@ -11,6 +11,7 @@ class HerdrBackgroundPackage : ReactPackage {
     listOf(
       CredentialVaultModule(reactContext),
       HerdrBackgroundModule(reactContext),
+      PrivateKeyFilePickerModule(reactContext),
     )
 
   override fun createViewManagers(
