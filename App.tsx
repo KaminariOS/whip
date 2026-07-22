@@ -24,6 +24,7 @@ import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import { resolveColorScheme } from './src/lib/appearance';
 import { biometricResumeAction } from './src/lib/appAccess';
+import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from './src/lib/biometricSecurity';
 import {
   activeTabSuppressesNotifications,
   agentFromStatusEvent,
@@ -136,6 +137,7 @@ interface ConnectOptions {
   markUsed?: boolean;
   trackConnecting?: boolean;
   activateSession?: boolean;
+  biometricVerified?: boolean;
 }
 
 let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;
@@ -176,8 +178,10 @@ function AppContent() {
   const ttsEnabledRef = useRef(false);
   const handledNotificationIdRef = useRef<string | null>(null);
   const biometricOnResumeRef = useRef(defaultDevicePreferences.biometricOnResume);
+  const biometricForKeysRef = useRef(defaultDevicePreferences.biometricForKeys);
   const preferencesLoadedRef = useRef(false);
   const appAuthenticationInFlightRef = useRef(false);
+  const securitySettingChangeInFlightRef = useRef(false);
   const [notificationResponse, setNotificationResponse] = useState<Notifications.NotificationResponse | null>(null);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
@@ -271,6 +275,7 @@ function AppContent() {
       .then(preferences => {
         setAlertsEnabled(preferences.alertsEnabled);
         setTtsEnabled(preferences.ttsEnabled);
+        biometricForKeysRef.current = preferences.biometricForKeys;
         setBiometricForKeys(preferences.biometricForKeys);
         biometricOnResumeRef.current = preferences.biometricOnResume;
         setBiometricOnResume(preferences.biometricOnResume);
@@ -649,6 +654,21 @@ function AppContent() {
     }
   }, []);
 
+  const verifyBiometric = useCallback(async (): Promise<boolean> => {
+    try {
+      await authenticateAppAccess();
+      return true;
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'E_APP_AUTH_CANCELLED') {
+        Alert.alert(
+          t('settings.biometricUnavailable'),
+          t('settings.biometricUnavailableCopy', { error: String(error) }),
+        );
+      }
+      return false;
+    }
+  }, [t]);
+
   useEffect(() => {
     let previousState = AppState.currentState;
     const subscription = AppState.addEventListener('change', state => {
@@ -669,23 +689,29 @@ function AppContent() {
     return () => subscription.remove();
   }, [authenticateLockedApp]);
 
-  const updateBiometricOnResume = async (enabled: boolean): Promise<void> => {
-    if (!enabled) {
-      biometricOnResumeRef.current = false;
-      setBiometricOnResume(false);
-      setAppAccessLocked(false);
-      return;
-    }
+  const updateSecuritySetting = async (apply: () => void): Promise<void> => {
+    if (securitySettingChangeInFlightRef.current) return;
+    securitySettingChangeInFlightRef.current = true;
     try {
-      await authenticateAppAccess();
-      biometricOnResumeRef.current = true;
-      setBiometricOnResume(true);
-    } catch (error) {
-      Alert.alert(
-        t('settings.biometricUnavailable'),
-        t('settings.biometricUnavailableCopy', { error: String(error) }),
-      );
+      if (await verifyBiometric()) apply();
+    } finally {
+      securitySettingChangeInFlightRef.current = false;
     }
+  };
+
+  const updateBiometricForKeys = async (enabled: boolean): Promise<void> => {
+    await updateSecuritySetting(() => {
+      biometricForKeysRef.current = enabled;
+      setBiometricForKeys(enabled);
+    });
+  };
+
+  const updateBiometricOnResume = async (enabled: boolean): Promise<void> => {
+    await updateSecuritySetting(() => {
+      biometricOnResumeRef.current = enabled;
+      setBiometricOnResume(enabled);
+      if (!enabled) setAppAccessLocked(false);
+    });
   };
 
   useEffect(() => {
@@ -753,6 +779,7 @@ function AppContent() {
       markUsed = true,
       trackConnecting = true,
       activateSession = true,
+      biometricVerified = false,
     } = options;
     if (trackConnecting) {
       setConnecting(true);
@@ -763,6 +790,9 @@ function AppContent() {
     if (existing) closeLiveHost(existing.id);
     let runtime: LiveRuntime | null = null;
     try {
+      if (!biometricVerified && requiresBiometricForKeyUse(nextProfile, biometricForKeysRef.current)) {
+        if (!await verifyBiometric()) return false;
+      }
       const saved = persistProfile
         ? await saveConnectionProfile(hostsRef.current, nextProfile)
         : {
@@ -829,9 +859,18 @@ function AppContent() {
 
   const restorePersistedLiveHosts = useEffectEvent(async () => {
     const persisted = persistedLiveHostsRef.current;
+    const persistedHosts = persisted.hostIds
+      .map(hostId => hostsRef.current.find(item => item.id === hostId))
+      .filter((host): host is HostProfile => Boolean(host));
+    const hasProtectedKey = persistedHosts.some(host => (
+      requiresBiometricForSavedKey(host, biometricForKeysRef.current)
+    ));
+    const protectedKeyAccessGranted = !hasProtectedKey || await verifyBiometric();
     await Promise.allSettled(persisted.hostIds.map(async hostId => {
       const host = hostsRef.current.find(item => item.id === hostId);
       if (!host) return;
+      const protectedKey = requiresBiometricForSavedKey(host, biometricForKeysRef.current);
+      if (protectedKey && !protectedKeyAccessGranted) return;
       try {
         const profile = await loadConnectionProfile(host);
         if (!profile.secret) return;
@@ -841,6 +880,7 @@ function AppContent() {
           markUsed: false,
           trackConnecting: false,
           activateSession: hostId === persisted.activeHostId,
+          biometricVerified: protectedKey,
         });
       } catch (error) {
         setConnectError(t('app.restoreHostError', { host: hostDisplayName(host), error: String(error) }));
@@ -1213,7 +1253,7 @@ function AppContent() {
               server={activeSession?.snapshot.server || null}
               onAlertsChange={setAlertsEnabled}
               onTtsChange={setTtsEnabled}
-              onBiometricForKeysChange={setBiometricForKeys}
+              onBiometricForKeysChange={value => { updateBiometricForKeys(value).catch(() => undefined); }}
               onBiometricOnResumeChange={value => { updateBiometricOnResume(value).catch(() => undefined); }}
               onAppearanceChange={updateAppearance}
               onLanguageChange={setLanguage}
@@ -1269,6 +1309,7 @@ function AppContent() {
               onSave={saveHost}
               onConnect={connect}
               onDelete={hosts.some(host => host.id === editorProfile.id) ? () => confirmDeleteHost(editorProfile) : undefined}
+              onAuthenticatePrivateKey={biometricForKeys ? verifyBiometric : undefined}
             />
           </View>
         )}
