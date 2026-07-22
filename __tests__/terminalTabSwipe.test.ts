@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import {
   neighborTabIndex,
   shouldCommitTerminalTabSwipe,
@@ -33,5 +36,14 @@ describe('terminal tab swiping', () => {
     expect(shouldCommitTerminalTabSwipe(-40, -0.5, 400, 1)).toBe(true);
     expect(shouldCommitTerminalTabSwipe(-40, 0.8, 400, 1)).toBe(false);
     expect(shouldCommitTerminalTabSwipe(101, 0, 400, -1)).toBe(true);
+  });
+
+  it('keeps the animated transform prop array-shaped while swipe state changes', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+
+    expect(screen).toContain('{ transform: [{ translateX }] }');
+    expect(screen).toContain('pointerEvents="box-none"');
+    expect(screen).not.toContain('tabSwipe?.originTerminalId === terminalSession.terminalId && {');
+    expect(screen).not.toContain('tabSwipe?.targetTerminalId === terminalSession.terminalId && {');
   });
 });

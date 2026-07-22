@@ -5,7 +5,7 @@ describe('terminal renderer lifecycle', () => {
   it('keeps one terminal WebView mounted per opened terminal', () => {
     const source = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
 
-    expect(source).toContain('terminalState.sessions.map(terminalSession => (');
+    expect(source).toContain('terminalState.sessions.map(terminalSession => {');
     expect(source).toContain('key={terminalSession.terminalId}');
     expect(source).toContain('session={terminalSession}');
     expect(source).toContain("!visible && 'absolute inset-0 opacity-0'");
