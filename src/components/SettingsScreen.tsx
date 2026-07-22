@@ -14,10 +14,14 @@ export interface SettingsSectionProps {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
   appearance: AppearancePreference;
+  keepScreenOn: boolean;
+  reopenTerminalOnLaunch: boolean;
   host: string | null;
   onAlertsChange: (value: boolean) => void;
   onTtsChange: (value: boolean) => void;
   onAppearanceChange: (value: AppearancePreference) => void;
+  onKeepScreenOnChange: (value: boolean) => void;
+  onReopenTerminalOnLaunchChange: (value: boolean) => void;
   terminalPreferences: TerminalPreferences;
   onTerminalPreferencesChange: (value: TerminalPreferences) => void;
   onDisconnect?: () => void;
@@ -66,7 +70,9 @@ export function SettingsSection(props: SettingsSectionProps) {
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">Terminal</Text>
         <View className="overflow-hidden rounded-lg border border-border bg-card">
-          <ValueRow title="Font size" value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(24, props.terminalPreferences.fontSize + 1) })} />
+          <SettingRow title="Keep screen on" copy="Prevent sleep while a terminal is open." value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} />
+          <SettingRow title="Reopen terminal on launch" copy="Open the last terminal when Herdr starts." value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
+          <ValueRow title="Font size" value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(24, props.terminalPreferences.fontSize + 1) })} divided />
           <ValueRow title="Scrollback" value={`${props.terminalPreferences.scrollback} lines`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
           <SettingRow title="Blinking cursor" copy="Animate the terminal cursor while the pane is active." value={props.terminalPreferences.cursorBlink} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, cursorBlink: value })} divided />
           <TerminalBackgroundRow

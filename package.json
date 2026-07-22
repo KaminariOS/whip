@@ -32,6 +32,7 @@
     "expo-font": "~57.0.1",
     "expo-haptics": "~57.0.1",
     "expo-image-picker": "~57.0.5",
+    "expo-keep-awake": "~57.0.1",
     "expo-notifications": "~57.0.6",
     "expo-speech": "~57.0.1",
     "expo-status-bar": "~57.0.1",

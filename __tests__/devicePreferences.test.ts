@@ -42,6 +42,8 @@ test('terminal preference defaults match the mobile renderer', () => {
   });
   expect(defaultDevicePreferences.terminalControlUsage).toEqual({});
   expect(defaultDevicePreferences.appearance).toBe('system');
+  expect(defaultDevicePreferences.keepScreenOn).toBe(false);
+  expect(defaultDevicePreferences.reopenTerminalOnLaunch).toBe(false);
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
 });
 
@@ -59,6 +61,8 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     alertsEnabled: false,
     ttsEnabled: true,
     appearance: 'system',
+    keepScreenOn: false,
+    reopenTerminalOnLaunch: false,
     lastTab: 'terminal',
     terminalControlUsage: {},
     terminal: {
@@ -77,6 +81,26 @@ test('loads a valid appearance preference and rejects invalid values', async () 
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ appearance: 'sepia' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ appearance: 'system' });
+});
+
+test('loads terminal behavior toggles only when explicitly enabled', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    keepScreenOn: true,
+    reopenTerminalOnLaunch: true,
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    keepScreenOn: true,
+    reopenTerminalOnLaunch: true,
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    keepScreenOn: 'yes',
+    reopenTerminalOnLaunch: 1,
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    keepScreenOn: false,
+    reopenTerminalOnLaunch: false,
+  });
 });
 
 test('sanitizes persisted terminal background preferences', async () => {

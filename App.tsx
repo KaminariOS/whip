@@ -2,6 +2,7 @@ import './global.css';
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
+import { useKeepAwake } from 'expo-keep-awake';
 import { PortalHost } from '@rn-primitives/portal';
 import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -160,6 +161,7 @@ function AppContent() {
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const hostsRef = useRef<HostProfile[]>([]);
   const persistedLiveHostsRef = useRef<PersistedLiveHosts>({ hostIds: [], activeHostId: null });
+  const restoredTerminalHostIdsRef = useRef(new Set<string>());
   const restoreStarted = useRef(false);
   const alertsEnabledRef = useRef(true);
   const ttsEnabledRef = useRef(false);
@@ -181,6 +183,8 @@ function AppContent() {
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [appearance, setAppearance] = useState<AppearancePreference>(defaultDevicePreferences.appearance);
+  const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
+  const [reopenTerminalOnLaunch, setReopenTerminalOnLaunch] = useState(defaultDevicePreferences.reopenTerminalOnLaunch);
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
   const [terminalControlUsage, setTerminalControlUsage] = useState<TerminalControlUsage>(defaultDevicePreferences.terminalControlUsage);
   const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
@@ -246,10 +250,15 @@ function AppContent() {
         setAlertsEnabled(preferences.alertsEnabled);
         setTtsEnabled(preferences.ttsEnabled);
         setAppearance(preferences.appearance);
+        setKeepScreenOn(preferences.keepScreenOn);
+        setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
         applyAppearance(preferences.appearance);
         setTerminalPreferences(preferences.terminal);
         setTerminalControlUsage(preferences.terminalControlUsage);
-        setNavigation(current => selectMobileTab(current, preferences.lastTab));
+        setNavigation(current => selectMobileTab(
+          current,
+          preferences.lastTab === 'terminal' ? 'hosts' : preferences.lastTab,
+        ));
       })
       .finally(() => setPreferencesLoaded(true));
     loadPersistedLiveHosts()
@@ -265,11 +274,13 @@ function AppContent() {
       alertsEnabled,
       ttsEnabled,
       appearance,
+      keepScreenOn,
+      reopenTerminalOnLaunch,
       lastTab: navigation.tab,
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [alertsEnabled, appearance, navigation.tab, preferencesLoaded, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [alertsEnabled, appearance, keepScreenOn, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
@@ -689,6 +700,7 @@ function AppContent() {
       const initial = await runtime.client.snapshot();
       const initialLatencyMs = elapsedLatencyMs(initialSnapshotStartedAt);
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
+      if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
       setLiveSessions(current => {
         let next = updateLiveHostConnection(current, sessionId, { status: 'connected' });
@@ -753,6 +765,18 @@ function AppContent() {
         const active = current.sessions.find(session => session.hostId === persisted.activeHostId);
         return active ? selectLiveHostSession(current, active.id) : current;
       });
+    }
+    if (reopenTerminalOnLaunch) {
+      const terminalHostId = persisted.activeHostId && restoredTerminalHostIdsRef.current.has(persisted.activeHostId)
+        ? persisted.activeHostId
+        : [...persisted.hostIds].reverse().find(hostId => restoredTerminalHostIdsRef.current.has(hostId));
+      if (terminalHostId) {
+        setLiveSessions(current => {
+          const terminalHost = current.sessions.find(session => session.hostId === terminalHostId);
+          return terminalHost ? selectLiveHostSession(current, terminalHost.id) : current;
+        });
+        setNavigation(current => selectMobileTab(current, 'terminal'));
+      }
     }
     setLiveHostRestoreComplete(true);
   });
@@ -1023,6 +1047,7 @@ function AppContent() {
 
   const terminalVisible = navigation.tab === 'terminal' && !editorProfile;
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
+  const activeTerminalVisible = immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
   const totalTerminalCount = liveSessions.sessions.reduce((total, session) => total + session.terminals.sessions.length, 0);
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
     hostId: session.id,
@@ -1034,6 +1059,7 @@ function AppContent() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom', 'left', 'right']}>
+      {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
       <View className="flex-1 bg-background">
         <View className="flex-1 bg-background">
           {navigation.tab === 'hosts' && (
@@ -1091,11 +1117,15 @@ function AppContent() {
               alertsEnabled={alertsEnabled}
               ttsEnabled={ttsEnabled}
               appearance={appearance}
+              keepScreenOn={keepScreenOn}
+              reopenTerminalOnLaunch={reopenTerminalOnLaunch}
               terminalPreferences={terminalPreferences}
               server={activeSession?.snapshot.server || null}
               onAlertsChange={setAlertsEnabled}
               onTtsChange={setTtsEnabled}
               onAppearanceChange={updateAppearance}
+              onKeepScreenOnChange={setKeepScreenOn}
+              onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
               onTerminalPreferencesChange={setTerminalPreferences}
               onDisconnect={activeSession ? () => closeLiveHost(activeSession.id) : undefined}
             />
@@ -1162,6 +1192,11 @@ function AppContent() {
       )}
     </SafeAreaView>
   );
+}
+
+function TerminalKeepAwake() {
+  useKeepAwake('herdr-terminal');
+  return null;
 }
 
 function LiveSessionView({

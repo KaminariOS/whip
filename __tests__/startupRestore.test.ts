@@ -16,4 +16,17 @@ describe('startup host restoration', () => {
     expect(app).toContain('trackConnecting: false');
     expect(app).toContain('activateSession: hostId === persisted.activeHostId');
   });
+
+  it('reopens only a terminal that survived startup restoration', () => {
+    expect(app).toContain('if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id)');
+    expect(app).toContain('if (reopenTerminalOnLaunch)');
+    expect(app).toContain("setNavigation(current => selectMobileTab(current, 'terminal'))");
+    expect(app).toContain("preferences.lastTab === 'terminal' ? 'hosts' : preferences.lastTab");
+  });
+
+  it('keeps the display awake only while the terminal screen is visible', () => {
+    expect(app).toContain("useKeepAwake('herdr-terminal')");
+    expect(app).toContain('activeTerminalVisible = immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId)');
+    expect(app).toContain('keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null');
+  });
 });
