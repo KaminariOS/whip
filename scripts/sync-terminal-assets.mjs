@@ -253,9 +253,9 @@ const terminalHtml = `<!doctype html>
     window.herdrSubmit = data => {
       bufferedInput = '';
       terminal.paste(data);
-      const value = bufferedInput + '\\r';
+      const value = bufferedInput;
       bufferedInput = null;
-      send({ type: 'buffered-input', data: value });
+      send({ type: 'buffered-submit', data: value });
       hideToolbar();
     };
     let searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
