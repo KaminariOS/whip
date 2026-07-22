@@ -31,6 +31,8 @@ export interface DevicePreferences {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
   appearance: AppearancePreference;
+  keepScreenOn: boolean;
+  reopenTerminalOnLaunch: boolean;
   lastTab: AppTab;
   terminal: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
@@ -40,6 +42,8 @@ export const defaultDevicePreferences: DevicePreferences = {
   alertsEnabled: true,
   ttsEnabled: false,
   appearance: 'system',
+  keepScreenOn: false,
+  reopenTerminalOnLaunch: false,
   lastTab: 'hosts',
   terminal: {
     fontSize: 8,
@@ -93,6 +97,8 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
       appearance: isAppearancePreference(parsed.appearance)
         ? parsed.appearance
         : defaultDevicePreferences.appearance,
+      keepScreenOn: parsed.keepScreenOn === true,
+      reopenTerminalOnLaunch: parsed.reopenTerminalOnLaunch === true,
       lastTab: isAppTab(parsed.lastTab) ? parsed.lastTab : defaultDevicePreferences.lastTab,
       terminalControlUsage: parseTerminalControlUsage(parsed.terminalControlUsage),
       terminal: {

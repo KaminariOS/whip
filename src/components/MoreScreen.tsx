@@ -20,10 +20,14 @@ export function MoreScreen(props: Props) {
         alertsEnabled={props.alertsEnabled}
         ttsEnabled={props.ttsEnabled}
         appearance={props.appearance}
+        keepScreenOn={props.keepScreenOn}
+        reopenTerminalOnLaunch={props.reopenTerminalOnLaunch}
         terminalPreferences={props.terminalPreferences}
         onAlertsChange={props.onAlertsChange}
         onTtsChange={props.onTtsChange}
         onAppearanceChange={props.onAppearanceChange}
+        onKeepScreenOnChange={props.onKeepScreenOnChange}
+        onReopenTerminalOnLaunchChange={props.onReopenTerminalOnLaunchChange}
         onTerminalPreferencesChange={props.onTerminalPreferencesChange}
         onDisconnect={props.onDisconnect}
       />
