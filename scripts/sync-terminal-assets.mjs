@@ -128,7 +128,7 @@ const terminalHtml = `<!doctype html>
     #terminal-background-glass { position: absolute; inset: 0; }
     #terminal { position: relative; z-index: 1; box-sizing: border-box; }
     .xterm { height: 100%; }
-    .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; }
+    .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; background-color: transparent !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     .xterm .scrollbar { display: none !important; }
     #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #2f2f2f; border: 1px solid #424242; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
