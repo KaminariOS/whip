@@ -1241,7 +1241,9 @@ function AppContent() {
   }));
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom', 'left', 'right']}>
+    <SafeAreaView
+      className="flex-1 bg-background"
+      edges={immersiveTerminal ? ['top', 'left', 'right'] : ['top', 'bottom', 'left', 'right']}>
       {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
       <View className="flex-1 bg-background">
         <View className="flex-1 bg-background">

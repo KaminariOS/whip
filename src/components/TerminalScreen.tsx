@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, MessageCircle, Send, X } from 'lucide-react-native';
-import { AppState, Clipboard, Keyboard, ScrollView, View, type GestureResponderHandlers } from 'react-native';
+import { AppState, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -70,6 +71,7 @@ const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 
 export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
   const { t } = useTranslation();
+  const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
   const status = session?.status || 'connecting';
@@ -253,7 +255,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 
   useEffect(() => {
     if (!ready) return;
-    webView.current?.injectJavaScript(`window.herdrConfigure(${JSON.stringify(preferences)}); true;`);
+    webView.current?.injectJavaScript(`window.herdrConfigure(${JSON.stringify({ ...preferences, backgroundImageUri: null })}); true;`);
   }, [preferences, ready]);
 
   useEffect(() => {
@@ -474,6 +476,24 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
       className={cn('flex-1 bg-transparent', (!presented || !session) && 'absolute inset-0 opacity-0')}>
+      {preferences.backgroundImageUri && (
+        <View
+          accessibilityElementsHidden
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { mixBlendMode: 'screen' }]}>
+          <Image
+            resizeMode="cover"
+            source={{ uri: preferences.backgroundImageUri }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: `rgba(0,0,0,${preferences.backgroundDimming / 100})` },
+            ]}
+          />
+        </View>
+      )}
       {!compact && (
         <View className="h-[30px] flex-row items-center gap-2 border-b border-[#424242] bg-[#181818] px-3">
           <View className="size-1.5 rounded-full bg-white" />
@@ -592,8 +612,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           horizontal
           keyboardShouldPersistTaps="always"
           showsHorizontalScrollIndicator={false}
-          className="flex-grow-0 border-t border-[#424242] bg-[#181818]"
-          contentContainerClassName="items-center gap-[5px] px-1.5 py-[7px]">
+          className="flex-grow-0"
+          contentContainerClassName="items-center gap-[5px] px-1.5 pt-[7px]"
+          contentContainerStyle={{ paddingBottom: 7 + (keyboardVisible ? 0 : bottomSafeAreaInset) }}>
           {controlOrder.map(renderTerminalControl)}
         </ScrollView>
       </View>

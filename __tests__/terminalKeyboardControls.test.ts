@@ -24,6 +24,9 @@ describe('terminal keyboard controls', () => {
     expect(screen).toContain(
       'style={keyboardInset > 0 ? { marginBottom: keyboardInset } : undefined}',
     );
+    expect(screen).toContain('contentContainerStyle={{ paddingBottom: 7 + (keyboardVisible ? 0 : bottomSafeAreaInset) }}');
+    expect(screen).toContain("source={{ uri: preferences.backgroundImageUri }}");
+    expect(screen).toContain('backgroundImageUri: null');
     expect(webView).toBeGreaterThanOrEqual(0);
     expect(controlsWrapper).toBeGreaterThan(webView);
     expect(controls).toBeGreaterThan(controlsWrapper);
