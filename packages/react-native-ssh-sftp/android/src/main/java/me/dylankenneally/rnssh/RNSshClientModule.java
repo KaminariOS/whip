@@ -1435,6 +1435,44 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
+  public void openLocalForward(final String remoteHost, final Integer remotePort, final String key, final Callback callback) {
+    new Thread(new Runnable() {
+      public void run() {
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client == null || client._session == null || !client._session.isConnected()) {
+            callback.invoke("SSH connection is not active");
+            return;
+          }
+          int localPort = client._session.setPortForwardingL("127.0.0.1", 0, remoteHost, remotePort);
+          callback.invoke(null, localPort);
+        } catch (Exception error) {
+          Log.e(LOGTAG, "Failed to open local forward: " + error.getMessage());
+          callback.invoke(error.getMessage());
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
+  public void closeLocalForward(final Integer localPort, final String key, final Callback callback) {
+    new Thread(new Runnable() {
+      public void run() {
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client != null && client._session != null && client._session.isConnected()) {
+            client._session.delPortForwardingL("127.0.0.1", localPort);
+          }
+          callback.invoke();
+        } catch (Exception error) {
+          Log.e(LOGTAG, "Failed to close local forward: " + error.getMessage());
+          callback.invoke(error.getMessage());
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
   public void disconnect(final String key) {
     SSHClient client = clientPool.remove(key);
     if (client != null) {

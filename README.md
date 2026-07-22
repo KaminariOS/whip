@@ -35,12 +35,12 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
     <td align="center"><strong>Watch the whole herd</strong><br>Merge open hosts into one attention queue, then scope it to a host or space.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/terminal.png" alt="Whip terminal showing live agent output, tab controls, a scroll indicator, and mobile keys" width="320"></td>
-    <td align="center"><img src="assets/screenshots/settings.png" alt="Whip Settings screen showing notifications, speech, appearance, and terminal preferences" width="320"></td>
+    <td align="center"><img src="assets/screenshots/terminal.png" alt="Whip terminal showing open tabs, the web-link browser action, and mobile keys" width="320"></td>
+    <td align="center"><img src="assets/screenshots/settings.png" alt="Whip More screen showing connection, notification, speech, and security settings" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Work from anywhere</strong><br>Open a selected pane in the full-width terminal with touch scrolling and mobile controls.</td>
-    <td align="center"><strong>Tune your workflow</strong><br>Configure agent alerts, speech, appearance, font size, and scrollback.</td>
+    <td align="center"><strong>Work from anywhere</strong><br>Open a selected pane in the full-width terminal, then collect its web links in one tap.</td>
+    <td align="center"><strong>Tune your workflow</strong><br>Configure agent alerts, speech, security, appearance, and terminal behavior.</td>
   </tr>
 </table>
 
@@ -54,6 +54,7 @@ Screenshots were captured from the current Whip Android build on a Pixel 9 Pro.
 - Create, focus, rename, split, zoom, inspect, and close space resources.
 - Launch agents, send direct prompts, and send commands or special keys to a pane.
 - Attach to any selected pane through an immersive, xterm-compatible terminal.
+- Scan terminal scrollback for web links and open local or LAN services in the in-app browser through an on-demand SSH tunnel.
 - Use ANSI colors, modifier keys, touch scrolling, Page Up/Down, a position indicator, double-tap Tab, live resizing, and configurable terminal appearance.
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
 - Save password or private-key credentials with Android Keystore and encrypted, device-authenticated Block Store recovery.
@@ -97,7 +98,7 @@ Whip accepts Herdr releases that report protocol 17 and rejects other protocol v
 
 Whip connects directly from Android to the configured SSH host. There is no Whip-operated relay service, and Herdr remains bound to the host as usual.
 
-While Whip is foregrounded, native screens receive workspace, tab, pane, and agent state from Herdr. Actions map to the existing Herdr CLI surfaces. Opening a pane terminal uses Herdr's remote client bridge over the same SSH connection, with live input, resize, and render frames.
+While Whip is foregrounded, native screens receive workspace, tab, pane, and agent state from Herdr. Actions map to the existing Herdr CLI surfaces. Opening a pane terminal uses Herdr's remote client bridge over the same SSH connection, with live input, resize, and render frames. Links found in terminal scrollback open directly when they are public; loopback and private-network addresses are forwarded through the active SSH connection first.
 
 The current SSH dependency does not pin host keys. Use Whip only over a trusted network until known-host verification is implemented. See [SECURITY.md](SECURITY.md) for the current security posture and [PRIVACY.md](PRIVACY.md) for the data flow and on-device storage details.
 

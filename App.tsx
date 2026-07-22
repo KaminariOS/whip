@@ -1,6 +1,7 @@
 import './global.css';
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocales } from 'expo-localization';
@@ -112,7 +113,17 @@ import {
 import { useTheme } from './src/theme';
 import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
+import { guiFontFamilies } from './src/lib/guiFonts';
 import i18n, { languageForLocale } from './src/i18n';
+
+const guiFontAssets = {
+  [guiFontFamilies.regular]: require('./assets/gui-fonts/Inter-Regular.ttf'),
+  [guiFontFamilies.medium]: require('./assets/gui-fonts/Inter-Medium.ttf'),
+  [guiFontFamilies.semiBold]: require('./assets/gui-fonts/Inter-SemiBold.ttf'),
+  [guiFontFamilies.bold]: require('./assets/gui-fonts/Inter-Bold.ttf'),
+  [guiFontFamilies.extraBold]: require('./assets/gui-fonts/Inter-ExtraBold.ttf'),
+  [guiFontFamilies.black]: require('./assets/gui-fonts/Inter-Black.ttf'),
+};
 
 interface LiveRuntime {
   client: HerdrClient;
@@ -157,7 +168,10 @@ function disposeRuntimes(target: Map<string, LiveRuntime>): void {
 }
 
 function App() {
+  const [guiFontsLoaded, guiFontError] = useFonts(guiFontAssets);
   const { colors: theme, isDark } = useTheme();
+  if (!guiFontsLoaded && !guiFontError) return null;
+
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.canvas} />
@@ -199,6 +213,7 @@ function AppContent() {
   const [liveSessions, setLiveSessions] = useState(emptyLiveHostSessions);
   const [navigation, setNavigation] = useState(initialMobileNavigation);
   const [herdHostFilterId, setHerdHostFilterId] = useState<string | null>(null);
+  const [herdWorkspaceFilterIds, setHerdWorkspaceFilterIds] = useState<Record<string, string | null>>({});
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
@@ -790,6 +805,12 @@ function AppContent() {
     }
     setSelectedPaneId(null);
     setHerdHostFilterId(current => current === sessionId ? null : current);
+    setHerdWorkspaceFilterIds(current => {
+      if (!(sessionId in current)) return current;
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
     setLiveSessions(current => {
       const next = closeLiveHostSession(current, sessionId);
       if (next.sessions.length === 0) {
@@ -995,6 +1016,22 @@ function AppContent() {
     setNavigation(current => selectMobileTab(current, tab));
   }, []);
 
+  const setHerdWorkspaceFilter = useCallback((sessionId: string, workspaceId: string | null) => {
+    setHerdWorkspaceFilterIds(current => current[sessionId] === workspaceId
+      ? current
+      : { ...current, [sessionId]: workspaceId });
+  }, []);
+
+  const exitTerminalToHerd = useCallback((sessionId: string) => {
+    const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+    const activeTerminalId = session?.terminals.activeTerminalId;
+    const activePane = session?.snapshot.panes.find(pane => pane.terminal_id === activeTerminalId);
+    const workspaceId = activePane?.workspace_id || session?.selection.workspaceId;
+    setHerdHostFilterId(sessionId);
+    if (workspaceId) setHerdWorkspaceFilter(sessionId, workspaceId);
+    setNavigation(current => selectMobileTab(current, 'herd'));
+  }, [setHerdWorkspaceFilter]);
+
   const connectSavedHost = async (host: HostProfile) => {
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === host.id);
     if (existing) {
@@ -1117,6 +1154,9 @@ function AppContent() {
   const selectedHerdHostId = herdHostFilterId && liveSessions.sessions.some(session => session.id === herdHostFilterId)
     ? herdHostFilterId
     : null;
+  const selectedHerdWorkspaceId = selectedHerdHostId
+    ? herdWorkspaceFilterIds[selectedHerdHostId] ?? null
+    : null;
   const herdQueues: HerdHostQueue[] = liveSessions.sessions.map(session => ({
     id: session.id,
     label: hostDisplayName(session.host),
@@ -1205,7 +1245,6 @@ function AppContent() {
   const terminalVisible = navigation.tab === 'terminal' && !editorProfile;
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
   const activeTerminalVisible = immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
-  const totalTerminalCount = liveSessions.sessions.reduce((total, session) => total + session.terminals.sessions.length, 0);
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
     hostId: session.id,
     label: hostDisplayName(session.host),
@@ -1215,10 +1254,13 @@ function AppContent() {
   }));
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom', 'left', 'right']}>
+    <SafeAreaView
+      className="flex-1 bg-background"
+      edges={['top', 'left', 'right']}>
       {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
       <View className="flex-1 bg-background">
-        <View className="flex-1 bg-background">
+        {!immersiveTerminal && (
+          <View className="flex-1 bg-background">
           {navigation.tab === 'hosts' && (
             <HostsScreen
               hosts={hosts}
@@ -1248,7 +1290,9 @@ function AppContent() {
                 queues={herdQueues}
                 sessions={railSessions}
                 selectedHostId={selectedHerdHostId}
+                workspaceFilterId={selectedHerdWorkspaceId}
                 onSelectHost={selectHerdHost}
+                onWorkspaceFilterChange={setHerdWorkspaceFilter}
                 onCloseHost={closeLiveHost}
                 onNewHost={() => selectTab('hosts')}
                 onSelectWorkspace={selectHerdWorkspace}
@@ -1296,35 +1340,37 @@ function AppContent() {
             />
           )}
 
-          {liveSessions.sessions.map(session => {
-            const runtime = runtimes.current.get(session.id);
-            if (!runtime) return null;
-            return (
-              <LiveSessionView
-                key={session.id}
-                session={session}
-                client={runtime.client}
-                visible={terminalVisible && session.id === activeSession?.id}
-                terminalPreferences={terminalPreferences}
-                terminalControlUsage={terminalControlUsage}
-                onTerminalFontSizeChange={updateTerminalFontSize}
-                onTerminalControlUse={recordTerminalControlUse}
-                onExit={() => selectTab('herd')}
-                onRefresh={refreshHost}
-                onOpenPane={(sessionId, pane) => {
-                  setLiveSessions(current => selectLiveHostSession(current, sessionId));
-                  setSelectedPaneId(pane.pane_id);
-                }}
-                onActivateTerminal={activatePaneTerminal}
-                onCloseTerminal={closeTerminal}
-                onTerminalStatus={updateTerminalStatus}
-              />
-            );
-          })}
-        </View>
+          </View>
+        )}
+
+        {liveSessions.sessions.map(session => {
+          const runtime = runtimes.current.get(session.id);
+          if (!runtime) return null;
+          return (
+            <LiveSessionView
+              key={session.id}
+              session={session}
+              client={runtime.client}
+              visible={terminalVisible && session.id === activeSession?.id}
+              terminalPreferences={terminalPreferences}
+              terminalControlUsage={terminalControlUsage}
+              onTerminalFontSizeChange={updateTerminalFontSize}
+              onTerminalControlUse={recordTerminalControlUse}
+              onExit={() => exitTerminalToHerd(session.id)}
+              onRefresh={refreshHost}
+              onOpenPane={(sessionId, pane) => {
+                setLiveSessions(current => selectLiveHostSession(current, sessionId));
+                setSelectedPaneId(pane.pane_id);
+              }}
+              onActivateTerminal={activatePaneTerminal}
+              onCloseTerminal={closeTerminal}
+              onTerminalStatus={updateTerminalStatus}
+            />
+          );
+        })}
 
         {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && (
-          <BottomNavigation activeTab={navigation.tab} sessionCount={totalTerminalCount} onSelect={selectTab} />
+          <BottomNavigation activeTab={navigation.tab} onSelect={selectTab} />
         )}
 
         {editorProfile && (

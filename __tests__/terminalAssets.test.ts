@@ -42,6 +42,7 @@ describe('Android terminal assets', () => {
     expect(html).toContain('pendingFrames.clear();');
     expect(html).toContain('background: transparent');
     expect(html).toContain('.xterm .scrollbar { display: none !important; }');
+    expect(html).toContain('background-color: transparent !important');
     expect(html).toContain('overviewRuler: { width: 1 }');
     expect(html).toContain('allowTransparency: true');
     expect(html).toContain("background: 'rgba(0,0,0,0)'");
@@ -52,9 +53,12 @@ describe('Android terminal assets', () => {
     expect(html).toContain(
       "backgroundGlass.style.backgroundColor = 'rgba(0,0,0,' + dimming",
     );
-    expect(html).toContain("foreground: '#ececec'");
-    expect(html).toContain("cursor: '#ffffff'");
-    expect(html).toContain("selectionBackground: '#67676780'");
+    expect(html).toContain("foreground: '#c0caf5'");
+    expect(html).toContain("cursor: '#c0caf5'");
+    expect(html).toContain("selectionBackground: '#283457'");
+    expect(html).toContain("blue: '#7aa2f7'");
+    expect(html).toContain("magenta: '#bb9af7'");
+    expect(html).toContain("cyan: '#7dcfff'");
     expect(html).not.toContain('#d8ff63');
 
     const inlineScript = html.match(
@@ -71,15 +75,21 @@ describe('Android terminal assets', () => {
     ];
 
     expect(embeddedFonts).toHaveLength(3);
-    expect(Buffer.from(embeddedFonts[0][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'JetBrainsMono-Regular.ttf')),
-    );
-    expect(Buffer.from(embeddedFonts[1][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'JetBrainsMono-Bold.ttf')),
-    );
-    expect(Buffer.from(embeddedFonts[2][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'SymbolsNerdFontMono-Regular.ttf')),
-    );
+    expect(
+      Buffer.from(embeddedFonts[0][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'JetBrainsMono-Regular.ttf')),
+      ),
+    ).toBe(true);
+    expect(
+      Buffer.from(embeddedFonts[1][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'JetBrainsMono-Bold.ttf')),
+      ),
+    ).toBe(true);
+    expect(
+      Buffer.from(embeddedFonts[2][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'SymbolsNerdFontMono-Regular.ttf')),
+      ),
+    ).toBe(true);
   });
 
   it.each([
@@ -98,7 +108,9 @@ describe('Android terminal assets', () => {
 
     expect(font.length).toBeGreaterThan(10_000_000);
     expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
-    expect(font).toEqual(readFileSync(resolve(sourceFonts, 'ArphicUKaiHK.ttf')));
+    expect(
+      font.equals(readFileSync(resolve(sourceFonts, 'ArphicUKaiHK.ttf'))),
+    ).toBe(true);
   });
 
   it.each([
@@ -106,9 +118,11 @@ describe('Android terminal assets', () => {
     ['JetBrainsMono-Bold.ttf', 'jetbrains-mono-bold.ttf'],
     ['SymbolsNerdFontMono-Regular.ttf', 'symbols-nerd-font-mono-regular.ttf'],
   ])('copies the vendored WezTerm face %s unchanged', (source, bundled) => {
-    expect(readFileSync(resolve(assets, bundled))).toEqual(
-      readFileSync(resolve(sourceFonts, source)),
-    );
+    expect(
+      readFileSync(resolve(assets, bundled)).equals(
+        readFileSync(resolve(sourceFonts, source)),
+      ),
+    ).toBe(true);
   });
 
   it('packages the JetBrains Mono license with the Android font assets', () => {

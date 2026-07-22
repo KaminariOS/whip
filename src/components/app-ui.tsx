@@ -95,9 +95,10 @@ export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: s
 export function AnimatedAgentStatusGlyph({ status, color, size = 18 }: { status: string; color: string; size?: number }) {
   const { motion, style, reduceMotion } = useStatusMotion(status, false);
   const frame = useSpinnerFrame(motion === 'spin' && !reduceMotion);
+  const glyphBoxSize = size + 4;
   return (
-    <Animated.View className="items-center justify-center" style={[{ width: size, height: size + 2 }, style]}>
-      <Text style={{ color, fontSize: size, lineHeight: size + 2 }}>{agentStatusGlyph(status, frame)}</Text>
+    <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
+      <Text className="text-center" style={{ color, fontSize: size, lineHeight: glyphBoxSize }}>{agentStatusGlyph(status, frame)}</Text>
     </Animated.View>
   );
 }

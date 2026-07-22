@@ -23,11 +23,32 @@ describe('session tab labels', () => {
     );
 
     expect(rail).toContain(
-      "h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px] py-0",
+      'h-8 max-w-[180px] flex-row rounded-full bg-muted px-[11px] py-0',
     );
     expect(rail).toContain(
       'max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px]',
     );
+  });
+
+  it('uses the app palette for Herd and Terminal header chrome', () => {
+    const hostRail = readFileSync(
+      resolve(__dirname, '../src/components/LiveSessionRail.tsx'),
+      'utf8',
+    );
+    const workspaceRail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
+      'utf8',
+    );
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/SessionScreen.tsx'),
+      'utf8',
+    );
+
+    expect(hostRail).toContain('border-b border-border bg-background');
+    expect(workspaceRail).toContain('border-b border-border bg-background');
+    expect(screen).toContain('h-[42px] flex-row border-b border-border bg-background');
+    expect(hostRail).not.toContain('bg-terminal-panel');
+    expect(workspaceRail).not.toContain('bg-terminal-panel');
   });
 
   it('leaves enough vertical space for Android font descenders', () => {

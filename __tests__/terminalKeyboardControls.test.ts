@@ -24,6 +24,9 @@ describe('terminal keyboard controls', () => {
     expect(screen).toContain(
       'style={keyboardInset > 0 ? { marginBottom: keyboardInset } : undefined}',
     );
+    expect(screen).toContain('contentContainerStyle={{ paddingBottom: 7 + (keyboardVisible ? 0 : bottomSafeAreaInset) }}');
+    expect(screen).toContain("source={{ uri: preferences.backgroundImageUri }}");
+    expect(screen).toContain('backgroundImageUri: null');
     expect(webView).toBeGreaterThanOrEqual(0);
     expect(controlsWrapper).toBeGreaterThan(webView);
     expect(controls).toBeGreaterThan(controlsWrapper);
@@ -41,6 +44,9 @@ describe('terminal keyboard controls', () => {
     );
     expect(screen).toContain('{controlOrder.map(renderTerminalControl)}');
     expect(screen).toContain('onControlUse(control);');
+    expect(screen).toContain('border border-border bg-card');
+    expect(screen).toContain("ctrl === 'locked' && 'border-primary bg-primary'");
+    expect(screen).toContain("ctrl === 'locked' && 'text-primary-foreground'");
     expect(screen).not.toContain('CTRL+C');
   });
 });
