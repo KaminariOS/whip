@@ -1,6 +1,7 @@
 import './global.css';
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocales } from 'expo-localization';
@@ -112,7 +113,17 @@ import {
 import { useTheme } from './src/theme';
 import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
+import { guiFontFamilies } from './src/lib/guiFonts';
 import i18n, { languageForLocale } from './src/i18n';
+
+const guiFontAssets = {
+  [guiFontFamilies.regular]: require('./assets/gui-fonts/Inter-Regular.ttf'),
+  [guiFontFamilies.medium]: require('./assets/gui-fonts/Inter-Medium.ttf'),
+  [guiFontFamilies.semiBold]: require('./assets/gui-fonts/Inter-SemiBold.ttf'),
+  [guiFontFamilies.bold]: require('./assets/gui-fonts/Inter-Bold.ttf'),
+  [guiFontFamilies.extraBold]: require('./assets/gui-fonts/Inter-ExtraBold.ttf'),
+  [guiFontFamilies.black]: require('./assets/gui-fonts/Inter-Black.ttf'),
+};
 
 interface LiveRuntime {
   client: HerdrClient;
@@ -157,7 +168,10 @@ function disposeRuntimes(target: Map<string, LiveRuntime>): void {
 }
 
 function App() {
+  const [guiFontsLoaded, guiFontError] = useFonts(guiFontAssets);
   const { colors: theme, isDark } = useTheme();
+  if (!guiFontsLoaded && !guiFontError) return null;
+
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.canvas} />
