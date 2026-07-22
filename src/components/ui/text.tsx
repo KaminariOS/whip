@@ -1,4 +1,5 @@
 import { cn } from '@/src/lib/utils';
+import { guiFontFamilyForClasses } from '@/src/lib/guiFonts';
 import { Slot } from '@rn-primitives/slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
@@ -40,15 +41,18 @@ const ARIA_LEVEL: Partial<Record<TextVariant, string>> = { h1: '1', h2: '2', h3:
 
 const TextClassContext = React.createContext<string | undefined>(undefined);
 
-function Text({ className, asChild = false, variant = 'default', ...props }:
+function Text({ className, asChild = false, variant = 'default', style, ...props }:
   React.ComponentProps<typeof RNText> & React.RefAttributes<typeof RNText> & TextVariantProps & { asChild?: boolean }) {
   const textClass = React.useContext(TextClassContext);
   const Component = asChild ? Slot : RNText;
+  const resolvedClassName = cn(textVariants({ variant }), textClass, className);
+  const fontFamily = guiFontFamilyForClasses(resolvedClassName);
   return (
     <Component
-      className={cn(textVariants({ variant }), textClass, className)}
+      className={resolvedClassName}
       role={variant ? ROLE[variant] : undefined}
       aria-level={variant ? ARIA_LEVEL[variant] : undefined}
+      style={fontFamily ? [{ fontFamily }, style] : style}
       {...props}
     />
   );
