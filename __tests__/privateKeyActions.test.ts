@@ -24,7 +24,16 @@ test('uses key action sheets instead of exposing the private key in a text area'
   expect(connectionScreen).toContain("t('connection.pasteClipboard')");
   expect(connectionScreen).toContain("t('connection.selectFile')");
   expect(connectionScreen).toContain("t('connection.generateNew')");
+  expect(connectionScreen).toContain("t('keychain.useGlobal')");
   expect(connectionScreen).not.toContain("multiline={profile.authMode === 'key'}");
+});
+
+test('requires biometric unlock before listing reusable global keys', () => {
+  const service = readFileSync(resolve(__dirname, '../src/services/globalSshKeychain.ts'), 'utf8');
+  const authentication = service.indexOf('await authenticateGlobalKeychain()');
+  const keyRead = service.indexOf('return loadGlobalSshKeyMaterials()');
+  expect(authentication).toBeGreaterThan(-1);
+  expect(authentication).toBeLessThan(keyRead);
 });
 
 test('registers a bounded Android document picker for private key files', () => {

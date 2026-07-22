@@ -11,5 +11,7 @@
     <string name="credential_unlock_subtitle">Use your fingerprint, face, or device screen lock</string>
     <string name="app_unlock_title">Unlock Whip</string>
     <string name="app_unlock_subtitle">Use your fingerprint or face to continue</string>
+    <string name="global_keychain_unlock_title">Unlock global SSH keychain</string>
+    <string name="global_keychain_unlock_subtitle">Use your fingerprint or face to access your private keys</string>
     <string name="biometric_cancel">Cancel</string>
 </resources>

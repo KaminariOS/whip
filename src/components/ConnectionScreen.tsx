@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { normalizePrivateKey } from '@/src/lib/privateKey';
 import { cn } from '@/src/lib/utils';
-import type { ConnectionProfile } from '@/src/types';
+import type { ConnectionProfile, GlobalSshKeyMaterial } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -23,6 +23,7 @@ interface Props {
   onConnect: (profile: ConnectionProfile) => void;
   onDelete?: () => void;
   onAuthenticatePrivateKey?: () => Promise<boolean>;
+  onLoadGlobalKeys?: () => Promise<GlobalSshKeyMaterial[] | null>;
 }
 
 type KeyInspection =
@@ -37,11 +38,12 @@ type PrivateKeyFilePickerModule = {
 
 const privateKeyFilePicker = NativeModules.PrivateKeyFilePicker as PrivateKeyFilePickerModule | undefined;
 
-export function ConnectionScreen({ initialProfile, connecting, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey }: Props) {
+export function ConnectionScreen({ initialProfile, connecting, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys }: Props) {
   const { t } = useTranslation();
   const [profile, setProfile] = useState(initialProfile);
   const [keyInspection, setKeyInspection] = useState<KeyInspection>({ state: 'idle' });
   const [keyActionsOpen, setKeyActionsOpen] = useState(false);
+  const [globalKeys, setGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [generatingKey, setGeneratingKey] = useState(false);
 
   useEffect(() => { setProfile(initialProfile); setKeyActionsOpen(false); }, [initialProfile]);
@@ -136,6 +138,27 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
       setGeneratingKey(false);
     }
   };
+  const useGlobalKeychain = async () => {
+    setKeyActionsOpen(false);
+    if (!onLoadGlobalKeys) return;
+    try {
+      const keys = await onLoadGlobalKeys();
+      if (keys === null) return;
+      if (keys.length === 0) {
+        Alert.alert(t('keychain.emptyTitle'), t('keychain.emptyPickerCopy'));
+        return;
+      }
+      setGlobalKeys(keys);
+    } catch (keychainError: any) {
+      if (keychainError?.code !== 'E_GLOBAL_KEYCHAIN_CANCELLED') {
+        Alert.alert(t('keychain.unlockError'), String(keychainError));
+      }
+    }
+  };
+  const selectGlobalKey = (key: GlobalSshKeyMaterial) => {
+    setProfile(current => ({ ...current, secret: key.secret, passphrase: key.passphrase }));
+    setGlobalKeys(null);
+  };
   const copied = (label: string) => {
     setKeyActionsOpen(false);
     if (Platform.OS === 'android') ToastAndroid.show(t('connection.copied', { label }), ToastAndroid.SHORT);
@@ -220,8 +243,15 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
         onCopyPrivate={copyPrivateKey}
         onCopyPublic={copyPublicKey}
         onGenerate={generatePrivateKey}
+        onGlobalKeychain={onLoadGlobalKeys ? useGlobalKeychain : undefined}
         onPaste={pastePrivateKey}
         onSelectFile={selectPrivateKeyFile}
+      />
+      <GlobalKeyPicker
+        keys={globalKeys || []}
+        visible={globalKeys !== null}
+        onClose={() => setGlobalKeys(null)}
+        onSelect={selectGlobalKey}
       />
     </KeyboardAvoidingView>
   );
@@ -237,13 +267,14 @@ function KeyIdentity({ fingerprint, keyType }: { fingerprint: string; keyType: s
   return <View className="min-w-0 flex-1 justify-center"><Text className="shrink font-mono text-[12px] leading-[17px]" ellipsizeMode="middle" numberOfLines={1}>{fingerprint}</Text><Text className="text-[11px] font-semibold leading-[17px] text-muted-foreground" numberOfLines={1}>{keyType}</Text></View>;
 }
 
-function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPublic, onGenerate, onPaste, onSelectFile }: {
+function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPublic, onGenerate, onGlobalKeychain, onPaste, onSelectFile }: {
   hasKey: boolean;
   visible: boolean;
   onClose: () => void;
   onCopyPrivate: () => void;
   onCopyPublic: () => void;
   onGenerate: () => void;
+  onGlobalKeychain?: () => void;
   onPaste: () => void;
   onSelectFile: () => void;
 }) {
@@ -263,11 +294,44 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
             </>
           ) : (
             <>
+              {onGlobalKeychain ? <KeyAction icon={KeyRound} label={t('keychain.useGlobal')} onPress={onGlobalKeychain} /> : null}
               <KeyAction icon={ClipboardPaste} label={t('connection.pasteClipboard')} onPress={onPaste} />
               <KeyAction icon={FileUp} label={t('connection.selectFile')} onPress={onSelectFile} />
               <KeyAction icon={Sparkles} label={t('connection.generateNew')} onPress={onGenerate} />
             </>
           )}
+          <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function GlobalKeyPicker({ keys, visible, onClose, onSelect }: {
+  keys: GlobalSshKeyMaterial[];
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (key: GlobalSshKeyMaterial) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <Pressable accessibilityLabel={t('keychain.closePicker')} className="flex-1 justify-end bg-black/55" onPress={onClose}>
+        <Pressable className="max-h-[72%] rounded-t-[28px] border-t border-border bg-card px-4 pb-8 pt-5" onPress={event => event.stopPropagation()}>
+          <Text className="px-2 text-lg font-semibold">{t('keychain.chooseKey')}</Text>
+          <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">{t('keychain.chooseKeyCopy')}</Text>
+          <ScrollView>
+            {keys.map(key => (
+              <Button key={key.id} className="min-h-[68px] justify-start rounded-xl px-3 py-2" size="content" variant="ghost" onPress={hapticPress(() => onSelect(key))}>
+                <Icon as={KeyRound} size={19} />
+                <View className="ml-1 min-w-0 flex-1">
+                  <Text className="text-[15px] font-medium" numberOfLines={1}>{key.name}</Text>
+                  <Text className="mt-0.5 font-mono text-[11px] text-muted-foreground" ellipsizeMode="middle" numberOfLines={1}>{key.fingerprint}</Text>
+                  <Text className="mt-0.5 text-[11px] text-muted-foreground">{key.keyType}</Text>
+                </View>
+              </Button>
+            ))}
+          </ScrollView>
           <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
         </Pressable>
       </Pressable>

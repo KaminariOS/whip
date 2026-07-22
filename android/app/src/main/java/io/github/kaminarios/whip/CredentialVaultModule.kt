@@ -135,15 +135,42 @@ class CredentialVaultModule(
 
   @ReactMethod
   fun authenticateAppAccess(promise: Promise) {
+    authenticateStrongBiometric(
+      promise,
+      buildAppPromptInfo(),
+      "E_APP_AUTH_CANCELLED",
+      "E_APP_AUTH_FAILED",
+      "E_APP_AUTH_BUSY",
+    )
+  }
+
+  @ReactMethod
+  fun authenticateGlobalKeychain(promise: Promise) {
+    authenticateStrongBiometric(
+      promise,
+      buildGlobalKeychainPromptInfo(),
+      "E_GLOBAL_KEYCHAIN_CANCELLED",
+      "E_GLOBAL_KEYCHAIN_AUTH",
+      "E_GLOBAL_KEYCHAIN_BUSY",
+    )
+  }
+
+  private fun authenticateStrongBiometric(
+    promise: Promise,
+    promptInfo: BiometricPrompt.PromptInfo,
+    cancelledCode: String,
+    failedCode: String,
+    busyCode: String,
+  ) {
     val activity = context.currentActivity as? FragmentActivity
       ?: return promise.reject(
-        "E_APP_AUTH_ACTIVITY",
+        failedCode,
         "Biometric authentication requires the active Whip screen",
       )
 
     context.runOnUiQueueThread {
       if (pendingUnlock != null || pendingAppAuthentication != null) {
-        promise.reject("E_APP_AUTH_BUSY", "Biometric authentication is already in progress")
+        promise.reject(busyCode, "Biometric authentication is already in progress")
         return@runOnUiQueueThread
       }
       pendingAppAuthentication = promise
@@ -161,16 +188,16 @@ class CredentialVaultModule(
               if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
                 errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
                 errorCode == BiometricPrompt.ERROR_CANCELED
-              ) "E_APP_AUTH_CANCELLED" else "E_APP_AUTH_FAILED",
+              ) cancelledCode else failedCode,
               errorMessage.toString(),
             )
           }
         },
       )
       try {
-        activePrompt?.authenticate(buildAppPromptInfo())
+        activePrompt?.authenticate(promptInfo)
       } catch (error: Throwable) {
-        finishAppAuthenticationError("E_APP_AUTH_FAILED", error)
+        finishAppAuthenticationError(failedCode, error)
       }
     }
   }
@@ -212,6 +239,14 @@ class CredentialVaultModule(
     BiometricPrompt.PromptInfo.Builder()
       .setTitle(reactApplicationContext.getString(R.string.app_unlock_title))
       .setSubtitle(reactApplicationContext.getString(R.string.app_unlock_subtitle))
+      .setAllowedAuthenticators(BIOMETRIC_STRONG)
+      .setNegativeButtonText(reactApplicationContext.getString(R.string.biometric_cancel))
+      .build()
+
+  private fun buildGlobalKeychainPromptInfo(): BiometricPrompt.PromptInfo =
+    BiometricPrompt.PromptInfo.Builder()
+      .setTitle(reactApplicationContext.getString(R.string.global_keychain_unlock_title))
+      .setSubtitle(reactApplicationContext.getString(R.string.global_keychain_unlock_subtitle))
       .setAllowedAuthenticators(BIOMETRIC_STRONG)
       .setNegativeButtonText(reactApplicationContext.getString(R.string.biometric_cancel))
       .build()
