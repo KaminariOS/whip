@@ -71,15 +71,21 @@ describe('Android terminal assets', () => {
     ];
 
     expect(embeddedFonts).toHaveLength(3);
-    expect(Buffer.from(embeddedFonts[0][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'JetBrainsMono-Regular.ttf')),
-    );
-    expect(Buffer.from(embeddedFonts[1][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'JetBrainsMono-Bold.ttf')),
-    );
-    expect(Buffer.from(embeddedFonts[2][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'SymbolsNerdFontMono-Regular.ttf')),
-    );
+    expect(
+      Buffer.from(embeddedFonts[0][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'JetBrainsMono-Regular.ttf')),
+      ),
+    ).toBe(true);
+    expect(
+      Buffer.from(embeddedFonts[1][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'JetBrainsMono-Bold.ttf')),
+      ),
+    ).toBe(true);
+    expect(
+      Buffer.from(embeddedFonts[2][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'SymbolsNerdFontMono-Regular.ttf')),
+      ),
+    ).toBe(true);
   });
 
   it.each([
@@ -98,7 +104,9 @@ describe('Android terminal assets', () => {
 
     expect(font.length).toBeGreaterThan(10_000_000);
     expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
-    expect(font).toEqual(readFileSync(resolve(sourceFonts, 'ArphicUKaiHK.ttf')));
+    expect(
+      font.equals(readFileSync(resolve(sourceFonts, 'ArphicUKaiHK.ttf'))),
+    ).toBe(true);
   });
 
   it.each([
@@ -106,9 +114,11 @@ describe('Android terminal assets', () => {
     ['JetBrainsMono-Bold.ttf', 'jetbrains-mono-bold.ttf'],
     ['SymbolsNerdFontMono-Regular.ttf', 'symbols-nerd-font-mono-regular.ttf'],
   ])('copies the vendored WezTerm face %s unchanged', (source, bundled) => {
-    expect(readFileSync(resolve(assets, bundled))).toEqual(
-      readFileSync(resolve(sourceFonts, source)),
-    );
+    expect(
+      readFileSync(resolve(assets, bundled)).equals(
+        readFileSync(resolve(sourceFonts, source)),
+      ),
+    ).toBe(true);
   });
 
   it('packages the JetBrains Mono license with the Android font assets', () => {
