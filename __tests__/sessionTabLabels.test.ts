@@ -23,7 +23,7 @@ describe('session tab labels', () => {
     );
 
     expect(rail).toContain(
-      "h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px] py-0",
+      'h-8 max-w-[180px] flex-row rounded-full bg-terminal-surface px-[11px] py-0',
     );
     expect(rail).toContain(
       'max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px]',

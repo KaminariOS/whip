@@ -15,7 +15,7 @@ test('supports indexed colors, modifiers, reverse, and CRLF', () => {
   expect(segments[0].style.bold).toBe(true);
   expect(resolvedStyle(segments[0].style)).toMatchObject({
     foreground: '#00005f',
-    background: '#d8ff63',
+    background: '#9fe044',
   });
 });
 

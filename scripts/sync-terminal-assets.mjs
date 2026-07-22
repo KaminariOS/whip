@@ -131,9 +131,9 @@ const terminalHtml = `<!doctype html>
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; background-color: transparent !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     .xterm .scrollbar { display: none !important; }
-    #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #2f2f2f; border: 1px solid #424242; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
-    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #ececec; padding: 8px 10px; font: 700 10px '${fontManifest.text.cssFamily}', monospace; }
-    #selection-toolbar button:active { background: #ffffff; color: #0d0d0d; }
+    #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #24283b; border: 1px solid #414868; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
+    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #c0caf5; padding: 8px 10px; font: 700 10px '${fontManifest.text.cssFamily}', monospace; }
+    #selection-toolbar button:active { background: #7aa2f7; color: #16161e; }
   </style>
 </head>
 <body>
@@ -171,12 +171,12 @@ const terminalHtml = `<!doctype html>
       scrollback: 5000,
       overviewRuler: { width: 1 },
       theme: {
-        background: 'rgba(0,0,0,0)', foreground: '#ececec', cursor: '#ffffff', selectionBackground: '#67676780',
-        black: '#181818', red: '#ff6b6b', green: '#42c59a', yellow: '#f2a94a',
-        blue: '#6ea8ff', magenta: '#c792ea', cyan: '#56c7d9', white: '#ececec',
-        brightBlack: '#8e8e8e', brightRed: '#ff8b8b', brightGreen: '#70ddb6',
-        brightYellow: '#ffd080', brightBlue: '#9bc4ff', brightMagenta: '#dcb0f7',
-        brightCyan: '#87dce8', brightWhite: '#ffffff'
+        background: 'rgba(0,0,0,0)', foreground: '#c0caf5', cursor: '#c0caf5', selectionBackground: '#283457',
+        black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
+        blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
+        brightBlack: '#414868', brightRed: '#ff899d', brightGreen: '#9fe044',
+        brightYellow: '#faba4a', brightBlue: '#8db0ff', brightMagenta: '#c7a9ff',
+        brightCyan: '#a4daff', brightWhite: '#c0caf5'
       }
     });
     const fit = new FitAddon.FitAddon();

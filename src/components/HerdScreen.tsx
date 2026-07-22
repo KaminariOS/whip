@@ -192,21 +192,21 @@ export function HerdScreen({
       ) : null}
 
       {workspaceMenuOpen && selectedQueue ? (
-        <View className="min-h-[42px] flex-row items-stretch border-b border-[#424242] bg-[#181818]">
+        <View className="min-h-[42px] flex-row items-stretch border-b border-terminal-divider bg-terminal-panel">
           <WorkspaceAction label={t('herd.renameSpace')} disabled={!selectedWorkspace} onPress={() => openRenameWorkspace()} />
           <WorkspaceAction label={t('herd.closeSpace')} danger disabled={!selectedWorkspace} onPress={confirmCloseWorkspace} />
         </View>
       ) : null}
 
       {workspaceEditorMode && selectedQueue ? (
-        <View className="flex-row items-center gap-1.5 border-b border-white bg-[#2F2F2F] p-[7px]">
+        <View className="flex-row items-center gap-1.5 border-b border-terminal-accent bg-terminal-surface p-[7px]">
           <Text className="font-mono text-[8px] text-white">{workspaceEditorMode === 'rename' ? t('herd.rename') : t('herd.new')} {t('herd.space')}</Text>
-          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
+          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-terminal-divider bg-terminal-canvas px-2 font-mono text-[10px] text-terminal-text" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
           {workspaceEditorMode === 'create' ? (
-            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder={t('herd.workingDirectoryOptional')} placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
+            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-terminal-divider bg-terminal-canvas px-2 font-mono text-[10px] text-terminal-text" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder={t('herd.workingDirectoryOptional')} placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
           ) : null}
-          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-[#B4B4B4]">{t('common.cancel')}</Text></Button>
-          <Button className="h-[34px] rounded-none bg-white px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black text-[#212121]">{t('common.save')}</Text></Button>
+          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-terminal-muted">{t('common.cancel')}</Text></Button>
+          <Button className="h-[34px] rounded-none bg-terminal-accent px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black text-terminal-ink">{t('common.save')}</Text></Button>
         </View>
       ) : null}
 
@@ -320,6 +320,6 @@ function priority(status: string): number {
 
 function WorkspaceAction({ label, onPress, disabled = false, danger = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
   return (
-    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-[#424242] px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={danger ? 'text-center text-[9px] font-semibold text-[#FF6B6B]' : 'text-center text-[9px] font-semibold text-[#ECECEC]'}>{label}</Text></Button>
+    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-terminal-divider px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={danger ? 'text-center text-[9px] font-semibold text-terminal-error' : 'text-center text-[9px] font-semibold text-terminal-text'}>{label}</Text></Button>
   );
 }
