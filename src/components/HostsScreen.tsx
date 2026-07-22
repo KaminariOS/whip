@@ -71,8 +71,8 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
           ) : (
             <>
               <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('hosts.count', { count: hosts.length })}</Text>
-              <View className="overflow-hidden rounded-lg border border-border bg-card">
-                {hosts.map((host, index) => {
+              <View className="gap-3">
+                {hosts.map(host => {
                   const connecting = connectingHostId === host.id;
                   const active = activeHostId === host.id;
                   const connected = connectedHostIds.includes(host.id);
@@ -81,7 +81,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                   const displayName = hostDisplayName(host);
                   const latencyMs = latencyMsByHostId[host.id];
                   return (
-                    <View className={index > 0 ? 'min-h-[88px] flex-row items-center border-t border-border pr-2' : 'min-h-[88px] flex-row items-center pr-2'} key={host.id}>
+                    <View className="min-h-[88px] flex-row items-center rounded-lg border border-border bg-card pr-2" key={host.id}>
                       <Button
                         accessibilityLabel={t('hosts.connectTo', { host: displayName })}
                         className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
