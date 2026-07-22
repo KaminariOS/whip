@@ -37,6 +37,8 @@ interface Props {
   terminalPanHandlers?: GestureResponderHandlers;
   onFontSizeChange: (fontSize: number) => void;
   onControlUse: (control: TerminalControlId) => void;
+  linkScanRequest?: number;
+  onLinksScanned?: (links: string[]) => void;
   onClose: () => void;
   onStatus: (status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
 }
@@ -68,8 +70,9 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
+const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
 
-export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
+export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onFontSizeChange, onControlUse, linkScanRequest = 0, onLinksScanned, onClose, onStatus }: Props) {
   const { colors: appColors } = useTheme();
   const { t } = useTranslation();
   const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
@@ -260,6 +263,11 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   }, [preferences, ready]);
 
   useEffect(() => {
+    if (!linkScanRequest || !ready || !visible) return;
+    webView.current?.injectJavaScript('window.herdrScanLinks(); true;');
+  }, [linkScanRequest, ready, visible]);
+
+  useEffect(() => {
     let insetTimer: ReturnType<typeof setTimeout> | null = null;
     const show = Keyboard.addListener('keyboardDidShow', event => {
       if (insetTimer) clearTimeout(insetTimer);
@@ -353,6 +361,8 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       await pasteClipboard();
     } else if (message.type === 'search-result') {
       setSearchResult({ count: message.count, index: message.index, invalid: Boolean(message.invalid) });
+    } else if (message.type === 'link-scan-result') {
+      onLinksScanned?.(Array.isArray(message.links) ? message.links.filter((link: unknown) => typeof link === 'string') : []);
     }
   };
 
@@ -481,7 +491,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         <View
           accessibilityElementsHidden
           pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { mixBlendMode: 'screen' }]}>
+          style={[StyleSheet.absoluteFill, BACKGROUND_SCREEN_STYLE]}>
           <Image
             resizeMode="cover"
             source={{ uri: preferences.backgroundImageUri }}

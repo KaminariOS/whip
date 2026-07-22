@@ -304,6 +304,48 @@ const terminalHtml = `<!doctype html>
       }
       send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
     };
+    window.herdrScanLinks = () => {
+      const logicalLines = [];
+      let logicalLine = '';
+      for (let row = 0; row < terminal.buffer.active.length; row += 1) {
+        const bufferLine = terminal.buffer.active.getLine(row);
+        if (!bufferLine) continue;
+        if (!bufferLine.isWrapped && logicalLine) {
+          logicalLines.push(logicalLine);
+          logicalLine = '';
+        }
+        logicalLine += bufferLine.translateToString(true);
+      }
+      if (logicalLine) logicalLines.push(logicalLine);
+
+      const links = [];
+      const seen = new Set();
+      const trimUrl = candidate => {
+        let value = candidate.replace(/[.,;:!?]+$/, '');
+        for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+          const opens = value.split(open).length - 1;
+          let closes = value.split(close).length - 1;
+          while (value.endsWith(close) && closes > opens) {
+            value = value.slice(0, -1);
+            closes -= 1;
+          }
+        }
+        return value;
+      };
+      for (let index = logicalLines.length - 1; index >= 0; index -= 1) {
+        const matches = [...logicalLines[index].matchAll(/https?:[/]{2}[^\\s<>"']+/gi)];
+        for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex -= 1) {
+          const value = trimUrl(matches[matchIndex][0]);
+          try {
+            const parsed = new URL(value);
+            if (!['http:', 'https:'].includes(parsed.protocol) || seen.has(parsed.href)) continue;
+            seen.add(parsed.href);
+            links.push(parsed.href);
+          } catch {}
+        }
+      }
+      send({ type: 'link-scan-result', links });
+    };
     const resize = () => {
       fit.fit();
       const screen = terminal.element?.querySelector('.xterm-screen');

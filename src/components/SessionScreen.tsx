@@ -1,17 +1,22 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronLeft, Ellipsis, Plus, X } from 'lucide-react-native';
+import { ChevronLeft, Ellipsis, Globe2, Plus, X } from 'lucide-react-native';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
+  Modal,
   PanResponder,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import WebView from 'react-native-webview/lib/WebView.android';
 
 import { cn } from '@/src/lib/utils';
 import { serverFocusMatchesPendingPane } from '@/src/lib/terminalFocus';
+import { terminalWebLinkTarget } from '@/src/lib/terminalLinks';
 import {
   neighborTabIndex,
   shouldCommitTerminalTabSwipe,
@@ -64,6 +69,12 @@ type TerminalTabSwipe = {
   targetLabel: string;
 };
 
+interface BrowserWebViewHandle {
+  goBack: () => void;
+}
+
+const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
+
 export function SessionScreen({
   visible,
   snapshot,
@@ -82,6 +93,7 @@ export function SessionScreen({
 }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const safeAreaInsets = useSafeAreaInsets();
   const focusedWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const [workspaceId, setWorkspaceId] = useState(focusedWorkspace?.workspace_id || '');
   const [tabId, setTabId] = useState(focusedWorkspace?.active_tab_id || '');
@@ -92,7 +104,19 @@ export function SessionScreen({
   const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);
   const [terminalWidth, setTerminalWidth] = useState(0);
   const [tabSwipe, setTabSwipe] = useState<TerminalTabSwipe | null>(null);
+  const [linkScanRequest, setLinkScanRequest] = useState(0);
+  const [linksOpen, setLinksOpen] = useState(false);
+  const [terminalLinks, setTerminalLinks] = useState<string[]>([]);
+  const [linksBusy, setLinksBusy] = useState(false);
+  const [linksError, setLinksError] = useState<string | null>(null);
+  const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  const [browserDisplayUrl, setBrowserDisplayUrl] = useState('');
+  const [browserCanGoBack, setBrowserCanGoBack] = useState(false);
+  const [browserLoading, setBrowserLoading] = useState(false);
   const terminalWidthRef = useRef(0);
+  const browserWebView = useRef<BrowserWebViewHandle | null>(null);
+  const tunnelPortRef = useRef<number | null>(null);
+  const browserRequestRef = useRef(0);
   const tabSwipeTranslateX = useRef(new Animated.Value(0)).current;
   const tabSwipeRef = useRef<TerminalTabSwipe | null>(null);
   const pendingPaneFocus = useRef<string | null>(null);
@@ -123,6 +147,70 @@ export function SessionScreen({
   const activeTerminalSession = terminalState.sessions.find(
     session => session.terminalId === terminalState.activeTerminalId,
   );
+
+  const closeActiveTunnel = async () => {
+    const localPort = tunnelPortRef.current;
+    tunnelPortRef.current = null;
+    if (localPort !== null) await client.closeWebTunnel(localPort).catch(() => undefined);
+  };
+
+  const scanTerminalLinks = () => {
+    browserRequestRef.current += 1;
+    setLinksOpen(true);
+    setBrowserUrl(null);
+    setTerminalLinks([]);
+    setLinksError(null);
+    setLinksBusy(true);
+    closeActiveTunnel().catch(() => undefined);
+    setLinkScanRequest(value => value + 1);
+  };
+
+  const dismissLinks = () => {
+    browserRequestRef.current += 1;
+    setLinksOpen(false);
+    setBrowserUrl(null);
+    setBrowserCanGoBack(false);
+    closeActiveTunnel().catch(() => undefined);
+  };
+
+  const leaveBrowser = () => {
+    browserRequestRef.current += 1;
+    setBrowserUrl(null);
+    setBrowserCanGoBack(false);
+    setBrowserLoading(false);
+    closeActiveTunnel().catch(() => undefined);
+  };
+
+  const openTerminalLink = async (value: string) => {
+    const request = ++browserRequestRef.current;
+    setLinksBusy(true);
+    setLinksError(null);
+    try {
+      await closeActiveTunnel();
+      const target = terminalWebLinkTarget(value);
+      const tunnel = await client.openWebTunnel(target.url);
+      if (request !== browserRequestRef.current) {
+        if (tunnel) await client.closeWebTunnel(tunnel.localPort).catch(() => undefined);
+        return;
+      }
+      if (tunnel) tunnelPortRef.current = tunnel.localPort;
+      setBrowserDisplayUrl(target.url);
+      setBrowserUrl(tunnel?.url || target.url);
+      setBrowserCanGoBack(false);
+      setBrowserLoading(true);
+    } catch (reason) {
+      if (request === browserRequestRef.current) setLinksError(String(reason));
+    } finally {
+      if (request === browserRequestRef.current) setLinksBusy(false);
+    }
+  };
+
+  useEffect(() => () => {
+    browserRequestRef.current += 1;
+    const localPort = tunnelPortRef.current;
+    tunnelPortRef.current = null;
+    if (localPort !== null) client.closeWebTunnel(localPort).catch(() => undefined);
+  }, [client]);
 
   useEffect(() => {
     const pending = pendingFocus.current;
@@ -373,6 +461,14 @@ export function SessionScreen({
             <Button accessibilityLabel={t('session.actions')} className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
               <Ellipsis size={18} color={colors.text} />
             </Button>
+            <Button
+              accessibilityLabel={t('terminal.scanLinks')}
+              className="h-[42px] w-11 rounded-none px-0"
+              disabled={!activeTerminalSession || activeTerminalSession.status !== 'connected'}
+              variant="ghost"
+              onPress={hapticPress(scanTerminalLinks)}>
+              <Globe2 size={18} color={colors.text} />
+            </Button>
           </>
         ) : null}
       </View>
@@ -442,6 +538,12 @@ export function SessionScreen({
                 scroll={snapshot.panes.find(pane => pane.terminal_id === terminalSession.terminalId)?.scroll}
                 preferences={terminalPreferences}
                 controlUsage={terminalControlUsage}
+                linkScanRequest={linkScanRequest}
+                onLinksScanned={links => {
+                  if (terminalSession.terminalId !== activeTerminalSession?.terminalId) return;
+                  setTerminalLinks(links);
+                  setLinksBusy(false);
+                }}
                 onFontSizeChange={onTerminalFontSizeChange}
                 onControlUse={onTerminalControlUse}
                 onClose={() => onCloseTerminal(terminalSession.terminalId)}
@@ -485,6 +587,107 @@ export function SessionScreen({
             <Text className="mt-2 text-center text-terminal-muted">{t('session.emptyTabCopy')}</Text>
           </View>
         )}
+        <Modal
+          animationType="slide"
+          onRequestClose={browserUrl ? leaveBrowser : dismissLinks}
+          statusBarTranslucent
+          visible={linksOpen}>
+          <View
+            className="flex-1 bg-background"
+            style={{ paddingTop: safeAreaInsets.top, paddingBottom: safeAreaInsets.bottom }}>
+            {browserUrl ? (
+              <>
+                <View className="h-12 flex-row items-center border-b border-border bg-background">
+                  <Button
+                    accessibilityLabel={t('terminal.browserBack')}
+                    className="h-12 w-12 rounded-none px-0"
+                    variant="ghost"
+                    onPress={() => browserCanGoBack ? browserWebView.current?.goBack() : leaveBrowser()}>
+                    <ChevronLeft size={21} color={colors.text} />
+                  </Button>
+                  <View className="min-w-0 flex-1 px-1">
+                    <Text numberOfLines={1} className="text-[11px] font-semibold text-foreground">{terminalWebLinkTarget(browserDisplayUrl).hostname}</Text>
+                    <Text numberOfLines={1} className="font-mono text-[8px] text-muted-foreground">{browserDisplayUrl}</Text>
+                  </View>
+                  <Button accessibilityLabel={t('terminal.closeBrowser')} className="h-12 w-12 rounded-none px-0" variant="ghost" onPress={dismissLinks}>
+                    <X size={19} color={colors.text} />
+                  </Button>
+                </View>
+                <View className="relative flex-1 bg-white">
+                  <WebView
+                    ref={value => { browserWebView.current = value as BrowserWebViewHandle | null; }}
+                    source={{ uri: browserUrl }}
+                    javaScriptEnabled
+                    onLoadStart={() => setBrowserLoading(true)}
+                    onLoadEnd={() => setBrowserLoading(false)}
+                    onNavigationStateChange={state => setBrowserCanGoBack(state.canGoBack)}
+                    style={BROWSER_WEBVIEW_STYLE}
+                  />
+                  {browserLoading && (
+                    <View pointerEvents="none" className="absolute inset-x-0 top-0 items-center py-2">
+                      <ActivityIndicator color={colors.primary} />
+                    </View>
+        )}
+                </View>
+              </>
+            ) : (
+              <>
+                <View className="h-14 flex-row items-center border-b border-border px-4">
+                  <View className="min-w-0 flex-1">
+                    <Text className="text-[17px] font-bold text-foreground">{t('terminal.linksTitle')}</Text>
+                    <Text className="font-mono text-[8px] uppercase tracking-[1px] text-muted-foreground">{t('terminal.linksLatestFirst')}</Text>
+                  </View>
+                  <Button accessibilityLabel={t('terminal.closeLinks')} className="size-11 rounded-full px-0" variant="ghost" onPress={dismissLinks}>
+                    <X size={19} color={colors.text} />
+                  </Button>
+                </View>
+                {linksBusy ? (
+                  <View className="flex-1 items-center justify-center gap-3 p-8">
+                    <ActivityIndicator color={colors.primary} />
+                    <Text className="text-[12px] text-muted-foreground">{t('terminal.scanningLinks')}</Text>
+                  </View>
+                ) : linksError ? (
+                  <View className="flex-1 items-center justify-center p-8">
+                    <Text className="text-center text-[13px] font-semibold text-destructive">{t('terminal.linkOpenFailed')}</Text>
+                    <Text className="mt-2 text-center font-mono text-[9px] text-muted-foreground">{linksError}</Text>
+                  </View>
+                ) : terminalLinks.length ? (
+                  <ScrollView className="flex-1" contentContainerClassName="px-4 py-2">
+                    {terminalLinks.map((link, index) => {
+                      const target = terminalWebLinkTarget(link);
+                      return (
+                        <Button
+                          key={`${link}-${index}`}
+                          className="h-auto min-h-[66px] flex-row justify-start gap-3 rounded-none border-b border-border px-0 py-3"
+                          variant="ghost"
+                          onPress={() => openTerminalLink(link)}>
+                          <View className="size-9 items-center justify-center rounded-full bg-muted">
+                            <Globe2 size={17} color={colors.text} />
+                          </View>
+                          <View className="min-w-0 flex-1 items-start">
+                            <View className="flex-row items-center gap-2">
+                              <Text numberOfLines={1} className="max-w-[220px] text-[12px] font-bold text-foreground">{target.hostname}</Text>
+                              {target.requiresSshTunnel && (
+                                <Text className="rounded-full bg-primary px-2 py-0.5 font-mono text-[7px] font-black text-primary-foreground">{t('terminal.sshTunnel')}</Text>
+                              )}
+                            </View>
+                            <Text numberOfLines={2} className="mt-1 text-left font-mono text-[9px] leading-[13px] text-muted-foreground">{link}</Text>
+                          </View>
+                        </Button>
+                      );
+                    })}
+                  </ScrollView>
+                ) : (
+                  <View className="flex-1 items-center justify-center p-8">
+                    <Globe2 size={28} color={colors.textSecondary} />
+                    <Text className="mt-3 text-[14px] font-semibold text-foreground">{t('terminal.noLinks')}</Text>
+                    <Text className="mt-1 text-center text-[11px] text-muted-foreground">{t('terminal.noLinksCopy')}</Text>
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+        </Modal>
       </View>
     </View>
   );
