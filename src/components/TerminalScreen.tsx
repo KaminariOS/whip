@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, X } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, MessageCircle, Send, X } from 'lucide-react-native';
 import { AppState, Clipboard, Keyboard, ScrollView, View, type GestureResponderHandlers } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview/lib/WebView.android';
@@ -91,6 +91,8 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const [searchCase, setSearchCase] = useState(false);
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ count: 0, index: -1, invalid: false });
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeText, setComposeText] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [scrollPosition, setScrollPosition] = useState(scroll);
@@ -131,17 +133,23 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     injectFrame(frame);
   });
 
-  const sendInput = async (data: string) => {
-    const value = applyTerminalModifiers(data, ctrl, alt);
+  const writeInput = async (data: string, refocusTerminal = true): Promise<boolean> => {
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
-    if (ctrl === 'armed') setCtrl('off');
-    if (alt === 'armed') setAlt('off');
     try {
-      await client.writeToTerminal(terminalId, value);
-      if (keyboardVisible) webView.current?.injectJavaScript('window.herdrFocus(); true;');
+      await client.writeToTerminal(terminalId, data);
+      if (refocusTerminal && keyboardVisible) webView.current?.injectJavaScript('window.herdrFocus(); true;');
+      return true;
     } catch (reason) {
       setError(String(reason));
+      return false;
     }
+  };
+
+  const sendInput = async (data: string) => {
+    const value = applyTerminalModifiers(data, ctrl, alt);
+    if (ctrl === 'armed') setCtrl('off');
+    if (alt === 'armed') setAlt('off');
+    return writeInput(value);
   };
 
   useEffect(() => {
@@ -305,6 +313,8 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     }
     if (message.type === 'input') {
       await sendInput(message.data);
+    } else if (message.type === 'buffered-input') {
+      await writeInput(message.data, false);
     } else if (message.type === 'resize') {
       if (!terminalId) return;
       client.resizeTerminal(
@@ -343,6 +353,18 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     setConnectionGeneration(value => value + 1);
   };
 
+  const closeCompose = () => {
+    setComposeOpen(false);
+    setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
+  };
+
+  const submitCompose = () => {
+    if (!composeText.trim()) return;
+    const value = JSON.stringify(composeText).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+    webView.current?.injectJavaScript(`window.herdrSubmit(${value}); true;`);
+    setComposeText('');
+  };
+
   const renderTerminalControl = (control: TerminalControlId) => {
     const key = TERMINAL_KEYS[control];
     if (key) {
@@ -369,6 +391,26 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         />
       );
     }
+    if (control === 'compose') {
+      return (
+        <Button
+          key={control}
+          accessibilityLabel={t('terminal.compose')}
+          accessibilityState={{ selected: composeOpen }}
+          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', composeOpen && 'border border-white')}
+          variant="secondary"
+          onPress={() => {
+            onControlUse(control);
+            if (composeOpen) closeCompose();
+            else {
+              setSearchOpen(false);
+              setComposeOpen(true);
+            }
+          }}>
+          <MessageCircle size={16} color={colors.text} />
+        </Button>
+      );
+    }
     if (control === 'find') {
       return (
         <TerminalKey
@@ -377,6 +419,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           armed={searchOpen}
           onPress={() => {
             onControlUse(control);
+            setComposeOpen(false);
             setSearchOpen(value => !value);
           }}
         />
@@ -506,6 +549,37 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         ref={controlsRef}
         collapsable={false}
         style={keyboardInset > 0 ? { marginBottom: keyboardInset } : undefined}>
+        {composeOpen && (
+          <View className="flex-row items-end gap-2 border-t border-[#424242] bg-[#181818] p-2">
+            <Input
+              autoFocus
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              value={composeText}
+              onChangeText={setComposeText}
+              placeholder={t('terminal.composePlaceholder')}
+              placeholderTextColor={colors.muted}
+              className="h-[76px] min-w-0 flex-1 rounded-lg border-[#424242] bg-[#212121] px-3 py-2 font-mono text-[12px] leading-[17px] text-[#ECECEC]"
+            />
+            <View className="gap-1.5">
+              <Button
+                accessibilityLabel={t('terminal.sendBufferedInput')}
+                disabled={!composeText.trim()}
+                className="size-10 rounded-full bg-white px-0"
+                onPress={submitCompose}>
+                <Send size={17} color={colors.ink} />
+              </Button>
+              <Button
+                accessibilityLabel={t('terminal.closeCompose')}
+                className="size-10 rounded-full bg-[#2F2F2F] px-0"
+                variant="secondary"
+                onPress={closeCompose}>
+                <X size={17} color={colors.text} />
+              </Button>
+            </View>
+          </View>
+        )}
         <ScrollView
           horizontal
           keyboardShouldPersistTaps="always"
