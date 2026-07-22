@@ -50,7 +50,7 @@ describe('session tab labels', () => {
       'utf8',
     );
 
-    expect(screen).toContain('accessibilityLabel={`Close ${label} tab`}');
+    expect(screen).toContain("accessibilityLabel={t('session.closeTab', { tab: label })}");
     expect(screen).toContain('onPress={hapticPress(() => closeTab(item))}');
   });
 });

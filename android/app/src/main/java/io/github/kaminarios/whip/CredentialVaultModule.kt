@@ -153,8 +153,8 @@ class CredentialVaultModule(
   @Suppress("DEPRECATION")
   private fun buildPromptInfo(): BiometricPrompt.PromptInfo {
     val builder = BiometricPrompt.PromptInfo.Builder()
-      .setTitle("Unlock restored SSH credentials")
-      .setSubtitle("Use your fingerprint, face, or device screen lock")
+      .setTitle(reactApplicationContext.getString(R.string.credential_unlock_title))
+      .setSubtitle(reactApplicationContext.getString(R.string.credential_unlock_subtitle))
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
       builder.setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
     } else {

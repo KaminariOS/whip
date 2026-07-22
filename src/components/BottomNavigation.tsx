@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { useTheme } from '@/src/theme';
@@ -15,15 +16,16 @@ interface Props {
   onSelect: (tab: AppTab) => void;
 }
 
-const items: Array<{ tab: AppTab; label: string; icon: IconName; activeIcon: IconName }> = [
-  { tab: 'hosts', label: 'Hosts', icon: 'server-outline', activeIcon: 'server' },
-  { tab: 'herd', label: 'Herd', icon: 'people-outline', activeIcon: 'people' },
-  { tab: 'terminal', label: 'Terminal', icon: 'terminal-outline', activeIcon: 'terminal' },
-  { tab: 'more', label: 'More', icon: 'ellipsis-horizontal-circle-outline', activeIcon: 'ellipsis-horizontal-circle' },
+const items: Array<{ tab: AppTab; labelKey: string; icon: IconName; activeIcon: IconName }> = [
+  { tab: 'hosts', labelKey: 'nav.hosts', icon: 'server-outline', activeIcon: 'server' },
+  { tab: 'herd', labelKey: 'nav.herd', icon: 'people-outline', activeIcon: 'people' },
+  { tab: 'terminal', labelKey: 'nav.terminal', icon: 'terminal-outline', activeIcon: 'terminal' },
+  { tab: 'more', labelKey: 'nav.more', icon: 'ellipsis-horizontal-circle-outline', activeIcon: 'ellipsis-horizontal-circle' },
 ];
 
 export function BottomNavigation({ activeTab, sessionCount, onSelect }: Props) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   return (
     <View className="min-h-[66px] flex-row border-t border-border bg-background pt-1">
       {items.map(item => {
@@ -44,7 +46,7 @@ export function BottomNavigation({ activeTab, sessionCount, onSelect }: Props) {
                 </Badge>
               ) : null}
             </View>
-            <Text className={cn('text-[11px] font-medium leading-[15px] text-muted-foreground', active && 'text-foreground')}>{item.label}</Text>
+            <Text className={cn('text-[11px] font-medium leading-[15px] text-muted-foreground', active && 'text-foreground')}>{t(item.labelKey)}</Text>
           </Button>
         );
       })}

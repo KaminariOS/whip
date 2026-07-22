@@ -9,6 +9,6 @@ describe('About screen', () => {
     );
 
     expect(screen).toContain('Application.nativeApplicationVersion');
-    expect(screen).toContain('Version {whipVersion}');
+    expect(screen).toContain("t('common.version', { version: whipVersion })");
   });
 });

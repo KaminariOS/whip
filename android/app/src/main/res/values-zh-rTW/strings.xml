@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Whip</string>
+    <string name="herdr_background_channel">Herdr 背景監控</string>
+    <string name="herdr_background_channel_description">Herdr 保持遠端工作階段連線時顯示</string>
+    <string name="herdr_background_title">Herdr 正在背景監控</string>
+    <plurals name="herdr_background_hosts">
+        <item quantity="other">正在透過 SSH 監看 %1$d 台遠端主機</item>
+    </plurals>
+    <string name="credential_unlock_title">解鎖已還原的 SSH 認證資料</string>
+    <string name="credential_unlock_subtitle">使用指紋、臉部或裝置螢幕鎖定</string>
+</resources>

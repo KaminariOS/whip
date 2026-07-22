@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppState, Clipboard, Keyboard, ScrollView, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
@@ -66,6 +67,7 @@ const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 
 export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
+  const { t } = useTranslation();
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
   const status = session?.status || 'connecting';
@@ -168,7 +170,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     client.openTerminal(
       terminalId,
       writeFrame,
-      reason => scheduleReconnect(reason || 'The remote terminal closed.'),
+      reason => scheduleReconnect(reason || t('terminal.remoteClosed')),
     ).then(() => {
       if (active) {
         reconnectAttempt.current = 0;
@@ -186,7 +188,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
     };
-  }, [client, connectionGeneration, terminalId, visible]);
+  }, [client, connectionGeneration, t, terminalId, visible]);
 
   useEffect(() => {
     let previous = AppState.currentState;
@@ -197,7 +199,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
         if (terminalId) {
           client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
-          reportStatus('disconnected', 'Terminal released while the app is in the background.', 0);
+          reportStatus('disconnected', t('terminal.releasedInBackground'), 0);
         }
       } else if (state === 'active' && !wasActive && terminalId) {
         reconnectAttempt.current = 0;
@@ -205,7 +207,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       }
     });
     return () => subscription.remove();
-  }, [client, terminalId]);
+  }, [client, t, terminalId]);
 
   useEffect(() => {
     reconnectAttempt.current = session?.reconnectAttempt || 0;
@@ -356,7 +358,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       return (
         <TerminalKey
           key={control}
-          label="PASTE"
+          label={t('terminal.paste')}
           onPress={() => {
             onControlUse(control);
             pasteClipboard().catch(reason => setError(String(reason)));
@@ -368,7 +370,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       return (
         <TerminalKey
           key={control}
-          label="FIND"
+          label={t('terminal.find')}
           armed={searchOpen}
           onPress={() => {
             onControlUse(control);
@@ -422,12 +424,12 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         <View className="h-[30px] flex-row items-center gap-2 border-b border-[#424242] bg-[#181818] px-3">
           <View className="size-1.5 rounded-full bg-white" />
           <Text numberOfLines={1} className="flex-1 font-mono text-[9px] tracking-[1px] text-[#B4B4B4]">
-            AGENT TERMINAL · {title} · {terminalId}
+            {t('terminal.agentTitle', { title, terminalId })}
           </Text>
-          {error && <Text className="font-mono text-[8px] text-[#FF6B6B]">ATTACH FAILED</Text>}
+          {error && <Text className="font-mono text-[8px] text-[#FF6B6B]">{t('terminal.attachFailed')}</Text>}
         </View>
       )}
-      {compact && error && <Text className="bg-[#241211] px-2 py-1 font-mono text-[8px] text-[#FF6B6B]">ATTACH FAILED · {String(error)}</Text>}
+      {compact && error && <Text className="bg-[#241211] px-2 py-1 font-mono text-[8px] text-[#FF6B6B]">{t('terminal.attachFailed')} · {String(error)}</Text>}
       {searchOpen && (
         <View className="min-h-12 flex-row items-center gap-1 border-b border-[#424242] bg-[#2F2F2F] px-[7px]">
           <Input
@@ -435,7 +437,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={() => moveSearch(1)}
-            placeholder="Find in terminal"
+            placeholder={t('terminal.findPlaceholder')}
             placeholderTextColor={colors.muted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -446,9 +448,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           <Text className={cn('min-w-[34px] text-center font-mono text-[8px] text-[#B4B4B4]', (searchResult.invalid || (searchQuery && searchResult.count === 0)) && 'text-[#FF6B6B]')}>
             {searchResult.invalid ? 'ERR' : searchQuery ? `${Math.max(0, searchResult.index + 1)}/${searchResult.count}` : ''}
           </Text>
-          <Button accessibilityLabel="Previous result" className="h-[31px] w-7 rounded-none px-0" disabled={!searchResult.count} variant="ghost" onPress={() => moveSearch(-1)}><Ionicons name="chevron-up" size={16} color={colors.text} /></Button>
-          <Button accessibilityLabel="Next result" className="h-[31px] w-7 rounded-none px-0" disabled={!searchResult.count} variant="ghost" onPress={() => moveSearch(1)}><Ionicons name="chevron-down" size={16} color={colors.text} /></Button>
-          <Button accessibilityLabel="Close search" className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><Ionicons name="close" size={17} color={colors.text} /></Button>
+          <Button accessibilityLabel={t('terminal.previousResult')} className="h-[31px] w-7 rounded-none px-0" disabled={!searchResult.count} variant="ghost" onPress={() => moveSearch(-1)}><Ionicons name="chevron-up" size={16} color={colors.text} /></Button>
+          <Button accessibilityLabel={t('terminal.nextResult')} className="h-[31px] w-7 rounded-none px-0" disabled={!searchResult.count} variant="ghost" onPress={() => moveSearch(1)}><Ionicons name="chevron-down" size={16} color={colors.text} /></Button>
+          <Button accessibilityLabel={t('terminal.closeSearch')} className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><Ionicons name="close" size={17} color={colors.text} /></Button>
         </View>
       )}
       <View className="relative flex-1">
@@ -481,19 +483,19 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         <View className="absolute inset-0 z-20 items-center justify-center bg-[#212121F2] p-[30px]">
           <View className={cn('size-2 rounded-full bg-[#42C59A]', status === 'error' && 'bg-[#FF6B6B]')} />
           <Text className="mt-[15px] text-center text-[17px] font-semibold leading-[22px] text-[#ECECEC]">
-            {status === 'connecting' ? 'Connecting terminal' : status === 'disconnected' ? 'Reconnecting terminal' : 'Terminal connection failed'}
+            {status === 'connecting' ? t('terminal.connecting') : status === 'disconnected' ? t('terminal.reconnecting') : t('terminal.failed')}
           </Text>
           <Text numberOfLines={3} className="mt-2 max-w-80 text-center text-[11px] leading-[17px] text-[#B4B4B4]">
-            {session.error || error || `Opening ${title}`}
+            {session.error || error || t('terminal.opening', { title })}
           </Text>
           {status === 'disconnected' && session.reconnectAttempt > 0 && (
-            <Text className="mt-2.5 text-[11px] text-[#B4B4B4]">Attempt {session.reconnectAttempt} of {MAX_RECONNECT_ATTEMPTS}</Text>
+            <Text className="mt-2.5 text-[11px] text-[#B4B4B4]">{t('terminal.attempt', { attempt: session.reconnectAttempt, total: MAX_RECONNECT_ATTEMPTS })}</Text>
           )}
           <View className="mt-5 flex-row gap-2">
             {status !== 'connecting' && (
-              <Button className="min-h-[42px] rounded-full bg-[#ECECEC] px-4" onPress={retryNow}><Text className="text-[13px] font-semibold text-[#212121]">Retry now</Text></Button>
+              <Button className="min-h-[42px] rounded-full bg-[#ECECEC] px-4" onPress={retryNow}><Text className="text-[13px] font-semibold text-[#212121]">{t('terminal.retry')}</Text></Button>
             )}
-            <Button className="min-h-[42px] rounded-full bg-[#2F2F2F] px-4" variant="secondary" onPress={onClose}><Text className="text-[13px] font-semibold text-[#ECECEC]">Close session</Text></Button>
+            <Button className="min-h-[42px] rounded-full bg-[#2F2F2F] px-4" variant="secondary" onPress={onClose}><Text className="text-[13px] font-semibold text-[#ECECEC]">{t('terminal.closeSession')}</Text></Button>
           </View>
         </View>
       )}

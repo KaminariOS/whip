@@ -19,11 +19,11 @@ const sshModule = readFileSync(
 );
 
 test('uses key action sheets instead of exposing the private key in a text area', () => {
-  expect(connectionScreen).toContain('Copy private key');
-  expect(connectionScreen).toContain('Copy public key');
-  expect(connectionScreen).toContain('Paste from clipboard');
-  expect(connectionScreen).toContain('Select file');
-  expect(connectionScreen).toContain('Generate new Ed25519 key');
+  expect(connectionScreen).toContain("t('connection.copyPrivate')");
+  expect(connectionScreen).toContain("t('connection.copyPublic')");
+  expect(connectionScreen).toContain("t('connection.pasteClipboard')");
+  expect(connectionScreen).toContain("t('connection.selectFile')");
+  expect(connectionScreen).toContain("t('connection.generateNew')");
   expect(connectionScreen).not.toContain("multiline={profile.authMode === 'key'}");
 });
 
