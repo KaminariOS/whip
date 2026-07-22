@@ -283,6 +283,10 @@ export const en = {
   'pane.closePane': 'Close pane',
 
   'terminal.paste': 'PASTE',
+  'terminal.compose': 'Compose terminal input',
+  'terminal.composePlaceholder': 'Edit a command or message before sending…',
+  'terminal.sendBufferedInput': 'Send to terminal',
+  'terminal.closeCompose': 'Close input composer',
   'terminal.find': 'FIND',
   'terminal.agentTitle': 'AGENT TERMINAL · {{title}} · {{terminalId}}',
   'terminal.attachFailed': 'ATTACH FAILED',

@@ -199,7 +199,11 @@ const terminalHtml = `<!doctype html>
       send({ type: 'input', data: sequence });
       return false;
     });
-    terminal.onData(data => send({ type: 'input', data }));
+    let bufferedInput = null;
+    terminal.onData(data => {
+      if (bufferedInput !== null) bufferedInput += data;
+      else send({ type: 'input', data });
+    });
     terminal.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }));
     terminal.parser.registerOscHandler(52, data => {
       const separator = data.indexOf(';');
@@ -246,6 +250,14 @@ const terminalHtml = `<!doctype html>
       setTimeout(resize, 0);
     };
     window.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
+    window.herdrSubmit = data => {
+      bufferedInput = '';
+      terminal.paste(data);
+      const value = bufferedInput + '\\r';
+      bufferedInput = null;
+      send({ type: 'buffered-input', data: value });
+      hideToolbar();
+    };
     let searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
     window.herdrClearSearch = () => { terminal.clearSelection(); searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 }; };
     window.herdrSearch = (query, caseSensitive, regex, direction) => {

@@ -3,6 +3,7 @@ export const defaultTerminalControlOrder = [
   'esc',
   'tab',
   'paste',
+  'compose',
   'up',
   'left',
   'right',
