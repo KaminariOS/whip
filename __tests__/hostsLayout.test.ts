@@ -17,4 +17,14 @@ describe('host list layout', () => {
     expect(screen).toContain('h-auto min-h-[88px] min-w-0 flex-1 self-stretch');
     expect(screen).toContain('sm:h-auto');
   });
+
+  it('places vertical space between host rows', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/HostsScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain('<View className="gap-3">');
+    expect(screen).toContain('rounded-lg border border-border bg-card pr-2');
+  });
 });
