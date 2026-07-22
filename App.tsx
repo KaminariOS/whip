@@ -199,6 +199,7 @@ function AppContent() {
   const [liveSessions, setLiveSessions] = useState(emptyLiveHostSessions);
   const [navigation, setNavigation] = useState(initialMobileNavigation);
   const [herdHostFilterId, setHerdHostFilterId] = useState<string | null>(null);
+  const [herdWorkspaceFilterIds, setHerdWorkspaceFilterIds] = useState<Record<string, string | null>>({});
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
@@ -790,6 +791,12 @@ function AppContent() {
     }
     setSelectedPaneId(null);
     setHerdHostFilterId(current => current === sessionId ? null : current);
+    setHerdWorkspaceFilterIds(current => {
+      if (!(sessionId in current)) return current;
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
     setLiveSessions(current => {
       const next = closeLiveHostSession(current, sessionId);
       if (next.sessions.length === 0) {
@@ -995,6 +1002,22 @@ function AppContent() {
     setNavigation(current => selectMobileTab(current, tab));
   }, []);
 
+  const setHerdWorkspaceFilter = useCallback((sessionId: string, workspaceId: string | null) => {
+    setHerdWorkspaceFilterIds(current => current[sessionId] === workspaceId
+      ? current
+      : { ...current, [sessionId]: workspaceId });
+  }, []);
+
+  const exitTerminalToHerd = useCallback((sessionId: string) => {
+    const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+    const activeTerminalId = session?.terminals.activeTerminalId;
+    const activePane = session?.snapshot.panes.find(pane => pane.terminal_id === activeTerminalId);
+    const workspaceId = activePane?.workspace_id || session?.selection.workspaceId;
+    setHerdHostFilterId(sessionId);
+    if (workspaceId) setHerdWorkspaceFilter(sessionId, workspaceId);
+    setNavigation(current => selectMobileTab(current, 'herd'));
+  }, [setHerdWorkspaceFilter]);
+
   const connectSavedHost = async (host: HostProfile) => {
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === host.id);
     if (existing) {
@@ -1116,6 +1139,9 @@ function AppContent() {
     : null;
   const selectedHerdHostId = herdHostFilterId && liveSessions.sessions.some(session => session.id === herdHostFilterId)
     ? herdHostFilterId
+    : null;
+  const selectedHerdWorkspaceId = selectedHerdHostId
+    ? herdWorkspaceFilterIds[selectedHerdHostId] ?? null
     : null;
   const herdQueues: HerdHostQueue[] = liveSessions.sessions.map(session => ({
     id: session.id,
@@ -1248,7 +1274,9 @@ function AppContent() {
                 queues={herdQueues}
                 sessions={railSessions}
                 selectedHostId={selectedHerdHostId}
+                workspaceFilterId={selectedHerdWorkspaceId}
                 onSelectHost={selectHerdHost}
+                onWorkspaceFilterChange={setHerdWorkspaceFilter}
                 onCloseHost={closeLiveHost}
                 onNewHost={() => selectTab('hosts')}
                 onSelectWorkspace={selectHerdWorkspace}
@@ -1309,7 +1337,7 @@ function AppContent() {
                 terminalControlUsage={terminalControlUsage}
                 onTerminalFontSizeChange={updateTerminalFontSize}
                 onTerminalControlUse={recordTerminalControlUse}
-                onExit={() => selectTab('herd')}
+                onExit={() => exitTerminalToHerd(session.id)}
                 onRefresh={refreshHost}
                 onOpenPane={(sessionId, pane) => {
                   setLiveSessions(current => selectLiveHostSession(current, sessionId));
