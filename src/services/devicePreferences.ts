@@ -17,6 +17,7 @@ export interface TerminalPreferences {
   fontSize: number;
   scrollback: number;
   cursorBlink: boolean;
+  doubleTapTab: boolean;
   backgroundImageUri: string | null;
   backgroundDimming: number;
 }
@@ -56,6 +57,7 @@ export const defaultDevicePreferences: DevicePreferences = {
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
+    doubleTapTab: true,
     backgroundImageUri: null,
     backgroundDimming: 60,
   },
@@ -117,6 +119,9 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         fontSize,
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),
         cursorBlink: terminal.cursorBlink ?? defaultDevicePreferences.terminal.cursorBlink,
+        doubleTapTab: typeof terminal.doubleTapTab === 'boolean'
+          ? terminal.doubleTapTab
+          : defaultDevicePreferences.terminal.doubleTapTab,
         backgroundImageUri: typeof terminal.backgroundImageUri === 'string' && terminal.backgroundImageUri
           ? terminal.backgroundImageUri
           : null,

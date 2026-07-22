@@ -37,6 +37,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
+    doubleTapTab: true,
     backgroundImageUri: null,
     backgroundDimming: 60,
   });
@@ -75,6 +76,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       fontSize: 8,
       scrollback: 9000,
       cursorBlink: false,
+      doubleTapTab: true,
       backgroundImageUri: null,
       backgroundDimming: 60,
     },
@@ -130,6 +132,18 @@ test('loads terminal behavior toggles only when explicitly enabled', async () =>
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
+  });
+});
+
+test('allows double-tap Tab to be explicitly disabled', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapTab: false } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { doubleTapTab: false },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapTab: 'no' } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { doubleTapTab: true },
   });
 });
 
