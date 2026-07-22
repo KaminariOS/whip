@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, X } from 'lucide-react-native';
-import { AppState, Clipboard, Keyboard, ScrollView, View } from 'react-native';
+import { ChevronDown, ChevronUp, MessageCircle, Send, X } from 'lucide-react-native';
+import { AppState, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -18,7 +19,7 @@ import { applyTerminalModifiers, type TerminalModifierState } from '../lib/termi
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
 import type { TerminalSession, TerminalSessionStatus } from '../terminalSessions';
 import type { PaneScrollInfo } from '../types';
-import { colors } from '../theme';
+import { colors, useTheme } from '../theme';
 import { terminalHtml } from '../generated/terminalHtml';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -32,8 +33,12 @@ interface Props {
   preferences: TerminalPreferences;
   controlUsage: TerminalControlUsage;
   compact?: boolean;
+  preview?: boolean;
+  terminalPanHandlers?: GestureResponderHandlers;
   onFontSizeChange: (fontSize: number) => void;
   onControlUse: (control: TerminalControlId) => void;
+  linkScanRequest?: number;
+  onLinksScanned?: (links: string[]) => void;
   onClose: () => void;
   onStatus: (status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
 }
@@ -65,9 +70,12 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
+const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
 
-export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
+export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onFontSizeChange, onControlUse, linkScanRequest = 0, onLinksScanned, onClose, onStatus }: Props) {
+  const { colors: appColors } = useTheme();
   const { t } = useTranslation();
+  const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
   const status = session?.status || 'connecting';
@@ -89,11 +97,14 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const [searchCase, setSearchCase] = useState(false);
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ count: 0, index: -1, invalid: false });
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeText, setComposeText] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [scrollPosition, setScrollPosition] = useState(scroll);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
   const scrollThumb = terminalScrollThumb(scrollPosition);
+  const presented = visible || preview;
 
   useEffect(() => {
     setScrollPosition(scroll);
@@ -128,31 +139,39 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     injectFrame(frame);
   });
 
-  const sendInput = async (data: string) => {
-    const value = applyTerminalModifiers(data, ctrl, alt);
+  const writeInput = async (data: string, refocusTerminal = true): Promise<boolean> => {
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
-    if (ctrl === 'armed') setCtrl('off');
-    if (alt === 'armed') setAlt('off');
     try {
-      await client.writeToTerminal(terminalId, value);
-      if (keyboardVisible) webView.current?.injectJavaScript('window.herdrFocus(); true;');
+      await client.writeToTerminal(terminalId, data);
+      if (refocusTerminal && keyboardVisible) webView.current?.injectJavaScript('window.herdrFocus(); true;');
+      return true;
     } catch (reason) {
       setError(String(reason));
+      return false;
     }
   };
 
+  const sendInput = async (data: string) => {
+    const value = applyTerminalModifiers(data, ctrl, alt);
+    if (ctrl === 'armed') setCtrl('off');
+    if (alt === 'armed') setAlt('off');
+    return writeInput(value);
+  };
+
   useEffect(() => {
-    // Keep each renderer mounted so it preserves its last frame, but only hold
-    // an SSH channel for the terminal the user can currently see. Opening a
-    // bridge for every visited pane exhausts the server's SSH MaxSessions limit
-    // and leaves no channel available for focus and refresh commands.
+    // Visibility activates and touches the terminal's per-host LRU entry. The
+    // bridge stays attached when navigating elsewhere in the app, while the
+    // client evicts older hidden terminals before reaching SSH MaxSessions.
     if (!terminalId || !visible) return;
     if (AppState.currentState !== 'active') return;
     let active = true;
-    resetOnNextFrame.current = true;
-    pendingFrames.current = [];
+    const retained = client.isTerminalBridgeRetained(terminalId);
+    if (!retained) {
+      resetOnNextFrame.current = true;
+      pendingFrames.current = [];
+    }
     setError(null);
-    reportStatus('connecting', undefined, reconnectAttempt.current);
+    if (!retained) reportStatus('connecting', undefined, reconnectAttempt.current);
     const scheduleReconnect = (reason: string) => {
       if (!active || AppState.currentState !== 'active') return;
       const nextAttempt = reconnectAttempt.current + 1;
@@ -186,9 +205,15 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     return () => {
       active = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
     };
   }, [client, connectionGeneration, t, terminalId, visible]);
+
+  useEffect(() => {
+    if (!terminalId) return;
+    return () => {
+      client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
+    };
+  }, [client, terminalId]);
 
   useEffect(() => {
     let previous = AppState.currentState;
@@ -234,8 +259,13 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 
   useEffect(() => {
     if (!ready) return;
-    webView.current?.injectJavaScript(`window.herdrConfigure(${JSON.stringify(preferences)}); true;`);
+    webView.current?.injectJavaScript(`window.herdrConfigure(${JSON.stringify({ ...preferences, backgroundImageUri: null })}); true;`);
   }, [preferences, ready]);
+
+  useEffect(() => {
+    if (!linkScanRequest || !ready || !visible) return;
+    webView.current?.injectJavaScript('window.herdrScanLinks(); true;');
+  }, [linkScanRequest, ready, visible]);
 
   useEffect(() => {
     let insetTimer: ReturnType<typeof setTimeout> | null = null;
@@ -302,6 +332,8 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     }
     if (message.type === 'input') {
       await sendInput(message.data);
+    } else if (message.type === 'buffered-submit') {
+      if (await writeInput(message.data, false)) await writeInput('\r', false);
     } else if (message.type === 'resize') {
       if (!terminalId) return;
       client.resizeTerminal(
@@ -329,6 +361,8 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       await pasteClipboard();
     } else if (message.type === 'search-result') {
       setSearchResult({ count: message.count, index: message.index, invalid: Boolean(message.invalid) });
+    } else if (message.type === 'link-scan-result') {
+      onLinksScanned?.(Array.isArray(message.links) ? message.links.filter((link: unknown) => typeof link === 'string') : []);
     }
   };
 
@@ -338,6 +372,18 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     reconnectAttempt.current = 0;
     onStatus('connecting', undefined, 0);
     setConnectionGeneration(value => value + 1);
+  };
+
+  const closeCompose = () => {
+    setComposeOpen(false);
+    setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
+  };
+
+  const submitCompose = () => {
+    if (!composeText.trim()) return;
+    const value = JSON.stringify(composeText).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+    webView.current?.injectJavaScript(`window.herdrSubmit(${value}); true;`);
+    setComposeText('');
   };
 
   const renderTerminalControl = (control: TerminalControlId) => {
@@ -366,6 +412,26 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         />
       );
     }
+    if (control === 'compose') {
+      return (
+        <Button
+          key={control}
+          accessibilityLabel={t('terminal.compose')}
+          accessibilityState={{ selected: composeOpen }}
+          className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', composeOpen && 'border-primary')}
+          variant="secondary"
+          onPress={() => {
+            onControlUse(control);
+            if (composeOpen) closeCompose();
+            else {
+              setSearchOpen(false);
+              setComposeOpen(true);
+            }
+          }}>
+          <MessageCircle size={16} color={appColors.text} />
+        </Button>
+      );
+    }
     if (control === 'find') {
       return (
         <TerminalKey
@@ -374,6 +440,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           armed={searchOpen}
           onPress={() => {
             onControlUse(control);
+            setComposeOpen(false);
             setSearchOpen(value => !value);
           }}
         />
@@ -390,9 +457,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           }}
           onLongPress={() => setCtrl('locked')}
           delayLongPress={450}
-          className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', ctrl === 'armed' && 'border border-white', ctrl === 'locked' && 'bg-white')}
+          className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', ctrl === 'armed' && 'border-primary', ctrl === 'locked' && 'border-primary bg-primary')}
           variant="secondary">
-          <Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', ctrl === 'armed' && 'text-white', ctrl === 'locked' && 'text-[#212121]')}>CTRL</Text>
+          <Text className={cn('font-mono text-[9px] font-bold text-foreground', ctrl === 'armed' && 'text-primary', ctrl === 'locked' && 'text-primary-foreground')}>CTRL</Text>
         </Button>
       );
     }
@@ -407,9 +474,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         }}
         onLongPress={() => setAlt('locked')}
         delayLongPress={450}
-        className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', alt === 'armed' && 'border border-white', alt === 'locked' && 'bg-white')}
+        className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', alt === 'armed' && 'border-primary', alt === 'locked' && 'border-primary bg-primary')}
         variant="secondary">
-        <Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', alt === 'armed' && 'text-white', alt === 'locked' && 'text-[#212121]')}>ALT</Text>
+        <Text className={cn('font-mono text-[9px] font-bold text-foreground', alt === 'armed' && 'text-primary', alt === 'locked' && 'text-primary-foreground')}>ALT</Text>
       </Button>
     );
   };
@@ -419,19 +486,37 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       accessibilityElementsHidden={!visible || !session}
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
-      className={cn('flex-1 bg-transparent', (!visible || !session) && 'absolute inset-0 opacity-0')}>
-      {!compact && (
-        <View className="h-[30px] flex-row items-center gap-2 border-b border-[#424242] bg-[#181818] px-3">
-          <View className="size-1.5 rounded-full bg-white" />
-          <Text numberOfLines={1} className="flex-1 font-mono text-[9px] tracking-[1px] text-[#B4B4B4]">
-            {t('terminal.agentTitle', { title, terminalId })}
-          </Text>
-          {error && <Text className="font-mono text-[8px] text-[#FF6B6B]">{t('terminal.attachFailed')}</Text>}
+      className={cn('flex-1 bg-transparent', (!presented || !session) && 'absolute inset-0 opacity-0')}>
+      {preferences.backgroundImageUri && (
+        <View
+          accessibilityElementsHidden
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, BACKGROUND_SCREEN_STYLE]}>
+          <Image
+            resizeMode="cover"
+            source={{ uri: preferences.backgroundImageUri }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: `rgba(0,0,0,${preferences.backgroundDimming / 100})` },
+            ]}
+          />
         </View>
       )}
-      {compact && error && <Text className="bg-[#241211] px-2 py-1 font-mono text-[8px] text-[#FF6B6B]">{t('terminal.attachFailed')} · {String(error)}</Text>}
+      {!compact && (
+        <View className="h-[30px] flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-3">
+          <View className="size-1.5 rounded-full bg-white" />
+          <Text numberOfLines={1} className="flex-1 font-mono text-[9px] tracking-[1px] text-terminal-muted">
+            {t('terminal.agentTitle', { title, terminalId })}
+          </Text>
+          {error && <Text className="font-mono text-[8px] text-terminal-error">{t('terminal.attachFailed')}</Text>}
+        </View>
+      )}
+      {compact && error && <Text className="bg-terminal-error/15 px-2 py-1 font-mono text-[8px] text-terminal-error">{t('terminal.attachFailed')} · {String(error)}</Text>}
       {searchOpen && (
-        <View className="min-h-12 flex-row items-center gap-1 border-b border-[#424242] bg-[#2F2F2F] px-[7px]">
+        <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
           <Input
             autoFocus
             value={searchQuery}
@@ -441,11 +526,11 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
             placeholderTextColor={colors.muted}
             autoCapitalize="none"
             autoCorrect={false}
-            className="h-9 min-w-[100px] flex-1 rounded-full border-0 bg-[#212121] px-3 font-mono text-[10px] text-[#ECECEC] shadow-none"
+            className="h-9 min-w-[100px] flex-1 rounded-full border-0 bg-terminal-canvas px-3 font-mono text-[10px] text-terminal-text shadow-none"
           />
-          <Button className={cn('size-8 rounded-full px-0', searchCase && 'bg-white')} variant="ghost" onPress={() => setSearchCase(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-[#B4B4B4]', searchCase && 'text-[#212121]')}>Aa</Text></Button>
-          <Button className={cn('size-8 rounded-full px-0', searchRegex && 'bg-white')} variant="ghost" onPress={() => setSearchRegex(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-[#B4B4B4]', searchRegex && 'text-[#212121]')}>.*</Text></Button>
-          <Text className={cn('min-w-[34px] text-center font-mono text-[8px] text-[#B4B4B4]', (searchResult.invalid || (searchQuery && searchResult.count === 0)) && 'text-[#FF6B6B]')}>
+          <Button className={cn('size-8 rounded-full px-0', searchCase && 'bg-terminal-accent')} variant="ghost" onPress={() => setSearchCase(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-terminal-muted', searchCase && 'text-terminal-ink')}>Aa</Text></Button>
+          <Button className={cn('size-8 rounded-full px-0', searchRegex && 'bg-terminal-accent')} variant="ghost" onPress={() => setSearchRegex(value => !value)}><Text className={cn('font-mono text-[9px] font-extrabold text-terminal-muted', searchRegex && 'text-terminal-ink')}>.*</Text></Button>
+          <Text className={cn('min-w-[34px] text-center font-mono text-[8px] text-terminal-muted', (searchResult.invalid || (searchQuery && searchResult.count === 0)) && 'text-terminal-error')}>
             {searchResult.invalid ? 'ERR' : searchQuery ? `${Math.max(0, searchResult.index + 1)}/${searchResult.count}` : ''}
           </Text>
           <Button accessibilityLabel={t('terminal.previousResult')} className="h-[31px] w-7 rounded-none px-0" disabled={!searchResult.count} variant="ghost" onPress={() => moveSearch(-1)}><ChevronUp size={16} color={colors.text} /></Button>
@@ -453,7 +538,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           <Button accessibilityLabel={t('terminal.closeSearch')} className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><X size={17} color={colors.text} /></Button>
         </View>
       )}
-      <View className="relative flex-1">
+      <View className="relative flex-1" {...terminalPanHandlers}>
         <WebView
           ref={value => {
             webView.current = value as WebViewHandle | null;
@@ -473,29 +558,29 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
             pointerEvents="none"
             className="absolute inset-y-0 right-0.5 w-0.5">
             <View
-              className="absolute inset-x-0 rounded-full bg-[#ECECECAA]"
+              className="absolute inset-x-0 rounded-full bg-terminal-text/70"
               style={{ height: `${scrollThumb.heightPercent}%`, top: `${scrollThumb.topPercent}%` }}
             />
           </View>
         )}
       </View>
       {session && status !== 'connected' && (
-        <View className="absolute inset-0 z-20 items-center justify-center bg-[#212121F2] p-[30px]">
-          <View className={cn('size-2 rounded-full bg-[#42C59A]', status === 'error' && 'bg-[#FF6B6B]')} />
-          <Text className="mt-[15px] text-center text-[17px] font-semibold leading-[22px] text-[#ECECEC]">
+        <View className="absolute inset-0 z-20 items-center justify-center bg-terminal-canvas/95 p-[30px]">
+          <View className={cn('size-2 rounded-full bg-terminal-success', status === 'error' && 'bg-terminal-error')} />
+          <Text className="mt-[15px] text-center text-[17px] font-semibold leading-[22px] text-terminal-text">
             {status === 'connecting' ? t('terminal.connecting') : status === 'disconnected' ? t('terminal.reconnecting') : t('terminal.failed')}
           </Text>
-          <Text numberOfLines={3} className="mt-2 max-w-80 text-center text-[11px] leading-[17px] text-[#B4B4B4]">
+          <Text numberOfLines={3} className="mt-2 max-w-80 text-center text-[11px] leading-[17px] text-terminal-muted">
             {session.error || error || t('terminal.opening', { title })}
           </Text>
           {status === 'disconnected' && session.reconnectAttempt > 0 && (
-            <Text className="mt-2.5 text-[11px] text-[#B4B4B4]">{t('terminal.attempt', { attempt: session.reconnectAttempt, total: MAX_RECONNECT_ATTEMPTS })}</Text>
+            <Text className="mt-2.5 text-[11px] text-terminal-muted">{t('terminal.attempt', { attempt: session.reconnectAttempt, total: MAX_RECONNECT_ATTEMPTS })}</Text>
           )}
           <View className="mt-5 flex-row gap-2">
             {status !== 'connecting' && (
-              <Button className="min-h-[42px] rounded-full bg-[#ECECEC] px-4" onPress={retryNow}><Text className="text-[13px] font-semibold text-[#212121]">{t('terminal.retry')}</Text></Button>
+              <Button className="min-h-[42px] rounded-full bg-terminal-accent px-4" onPress={retryNow}><Text className="text-[13px] font-semibold text-terminal-ink">{t('terminal.retry')}</Text></Button>
             )}
-            <Button className="min-h-[42px] rounded-full bg-[#2F2F2F] px-4" variant="secondary" onPress={onClose}><Text className="text-[13px] font-semibold text-[#ECECEC]">{t('terminal.closeSession')}</Text></Button>
+            <Button className="min-h-[42px] rounded-full bg-terminal-surface px-4" variant="secondary" onPress={onClose}><Text className="text-[13px] font-semibold text-terminal-text">{t('terminal.closeSession')}</Text></Button>
           </View>
         </View>
       )}
@@ -503,12 +588,44 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         ref={controlsRef}
         collapsable={false}
         style={keyboardInset > 0 ? { marginBottom: keyboardInset } : undefined}>
+        {composeOpen && (
+          <View className="flex-row items-end gap-2 border-t border-terminal-divider bg-terminal-panel p-2">
+            <Input
+              autoFocus
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              value={composeText}
+              onChangeText={setComposeText}
+              placeholder={t('terminal.composePlaceholder')}
+              placeholderTextColor={colors.muted}
+              className="h-[76px] min-w-0 flex-1 rounded-lg border-terminal-divider bg-terminal-canvas px-3 py-2 font-mono text-[12px] leading-[17px] text-terminal-text"
+            />
+            <View className="gap-1.5">
+              <Button
+                accessibilityLabel={t('terminal.sendBufferedInput')}
+                disabled={!composeText.trim()}
+                className="size-10 rounded-full bg-white px-0"
+                onPress={submitCompose}>
+                <Send size={17} color={colors.ink} />
+              </Button>
+              <Button
+                accessibilityLabel={t('terminal.closeCompose')}
+                className="size-10 rounded-full bg-terminal-surface px-0"
+                variant="secondary"
+                onPress={closeCompose}>
+                <X size={17} color={colors.text} />
+              </Button>
+            </View>
+          </View>
+        )}
         <ScrollView
           horizontal
           keyboardShouldPersistTaps="always"
           showsHorizontalScrollIndicator={false}
-          className="flex-grow-0 border-t border-[#424242] bg-[#181818]"
-          contentContainerClassName="items-center gap-[5px] px-1.5 py-[7px]">
+          className="flex-grow-0"
+          contentContainerClassName="items-center gap-[5px] px-1.5 pt-[7px]"
+          contentContainerStyle={{ paddingBottom: 7 + (keyboardVisible ? 0 : bottomSafeAreaInset) }}>
           {controlOrder.map(renderTerminalControl)}
         </ScrollView>
       </View>
@@ -517,5 +634,5 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 }
 
 function TerminalKey({ label, onPress, armed = false }: { label: string; onPress: () => void; armed?: boolean }) {
-  return <Button className={cn('min-h-[34px] min-w-12 rounded-sm bg-[#2F2F2F] px-2.5', armed && 'border border-white')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-[#ECECEC]', armed && 'text-white')}>{label}</Text></Button>;
+  return <Button className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', armed && 'border-primary')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-foreground', armed && 'text-primary')}>{label}</Text></Button>;
 }

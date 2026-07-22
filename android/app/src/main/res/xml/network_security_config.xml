@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <!-- The in-app browser intentionally supports HTTP development servers,
+       including loopback ports reached through an authenticated SSH tunnel. -->
+  <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

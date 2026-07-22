@@ -258,6 +258,10 @@ export default class SSHClient {
     herdrBridgeScroll(terminalId: string, direction: 'up' | 'down', lines: number): Promise<void>;
     closeHerdrBridge(terminalId: string): void;
     closeAllHerdrBridges(): void;
+    /** Opens a loopback listener that forwards through this SSH session. Android-only. */
+    openLocalForward(remoteHost: string, remotePort: number): Promise<number>;
+    /** Closes a loopback listener previously returned by openLocalForward. */
+    closeLocalForward(localPort: number): Promise<void>;
     startHerdrEventStream(command: string, handler: (data: string) => void, callback?: CallbackFunction<void>): Promise<void>;
     writeHerdrEventStream(value: string): Promise<void>;
     closeHerdrEventStream(): void;

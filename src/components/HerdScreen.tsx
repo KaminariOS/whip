@@ -24,7 +24,9 @@ interface Props {
   queues: HerdHostQueue[];
   sessions: LiveSessionRailItem[];
   selectedHostId: string | null;
+  workspaceFilterId: string | null;
   onSelectHost: (hostId: string | null) => void;
+  onWorkspaceFilterChange: (hostId: string, workspaceId: string | null) => void;
   onCloseHost: (hostId: string) => void;
   onNewHost: () => void;
   onSelectWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
@@ -41,7 +43,9 @@ export function HerdScreen({
   queues,
   sessions,
   selectedHostId,
+  workspaceFilterId,
   onSelectHost,
+  onWorkspaceFilterChange,
   onCloseHost,
   onNewHost,
   onSelectWorkspace,
@@ -57,7 +61,6 @@ export function HerdScreen({
   const { t } = useTranslation();
   const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
   const selectedQueue = selectedHostId ? scopedQueues[0] : undefined;
-  const [workspaceFilterId, setWorkspaceFilterId] = useState<string | null>(null);
   const selectedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, workspaceFilterId);
   const selectedWorkspace = selectedQueue?.workspaces.find(
     workspace => workspace.workspace_id === selectedWorkspaceId,
@@ -78,14 +81,15 @@ export function HerdScreen({
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
   useEffect(() => {
-    if (workspaceFilterId && !selectedWorkspaceId) setWorkspaceFilterId(null);
-  }, [selectedWorkspaceId, workspaceFilterId]);
+    if (workspaceFilterId && !selectedWorkspaceId && selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, null);
+    }
+  }, [onWorkspaceFilterChange, selectedQueue, selectedWorkspaceId, workspaceFilterId]);
 
   const selectHost = (hostId: string | null) => {
     setCreating(false);
     setWorkspaceEditorMode(null);
     setWorkspaceMenuOpen(false);
-    setWorkspaceFilterId(null);
     onSelectHost(hostId);
   };
 
@@ -106,9 +110,11 @@ export function HerdScreen({
     setCreating(false);
     setWorkspaceEditorMode(null);
     setWorkspaceMenuOpen(false);
-    setWorkspaceFilterId(workspaceId);
     if (workspaceId && selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, workspaceId);
       runWorkspaceAction(() => onSelectWorkspace(selectedQueue.id, workspaceId));
+    } else if (selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, null);
     }
   };
 
@@ -121,7 +127,7 @@ export function HerdScreen({
 
   const openRenameWorkspace = (workspace: WorkspaceInfo | undefined = selectedWorkspace) => {
     if (!workspace) return;
-    setWorkspaceFilterId(workspace.workspace_id);
+    if (selectedQueue) onWorkspaceFilterChange(selectedQueue.id, workspace.workspace_id);
     setWorkspaceName(workspace.label);
     setWorkspaceCwd('');
     setWorkspaceMenuOpen(false);
@@ -151,7 +157,7 @@ export function HerdScreen({
         style: 'destructive',
         onPress: async () => {
           if (await runWorkspaceAction(() => onCloseWorkspace(selectedQueue.id, selectedWorkspace.workspace_id))) {
-            setWorkspaceFilterId(null);
+            onWorkspaceFilterChange(selectedQueue.id, null);
           }
         },
       },
@@ -186,21 +192,21 @@ export function HerdScreen({
       ) : null}
 
       {workspaceMenuOpen && selectedQueue ? (
-        <View className="min-h-[42px] flex-row items-stretch border-b border-[#424242] bg-[#181818]">
+        <View className="min-h-[42px] flex-row items-stretch border-b border-border bg-background">
           <WorkspaceAction label={t('herd.renameSpace')} disabled={!selectedWorkspace} onPress={() => openRenameWorkspace()} />
           <WorkspaceAction label={t('herd.closeSpace')} danger disabled={!selectedWorkspace} onPress={confirmCloseWorkspace} />
         </View>
       ) : null}
 
       {workspaceEditorMode && selectedQueue ? (
-        <View className="flex-row items-center gap-1.5 border-b border-white bg-[#2F2F2F] p-[7px]">
-          <Text className="font-mono text-[8px] text-white">{workspaceEditorMode === 'rename' ? t('herd.rename') : t('herd.new')} {t('herd.space')}</Text>
-          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
+        <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
+          <Text className="font-mono text-[8px] text-foreground">{workspaceEditorMode === 'rename' ? t('herd.rename') : t('herd.new')} {t('herd.space')}</Text>
+          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
           {workspaceEditorMode === 'create' ? (
-            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder={t('herd.workingDirectoryOptional')} placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
+            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder={t('herd.workingDirectoryOptional')} placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
           ) : null}
-          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-[#B4B4B4]">{t('common.cancel')}</Text></Button>
-          <Button className="h-[34px] rounded-none bg-white px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black text-[#212121]">{t('common.save')}</Text></Button>
+          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
+          <Button className="h-[34px] rounded-none px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
         </View>
       ) : null}
 
@@ -314,6 +320,6 @@ function priority(status: string): number {
 
 function WorkspaceAction({ label, onPress, disabled = false, danger = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
   return (
-    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-[#424242] px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={danger ? 'text-center text-[9px] font-semibold text-[#FF6B6B]' : 'text-center text-[9px] font-semibold text-[#ECECEC]'}>{label}</Text></Button>
+    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-border px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={danger ? 'text-center text-[9px] font-semibold text-destructive' : 'text-center text-[9px] font-semibold text-foreground'}>{label}</Text></Button>
   );
 }
