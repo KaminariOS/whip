@@ -412,44 +412,45 @@ export function SessionScreen({
           terminalWidthRef.current = event.nativeEvent.layout.width;
           setTerminalWidth(event.nativeEvent.layout.width);
         }}>
-        {terminalSurfaceMounted && terminalState.sessions.map(terminalSession => (
-          <Animated.View
-            key={terminalSession.terminalId}
-            style={[
-              StyleSheet.absoluteFill,
-              tabSwipe?.originTerminalId === terminalSession.terminalId && {
-                transform: [{ translateX: tabSwipeTranslateX }],
-              },
-              tabSwipe?.targetTerminalId === terminalSession.terminalId && {
-                transform: [{
-                  translateX: Animated.add(
-                    tabSwipeTranslateX,
-                    tabSwipe.direction * terminalWidth,
-                  ),
-                }],
-              },
-            ]}>
-            <TerminalScreen
-              client={client}
-              compact
-              visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
-              preview={tabSwipe?.targetTerminalId === terminalSession.terminalId}
-              terminalPanHandlers={terminalSession.terminalId === activeTerminalSession?.terminalId
-                ? terminalTabPanResponder.panHandlers
-                : undefined}
-              session={terminalSession}
-              scroll={snapshot.panes.find(pane => pane.terminal_id === terminalSession.terminalId)?.scroll}
-              preferences={terminalPreferences}
-              controlUsage={terminalControlUsage}
-              onFontSizeChange={onTerminalFontSizeChange}
-              onControlUse={onTerminalControlUse}
-              onClose={() => onCloseTerminal(terminalSession.terminalId)}
-              onStatus={(status, error, reconnectAttempt) => {
-                onTerminalStatus(terminalSession.terminalId, status, error, reconnectAttempt);
-              }}
-            />
-          </Animated.View>
-        ))}
+        {terminalSurfaceMounted && terminalState.sessions.map(terminalSession => {
+          // Fabric merges native-driver transform patches with React props. Keep
+          // transform array-shaped even after a swipe ends; changing it to null
+          // trips SurfaceMountingManager's synchronous-prop assertion.
+          const translateX = tabSwipe?.originTerminalId === terminalSession.terminalId
+            ? tabSwipeTranslateX
+            : tabSwipe?.targetTerminalId === terminalSession.terminalId
+              ? Animated.add(tabSwipeTranslateX, tabSwipe.direction * terminalWidth)
+              : 0;
+          return (
+            <Animated.View
+              key={terminalSession.terminalId}
+              pointerEvents="box-none"
+              style={[
+                StyleSheet.absoluteFill,
+                { transform: [{ translateX }] },
+              ]}>
+              <TerminalScreen
+                client={client}
+                compact
+                visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
+                preview={tabSwipe?.targetTerminalId === terminalSession.terminalId}
+                terminalPanHandlers={terminalSession.terminalId === activeTerminalSession?.terminalId
+                  ? terminalTabPanResponder.panHandlers
+                  : undefined}
+                session={terminalSession}
+                scroll={snapshot.panes.find(pane => pane.terminal_id === terminalSession.terminalId)?.scroll}
+                preferences={terminalPreferences}
+                controlUsage={terminalControlUsage}
+                onFontSizeChange={onTerminalFontSizeChange}
+                onControlUse={onTerminalControlUse}
+                onClose={() => onCloseTerminal(terminalSession.terminalId)}
+                onStatus={(status, error, reconnectAttempt) => {
+                  onTerminalStatus(terminalSession.terminalId, status, error, reconnectAttempt);
+                }}
+              />
+            </Animated.View>
+          );
+        })}
         {tabSwipe
           && (!tabSwipe.targetTerminalId
             || !terminalState.sessions.some(session => session.terminalId === tabSwipe.targetTerminalId))
