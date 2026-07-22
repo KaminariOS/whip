@@ -31,6 +31,7 @@ type StoredTerminalPreferences = Partial<TerminalPreferences> & {
 export interface DevicePreferences {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
+  biometricForKeys: boolean;
   appearance: AppearancePreference;
   language: LanguagePreference;
   keepScreenOn: boolean;
@@ -43,6 +44,7 @@ export interface DevicePreferences {
 export const defaultDevicePreferences: DevicePreferences = {
   alertsEnabled: true,
   ttsEnabled: false,
+  biometricForKeys: false,
   appearance: 'system',
   language: 'system',
   keepScreenOn: false,
@@ -97,6 +99,7 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
     return {
       alertsEnabled: parsed.alertsEnabled ?? defaultDevicePreferences.alertsEnabled,
       ttsEnabled: parsed.ttsEnabled ?? defaultDevicePreferences.ttsEnabled,
+      biometricForKeys: parsed.biometricForKeys === true,
       appearance: isAppearancePreference(parsed.appearance)
         ? parsed.appearance
         : defaultDevicePreferences.appearance,
