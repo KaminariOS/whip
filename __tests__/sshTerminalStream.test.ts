@@ -14,7 +14,7 @@ describe('Android SSH terminal protocol stream', () => {
 
     expect(javascript).toContain('startLineShell(ptyType, callback)');
     expect(javascript).toContain('RNSSHClient.startLineShell');
-    expect(javascript).toContain('startHerdrEventStream(command, handler, callback)');
+    expect(javascript).toContain('startHerdrEventStream(socketPath, handler, callback)');
     expect(javascript).toContain('startHerdrCommandStream(command, handler, callback)');
     expect(declarations).toContain('startLineShell(ptyType: PtyType');
     expect(declarations).toContain('startHerdrCommandStream(command: string');
