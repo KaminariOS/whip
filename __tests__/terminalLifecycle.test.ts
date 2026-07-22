@@ -51,6 +51,7 @@ describe('terminal renderer lifecycle', () => {
 
     expect(app).toContain("if (navigate) setNavigation(current => selectMobileTab(current, 'terminal'));");
     expect(app).toContain("selectLiveHost(existing.id, 'terminal');");
+    expect(app).toContain('refreshHost(existing.id).catch(error => scheduleReconnect(existing.id, error));');
   });
 
   it('keeps terminal focus bidirectional with Herdr', () => {

@@ -262,8 +262,12 @@ export class HerdrClient {
   }
 
   async snapshot(): Promise<HerdrSnapshot> {
-    const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
-    this.apiServer = server;
+    // A stopped server can be started independently after this SSH connection
+    // was opened. Only cache a usable API endpoint so refreshes can discover it.
+    const server = this.apiServer?.running
+      ? this.apiServer
+      : await this.executeJson<ServerInfo>('status server --json');
+    this.apiServer = server.running ? server : null;
     if (!server.running) {
       return {
         server,
