@@ -80,15 +80,15 @@ A Termius-style saved-server list is the entry surface. It shows identity, addre
 
 ### Herd
 
-The attention surface orders agents by actionable status: blocked, done, working, idle, unknown. Each row exposes the task, workspace/pane context, recent output, prompt action, and terminal attachment.
+The attention surface can scope the queue to one live host or merge every live host. It orders agents by actionable status: blocked, done, working, idle, unknown, while preserving host, workspace, and pane context for terminal attachment and host-specific actions.
 
 ### Workspaces
 
-Native workspace, tab, and pane navigation replaces the corresponding Herdr TUI chrome. Selection changes client navigation first; explicit focus actions change server focus. Destructive operations require confirmation.
+Native workspace, tab, and pane navigation replaces the corresponding Herdr TUI chrome. Selection changes client navigation first; explicit focus actions change server focus. Closing a tab takes effect immediately, while other destructive operations require confirmation.
 
 ### Terminals
 
-An immersive terminal surface keeps a slim scrollable session rail, connection status, close/new actions, and a horizontally scrollable mobile key rail. Switching back to Herd or Workspaces must not disconnect or recreate terminal sessions.
+An immersive terminal surface keeps a slim scrollable session rail, connection status, close/new actions, and a horizontally scrollable mobile key rail. Switching back to Herd, Hosts, or More must not disconnect or recreate terminal sessions.
 
 ### Settings
 

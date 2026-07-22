@@ -47,10 +47,10 @@ class HerdrBackgroundService : Service() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val channel = NotificationChannel(
       CHANNEL_ID,
-      "Herdr background monitoring",
+      getString(R.string.herdr_background_channel),
       NotificationManager.IMPORTANCE_LOW,
     ).apply {
-      description = "Shows when Herdr is keeping remote sessions connected"
+      description = getString(R.string.herdr_background_channel_description)
       setShowBadge(false)
     }
     getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -78,7 +78,6 @@ class HerdrBackgroundService : Service() {
       launchIntent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
-    val noun = if (hostCount == 1) "host" else "hosts"
     val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       Notification.Builder(this, CHANNEL_ID)
     } else {
@@ -87,8 +86,8 @@ class HerdrBackgroundService : Service() {
     }
     return builder
       .setSmallIcon(android.R.drawable.stat_notify_sync)
-      .setContentTitle("Herdr is monitoring in the background")
-      .setContentText("Watching $hostCount remote $noun over SSH")
+      .setContentTitle(getString(R.string.herdr_background_title))
+      .setContentText(resources.getQuantityString(R.plurals.herdr_background_hosts, hostCount, hostCount))
       .setContentIntent(contentIntent)
       .setCategory(Notification.CATEGORY_SERVICE)
       .setOngoing(true)

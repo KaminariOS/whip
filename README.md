@@ -1,89 +1,129 @@
 # Whip
 
-<img src="assets/icon.png" alt="Whip app icon" width="128">
+<p align="center">
+  <img src="assets/icon.png" alt="Whip app icon" width="128">
+</p>
 
-Whip is an independent, unofficial Android client for supervising and controlling [Herdr](https://github.com/ogulcancelik/herdr) over SSH on a Tailscale network.
+<p align="center">
+  <strong>Keep your Herdr agents within reach.</strong><br>
+  An independent Android client for supervising agents, scoping hosts and spaces, and opening pane terminals over SSH.
+</p>
+
+<p align="center">
+  <a href="https://github.com/KaminariOS/whip/actions/workflows/ci.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
+</p>
+
+Whip gives [Herdr](https://github.com/ogulcancelik/herdr) a touch-friendly Android interface without exposing Herdr itself to the network or requiring changes on the host. It connects directly to your machine over SSH—ideally through Tailscale—and rebuilds the management experience as native screens. A terminal appears only when you choose to attach to a pane.
+
+The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints, **Herd** merges their agents into a scoped attention queue, **Terminal** lists open pane sessions, and **More** holds notification, appearance, and terminal preferences.
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
 > [!WARNING]
-> Whip is an experimental personal project developed for my own needs. I do not know React Native, and I have not read or manually reviewed the generated code. Do not assume the app is secure or production-ready; review it yourself before trusting it with sensitive systems or credentials. Connect only through a trusted Tailnet because SSH host keys are not yet verified.
+> Whip is an experimental personal project developed for my own needs. I do not know React Native, and I have not read or manually reviewed the generated code. Do not assume the app is secure; review it yourself before trusting it with sensitive systems or credentials. Connect only through a trusted Tailnet because SSH host keys are not yet verified.
 
-[![CI](https://github.com/KaminariOS/whip/actions/workflows/ci.yml/badge.svg)](https://github.com/KaminariOS/whip/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg)](https://github.com/KaminariOS/whip/actions/workflows/codeql.yml)
+## Preview
 
-Herdr itself is not exposed to the network and does not need to be modified. Herdr's management UI is rebuilt as native Android screens. The xterm-compatible view is used only when the user attaches directly to a selected agent or shell pane.
+<table>
+  <tr>
+    <td align="center"><img src="assets/screenshots/hosts.png" alt="Whip Hosts screen showing saved Herdr servers, connection state, and latency" width="320"></td>
+    <td align="center"><img src="assets/screenshots/herd.png" alt="Whip Herd screen showing merged host scopes, agent totals, and the attention queue" width="320"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Manage every host</strong><br>See live connection state, latency, and saved authentication at a glance.</td>
+    <td align="center"><strong>Watch the whole herd</strong><br>Merge open hosts into one attention queue, then scope it to a host or space.</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/terminal.png" alt="Whip terminal showing open tabs, the web-link browser action, and mobile keys" width="320"></td>
+    <td align="center"><img src="assets/screenshots/settings.png" alt="Whip More screen showing connection, notification, speech, and security settings" width="320"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Work from anywhere</strong><br>Open a selected pane in the full-width terminal, then collect its web links in one tap.</td>
+    <td align="center"><strong>Tune your workflow</strong><br>Configure agent alerts, speech, security, appearance, and terminal behavior.</td>
+  </tr>
+</table>
 
-## Features
+Screenshots were captured from the current Whip Android build on a Pixel 9 Pro.
 
-- Native attention queue for working, blocked, done, idle, and unknown agents
-- Native spaces, tabs, panes, and agent navigation
-- Create, focus, rename, and close spaces and tabs
-- Split, zoom, rename, inspect, send keys to, and close panes
-- Launch agents and send direct prompts or pane commands
-- Immersive Voltius-style workspace, tab, and pane terminal navigation
-- Direct interactive terminal bridge for each selected pane
-- ANSI colors, modifier/special keys, touch scrolling, double-tap Tab, and live resizing
-- Android vibration and local notifications for blocked/done transitions
-- Optional Expo Speech announcements
-- Password and private-key authentication
-- Android Keystore credential storage with encrypted, device-authenticated Block Store recovery
-- Named Herdr sessions and configurable Herdr executable path
+## What you can do
 
-## Requirements
+- Monitor every open host in one native attention queue, with per-host and per-space scopes.
+- See working, blocked, done, idle, and unknown agents, including their host and space context.
+- Move through Herdr hosts, spaces, tabs, panes, and agents without living in a terminal.
+- Create, focus, rename, split, zoom, inspect, and close space resources.
+- Launch agents, send direct prompts, and send commands or special keys to a pane.
+- Attach to any selected pane through an immersive, xterm-compatible terminal.
+- Scan terminal scrollback for web links and open local or LAN services in the in-app browser through an on-demand SSH tunnel.
+- Use ANSI colors, modifier keys, touch scrolling, Page Up/Down, a position indicator, double-tap Tab, live resizing, and configurable terminal appearance.
+- Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
+- Save password or private-key credentials with Android Keystore and encrypted, device-authenticated Block Store recovery.
+- Keep several named Herdr hosts open and switch between their live sessions.
 
-- Android phone and laptop connected to the same Tailscale network
-- SSH server running on the laptop
-- Herdr installed on the laptop
-- Node.js 22+
-- Android SDK and JDK 17 for local native builds
+## Install an experimental preview
 
-Whip currently supports Android only. The checked-in iOS project is not a supported release target.
+Preview APKs are currently ARM64-only prereleases. Their signing identity may change before Whip reaches a stable release, so Android may require you to uninstall an older preview before installing a newer one.
 
-Confirm the same connection outside the app first:
+1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
+2. Put the Android phone and Herdr host on a Tailnet you trust.
+3. Download the APK and checksum from [GitHub Releases](https://github.com/KaminariOS/whip/releases).
+4. Verify the download:
+
+   ```bash
+   sha256sum -c whip-experimental-arm64.apk.sha256
+   ```
+
+5. Allow installation from the app that downloaded the APK, then open Whip.
+
+Whip supports Android 7.0 and newer (`minSdk 24`). The current preview distribution targets 64-bit ARM Android devices.
+
+## Connect your first host
+
+You need an SSH server and Herdr on a laptop or server reachable from the phone. Confirm the same connection outside Whip first:
 
 ```bash
 ssh user@laptop.tailnet.ts.net 'herdr status server --json'
 ```
 
-If `herdr` is not in the non-interactive SSH `PATH`, enter its absolute path in the app's **Command** field, for example `/home/user/.local/bin/herdr`.
+Then in Whip:
+
+1. Tap **Add your first host**.
+2. Enter the Tailscale DNS name or `100.x.y.z` address, SSH user, and password or private key.
+3. Leave **Command** as `herdr`, or enter its absolute path if it is not in the non-interactive SSH `PATH`.
+4. Choose the Herdr session name and connect.
+
+Whip accepts Herdr releases that report protocol 17 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
+
+## How it works
+
+Whip connects directly from Android to the configured SSH host. There is no Whip-operated relay service, and Herdr remains bound to the host as usual.
+
+While Whip is foregrounded, native screens receive workspace, tab, pane, and agent state from Herdr. Actions map to the existing Herdr CLI surfaces. Opening a pane terminal uses Herdr's remote client bridge over the same SSH connection, with live input, resize, and render frames. Links found in terminal scrollback open directly when they are public; loopback and private-network addresses are forwarded through the active SSH connection first.
+
+The current SSH dependency does not pin host keys. Use Whip only over a trusted network until known-host verification is implemented. See [SECURITY.md](SECURITY.md) for the current security posture and [PRIVACY.md](PRIVACY.md) for the data flow and on-device storage details.
 
 ## Development
 
-This project uses Expo SDK 57 with a custom development build. It cannot run in Expo Go because SSH, Android Keystore, and the patched PTY stream use native modules.
+Whip uses Expo SDK 57 with a custom Android development build. It cannot run in Expo Go because SSH, Android Keystore, and the patched PTY stream use native modules.
 
-```bash
-npm install
-npm start
-```
-
-In another terminal, build and install the Expo development client:
-
-```bash
-npm run android
-```
-
-On NixOS, enter the included shell first:
+On NixOS, the included development shell provides Node.js 22, JDK 17, and the required Android SDK and NDK versions:
 
 ```bash
 nix develop
+npm ci
 npm run android
 ```
 
-The Nix development shell provides Node.js, JDK 17, and the required Android SDK/NDK versions. Outside Nix, install those tools separately and expose the Android SDK through `ANDROID_HOME`.
+On other systems, install Node.js 22, JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 27.1.12297006, and CMake 3.22.1. Set `ANDROID_HOME`, then run:
 
-## Experimental APKs
+```bash
+npm ci
+npm run android
+```
 
-Maintainers can publish an ARM64 preview APK through the manual **Build Android APK** workflow. Preview builds are published as GitHub prereleases and are not production releases. Their signing identity may change before Whip reaches a stable release.
+See [DEBUG.md](DEBUG.md) for the complete emulator and physical-device loop.
 
-Before installing a preview:
-
-1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
-2. Confirm that the phone and Herdr host are on a Tailnet you trust.
-3. Download the APK and checksum from [GitHub Releases](https://github.com/KaminariOS/whip/releases).
-4. Verify it with `sha256sum -c whip-experimental-arm64.apk.sha256`.
-
-## EAS builds
+### EAS builds
 
 After authenticating and initializing the Expo project:
 
@@ -94,18 +134,7 @@ npx eas-cli build --profile preview --platform android
 
 The `development` profile creates an Expo development client. The `preview` profile creates an installable APK.
 
-## Connection behavior
-
-1. Enter the laptop's Tailscale DNS name or `100.x.y.z` address.
-2. Authenticate with the same SSH user and credentials used by Termius.
-3. The app polls Herdr's workspace, tab, pane, and agent CLI surfaces every 2.5 seconds while foregrounded.
-4. Herdr session management stays in native Android screens; only the selected pane's shell or agent TUI is rendered as a terminal.
-5. Opening **Session** runs `herdr terminal session control <terminal_id> --takeover` and exchanges Herdr's JSON frame/input/resize protocol over an SSH PTY.
-6. Native actions call existing commands such as `herdr agent send`, `herdr pane split`, and `herdr workspace focus`.
-
-The current SSH dependency does not pin host keys. Use the app only over a trusted Tailscale network until host-key verification is added. See [SECURITY.md](SECURITY.md) for the current security posture and private reporting instructions.
-
-## Validation
+### Validation
 
 ```bash
 npx expo-doctor
@@ -115,11 +144,7 @@ npm test -- --runInBand
 npx expo export --platform android
 ```
 
-The SSH bridge is a project-owned local package at
-`packages/react-native-ssh-sftp`. It preserves raw PTY chunks, supports terminal
-resizing, and uses current Android SSH crypto for OpenSSH Ed25519 keys. The root
-dependency uses `file:packages/react-native-ssh-sftp`; do not edit or patch the
-symlink under `node_modules`.
+The SSH bridge is maintained in [`packages/react-native-ssh-sftp`](packages/react-native-ssh-sftp). The root dependency uses that local package; do not edit or patch its symlink under `node_modules`.
 
 ## Community
 
@@ -129,7 +154,7 @@ symlink under `node_modules`.
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Review the [roadmap](ROADMAP.md) for current priorities.
 
-Whip is especially looking for feedback about Android device compatibility, real-world Herdr workflows, terminal ergonomics, and safe SSH trust UX.
+Feedback is especially useful around Android device compatibility, real-world Herdr workflows, terminal ergonomics, and safe SSH trust UX.
 
 ## License
 

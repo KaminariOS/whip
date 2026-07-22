@@ -11,7 +11,7 @@ describe('terminal pinch zoom', () => {
     expect(assets).toContain('if (event.touches.length === 2)');
     expect(assets).toContain('touchDistance(event.touches) / pinch.distance');
     expect(assets).toContain(
-      'Math.max(8, Math.min(16, Math.round(pinch.initialFontSize * ratio)))',
+      'Math.max(8, Math.min(24, Math.round(pinch.initialFontSize * ratio)))',
     );
     expect(assets).toContain('terminal.options.fontSize = fontSize');
     expect(assets).toContain("send({ type: 'font-size-change', fontSize })");
@@ -24,7 +24,7 @@ describe('terminal pinch zoom', () => {
 
     expect(terminalScreen).toContain("message.type === 'font-size-change'");
     expect(terminalScreen).toContain(
-      'onFontSizeChange(Math.max(8, Math.min(16, Math.round(fontSize))))',
+      'onFontSizeChange(Math.max(8, Math.min(24, Math.round(fontSize))))',
     );
     expect(sessionScreen).toContain(
       'onFontSizeChange={onTerminalFontSizeChange}',

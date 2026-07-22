@@ -23,22 +23,29 @@ describe('Herdr API bridge', () => {
         type: 'session_snapshot',
         snapshot: {
           version: '0.7.4',
-          protocol: 16,
+          protocol: 17,
+          focused_workspace_id: null,
+          focused_tab_id: null,
+          focused_pane_id: null,
           workspaces: [],
           tabs: [],
           panes: [],
+          layouts: [],
           agents: [],
         },
       },
     };
-    expect(response.result.snapshot.protocol).toBe(16);
+    expect(response.result.snapshot.protocol).toBe(17);
   });
 
   it('subscribes to lifecycle and per-pane agent changes without duplicates', () => {
     const request = eventsSubscribeRequest(['w1:p2', 'w1:p1', 'w1:p2']);
     const subscriptions = request.params.subscriptions as Array<Record<string, string>>;
     expect(subscriptions).toContainEqual({ type: 'workspace.updated' });
+    expect(subscriptions).toContainEqual({ type: 'workspace.metadata_updated' });
     expect(subscriptions).toContainEqual({ type: 'pane.created' });
+    expect(subscriptions).toContainEqual({ type: 'pane.updated' });
+    expect(subscriptions).toContainEqual({ type: 'layout.updated' });
     expect(subscriptions.filter(item => item.type === 'pane.agent_status_changed')).toEqual([
       { type: 'pane.agent_status_changed', pane_id: 'w1:p1' },
       { type: 'pane.agent_status_changed', pane_id: 'w1:p2' },

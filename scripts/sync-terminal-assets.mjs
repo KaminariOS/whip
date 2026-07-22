@@ -9,17 +9,35 @@ const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = resolve(root, 'android/app/src/main/assets');
 const terminalFonts = resolve(root, 'assets/terminal-fonts');
+const fontManifest = JSON.parse(
+  await readFile(resolve(terminalFonts, 'manifest.json'), 'utf8'),
+);
 const jetBrainsMonoRegular = resolve(
   terminalFonts,
-  'JetBrainsMono-Regular.ttf',
+  fontManifest.text.regularFile,
 );
-const jetBrainsMonoBold = resolve(terminalFonts, 'JetBrainsMono-Bold.ttf');
-const jetBrainsMonoLicense = resolve(terminalFonts, 'OFL.txt');
+const jetBrainsMonoBold = resolve(terminalFonts, fontManifest.text.boldFile);
+const jetBrainsMonoLicense = resolve(
+  terminalFonts,
+  fontManifest.text.licenseFile,
+);
+const cjkRegular = resolve(terminalFonts, fontManifest.cjk.regularFile);
+const cjkLicense = resolve(terminalFonts, fontManifest.cjk.licenseFile);
 const nerdSymbolsRegular = resolve(
   terminalFonts,
-  'SymbolsNerdFontMono-Regular.ttf',
+  fontManifest.symbols.regularFile,
 );
-const nerdSymbolsLicense = resolve(terminalFonts, 'NerdFonts-LICENSE.txt');
+const nerdSymbolsLicense = resolve(
+  terminalFonts,
+  fontManifest.symbols.licenseFile,
+);
+const terminalFontFamily = [
+  fontManifest.text.cssFamily,
+  fontManifest.emoji.cssFamily,
+  fontManifest.symbols.cssFamily,
+  fontManifest.cjk.cssFamily,
+  fontManifest.fallback.cssFamily,
+].map(family => family === 'monospace' ? family : `"${family}"`).join(', ');
 const [
   jetBrainsMonoRegularData,
   jetBrainsMonoBoldData,
@@ -44,16 +62,27 @@ await Promise.all([
     resolve(root, 'node_modules/@xterm/addon-fit/lib/addon-fit.js'),
     resolve(assets, 'addon-fit.js'),
   ),
-  copyFile(jetBrainsMonoRegular, resolve(assets, 'jetbrains-mono-regular.ttf')),
-  copyFile(jetBrainsMonoBold, resolve(assets, 'jetbrains-mono-bold.ttf')),
-  copyFile(jetBrainsMonoLicense, resolve(assets, 'jetbrains-mono-OFL.txt')),
+  copyFile(
+    jetBrainsMonoRegular,
+    resolve(assets, fontManifest.text.bundledRegularFile),
+  ),
+  copyFile(
+    jetBrainsMonoBold,
+    resolve(assets, fontManifest.text.bundledBoldFile),
+  ),
+  copyFile(
+    jetBrainsMonoLicense,
+    resolve(assets, fontManifest.text.bundledLicenseFile),
+  ),
+  copyFile(cjkRegular, resolve(assets, fontManifest.cjk.bundledRegularFile)),
+  copyFile(cjkLicense, resolve(assets, fontManifest.cjk.bundledLicenseFile)),
   copyFile(
     nerdSymbolsRegular,
-    resolve(assets, 'symbols-nerd-font-mono-regular.ttf'),
+    resolve(assets, fontManifest.symbols.bundledRegularFile),
   ),
   copyFile(
     nerdSymbolsLicense,
-    resolve(assets, 'symbols-nerd-font-LICENSE.txt'),
+    resolve(assets, fontManifest.symbols.bundledLicenseFile),
   ),
 ]);
 
@@ -65,22 +94,29 @@ const terminalHtml = `<!doctype html>
   <link rel="stylesheet" href="xterm.css">
   <style>
     @font-face {
-      font-family: 'Herdr Terminal Mono';
+      font-family: '${fontManifest.text.cssFamily}';
       src: url('data:font/ttf;base64,${jetBrainsMonoRegularData}') format('truetype');
       font-style: normal;
       font-weight: 400;
       font-display: block;
     }
     @font-face {
-      font-family: 'Herdr Terminal Mono';
+      font-family: '${fontManifest.text.cssFamily}';
       src: url('data:font/ttf;base64,${jetBrainsMonoBoldData}') format('truetype');
       font-style: normal;
       font-weight: 700;
       font-display: block;
     }
     @font-face {
-      font-family: 'Herdr Terminal Symbols';
+      font-family: '${fontManifest.symbols.cssFamily}';
       src: url('data:font/ttf;base64,${nerdSymbolsRegularData}') format('truetype');
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+    }
+    @font-face {
+      font-family: '${fontManifest.cjk.cssFamily}';
+      src: url('${fontManifest.cjk.bundledRegularFile}') format('truetype');
       font-style: normal;
       font-weight: 400;
       font-display: block;
@@ -92,11 +128,12 @@ const terminalHtml = `<!doctype html>
     #terminal-background-glass { position: absolute; inset: 0; }
     #terminal { position: relative; z-index: 1; box-sizing: border-box; }
     .xterm { height: 100%; }
-    .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; }
+    .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; background-color: transparent !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
-    #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #2f2f2f; border: 1px solid #424242; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
-    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #ececec; padding: 8px 10px; font: 700 10px 'Herdr Terminal Mono', monospace; }
-    #selection-toolbar button:active { background: #ffffff; color: #0d0d0d; }
+    .xterm .scrollbar { display: none !important; }
+    #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #24283b; border: 1px solid #414868; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
+    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #c0caf5; padding: 8px 10px; font: 700 10px '${fontManifest.text.cssFamily}', monospace; }
+    #selection-toolbar button:active { background: #7aa2f7; color: #16161e; }
   </style>
 </head>
 <body>
@@ -111,12 +148,13 @@ const terminalHtml = `<!doctype html>
   <script>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
-    const terminalFontFamily = '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", monospace';
+    const terminalFontFamily = '${terminalFontFamily}';
     const fontReady = document.fonts?.load
       ? Promise.all([
-          document.fonts.load('400 8px "Herdr Terminal Mono"'),
-          document.fonts.load('700 8px "Herdr Terminal Mono"'),
-          document.fonts.load('400 8px "Herdr Terminal Symbols"', '\\uf120'),
+          document.fonts.load('400 8px "${fontManifest.text.cssFamily}"'),
+          document.fonts.load('700 8px "${fontManifest.text.cssFamily}"'),
+          document.fonts.load('400 8px "${fontManifest.symbols.cssFamily}"', '\\uf120'),
+          document.fonts.load('400 8px "${fontManifest.cjk.cssFamily}"', '\\u4e2d'),
         ]).then(() => document.fonts.ready)
       : Promise.resolve();
     const initializeTerminal = () => {
@@ -131,19 +169,22 @@ const terminalHtml = `<!doctype html>
       lineHeight: 1.12,
       letterSpacing: 0,
       scrollback: 5000,
+      overviewRuler: { width: 1 },
       theme: {
-        background: 'rgba(0,0,0,0)', foreground: '#ececec', cursor: '#ffffff', selectionBackground: '#67676780',
-        black: '#181818', red: '#ff6b6b', green: '#42c59a', yellow: '#f2a94a',
-        blue: '#6ea8ff', magenta: '#c792ea', cyan: '#56c7d9', white: '#ececec',
-        brightBlack: '#8e8e8e', brightRed: '#ff8b8b', brightGreen: '#70ddb6',
-        brightYellow: '#ffd080', brightBlue: '#9bc4ff', brightMagenta: '#dcb0f7',
-        brightCyan: '#87dce8', brightWhite: '#ffffff'
+        background: 'rgba(0,0,0,0)', foreground: '#c0caf5', cursor: '#c0caf5', selectionBackground: '#283457',
+        black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
+        blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
+        brightBlack: '#414868', brightRed: '#ff899d', brightGreen: '#9fe044',
+        brightYellow: '#faba4a', brightBlue: '#8db0ff', brightMagenta: '#c7a9ff',
+        brightCyan: '#a4daff', brightWhite: '#c0caf5'
       }
     });
     const fit = new FitAddon.FitAddon();
     terminal.loadAddon(fit);
     terminal.open(document.getElementById('terminal'));
     const send = value => window.ReactNativeWebView.postMessage(JSON.stringify(value));
+    let lastTap = null;
+    let doubleTapTabEnabled = true;
     installAndroidImeBridge(terminal, send, navigator.userAgent);
     const controlSequenceForKey = key => {
       const upper = key.length === 1 ? key.toUpperCase() : '';
@@ -158,7 +199,11 @@ const terminalHtml = `<!doctype html>
       send({ type: 'input', data: sequence });
       return false;
     });
-    terminal.onData(data => send({ type: 'input', data }));
+    let bufferedInput = null;
+    terminal.onData(data => {
+      if (bufferedInput !== null) bufferedInput += data;
+      else send({ type: 'input', data });
+    });
     terminal.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }));
     terminal.parser.registerOscHandler(52, data => {
       const separator = data.indexOf(';');
@@ -189,9 +234,11 @@ const terminalHtml = `<!doctype html>
       terminal.reset();
     };
     window.herdrConfigure = options => {
-      terminal.options.fontSize = Math.max(8, Math.min(16, Number(options.fontSize) || 8));
+      terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
+      doubleTapTabEnabled = options.doubleTapTab !== false;
+      if (!doubleTapTabEnabled) lastTap = null;
       const backgroundUri = options.backgroundImageUri || '';
       const dimming = Math.max(0, Math.min(100, Number(options.backgroundDimming) || 0)) / 100;
       const backgroundLayer = document.getElementById('terminal-background-layer');
@@ -203,6 +250,14 @@ const terminalHtml = `<!doctype html>
       setTimeout(resize, 0);
     };
     window.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
+    window.herdrSubmit = data => {
+      bufferedInput = '';
+      terminal.paste(data);
+      const value = bufferedInput;
+      bufferedInput = null;
+      send({ type: 'buffered-submit', data: value });
+      hideToolbar();
+    };
     let searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
     window.herdrClearSearch = () => { terminal.clearSelection(); searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 }; };
     window.herdrSearch = (query, caseSensitive, regex, direction) => {
@@ -248,6 +303,48 @@ const terminalHtml = `<!doctype html>
         terminal.clearSelection();
       }
       send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
+    };
+    window.herdrScanLinks = () => {
+      const logicalLines = [];
+      let logicalLine = '';
+      for (let row = 0; row < terminal.buffer.active.length; row += 1) {
+        const bufferLine = terminal.buffer.active.getLine(row);
+        if (!bufferLine) continue;
+        if (!bufferLine.isWrapped && logicalLine) {
+          logicalLines.push(logicalLine);
+          logicalLine = '';
+        }
+        logicalLine += bufferLine.translateToString(true);
+      }
+      if (logicalLine) logicalLines.push(logicalLine);
+
+      const links = [];
+      const seen = new Set();
+      const trimUrl = candidate => {
+        let value = candidate.replace(/[.,;:!?]+$/, '');
+        for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+          const opens = value.split(open).length - 1;
+          let closes = value.split(close).length - 1;
+          while (value.endsWith(close) && closes > opens) {
+            value = value.slice(0, -1);
+            closes -= 1;
+          }
+        }
+        return value;
+      };
+      for (let index = logicalLines.length - 1; index >= 0; index -= 1) {
+        const matches = [...logicalLines[index].matchAll(/https?:[/]{2}[^\\s<>"']+/gi)];
+        for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex -= 1) {
+          const value = trimUrl(matches[matchIndex][0]);
+          try {
+            const parsed = new URL(value);
+            if (!['http:', 'https:'].includes(parsed.protocol) || seen.has(parsed.href)) continue;
+            seen.add(parsed.href);
+            links.push(parsed.href);
+          } catch {}
+        }
+      }
+      send({ type: 'link-scan-result', links });
     };
     const resize = () => {
       fit.fit();
@@ -302,8 +399,9 @@ const terminalHtml = `<!doctype html>
     };
     let touch = null;
     let pinch = null;
-    let lastTap = null;
     let longPressTimer = null;
+    const doubleTapTimeoutMs = 300;
+    const doubleTapDistancePx = 24;
     const touchDistance = touches => Math.hypot(
       touches[1].clientX - touches[0].clientX,
       touches[1].clientY - touches[0].clientY,
@@ -324,13 +422,14 @@ const terminalHtml = `<!doctype html>
         };
         return;
       }
-      if (event.touches.length !== 1) { touch = null; pinch = null; return; }
+      if (event.touches.length !== 1) { touch = null; pinch = null; lastTap = null; return; }
       const point = event.touches[0];
       hideToolbar();
       touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
         touch.longPressed = true;
+        lastTap = null;
         event.preventDefault();
         event.stopPropagation();
         if (selectWordAt(touch.x, touch.y)) showToolbar(touch.x, touch.y);
@@ -342,7 +441,7 @@ const terminalHtml = `<!doctype html>
         event.preventDefault();
         event.stopPropagation();
         const ratio = touchDistance(event.touches) / pinch.distance;
-        const fontSize = Math.max(8, Math.min(16, Math.round(pinch.initialFontSize * ratio)));
+        const fontSize = Math.max(8, Math.min(24, Math.round(pinch.initialFontSize * ratio)));
         if (fontSize !== pinch.fontSize) {
           pinch.fontSize = fontSize;
           terminal.options.fontSize = fontSize;
@@ -359,6 +458,7 @@ const terminalHtml = `<!doctype html>
       const point = event.touches[0];
       if (!touch.moved && Math.hypot(point.clientX - touch.x, point.clientY - touch.y) < 10) return;
       touch.moved = true;
+      lastTap = null;
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
       event.preventDefault();
       event.stopPropagation();
@@ -392,9 +492,9 @@ const terminalHtml = `<!doctype html>
       }
       if (!touch.moved && !touch.longPressed && point) {
         const now = { time: Date.now(), x: point.clientX, y: point.clientY };
-        if (lastTap && now.time - lastTap.time < 300 && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) < 24) {
+        if (doubleTapTabEnabled && lastTap && now.time - lastTap.time <= doubleTapTimeoutMs && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) <= doubleTapDistancePx) {
           event.preventDefault();
-          event.stopPropagation();
+          event.stopImmediatePropagation();
           send({ type: 'input', data: '\\t' });
           lastTap = null;
         } else {
@@ -408,6 +508,7 @@ const terminalHtml = `<!doctype html>
       longPressTimer = null;
       touch = null;
       pinch = null;
+      lastTap = null;
     }, { capture: true });
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);

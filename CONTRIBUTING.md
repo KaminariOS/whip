@@ -54,6 +54,7 @@ Document any check you could not run and why.
 - Explain the user-visible result and how you verified it.
 - Add or update tests for behavior changes.
 - Include before/after screenshots or a short recording for UI changes.
+- Put documentation screenshots in `assets/screenshots`, capture them from a release build, and use generic host, user, path, and terminal values.
 - Preserve the Android-only product boundary unless a proposal has been discussed first.
 - Use conventional commit subjects such as `fix:`, `feat:`, `docs:`, `ci:`, `test:`, or `chore:`.
 - Do not mix dependency upgrades or generated files into an unrelated change.

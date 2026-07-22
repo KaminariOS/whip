@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { HerdrSnapshot } from '../types';
-import type { TerminalSessionsState } from '../terminalSessions';
+import { openTerminalSession, type TerminalSessionsState } from '../terminalSessions';
 
 const PREFIX = 'herdr.terminal.sessions.v1.';
 
@@ -23,7 +23,10 @@ export async function loadPersistedTerminals(hostId: string, snapshot: HerdrSnap
     const activeTerminalId = sessions.some(session => session.terminalId === parsed.activeTerminalId)
       ? parsed.activeTerminalId || null
       : sessions[0]?.terminalId || null;
-    return { sessions, activeTerminalId };
+    const restored = { sessions, activeTerminalId };
+    const focusedPane = snapshot.panes.find(pane => pane.pane_id === snapshot.focused_pane_id)
+      ?? snapshot.panes.find(pane => pane.focused);
+    return focusedPane ? openTerminalSession(restored, focusedPane) : restored;
   } catch {
     return { sessions: [], activeTerminalId: null };
   }
