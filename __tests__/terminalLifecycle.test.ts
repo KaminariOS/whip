@@ -117,7 +117,7 @@ describe('terminal renderer lifecycle', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
 
     expect(screen).toContain('if (!terminalId || !visible) return;');
-    expect(screen).toContain('[client, connectionGeneration, terminalId, visible]');
+    expect(screen).toContain('[client, connectionGeneration, t, terminalId, visible]');
   });
 
   it('resets the renderer in the same injection as the first terminal frame', () => {

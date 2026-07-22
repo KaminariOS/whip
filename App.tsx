@@ -3,9 +3,11 @@ import './global.css';
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { useKeepAwake } from 'expo-keep-awake';
+import { useLocales } from 'expo-localization';
 import { PortalHost } from '@rn-primitives/portal';
 import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
@@ -72,6 +74,7 @@ import {
   loadDevicePreferences,
   saveDevicePreferences,
   type AppearancePreference,
+  type LanguagePreference,
   type TerminalPreferences,
 } from './src/services/devicePreferences';
 import { HerdrClient } from './src/services/HerdrClient';
@@ -103,6 +106,7 @@ import {
 import { useTheme } from './src/theme';
 import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
+import i18n, { languageForLocale } from './src/i18n';
 
 interface LiveRuntime {
   client: HerdrClient;
@@ -157,6 +161,8 @@ function App() {
 }
 
 function AppContent() {
+  const { t } = useTranslation();
+  const locales = useLocales();
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const hostsRef = useRef<HostProfile[]>([]);
@@ -183,6 +189,7 @@ function AppContent() {
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [appearance, setAppearance] = useState<AppearancePreference>(defaultDevicePreferences.appearance);
+  const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
   const [reopenTerminalOnLaunch, setReopenTerminalOnLaunch] = useState(defaultDevicePreferences.reopenTerminalOnLaunch);
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
@@ -192,6 +199,11 @@ function AppContent() {
   const applyAppearance = useEffectEvent((value: AppearancePreference) => {
     Appearance.setColorScheme(resolveColorScheme(value));
   });
+  const resolvedLanguage = language === 'system' ? languageForLocale(locales[0]) : language;
+
+  useEffect(() => {
+    i18n.changeLanguage(resolvedLanguage).catch(() => undefined);
+  }, [resolvedLanguage]);
 
   const updateTerminalFontSize = useCallback((fontSize: number) => {
     const nextFontSize = Math.max(8, Math.min(24, Math.round(fontSize)));
@@ -242,7 +254,7 @@ function AppContent() {
         setHosts(value);
         setCredentialRecovery(await credentialRecoveryStatus());
       })
-      .catch(error => setConnectError(`Could not load saved hosts: ${String(error)}`))
+      .catch(error => setConnectError(t('app.loadHostsError', { error: String(error) })))
       .finally(() => setProfilesLoaded(true));
     prepareAlerts().catch(() => undefined);
     loadDevicePreferences()
@@ -250,6 +262,7 @@ function AppContent() {
         setAlertsEnabled(preferences.alertsEnabled);
         setTtsEnabled(preferences.ttsEnabled);
         setAppearance(preferences.appearance);
+        setLanguage(preferences.language);
         setKeepScreenOn(preferences.keepScreenOn);
         setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
         applyAppearance(preferences.appearance);
@@ -266,7 +279,7 @@ function AppContent() {
         persistedLiveHostsRef.current = value;
       })
       .finally(() => setLiveHostsLoaded(true));
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -274,13 +287,14 @@ function AppContent() {
       alertsEnabled,
       ttsEnabled,
       appearance,
+      language,
       keepScreenOn,
       reopenTerminalOnLaunch,
       lastTab: navigation.tab,
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [alertsEnabled, appearance, keepScreenOn, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [alertsEnabled, appearance, keepScreenOn, language, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
@@ -309,8 +323,8 @@ function AppContent() {
     const operation = alertsEnabled && hostCount > 0
       ? startBackgroundMonitoring(hostCount)
       : stopBackgroundMonitoring();
-    operation.catch(error => setConnectError(`Background monitoring unavailable: ${String(error)}`));
-  }, [alertsEnabled, liveHostRestoreComplete, liveSessions.sessions.length]);
+    operation.catch(error => setConnectError(t('app.backgroundUnavailable', { error: String(error) })));
+  }, [alertsEnabled, liveHostRestoreComplete, liveSessions.sessions.length, t]);
 
   useEffect(() => () => {
     if (
@@ -451,7 +465,7 @@ function AppContent() {
       reason => {
         if (runtimes.current.get(sessionId) !== runtime) return;
         runtime.eventStatus = 'closed';
-        scheduleEventReconnect(sessionId, reason || 'Herdr event bridge closed');
+        scheduleEventReconnect(sessionId, reason || t('app.eventBridgeClosed'));
       },
     );
     if (runtimes.current.get(sessionId) !== runtime) return;
@@ -757,7 +771,7 @@ function AppContent() {
           activateSession: hostId === persisted.activeHostId,
         });
       } catch (error) {
-        setConnectError(`Could not restore ${hostDisplayName(host)}: ${String(error)}`);
+        setConnectError(t('app.restoreHostError', { host: hostDisplayName(host), error: String(error) }));
       }
     }));
     if (persisted.activeHostId) {
@@ -785,10 +799,10 @@ function AppContent() {
     if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || restoreStarted.current) return;
     restoreStarted.current = true;
     restorePersistedLiveHosts().catch(error => {
-      setConnectError(`Could not restore live hosts: ${String(error)}`);
+      setConnectError(t('app.restoreLiveHostsError', { error: String(error) }));
       setLiveHostRestoreComplete(true);
     });
-  }, [liveHostsLoaded, preferencesLoaded, profilesLoaded]);
+  }, [liveHostsLoaded, preferencesLoaded, profilesLoaded, t]);
 
   const saveHost = async (nextProfile: ConnectionProfile) => {
     setConnectError(null);
@@ -798,7 +812,7 @@ function AppContent() {
       setCredentialRecovery(await credentialRecoveryStatus());
       setEditorProfile(null);
     } catch (error) {
-      setConnectError(`Could not save host: ${String(error)}`);
+      setConnectError(t('app.saveHostError', { error: String(error) }));
     }
   };
 
@@ -807,7 +821,7 @@ function AppContent() {
     try {
       setEditorProfile(await loadConnectionProfile(host));
     } catch (error) {
-      setConnectError(`Could not load credentials: ${String(error)}`);
+      setConnectError(t('app.loadCredentialsError', { error: String(error) }));
     }
   };
 
@@ -818,13 +832,13 @@ function AppContent() {
       const result = await restoreCredentialBackups(hostsRef.current);
       setCredentialRecovery(await credentialRecoveryStatus());
       if (result.failed > 0) {
-        setConnectError(`Restored ${result.restored} credentials; ${result.failed} could not be decrypted.`);
+        setConnectError(t('app.restoreCredentialsPartial', { restored: result.restored, failed: result.failed }));
       }
       return result.restored > 0;
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code !== 'E_CREDENTIAL_VAULT_CANCELLED') {
-        setConnectError(`Could not restore credentials: ${String(error)}`);
+        setConnectError(t('app.restoreCredentialsError', { error: String(error) }));
       }
       setCredentialRecovery(await credentialRecoveryStatus());
       return false;
@@ -855,7 +869,7 @@ function AppContent() {
       }
       if (!nextProfile.secret) {
         setEditorProfile(nextProfile);
-        setConnectError('Enter this host credential before connecting. Enable Remember credentials to use one-tap connect next time.');
+        setConnectError(t('app.enterCredential'));
         return;
       }
       await connect(nextProfile);
@@ -867,10 +881,10 @@ function AppContent() {
   };
 
   const confirmDeleteHost = (target: ConnectionProfile) => {
-    Alert.alert('Delete host?', `${hostDisplayName(target)} and its saved credential will be removed from this device.`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('app.deleteHostTitle'), t('app.deleteHostCopy', { host: hostDisplayName(target) }), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: () => {
           const live = liveSessionsRef.current.sessions.find(session => session.hostId === target.id);
@@ -882,7 +896,7 @@ function AppContent() {
               setEditorProfile(null);
               setConnectError(null);
             })
-            .catch(error => setConnectError(`Could not delete host: ${String(error)}`));
+            .catch(error => setConnectError(t('app.deleteHostError', { error: String(error) })));
         },
       },
     ]);
@@ -996,28 +1010,28 @@ function AppContent() {
 
   const selectHerdWorkspace = async (sessionId: string, workspaceId: string) => {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime) throw new Error('Host session is unavailable');
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
     await runtime.client.focusWorkspace(workspaceId);
     await refreshHost(sessionId);
   };
 
   const createHerdWorkspace = async (sessionId: string, name: string, cwd: string) => {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime) throw new Error('Host session is unavailable');
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
     await runtime.client.createWorkspace(name, cwd);
     await refreshHost(sessionId);
   };
 
   const renameHerdWorkspace = async (sessionId: string, workspaceId: string, name: string) => {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime) throw new Error('Host session is unavailable');
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
     await runtime.client.renameWorkspace(workspaceId, name);
     await refreshHost(sessionId);
   };
 
   const closeHerdWorkspace = async (sessionId: string, workspaceId: string) => {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime) throw new Error('Host session is unavailable');
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
     await runtime.client.closeWorkspace(workspaceId);
     await refreshHost(sessionId);
   };
@@ -1042,7 +1056,7 @@ function AppContent() {
   };
 
   if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded) {
-    return <View className="flex-1 items-center justify-center bg-background"><WhipMark accessibilityLabel="Whip is loading" size={64} /></View>;
+    return <View className="flex-1 items-center justify-center bg-background"><WhipMark accessibilityLabel={t('app.loading')} size={64} /></View>;
   }
 
   const terminalVisible = navigation.tab === 'terminal' && !editorProfile;
@@ -1103,11 +1117,11 @@ function AppContent() {
                 onStart={startAgent}
                 onStartServer={startServer}
               />
-            ) : <ConnectRequiredScreen destination="HERD" onPickHost={() => selectTab('hosts')} />
+            ) : <ConnectRequiredScreen destination={t('nav.herd')} onPickHost={() => selectTab('hosts')} />
           )}
 
           {!activeSession && navigation.tab === 'terminal' && (
-            <ConnectRequiredScreen destination="TERMINAL" onPickHost={() => selectTab('hosts')} />
+            <ConnectRequiredScreen destination={t('nav.terminal')} onPickHost={() => selectTab('hosts')} />
           )}
 
           {navigation.tab === 'more' && (
@@ -1117,6 +1131,7 @@ function AppContent() {
               alertsEnabled={alertsEnabled}
               ttsEnabled={ttsEnabled}
               appearance={appearance}
+              language={language}
               keepScreenOn={keepScreenOn}
               reopenTerminalOnLaunch={reopenTerminalOnLaunch}
               terminalPreferences={terminalPreferences}
@@ -1124,6 +1139,7 @@ function AppContent() {
               onAlertsChange={setAlertsEnabled}
               onTtsChange={setTtsEnabled}
               onAppearanceChange={updateAppearance}
+              onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
               onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
               onTerminalPreferencesChange={setTerminalPreferences}

@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScrollView, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { aggregateAgentStatus } from '@/src/liveHostSessions';
 import { cn } from '@/src/lib/utils';
@@ -28,6 +29,7 @@ export function WorkspaceRail({
   onActions,
   onRename,
 }: Props) {
+  const { t } = useTranslation();
   const allStatus = aggregateAgentStatus(workspaces.map(workspace => workspace.agent_status));
   const totalTabs = workspaces.reduce((total, workspace) => total + workspace.tab_count, 0);
 
@@ -35,7 +37,7 @@ export function WorkspaceRail({
     <View className="h-12 flex-row border-b border-[#424242] bg-[#181818]">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5">
         <WorkspacePill
-          label="All spaces"
+          label={t('rail.allSpaces')}
           status={allStatus}
           count={totalTabs}
           active={selectedWorkspaceId === null}
@@ -53,10 +55,10 @@ export function WorkspaceRail({
           />
         ))}
       </ScrollView>
-      <Button accessibilityLabel="New workspace" className="h-12 w-[72px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
-        <Ionicons name="add" size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">Space</Text>
+      <Button accessibilityLabel={t('rail.newWorkspace')} className="h-12 w-[72px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
+        <Ionicons name="add" size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">{t('rail.space')}</Text>
       </Button>
-      <Button accessibilityLabel="Workspace actions" className="h-12 w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(onActions)}>
+      <Button accessibilityLabel={t('rail.workspaceActions')} className="h-12 w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(onActions)}>
         <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
       </Button>
     </View>
@@ -78,8 +80,9 @@ function WorkspacePill({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
+  const { t } = useTranslation();
   return (
-    <Button accessibilityLabel={`${label}, ${status}`} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px] py-0', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
+    <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-[#2F2F2F] px-[11px] py-0', active && 'bg-[#FFFFFF]')} variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
       <AnimatedAgentStatusGlyph status={status} color={statusColor(status)} size={12} />
       <Text numberOfLines={1} className={cn('max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{label}</Text>
       <Text className={cn('font-mono text-[8px] leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{count}</Text>

@@ -6,6 +6,14 @@
     "icon": "./assets/icon.png",
     "scheme": "whip",
     "userInterfaceStyle": "automatic",
+    "plugins": [
+      [
+        "expo-localization",
+        {
+          "supportedLocales": ["en", "zh-Hant"]
+        }
+      ]
+    ],
     "ios": {
       "bundleIdentifier": "io.github.kaminarios.whip"
     },

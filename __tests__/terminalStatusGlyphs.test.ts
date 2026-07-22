@@ -28,14 +28,14 @@ describe('terminal hierarchy status glyphs', () => {
 
     expect(herd).toContain('<LiveSessionRail');
     expect(herd).toContain('<WorkspaceRail');
-    expect(hostRail).toContain("label: 'All hosts'");
-    expect(hostRail).toContain('accessibilityLabel={`Disconnect ${session.label}`}');
-    expect(hostRail).toContain('accessibilityLabel="New host session"');
-    expect(workspaceRail).toContain('label="All spaces"');
-    expect(workspaceRail).toContain('accessibilityLabel="New workspace"');
-    expect(workspaceRail).toContain('accessibilityLabel="Workspace actions"');
+    expect(hostRail).toContain("label: t('rail.allHosts')");
+    expect(hostRail).toContain("accessibilityLabel={t('rail.disconnectHost', { host: session.label })}");
+    expect(hostRail).toContain("accessibilityLabel={t('rail.newHostSession')}");
+    expect(workspaceRail).toContain("label={t('rail.allSpaces')}");
+    expect(workspaceRail).toContain("accessibilityLabel={t('rail.newWorkspace')}");
+    expect(workspaceRail).toContain("accessibilityLabel={t('rail.workspaceActions')}");
     expect(screen).not.toContain('snapshot.workspaces.map');
-    expect(screen).toContain('accessibilityLabel="Back to herd"');
+    expect(screen).toContain("accessibilityLabel={t('session.backToHerd')}");
   });
 
   it('shows aggregate agent status glyphs for hosts', () => {

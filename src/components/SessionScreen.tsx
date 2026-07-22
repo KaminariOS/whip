@@ -5,6 +5,7 @@ import {
   ScrollView,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { serverFocusMatchesPendingPane } from '@/src/lib/terminalFocus';
@@ -60,6 +61,7 @@ export function SessionScreen({
   onTerminalControlUse,
   onExit,
 }: Props) {
+  const { t } = useTranslation();
   const focusedWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const [workspaceId, setWorkspaceId] = useState(focusedWorkspace?.workspace_id || '');
   const [tabId, setTabId] = useState(focusedWorkspace?.active_tab_id || '');
@@ -161,7 +163,7 @@ export function SessionScreen({
       await onRefresh();
       return true;
     } catch (error) {
-      Alert.alert('Herdr command failed', String(error));
+      Alert.alert(t('herd.commandFailed'), String(error));
       return false;
     } finally {
       setBusy(false);
@@ -222,7 +224,7 @@ export function SessionScreen({
       pointerEvents={visible ? 'auto' : 'none'}
       className={cn('flex-1 bg-[#212121]', !visible && 'absolute inset-0 opacity-0')}>
       <View className="h-[42px] flex-row border-b border-[#424242] bg-[#2F2F2F]">
-        <Button accessibilityLabel="Back to herd" className="h-[42px] w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
+        <Button accessibilityLabel={t('session.backToHerd')} className="h-[42px] w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
           <Ionicons name="chevron-back" size={21} color={colors.text} />
         </Button>
         {workspace ? (
@@ -235,20 +237,20 @@ export function SessionScreen({
                 const label = item.label || item.tab_id;
                 return (
                   <View key={item.tab_id} className={cn('h-[30px] max-w-[170px] flex-row items-center overflow-hidden rounded-full bg-[#212121]', active && 'bg-[#FFFFFF]')}>
-                    <Button accessibilityLabel={`Open ${label} tab`} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
+                    <Button accessibilityLabel={t('session.openTab', { tab: label })} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
                       <AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status)} size={12} />
                       <Text numberOfLines={1} className={cn('max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#B4B4B4]', active && 'text-[#212121]')}>{label}</Text>
                       {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
                     </Button>
-                    <Button accessibilityLabel={`Close ${label} tab`} className="h-[30px] w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(() => closeTab(item))}>
+                    <Button accessibilityLabel={t('session.closeTab', { tab: label })} className="h-[30px] w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(() => closeTab(item))}>
                       <Ionicons name="close" size={14} color={active ? colors.ink : colors.muted} />
                     </Button>
                   </View>
                 );
               })}
             </ScrollView>
-            <Button accessibilityLabel="New tab" className="h-[42px] w-[58px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Ionicons name="add" size={14} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">Tab</Text></Button>
-            <Button accessibilityLabel="Session actions" className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
+            <Button accessibilityLabel={t('session.newTab')} className="h-[42px] w-[58px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Ionicons name="add" size={14} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">{t('session.tab')}</Text></Button>
+            <Button accessibilityLabel={t('session.actions')} className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
               <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
             </Button>
           </>
@@ -257,18 +259,18 @@ export function SessionScreen({
 
       {menuOpen && (
         <View className="min-h-[42px] flex-row items-stretch border-b border-[#424242] bg-[#181818]">
-          <MenuAction label="RENAME TAB" disabled={!selectedTab} onPress={openRenameTab} />
-          <MenuAction label="PANE ACTIONS" disabled={!selectedPane} onPress={() => { if (selectedPane) onOpenPane(selectedPane); setMenuOpen(false); }} />
-          <MenuAction label="CLOSE TAB" danger disabled={!selectedTab} onPress={closeTab} />
+          <MenuAction label={t('session.renameTab')} disabled={!selectedTab} onPress={openRenameTab} />
+          <MenuAction label={t('session.paneActions')} disabled={!selectedPane} onPress={() => { if (selectedPane) onOpenPane(selectedPane); setMenuOpen(false); }} />
+          <MenuAction label={t('session.closeTabAction')} danger disabled={!selectedTab} onPress={closeTab} />
         </View>
       )}
 
       {editorMode && (
         <View className="flex-row items-center gap-1.5 border-b border-white bg-[#2F2F2F] p-[7px]">
-          <Text className="font-mono text-[8px] text-white">{editorMode.startsWith('rename') ? 'RENAME' : 'NEW'} {editorMode.replace('rename-', '').toUpperCase()}</Text>
-          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={name} onChangeText={setName} placeholder="Label (optional)" placeholderTextColor={colors.muted} />
-          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setEditorMode(null))}><Text className="font-mono text-[8px] text-[#B4B4B4]">CANCEL</Text></Button>
-          <Button className="h-[34px] rounded-none bg-white px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black text-[#212121]">SAVE</Text></Button>
+          <Text className="font-mono text-[8px] text-white">{editorMode.startsWith('rename') ? t('herd.rename') : t('herd.new')} {t('session.tab')}</Text>
+          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={name} onChangeText={setName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.muted} />
+          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setEditorMode(null))}><Text className="font-mono text-[8px] text-[#B4B4B4]">{t('common.cancel')}</Text></Button>
+          <Button className="h-[34px] rounded-none bg-white px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black text-[#212121]">{t('common.save')}</Text></Button>
         </View>
       )}
 
@@ -306,14 +308,14 @@ export function SessionScreen({
         ))}
         {!selectedTab && (
           <View className="flex-1 items-center justify-center p-[30px]">
-            <Text className="font-mono font-black text-[#ECECEC]">{workspace ? 'EMPTY WORKSPACE' : 'NO WORKSPACES'}</Text>
-            <Text className="mt-2 text-center text-[#B4B4B4]">{workspace ? 'Create a Herdr tab to open a terminal.' : 'Create a Herdr workspace to begin.'}</Text>
+            <Text className="font-mono font-black text-[#ECECEC]">{workspace ? t('session.emptyWorkspace') : t('session.noWorkspaces')}</Text>
+            <Text className="mt-2 text-center text-[#B4B4B4]">{workspace ? t('session.createTab') : t('session.createWorkspace')}</Text>
           </View>
         )}
         {selectedTab && panes.length === 0 && (
           <View className="flex-1 items-center justify-center p-[30px]">
-            <Text className="font-mono font-black text-[#ECECEC]">EMPTY TAB</Text>
-            <Text className="mt-2 text-center text-[#B4B4B4]">Create or move a pane here from Herdr.</Text>
+            <Text className="font-mono font-black text-[#ECECEC]">{t('session.emptyTab')}</Text>
+            <Text className="mt-2 text-center text-[#B4B4B4]">{t('session.emptyTabCopy')}</Text>
           </View>
         )}
       </View>

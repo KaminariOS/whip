@@ -22,6 +22,7 @@ export interface TerminalPreferences {
 }
 
 export type AppearancePreference = 'system' | 'light' | 'dark';
+export type LanguagePreference = 'system' | 'en' | 'zh-Hant';
 
 type StoredTerminalPreferences = Partial<TerminalPreferences> & {
   backgroundOpacity?: unknown;
@@ -31,6 +32,7 @@ export interface DevicePreferences {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
   appearance: AppearancePreference;
+  language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
   lastTab: AppTab;
@@ -42,6 +44,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   alertsEnabled: true,
   ttsEnabled: false,
   appearance: 'system',
+  language: 'system',
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
   lastTab: 'hosts',
@@ -97,6 +100,9 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
       appearance: isAppearancePreference(parsed.appearance)
         ? parsed.appearance
         : defaultDevicePreferences.appearance,
+      language: isLanguagePreference(parsed.language)
+        ? parsed.language
+        : defaultDevicePreferences.language,
       keepScreenOn: parsed.keepScreenOn === true,
       reopenTerminalOnLaunch: parsed.reopenTerminalOnLaunch === true,
       lastTab: isAppTab(parsed.lastTab) ? parsed.lastTab : defaultDevicePreferences.lastTab,
@@ -137,4 +143,8 @@ function isAppTab(value: unknown): value is AppTab {
 
 function isAppearancePreference(value: unknown): value is AppearancePreference {
   return value === 'system' || value === 'light' || value === 'dark';
+}
+
+function isLanguagePreference(value: unknown): value is LanguagePreference {
+  return value === 'system' || value === 'en' || value === 'zh-Hant';
 }

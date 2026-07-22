@@ -42,6 +42,7 @@ test('terminal preference defaults match the mobile renderer', () => {
   });
   expect(defaultDevicePreferences.terminalControlUsage).toEqual({});
   expect(defaultDevicePreferences.appearance).toBe('system');
+  expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.keepScreenOn).toBe(false);
   expect(defaultDevicePreferences.reopenTerminalOnLaunch).toBe(false);
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
@@ -61,6 +62,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     alertsEnabled: false,
     ttsEnabled: true,
     appearance: 'system',
+    language: 'system',
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
     lastTab: 'terminal',
@@ -81,6 +83,14 @@ test('loads a valid appearance preference and rejects invalid values', async () 
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ appearance: 'sepia' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ appearance: 'system' });
+});
+
+test('loads a supported language preference and rejects invalid values', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'zh-Hant' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'zh-Hant' });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'fr' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'system' });
 });
 
 test('loads terminal behavior toggles only when explicitly enabled', async () => {

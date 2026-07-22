@@ -6,6 +6,7 @@ import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
 import { armPersistentAgentAlert } from './backgroundMonitoring';
+import i18n from '../i18n';
 
 const CHANNEL_ID = 'agent-state-v3';
 const ALERT_VIBRATION_PATTERN = [
@@ -28,7 +29,7 @@ Notifications.setNotificationHandler({
 export async function prepareAlerts(): Promise<void> {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-      name: 'Agent state',
+      name: i18n.t('alerts.channelName'),
       importance: Notifications.AndroidImportance.HIGH,
       bypassDnd: true,
       enableLights: true,
@@ -45,8 +46,11 @@ export async function alertAgent(
   target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
   tabName?: string,
 ): Promise<void> {
-  const title = agentNotificationTitle(agent, tabName);
-  const body = agent.title || agent.custom_status || `Agent is ${agent.agent_status}`;
+  const title = agentNotificationTitle(agent, tabName, {
+    needsYou: name => i18n.t('alerts.needsYou', { name }),
+    finished: name => i18n.t('alerts.finished', { name }),
+  });
+  const body = agent.title || agent.custom_status || i18n.t('alerts.agentState', { status: agent.agent_status });
 
   if (Platform.OS !== 'android') Vibration.vibrate();
   const notificationIdentifier = await Notifications.scheduleNotificationAsync({
@@ -69,6 +73,6 @@ export async function alertAgent(
   }
   if (speak) {
     Speech.stop();
-    Speech.speak(title);
+    Speech.speak(title, { language: i18n.resolvedLanguage === 'zh-Hant' ? 'zh-TW' : 'en-US' });
   }
 }

@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { ScrollView, StyleSheet, Text } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { dominantAnsiBackground, parseAnsi, resolvedStyle } from '../lib/ansi';
 import { colors } from '../theme';
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function AnsiOutput({ value }: Props) {
+  const { t } = useTranslation();
   const scrollView = useRef<ScrollView | null>(null);
   const segments = useMemo(() => parseAnsi(value), [value]);
   const background = useMemo(
@@ -19,7 +21,7 @@ export function AnsiOutput({ value }: Props) {
   return (
     <ScrollView
       ref={scrollView}
-      accessibilityLabel="ANSI pane output"
+      accessibilityLabel={t('pane.ansiOutput')}
       style={[styles.scroll, { backgroundColor: background }]}
       contentContainerStyle={styles.content}
       onContentSizeChange={() => scrollView.current?.scrollToEnd({ animated: false })}>

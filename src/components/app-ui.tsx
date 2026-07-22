@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Animated, Easing, Image, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { agentStatusGlyph, statusMotionKind, statusTone } from '@/src/lib/statusMotion';
@@ -64,6 +65,7 @@ export function IconButton({
 
 export function StatusBadge({ status, label, agentStatus = false, showIndicator = true }: { status: string; label?: string; agentStatus?: boolean; showIndicator?: boolean }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const tone = statusTone(status);
   const indicatorColor = { success: colors.working, destructive: colors.error, warning: colors.warning, muted: colors.textTertiary }[tone];
   const textClass = { success: 'text-success', destructive: 'text-destructive', warning: 'text-warning', muted: 'text-muted-foreground' }[tone];
@@ -72,7 +74,7 @@ export function StatusBadge({ status, label, agentStatus = false, showIndicator 
       {showIndicator && (agentStatus
         ? <AnimatedAgentStatusGlyph status={status} color={indicatorColor} size={12} />
         : <AnimatedStatusIndicator status={status} color={indicatorColor} />)}
-      <Text className={cn('text-xs font-semibold capitalize', textClass)}>{label || status}</Text>
+      <Text className={cn('text-xs font-semibold capitalize', textClass)}>{label || t(`status.${status}`, { defaultValue: status })}</Text>
     </Badge>
   );
 }

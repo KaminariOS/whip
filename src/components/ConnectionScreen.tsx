@@ -2,6 +2,7 @@ import { ArrowRight, ClipboardPaste, Copy, FileUp, KeyRound, Sparkles, Trash2, X
 import SSHClient from '@dylankenneally/react-native-ssh-sftp';
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { normalizePrivateKey } from '@/src/lib/privateKey';
 import { cn } from '@/src/lib/utils';
@@ -36,6 +37,7 @@ type PrivateKeyFilePickerModule = {
 const privateKeyFilePicker = NativeModules.PrivateKeyFilePicker as PrivateKeyFilePickerModule | undefined;
 
 export function ConnectionScreen({ initialProfile, connecting, error, onCancel, onSave, onConnect, onDelete }: Props) {
+  const { t } = useTranslation();
   const [profile, setProfile] = useState(initialProfile);
   const [keyInspection, setKeyInspection] = useState<KeyInspection>({ state: 'idle' });
   const [keyActionsOpen, setKeyActionsOpen] = useState(false);
@@ -70,8 +72,8 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
           setKeyInspection({
             state: 'invalid',
             message: inspectionError?.code === 'E_KEY_PASSPHRASE_INVALID'
-              ? 'The key passphrase is incorrect.'
-              : 'This private key could not be read.',
+              ? t('connection.incorrectPassphrase')
+              : t('connection.unreadableKey'),
           });
         });
     }, 250);
@@ -80,14 +82,14 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
       active = false;
       clearTimeout(timeout);
     };
-  }, [profile.authMode, profile.passphrase, profile.secret]);
+  }, [profile.authMode, profile.passphrase, profile.secret, t]);
 
   const update = <K extends keyof ConnectionProfile>(key: K, value: ConnectionProfile[K]) => setProfile(current => ({ ...current, [key]: value }));
   const canSave = Boolean(profile.host.trim() && profile.username.trim());
   const canConnect = Boolean(canSave && profile.secret);
   const privateKeyAccessibilityLabel = keyInspection.state === 'valid'
-    ? `${keyInspection.fingerprint}, ${keyInspection.keyType}. Tap for copy options.`
-    : 'Private key loaded. Tap for copy options.';
+    ? t('connection.keyA11y', { fingerprint: keyInspection.fingerprint, keyType: keyInspection.keyType })
+    : t('connection.loadedKeyA11y');
   const removePrivateKey = () => {
     setProfile(current => ({ ...current, secret: '', passphrase: '' }));
     setKeyActionsOpen(false);
@@ -95,7 +97,7 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
   const applyPrivateKey = (value: string) => {
     const privateKey = normalizePrivateKey(value);
     if (!privateKey) {
-      Alert.alert('No private key found', 'The clipboard or selected file is empty.');
+      Alert.alert(t('connection.noPrivateKeyTitle'), t('connection.noPrivateKeyCopy'));
       return;
     }
     setProfile(current => ({ ...current, secret: privateKey }));
@@ -105,20 +107,20 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
     try {
       applyPrivateKey(await Clipboard.getString());
     } catch (pasteError) {
-      Alert.alert('Could not paste private key', String(pasteError));
+      Alert.alert(t('connection.pasteError'), String(pasteError));
     }
   };
   const selectPrivateKeyFile = async () => {
     setKeyActionsOpen(false);
     if (!privateKeyFilePicker) {
-      Alert.alert('File selection unavailable', 'This build does not include the private key file picker.');
+      Alert.alert(t('connection.fileUnavailableTitle'), t('connection.fileUnavailableCopy'));
       return;
     }
     try {
       const privateKey = await privateKeyFilePicker.pickPrivateKey();
       if (privateKey != null) applyPrivateKey(privateKey);
     } catch (fileError) {
-      Alert.alert('Could not read private key', String(fileError));
+      Alert.alert(t('connection.readKeyError'), String(fileError));
     }
   };
   const generatePrivateKey = async () => {
@@ -128,19 +130,19 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
       const generated = await SSHClient.generateKeyPair('ed25519', profile.passphrase || '', 256, profile.name.trim() || 'herdr');
       applyPrivateKey(generated.privateKey);
     } catch (generationError) {
-      Alert.alert('Could not generate private key', String(generationError));
+      Alert.alert(t('connection.generateKeyError'), String(generationError));
     } finally {
       setGeneratingKey(false);
     }
   };
   const copied = (label: string) => {
     setKeyActionsOpen(false);
-    if (Platform.OS === 'android') ToastAndroid.show(`${label} copied`, ToastAndroid.SHORT);
-    else Alert.alert(`${label} copied`);
+    if (Platform.OS === 'android') ToastAndroid.show(t('connection.copied', { label }), ToastAndroid.SHORT);
+    else Alert.alert(t('connection.copied', { label }));
   };
   const copyPrivateKey = () => {
     Clipboard.setString(profile.secret);
-    copied('Private key');
+    copied(t('connection.privateKey'));
   };
   const copyPublicKey = async () => {
     try {
@@ -148,41 +150,41 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
         ? keyInspection.publicKey
         : (await SSHClient.getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined)).publicKey;
       Clipboard.setString(publicKey);
-      copied('Public key');
+      copied(t('connection.publicKey'));
     } catch (copyError: any) {
       setKeyActionsOpen(false);
       Alert.alert(
-        'Could not copy public key',
+        t('connection.copyPublicError'),
         copyError?.code === 'E_KEY_PASSPHRASE_REQUIRED'
-          ? 'Enter the key passphrase first.'
+          ? t('connection.enterPassphraseFirst')
           : copyError?.code === 'E_KEY_PASSPHRASE_INVALID'
-            ? 'The key passphrase is incorrect.'
-            : 'This private key could not be read.',
+            ? t('connection.incorrectPassphrase')
+            : t('connection.unreadableKey'),
       );
     }
   };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 bg-background">
-      <ScreenHeader title={profile.name.trim() ? 'Edit host' : 'New host'} left={<IconButton icon="chevron-back" accessibilityLabel="Back" onPress={onCancel} />} />
+      <ScreenHeader title={profile.name.trim() ? t('connection.editHost') : t('connection.newHost')} left={<IconButton icon="chevron-back" accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled"><View className="p-4 pb-11">
-        <View className="mb-[30px] flex-row items-center gap-3.5"><WhipMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">Remote Herdr connection</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">Herdr stays private on the host. This device connects over SSH and opens only the selected pane terminal.</Text></View></View>
+        <View className="mb-[30px] flex-row items-center gap-3.5"><WhipMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">{t('connection.title')}</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">{t('connection.intro')}</Text></View></View>
 
-        <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">Host identity</Text>
-        <Field label="Display name" value={profile.name} placeholder={profile.host.trim() || 'Savior'} onChangeText={value => update('name', value)} />
+        <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('connection.hostIdentity')}</Text>
+        <Field label={t('connection.displayName')} value={profile.name} placeholder={profile.host.trim() || 'Savior'} onChangeText={value => update('name', value)} />
 
-        <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">SSH destination</Text>
-        <View className="flex-row gap-2.5"><Field label="Tailscale host or IP" value={profile.host} placeholder="laptop.tailnet.ts.net" onChangeText={value => update('host', value)} className="flex-1" autoCapitalize="none" /><Field label="Port" value={profile.port} onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-[88px]" /></View>
-        <Field label="SSH user" value={profile.username} placeholder="kosumi" onChangeText={value => update('username', value)} autoCapitalize="none" />
+        <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.sshDestination')}</Text>
+        <View className="flex-row gap-2.5"><Field label={t('connection.hostOrIp')} value={profile.host} placeholder="laptop.tailnet.ts.net" onChangeText={value => update('host', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.port')} value={profile.port} onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-[88px]" /></View>
+        <Field label={t('connection.sshUser')} value={profile.username} placeholder="kosumi" onChangeText={value => update('username', value)} autoCapitalize="none" />
 
         <View className="mb-4 flex-row rounded-full bg-muted p-1">
-          {(['password', 'key'] as const).map(mode => <Button className={cn('h-[38px] flex-1 rounded-full', profile.authMode === mode && 'bg-background')} key={mode} variant="ghost" onPress={hapticPress(() => update('authMode', mode))}><Text className={cn('text-[13px] font-semibold', profile.authMode !== mode && 'text-muted-foreground')}>{mode === 'password' ? 'Password' : 'Private key'}</Text></Button>)}
+          {(['password', 'key'] as const).map(mode => <Button className={cn('h-[38px] flex-1 rounded-full', profile.authMode === mode && 'bg-background')} key={mode} variant="ghost" onPress={hapticPress(() => update('authMode', mode))}><Text className={cn('text-[13px] font-semibold', profile.authMode !== mode && 'text-muted-foreground')}>{mode === 'password' ? t('hosts.password') : t('connection.privateKey')}</Text></Button>)}
         </View>
 
         {profile.authMode === 'password' ? (
-          <Field label="SSH password" value={profile.secret} onChangeText={value => update('secret', value)} secureTextEntry autoCapitalize="none" />
+          <Field label={t('connection.sshPassword')} value={profile.secret} onChangeText={value => update('secret', value)} secureTextEntry autoCapitalize="none" />
         ) : (
-          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">PEM / OpenSSH private key</Text><View className="min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border bg-card"><Button accessibilityLabel={profile.secret ? privateKeyAccessibilityLabel : 'Add private key'} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" disabled={generatingKey} size="content" variant="ghost" onPress={hapticPress(() => setKeyActionsOpen(true))}><Icon as={KeyRound} size={18} />{profile.secret ? (keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>Private key loaded</Text>) : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{generatingKey ? 'Generating Ed25519 key…' : 'Add private key'}</Text>}</Button>{profile.secret ? <Button accessibilityLabel="Remove private key" className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button> : null}</View></View>
+          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.privateKeyFormat')}</Text><View className="min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border bg-card"><Button accessibilityLabel={profile.secret ? privateKeyAccessibilityLabel : t('connection.addPrivateKey')} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" disabled={generatingKey} size="content" variant="ghost" onPress={hapticPress(() => setKeyActionsOpen(true))}><Icon as={KeyRound} size={18} />{profile.secret ? (keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{t('connection.privateKeyLoaded')}</Text>) : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{generatingKey ? t('connection.generatingKey') : t('connection.addPrivateKey')}</Text>}</Button>{profile.secret ? <Button accessibilityLabel={t('connection.removePrivateKey')} className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button> : null}</View></View>
         )}
         {profile.authMode === 'key' && keyInspection.state !== 'idle' && keyInspection.state !== 'valid' ? (
             <Text
@@ -192,22 +194,22 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
                 keyInspection.state === 'invalid' && 'text-destructive',
                 (keyInspection.state === 'loading' || keyInspection.state === 'passphrase-required') && 'text-muted-foreground',
               )}>
-              {keyInspection.state === 'loading' && 'Inspecting private key…'}
-              {keyInspection.state === 'passphrase-required' && 'Enter the key passphrase to inspect this encrypted key.'}
+              {keyInspection.state === 'loading' && t('connection.inspectingKey')}
+              {keyInspection.state === 'passphrase-required' && t('connection.passphraseRequired')}
               {keyInspection.state === 'invalid' && keyInspection.message}
             </Text>
         ) : null}
-        {profile.authMode === 'key' ? <Field label="Key passphrase (optional)" value={profile.passphrase} onChangeText={value => update('passphrase', value)} secureTextEntry /> : null}
+        {profile.authMode === 'key' ? <Field label={t('connection.keyPassphrase')} value={profile.passphrase} onChangeText={value => update('passphrase', value)} secureTextEntry /> : null}
 
-        <View className="mb-3.5 mt-0.5 min-h-[74px] flex-row items-center gap-4 border-y border-border"><View className="flex-1"><Text className="text-[15px] font-semibold leading-5">Remember credentials</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">Keystore protected, with encrypted recovery unlocked by device security.</Text></View><Switch checked={profile.rememberCredentials} onCheckedChange={value => update('rememberCredentials', value)} /></View>
+        <View className="mb-3.5 mt-0.5 min-h-[74px] flex-row items-center gap-4 border-y border-border"><View className="flex-1"><Text className="text-[15px] font-semibold leading-5">{t('connection.rememberCredentials')}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('connection.rememberCopy')}</Text></View><Switch checked={profile.rememberCredentials} onCheckedChange={value => update('rememberCredentials', value)} /></View>
 
-        <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">Herdr target</Text>
-        <View className="flex-row gap-2.5"><Field label="Command" value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label="Session" value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
+        <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.herdrTarget')}</Text>
+        <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
 
         {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
-        <View className="mt-2 flex-row gap-2.5"><Button className="flex-1 rounded-full" variant="secondary" disabled={!canSave || connecting} onPress={hapticPress(() => onSave(profile))}><Text>Save host</Text></Button><Button className="flex-1 rounded-full" disabled={!canConnect || connecting} onPress={hapticPress(() => onConnect(profile))}><Text>{connecting ? 'Opening SSH…' : 'Connect'}</Text><Icon as={ArrowRight} className="text-primary-foreground" size={17} /></Button></View>
-        {onDelete ? <Button className="mt-3.5 rounded-full" variant="destructive" onPress={hapticPress(onDelete)}><Icon as={Trash2} className="text-destructive-foreground" size={17} /><Text>Delete host</Text></Button> : null}
-        <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">Host-key pinning is not available yet. Use this connection only inside a trusted Tailscale network.</Text>
+        <View className="mt-2 flex-row gap-2.5"><Button className="flex-1 rounded-full" variant="secondary" disabled={!canSave || connecting} onPress={hapticPress(() => onSave(profile))}><Text>{t('connection.saveHost')}</Text></Button><Button className="flex-1 rounded-full" disabled={!canConnect || connecting} onPress={hapticPress(() => onConnect(profile))}><Text>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text><Icon as={ArrowRight} className="text-primary-foreground" size={17} /></Button></View>
+        {onDelete ? <Button className="mt-3.5 rounded-full" variant="destructive" onPress={hapticPress(onDelete)}><Icon as={Trash2} className="text-destructive-foreground" size={17} /><Text>{t('connection.deleteHost')}</Text></Button> : null}
+        <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">{t('connection.hostKeyWarning')}</Text>
       </View></ScrollView>
       <PrivateKeyActions
         hasKey={Boolean(profile.secret)}
@@ -243,27 +245,28 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
   onPaste: () => void;
   onSelectFile: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityLabel="Close private key actions" className="flex-1 justify-end bg-black/55" onPress={onClose}>
+      <Pressable accessibilityLabel={t('connection.closeKeyActions')} className="flex-1 justify-end bg-black/55" onPress={onClose}>
         <Pressable className="rounded-t-[28px] border-t border-border bg-card px-4 pb-8 pt-5" onPress={event => event.stopPropagation()}>
-          <Text className="px-2 text-lg font-semibold">{hasKey ? 'Copy SSH key' : 'Add private key'}</Text>
+          <Text className="px-2 text-lg font-semibold">{hasKey ? t('connection.copySshKey') : t('connection.addPrivateKey')}</Text>
           <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">
-            {hasKey ? 'Choose which part of this keypair to copy.' : 'Choose how to add an SSH private key.'}
+            {hasKey ? t('connection.copyWhich') : t('connection.chooseAddMethod')}
           </Text>
           {hasKey ? (
             <>
-              <KeyAction icon={Copy} label="Copy private key" onPress={onCopyPrivate} />
-              <KeyAction icon={KeyRound} label="Copy public key" onPress={onCopyPublic} />
+              <KeyAction icon={Copy} label={t('connection.copyPrivate')} onPress={onCopyPrivate} />
+              <KeyAction icon={KeyRound} label={t('connection.copyPublic')} onPress={onCopyPublic} />
             </>
           ) : (
             <>
-              <KeyAction icon={ClipboardPaste} label="Paste from clipboard" onPress={onPaste} />
-              <KeyAction icon={FileUp} label="Select file" onPress={onSelectFile} />
-              <KeyAction icon={Sparkles} label="Generate new Ed25519 key" onPress={onGenerate} />
+              <KeyAction icon={ClipboardPaste} label={t('connection.pasteClipboard')} onPress={onPaste} />
+              <KeyAction icon={FileUp} label={t('connection.selectFile')} onPress={onSelectFile} />
+              <KeyAction icon={Sparkles} label={t('connection.generateNew')} onPress={onGenerate} />
             </>
           )}
-          <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>Cancel</Text></Button>
+          <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
         </Pressable>
       </Pressable>
     </Modal>
