@@ -26,6 +26,13 @@
       font-weight: 400;
       font-display: block;
     }
+    @font-face {
+      font-family: 'Herdr Terminal CJK';
+      src: url('arphic-ukai-hk.ttf') format('truetype');
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+    }
     html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
     html { -webkit-text-size-adjust: none; text-size-adjust: none; }
     #terminal-background-layer { position: fixed; inset: 0; z-index: 2; display: none; mix-blend-mode: screen; pointer-events: none; }
@@ -183,12 +190,13 @@
     for (const [type, listener] of listeners) eventTarget.removeEventListener(type, listener, true);
   };
 }
-    const terminalFontFamily = '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", monospace';
+    const terminalFontFamily = '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", "Herdr Terminal CJK", monospace';
     const fontReady = document.fonts?.load
       ? Promise.all([
           document.fonts.load('400 8px "Herdr Terminal Mono"'),
           document.fonts.load('700 8px "Herdr Terminal Mono"'),
           document.fonts.load('400 8px "Herdr Terminal Symbols"', '\uf120'),
+          document.fonts.load('400 8px "Herdr Terminal CJK"', '\u4e2d'),
         ]).then(() => document.fonts.ready)
       : Promise.resolve();
     const initializeTerminal = () => {

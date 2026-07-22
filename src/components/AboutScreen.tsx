@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import { Alert, Linking, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { HERDR_PROTOCOL_VERSION } from '@/src/lib/herdrProtocol';
 import type { ServerInfo } from '@/src/types';
 import { hapticPress, WhipMark } from './app-ui';
@@ -51,6 +52,15 @@ export function AboutSection({ server }: AboutSectionProps) {
           <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
             {t('about.compatibilityCopy', { version: HERDR_PROTOCOL_VERSION })}
           </Text>
+
+          <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.terminalFonts')}</Text>
+          <View className="overflow-hidden rounded-lg border border-border bg-card">
+            <AboutRow label={t('about.terminalTextFont')} value={terminalFonts.text.displayName} />
+            <AboutRow label={t('about.terminalCjkFont')} value={terminalFonts.cjk.displayName} divided />
+            <AboutRow label={t('about.terminalSymbolFont')} value={terminalFonts.symbols.displayName} divided />
+            <AboutRow label={t('about.terminalEmojiFont')} value={terminalFonts.emoji.displayName} divided />
+            <AboutRow label={t('about.terminalFallbackFont')} value={terminalFonts.fallback.displayName} divided />
+          </View>
 
           <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.source')}</Text>
           <Button
