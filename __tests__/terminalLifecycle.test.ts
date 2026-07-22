@@ -5,11 +5,32 @@ describe('terminal renderer lifecycle', () => {
   it('keeps one terminal WebView mounted per opened terminal', () => {
     const source = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
 
-    expect(source).toContain('terminalState.sessions.map(terminalSession => (');
+    expect(source).toContain('terminalState.sessions.map(terminalSession => {');
     expect(source).toContain('key={terminalSession.terminalId}');
     expect(source).toContain('session={terminalSession}');
     expect(source).toContain("!visible && 'absolute inset-0 opacity-0'");
     expect(source).not.toContain("!visible && 'hidden'");
+  });
+
+  it('keeps hidden terminals at immersive height while bottom navigation is visible', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const bottomNavigation = readFileSync(resolve(__dirname, '../src/components/BottomNavigation.tsx'), 'utf8');
+
+    expect(app).toContain("edges={['top', 'left', 'right']}");
+    expect(app).toContain("{!immersiveTerminal && (\n          <View className=\"flex-1 bg-background\">");
+    expect(app).toContain("          </View>\n        )}\n\n        {liveSessions.sessions.map");
+    expect(bottomNavigation).toContain('const { bottom } = useSafeAreaInsets();');
+    expect(bottomNavigation).toContain('style={{ minHeight: 66 + bottom, paddingBottom: bottom }}');
+    expect(bottomNavigation).toContain('active:bg-transparent dark:active:bg-transparent');
+    expect(bottomNavigation).toContain('borderRadius: 999');
+  });
+
+  it('defers terminal WebViews until their host terminal surface is first shown', () => {
+    const source = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+
+    expect(source).toContain('const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);');
+    expect(source).toContain('if (visible) setTerminalSurfaceMounted(true);');
+    expect(source).toContain('terminalSurfaceMounted && terminalState.sessions.map');
   });
 
   it('hands keyboard focus between persistent terminal renderers', () => {
@@ -21,12 +42,21 @@ describe('terminal renderer lifecycle', () => {
     expect(assets).toContain('window.herdrBlur = () => terminal.blur();');
   });
 
-  it('starts the remote bridge before a terminal is opened', () => {
+  it('does not reserve a spare SSH channel for terminal prewarming', () => {
     const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
 
-    expect(app).toContain('runtime.client.prepareTerminalBridge().catch(() => undefined);');
-    expect(client).toContain('if (preparing) await preparing.catch(() => undefined);');
+    expect(app).not.toContain('runtime.client.prepareTerminalBridge');
+    expect(client).not.toContain('bridgePrepareOpening');
+    expect(client).not.toContain('prepareHerdrBridge');
+  });
+
+  it('reconciles a snapshot after an event stream reconnect', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+
+    expect(app).toContain('await ensureEventStream(sessionId, session.snapshot, true);');
+    expect(app).toContain('Events emitted while the stream was down cannot be replayed.');
+    expect(app).toContain('await refreshHost(sessionId);');
   });
 
   it('opens the active terminal immediately after selecting a saved host', () => {
@@ -34,6 +64,7 @@ describe('terminal renderer lifecycle', () => {
 
     expect(app).toContain("if (navigate) setNavigation(current => selectMobileTab(current, 'terminal'));");
     expect(app).toContain("selectLiveHost(existing.id, 'terminal');");
+    expect(app).toContain('refreshHost(existing.id).catch(error => scheduleReconnect(existing.id, error));');
   });
 
   it('keeps terminal focus bidirectional with Herdr', () => {
@@ -45,6 +76,23 @@ describe('terminal renderer lifecycle', () => {
     expect(screen).toContain('client.focusPane(pane.pane_id)');
     expect(screen).toContain('activateServerPane(serverPaneId)');
     expect(client).toContain('async focusPane(paneId: string)');
+    expect(app).toContain('.catch(error => scheduleReconnect(sessionId, error));');
+  });
+
+  it('does not replace a Herd-selected terminal with stale server focus', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+
+    expect(app).toContain('openPaneTerminal(sessionId, pane, true)');
+    expect(screen).toContain('pendingPaneFocus.current = activePane.pane_id');
+    expect(screen).toContain('serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)');
+  });
+
+  it('closes tabs immediately without a confirmation prompt', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+
+    expect(screen).toContain('onPress={closeTab}');
+    expect(screen).not.toContain("Alert.alert('Close Herdr tab?'");
   });
 
   it('reattaches terminals transparently when the SSH control session is replaced', () => {
@@ -77,6 +125,23 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('this.client?.closeHerdrBridge(terminalId)');
     expect(client).toContain('this.client?.closeAllHerdrBridges()');
     expect(client).toContain('this.requireClient().herdrBridgeResize(\n      terminalId,');
+  });
+
+  it('retains recently focused terminals without tying bridge lifetime to navigation visibility', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
+    const visibilityLifecycleEnd = '}, [client, connectionGeneration, t, terminalId, visible]);';
+    const visibilityLifecycle = screen.slice(
+      screen.indexOf('// Visibility activates and touches'),
+      screen.indexOf(visibilityLifecycleEnd) + visibilityLifecycleEnd.length,
+    );
+
+    expect(screen).toContain('if (!terminalId || !visible) return;');
+    expect(screen).toContain('client.isTerminalBridgeRetained(terminalId)');
+    expect(screen).toContain('[client, connectionGeneration, t, terminalId, visible]');
+    expect(visibilityLifecycle).not.toContain('client.releaseTerminal(terminalId)');
+    expect(client).toContain('MAX_RETAINED_TERMINAL_BRIDGES = 3');
+    expect(client).toContain('evictLeastRecentlyUsedTerminal(terminalId)');
   });
 
   it('resets the renderer in the same injection as the first terminal frame', () => {

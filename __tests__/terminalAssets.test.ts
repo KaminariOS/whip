@@ -14,15 +14,20 @@ describe('Android terminal assets', () => {
     expect(html).toContain("url('data:font/ttf;base64,");
     expect(html).toContain("font-family: 'Herdr Terminal Mono'");
     expect(html).toContain("font-family: 'Herdr Terminal Symbols'");
+    expect(html).toContain("font-family: 'Herdr Terminal CJK'");
+    expect(html).toContain("url('arphic-ukai-hk.ttf') format('truetype')");
     expect(html).toContain(
-      '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", monospace',
+      '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", "Herdr Terminal CJK", monospace',
     );
     expect(html).toContain(
       "document.fonts.load('400 8px \"Herdr Terminal Symbols\"', '\\uf120')",
     );
+    expect(html).toContain(
+      "document.fonts.load('400 8px \"Herdr Terminal CJK\"', '\\u4e2d')",
+    );
     expect(html).toContain("fontWeightBold: '700'");
     expect(html).toContain('fontSize: 8');
-    expect(html).toContain('Math.max(8, Math.min(16');
+    expect(html).toContain('Math.max(8, Math.min(24');
     expect(html).toContain('document.fonts.load');
     expect(html).toContain('terminal.attachCustomKeyEventHandler');
     expect(html).toContain('installAndroidImeBridge(terminal, send, navigator.userAgent)');
@@ -36,6 +41,9 @@ describe('Android terminal assets', () => {
     expect(html).toContain('Promise.race([');
     expect(html).toContain('pendingFrames.clear();');
     expect(html).toContain('background: transparent');
+    expect(html).toContain('.xterm .scrollbar { display: none !important; }');
+    expect(html).toContain('background-color: transparent !important');
+    expect(html).toContain('overviewRuler: { width: 1 }');
     expect(html).toContain('allowTransparency: true');
     expect(html).toContain("background: 'rgba(0,0,0,0)'");
     expect(html).toContain('<img id="terminal-background-image" alt="" />');
@@ -45,9 +53,12 @@ describe('Android terminal assets', () => {
     expect(html).toContain(
       "backgroundGlass.style.backgroundColor = 'rgba(0,0,0,' + dimming",
     );
-    expect(html).toContain("foreground: '#ececec'");
-    expect(html).toContain("cursor: '#ffffff'");
-    expect(html).toContain("selectionBackground: '#67676780'");
+    expect(html).toContain("foreground: '#c0caf5'");
+    expect(html).toContain("cursor: '#c0caf5'");
+    expect(html).toContain("selectionBackground: '#283457'");
+    expect(html).toContain("blue: '#7aa2f7'");
+    expect(html).toContain("magenta: '#bb9af7'");
+    expect(html).toContain("cyan: '#7dcfff'");
     expect(html).not.toContain('#d8ff63');
 
     const inlineScript = html.match(
@@ -64,15 +75,21 @@ describe('Android terminal assets', () => {
     ];
 
     expect(embeddedFonts).toHaveLength(3);
-    expect(Buffer.from(embeddedFonts[0][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'JetBrainsMono-Regular.ttf')),
-    );
-    expect(Buffer.from(embeddedFonts[1][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'JetBrainsMono-Bold.ttf')),
-    );
-    expect(Buffer.from(embeddedFonts[2][1], 'base64')).toEqual(
-      readFileSync(resolve(sourceFonts, 'SymbolsNerdFontMono-Regular.ttf')),
-    );
+    expect(
+      Buffer.from(embeddedFonts[0][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'JetBrainsMono-Regular.ttf')),
+      ),
+    ).toBe(true);
+    expect(
+      Buffer.from(embeddedFonts[1][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'JetBrainsMono-Bold.ttf')),
+      ),
+    ).toBe(true);
+    expect(
+      Buffer.from(embeddedFonts[2][1], 'base64').equals(
+        readFileSync(resolve(sourceFonts, 'SymbolsNerdFontMono-Regular.ttf')),
+      ),
+    ).toBe(true);
   });
 
   it.each([
@@ -86,14 +103,26 @@ describe('Android terminal assets', () => {
     expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
   });
 
+  it('packages the standalone Arphic UKai HK TrueType face', () => {
+    const font = readFileSync(resolve(assets, 'arphic-ukai-hk.ttf'));
+
+    expect(font.length).toBeGreaterThan(10_000_000);
+    expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
+    expect(
+      font.equals(readFileSync(resolve(sourceFonts, 'ArphicUKaiHK.ttf'))),
+    ).toBe(true);
+  });
+
   it.each([
     ['JetBrainsMono-Regular.ttf', 'jetbrains-mono-regular.ttf'],
     ['JetBrainsMono-Bold.ttf', 'jetbrains-mono-bold.ttf'],
     ['SymbolsNerdFontMono-Regular.ttf', 'symbols-nerd-font-mono-regular.ttf'],
   ])('copies the vendored WezTerm face %s unchanged', (source, bundled) => {
-    expect(readFileSync(resolve(assets, bundled))).toEqual(
-      readFileSync(resolve(sourceFonts, source)),
-    );
+    expect(
+      readFileSync(resolve(assets, bundled)).equals(
+        readFileSync(resolve(sourceFonts, source)),
+      ),
+    ).toBe(true);
   });
 
   it('packages the JetBrains Mono license with the Android font assets', () => {
@@ -106,6 +135,12 @@ describe('Android terminal assets', () => {
     expect(
       readFileSync(resolve(assets, 'symbols-nerd-font-LICENSE.txt')),
     ).toEqual(readFileSync(resolve(sourceFonts, 'NerdFonts-LICENSE.txt')));
+  });
+
+  it('packages the Arphic license with the Android font assets', () => {
+    expect(readFileSync(resolve(assets, 'arphic-ukai-LICENSE.txt'))).toEqual(
+      readFileSync(resolve(sourceFonts, 'ARPHICPL.txt')),
+    );
   });
 
   it('generates the same HTML for Metro so terminal changes do not require an APK rebuild', () => {

@@ -1,15 +1,16 @@
 import SSHClient, {
   type HerdrBridgeEvent,
+  type HerdrCommandStreamEvent,
 } from '@dylankenneally/react-native-ssh-sftp';
 
 import { normalizePrivateKey } from '../lib/privateKey';
+import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import {
   apiEvent,
   apiErrorMessage,
   apiRequestLine,
   eventsSubscribeRequest,
   HerdrApiBridgeDecoder,
-  sessionSnapshotRequest,
   type HerdrApiEvent,
   type SessionSnapshotResult,
 } from '../lib/herdrApiBridge';
@@ -17,11 +18,17 @@ import { parseJsonResponse, shellQuote } from '../lib/shell';
 import {
   type TerminalFrame,
 } from '../lib/terminalBridge';
+import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
 type ApiEventHandler = (event: HerdrApiEvent) => void;
+
+export function isUnavailableSshChannel(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /channel (?:is )?not open(?:ed)?|session is down|socket is not established/i.test(message);
+}
 
 interface TerminalConnection {
   onFrame: TerminalFrameHandler;
@@ -35,6 +42,14 @@ interface TerminalSize {
   cellHeightPx: number;
 }
 
+interface PendingCommand {
+  marker: string;
+  resolve: (output: string) => void;
+  reject: (error: unknown) => void;
+}
+
+export const MAX_RETAINED_TERMINAL_BRIDGES = 3;
+
 export class HerdrClient {
   private client: SSHClient | null = null;
   private profile: ConnectionProfile | null = null;
@@ -42,12 +57,20 @@ export class HerdrClient {
   private terminalOpenings = new Map<string, Promise<void>>();
   private terminalSizes = new Map<string, TerminalSize>();
   private terminalBridges = new Set<string>();
-  private bridgePrepareOpening: Promise<void> | null = null;
+  private terminalBridgeLru = new Map<string, true>();
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
   private controlConnect: Promise<void> | null = null;
   private controlReconnect: Promise<void> | null = null;
+  private commandStreamOpening: Promise<void> | null = null;
+  private commandStreamReady = false;
+  private commandGeneration = 0;
+  private commandSequence = 0;
+  private commandBuffer = '';
+  private pendingCommand: PendingCommand | null = null;
+  private commandQueue: Promise<void> = Promise.resolve();
+  private localForwards = new Map<number, SSHClient>();
 
   async connect(profile: ConnectionProfile): Promise<void> {
     const port = Number(profile.port);
@@ -98,21 +121,28 @@ export class HerdrClient {
 
     const nextClient = await this.connectSsh(profile, port);
     const previousClient = this.client;
+    this.resetCommandStream('SSH control connection was replaced');
     this.client = nextClient;
     this.profile = profile;
     this.apiServer = null;
     this.eventClient = null;
+    const retainedTerminalIds = [...this.terminalBridgeLru.keys()].filter(terminalId => (
+      this.terminalBridges.has(terminalId)
+    ));
     this.terminalBridges.clear();
+    this.terminalBridgeLru.clear();
     this.terminalOpenings.clear();
-    this.bridgePrepareOpening = null;
     previousClient?.off('Shell');
+    previousClient?.closeHerdrCommandStream();
     previousClient?.disconnect();
+    for (const [localPort, tunnelClient] of this.localForwards) {
+      if (tunnelClient === previousClient) this.localForwards.delete(localPort);
+    }
 
     // A control reconnect is transport maintenance, not a terminal failure.
-    // Restore the visible terminal on the replacement session while preserving
-    // its frame and close callbacks, then let inactive tabs attach on demand.
-    const terminalIds = [...this.terminalConnections.keys()];
-    await Promise.all(terminalIds.map(async terminalId => {
+    // Restore only the bounded LRU set on the replacement SSH session while
+    // preserving each terminal's frame and close callbacks.
+    for (const terminalId of retainedTerminalIds) {
       try {
         await this.attachTerminal(terminalId);
       } catch (error) {
@@ -120,11 +150,13 @@ export class HerdrClient {
           `Terminal reattach failed: ${String(error)}`,
         );
       }
-    }));
+    }
   }
 
   disconnect(): void {
     this.closeEventStream();
+    this.resetCommandStream('SSH connection was closed');
+    this.client?.closeHerdrCommandStream();
     this.client?.closeAllHerdrBridges();
     this.client?.off('Shell');
     this.client?.disconnect();
@@ -135,8 +167,24 @@ export class HerdrClient {
     this.terminalConnections.clear();
     this.terminalSizes.clear();
     this.terminalBridges.clear();
-    this.bridgePrepareOpening = null;
+    this.terminalBridgeLru.clear();
     this.controlReconnect = null;
+    this.localForwards.clear();
+  }
+
+  async openWebTunnel(value: string): Promise<{ url: string; localPort: number } | null> {
+    const target = terminalWebLinkTarget(value);
+    if (!target.requiresSshTunnel) return null;
+    const client = this.requireClient();
+    const localPort = await client.openLocalForward(target.hostname, target.port);
+    this.localForwards.set(localPort, client);
+    return { url: localTunnelUrl(target.url, localPort), localPort };
+  }
+
+  async closeWebTunnel(localPort: number): Promise<void> {
+    const client = this.localForwards.get(localPort);
+    this.localForwards.delete(localPort);
+    if (client) await client.closeLocalForward(localPort);
   }
 
   async openTerminal(
@@ -151,7 +199,9 @@ export class HerdrClient {
 
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) {
-      return opening;
+      await opening;
+      this.touchTerminalBridge(terminalId);
+      return;
     }
 
     const task = this.attachTerminal(terminalId);
@@ -160,27 +210,6 @@ export class HerdrClient {
       await task;
     } finally {
       this.terminalOpenings.delete(terminalId);
-    }
-  }
-
-  async prepareTerminalBridge(): Promise<void> {
-    if (this.bridgePrepareOpening) return this.bridgePrepareOpening;
-    const task = (async () => {
-      const server = await this.requireBridgeServer();
-      await this.requireClient().prepareHerdrBridge(
-        `${this.baseCommand()} remote-client-bridge`,
-        server.protocol,
-        80,
-        24,
-        0,
-        0,
-      );
-    })();
-    this.bridgePrepareOpening = task;
-    try {
-      await task;
-    } finally {
-      if (this.bridgePrepareOpening === task) this.bridgePrepareOpening = null;
     }
   }
 
@@ -227,6 +256,13 @@ export class HerdrClient {
 
   closeTerminal(terminalId: string): void {
     this.terminalConnections.delete(terminalId);
+    this.terminalBridges.delete(terminalId);
+    this.terminalBridgeLru.delete(terminalId);
+    this.client?.closeHerdrBridge(terminalId);
+  }
+
+  isTerminalBridgeRetained(terminalId: string): boolean {
+    return this.terminalBridges.has(terminalId) || this.terminalOpenings.has(terminalId);
   }
 
   async releaseTerminal(terminalId: string): Promise<void> {
@@ -241,6 +277,7 @@ export class HerdrClient {
 
     this.terminalConnections.delete(terminalId);
     this.terminalBridges.delete(terminalId);
+    this.terminalBridgeLru.delete(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -251,6 +288,7 @@ export class HerdrClient {
     this.terminalOpenings.delete(terminalId);
     this.terminalSizes.delete(terminalId);
     this.terminalBridges.delete(terminalId);
+    this.terminalBridgeLru.delete(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -258,22 +296,35 @@ export class HerdrClient {
     this.terminalConnections.clear();
     this.terminalOpenings.clear();
     this.terminalBridges.clear();
+    this.terminalBridgeLru.clear();
     this.client?.closeAllHerdrBridges();
   }
 
   async snapshot(): Promise<HerdrSnapshot> {
-    const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
-    this.apiServer = server;
+    // A stopped server can be started independently after this SSH connection
+    // was opened. Only cache a usable API endpoint so refreshes can discover it.
+    const server = this.apiServer?.running
+      ? this.apiServer
+      : await this.executeJson<ServerInfo>('status server --json');
+    this.apiServer = server.running ? server : null;
     if (!server.running) {
-      return { server, agents: [], workspaces: [], tabs: [], panes: [] };
+      return {
+        server,
+        focused_workspace_id: null,
+        focused_tab_id: null,
+        focused_pane_id: null,
+        agents: [],
+        workspaces: [],
+        tabs: [],
+        panes: [],
+        layouts: [],
+      };
     }
+    assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
     if (!server.socket) throw new Error('Herdr server status did not include its API socket');
-    const request = JSON.stringify(sessionSnapshotRequest());
     let output: string;
     try {
-      output = await this.requireClient().execute(
-        `printf '%s\\n' ${shellQuote(request)} | nc -N -U ${shellQuote(server.socket)} 2>&1`,
-      );
+      output = await this.executeCommand(`${this.baseCommand()} api snapshot`);
     } catch (error) {
       this.apiServer = null;
       throw error;
@@ -283,12 +334,17 @@ export class HerdrClient {
       throw new Error('Herdr API socket did not return a session snapshot');
     }
     const snapshot = result.snapshot;
+    assertHerdrProtocolCompatible(snapshot.protocol);
     return {
       server: { ...server, version: snapshot.version, protocol: snapshot.protocol, compatible: true },
+      focused_workspace_id: snapshot.focused_workspace_id ?? null,
+      focused_tab_id: snapshot.focused_tab_id ?? null,
+      focused_pane_id: snapshot.focused_pane_id ?? null,
       agents: snapshot.agents,
       workspaces: snapshot.workspaces,
       tabs: snapshot.tabs,
       panes: snapshot.panes,
+      layouts: snapshot.layouts ?? [],
     };
   }
 
@@ -326,7 +382,7 @@ export class HerdrClient {
       }
     };
     try {
-      await client.startHerdrEventStream(`nc -U ${shellQuote(server.socket)}`, onData);
+      await client.startHerdrEventStream(server.socket, onData);
       if (generation !== this.eventGeneration) {
         client.closeHerdrEventStream();
         return;
@@ -348,7 +404,7 @@ export class HerdrClient {
   }
 
   async startServer(): Promise<void> {
-    await this.requireClient().execute(
+    await this.executeCommand(
       `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`,
     );
     this.apiServer = null;
@@ -366,7 +422,7 @@ export class HerdrClient {
   }
 
   async focusAgent(target: string): Promise<void> {
-    await this.executeJson(`agent focus ${shellQuote(target)}`);
+    await this.executeFocusJson(`agent focus ${shellQuote(target)}`);
   }
 
   async startAgent(name: string, command: string, cwd: string): Promise<void> {
@@ -377,7 +433,7 @@ export class HerdrClient {
   }
 
   async focusWorkspace(workspaceId: string): Promise<void> {
-    await this.executeJson(`workspace focus ${shellQuote(workspaceId)}`);
+    await this.executeFocusJson(`workspace focus ${shellQuote(workspaceId)}`);
   }
 
   async createWorkspace(label: string, cwd: string): Promise<void> {
@@ -405,11 +461,11 @@ export class HerdrClient {
   }
 
   async focusTab(tabId: string): Promise<void> {
-    await this.executeJson(`tab focus ${shellQuote(tabId)}`);
+    await this.executeFocusJson(`tab focus ${shellQuote(tabId)}`);
   }
 
   async focusPane(paneId: string): Promise<void> {
-    await this.executeJson(`pane focus ${shellQuote(paneId)}`);
+    await this.executeFocusJson(`pane focus ${shellQuote(paneId)}`);
   }
 
   async renameTab(tabId: string, label: string): Promise<void> {
@@ -446,12 +502,105 @@ export class HerdrClient {
   }
 
   private async executeJson<T>(args: string, resultKey?: string): Promise<T> {
-    const output = await this.requireClient().execute(`${this.baseCommand()} ${args} 2>&1`);
+    const output = await this.executeCommand(`${this.baseCommand()} ${args} 2>&1`);
     return parseJsonResponse<T>(output, resultKey);
   }
 
+  private async executeFocusJson<T>(args: string, resultKey?: string): Promise<T> {
+    const reconnecting = this.controlReconnect;
+    if (reconnecting) await reconnecting;
+    try {
+      return await this.executeJson<T>(args, resultKey);
+    } catch (error) {
+      if (!isUnavailableSshChannel(error)) throw error;
+      await this.reconnectControl();
+      return this.executeJson<T>(args, resultKey);
+    }
+  }
+
   private executeText(args: string): Promise<string> {
-    return this.requireClient().execute(`${this.baseCommand()} ${args} 2>&1`);
+    return this.executeCommand(`${this.baseCommand()} ${args} 2>&1`);
+  }
+
+  private executeCommand(command: string): Promise<string> {
+    const task = this.commandQueue.then(() => this.runCommand(command));
+    this.commandQueue = task.then(() => undefined, () => undefined);
+    return task;
+  }
+
+  private async runCommand(command: string): Promise<string> {
+    await this.ensureCommandStream();
+    const id = `${this.commandGeneration}_${++this.commandSequence}`;
+    const marker = `WHIP_COMMAND_${id}`;
+    const result = new Promise<string>((resolve, reject) => {
+      this.pendingCommand = { marker, resolve, reject };
+    });
+    const script = `${command}\n__whip_status=$?\nprintf '\\036${marker}:%s\\037\\n' "$__whip_status"\n`;
+    try {
+      await this.requireClient().writeHerdrCommandStream(script);
+    } catch (error) {
+      this.failPendingCommand(error);
+    }
+    return result;
+  }
+
+  private async ensureCommandStream(): Promise<void> {
+    if (this.commandStreamReady) return;
+    if (this.commandStreamOpening) return this.commandStreamOpening;
+    const client = this.requireClient();
+    const generation = ++this.commandGeneration;
+    const task = client.startHerdrCommandStream(
+      '/bin/sh',
+      event => {
+        if (generation === this.commandGeneration) this.handleCommandStreamEvent(event);
+      },
+    );
+    this.commandStreamOpening = task;
+    try {
+      await task;
+      if (generation === this.commandGeneration) this.commandStreamReady = true;
+    } finally {
+      if (this.commandStreamOpening === task) this.commandStreamOpening = null;
+    }
+  }
+
+  private handleCommandStreamEvent(event: HerdrCommandStreamEvent): void {
+    if (event.data) {
+      this.commandBuffer += event.data;
+      this.resolveCommandFrame();
+    }
+    if (event.closed) {
+      this.commandStreamReady = false;
+      this.failPendingCommand(event.error || 'Herdr command stream closed');
+    }
+  }
+
+  private resolveCommandFrame(): void {
+    const pending = this.pendingCommand;
+    if (!pending) return;
+    const markerStart = `\u001e${pending.marker}:`;
+    const start = this.commandBuffer.indexOf(markerStart);
+    if (start < 0) return;
+    const end = this.commandBuffer.indexOf('\u001f', start + markerStart.length);
+    if (end < 0) return;
+    const output = this.commandBuffer.slice(0, start);
+    this.commandBuffer = this.commandBuffer.slice(end + 1).replace(/^\r?\n/, '');
+    this.pendingCommand = null;
+    pending.resolve(output);
+  }
+
+  private failPendingCommand(error: unknown): void {
+    const pending = this.pendingCommand;
+    this.pendingCommand = null;
+    this.commandBuffer = '';
+    pending?.reject(error);
+  }
+
+  private resetCommandStream(reason: string): void {
+    this.commandGeneration += 1;
+    this.commandStreamReady = false;
+    this.commandStreamOpening = null;
+    this.failPendingCommand(reason);
   }
 
   private baseCommand(): string {
@@ -510,15 +659,12 @@ export class HerdrClient {
   }
 
   private async ensureTerminalBridge(terminalId: string, requestedSize?: TerminalSize): Promise<void> {
-    if (this.terminalBridges.has(terminalId)) return;
+    if (this.terminalBridges.has(terminalId)) {
+      this.touchTerminalBridge(terminalId);
+      return;
+    }
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) return opening;
-    // A first tap commonly lands while the post-connect bridge prewarm is
-    // handshaking. Let it finish so startHerdrBridge can atomically claim that
-    // prepared connection instead of opening a competing bridge.
-    const preparing = this.bridgePrepareOpening;
-    if (preparing) await preparing.catch(() => undefined);
-    if (this.terminalBridges.has(terminalId)) return;
     const size = requestedSize || this.terminalSizes.get(terminalId) || {
       columns: 80,
       rows: 24,
@@ -526,6 +672,7 @@ export class HerdrClient {
       cellHeightPx: 0,
     };
     const server = await this.requireBridgeServer();
+    this.evictLeastRecentlyUsedTerminal(terminalId);
     await this.requireClient().startHerdrBridge(
       `${this.baseCommand()} remote-client-bridge`,
       server.protocol,
@@ -538,7 +685,24 @@ export class HerdrClient {
       event => this.handleHerdrBridgeEvent(terminalId, event),
     );
     this.terminalBridges.add(terminalId);
-    this.prepareTerminalBridge().catch(() => undefined);
+    this.touchTerminalBridge(terminalId);
+  }
+
+  private touchTerminalBridge(terminalId: string): void {
+    if (!this.terminalBridges.has(terminalId)) return;
+    this.terminalBridgeLru.delete(terminalId);
+    this.terminalBridgeLru.set(terminalId, true);
+  }
+
+  private evictLeastRecentlyUsedTerminal(incomingTerminalId: string): void {
+    if (this.terminalBridges.has(incomingTerminalId)) return;
+    while (this.terminalBridges.size >= MAX_RETAINED_TERMINAL_BRIDGES) {
+      const oldestTerminalId = this.terminalBridgeLru.keys().next().value as string | undefined;
+      if (!oldestTerminalId) return;
+      this.terminalBridgeLru.delete(oldestTerminalId);
+      this.terminalBridges.delete(oldestTerminalId);
+      this.client?.closeHerdrBridge(oldestTerminalId);
+    }
   }
 
   private async requireBridgeServer(): Promise<ServerInfo & { protocol: number }> {
@@ -547,6 +711,7 @@ export class HerdrClient {
     if (!server.running || typeof server.protocol !== 'number') {
       throw new Error('Herdr server protocol is unavailable');
     }
+    assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
     return server as ServerInfo & { protocol: number };
   }
 
@@ -573,6 +738,7 @@ export class HerdrClient {
     }
     if (event.type === 'closed') {
       this.terminalBridges.delete(terminalId);
+      this.terminalBridgeLru.delete(terminalId);
       this.terminalConnections.get(terminalId)?.onClosed?.(
         event.text || 'Herdr remote-client-bridge closed',
       );

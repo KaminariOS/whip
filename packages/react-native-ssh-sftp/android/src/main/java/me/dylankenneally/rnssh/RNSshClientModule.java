@@ -18,6 +18,7 @@ import com.facebook.react.bridge.WritableNativeArray;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
 import com.jcraft.jsch.Channel;
+import com.jcraft.jsch.ChannelDirectStreamLocal;
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.ChannelSftp.LsEntry;
@@ -55,6 +56,8 @@ import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 
 public class RNSshClientModule extends ReactContextBaseJavaModule {
+  private static final int SSH_CONNECT_TIMEOUT_MS = 10_000;
+  private static final int SSH_CHANNEL_CONNECT_TIMEOUT_MS = 5_000;
   private static final int SSH_SERVER_ALIVE_INTERVAL_MS = 5_000;
   private static final int SSH_SERVER_ALIVE_COUNT_MAX = 3;
 
@@ -78,8 +81,10 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     Channel _channel = null;
     final Map<String, HerdrBridgeConnection> _herdrBridges = new ConcurrentHashMap<>();
     HerdrBridgeConnection _preparedHerdrBridge = null;
-    ChannelExec _herdrEventChannel = null;
+    ChannelDirectStreamLocal _herdrEventChannel = null;
     DataOutputStream _herdrEventOutputStream = null;
+    ChannelExec _herdrCommandChannel = null;
+    DataOutputStream _herdrCommandOutputStream = null;
     ChannelSftp _sftpSession = null;
     Boolean _downloadContinue = false;
     Boolean _uploadContinue = false;
@@ -171,13 +176,25 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 }
 
   @ReactMethod
-  public void getKeyDetails(String privateKey, Promise promise) {
+  public void getKeyDetails(String privateKey, @Nullable String passphrase, Promise promise) {
+  KeyPair kpair = null;
   try {
     // Parse the key straight from memory. The previous implementation wrote the
     // private key to a temp file on disk, which briefly exposed it and could
     // leak if the process was killed mid-parse (review #3).
     JSch jsch = new JSch();
-    KeyPair kpair = KeyPair.load(jsch, privateKey.getBytes(), null);
+    kpair = KeyPair.load(jsch, privateKey.getBytes(StandardCharsets.UTF_8), null);
+
+    if (kpair.isEncrypted()) {
+      if (passphrase == null || passphrase.isEmpty()) {
+        promise.reject("E_KEY_PASSPHRASE_REQUIRED", "Private key passphrase is required");
+        return;
+      }
+      if (!kpair.decrypt(passphrase.getBytes(StandardCharsets.UTF_8))) {
+        promise.reject("E_KEY_PASSPHRASE_INVALID", "Private key passphrase is incorrect");
+        return;
+      }
+    }
 
     String keyType;
     switch (kpair.getKeyType()) {
@@ -197,15 +214,20 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
         keyType = "UNKNOWN";
     }
     int keySize = kpair.getKeySize();
-
-    kpair.dispose();
+    String fingerprint = kpair.getFingerPrint();
+    ByteArrayOutputStream publicKeyOut = new ByteArrayOutputStream();
+    kpair.writePublicKey(publicKeyOut, "herdr");
 
     WritableMap result = Arguments.createMap();
     result.putString("keyType", keyType);
     result.putInt("keySize", keySize);
+    result.putString("fingerprint", fingerprint);
+    result.putString("publicKey", publicKeyOut.toString("UTF-8").trim());
     promise.resolve(result);
   } catch (Exception e) {
-    promise.reject("Error", e.getMessage());
+    promise.reject("E_KEY_INVALID", e.getMessage(), e);
+  } finally {
+    if (kpair != null) kpair.dispose();
   }
 }
 
@@ -236,7 +258,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           // so the terminal never receives a close event and looks frozen.
           session.setServerAliveInterval(SSH_SERVER_ALIVE_INTERVAL_MS);
           session.setServerAliveCountMax(SSH_SERVER_ALIVE_COUNT_MAX);
-          session.connect();
+          session.connect(SSH_CONNECT_TIMEOUT_MS);
 
           if (session.isConnected()) {
             SSHClient client = new SSHClient();
@@ -274,7 +296,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           channel = (ChannelExec) session.openChannel("exec");
           channel.setCommand(command);
           InputStream in = channel.getInputStream();
-          channel.connect();
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
 
           String line;
           StringBuilder response = new StringBuilder();
@@ -319,7 +341,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
           Channel channel = session.openChannel("shell");
           ((ChannelShell)channel).setPtyType(ptyType);
-          channel.connect();
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
 
           InputStream in = channel.getInputStream();
           client._channel = channel;
@@ -594,7 +616,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
       DataOutputStream output = new DataOutputStream(channel.getOutputStream());
       connection.channel = channel;
       connection.outputStream = output;
-      channel.connect();
+      channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
       startHerdrBridgeErrorReader(errorInput, connection);
       writeHerdrMessage(connection, HerdrBridgeCodec.hello(
           protocol,
@@ -631,12 +653,34 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           sendHerdrBridgeMessage(key, connection.terminalId, message);
         }
       }
-      if (!connection.handshakeComplete) throw new IOException("Herdr bridge closed before Welcome");
+      if (!connection.handshakeComplete) {
+        boolean clientWasReplaced = clientPool.get(key) != client;
+        boolean unusedPrewarm = connection.terminalId == null;
+        if (connection.closedByClient || clientWasReplaced || unusedPrewarm) {
+          if (!callbackInvoked) {
+            callback.invoke(
+                unusedPrewarm
+                    ? "Herdr bridge prewarm ended before Welcome"
+                    : "Herdr bridge cancelled because the SSH session was replaced"
+            );
+            callbackInvoked = true;
+          }
+        } else {
+          throw new IOException("Herdr bridge closed before Welcome");
+        }
+      }
       if (!connection.closedByClient && connection.terminalId != null) {
         sendHerdrBridgeClosed(key, connection.terminalId, "Herdr remote-client-bridge closed");
       }
     } catch (Exception error) {
-      Log.e(LOGTAG, "Herdr bridge failed: " + error.getMessage());
+      if (!connection.handshakeComplete && connection.terminalId == null) {
+        // Prewarming is opportunistic. Channel pressure or a reconnect may end
+        // it without affecting any visible terminal, so do not report it as a
+        // terminal bridge failure. The callback still lets JavaScript retry.
+        Log.d(LOGTAG, "Herdr bridge prewarm ended: " + error.getMessage());
+      } else {
+        Log.e(LOGTAG, "Herdr bridge failed: " + error.getMessage());
+      }
       if (!callbackInvoked) callback.invoke(error.getMessage());
       else if (!connection.closedByClient && connection.terminalId != null) {
         sendHerdrBridgeClosed(key, connection.terminalId, error.getMessage());
@@ -898,7 +942,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void startHerdrEventStream(
-      final String command,
+      final String socketPath,
       final String key,
       final Callback callback
   ) {
@@ -912,13 +956,15 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
             callback.invoke();
             return;
           }
-          ChannelExec channel = (ChannelExec) client._session.openChannel("exec");
-          channel.setCommand(command);
+          ChannelDirectStreamLocal channel = (ChannelDirectStreamLocal) client._session.openChannel(
+              "direct-streamlocal@openssh.com"
+          );
+          channel.setSocketPath(socketPath);
           InputStream input = channel.getInputStream();
           DataOutputStream output = new DataOutputStream(channel.getOutputStream());
           client._herdrEventChannel = channel;
           client._herdrEventOutputStream = output;
-          channel.connect();
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
           started = true;
           callback.invoke();
 
@@ -986,6 +1032,135 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
         client._herdrEventChannel.disconnect();
         client._herdrEventChannel = null;
       }
+    }
+  }
+
+  @ReactMethod
+  public void startHerdrCommandStream(
+      final String command,
+      final String key,
+      final Callback callback
+  ) {
+    new Thread(new Runnable() {
+      public void run() {
+        boolean started = false;
+        ChannelExec channel = null;
+        DataOutputStream output = null;
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client == null) throw new Exception("client is null");
+          if (client._herdrCommandChannel != null && client._herdrCommandChannel.isConnected()) {
+            callback.invoke();
+            return;
+          }
+          channel = (ChannelExec) client._session.openChannel("exec");
+          channel.setCommand(command);
+          InputStream input = channel.getInputStream();
+          output = new DataOutputStream(channel.getOutputStream());
+          synchronized (client) {
+            client._herdrCommandChannel = channel;
+            client._herdrCommandOutputStream = output;
+          }
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
+          started = true;
+          callback.invoke();
+
+          InputStreamReader reader = new InputStreamReader(input, StandardCharsets.UTF_8);
+          char[] chars = new char[8192];
+          int count;
+          while (clientPool.get(key) == client && channel.isConnected() && (count = reader.read(chars)) >= 0) {
+            if (count > 0) sendHerdrCommandStreamEvent(key, new String(chars, 0, count), false, null);
+          }
+          sendHerdrCommandStreamEvent(key, null, true, null);
+        } catch (Exception error) {
+          Log.e(LOGTAG, "Herdr command stream failed: " + error.getMessage());
+          if (!started) callback.invoke(error.getMessage());
+          else sendHerdrCommandStreamEvent(key, null, true, error.getMessage());
+        } finally {
+          SSHClient client = clientPool.get(key);
+          closeHerdrCommandStreamConnection(client, channel, output);
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
+  public void writeHerdrCommandStream(final String value, final String key, final Callback callback) {
+    try {
+      SSHClient client = clientPool.get(key);
+      if (client == null) throw new IOException("client is null");
+      synchronized (client) {
+        if (client._herdrCommandOutputStream == null) throw new IOException("Herdr command stream is not active");
+        client._herdrCommandOutputStream.write(value.getBytes(StandardCharsets.UTF_8));
+        client._herdrCommandOutputStream.flush();
+      }
+      callback.invoke();
+    } catch (Exception error) {
+      callback.invoke(error.getMessage());
+    }
+  }
+
+  @ReactMethod
+  public void closeHerdrCommandStream(final String key) {
+    SSHClient client = clientPool.get(key);
+    if (client != null) closeHerdrCommandStreamClient(client);
+  }
+
+  private void sendHerdrCommandStreamEvent(
+      String key,
+      @Nullable String data,
+      boolean closed,
+      @Nullable String error
+  ) {
+    WritableMap value = Arguments.createMap();
+    if (data != null) value.putString("data", data);
+    value.putBoolean("closed", closed);
+    if (error != null) value.putString("error", error);
+
+    WritableMap event = Arguments.createMap();
+    event.putString("name", "HerdrCommandStream");
+    event.putString("key", key);
+    event.putMap("value", value);
+    sendEvent(reactContext, "HerdrCommandStream", event);
+  }
+
+  private void closeHerdrCommandStreamClient(SSHClient client) {
+    ChannelExec channel;
+    DataOutputStream output;
+    synchronized (client) {
+      channel = client._herdrCommandChannel;
+      output = client._herdrCommandOutputStream;
+      client._herdrCommandChannel = null;
+      client._herdrCommandOutputStream = null;
+    }
+    closeHerdrCommandStreamConnection(null, channel, output);
+  }
+
+  private void closeHerdrCommandStreamConnection(
+      @Nullable SSHClient client,
+      @Nullable ChannelExec channel,
+      @Nullable DataOutputStream output
+  ) {
+    if (client != null) {
+      synchronized (client) {
+        // A replacement stream may already own the client fields. The reader
+        // finishing for an older channel must never close that replacement.
+        if (client._herdrCommandChannel == channel) {
+          client._herdrCommandChannel = null;
+          client._herdrCommandOutputStream = null;
+        }
+      }
+    }
+    try {
+      if (output != null) {
+        output.flush();
+        output.close();
+      }
+    } catch (IOException error) {
+      Log.e(LOGTAG, "Error closing Herdr command output: " + error.getMessage());
+    }
+    if (channel != null) {
+      channel.disconnect();
     }
   }
 
@@ -1263,12 +1438,51 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
+  public void openLocalForward(final String remoteHost, final Integer remotePort, final String key, final Callback callback) {
+    new Thread(new Runnable() {
+      public void run() {
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client == null || client._session == null || !client._session.isConnected()) {
+            callback.invoke("SSH connection is not active");
+            return;
+          }
+          int localPort = client._session.setPortForwardingL("127.0.0.1", 0, remoteHost, remotePort);
+          callback.invoke(null, localPort);
+        } catch (Exception error) {
+          Log.e(LOGTAG, "Failed to open local forward: " + error.getMessage());
+          callback.invoke(error.getMessage());
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
+  public void closeLocalForward(final Integer localPort, final String key, final Callback callback) {
+    new Thread(new Runnable() {
+      public void run() {
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client != null && client._session != null && client._session.isConnected()) {
+            client._session.delPortForwardingL("127.0.0.1", localPort);
+          }
+          callback.invoke();
+        } catch (Exception error) {
+          Log.e(LOGTAG, "Failed to close local forward: " + error.getMessage());
+          callback.invoke(error.getMessage());
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
   public void disconnect(final String key) {
     SSHClient client = clientPool.remove(key);
     if (client != null) {
         closeShellClient(client);
-        closeHerdrBridgeClient(client);
-        closeHerdrEventStreamClient(client);
+      closeHerdrBridgeClient(client);
+      closeHerdrEventStreamClient(client);
+      closeHerdrCommandStreamClient(client);
         if (client._sftpSession != null) {
           client._sftpSession.disconnect();
           client._sftpSession = null;

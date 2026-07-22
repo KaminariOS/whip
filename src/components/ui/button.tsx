@@ -22,6 +22,7 @@ const buttonVariants = cva(
         sm: cn('h-9 gap-1.5 rounded-md px-3 sm:h-8', Platform.select({ web: 'has-[>svg]:px-2.5' })),
         lg: cn('h-11 rounded-md px-6 sm:h-10', Platform.select({ web: 'has-[>svg]:px-4' })),
         icon: 'h-10 w-10 sm:h-9 sm:w-9',
+        content: '',
       },
     },
     defaultVariants: { variant: 'default', size: 'default' },
@@ -38,7 +39,7 @@ const buttonTextVariants = cva('text-foreground text-sm font-medium', {
       ghost: 'group-active:text-accent-foreground',
       link: cn('text-primary group-active:underline', Platform.select({ web: 'underline-offset-4 hover:underline group-hover:underline' })),
     },
-    size: { default: '', sm: '', lg: '', icon: '' },
+    size: { default: '', sm: '', lg: '', icon: '', content: '' },
   },
   defaultVariants: { variant: 'default', size: 'default' },
 });

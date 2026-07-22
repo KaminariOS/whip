@@ -7,7 +7,6 @@ Whip is an experimental, unofficial Android client for Herdr. This roadmap commu
 - Implement SSH known-host verification with explicit first-connect trust and changed-key rejection.
 - Establish a stable Android release-signing identity and documented release process.
 - Publish a tested Android device, architecture, and Herdr-version compatibility matrix.
-- Add a concise visual walkthrough and repeatable preview-installation path.
 
 ## Next
 

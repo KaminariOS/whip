@@ -1,6 +1,10 @@
 import {
   applyLiveHostFocus,
+  applyLiveHostAgentStatus,
+  applyLiveHostLayoutUpdate,
+  applyLiveHostPaneUpdate,
   applyLiveHostSnapshot,
+  aggregateAgentStatus,
   beginLiveHostSync,
   canRefreshLiveHostSession,
   closeLiveHostSession,
@@ -85,10 +89,14 @@ function snapshot(prefix: string): HerdrSnapshot {
   const tabId = `${prefix}-tab`;
   return {
     server: { running: true, version: '1.0.0' },
+    focused_workspace_id: workspaceId,
+    focused_tab_id: tabId,
+    focused_pane_id: `${prefix}-pane`,
     agents: [],
     workspaces: [workspace(workspaceId, tabId, true)],
     tabs: [tab(tabId, workspaceId, true)],
     panes: [pane(`${prefix}-pane`, `${prefix}-terminal`, workspaceId, tabId, true)],
+    layouts: [],
   };
 }
 
@@ -102,6 +110,13 @@ function syncSnapshot(
 }
 
 describe('live host session state', () => {
+  test('aggregates agent attention with native-client priority', () => {
+    expect(aggregateAgentStatus([])).toBe('unknown');
+    expect(aggregateAgentStatus(['idle', 'working'])).toBe('working');
+    expect(aggregateAgentStatus(['working', 'done'])).toBe('done');
+    expect(aggregateAgentStatus(['done', 'blocked'])).toBe('blocked');
+  });
+
   test('does not refresh a host until its initial SSH connection is ready', () => {
     const connecting = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const session = findLiveHostSession(connecting, 'live-1');
@@ -124,6 +139,14 @@ describe('live host session state', () => {
     expect(withFirstSnapshot.activeSessionId).toBe('live-2');
     expect(findLiveHostSession(withFirstSnapshot, 'live-1')?.snapshot.server.running).toBe(true);
     expect(findLiveHostSession(withFirstSnapshot, 'live-2')?.snapshot.server.running).toBe(false);
+  });
+
+  test('can restore a background host without changing the active session', () => {
+    const first = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const second = openLiveHostSession(first, host('builder'), 'live-2', false);
+
+    expect(second.sessions.map(session => session.id)).toEqual(['live-1', 'live-2']);
+    expect(second.activeSessionId).toBe('live-1');
   });
 
   test('selects sessions directly or by saved host without accepting unknown ids', () => {
@@ -185,6 +208,21 @@ describe('live host session state', () => {
     });
   });
 
+  test('tracks the latest successful control-channel latency for each host', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const request = beginLiveHostSync(opened, 'live-1');
+    const synced = applyLiveHostSnapshot(
+      request.state,
+      'live-1',
+      request.generation,
+      snapshot('savior'),
+      '2026-02-02T00:00:00.000Z',
+      42,
+    );
+
+    expect(findLiveHostSession(synced, 'live-1')?.sync.latencyMs).toBe(42);
+  });
+
   test('derives workspace, tab, and pane selection from each snapshot', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const synced = syncSnapshot(opened, 'live-1', snapshot('savior'));
@@ -199,13 +237,19 @@ describe('live host session state', () => {
   test('follows authoritative focus when a newer snapshot arrives', () => {
     const first: HerdrSnapshot = {
       server: { running: true },
+      focused_workspace_id: 'w1',
+      focused_tab_id: 't1',
+      focused_pane_id: 'p1',
       agents: [],
       workspaces: [workspace('w1', 't1', true)],
       tabs: [tab('t1', 'w1', true), tab('t2', 'w1')],
       panes: [pane('p1', 'term-1', 'w1', 't1', true), pane('p2', 'term-2', 'w1', 't2')],
+      layouts: [],
     };
     const second: HerdrSnapshot = {
       ...first,
+      focused_tab_id: 't2',
+      focused_pane_id: 'p2',
       workspaces: [workspace('w1', 't2', true)],
       tabs: [tab('t1', 'w1'), tab('t2', 'w1', true)],
       panes: [pane('p1', 'term-1', 'w1', 't1'), pane('p2', 'term-2', 'w1', 't2', true)],
@@ -225,10 +269,14 @@ describe('live host session state', () => {
   test('applies pane focus events immediately and updates the full hierarchy', () => {
     const value: HerdrSnapshot = {
       server: { running: true },
+      focused_workspace_id: 'w1',
+      focused_tab_id: 't1',
+      focused_pane_id: 'p1',
       agents: [],
       workspaces: [workspace('w1', 't1', true)],
       tabs: [tab('t1', 'w1', true), tab('t2', 'w1')],
       panes: [pane('p1', 'term-1', 'w1', 't1', true), pane('p2', 'term-2', 'w1', 't2')],
+      layouts: [],
     };
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const synced = syncSnapshot(opened, 'live-1', value);
@@ -239,15 +287,68 @@ describe('live host session state', () => {
     expect(session?.snapshot.workspaces[0].active_tab_id).toBe('t2');
     expect(session?.snapshot.tabs.find(item => item.tab_id === 't2')?.focused).toBe(true);
     expect(session?.snapshot.panes.find(item => item.pane_id === 'p2')?.focused).toBe(true);
+    expect(session?.snapshot.focused_tab_id).toBe('t2');
+    expect(session?.snapshot.focused_pane_id).toBe('p2');
+  });
+
+  test('applies agent, pane, and layout events immediately', () => {
+    const value = snapshot('savior');
+    const paneId = 'savior-pane';
+    value.agents = [{
+      terminal_id: 'savior-terminal',
+      agent: 'codex',
+      agent_status: 'working',
+      workspace_id: 'savior-workspace',
+      tab_id: 'savior-tab',
+      pane_id: paneId,
+      focused: true,
+      revision: 1,
+    }];
+    value.panes[0].agent_status = 'working';
+    value.tabs[0].agent_status = 'working';
+    value.workspaces[0].agent_status = 'working';
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const synced = syncSnapshot(opened, 'live-1', value);
+    const status = applyLiveHostAgentStatus(synced, 'live-1', paneId, {
+      agent_status: 'done',
+      title: 'Finished',
+    });
+    const paneUpdated = applyLiveHostPaneUpdate(status, 'live-1', {
+      ...value.panes[0],
+      agent_status: 'done',
+      terminal_title: 'New terminal title',
+      revision: 2,
+    });
+    const layout = {
+      workspace_id: 'savior-workspace',
+      tab_id: 'savior-tab',
+      zoomed: false,
+      area: { x: 0, y: 0, width: 80, height: 24 },
+      focused_pane_id: paneId,
+      panes: [{ pane_id: paneId, focused: true, rect: { x: 0, y: 0, width: 80, height: 24 } }],
+      splits: [],
+    };
+    const laidOut = applyLiveHostLayoutUpdate(paneUpdated, 'live-1', layout);
+    const session = findLiveHostSession(laidOut, 'live-1');
+
+    expect(session?.snapshot.agents[0]).toMatchObject({ agent_status: 'done', title: 'Finished' });
+    expect(session?.snapshot.panes[0]).toMatchObject({ agent_status: 'done', terminal_title: 'New terminal title' });
+    expect(session?.snapshot.tabs[0].agent_status).toBe('done');
+    expect(session?.snapshot.workspaces[0].agent_status).toBe('done');
+    expect(session?.snapshot.layouts).toEqual([layout]);
   });
 
   test('selecting workspace, tab, or pane keeps the hierarchy internally consistent', () => {
     const value: HerdrSnapshot = {
       server: { running: true },
+      focused_workspace_id: 'w1',
+      focused_tab_id: 't1',
+      focused_pane_id: 'p1',
       agents: [],
       workspaces: [workspace('w1', 't1', true), workspace('w2', 't2')],
       tabs: [tab('t1', 'w1', true), tab('t2', 'w2')],
       panes: [pane('p1', 'term-1', 'w1', 't1', true), pane('p2', 'term-2', 'w2', 't2', true)],
+      layouts: [],
     };
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const synced = syncSnapshot(opened, 'live-1', value);

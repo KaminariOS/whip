@@ -17,11 +17,13 @@ export interface TerminalPreferences {
   fontSize: number;
   scrollback: number;
   cursorBlink: boolean;
+  doubleTapTab: boolean;
   backgroundImageUri: string | null;
   backgroundDimming: number;
 }
 
 export type AppearancePreference = 'system' | 'light' | 'dark';
+export type LanguagePreference = 'system' | 'en' | 'zh-Hant';
 
 type StoredTerminalPreferences = Partial<TerminalPreferences> & {
   backgroundOpacity?: unknown;
@@ -30,7 +32,12 @@ type StoredTerminalPreferences = Partial<TerminalPreferences> & {
 export interface DevicePreferences {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
+  biometricForKeys: boolean;
+  biometricOnResume: boolean;
   appearance: AppearancePreference;
+  language: LanguagePreference;
+  keepScreenOn: boolean;
+  reopenTerminalOnLaunch: boolean;
   lastTab: AppTab;
   terminal: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
@@ -39,12 +46,18 @@ export interface DevicePreferences {
 export const defaultDevicePreferences: DevicePreferences = {
   alertsEnabled: true,
   ttsEnabled: false,
+  biometricForKeys: false,
+  biometricOnResume: false,
   appearance: 'system',
+  language: 'system',
+  keepScreenOn: false,
+  reopenTerminalOnLaunch: false,
   lastTab: 'hosts',
   terminal: {
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
+    doubleTapTab: true,
     backgroundImageUri: null,
     backgroundDimming: 60,
   },
@@ -86,19 +99,29 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
     const terminal = (parsed.terminal || {}) as StoredTerminalPreferences;
     const fontSize = migratingLegacy && terminal.fontSize === 11
       ? defaultDevicePreferences.terminal.fontSize
-      : clampNumber(terminal.fontSize, 8, 16, defaultDevicePreferences.terminal.fontSize);
+      : clampNumber(terminal.fontSize, 8, 24, defaultDevicePreferences.terminal.fontSize);
     return {
       alertsEnabled: parsed.alertsEnabled ?? defaultDevicePreferences.alertsEnabled,
       ttsEnabled: parsed.ttsEnabled ?? defaultDevicePreferences.ttsEnabled,
+      biometricForKeys: parsed.biometricForKeys === true,
+      biometricOnResume: parsed.biometricOnResume === true,
       appearance: isAppearancePreference(parsed.appearance)
         ? parsed.appearance
         : defaultDevicePreferences.appearance,
+      language: isLanguagePreference(parsed.language)
+        ? parsed.language
+        : defaultDevicePreferences.language,
+      keepScreenOn: parsed.keepScreenOn === true,
+      reopenTerminalOnLaunch: parsed.reopenTerminalOnLaunch === true,
       lastTab: isAppTab(parsed.lastTab) ? parsed.lastTab : defaultDevicePreferences.lastTab,
       terminalControlUsage: parseTerminalControlUsage(parsed.terminalControlUsage),
       terminal: {
         fontSize,
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),
         cursorBlink: terminal.cursorBlink ?? defaultDevicePreferences.terminal.cursorBlink,
+        doubleTapTab: typeof terminal.doubleTapTab === 'boolean'
+          ? terminal.doubleTapTab
+          : defaultDevicePreferences.terminal.doubleTapTab,
         backgroundImageUri: typeof terminal.backgroundImageUri === 'string' && terminal.backgroundImageUri
           ? terminal.backgroundImageUri
           : null,
@@ -131,4 +154,8 @@ function isAppTab(value: unknown): value is AppTab {
 
 function isAppearancePreference(value: unknown): value is AppearancePreference {
   return value === 'system' || value === 'light' || value === 'dark';
+}
+
+function isLanguagePreference(value: unknown): value is LanguagePreference {
+  return value === 'system' || value === 'en' || value === 'zh-Hant';
 }

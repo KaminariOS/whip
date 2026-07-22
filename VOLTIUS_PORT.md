@@ -30,8 +30,8 @@ the current milestone.
 | --- | --- | --- |
 | Saved hosts | Partial: add/edit/delete, per-host Keychain credentials, last-used ordering | `src/components/HostsScreen.tsx`, `src/services/hostProfiles.ts` |
 | Concurrent live sessions across hosts | Implemented: each live host owns an independent client, snapshot, selection, terminals, refresh generation, and reconnect state | `App.tsx`, `src/liveHostSessions.ts` |
-| Persistent terminal session rail | Implemented: outer host rail with select, close, status, terminal count, and new-session action | `src/components/LiveSessionRail.tsx` |
-| Workspace → tab → pane hierarchy | Implemented: nested workspace/tab rails and pane switcher scoped to each live host | `src/components/SessionScreen.tsx` |
+| Persistent host session rail | Implemented as the Herd host scope with all-host/host selection, close, status, terminal count, and new-session action | `src/components/LiveSessionRail.tsx`, `src/components/HerdScreen.tsx` |
+| Workspace → tab → pane hierarchy | Implemented as a Herd space scope plus focused tab and pane switchers in Terminal | `src/components/WorkspaceRail.tsx`, `src/components/SessionScreen.tsx` |
 | Complete workspace/tab lifecycle | Implemented: create, focus, rename, and close actions, with post-command reconciliation | `src/components/SessionScreen.tsx`, `src/services/HerdrClient.ts` |
 | Mounted terminal surfaces across navigation | Implemented per host and across host switching; hidden xterm WebViews retain state | `App.tsx`, `src/components/SessionScreen.tsx` |
 | Terminal rendering | Implemented for the current bridge: atomic NDJSON frames, ANSI/color, mobile 82-column default, resize/redraw recovery, search, clipboard, gestures, and extra keys | `src/components/TerminalScreen.tsx`, `src/services/HerdrClient.ts`, `packages/react-native-ssh-sftp/` |

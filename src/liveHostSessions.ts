@@ -1,5 +1,14 @@
 import type { TerminalSessionsState } from './terminalSessions';
-import type { HerdrSnapshot, HostProfile, PaneInfo, TabInfo, WorkspaceInfo } from './types';
+import { agentFromStatusEvent, agentStatusFromEvent } from './lib/agentStatusEvents';
+import type {
+  AgentStatus,
+  HerdrSnapshot,
+  HostProfile,
+  PaneInfo,
+  PaneLayoutSnapshot,
+  TabInfo,
+  WorkspaceInfo,
+} from './types';
 
 export type LiveHostConnectionStatus =
   | 'connecting'
@@ -22,6 +31,8 @@ export interface LiveHostSyncState {
   generation: number;
   error: string | null;
   lastSyncedAt: string | null;
+  /** Latest successful Herdr snapshot round-trip over the SSH control channel. */
+  latencyMs: number | null;
 }
 
 export interface LiveHostSession {
@@ -68,10 +79,14 @@ export function canRefreshLiveHostSession(
 export function createEmptyHerdrSnapshot(): HerdrSnapshot {
   return {
     server: { running: false },
+    focused_workspace_id: null,
+    focused_tab_id: null,
+    focused_pane_id: null,
     agents: [],
     workspaces: [],
     tabs: [],
     panes: [],
+    layouts: [],
   };
 }
 
@@ -92,6 +107,7 @@ export function createLiveHostSession(
       generation: 0,
       error: null,
       lastSyncedAt: null,
+      latencyMs: null,
     },
     selection: {
       workspaceId: null,
@@ -110,6 +126,7 @@ export function openLiveHostSession(
   state: LiveHostSessionsState,
   host: HostProfile,
   sessionId = host.id,
+  activate = true,
 ): LiveHostSessionsState {
   const existing = state.sessions.find(session => session.id === sessionId);
   if (existing) {
@@ -124,13 +141,13 @@ export function openLiveHostSession(
           reconnectAttempt: 0,
         }
         : session),
-      activeSessionId: sessionId,
+      activeSessionId: activate ? sessionId : state.activeSessionId,
     };
   }
 
   return {
     sessions: [...state.sessions, createLiveHostSession(host, sessionId)],
-    activeSessionId: sessionId,
+    activeSessionId: activate ? sessionId : state.activeSessionId,
   };
 }
 
@@ -229,6 +246,7 @@ export function applyLiveHostSnapshot(
   generation: number,
   snapshot: HerdrSnapshot,
   syncedAt: string | null = null,
+  latencyMs: number | null = null,
 ): LiveHostSessionsState {
   return updateSession(state, sessionId, session => {
     if (session.sync.generation !== generation) return session;
@@ -241,6 +259,7 @@ export function applyLiveHostSnapshot(
         generation,
         error: null,
         lastSyncedAt: syncedAt,
+        latencyMs,
       },
     };
   });
@@ -272,6 +291,9 @@ export function applyLiveHostFocus(
       ?? session.snapshot.panes.find(item => item.tab_id === activeTabId);
     const snapshot: HerdrSnapshot = {
       ...session.snapshot,
+      focused_workspace_id: workspace.workspace_id,
+      focused_tab_id: activeTabId ?? null,
+      focused_pane_id: focusedPane?.pane_id ?? null,
       workspaces: session.snapshot.workspaces.map(item => ({
         ...item,
         focused: item.workspace_id === workspace.workspace_id,
@@ -291,6 +313,81 @@ export function applyLiveHostFocus(
       snapshot,
       selection: serverFocusSelection(snapshot),
     };
+  });
+}
+
+/** Apply the public status event immediately; the following snapshot remains authoritative. */
+export function applyLiveHostAgentStatus(
+  state: LiveHostSessionsState,
+  sessionId: string,
+  paneId: string,
+  data: Record<string, unknown>,
+): LiveHostSessionsState {
+  const agentStatus = agentStatusFromEvent(data.agent_status);
+  if (!agentStatus) return state;
+
+  return updateSession(state, sessionId, session => {
+    const paneIndex = session.snapshot.panes.findIndex(pane => pane.pane_id === paneId);
+    if (paneIndex < 0) return session;
+
+    const panes = session.snapshot.panes.map(pane => pane.pane_id === paneId
+      ? paneFromAgentStatusEvent(pane, agentStatus, data)
+      : pane);
+    const agents = session.snapshot.agents.map(agent => {
+      if (agent.pane_id !== paneId) return agent;
+      return agentFromStatusEvent(agent, data) ?? agent;
+    });
+    const tabs = session.snapshot.tabs.map(tab => ({
+      ...tab,
+      agent_status: aggregateAgentStatus(
+        panes.filter(pane => pane.tab_id === tab.tab_id).map(pane => pane.agent_status),
+      ),
+    }));
+    const workspaces = session.snapshot.workspaces.map(workspace => ({
+      ...workspace,
+      agent_status: aggregateAgentStatus(
+        panes
+          .filter(pane => pane.workspace_id === workspace.workspace_id)
+          .map(pane => pane.agent_status),
+      ),
+    }));
+
+    return {
+      ...session,
+      snapshot: { ...session.snapshot, agents, panes, tabs, workspaces },
+    };
+  });
+}
+
+/** Apply complete pane metadata carried by pane.updated without waiting for a snapshot. */
+export function applyLiveHostPaneUpdate(
+  state: LiveHostSessionsState,
+  sessionId: string,
+  pane: PaneInfo,
+): LiveHostSessionsState {
+  return updateSession(state, sessionId, session => {
+    if (!session.snapshot.panes.some(item => item.pane_id === pane.pane_id)) return session;
+    return {
+      ...session,
+      snapshot: {
+        ...session.snapshot,
+        panes: session.snapshot.panes.map(item => item.pane_id === pane.pane_id ? pane : item),
+      },
+    };
+  });
+}
+
+/** Apply layout.updated immediately so layout state follows the native session. */
+export function applyLiveHostLayoutUpdate(
+  state: LiveHostSessionsState,
+  sessionId: string,
+  layout: PaneLayoutSnapshot,
+): LiveHostSessionsState {
+  return updateSession(state, sessionId, session => {
+    const layouts = session.snapshot.layouts.some(item => item.tab_id === layout.tab_id)
+      ? session.snapshot.layouts.map(item => item.tab_id === layout.tab_id ? layout : item)
+      : [...session.snapshot.layouts, layout];
+    return { ...session, snapshot: { ...session.snapshot, layouts } };
   });
 }
 
@@ -422,19 +519,59 @@ function updateSession(
 }
 
 function serverFocusSelection(snapshot: HerdrSnapshot): LiveHostSelection {
-  const workspace = snapshot.workspaces.find(item => item.focused)
+  const workspace = snapshot.workspaces.find(item => item.workspace_id === snapshot.focused_workspace_id)
+    ?? snapshot.workspaces.find(item => item.focused)
     ?? snapshot.workspaces[0];
   if (!workspace) return { workspaceId: null, tabId: null, paneId: null };
 
-  const tab = preferredTab(snapshot, workspace);
+  const tab = snapshot.tabs.find(item => (
+    item.tab_id === snapshot.focused_tab_id && item.workspace_id === workspace.workspace_id
+  )) ?? preferredTab(snapshot, workspace);
   if (!tab) return { workspaceId: workspace.workspace_id, tabId: null, paneId: null };
 
-  const pane = preferredPane(snapshot, tab);
+  const pane = snapshot.panes.find(item => (
+    item.pane_id === snapshot.focused_pane_id && item.tab_id === tab.tab_id
+  )) ?? preferredPane(snapshot, tab);
   return {
     workspaceId: workspace.workspace_id,
     tabId: tab.tab_id,
     paneId: pane?.pane_id ?? null,
   };
+}
+
+const AGENT_STATUS_PRIORITY: Record<AgentStatus, number> = {
+  blocked: 5,
+  done: 4,
+  working: 3,
+  idle: 2,
+  unknown: 1,
+};
+
+export function aggregateAgentStatus(statuses: AgentStatus[]): AgentStatus {
+  return statuses.reduce<AgentStatus>((aggregate, status) => (
+    AGENT_STATUS_PRIORITY[status] > AGENT_STATUS_PRIORITY[aggregate] ? status : aggregate
+  ), 'unknown');
+}
+
+function paneFromAgentStatusEvent(
+  pane: PaneInfo,
+  agentStatus: AgentStatus,
+  data: Record<string, unknown>,
+): PaneInfo {
+  const next = { ...pane, agent_status: agentStatus };
+  for (const field of ['agent', 'title', 'display_agent', 'custom_status'] as const) {
+    if (typeof data[field] === 'string') next[field] = data[field];
+  }
+  if (
+    data.state_labels
+    && typeof data.state_labels === 'object'
+    && !Array.isArray(data.state_labels)
+    && Object.values(data.state_labels as Record<string, unknown>)
+      .every(value => typeof value === 'string')
+  ) {
+    next.state_labels = data.state_labels as Record<string, string>;
+  }
+  return next;
 }
 
 function preferredTab(snapshot: HerdrSnapshot, workspace: WorkspaceInfo): TabInfo | undefined {
