@@ -321,8 +321,8 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     }
     if (message.type === 'input') {
       await sendInput(message.data);
-    } else if (message.type === 'buffered-input') {
-      await writeInput(message.data, false);
+    } else if (message.type === 'buffered-submit') {
+      if (await writeInput(message.data, false)) await writeInput('\r', false);
     } else if (message.type === 'resize') {
       if (!terminalId) return;
       client.resizeTerminal(
