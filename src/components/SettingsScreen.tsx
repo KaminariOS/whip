@@ -15,6 +15,7 @@ export interface SettingsSectionProps {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
   biometricForKeys: boolean;
+  biometricOnResume: boolean;
   appearance: AppearancePreference;
   language: LanguagePreference;
   keepScreenOn: boolean;
@@ -23,6 +24,7 @@ export interface SettingsSectionProps {
   onAlertsChange: (value: boolean) => void;
   onTtsChange: (value: boolean) => void;
   onBiometricForKeysChange: (value: boolean) => void;
+  onBiometricOnResumeChange: (value: boolean) => void;
   onAppearanceChange: (value: AppearancePreference) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
@@ -74,6 +76,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
         <View className="overflow-hidden rounded-lg border border-border bg-card">
           <SettingRow title={t('settings.biometricForKeys')} copy={t('settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} />
+          <SettingRow title={t('settings.biometricOnResume')} copy={t('settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
         </View>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>

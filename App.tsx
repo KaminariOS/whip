@@ -10,6 +10,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
+import { AppAccessLock } from './src/components/AppAccessLock';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
 import { HerdScreen } from './src/components/HerdScreen';
@@ -22,6 +23,7 @@ import { WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import { resolveColorScheme } from './src/lib/appearance';
+import { biometricResumeAction } from './src/lib/appAccess';
 import {
   activeTabSuppressesNotifications,
   agentFromStatusEvent,
@@ -68,6 +70,7 @@ import {
   selectMobileTab,
 } from './src/mobileNavigation';
 import { alertAgent, prepareAlerts } from './src/services/alerts';
+import { authenticateAppAccess } from './src/services/appAuthentication';
 import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
 import {
   defaultDevicePreferences,
@@ -172,6 +175,9 @@ function AppContent() {
   const alertsEnabledRef = useRef(true);
   const ttsEnabledRef = useRef(false);
   const handledNotificationIdRef = useRef<string | null>(null);
+  const biometricOnResumeRef = useRef(defaultDevicePreferences.biometricOnResume);
+  const preferencesLoadedRef = useRef(false);
+  const appAuthenticationInFlightRef = useRef(false);
   const [notificationResponse, setNotificationResponse] = useState<Notifications.NotificationResponse | null>(null);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
@@ -189,6 +195,9 @@ function AppContent() {
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [biometricForKeys, setBiometricForKeys] = useState(defaultDevicePreferences.biometricForKeys);
+  const [biometricOnResume, setBiometricOnResume] = useState(defaultDevicePreferences.biometricOnResume);
+  const [appAccessLocked, setAppAccessLocked] = useState(false);
+  const [appAccessAuthenticating, setAppAccessAuthenticating] = useState(false);
   const [appearance, setAppearance] = useState<AppearancePreference>(defaultDevicePreferences.appearance);
   const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
@@ -263,6 +272,8 @@ function AppContent() {
         setAlertsEnabled(preferences.alertsEnabled);
         setTtsEnabled(preferences.ttsEnabled);
         setBiometricForKeys(preferences.biometricForKeys);
+        biometricOnResumeRef.current = preferences.biometricOnResume;
+        setBiometricOnResume(preferences.biometricOnResume);
         setAppearance(preferences.appearance);
         setLanguage(preferences.language);
         setKeepScreenOn(preferences.keepScreenOn);
@@ -275,7 +286,10 @@ function AppContent() {
           preferences.lastTab === 'terminal' ? 'hosts' : preferences.lastTab,
         ));
       })
-      .finally(() => setPreferencesLoaded(true));
+      .finally(() => {
+        preferencesLoadedRef.current = true;
+        setPreferencesLoaded(true);
+      });
     loadPersistedLiveHosts()
       .then(value => {
         persistedLiveHostsRef.current = value;
@@ -289,6 +303,7 @@ function AppContent() {
       alertsEnabled,
       ttsEnabled,
       biometricForKeys,
+      biometricOnResume,
       appearance,
       language,
       keepScreenOn,
@@ -297,7 +312,7 @@ function AppContent() {
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [alertsEnabled, appearance, biometricForKeys, keepScreenOn, language, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [alertsEnabled, appearance, biometricForKeys, biometricOnResume, keepScreenOn, language, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
@@ -618,6 +633,60 @@ function AppContent() {
       refreshHost(sessionId).catch(() => undefined);
     }
   });
+
+  const authenticateLockedApp = useCallback(async () => {
+    if (appAuthenticationInFlightRef.current) return;
+    appAuthenticationInFlightRef.current = true;
+    setAppAccessAuthenticating(true);
+    try {
+      await authenticateAppAccess();
+      setAppAccessLocked(false);
+    } catch {
+      // Cancellation and failed checks leave the app locked so the user can retry.
+    } finally {
+      appAuthenticationInFlightRef.current = false;
+      setAppAccessAuthenticating(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let previousState = AppState.currentState;
+    const subscription = AppState.addEventListener('change', state => {
+      const action = biometricResumeAction(
+        previousState,
+        state,
+        biometricOnResumeRef.current,
+        preferencesLoadedRef.current,
+      );
+      previousState = state;
+      if (action === 'lock') {
+        setAppAccessLocked(true);
+      } else if (action === 'authenticate') {
+        setAppAccessLocked(true);
+        authenticateLockedApp();
+      }
+    });
+    return () => subscription.remove();
+  }, [authenticateLockedApp]);
+
+  const updateBiometricOnResume = async (enabled: boolean): Promise<void> => {
+    if (!enabled) {
+      biometricOnResumeRef.current = false;
+      setBiometricOnResume(false);
+      setAppAccessLocked(false);
+      return;
+    }
+    try {
+      await authenticateAppAccess();
+      biometricOnResumeRef.current = true;
+      setBiometricOnResume(true);
+    } catch (error) {
+      Alert.alert(
+        t('settings.biometricUnavailable'),
+        t('settings.biometricUnavailableCopy', { error: String(error) }),
+      );
+    }
+  };
 
   useEffect(() => {
     if (liveSessions.sessions.length === 0) return;
@@ -1135,6 +1204,7 @@ function AppContent() {
               alertsEnabled={alertsEnabled}
               ttsEnabled={ttsEnabled}
               biometricForKeys={biometricForKeys}
+              biometricOnResume={biometricOnResume}
               appearance={appearance}
               language={language}
               keepScreenOn={keepScreenOn}
@@ -1144,6 +1214,7 @@ function AppContent() {
               onAlertsChange={setAlertsEnabled}
               onTtsChange={setTtsEnabled}
               onBiometricForKeysChange={setBiometricForKeys}
+              onBiometricOnResumeChange={value => { updateBiometricOnResume(value).catch(() => undefined); }}
               onAppearanceChange={updateAppearance}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
@@ -1212,6 +1283,11 @@ function AppContent() {
           onOpenTerminal={pane => activeSession && openPaneTerminal(activeSession.id, pane)}
         />
       )}
+      <AppAccessLock
+        authenticating={appAccessAuthenticating}
+        visible={appAccessLocked}
+        onRetry={() => { authenticateLockedApp(); }}
+      />
     </SafeAreaView>
   );
 }

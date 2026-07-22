@@ -22,6 +22,7 @@ export function MoreScreen(props: Props) {
         alertsEnabled={props.alertsEnabled}
         ttsEnabled={props.ttsEnabled}
         biometricForKeys={props.biometricForKeys}
+        biometricOnResume={props.biometricOnResume}
         appearance={props.appearance}
         language={props.language}
         keepScreenOn={props.keepScreenOn}
@@ -30,6 +31,7 @@ export function MoreScreen(props: Props) {
         onAlertsChange={props.onAlertsChange}
         onTtsChange={props.onTtsChange}
         onBiometricForKeysChange={props.onBiometricForKeysChange}
+        onBiometricOnResumeChange={props.onBiometricOnResumeChange}
         onAppearanceChange={props.onAppearanceChange}
         onLanguageChange={props.onLanguageChange}
         onKeepScreenOnChange={props.onKeepScreenOnChange}
