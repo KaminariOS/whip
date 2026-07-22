@@ -2,13 +2,23 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { ChevronLeft, Ellipsis, Plus, X } from 'lucide-react-native';
 import {
   Alert,
+  Animated,
+  PanResponder,
   ScrollView,
+  StyleSheet,
   View,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { serverFocusMatchesPendingPane } from '@/src/lib/terminalFocus';
+import {
+  neighborTabIndex,
+  shouldCommitTerminalTabSwipe,
+  terminalTabSwipeDirection,
+  terminalTabSwipeOffset,
+  type TerminalTabSwipeDirection,
+} from '@/src/lib/terminalTabSwipe';
 import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalControls';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSessionsState } from '../terminalSessions';
@@ -45,6 +55,15 @@ type PendingFocus = {
   previousId: string | null;
 };
 
+type TerminalTabSwipe = {
+  direction: TerminalTabSwipeDirection;
+  originTabId: string;
+  originTerminalId: string | null;
+  targetTabId: string;
+  targetTerminalId: string | null;
+  targetLabel: string;
+};
+
 export function SessionScreen({
   visible,
   snapshot,
@@ -70,6 +89,11 @@ export function SessionScreen({
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);
+  const [terminalWidth, setTerminalWidth] = useState(0);
+  const [tabSwipe, setTabSwipe] = useState<TerminalTabSwipe | null>(null);
+  const terminalWidthRef = useRef(0);
+  const tabSwipeTranslateX = useRef(new Animated.Value(0)).current;
+  const tabSwipeRef = useRef<TerminalTabSwipe | null>(null);
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
@@ -182,6 +206,101 @@ export function SessionScreen({
     });
   };
 
+  const swipeContextRef = useRef({ tabs, selectedTab, activeTerminalSession, snapshot });
+  swipeContextRef.current = { tabs, selectedTab, activeTerminalSession, snapshot };
+  const chooseTabRef = useRef(chooseTab);
+  chooseTabRef.current = chooseTab;
+
+  const beginTabSwipe = (direction: TerminalTabSwipeDirection): TerminalTabSwipe | null => {
+    const context = swipeContextRef.current;
+    const currentIndex = context.tabs.findIndex(item => item.tab_id === context.selectedTab?.tab_id);
+    const targetIndex = neighborTabIndex(currentIndex, context.tabs.length, direction);
+    if (targetIndex === null || !context.selectedTab) return null;
+    const target = context.tabs[targetIndex];
+    const targetPanes = context.snapshot.panes.filter(pane => pane.tab_id === target.tab_id);
+    const targetPane = targetPanes.find(pane => pane.focused) || targetPanes[0];
+    const nextSwipe: TerminalTabSwipe = {
+      direction,
+      originTabId: context.selectedTab.tab_id,
+      originTerminalId: context.activeTerminalSession?.terminalId || null,
+      targetTabId: target.tab_id,
+      targetTerminalId: targetPane?.terminal_id || null,
+      targetLabel: target.label || target.tab_id,
+    };
+    tabSwipeRef.current = nextSwipe;
+    setTabSwipe(nextSwipe);
+    return nextSwipe;
+  };
+
+  const settleTabSwipe = (commit: boolean) => {
+    const swipe = tabSwipeRef.current;
+    if (!swipe) return;
+    const destination = commit ? -swipe.direction * terminalWidthRef.current : 0;
+    Animated.spring(tabSwipeTranslateX, {
+      toValue: destination,
+      damping: 24,
+      stiffness: 240,
+      mass: 0.8,
+      overshootClamping: true,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished || tabSwipeRef.current !== swipe) return;
+      if (commit) {
+        const target = swipeContextRef.current.tabs.find(item => item.tab_id === swipe.targetTabId);
+        if (target) chooseTabRef.current(target);
+      }
+      tabSwipeRef.current = null;
+      setTabSwipe(null);
+      tabSwipeTranslateX.setValue(0);
+    });
+  };
+
+  const terminalTabPanResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => {
+      const direction = terminalTabSwipeDirection(
+        gesture.dx,
+        gesture.dy,
+        gesture.numberActiveTouches,
+      );
+      if (!direction || terminalWidthRef.current <= 0) return false;
+      const context = swipeContextRef.current;
+      const currentIndex = context.tabs.findIndex(item => item.tab_id === context.selectedTab?.tab_id);
+      return neighborTabIndex(currentIndex, context.tabs.length, direction) !== null;
+    },
+    onPanResponderMove: (_event, gesture) => {
+      const direction = tabSwipeRef.current?.direction
+        || terminalTabSwipeDirection(gesture.dx, gesture.dy, gesture.numberActiveTouches);
+      if (!direction) return;
+      const swipe = tabSwipeRef.current || beginTabSwipe(direction);
+      if (!swipe) return;
+      tabSwipeTranslateX.setValue(terminalTabSwipeOffset(
+        gesture.dx,
+        terminalWidthRef.current,
+        swipe.direction,
+      ));
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      const swipe = tabSwipeRef.current;
+      if (!swipe) return;
+      settleTabSwipe(shouldCommitTerminalTabSwipe(
+        gesture.dx,
+        gesture.vx,
+        terminalWidthRef.current,
+        swipe.direction,
+      ));
+    },
+    onPanResponderTerminate: () => settleTabSwipe(false),
+    onPanResponderTerminationRequest: () => false,
+  })).current;
+
+  useEffect(() => {
+    if (visible) return;
+    tabSwipeRef.current = null;
+    setTabSwipe(null);
+    tabSwipeTranslateX.stopAnimation();
+    tabSwipeTranslateX.setValue(0);
+  }, [tabSwipeTranslateX, visible]);
+
   const choosePane = (pane: PaneInfo) => {
     onActivateTerminal(pane);
     run(() => client.focusPane(pane.pane_id));
@@ -287,25 +406,71 @@ export function SessionScreen({
         </View>
       )}
 
-      <View className="relative flex-1 overflow-hidden bg-[#212121]">
+      <View
+        className="relative flex-1 overflow-hidden bg-[#212121]"
+        onLayout={event => {
+          terminalWidthRef.current = event.nativeEvent.layout.width;
+          setTerminalWidth(event.nativeEvent.layout.width);
+        }}>
         {terminalSurfaceMounted && terminalState.sessions.map(terminalSession => (
-          <TerminalScreen
+          <Animated.View
             key={terminalSession.terminalId}
-            client={client}
-            compact
-            visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
-            session={terminalSession}
-            scroll={snapshot.panes.find(pane => pane.terminal_id === terminalSession.terminalId)?.scroll}
-            preferences={terminalPreferences}
-            controlUsage={terminalControlUsage}
-            onFontSizeChange={onTerminalFontSizeChange}
-            onControlUse={onTerminalControlUse}
-            onClose={() => onCloseTerminal(terminalSession.terminalId)}
-            onStatus={(status, error, reconnectAttempt) => {
-              onTerminalStatus(terminalSession.terminalId, status, error, reconnectAttempt);
-            }}
-          />
+            style={[
+              StyleSheet.absoluteFill,
+              tabSwipe?.originTerminalId === terminalSession.terminalId && {
+                transform: [{ translateX: tabSwipeTranslateX }],
+              },
+              tabSwipe?.targetTerminalId === terminalSession.terminalId && {
+                transform: [{
+                  translateX: Animated.add(
+                    tabSwipeTranslateX,
+                    tabSwipe.direction * terminalWidth,
+                  ),
+                }],
+              },
+            ]}>
+            <TerminalScreen
+              client={client}
+              compact
+              visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
+              preview={tabSwipe?.targetTerminalId === terminalSession.terminalId}
+              terminalPanHandlers={terminalSession.terminalId === activeTerminalSession?.terminalId
+                ? terminalTabPanResponder.panHandlers
+                : undefined}
+              session={terminalSession}
+              scroll={snapshot.panes.find(pane => pane.terminal_id === terminalSession.terminalId)?.scroll}
+              preferences={terminalPreferences}
+              controlUsage={terminalControlUsage}
+              onFontSizeChange={onTerminalFontSizeChange}
+              onControlUse={onTerminalControlUse}
+              onClose={() => onCloseTerminal(terminalSession.terminalId)}
+              onStatus={(status, error, reconnectAttempt) => {
+                onTerminalStatus(terminalSession.terminalId, status, error, reconnectAttempt);
+              }}
+            />
+          </Animated.View>
         ))}
+        {tabSwipe
+          && (!tabSwipe.targetTerminalId
+            || !terminalState.sessions.some(session => session.terminalId === tabSwipe.targetTerminalId))
+          && (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  transform: [{
+                    translateX: Animated.add(
+                      tabSwipeTranslateX,
+                      tabSwipe.direction * terminalWidth,
+                    ),
+                  }],
+                },
+              ]}
+              className="items-center justify-center bg-[#212121] p-[30px]">
+              <Text className="font-mono text-[10px] font-black text-[#ECECEC]">{tabSwipe.targetLabel}</Text>
+            </Animated.View>
+          )}
         {!selectedTab && (
           <View className="flex-1 items-center justify-center p-[30px]">
             <Text className="font-mono font-black text-[#ECECEC]">{workspace ? t('session.emptyWorkspace') : t('session.noWorkspaces')}</Text>

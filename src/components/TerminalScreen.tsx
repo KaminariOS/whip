@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, X } from 'lucide-react-native';
-import { AppState, Clipboard, Keyboard, ScrollView, View } from 'react-native';
+import { AppState, Clipboard, Keyboard, ScrollView, View, type GestureResponderHandlers } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -32,6 +32,8 @@ interface Props {
   preferences: TerminalPreferences;
   controlUsage: TerminalControlUsage;
   compact?: boolean;
+  preview?: boolean;
+  terminalPanHandlers?: GestureResponderHandlers;
   onFontSizeChange: (fontSize: number) => void;
   onControlUse: (control: TerminalControlId) => void;
   onClose: () => void;
@@ -66,7 +68,7 @@ const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 
-export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
+export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
   const { t } = useTranslation();
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
@@ -94,6 +96,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const [scrollPosition, setScrollPosition] = useState(scroll);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
   const scrollThumb = terminalScrollThumb(scrollPosition);
+  const presented = visible || preview;
 
   useEffect(() => {
     setScrollPosition(scroll);
@@ -419,7 +422,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       accessibilityElementsHidden={!visible || !session}
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
-      className={cn('flex-1 bg-transparent', (!visible || !session) && 'absolute inset-0 opacity-0')}>
+      className={cn('flex-1 bg-transparent', (!presented || !session) && 'absolute inset-0 opacity-0')}>
       {!compact && (
         <View className="h-[30px] flex-row items-center gap-2 border-b border-[#424242] bg-[#181818] px-3">
           <View className="size-1.5 rounded-full bg-white" />
@@ -453,7 +456,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           <Button accessibilityLabel={t('terminal.closeSearch')} className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><X size={17} color={colors.text} /></Button>
         </View>
       )}
-      <View className="relative flex-1">
+      <View className="relative flex-1" {...terminalPanHandlers}>
         <WebView
           ref={value => {
             webView.current = value as WebViewHandle | null;
