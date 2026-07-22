@@ -21,6 +21,8 @@ describe('terminal renderer lifecycle', () => {
     expect(app).toContain("          </View>\n        )}\n\n        {liveSessions.sessions.map");
     expect(bottomNavigation).toContain('const { bottom } = useSafeAreaInsets();');
     expect(bottomNavigation).toContain('style={{ minHeight: 66 + bottom, paddingBottom: bottom }}');
+    expect(bottomNavigation).toContain('active:bg-transparent dark:active:bg-transparent');
+    expect(bottomNavigation).toContain('borderRadius: 999');
   });
 
   it('defers terminal WebViews until their host terminal surface is first shown', () => {

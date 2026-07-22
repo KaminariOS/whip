@@ -19,7 +19,7 @@ import { applyTerminalModifiers, type TerminalModifierState } from '../lib/termi
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
 import type { TerminalSession, TerminalSessionStatus } from '../terminalSessions';
 import type { PaneScrollInfo } from '../types';
-import { colors } from '../theme';
+import { colors, useTheme } from '../theme';
 import { terminalHtml } from '../generated/terminalHtml';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -70,6 +70,7 @@ const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 
 export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onFontSizeChange, onControlUse, onClose, onStatus }: Props) {
+  const { colors: appColors } = useTheme();
   const { t } = useTranslation();
   const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
   const terminalId = session?.terminalId || '';
@@ -407,7 +408,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           key={control}
           accessibilityLabel={t('terminal.compose')}
           accessibilityState={{ selected: composeOpen }}
-          className={cn('min-h-[34px] min-w-12 rounded-sm bg-terminal-surface px-2.5', composeOpen && 'border border-terminal-accent')}
+          className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', composeOpen && 'border-primary')}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
@@ -417,7 +418,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
               setComposeOpen(true);
             }
           }}>
-          <MessageCircle size={16} color={colors.text} />
+          <MessageCircle size={16} color={appColors.text} />
         </Button>
       );
     }
@@ -446,9 +447,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           }}
           onLongPress={() => setCtrl('locked')}
           delayLongPress={450}
-          className={cn('min-h-[34px] min-w-12 rounded-sm bg-terminal-surface px-2.5', ctrl === 'armed' && 'border border-terminal-accent', ctrl === 'locked' && 'bg-terminal-accent')}
+          className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', ctrl === 'armed' && 'border-primary', ctrl === 'locked' && 'border-primary bg-primary')}
           variant="secondary">
-          <Text className={cn('font-mono text-[9px] font-bold text-terminal-text', ctrl === 'armed' && 'text-terminal-accent', ctrl === 'locked' && 'text-terminal-ink')}>CTRL</Text>
+          <Text className={cn('font-mono text-[9px] font-bold text-foreground', ctrl === 'armed' && 'text-primary', ctrl === 'locked' && 'text-primary-foreground')}>CTRL</Text>
         </Button>
       );
     }
@@ -463,9 +464,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         }}
         onLongPress={() => setAlt('locked')}
         delayLongPress={450}
-        className={cn('min-h-[34px] min-w-12 rounded-sm bg-terminal-surface px-2.5', alt === 'armed' && 'border border-terminal-accent', alt === 'locked' && 'bg-terminal-accent')}
+        className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', alt === 'armed' && 'border-primary', alt === 'locked' && 'border-primary bg-primary')}
         variant="secondary">
-        <Text className={cn('font-mono text-[9px] font-bold text-terminal-text', alt === 'armed' && 'text-terminal-accent', alt === 'locked' && 'text-terminal-ink')}>ALT</Text>
+        <Text className={cn('font-mono text-[9px] font-bold text-foreground', alt === 'armed' && 'text-primary', alt === 'locked' && 'text-primary-foreground')}>ALT</Text>
       </Button>
     );
   };
@@ -623,5 +624,5 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 }
 
 function TerminalKey({ label, onPress, armed = false }: { label: string; onPress: () => void; armed?: boolean }) {
-  return <Button className={cn('min-h-[34px] min-w-12 rounded-sm bg-terminal-surface px-2.5', armed && 'border border-terminal-accent')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-terminal-text', armed && 'text-terminal-accent')}>{label}</Text></Button>;
+  return <Button className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', armed && 'border-primary')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-foreground', armed && 'text-primary')}>{label}</Text></Button>;
 }
