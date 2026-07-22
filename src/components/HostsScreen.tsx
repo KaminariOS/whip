@@ -1,4 +1,4 @@
-import { AlertCircle, LockKeyhole, Plus, Server } from 'lucide-react-native';
+import { AlertCircle, Ellipsis, LockKeyhole, Plus, Server } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -34,7 +34,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
         title="Herdr"
         subtitle={t('hosts.subtitle')}
         left={<WhipMark size={40} />}
-        right={<IconButton icon="add" accessibilityLabel={t('hosts.add')} onPress={onAdd} />}
+        right={<IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />}
       />
 
       {error ? (
@@ -99,7 +99,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                           <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')} · {host.rememberCredentials ? t('hosts.credentialSaved') : t('hosts.askOnConnect')}{host.lastConnectedAt ? ` · ${formatLastUsed(host.lastConnectedAt, t)}` : ''}</Text>
                         </View>
                       </Button>
-                      <IconButton icon="ellipsis-horizontal" accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => onEdit(host)} />
+                      <IconButton icon={Ellipsis} accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => onEdit(host)} />
                     </View>
                   );
                 })}

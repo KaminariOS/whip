@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { ChevronLeft, Ellipsis, Plus, X } from 'lucide-react-native';
 import {
   Alert,
   ScrollView,
@@ -225,7 +225,7 @@ export function SessionScreen({
       className={cn('flex-1 bg-[#212121]', !visible && 'absolute inset-0 opacity-0')}>
       <View className="h-[42px] flex-row border-b border-[#424242] bg-[#2F2F2F]">
         <Button accessibilityLabel={t('session.backToHerd')} className="h-[42px] w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
-          <Ionicons name="chevron-back" size={21} color={colors.text} />
+          <ChevronLeft size={21} color={colors.text} />
         </Button>
         {workspace ? (
           <>
@@ -243,15 +243,15 @@ export function SessionScreen({
                       {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-[#B4B4B4]', active && 'text-[#212121]')}>{item.pane_count}</Text>}
                     </Button>
                     <Button accessibilityLabel={t('session.closeTab', { tab: label })} className="h-[30px] w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(() => closeTab(item))}>
-                      <Ionicons name="close" size={14} color={active ? colors.ink : colors.muted} />
+                      <X size={14} color={active ? colors.ink : colors.muted} />
                     </Button>
                   </View>
                 );
               })}
             </ScrollView>
-            <Button accessibilityLabel={t('session.newTab')} className="h-[42px] w-[58px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Ionicons name="add" size={14} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">{t('session.tab')}</Text></Button>
+            <Button accessibilityLabel={t('session.newTab')} className="h-[42px] w-[58px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Plus size={14} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">{t('session.tab')}</Text></Button>
             <Button accessibilityLabel={t('session.actions')} className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
-              <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
+              <Ellipsis size={18} color={colors.text} />
             </Button>
           </>
         ) : null}

@@ -1,13 +1,14 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { CircleEllipsis, Server, SquareTerminal, Users, type LucideIcon } from 'lucide-react-native';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { useTheme } from '@/src/theme';
 import type { AppTab } from '@/src/types';
-import { hapticPress, type IconName } from './app-ui';
+import { hapticPress } from './app-ui';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 interface Props {
@@ -16,11 +17,11 @@ interface Props {
   onSelect: (tab: AppTab) => void;
 }
 
-const items: Array<{ tab: AppTab; labelKey: string; icon: IconName; activeIcon: IconName }> = [
-  { tab: 'hosts', labelKey: 'nav.hosts', icon: 'server-outline', activeIcon: 'server' },
-  { tab: 'herd', labelKey: 'nav.herd', icon: 'people-outline', activeIcon: 'people' },
-  { tab: 'terminal', labelKey: 'nav.terminal', icon: 'terminal-outline', activeIcon: 'terminal' },
-  { tab: 'more', labelKey: 'nav.more', icon: 'ellipsis-horizontal-circle-outline', activeIcon: 'ellipsis-horizontal-circle' },
+const items: Array<{ tab: AppTab; labelKey: string; icon: LucideIcon }> = [
+  { tab: 'hosts', labelKey: 'nav.hosts', icon: Server },
+  { tab: 'herd', labelKey: 'nav.herd', icon: Users },
+  { tab: 'terminal', labelKey: 'nav.terminal', icon: SquareTerminal },
+  { tab: 'more', labelKey: 'nav.more', icon: CircleEllipsis },
 ];
 
 export function BottomNavigation({ activeTab, sessionCount, onSelect }: Props) {
@@ -39,7 +40,7 @@ export function BottomNavigation({ activeTab, sessionCount, onSelect }: Props) {
             variant="ghost"
             onPress={hapticPress(() => onSelect(item.tab))}>
             <View className={cn('h-[30px] w-11 items-center justify-center rounded-full', active && 'bg-accent')}>
-              <Ionicons name={active ? item.activeIcon : item.icon} size={20} color={active ? colors.text : colors.textSecondary} />
+              <Icon as={item.icon} size={20} color={active ? colors.text : colors.textSecondary} strokeWidth={active ? 2.75 : 2} />
               {item.tab === 'terminal' && sessionCount > 0 ? (
                 <Badge className="absolute -right-1 -top-1 min-w-[17px] border-2 border-background px-1 py-0">
                   <Text className="text-[9px] font-bold leading-[13px]">{sessionCount > 9 ? '9+' : sessionCount}</Text>

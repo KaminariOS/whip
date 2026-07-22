@@ -1,4 +1,4 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { Ellipsis, Plus } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -56,10 +56,10 @@ export function WorkspaceRail({
         ))}
       </ScrollView>
       <Button accessibilityLabel={t('rail.newWorkspace')} className="h-12 w-[72px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
-        <Ionicons name="add" size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">{t('rail.space')}</Text>
+        <Plus size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-[#ECECEC]">{t('rail.space')}</Text>
       </Button>
       <Button accessibilityLabel={t('rail.workspaceActions')} className="h-12 w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(onActions)}>
-        <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
+        <Ellipsis size={18} color={colors.text} />
       </Button>
     </View>
   );

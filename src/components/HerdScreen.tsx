@@ -1,5 +1,4 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { Plus, Sparkles } from 'lucide-react-native';
+import { ChevronRight, Plus, Sparkles, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -236,7 +235,7 @@ export function HerdScreen({
               <Text className="px-1 text-sm font-semibold text-muted-foreground">{t('herd.attentionQueue')}</Text>
               {selectedQueue ? (
                 <Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(value => !value))}>
-                  {creating ? <Ionicons name="close" size={16} color={colors.text} /> : <Icon as={Plus} size={16} />}
+                  {creating ? <Icon as={X} size={16} color={colors.text} /> : <Icon as={Plus} size={16} />}
                   <Text>{creating ? t('common.close') : t('herd.startAgent')}</Text>
                 </Button>
               ) : null}
@@ -298,7 +297,7 @@ function AgentRow({ item, index, showHost, onOpenTerminal }: { item: HerdQueueAg
       <Button accessibilityLabel={t('herd.openAgentTerminal', { agent: item.primaryLabel, host: item.hostLabel })} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} variant="ghost" onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
         <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
         <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
       </Button>
     </AnimatedEntrance>
   );

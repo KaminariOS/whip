@@ -1,4 +1,4 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { Plus, X } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -39,7 +39,7 @@ export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onN
           return <HostPill key={session.hostId} session={session} active={active} onSelect={() => onSelect(session.hostId)} onClose={() => onClose(session.hostId)} />;
         })}
       </ScrollView>
-      <Button accessibilityLabel={t('rail.newHostSession')} className="h-12 w-[46px] rounded-none px-0" variant="ghost" onPress={hapticPress(onNew)}><Ionicons name="add" size={22} color={colors.text} /></Button>
+      <Button accessibilityLabel={t('rail.newHostSession')} className="h-12 w-[46px] rounded-none px-0" variant="ghost" onPress={hapticPress(onNew)}><Plus size={22} color={colors.text} /></Button>
     </View>
   );
 }
@@ -53,7 +53,7 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
         <Text className={cn('max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-[#ECECEC]', active && 'text-[#212121]')} numberOfLines={1}>{session.label}</Text>
         {session.terminalCount > 0 ? <Text className={cn('text-[10px] leading-[18px] text-[#8E8E8E]', active && 'text-[#212121]')}>{session.terminalCount}</Text> : null}
       </Button>
-      {onClose ? <Button accessibilityLabel={t('rail.disconnectHost', { host: session.label })} className="h-8 w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(onClose)}><Ionicons name="close" size={14} color={active ? colors.ink : colors.muted} /></Button> : null}
+      {onClose ? <Button accessibilityLabel={t('rail.disconnectHost', { host: session.label })} className="h-8 w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? colors.ink : colors.muted} /></Button> : null}
     </View>
   );
 }
