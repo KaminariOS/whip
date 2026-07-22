@@ -114,11 +114,21 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('this.requireClient().herdrBridgeResize(\n      terminalId,');
   });
 
-  it('reserves SSH channels for the visible terminal and control commands', () => {
+  it('retains recently focused terminals without tying bridge lifetime to navigation visibility', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
+    const visibilityLifecycleEnd = '}, [client, connectionGeneration, t, terminalId, visible]);';
+    const visibilityLifecycle = screen.slice(
+      screen.indexOf('// Visibility activates and touches'),
+      screen.indexOf(visibilityLifecycleEnd) + visibilityLifecycleEnd.length,
+    );
 
     expect(screen).toContain('if (!terminalId || !visible) return;');
+    expect(screen).toContain('client.isTerminalBridgeRetained(terminalId)');
     expect(screen).toContain('[client, connectionGeneration, t, terminalId, visible]');
+    expect(visibilityLifecycle).not.toContain('client.releaseTerminal(terminalId)');
+    expect(client).toContain('MAX_RETAINED_TERMINAL_BRIDGES = 3');
+    expect(client).toContain('evictLeastRecentlyUsedTerminal(terminalId)');
   });
 
   it('resets the renderer in the same injection as the first terminal frame', () => {

@@ -153,17 +153,19 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   };
 
   useEffect(() => {
-    // Keep each renderer mounted so it preserves its last frame, but only hold
-    // an SSH channel for the terminal the user can currently see. Opening a
-    // bridge for every visited pane exhausts the server's SSH MaxSessions limit
-    // and leaves no channel available for focus and refresh commands.
+    // Visibility activates and touches the terminal's per-host LRU entry. The
+    // bridge stays attached when navigating elsewhere in the app, while the
+    // client evicts older hidden terminals before reaching SSH MaxSessions.
     if (!terminalId || !visible) return;
     if (AppState.currentState !== 'active') return;
     let active = true;
-    resetOnNextFrame.current = true;
-    pendingFrames.current = [];
+    const retained = client.isTerminalBridgeRetained(terminalId);
+    if (!retained) {
+      resetOnNextFrame.current = true;
+      pendingFrames.current = [];
+    }
     setError(null);
-    reportStatus('connecting', undefined, reconnectAttempt.current);
+    if (!retained) reportStatus('connecting', undefined, reconnectAttempt.current);
     const scheduleReconnect = (reason: string) => {
       if (!active || AppState.currentState !== 'active') return;
       const nextAttempt = reconnectAttempt.current + 1;
@@ -197,9 +199,15 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     return () => {
       active = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
     };
   }, [client, connectionGeneration, t, terminalId, visible]);
+
+  useEffect(() => {
+    if (!terminalId) return;
+    return () => {
+      client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
+    };
+  }, [client, terminalId]);
 
   useEffect(() => {
     let previous = AppState.currentState;
