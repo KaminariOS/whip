@@ -14,6 +14,7 @@ import { Text } from './ui/text';
 export interface SettingsSectionProps {
   alertsEnabled: boolean;
   ttsEnabled: boolean;
+  biometricForKeys: boolean;
   appearance: AppearancePreference;
   language: LanguagePreference;
   keepScreenOn: boolean;
@@ -21,6 +22,7 @@ export interface SettingsSectionProps {
   host: string | null;
   onAlertsChange: (value: boolean) => void;
   onTtsChange: (value: boolean) => void;
+  onBiometricForKeysChange: (value: boolean) => void;
   onAppearanceChange: (value: AppearancePreference) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
@@ -67,6 +69,11 @@ export function SettingsSection(props: SettingsSectionProps) {
         <View className="overflow-hidden rounded-lg border border-border bg-card">
           <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
           <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
+        </View>
+
+        <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
+        <View className="overflow-hidden rounded-lg border border-border bg-card">
+          <SettingRow title={t('settings.biometricForKeys')} copy={t('settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} />
         </View>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>

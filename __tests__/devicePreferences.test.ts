@@ -43,6 +43,7 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.terminalControlUsage).toEqual({});
   expect(defaultDevicePreferences.appearance).toBe('system');
   expect(defaultDevicePreferences.language).toBe('system');
+  expect(defaultDevicePreferences.biometricForKeys).toBe(false);
   expect(defaultDevicePreferences.keepScreenOn).toBe(false);
   expect(defaultDevicePreferences.reopenTerminalOnLaunch).toBe(false);
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
@@ -61,6 +62,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
   await expect(loadDevicePreferences()).resolves.toEqual({
     alertsEnabled: false,
     ttsEnabled: true,
+    biometricForKeys: false,
     appearance: 'system',
     language: 'system',
     keepScreenOn: false,
@@ -75,6 +77,14 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       backgroundDimming: 60,
     },
   });
+});
+
+test('loads biometric key protection only when explicitly enabled', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ biometricForKeys: true }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ biometricForKeys: true });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ biometricForKeys: 'yes' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ biometricForKeys: false });
 });
 
 test('loads a valid appearance preference and rejects invalid values', async () => {

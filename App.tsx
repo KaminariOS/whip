@@ -188,6 +188,7 @@ function AppContent() {
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(false);
+  const [biometricForKeys, setBiometricForKeys] = useState(defaultDevicePreferences.biometricForKeys);
   const [appearance, setAppearance] = useState<AppearancePreference>(defaultDevicePreferences.appearance);
   const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
@@ -261,6 +262,7 @@ function AppContent() {
       .then(preferences => {
         setAlertsEnabled(preferences.alertsEnabled);
         setTtsEnabled(preferences.ttsEnabled);
+        setBiometricForKeys(preferences.biometricForKeys);
         setAppearance(preferences.appearance);
         setLanguage(preferences.language);
         setKeepScreenOn(preferences.keepScreenOn);
@@ -286,6 +288,7 @@ function AppContent() {
     saveDevicePreferences({
       alertsEnabled,
       ttsEnabled,
+      biometricForKeys,
       appearance,
       language,
       keepScreenOn,
@@ -294,7 +297,7 @@ function AppContent() {
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [alertsEnabled, appearance, keepScreenOn, language, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [alertsEnabled, appearance, biometricForKeys, keepScreenOn, language, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
@@ -1130,6 +1133,7 @@ function AppContent() {
               host={activeSession?.host.host || null}
               alertsEnabled={alertsEnabled}
               ttsEnabled={ttsEnabled}
+              biometricForKeys={biometricForKeys}
               appearance={appearance}
               language={language}
               keepScreenOn={keepScreenOn}
@@ -1138,6 +1142,7 @@ function AppContent() {
               server={activeSession?.snapshot.server || null}
               onAlertsChange={setAlertsEnabled}
               onTtsChange={setTtsEnabled}
+              onBiometricForKeysChange={setBiometricForKeys}
               onAppearanceChange={updateAppearance}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
