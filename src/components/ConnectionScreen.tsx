@@ -1,4 +1,4 @@
-import { ArrowRight, KeyRound, Trash2 } from 'lucide-react-native';
+import { ArrowRight, KeyRound, Trash2, X } from 'lucide-react-native';
 import SSHClient from '@dylankenneally/react-native-ssh-sftp';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
@@ -80,6 +80,10 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
   const privateKeyAccessibilityLabel = keyInspection.state === 'valid'
     ? `${keyInspection.fingerprint}, ${keyInspection.keyType}. Tap to replace.`
     : 'Private key loaded. Tap to replace.';
+  const removePrivateKey = () => {
+    setProfile(current => ({ ...current, secret: '', passphrase: '' }));
+    setEditingPrivateKey(false);
+  };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 bg-background">
@@ -99,7 +103,7 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
         </View>
 
         {profile.authMode === 'key' && profile.secret && !editingPrivateKey ? (
-          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">PEM / OpenSSH private key</Text><Button accessibilityLabel={privateKeyAccessibilityLabel} className="min-h-[58px] w-full justify-start rounded-md border border-border bg-card px-3.5 py-2.5" size="content" variant="outline" onPress={hapticPress(() => setEditingPrivateKey(true))}><Icon as={KeyRound} size={18} />{keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>Private key loaded · Tap to replace</Text>}</Button></View>
+          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">PEM / OpenSSH private key</Text><View className="min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border bg-card"><Button accessibilityLabel={privateKeyAccessibilityLabel} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" size="content" variant="ghost" onPress={hapticPress(() => setEditingPrivateKey(true))}><Icon as={KeyRound} size={18} />{keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>Private key loaded · Tap to replace</Text>}</Button><Button accessibilityLabel="Remove private key" className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button></View></View>
         ) : (
           <Field label={profile.authMode === 'password' ? 'SSH password' : 'PEM / OpenSSH private key'} value={profile.secret} onChangeText={value => update('secret', value)} onBlur={() => setEditingPrivateKey(false)} secureTextEntry={profile.authMode === 'password'} multiline={profile.authMode === 'key'} numberOfLines={profile.authMode === 'key' ? 5 : 1} autoCapitalize="none" />
         )}
