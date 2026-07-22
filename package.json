@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@dylankenneally/react-native-ssh-sftp": "file:packages/react-native-ssh-sftp",
-    "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native/new-app-screen": "0.86.0",
     "@rn-primitives/portal": "^1.5.2",

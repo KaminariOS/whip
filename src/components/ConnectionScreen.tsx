@@ -1,4 +1,4 @@
-import { ArrowRight, ClipboardPaste, Copy, FileUp, KeyRound, Sparkles, Trash2, X } from 'lucide-react-native';
+import { ArrowRight, ChevronLeft, ClipboardPaste, Copy, FileUp, KeyRound, Sparkles, Trash2, X } from 'lucide-react-native';
 import SSHClient from '@dylankenneally/react-native-ssh-sftp';
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
@@ -166,7 +166,7 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 bg-background">
-      <ScreenHeader title={profile.name.trim() ? t('connection.editHost') : t('connection.newHost')} left={<IconButton icon="chevron-back" accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
+      <ScreenHeader title={profile.name.trim() ? t('connection.editHost') : t('connection.newHost')} left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled"><View className="p-4 pb-11">
         <View className="mb-[30px] flex-row items-center gap-3.5"><WhipMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">{t('connection.title')}</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">{t('connection.intro')}</Text></View></View>
 

@@ -1,5 +1,5 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
+import { RefreshCw, type LucideIcon } from 'lucide-react-native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Animated, Easing, Image, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -10,8 +10,6 @@ import { useTheme } from '@/src/theme';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
-
-export type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export function WhipMark({ size, accessibilityLabel }: { size: number; accessibilityLabel?: string }) {
   return (
@@ -41,7 +39,7 @@ export function IconButton({
   disabled = false,
   selected = false,
 }: {
-  icon: IconName;
+  icon: LucideIcon;
   accessibilityLabel: string;
   onPress: () => void;
   className?: string;
@@ -50,6 +48,7 @@ export function IconButton({
   selected?: boolean;
 }) {
   const { colors } = useTheme();
+  const IconComponent = icon;
   return (
     <Button
       accessibilityLabel={accessibilityLabel}
@@ -58,7 +57,7 @@ export function IconButton({
       size="icon"
       variant="ghost"
       onPress={hapticPress(onPress)}>
-      <Ionicons name={icon} size={21} color={destructive ? colors.error : selected ? colors.onPrimary : colors.text} />
+      <IconComponent size={21} color={destructive ? colors.error : selected ? colors.onPrimary : colors.text} />
     </Button>
   );
 }
@@ -85,7 +84,7 @@ export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: s
   if (motion === 'spin') {
     return (
       <Animated.View style={style}>
-        <Ionicons name="sync" size={Math.max(11, size)} color={color} />
+        <RefreshCw size={Math.max(11, size)} color={color} />
       </Animated.View>
     );
   }
