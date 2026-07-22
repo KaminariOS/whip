@@ -860,6 +860,7 @@ function AppContent() {
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === host.id);
     if (existing) {
       selectLiveHost(existing.id, 'terminal');
+      refreshHost(existing.id).catch(error => scheduleReconnect(existing.id, error));
       return;
     }
     setConnectError(null);
