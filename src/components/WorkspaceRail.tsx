@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { aggregateAgentStatus } from '@/src/liveHostSessions';
 import { cn } from '@/src/lib/utils';
-import { colors, statusColor } from '@/src/theme';
+import { statusColor, useTheme } from '@/src/theme';
 import type { WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { Button } from './ui/button';
@@ -29,12 +29,13 @@ export function WorkspaceRail({
   onActions,
   onRename,
 }: Props) {
+  const { colors } = useTheme();
   const { t } = useTranslation();
   const allStatus = aggregateAgentStatus(workspaces.map(workspace => workspace.agent_status));
   const totalTabs = workspaces.reduce((total, workspace) => total + workspace.tab_count, 0);
 
   return (
-    <View className="h-12 flex-row border-b border-terminal-divider bg-terminal-panel">
+    <View className="h-12 flex-row border-b border-border bg-background">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5">
         <WorkspacePill
           label={t('rail.allSpaces')}
@@ -56,7 +57,7 @@ export function WorkspaceRail({
         ))}
       </ScrollView>
       <Button accessibilityLabel={t('rail.newWorkspace')} className="h-12 w-[72px] rounded-none px-1" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
-        <Plus size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-terminal-text">{t('rail.space')}</Text>
+        <Plus size={15} color={colors.text} /><Text className="text-[10px] font-semibold text-foreground">{t('rail.space')}</Text>
       </Button>
       <Button accessibilityLabel={t('rail.workspaceActions')} className="h-12 w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(onActions)}>
         <Ellipsis size={18} color={colors.text} />
@@ -80,12 +81,13 @@ function WorkspacePill({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
+  const { colors } = useTheme();
   const { t } = useTranslation();
   return (
-    <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-terminal-surface px-[11px] py-0', active && 'bg-terminal-accent')} variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
-      <AnimatedAgentStatusGlyph status={status} color={statusColor(status)} size={12} />
-      <Text numberOfLines={1} className={cn('max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px] text-terminal-muted', active && 'text-terminal-ink')}>{label}</Text>
-      <Text className={cn('font-mono text-[8px] leading-[18px] text-terminal-muted', active && 'text-terminal-ink')}>{count}</Text>
+    <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-8 max-w-[180px] flex-row rounded-full bg-muted px-[11px] py-0', active && 'bg-primary')} variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
+      <AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={12} />
+      <Text numberOfLines={1} className={cn('max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{label}</Text>
+      <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{count}</Text>
     </Button>
   );
 }

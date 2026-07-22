@@ -11,13 +11,19 @@ describe('terminal hierarchy status glyphs', () => {
       resolve(__dirname, '../src/components/SessionScreen.tsx'),
       'utf8',
     );
+    const appUi = readFileSync(
+      resolve(__dirname, '../src/components/app-ui.tsx'),
+      'utf8',
+    );
 
     expect(workspaceRail).toContain(
-      '<AnimatedAgentStatusGlyph status={status} color={statusColor(status)} size={12} />',
+      '<AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={12} />',
     );
     expect(screen).toContain(
-      '<AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status)} size={12} />',
+      '<AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status, colors)} size={12} />',
     );
+    expect(appUi).toContain('const glyphBoxSize = size + 4;');
+    expect(appUi).toContain('lineHeight: glyphBoxSize');
   });
 
   it('keeps host and space status controls in Herd instead of Terminal', () => {
@@ -49,7 +55,7 @@ describe('terminal hierarchy status glyphs', () => {
       'agentStatus: aggregateAgentStatus(session.snapshot.workspaces.map(workspace => workspace.agent_status))',
     );
     expect(rail).toContain(
-      '<AnimatedAgentStatusGlyph status={session.agentStatus} color={sessionStatusColor(session)} size={12} />',
+      '<AnimatedAgentStatusGlyph status={session.agentStatus} color={sessionStatusColor(session, colors)} size={12} />',
     );
   });
 
