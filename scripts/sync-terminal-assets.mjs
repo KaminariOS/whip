@@ -146,6 +146,8 @@ const terminalHtml = `<!doctype html>
     terminal.loadAddon(fit);
     terminal.open(document.getElementById('terminal'));
     const send = value => window.ReactNativeWebView.postMessage(JSON.stringify(value));
+    let lastTap = null;
+    let doubleTapTabEnabled = true;
     installAndroidImeBridge(terminal, send, navigator.userAgent);
     const controlSequenceForKey = key => {
       const upper = key.length === 1 ? key.toUpperCase() : '';
@@ -194,6 +196,8 @@ const terminalHtml = `<!doctype html>
       terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
+      doubleTapTabEnabled = options.doubleTapTab !== false;
+      if (!doubleTapTabEnabled) lastTap = null;
       const backgroundUri = options.backgroundImageUri || '';
       const dimming = Math.max(0, Math.min(100, Number(options.backgroundDimming) || 0)) / 100;
       const backgroundLayer = document.getElementById('terminal-background-layer');
@@ -304,8 +308,9 @@ const terminalHtml = `<!doctype html>
     };
     let touch = null;
     let pinch = null;
-    let lastTap = null;
     let longPressTimer = null;
+    const doubleTapTimeoutMs = 300;
+    const doubleTapDistancePx = 24;
     const touchDistance = touches => Math.hypot(
       touches[1].clientX - touches[0].clientX,
       touches[1].clientY - touches[0].clientY,
@@ -326,13 +331,14 @@ const terminalHtml = `<!doctype html>
         };
         return;
       }
-      if (event.touches.length !== 1) { touch = null; pinch = null; return; }
+      if (event.touches.length !== 1) { touch = null; pinch = null; lastTap = null; return; }
       const point = event.touches[0];
       hideToolbar();
       touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
         touch.longPressed = true;
+        lastTap = null;
         event.preventDefault();
         event.stopPropagation();
         if (selectWordAt(touch.x, touch.y)) showToolbar(touch.x, touch.y);
@@ -361,6 +367,7 @@ const terminalHtml = `<!doctype html>
       const point = event.touches[0];
       if (!touch.moved && Math.hypot(point.clientX - touch.x, point.clientY - touch.y) < 10) return;
       touch.moved = true;
+      lastTap = null;
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
       event.preventDefault();
       event.stopPropagation();
@@ -394,9 +401,9 @@ const terminalHtml = `<!doctype html>
       }
       if (!touch.moved && !touch.longPressed && point) {
         const now = { time: Date.now(), x: point.clientX, y: point.clientY };
-        if (lastTap && now.time - lastTap.time < 300 && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) < 24) {
+        if (doubleTapTabEnabled && lastTap && now.time - lastTap.time <= doubleTapTimeoutMs && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) <= doubleTapDistancePx) {
           event.preventDefault();
-          event.stopPropagation();
+          event.stopImmediatePropagation();
           send({ type: 'input', data: '\\t' });
           lastTap = null;
         } else {
@@ -410,6 +417,7 @@ const terminalHtml = `<!doctype html>
       longPressTimer = null;
       touch = null;
       pinch = null;
+      lastTap = null;
     }, { capture: true });
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);
