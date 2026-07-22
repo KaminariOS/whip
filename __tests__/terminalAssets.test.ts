@@ -14,11 +14,16 @@ describe('Android terminal assets', () => {
     expect(html).toContain("url('data:font/ttf;base64,");
     expect(html).toContain("font-family: 'Herdr Terminal Mono'");
     expect(html).toContain("font-family: 'Herdr Terminal Symbols'");
+    expect(html).toContain("font-family: 'Herdr Terminal CJK'");
+    expect(html).toContain("url('arphic-ukai-hk.ttf') format('truetype')");
     expect(html).toContain(
-      '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", monospace',
+      '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", "Herdr Terminal CJK", monospace',
     );
     expect(html).toContain(
       "document.fonts.load('400 8px \"Herdr Terminal Symbols\"', '\\uf120')",
+    );
+    expect(html).toContain(
+      "document.fonts.load('400 8px \"Herdr Terminal CJK\"', '\\u4e2d')",
     );
     expect(html).toContain("fontWeightBold: '700'");
     expect(html).toContain('fontSize: 8');
@@ -88,6 +93,14 @@ describe('Android terminal assets', () => {
     expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
   });
 
+  it('packages the standalone Arphic UKai HK TrueType face', () => {
+    const font = readFileSync(resolve(assets, 'arphic-ukai-hk.ttf'));
+
+    expect(font.length).toBeGreaterThan(10_000_000);
+    expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
+    expect(font).toEqual(readFileSync(resolve(sourceFonts, 'ArphicUKaiHK.ttf')));
+  });
+
   it.each([
     ['JetBrainsMono-Regular.ttf', 'jetbrains-mono-regular.ttf'],
     ['JetBrainsMono-Bold.ttf', 'jetbrains-mono-bold.ttf'],
@@ -108,6 +121,12 @@ describe('Android terminal assets', () => {
     expect(
       readFileSync(resolve(assets, 'symbols-nerd-font-LICENSE.txt')),
     ).toEqual(readFileSync(resolve(sourceFonts, 'NerdFonts-LICENSE.txt')));
+  });
+
+  it('packages the Arphic license with the Android font assets', () => {
+    expect(readFileSync(resolve(assets, 'arphic-ukai-LICENSE.txt'))).toEqual(
+      readFileSync(resolve(sourceFonts, 'ARPHICPL.txt')),
+    );
   });
 
   it('generates the same HTML for Metro so terminal changes do not require an APK rebuild', () => {

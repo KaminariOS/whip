@@ -9,17 +9,35 @@ const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = resolve(root, 'android/app/src/main/assets');
 const terminalFonts = resolve(root, 'assets/terminal-fonts');
+const fontManifest = JSON.parse(
+  await readFile(resolve(terminalFonts, 'manifest.json'), 'utf8'),
+);
 const jetBrainsMonoRegular = resolve(
   terminalFonts,
-  'JetBrainsMono-Regular.ttf',
+  fontManifest.text.regularFile,
 );
-const jetBrainsMonoBold = resolve(terminalFonts, 'JetBrainsMono-Bold.ttf');
-const jetBrainsMonoLicense = resolve(terminalFonts, 'OFL.txt');
+const jetBrainsMonoBold = resolve(terminalFonts, fontManifest.text.boldFile);
+const jetBrainsMonoLicense = resolve(
+  terminalFonts,
+  fontManifest.text.licenseFile,
+);
+const cjkRegular = resolve(terminalFonts, fontManifest.cjk.regularFile);
+const cjkLicense = resolve(terminalFonts, fontManifest.cjk.licenseFile);
 const nerdSymbolsRegular = resolve(
   terminalFonts,
-  'SymbolsNerdFontMono-Regular.ttf',
+  fontManifest.symbols.regularFile,
 );
-const nerdSymbolsLicense = resolve(terminalFonts, 'NerdFonts-LICENSE.txt');
+const nerdSymbolsLicense = resolve(
+  terminalFonts,
+  fontManifest.symbols.licenseFile,
+);
+const terminalFontFamily = [
+  fontManifest.text.cssFamily,
+  fontManifest.emoji.cssFamily,
+  fontManifest.symbols.cssFamily,
+  fontManifest.cjk.cssFamily,
+  fontManifest.fallback.cssFamily,
+].map(family => family === 'monospace' ? family : `"${family}"`).join(', ');
 const [
   jetBrainsMonoRegularData,
   jetBrainsMonoBoldData,
@@ -44,16 +62,27 @@ await Promise.all([
     resolve(root, 'node_modules/@xterm/addon-fit/lib/addon-fit.js'),
     resolve(assets, 'addon-fit.js'),
   ),
-  copyFile(jetBrainsMonoRegular, resolve(assets, 'jetbrains-mono-regular.ttf')),
-  copyFile(jetBrainsMonoBold, resolve(assets, 'jetbrains-mono-bold.ttf')),
-  copyFile(jetBrainsMonoLicense, resolve(assets, 'jetbrains-mono-OFL.txt')),
+  copyFile(
+    jetBrainsMonoRegular,
+    resolve(assets, fontManifest.text.bundledRegularFile),
+  ),
+  copyFile(
+    jetBrainsMonoBold,
+    resolve(assets, fontManifest.text.bundledBoldFile),
+  ),
+  copyFile(
+    jetBrainsMonoLicense,
+    resolve(assets, fontManifest.text.bundledLicenseFile),
+  ),
+  copyFile(cjkRegular, resolve(assets, fontManifest.cjk.bundledRegularFile)),
+  copyFile(cjkLicense, resolve(assets, fontManifest.cjk.bundledLicenseFile)),
   copyFile(
     nerdSymbolsRegular,
-    resolve(assets, 'symbols-nerd-font-mono-regular.ttf'),
+    resolve(assets, fontManifest.symbols.bundledRegularFile),
   ),
   copyFile(
     nerdSymbolsLicense,
-    resolve(assets, 'symbols-nerd-font-LICENSE.txt'),
+    resolve(assets, fontManifest.symbols.bundledLicenseFile),
   ),
 ]);
 
@@ -65,22 +94,29 @@ const terminalHtml = `<!doctype html>
   <link rel="stylesheet" href="xterm.css">
   <style>
     @font-face {
-      font-family: 'Herdr Terminal Mono';
+      font-family: '${fontManifest.text.cssFamily}';
       src: url('data:font/ttf;base64,${jetBrainsMonoRegularData}') format('truetype');
       font-style: normal;
       font-weight: 400;
       font-display: block;
     }
     @font-face {
-      font-family: 'Herdr Terminal Mono';
+      font-family: '${fontManifest.text.cssFamily}';
       src: url('data:font/ttf;base64,${jetBrainsMonoBoldData}') format('truetype');
       font-style: normal;
       font-weight: 700;
       font-display: block;
     }
     @font-face {
-      font-family: 'Herdr Terminal Symbols';
+      font-family: '${fontManifest.symbols.cssFamily}';
       src: url('data:font/ttf;base64,${nerdSymbolsRegularData}') format('truetype');
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+    }
+    @font-face {
+      font-family: '${fontManifest.cjk.cssFamily}';
+      src: url('${fontManifest.cjk.bundledRegularFile}') format('truetype');
       font-style: normal;
       font-weight: 400;
       font-display: block;
@@ -96,7 +132,7 @@ const terminalHtml = `<!doctype html>
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     .xterm .scrollbar { display: none !important; }
     #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #2f2f2f; border: 1px solid #424242; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
-    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #ececec; padding: 8px 10px; font: 700 10px 'Herdr Terminal Mono', monospace; }
+    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #ececec; padding: 8px 10px; font: 700 10px '${fontManifest.text.cssFamily}', monospace; }
     #selection-toolbar button:active { background: #ffffff; color: #0d0d0d; }
   </style>
 </head>
@@ -112,12 +148,13 @@ const terminalHtml = `<!doctype html>
   <script>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
-    const terminalFontFamily = '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", monospace';
+    const terminalFontFamily = '${terminalFontFamily}';
     const fontReady = document.fonts?.load
       ? Promise.all([
-          document.fonts.load('400 8px "Herdr Terminal Mono"'),
-          document.fonts.load('700 8px "Herdr Terminal Mono"'),
-          document.fonts.load('400 8px "Herdr Terminal Symbols"', '\\uf120'),
+          document.fonts.load('400 8px "${fontManifest.text.cssFamily}"'),
+          document.fonts.load('700 8px "${fontManifest.text.cssFamily}"'),
+          document.fonts.load('400 8px "${fontManifest.symbols.cssFamily}"', '\\uf120'),
+          document.fonts.load('400 8px "${fontManifest.cjk.cssFamily}"', '\\u4e2d'),
         ]).then(() => document.fonts.ready)
       : Promise.resolve();
     const initializeTerminal = () => {
