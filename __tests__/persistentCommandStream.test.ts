@@ -120,4 +120,27 @@ describe('persistent SSH command stream', () => {
 
     await expect(client.createWorkspace('space', '')).rejects.toBe('socket is not established');
   });
+
+  test('rechecks an offline server so a later refresh discovers its workspaces', async () => {
+    let statusChecks = 0;
+    const native = commandClient(script => {
+      if (script.includes('status server --json')) {
+        statusChecks += 1;
+        return statusChecks === 1
+          ? '{"running":false}\n'
+          : '{"running":true,"protocol":17,"compatible":true,"socket":"/tmp/herdr.sock"}\n';
+      }
+      return '{"result":{"type":"session_snapshot","snapshot":{"version":"0.7.4","protocol":17,"focused_workspace_id":"w1","focused_tab_id":"t1","focused_pane_id":"p1","workspaces":[{"workspace_id":"w1","number":1,"label":"work","focused":true,"pane_count":1,"tab_count":1,"active_tab_id":"t1","agent_status":"idle"}],"tabs":[],"panes":[],"layouts":[],"agents":[]}}}\n';
+    });
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await expect(client.snapshot()).resolves.toMatchObject({ server: { running: false }, workspaces: [] });
+    await expect(client.snapshot()).resolves.toMatchObject({
+      server: { running: true },
+      workspaces: [{ workspace_id: 'w1', label: 'work' }],
+    });
+    expect(statusChecks).toBe(2);
+  });
 });

@@ -1,7 +1,7 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { Plus, Sparkles } from 'lucide-react-native';
+import { ChevronRight, Plus, Sparkles, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   agentsForHerdFilter,
@@ -24,7 +24,9 @@ interface Props {
   queues: HerdHostQueue[];
   sessions: LiveSessionRailItem[];
   selectedHostId: string | null;
+  workspaceFilterId: string | null;
   onSelectHost: (hostId: string | null) => void;
+  onWorkspaceFilterChange: (hostId: string, workspaceId: string | null) => void;
   onCloseHost: (hostId: string) => void;
   onNewHost: () => void;
   onSelectWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
@@ -41,7 +43,9 @@ export function HerdScreen({
   queues,
   sessions,
   selectedHostId,
+  workspaceFilterId,
   onSelectHost,
+  onWorkspaceFilterChange,
   onCloseHost,
   onNewHost,
   onSelectWorkspace,
@@ -54,9 +58,9 @@ export function HerdScreen({
   onStartServer,
 }: Props) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
   const selectedQueue = selectedHostId ? scopedQueues[0] : undefined;
-  const [workspaceFilterId, setWorkspaceFilterId] = useState<string | null>(null);
   const selectedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, workspaceFilterId);
   const selectedWorkspace = selectedQueue?.workspaces.find(
     workspace => workspace.workspace_id === selectedWorkspaceId,
@@ -77,14 +81,15 @@ export function HerdScreen({
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
   useEffect(() => {
-    if (workspaceFilterId && !selectedWorkspaceId) setWorkspaceFilterId(null);
-  }, [selectedWorkspaceId, workspaceFilterId]);
+    if (workspaceFilterId && !selectedWorkspaceId && selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, null);
+    }
+  }, [onWorkspaceFilterChange, selectedQueue, selectedWorkspaceId, workspaceFilterId]);
 
   const selectHost = (hostId: string | null) => {
     setCreating(false);
     setWorkspaceEditorMode(null);
     setWorkspaceMenuOpen(false);
-    setWorkspaceFilterId(null);
     onSelectHost(hostId);
   };
 
@@ -94,7 +99,7 @@ export function HerdScreen({
       await action();
       return true;
     } catch (error) {
-      Alert.alert('Herdr command failed', String(error));
+      Alert.alert(t('herd.commandFailed'), String(error));
       return false;
     } finally {
       setWorkspaceBusy(false);
@@ -105,9 +110,11 @@ export function HerdScreen({
     setCreating(false);
     setWorkspaceEditorMode(null);
     setWorkspaceMenuOpen(false);
-    setWorkspaceFilterId(workspaceId);
     if (workspaceId && selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, workspaceId);
       runWorkspaceAction(() => onSelectWorkspace(selectedQueue.id, workspaceId));
+    } else if (selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, null);
     }
   };
 
@@ -120,7 +127,7 @@ export function HerdScreen({
 
   const openRenameWorkspace = (workspace: WorkspaceInfo | undefined = selectedWorkspace) => {
     if (!workspace) return;
-    setWorkspaceFilterId(workspace.workspace_id);
+    if (selectedQueue) onWorkspaceFilterChange(selectedQueue.id, workspace.workspace_id);
     setWorkspaceName(workspace.label);
     setWorkspaceCwd('');
     setWorkspaceMenuOpen(false);
@@ -143,14 +150,14 @@ export function HerdScreen({
   const confirmCloseWorkspace = () => {
     if (!selectedQueue || !selectedWorkspace) return;
     setWorkspaceMenuOpen(false);
-    Alert.alert('Close Herdr workspace?', selectedWorkspace.label || selectedWorkspace.workspace_id, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('herd.closeWorkspaceTitle'), selectedWorkspace.label || selectedWorkspace.workspace_id, [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Close',
+        text: t('common.close'),
         style: 'destructive',
         onPress: async () => {
           if (await runWorkspaceAction(() => onCloseWorkspace(selectedQueue.id, selectedWorkspace.workspace_id))) {
-            setWorkspaceFilterId(null);
+            onWorkspaceFilterChange(selectedQueue.id, null);
           }
         },
       },
@@ -167,7 +174,7 @@ export function HerdScreen({
   const sorted = [...queueAgents].sort((a, b) => (
     priority(a.agent.agent_status) - priority(b.agent.agent_status)
   ));
-  const hostCountLabel = `${queues.length} ${queues.length === 1 ? 'host' : 'hosts'}`;
+  const hostCountLabel = t('herd.hostCount', { count: queues.length });
 
   return (
     <View className="flex-1 bg-background">
@@ -185,21 +192,21 @@ export function HerdScreen({
       ) : null}
 
       {workspaceMenuOpen && selectedQueue ? (
-        <View className="min-h-[42px] flex-row items-stretch border-b border-[#424242] bg-[#181818]">
-          <WorkspaceAction label="RENAME SPACE" disabled={!selectedWorkspace} onPress={() => openRenameWorkspace()} />
-          <WorkspaceAction label="CLOSE SPACE" danger disabled={!selectedWorkspace} onPress={confirmCloseWorkspace} />
+        <View className="min-h-[42px] flex-row items-stretch border-b border-border bg-background">
+          <WorkspaceAction label={t('herd.renameSpace')} disabled={!selectedWorkspace} onPress={() => openRenameWorkspace()} />
+          <WorkspaceAction label={t('herd.closeSpace')} danger disabled={!selectedWorkspace} onPress={confirmCloseWorkspace} />
         </View>
       ) : null}
 
       {workspaceEditorMode && selectedQueue ? (
-        <View className="flex-row items-center gap-1.5 border-b border-white bg-[#2F2F2F] p-[7px]">
-          <Text className="font-mono text-[8px] text-white">{workspaceEditorMode === 'rename' ? 'RENAME' : 'NEW'} SPACE</Text>
-          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={workspaceName} onChangeText={setWorkspaceName} placeholder="Label (optional)" placeholderTextColor={colors.textTertiary} />
+        <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
+          <Text className="font-mono text-[8px] text-foreground">{workspaceEditorMode === 'rename' ? t('herd.rename') : t('herd.new')} {t('herd.space')}</Text>
+          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
           {workspaceEditorMode === 'create' ? (
-            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none border-[#424242] bg-[#212121] px-2 font-mono text-[10px] text-[#ECECEC]" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder="Working directory (optional)" placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
+            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder={t('herd.workingDirectoryOptional')} placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
           ) : null}
-          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-[#B4B4B4]">CANCEL</Text></Button>
-          <Button className="h-[34px] rounded-none bg-white px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black text-[#212121]">SAVE</Text></Button>
+          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
+          <Button className="h-[34px] rounded-none px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
         </View>
       ) : null}
 
@@ -209,33 +216,33 @@ export function HerdScreen({
       >
         <View className="p-4 pb-8">
           <Text className="mb-6 px-1 text-xs leading-[17px] text-muted-foreground">
-            {selectedQueue ? selectedQueue.address : `${hostCountLabel} · merged queue`}
+            {selectedQueue ? selectedQueue.address : t('herd.mergedQueue', { hosts: hostCountLabel })}
           </Text>
 
         {selectedQueue && !selectedQueue.running ? (
           <View className="min-h-[360px] items-center justify-center p-7">
             <View className="size-16 items-center justify-center rounded-full bg-destructive/10"><Text className="text-[28px] font-bold text-destructive">!</Text></View>
-            <Text className="mt-[18px] text-xl font-semibold leading-[26px]">Herdr server is offline</Text>
-            <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">Start the headless runtime on {selectedQueue.label}, then refresh this queue.</Text>
+            <Text className="mt-[18px] text-xl font-semibold leading-[26px]">{t('herd.serverOffline')}</Text>
+            <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{t('herd.serverOfflineCopy', { host: selectedQueue.label })}</Text>
             <Button className="mt-6 rounded-full px-5" disabled={selectedQueue.refreshing} onPress={hapticPress(() => onStartServer(selectedQueue.id))}>
-              <Text>{selectedQueue.refreshing ? 'Starting…' : 'Start Herdr server'}</Text>
+              <Text>{selectedQueue.refreshing ? t('herd.starting') : t('herd.startServer')}</Text>
             </Button>
           </View>
         ) : (
           <>
             <View className="mb-6 flex-row">
-              <Metric value={queueAgents.length} label="Agents" />
-              <Metric value={working} label="Working" status="working" />
-              <Metric value={blocked} label="Need you" status="blocked" />
-              <Metric value={done} label="Done" status="done" />
+              <Metric value={queueAgents.length} label={t('herd.agents')} />
+              <Metric value={working} label={t('herd.working')} status="working" />
+              <Metric value={blocked} label={t('herd.needYou')} status="blocked" />
+              <Metric value={done} label={t('herd.done')} status="done" />
             </View>
 
             <View className="min-h-10 flex-row items-center justify-between">
-              <Text className="px-1 text-sm font-semibold text-muted-foreground">Attention queue</Text>
+              <Text className="px-1 text-sm font-semibold text-muted-foreground">{t('herd.attentionQueue')}</Text>
               {selectedQueue ? (
                 <Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(value => !value))}>
-                  {creating ? <Ionicons name="close" size={16} color={colors.text} /> : <Icon as={Plus} size={16} />}
-                  <Text>{creating ? 'Close' : 'Start agent'}</Text>
+                  {creating ? <Icon as={X} size={16} color={colors.text} /> : <Icon as={Plus} size={16} />}
+                  <Text>{creating ? t('common.close') : t('herd.startAgent')}</Text>
                 </Button>
               ) : null}
             </View>
@@ -243,11 +250,11 @@ export function HerdScreen({
             {creating && selectedQueue ? (
               <AnimatedEntrance className="mb-4">
                 <View className="gap-2.5 rounded-lg border border-border bg-card p-3.5">
-                  <Text className="mb-0.5 text-[17px] font-semibold leading-[22px]">Start an agent on {selectedQueue.label}</Text>
-                  <Input value={name} onChangeText={setName} placeholder="Agent name" />
-                  <Input value={command} onChangeText={setCommand} placeholder="Command, e.g. claude" autoCapitalize="none" />
-                  <Input value={cwd} onChangeText={setCwd} placeholder="Working directory (optional)" autoCapitalize="none" />
-                  <View className="mt-0.5 flex-row justify-end gap-2"><Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(false))}><Text>Cancel</Text></Button><Button size="sm" disabled={!name.trim() || !command.trim()} onPress={hapticPress(start)}><Text>Launch</Text></Button></View>
+                  <Text className="mb-0.5 text-[17px] font-semibold leading-[22px]">{t('herd.startAgentOn', { host: selectedQueue.label })}</Text>
+                  <Input value={name} onChangeText={setName} placeholder={t('herd.agentName')} />
+                  <Input value={command} onChangeText={setCommand} placeholder={t('herd.commandExample')} autoCapitalize="none" />
+                  <Input value={cwd} onChangeText={setCwd} placeholder={t('herd.workingDirectoryOptional')} autoCapitalize="none" />
+                  <View className="mt-0.5 flex-row justify-end gap-2"><Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(false))}><Text>{t('common.cancel')}</Text></Button><Button size="sm" disabled={!name.trim() || !command.trim()} onPress={hapticPress(start)}><Text>{t('herd.launch')}</Text></Button></View>
                 </View>
               </AnimatedEntrance>
             ) : null}
@@ -255,8 +262,8 @@ export function HerdScreen({
             {sorted.length === 0 ? (
               <View className="min-h-[360px] items-center justify-center p-7">
                 <View className="size-16 items-center justify-center rounded-full bg-muted"><Icon as={Sparkles} size={28} /></View>
-                <Text className="mt-[18px] text-xl font-semibold leading-[26px]">No agents detected</Text>
-                <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{selectedWorkspace ? `No agents are active in ${selectedWorkspace.label || selectedWorkspace.workspace_id}.` : selectedQueue ? `Start an agent on ${selectedQueue.label}, then pull down to refresh.` : 'No agents are active across the merged host queue.'}</Text>
+                <Text className="mt-[18px] text-xl font-semibold leading-[26px]">{t('herd.noAgents')}</Text>
+                <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{selectedWorkspace ? t('herd.noAgentsWorkspace', { workspace: selectedWorkspace.label || selectedWorkspace.workspace_id }) : selectedQueue ? t('herd.noAgentsHost', { host: selectedQueue.label }) : t('herd.noAgentsMerged')}</Text>
               </View>
             ) : (
               <View className="border-y border-border">
@@ -281,6 +288,7 @@ export function HerdScreen({
 
 function AgentRow({ item, index, showHost, onOpenTerminal }: { item: HerdQueueAgent; index: number; showHost: boolean; onOpenTerminal: (hostId: string, agent: AgentInfo) => void }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const { agent } = item;
   const agentLabel = agent.display_agent || agent.name || agent.agent || 'agent';
   const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
@@ -288,14 +296,14 @@ function AgentRow({ item, index, showHost, onOpenTerminal }: { item: HerdQueueAg
   const context = [
     ...(showHost ? [item.hostLabel] : []),
     agentLabel,
-    ...(agent.focused ? ['Focused'] : []),
+    ...(agent.focused ? [t('herd.focused')] : []),
   ].join(' · ');
   return (
     <AnimatedEntrance delay={Math.min(index * 45, 225)}>
-      <Button accessibilityLabel={`Open ${item.primaryLabel} terminal on ${item.hostLabel}`} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} variant="ghost" onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
+      <Button accessibilityLabel={t('herd.openAgentTerminal', { agent: item.primaryLabel, host: item.hostLabel })} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} variant="ghost" onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
         <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
-        <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || 'Untitled task'}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
+        <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
       </Button>
     </AnimatedEntrance>
   );
@@ -312,6 +320,6 @@ function priority(status: string): number {
 
 function WorkspaceAction({ label, onPress, disabled = false, danger = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
   return (
-    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-[#424242] px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={danger ? 'text-center text-[9px] font-semibold text-[#FF6B6B]' : 'text-center text-[9px] font-semibold text-[#ECECEC]'}>{label}</Text></Button>
+    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-border px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={danger ? 'text-center text-[9px] font-semibold text-destructive' : 'text-center text-[9px] font-semibold text-foreground'}>{label}</Text></Button>
   );
 }

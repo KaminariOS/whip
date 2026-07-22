@@ -29,15 +29,18 @@ class SSHClient {
     /**
     * Retrieves the details of an SSH key.
     * @param key - The SSH private key as a string.
-    * @returns A Promise that resolves to the details of the key, including its type and size.
+    * @param passphrase - The passphrase for an encrypted private key (optional).
+    * @returns A Promise that resolves to the details of the key, including its fingerprint, type and size.
     */
-    static getKeyDetails(key) {
+    static getKeyDetails(key, passphrase) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.getKeyDetails(key)
+            RNSSHClient.getKeyDetails(key, passphrase || null)
                 .then((result) => {
                 resolve({
                     keyType: result.keyType,
-                    keySize: result.keySize || 0
+                    keySize: result.keySize || 0,
+                    fingerprint: result.fingerprint,
+                    publicKey: result.publicKey
                 });
             })
                 .catch((error) => {
@@ -441,6 +444,20 @@ class SSHClient {
         this._herdrBridgeHandlers.clear();
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
         RNSSHClient.closeAllHerdrBridges(this._key);
+    }
+    openLocalForward(remoteHost, remotePort) {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('SSH local forwarding is currently Android-only'));
+        }
+        return new Promise((resolve, reject) => {
+            RNSSHClient.openLocalForward(remoteHost, remotePort, this._key, (error, localPort) => error ? reject(error) : resolve(localPort));
+        });
+    }
+    closeLocalForward(localPort) {
+        if (Platform.OS !== 'android') return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            RNSSHClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
+        });
     }
     startHerdrEventStream(command, handler, callback) {
         if (Platform.OS !== 'android') {

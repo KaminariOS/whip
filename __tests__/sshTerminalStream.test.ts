@@ -114,4 +114,21 @@ describe('Android SSH terminal protocol stream', () => {
     expect(android).not.toContain('session.connect();');
     expect(android).not.toContain('channel.connect();');
   });
+
+  test('reports private-key fingerprints and supports encrypted key inspection', () => {
+    const javascript = readFileSync(resolve(packageRoot, 'lib/sshclient.js'), 'utf8');
+    const declarations = readFileSync(resolve(packageRoot, 'lib/sshclient.d.ts'), 'utf8');
+    const android = readFileSync(
+      resolve(packageRoot, 'android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java'),
+      'utf8',
+    );
+
+    expect(javascript).toContain('RNSSHClient.getKeyDetails(key, passphrase || null)');
+    expect(declarations).toContain('fingerprint: string;');
+    expect(declarations).toContain('getKeyDetails(key: string, passphrase?: string)');
+    expect(android).toContain('if (kpair.isEncrypted())');
+    expect(android).toContain('kpair.decrypt(passphrase.getBytes(StandardCharsets.UTF_8))');
+    expect(android).toContain('String fingerprint = kpair.getFingerPrint();');
+    expect(android).toContain('result.putString("fingerprint", fingerprint);');
+  });
 });

@@ -71,7 +71,7 @@ export async function saveConnectionProfile(
 
   if (profile.rememberCredentials && profile.secret) {
     await writeCredential(profile);
-  } else if (!profile.rememberCredentials) {
+  } else {
     await Keychain.resetGenericPassword({ service: hostCredentialService(profile.id) });
     await removeCredentialBackup(profile.id);
   }

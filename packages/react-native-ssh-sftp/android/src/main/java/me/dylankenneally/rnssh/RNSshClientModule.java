@@ -175,13 +175,25 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 }
 
   @ReactMethod
-  public void getKeyDetails(String privateKey, Promise promise) {
+  public void getKeyDetails(String privateKey, @Nullable String passphrase, Promise promise) {
+  KeyPair kpair = null;
   try {
     // Parse the key straight from memory. The previous implementation wrote the
     // private key to a temp file on disk, which briefly exposed it and could
     // leak if the process was killed mid-parse (review #3).
     JSch jsch = new JSch();
-    KeyPair kpair = KeyPair.load(jsch, privateKey.getBytes(), null);
+    kpair = KeyPair.load(jsch, privateKey.getBytes(StandardCharsets.UTF_8), null);
+
+    if (kpair.isEncrypted()) {
+      if (passphrase == null || passphrase.isEmpty()) {
+        promise.reject("E_KEY_PASSPHRASE_REQUIRED", "Private key passphrase is required");
+        return;
+      }
+      if (!kpair.decrypt(passphrase.getBytes(StandardCharsets.UTF_8))) {
+        promise.reject("E_KEY_PASSPHRASE_INVALID", "Private key passphrase is incorrect");
+        return;
+      }
+    }
 
     String keyType;
     switch (kpair.getKeyType()) {
@@ -201,15 +213,20 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
         keyType = "UNKNOWN";
     }
     int keySize = kpair.getKeySize();
-
-    kpair.dispose();
+    String fingerprint = kpair.getFingerPrint();
+    ByteArrayOutputStream publicKeyOut = new ByteArrayOutputStream();
+    kpair.writePublicKey(publicKeyOut, "herdr");
 
     WritableMap result = Arguments.createMap();
     result.putString("keyType", keyType);
     result.putInt("keySize", keySize);
+    result.putString("fingerprint", fingerprint);
+    result.putString("publicKey", publicKeyOut.toString("UTF-8").trim());
     promise.resolve(result);
   } catch (Exception e) {
-    promise.reject("Error", e.getMessage());
+    promise.reject("E_KEY_INVALID", e.getMessage(), e);
+  } finally {
+    if (kpair != null) kpair.dispose();
   }
 }
 
@@ -1415,6 +1432,44 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     if (client != null) {
         client._uploadContinue = false;
     }
+  }
+
+  @ReactMethod
+  public void openLocalForward(final String remoteHost, final Integer remotePort, final String key, final Callback callback) {
+    new Thread(new Runnable() {
+      public void run() {
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client == null || client._session == null || !client._session.isConnected()) {
+            callback.invoke("SSH connection is not active");
+            return;
+          }
+          int localPort = client._session.setPortForwardingL("127.0.0.1", 0, remoteHost, remotePort);
+          callback.invoke(null, localPort);
+        } catch (Exception error) {
+          Log.e(LOGTAG, "Failed to open local forward: " + error.getMessage());
+          callback.invoke(error.getMessage());
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
+  public void closeLocalForward(final Integer localPort, final String key, final Callback callback) {
+    new Thread(new Runnable() {
+      public void run() {
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client != null && client._session != null && client._session.isConnected()) {
+            client._session.delPortForwardingL("127.0.0.1", localPort);
+          }
+          callback.invoke();
+        } catch (Exception error) {
+          Log.e(LOGTAG, "Failed to close local forward: " + error.getMessage());
+          callback.invoke(error.getMessage());
+        }
+      }
+    }).start();
   }
 
   @ReactMethod

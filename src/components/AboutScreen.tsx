@@ -2,7 +2,9 @@ import { Code2, ExternalLink } from 'lucide-react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { Alert, Linking, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
+import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { HERDR_PROTOCOL_VERSION } from '@/src/lib/herdrProtocol';
 import type { ServerInfo } from '@/src/types';
 import { hapticPress, WhipMark } from './app-ui';
@@ -17,40 +19,50 @@ export interface AboutSectionProps {
 }
 
 export function AboutSection({ server }: AboutSectionProps) {
-  const whipVersion = Application.nativeApplicationVersion || Constants.expoConfig?.version || 'Unavailable';
+  const { t } = useTranslation();
+  const whipVersion = Application.nativeApplicationVersion || Constants.expoConfig?.version || t('common.unavailable');
   const openGitHub = () => {
     Linking.openURL(WHIP_GITHUB_URL).catch(error => {
-      Alert.alert('Could not open GitHub', String(error));
+      Alert.alert(t('about.githubError'), String(error));
     });
   };
 
   const connectedVersion = server?.version
     ? `Herdr ${server.version}`
     : server?.running
-      ? 'Version unavailable'
-      : 'Not connected';
-  const connectedProtocol = server?.protocol === undefined ? null : `Protocol ${server.protocol}`;
+      ? t('about.versionUnavailable')
+      : t('common.notConnected');
+  const connectedProtocol = server?.protocol === undefined ? null : t('common.protocol', { version: server.protocol });
 
   return (
     <View className="border-t border-border px-5 pb-11 pt-8">
-          <Text className="mb-7 text-[22px] font-semibold leading-7">About</Text>
+          <Text className="mb-7 text-[22px] font-semibold leading-7">{t('about.title')}</Text>
           <View className="items-center">
-            <WhipMark size={82} accessibilityLabel="Whip app icon" />
+            <WhipMark size={82} accessibilityLabel={t('about.appIcon')} />
             <Text className="mt-4 text-[28px] font-semibold leading-9">Whip</Text>
-            <Text className="mt-1 text-center text-sm leading-5 text-muted-foreground">Unofficial Android client for Herdr</Text>
-            <Text className="mt-1.5 text-center text-xs leading-[17px] text-muted-foreground/70">Version {whipVersion}</Text>
+            <Text className="mt-1 text-center text-sm leading-5 text-muted-foreground">{t('about.tagline')}</Text>
+            <Text className="mt-1.5 text-center text-xs leading-[17px] text-muted-foreground/70">{t('common.version', { version: whipVersion })}</Text>
           </View>
 
-          <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">Compatibility</Text>
+          <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>
           <View className="overflow-hidden rounded-lg border border-border bg-card">
-            <AboutRow label="Supported Herdr" value={`Protocol ${HERDR_PROTOCOL_VERSION}`} />
-            <AboutRow label="Connected host" value={connectedVersion} detail={connectedProtocol} divided />
+            <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: HERDR_PROTOCOL_VERSION })} />
+            <AboutRow label={t('about.connectedHost')} value={connectedVersion} detail={connectedProtocol} divided />
           </View>
           <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
-            Whip works with Herdr releases that report protocol {HERDR_PROTOCOL_VERSION}. Other protocol versions are rejected to prevent incompatible commands.
+            {t('about.compatibilityCopy', { version: HERDR_PROTOCOL_VERSION })}
           </Text>
 
-          <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">Source</Text>
+          <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.terminalFonts')}</Text>
+          <View className="overflow-hidden rounded-lg border border-border bg-card">
+            <AboutRow label={t('about.terminalTextFont')} value={terminalFonts.text.displayName} />
+            <AboutRow label={t('about.terminalCjkFont')} value={terminalFonts.cjk.displayName} divided />
+            <AboutRow label={t('about.terminalSymbolFont')} value={terminalFonts.symbols.displayName} divided />
+            <AboutRow label={t('about.terminalEmojiFont')} value={terminalFonts.emoji.displayName} divided />
+            <AboutRow label={t('about.terminalFallbackFont')} value={terminalFonts.fallback.displayName} divided />
+          </View>
+
+          <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.source')}</Text>
           <Button
             accessibilityRole="link"
             className="h-auto w-full justify-start rounded-lg border border-border bg-card px-4 py-4"
@@ -60,7 +72,7 @@ export function AboutSection({ server }: AboutSectionProps) {
               <Icon as={Code2} size={22} />
             </View>
             <View className="min-w-0 flex-1">
-              <Text className="text-[15px] font-semibold leading-5">GitHub repository</Text>
+              <Text className="text-[15px] font-semibold leading-5">{t('about.githubRepository')}</Text>
               <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>KaminariOS/whip</Text>
             </View>
             <Icon as={ExternalLink} className="text-muted-foreground" size={19} />

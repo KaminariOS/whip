@@ -1,7 +1,8 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
+import { RefreshCw, type LucideIcon } from 'lucide-react-native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Animated, Easing, Image, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { agentStatusGlyph, statusMotionKind, statusTone } from '@/src/lib/statusMotion';
@@ -9,8 +10,6 @@ import { useTheme } from '@/src/theme';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
-
-export type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export function WhipMark({ size, accessibilityLabel }: { size: number; accessibilityLabel?: string }) {
   return (
@@ -40,7 +39,7 @@ export function IconButton({
   disabled = false,
   selected = false,
 }: {
-  icon: IconName;
+  icon: LucideIcon;
   accessibilityLabel: string;
   onPress: () => void;
   className?: string;
@@ -49,6 +48,7 @@ export function IconButton({
   selected?: boolean;
 }) {
   const { colors } = useTheme();
+  const IconComponent = icon;
   return (
     <Button
       accessibilityLabel={accessibilityLabel}
@@ -57,13 +57,14 @@ export function IconButton({
       size="icon"
       variant="ghost"
       onPress={hapticPress(onPress)}>
-      <Ionicons name={icon} size={21} color={destructive ? colors.error : selected ? colors.onPrimary : colors.text} />
+      <IconComponent size={21} color={destructive ? colors.error : selected ? colors.onPrimary : colors.text} />
     </Button>
   );
 }
 
 export function StatusBadge({ status, label, agentStatus = false, showIndicator = true }: { status: string; label?: string; agentStatus?: boolean; showIndicator?: boolean }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const tone = statusTone(status);
   const indicatorColor = { success: colors.working, destructive: colors.error, warning: colors.warning, muted: colors.textTertiary }[tone];
   const textClass = { success: 'text-success', destructive: 'text-destructive', warning: 'text-warning', muted: 'text-muted-foreground' }[tone];
@@ -72,7 +73,7 @@ export function StatusBadge({ status, label, agentStatus = false, showIndicator 
       {showIndicator && (agentStatus
         ? <AnimatedAgentStatusGlyph status={status} color={indicatorColor} size={12} />
         : <AnimatedStatusIndicator status={status} color={indicatorColor} />)}
-      <Text className={cn('text-xs font-semibold capitalize', textClass)}>{label || status}</Text>
+      <Text className={cn('text-xs font-semibold capitalize', textClass)}>{label || t(`status.${status}`, { defaultValue: status })}</Text>
     </Badge>
   );
 }
@@ -83,7 +84,7 @@ export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: s
   if (motion === 'spin') {
     return (
       <Animated.View style={style}>
-        <Ionicons name="sync" size={Math.max(11, size)} color={color} />
+        <RefreshCw size={Math.max(11, size)} color={color} />
       </Animated.View>
     );
   }
@@ -94,9 +95,10 @@ export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: s
 export function AnimatedAgentStatusGlyph({ status, color, size = 18 }: { status: string; color: string; size?: number }) {
   const { motion, style, reduceMotion } = useStatusMotion(status, false);
   const frame = useSpinnerFrame(motion === 'spin' && !reduceMotion);
+  const glyphBoxSize = size + 4;
   return (
-    <Animated.View className="items-center justify-center" style={[{ width: size, height: size + 2 }, style]}>
-      <Text style={{ color, fontSize: size, lineHeight: size + 2 }}>{agentStatusGlyph(status, frame)}</Text>
+    <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
+      <Text className="text-center" style={{ color, fontSize: size, lineHeight: glyphBoxSize }}>{agentStatusGlyph(status, frame)}</Text>
     </Animated.View>
   );
 }

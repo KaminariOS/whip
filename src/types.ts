@@ -21,6 +21,20 @@ export interface ConnectionProfile extends HostProfile {
   passphrase: string;
 }
 
+export interface GlobalSshKey {
+  id: string;
+  name: string;
+  fingerprint: string;
+  keyType: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GlobalSshKeyMaterial extends GlobalSshKey {
+  secret: string;
+  passphrase: string;
+}
+
 export interface AgentInfo {
   terminal_id: string;
   name?: string;

@@ -34,3 +34,17 @@ test('requires system authentication before retrieving the Block Store key', () 
   expect(nativeSource).toContain('.setShouldBackupToCloud(cloudEnabled)');
   expect(nativeSource).toContain('isEndToEndEncryptionAvailable()');
 });
+
+test('exposes strong biometric-only authentication for unlocking the app', () => {
+  expect(nativeSource).toContain('fun authenticateAppAccess(promise: Promise)');
+  expect(nativeSource).toContain('private fun buildAppPromptInfo()');
+  expect(nativeSource).toContain('.setAllowedAuthenticators(BIOMETRIC_STRONG)');
+  expect(nativeSource).toContain('finishAppAuthenticationSuccess()');
+});
+
+test('uses a dedicated strong-biometric prompt for the global SSH keychain', () => {
+  expect(nativeSource).toContain('fun authenticateGlobalKeychain(promise: Promise)');
+  expect(nativeSource).toContain('private fun buildGlobalKeychainPromptInfo()');
+  expect(nativeSource).toContain('R.string.global_keychain_unlock_title');
+  expect(nativeSource).toContain('.setAllowedAuthenticators(BIOMETRIC_STRONG)');
+});

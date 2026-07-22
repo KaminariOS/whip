@@ -1,3 +1,17 @@
 <resources>
     <string name="app_name">Whip</string>
+    <string name="herdr_background_channel">Herdr background monitoring</string>
+    <string name="herdr_background_channel_description">Shows when Herdr is keeping remote sessions connected</string>
+    <string name="herdr_background_title">Herdr is monitoring in the background</string>
+    <plurals name="herdr_background_hosts">
+        <item quantity="one">Watching %1$d remote host over SSH</item>
+        <item quantity="other">Watching %1$d remote hosts over SSH</item>
+    </plurals>
+    <string name="credential_unlock_title">Unlock restored SSH credentials</string>
+    <string name="credential_unlock_subtitle">Use your fingerprint, face, or device screen lock</string>
+    <string name="app_unlock_title">Unlock Whip</string>
+    <string name="app_unlock_subtitle">Use your fingerprint or face to continue</string>
+    <string name="global_keychain_unlock_title">Unlock global SSH keychain</string>
+    <string name="global_keychain_unlock_subtitle">Use your fingerprint or face to access your private keys</string>
+    <string name="biometric_cancel">Cancel</string>
 </resources>

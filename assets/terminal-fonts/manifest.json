@@ -1,0 +1,36 @@
+{
+  "text": {
+    "displayName": "JetBrains Mono",
+    "cssFamily": "Herdr Terminal Mono",
+    "regularFile": "JetBrainsMono-Regular.ttf",
+    "boldFile": "JetBrainsMono-Bold.ttf",
+    "bundledRegularFile": "jetbrains-mono-regular.ttf",
+    "bundledBoldFile": "jetbrains-mono-bold.ttf",
+    "licenseFile": "OFL.txt",
+    "bundledLicenseFile": "jetbrains-mono-OFL.txt"
+  },
+  "cjk": {
+    "displayName": "AR PL UKai HK",
+    "cssFamily": "Herdr Terminal CJK",
+    "regularFile": "ArphicUKaiHK.ttf",
+    "bundledRegularFile": "arphic-ukai-hk.ttf",
+    "licenseFile": "ARPHICPL.txt",
+    "bundledLicenseFile": "arphic-ukai-LICENSE.txt"
+  },
+  "symbols": {
+    "displayName": "Symbols Nerd Font Mono",
+    "cssFamily": "Herdr Terminal Symbols",
+    "regularFile": "SymbolsNerdFontMono-Regular.ttf",
+    "bundledRegularFile": "symbols-nerd-font-mono-regular.ttf",
+    "licenseFile": "NerdFonts-LICENSE.txt",
+    "bundledLicenseFile": "symbols-nerd-font-LICENSE.txt"
+  },
+  "emoji": {
+    "displayName": "Noto Color Emoji",
+    "cssFamily": "Noto Color Emoji"
+  },
+  "fallback": {
+    "displayName": "Android monospace",
+    "cssFamily": "monospace"
+  }
+}

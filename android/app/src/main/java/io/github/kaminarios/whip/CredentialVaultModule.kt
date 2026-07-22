@@ -36,6 +36,7 @@ class CredentialVaultModule(
   private val blockstore by lazy { Blockstore.getClient(context) }
   private var activePrompt: BiometricPrompt? = null
   private var pendingUnlock: Promise? = null
+  private var pendingAppAuthentication: Promise? = null
 
   override fun getName(): String = "HerdrCredentialVault"
 
@@ -99,7 +100,7 @@ class CredentialVaultModule(
       )
 
     context.runOnUiQueueThread {
-      if (pendingUnlock != null) {
+      if (pendingUnlock != null || pendingAppAuthentication != null) {
         promise.reject("E_CREDENTIAL_VAULT_BUSY", "Credential recovery is already in progress")
         return@runOnUiQueueThread
       }
@@ -133,6 +134,75 @@ class CredentialVaultModule(
   }
 
   @ReactMethod
+  fun authenticateAppAccess(promise: Promise) {
+    authenticateStrongBiometric(
+      promise,
+      buildAppPromptInfo(),
+      "E_APP_AUTH_CANCELLED",
+      "E_APP_AUTH_FAILED",
+      "E_APP_AUTH_BUSY",
+    )
+  }
+
+  @ReactMethod
+  fun authenticateGlobalKeychain(promise: Promise) {
+    authenticateStrongBiometric(
+      promise,
+      buildGlobalKeychainPromptInfo(),
+      "E_GLOBAL_KEYCHAIN_CANCELLED",
+      "E_GLOBAL_KEYCHAIN_AUTH",
+      "E_GLOBAL_KEYCHAIN_BUSY",
+    )
+  }
+
+  private fun authenticateStrongBiometric(
+    promise: Promise,
+    promptInfo: BiometricPrompt.PromptInfo,
+    cancelledCode: String,
+    failedCode: String,
+    busyCode: String,
+  ) {
+    val activity = context.currentActivity as? FragmentActivity
+      ?: return promise.reject(
+        failedCode,
+        "Biometric authentication requires the active Whip screen",
+      )
+
+    context.runOnUiQueueThread {
+      if (pendingUnlock != null || pendingAppAuthentication != null) {
+        promise.reject(busyCode, "Biometric authentication is already in progress")
+        return@runOnUiQueueThread
+      }
+      pendingAppAuthentication = promise
+      val executor = ContextCompat.getMainExecutor(activity)
+      activePrompt = BiometricPrompt(
+        activity,
+        executor,
+        object : BiometricPrompt.AuthenticationCallback() {
+          override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+            finishAppAuthenticationSuccess()
+          }
+
+          override fun onAuthenticationError(errorCode: Int, errorMessage: CharSequence) {
+            finishAppAuthenticationError(
+              if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
+                errorCode == BiometricPrompt.ERROR_CANCELED
+              ) cancelledCode else failedCode,
+              errorMessage.toString(),
+            )
+          }
+        },
+      )
+      try {
+        activePrompt?.authenticate(promptInfo)
+      } catch (error: Throwable) {
+        finishAppAuthenticationError(failedCode, error)
+      }
+    }
+  }
+
+  @ReactMethod
   fun clearRecoveryKey(promise: Promise) {
     val request = DeleteBytesRequest.Builder().setDeleteAll(true).build()
     blockstore.deleteBytes(request).addOnCompleteListener { task ->
@@ -145,16 +215,18 @@ class CredentialVaultModule(
   override fun invalidate() {
     activePrompt?.cancelAuthentication()
     pendingUnlock?.reject("E_CREDENTIAL_VAULT_CANCELLED", "Credential recovery was interrupted")
+    pendingAppAuthentication?.reject("E_APP_AUTH_CANCELLED", "Biometric authentication was interrupted")
     activePrompt = null
     pendingUnlock = null
+    pendingAppAuthentication = null
     super.invalidate()
   }
 
   @Suppress("DEPRECATION")
   private fun buildPromptInfo(): BiometricPrompt.PromptInfo {
     val builder = BiometricPrompt.PromptInfo.Builder()
-      .setTitle("Unlock restored SSH credentials")
-      .setSubtitle("Use your fingerprint, face, or device screen lock")
+      .setTitle(reactApplicationContext.getString(R.string.credential_unlock_title))
+      .setSubtitle(reactApplicationContext.getString(R.string.credential_unlock_subtitle))
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
       builder.setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
     } else {
@@ -162,6 +234,22 @@ class CredentialVaultModule(
     }
     return builder.build()
   }
+
+  private fun buildAppPromptInfo(): BiometricPrompt.PromptInfo =
+    BiometricPrompt.PromptInfo.Builder()
+      .setTitle(reactApplicationContext.getString(R.string.app_unlock_title))
+      .setSubtitle(reactApplicationContext.getString(R.string.app_unlock_subtitle))
+      .setAllowedAuthenticators(BIOMETRIC_STRONG)
+      .setNegativeButtonText(reactApplicationContext.getString(R.string.biometric_cancel))
+      .build()
+
+  private fun buildGlobalKeychainPromptInfo(): BiometricPrompt.PromptInfo =
+    BiometricPrompt.PromptInfo.Builder()
+      .setTitle(reactApplicationContext.getString(R.string.global_keychain_unlock_title))
+      .setSubtitle(reactApplicationContext.getString(R.string.global_keychain_unlock_subtitle))
+      .setAllowedAuthenticators(BIOMETRIC_STRONG)
+      .setNegativeButtonText(reactApplicationContext.getString(R.string.biometric_cancel))
+      .build()
 
   private fun retrieveRecoveryKey() {
     val request = RetrieveBytesRequest.Builder()
@@ -334,6 +422,27 @@ class CredentialVaultModule(
   private fun finishUnlockError(code: String, error: Throwable) {
     val promise = pendingUnlock
     pendingUnlock = null
+    activePrompt = null
+    promise?.reject(code, error)
+  }
+
+  private fun finishAppAuthenticationSuccess() {
+    val promise = pendingAppAuthentication
+    pendingAppAuthentication = null
+    activePrompt = null
+    promise?.resolve(true)
+  }
+
+  private fun finishAppAuthenticationError(code: String, message: String) {
+    val promise = pendingAppAuthentication
+    pendingAppAuthentication = null
+    activePrompt = null
+    promise?.reject(code, message)
+  }
+
+  private fun finishAppAuthenticationError(code: String, error: Throwable) {
+    val promise = pendingAppAuthentication
+    pendingAppAuthentication = null
     activePrompt = null
     promise?.reject(code, error)
   }
