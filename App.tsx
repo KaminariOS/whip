@@ -14,6 +14,7 @@ import { AppAccessLock } from './src/components/AppAccessLock';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
 import { HerdScreen } from './src/components/HerdScreen';
+import { GlobalKeychainScreen } from './src/components/GlobalKeychainScreen';
 import { HostsScreen } from './src/components/HostsScreen';
 import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
@@ -94,6 +95,7 @@ import {
   restoreCredentialBackups,
   type CredentialRecoveryStatus,
 } from './src/services/credentialVault';
+import { loadGlobalSshKeys, unlockGlobalSshKeychain } from './src/services/globalSshKeychain';
 import { loadPersistedTerminals, savePersistedTerminals } from './src/services/persistedTerminals';
 import {
   loadPersistedLiveHosts,
@@ -108,7 +110,7 @@ import {
   type TerminalSessionStatus,
 } from './src/terminalSessions';
 import { useTheme } from './src/theme';
-import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
+import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 import i18n, { languageForLocale } from './src/i18n';
 
@@ -185,6 +187,8 @@ function AppContent() {
   const [notificationResponse, setNotificationResponse] = useState<Notifications.NotificationResponse | null>(null);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
+  const [globalSshKeys, setGlobalSshKeys] = useState<GlobalSshKey[]>([]);
+  const [unlockedGlobalKeys, setUnlockedGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [liveHostsLoaded, setLiveHostsLoaded] = useState(false);
@@ -270,6 +274,7 @@ function AppContent() {
       })
       .catch(error => setConnectError(t('app.loadHostsError', { error: String(error) })))
       .finally(() => setProfilesLoaded(true));
+    loadGlobalSshKeys().then(setGlobalSshKeys).catch(() => undefined);
     prepareAlerts().catch(() => undefined);
     loadDevicePreferences()
       .then(preferences => {
@@ -669,6 +674,27 @@ function AppContent() {
     }
   }, [t]);
 
+  const unlockGlobalKeychain = useCallback(async (): Promise<GlobalSshKeyMaterial[] | null> => {
+    try {
+      return await unlockGlobalSshKeychain();
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'E_GLOBAL_KEYCHAIN_CANCELLED') {
+        Alert.alert(t('keychain.unlockError'), t('keychain.unlockErrorCopy', { error: String(error) }));
+      }
+      return null;
+    }
+  }, [t]);
+
+  const openGlobalKeychain = async (): Promise<void> => {
+    const keys = await unlockGlobalKeychain();
+    if (keys !== null) setUnlockedGlobalKeys(keys);
+  };
+
+  const updateGlobalKeys = (keys: GlobalSshKeyMaterial[]) => {
+    setUnlockedGlobalKeys(keys);
+    setGlobalSshKeys(keys.map(({ secret: _secret, passphrase: _passphrase, ...key }) => key));
+  };
+
   useEffect(() => {
     let previousState = AppState.currentState;
     const subscription = AppState.addEventListener('change', state => {
@@ -728,6 +754,10 @@ function AppContent() {
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (unlockedGlobalKeys !== null) {
+        setUnlockedGlobalKeys(null);
+        return true;
+      }
       if (editorProfile) {
         setEditorProfile(null);
         setConnectError(null);
@@ -742,7 +772,7 @@ function AppContent() {
       return result.handled;
     });
     return () => subscription.remove();
-  }, [editorProfile, navigation, selectedPaneId]);
+  }, [editorProfile, navigation, selectedPaneId, unlockedGlobalKeys]);
 
   const selectTab = (tab: AppTab) => setNavigation(current => selectMobileTab(current, tab));
 
@@ -1245,6 +1275,7 @@ function AppContent() {
               ttsEnabled={ttsEnabled}
               biometricForKeys={biometricForKeys}
               biometricOnResume={biometricOnResume}
+              globalKeyCount={globalSshKeys.length}
               appearance={appearance}
               language={language}
               keepScreenOn={keepScreenOn}
@@ -1255,6 +1286,7 @@ function AppContent() {
               onTtsChange={setTtsEnabled}
               onBiometricForKeysChange={value => { updateBiometricForKeys(value).catch(() => undefined); }}
               onBiometricOnResumeChange={value => { updateBiometricOnResume(value).catch(() => undefined); }}
+              onManageGlobalKeychain={() => { openGlobalKeychain().catch(() => undefined); }}
               onAppearanceChange={updateAppearance}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
@@ -1291,7 +1323,7 @@ function AppContent() {
           })}
         </View>
 
-        {!immersiveTerminal && !editorProfile && (
+        {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && (
           <BottomNavigation activeTab={navigation.tab} sessionCount={totalTerminalCount} onSelect={selectTab} />
         )}
 
@@ -1310,6 +1342,17 @@ function AppContent() {
               onConnect={connect}
               onDelete={hosts.some(host => host.id === editorProfile.id) ? () => confirmDeleteHost(editorProfile) : undefined}
               onAuthenticatePrivateKey={biometricForKeys ? verifyBiometric : undefined}
+              onLoadGlobalKeys={unlockGlobalKeychain}
+            />
+          </View>
+        )}
+
+        {unlockedGlobalKeys !== null && (
+          <View className="absolute inset-0 z-50 bg-background">
+            <GlobalKeychainScreen
+              initialKeys={unlockedGlobalKeys}
+              onChanged={updateGlobalKeys}
+              onClose={() => setUnlockedGlobalKeys(null)}
             />
           </View>
         )}

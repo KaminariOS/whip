@@ -1,4 +1,4 @@
-import { ImagePlus, LogOut, Minus, Plus, ShieldCheck, Trash2 } from 'lucide-react-native';
+import { ChevronRight, ImagePlus, KeyRound, LogOut, Minus, Plus, ShieldCheck, Trash2 } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Image, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ export interface SettingsSectionProps {
   ttsEnabled: boolean;
   biometricForKeys: boolean;
   biometricOnResume: boolean;
+  globalKeyCount: number;
   appearance: AppearancePreference;
   language: LanguagePreference;
   keepScreenOn: boolean;
@@ -25,6 +26,7 @@ export interface SettingsSectionProps {
   onTtsChange: (value: boolean) => void;
   onBiometricForKeysChange: (value: boolean) => void;
   onBiometricOnResumeChange: (value: boolean) => void;
+  onManageGlobalKeychain: () => void;
   onAppearanceChange: (value: AppearancePreference) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
@@ -75,7 +77,12 @@ export function SettingsSection(props: SettingsSectionProps) {
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
         <View className="overflow-hidden rounded-lg border border-border bg-card">
-          <SettingRow title={t('settings.biometricForKeys')} copy={t('settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} />
+          <ActionRow
+            title={t('settings.globalKeychain')}
+            copy={t('settings.globalKeychainCopy', { count: props.globalKeyCount })}
+            onPress={props.onManageGlobalKeychain}
+          />
+          <SettingRow title={t('settings.biometricForKeys')} copy={t('settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
           <SettingRow title={t('settings.biometricOnResume')} copy={t('settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
         </View>
 
@@ -207,6 +214,16 @@ function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { bus
 
 function SettingRow({ title, copy, value, onChange, divided = false }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; divided?: boolean }) {
   return <View className={divided ? 'min-h-[82px] flex-row items-center border-t border-border p-3.5' : 'min-h-[82px] flex-row items-center p-3.5'}><View className="flex-1 pr-[18px]"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View><Switch checked={value} onCheckedChange={onChange} /></View>;
+}
+
+function ActionRow({ title, copy, onPress }: { title: string; copy: string; onPress: () => void }) {
+  return (
+    <Button className="min-h-[82px] justify-start rounded-none px-3.5 py-3" size="content" variant="ghost" onPress={hapticPress(onPress)}>
+      <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={KeyRound} className="text-primary" size={18} /></View>
+      <View className="ml-3 min-w-0 flex-1"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View>
+      <Icon as={ChevronRight} className="text-muted-foreground" size={18} />
+    </Button>
+  );
 }
 
 const styles = StyleSheet.create({

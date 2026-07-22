@@ -10,5 +10,7 @@
     <string name="credential_unlock_subtitle">使用指紋、臉部或裝置螢幕鎖定</string>
     <string name="app_unlock_title">解鎖 Whip</string>
     <string name="app_unlock_subtitle">使用指紋或臉部辨識驗證以繼續</string>
+    <string name="global_keychain_unlock_title">解鎖全域 SSH 金鑰圈</string>
+    <string name="global_keychain_unlock_subtitle">使用指紋或臉部辨識以存取私密金鑰</string>
     <string name="biometric_cancel">取消</string>
 </resources>

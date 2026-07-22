@@ -14,6 +14,8 @@ Whip may process and store:
 
 Credentials are stored through Android Keystore. When supported and enabled by the device, Whip also uses Android Block Store for an encrypted, device-authenticated recovery copy. Block Store availability and cloud backup behavior are controlled by Google Play services and the user's device/account settings.
 
+Global SSH keychain labels and fingerprints are stored as device-local metadata. Their private keys and passphrases remain in the device credential store, and Whip requires strong biometric verification each time the global keychain is opened. Global keychain secrets are not copied to Block Store.
+
 ## Network communication
 
 Whip connects directly to the SSH host configured by the user. Herdr data and terminal traffic travel through that SSH connection. Tailscale, the SSH host, Android, Google Play services, and any build distribution service have their own privacy practices outside this project's control.
@@ -26,7 +28,7 @@ Blocked/done notifications, vibration, and optional speech announcements are pro
 
 ## Removing data
 
-Deleting a saved host profile removes its associated local credential and requests deletion of its Block Store recovery entry. Clearing the app's storage removes device-local profiles, credentials, preferences, and imported background images. Android or Google account backup retention may be governed separately by the operating system and Google Play services.
+Deleting a saved host profile removes its associated local credential and requests deletion of its Block Store recovery entry. Removing a global SSH key deletes it from the global keychain but does not alter host credentials that previously copied that key. Clearing the app's storage removes device-local profiles, credentials, preferences, and imported background images. Android or Google account backup retention may be governed separately by the operating system and Google Play services.
 
 ## Sharing diagnostics
 
