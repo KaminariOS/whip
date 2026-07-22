@@ -12,8 +12,9 @@ Herdr-specific changes:
 - run Herdr protocol 17 `remote-client-bridge` as a persistent binary exec
   channel for the visible terminal, including attach, input, resize, scrolling,
   and terminal-id-tagged chunked ANSI frame events;
-- run the newline-delimited `nc -U` event subscription as a separate exec
-  channel on that same authenticated session;
+- connect directly to Herdr's Unix API socket through an OpenSSH stream-local
+  channel for newline-delimited event subscriptions on the same authenticated
+  session;
 - run sequential Herdr control commands through one persistent non-PTY shell
   channel, with response markers framed across native event chunks, so normal
   operation stays at three SSH channels instead of opening an exec channel for

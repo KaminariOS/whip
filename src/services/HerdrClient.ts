@@ -11,7 +11,6 @@ import {
   apiRequestLine,
   eventsSubscribeRequest,
   HerdrApiBridgeDecoder,
-  sessionSnapshotRequest,
   type HerdrApiEvent,
   type SessionSnapshotResult,
 } from '../lib/herdrApiBridge';
@@ -323,12 +322,9 @@ export class HerdrClient {
     }
     assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
     if (!server.socket) throw new Error('Herdr server status did not include its API socket');
-    const request = JSON.stringify(sessionSnapshotRequest());
     let output: string;
     try {
-      output = await this.executeCommand(
-        `printf '%s\\n' ${shellQuote(request)} | nc -N -U ${shellQuote(server.socket)} 2>&1`,
-      );
+      output = await this.executeCommand(`${this.baseCommand()} api snapshot`);
     } catch (error) {
       this.apiServer = null;
       throw error;
@@ -386,7 +382,7 @@ export class HerdrClient {
       }
     };
     try {
-      await client.startHerdrEventStream(`nc -U ${shellQuote(server.socket)}`, onData);
+      await client.startHerdrEventStream(server.socket, onData);
       if (generation !== this.eventGeneration) {
         client.closeHerdrEventStream();
         return;
