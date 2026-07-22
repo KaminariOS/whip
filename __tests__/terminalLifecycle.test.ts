@@ -12,6 +12,17 @@ describe('terminal renderer lifecycle', () => {
     expect(source).not.toContain("!visible && 'hidden'");
   });
 
+  it('keeps hidden terminals at immersive height while bottom navigation is visible', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const bottomNavigation = readFileSync(resolve(__dirname, '../src/components/BottomNavigation.tsx'), 'utf8');
+
+    expect(app).toContain("edges={['top', 'left', 'right']}");
+    expect(app).toContain("{!immersiveTerminal && (\n          <View className=\"flex-1 bg-background\">");
+    expect(app).toContain("          </View>\n        )}\n\n        {liveSessions.sessions.map");
+    expect(bottomNavigation).toContain('const { bottom } = useSafeAreaInsets();');
+    expect(bottomNavigation).toContain('style={{ minHeight: 66 + bottom, paddingBottom: bottom }}');
+  });
+
   it('defers terminal WebViews until their host terminal surface is first shown', () => {
     const source = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
 

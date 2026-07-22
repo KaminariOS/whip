@@ -1243,10 +1243,11 @@ function AppContent() {
   return (
     <SafeAreaView
       className="flex-1 bg-background"
-      edges={immersiveTerminal ? ['top', 'left', 'right'] : ['top', 'bottom', 'left', 'right']}>
+      edges={['top', 'left', 'right']}>
       {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
       <View className="flex-1 bg-background">
-        <View className="flex-1 bg-background">
+        {!immersiveTerminal && (
+          <View className="flex-1 bg-background">
           {navigation.tab === 'hosts' && (
             <HostsScreen
               hosts={hosts}
@@ -1326,32 +1327,34 @@ function AppContent() {
             />
           )}
 
-          {liveSessions.sessions.map(session => {
-            const runtime = runtimes.current.get(session.id);
-            if (!runtime) return null;
-            return (
-              <LiveSessionView
-                key={session.id}
-                session={session}
-                client={runtime.client}
-                visible={terminalVisible && session.id === activeSession?.id}
-                terminalPreferences={terminalPreferences}
-                terminalControlUsage={terminalControlUsage}
-                onTerminalFontSizeChange={updateTerminalFontSize}
-                onTerminalControlUse={recordTerminalControlUse}
-                onExit={() => exitTerminalToHerd(session.id)}
-                onRefresh={refreshHost}
-                onOpenPane={(sessionId, pane) => {
-                  setLiveSessions(current => selectLiveHostSession(current, sessionId));
-                  setSelectedPaneId(pane.pane_id);
-                }}
-                onActivateTerminal={activatePaneTerminal}
-                onCloseTerminal={closeTerminal}
-                onTerminalStatus={updateTerminalStatus}
-              />
-            );
-          })}
-        </View>
+          </View>
+        )}
+
+        {liveSessions.sessions.map(session => {
+          const runtime = runtimes.current.get(session.id);
+          if (!runtime) return null;
+          return (
+            <LiveSessionView
+              key={session.id}
+              session={session}
+              client={runtime.client}
+              visible={terminalVisible && session.id === activeSession?.id}
+              terminalPreferences={terminalPreferences}
+              terminalControlUsage={terminalControlUsage}
+              onTerminalFontSizeChange={updateTerminalFontSize}
+              onTerminalControlUse={recordTerminalControlUse}
+              onExit={() => exitTerminalToHerd(session.id)}
+              onRefresh={refreshHost}
+              onOpenPane={(sessionId, pane) => {
+                setLiveSessions(current => selectLiveHostSession(current, sessionId));
+                setSelectedPaneId(pane.pane_id);
+              }}
+              onActivateTerminal={activatePaneTerminal}
+              onCloseTerminal={closeTerminal}
+              onTerminalStatus={updateTerminalStatus}
+            />
+          );
+        })}
 
         {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && (
           <BottomNavigation activeTab={navigation.tab} sessionCount={totalTerminalCount} onSelect={selectTab} />
