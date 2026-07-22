@@ -262,7 +262,7 @@ export default class SSHClient {
     openLocalForward(remoteHost: string, remotePort: number): Promise<number>;
     /** Closes a loopback listener previously returned by openLocalForward. */
     closeLocalForward(localPort: number): Promise<void>;
-    startHerdrEventStream(command: string, handler: (data: string) => void, callback?: CallbackFunction<void>): Promise<void>;
+    startHerdrEventStream(socketPath: string, handler: (data: string) => void, callback?: CallbackFunction<void>): Promise<void>;
     writeHerdrEventStream(value: string): Promise<void>;
     closeHerdrEventStream(): void;
     startHerdrCommandStream(command: string, handler: (event: HerdrCommandStreamEvent) => void, callback?: CallbackFunction<void>): Promise<void>;

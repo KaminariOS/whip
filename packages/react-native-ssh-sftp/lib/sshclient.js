@@ -459,7 +459,7 @@ class SSHClient {
             RNSSHClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
         });
     }
-    startHerdrEventStream(command, handler, callback) {
+    startHerdrEventStream(socketPath, handler, callback) {
         if (Platform.OS !== 'android') {
             return Promise.reject(new Error('Herdr event streams are currently Android-only'));
         }
@@ -470,7 +470,7 @@ class SSHClient {
         return new Promise((resolve, reject) => {
             this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
             this.registerNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-            RNSSHClient.startHerdrEventStream(command, this._key, error => {
+            RNSSHClient.startHerdrEventStream(socketPath, this._key, error => {
                 if (callback) callback(error);
                 if (error) {
                     this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
