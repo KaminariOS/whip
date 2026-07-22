@@ -27,7 +27,9 @@ Herdr-specific changes:
 - close shell/SFTP streams synchronously during disconnect so asynchronous
   cleanup cannot race client-pool removal and crash the Android process;
 - use JSch 2.28.4 and `bcprov-jdk18on` 1.85 so Ed25519 OpenSSH keys work on
-  Android runtimes that do not provide Java 15's EdDSA implementation.
+  Android runtimes that do not provide Java 15's EdDSA implementation;
+- inspect private keys in memory, including encrypted keys, and expose their
+  SHA-256 fingerprint and key type to the host editor.
 
 When updating from upstream, compare and merge these changes in this directory,
 then run the root test, typecheck, lint, and Android build commands. Never edit

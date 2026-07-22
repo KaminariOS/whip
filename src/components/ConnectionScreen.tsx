@@ -1,7 +1,9 @@
 import { ArrowRight, KeyRound, Trash2 } from 'lucide-react-native';
+import SSHClient from '@dylankenneally/react-native-ssh-sftp';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
 
+import { normalizePrivateKey } from '@/src/lib/privateKey';
 import { cn } from '@/src/lib/utils';
 import type { ConnectionProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
@@ -21,15 +23,63 @@ interface Props {
   onDelete?: () => void;
 }
 
+type KeyInspection =
+  | { state: 'idle' | 'loading' }
+  | { state: 'valid'; fingerprint: string; keyType: string }
+  | { state: 'passphrase-required' }
+  | { state: 'invalid'; message: string };
+
 export function ConnectionScreen({ initialProfile, connecting, error, onCancel, onSave, onConnect, onDelete }: Props) {
   const [profile, setProfile] = useState(initialProfile);
   const [editingPrivateKey, setEditingPrivateKey] = useState(false);
+  const [keyInspection, setKeyInspection] = useState<KeyInspection>({ state: 'idle' });
 
   useEffect(() => { setProfile(initialProfile); setEditingPrivateKey(false); }, [initialProfile]);
+
+  useEffect(() => {
+    if (profile.authMode !== 'key' || !profile.secret.trim()) {
+      setKeyInspection({ state: 'idle' });
+      return;
+    }
+
+    let active = true;
+    setKeyInspection({ state: 'loading' });
+    const timeout = setTimeout(() => {
+      SSHClient.getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined)
+        .then(details => {
+          if (active) setKeyInspection({
+            state: 'valid',
+            fingerprint: details.fingerprint,
+            keyType: details.keyType,
+          });
+        })
+        .catch((inspectionError: { code?: string; message?: string }) => {
+          if (!active) return;
+          if (inspectionError?.code === 'E_KEY_PASSPHRASE_REQUIRED') {
+            setKeyInspection({ state: 'passphrase-required' });
+            return;
+          }
+          setKeyInspection({
+            state: 'invalid',
+            message: inspectionError?.code === 'E_KEY_PASSPHRASE_INVALID'
+              ? 'The key passphrase is incorrect.'
+              : 'This private key could not be read.',
+          });
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [profile.authMode, profile.passphrase, profile.secret]);
 
   const update = <K extends keyof ConnectionProfile>(key: K, value: ConnectionProfile[K]) => setProfile(current => ({ ...current, [key]: value }));
   const canSave = Boolean(profile.host.trim() && profile.username.trim());
   const canConnect = Boolean(canSave && profile.secret);
+  const privateKeyAccessibilityLabel = keyInspection.state === 'valid'
+    ? `${keyInspection.fingerprint}, ${keyInspection.keyType}. Tap to replace.`
+    : 'Private key loaded. Tap to replace.';
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 bg-background">
@@ -49,10 +99,27 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
         </View>
 
         {profile.authMode === 'key' && profile.secret && !editingPrivateKey ? (
-          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">PEM / OpenSSH private key</Text><Button accessibilityLabel="Private key loaded. Tap to replace." className="h-[50px] w-full justify-start rounded-md border border-border bg-card px-3.5" variant="outline" onPress={hapticPress(() => setEditingPrivateKey(true))}><Icon as={KeyRound} size={18} /><Text className="text-[13px] font-medium">Private key loaded · Tap to replace</Text></Button></View>
+          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">PEM / OpenSSH private key</Text><Button accessibilityLabel={privateKeyAccessibilityLabel} className="min-h-[58px] w-full justify-start rounded-md border border-border bg-card px-3.5 py-2.5" size="content" variant="outline" onPress={hapticPress(() => setEditingPrivateKey(true))}><Icon as={KeyRound} size={18} />{keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>Private key loaded · Tap to replace</Text>}</Button></View>
         ) : (
           <Field label={profile.authMode === 'password' ? 'SSH password' : 'PEM / OpenSSH private key'} value={profile.secret} onChangeText={value => update('secret', value)} onBlur={() => setEditingPrivateKey(false)} secureTextEntry={profile.authMode === 'password'} multiline={profile.authMode === 'key'} numberOfLines={profile.authMode === 'key' ? 5 : 1} autoCapitalize="none" />
         )}
+        {profile.authMode === 'key' && keyInspection.state !== 'idle' && (editingPrivateKey || keyInspection.state !== 'valid') ? (
+          keyInspection.state === 'valid' ? (
+            <View accessibilityLiveRegion="polite" className="-mt-2 mb-3.5 px-1"><KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /></View>
+          ) : (
+            <Text
+              accessibilityLiveRegion="polite"
+              className={cn(
+                '-mt-2 mb-3.5 px-1 text-xs leading-[17px]',
+                keyInspection.state === 'invalid' && 'text-destructive',
+                (keyInspection.state === 'loading' || keyInspection.state === 'passphrase-required') && 'text-muted-foreground',
+              )}>
+              {keyInspection.state === 'loading' && 'Inspecting private key…'}
+              {keyInspection.state === 'passphrase-required' && 'Enter the key passphrase to inspect this encrypted key.'}
+              {keyInspection.state === 'invalid' && keyInspection.message}
+            </Text>
+          )
+        ) : null}
         {profile.authMode === 'key' ? <Field label="Key passphrase (optional)" value={profile.passphrase} onChangeText={value => update('passphrase', value)} secureTextEntry /> : null}
 
         <View className="mb-3.5 mt-0.5 min-h-[74px] flex-row items-center gap-4 border-y border-border"><View className="flex-1"><Text className="text-[15px] font-semibold leading-5">Remember credentials</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">Keystore protected, with encrypted recovery unlocked by device security.</Text></View><Switch checked={profile.rememberCredentials} onCheckedChange={value => update('rememberCredentials', value)} /></View>
@@ -73,4 +140,8 @@ interface FieldProps extends React.ComponentProps<typeof TextInput> { label: str
 
 function Field({ label, className, multiline, ...props }: FieldProps) {
   return <View className={cn('mb-3.5', className)}><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</Text><Input {...props} multiline={multiline} className={multiline ? 'min-h-[116px] font-mono text-xs' : undefined} textAlignVertical={multiline ? 'top' : 'center'} /></View>;
+}
+
+function KeyIdentity({ fingerprint, keyType }: { fingerprint: string; keyType: string }) {
+  return <View className="min-w-0 flex-1 justify-center"><Text className="shrink font-mono text-[12px] leading-[17px]" ellipsizeMode="middle" numberOfLines={1}>{fingerprint}</Text><Text className="text-[11px] font-semibold leading-[17px] text-muted-foreground" numberOfLines={1}>{keyType}</Text></View>;
 }

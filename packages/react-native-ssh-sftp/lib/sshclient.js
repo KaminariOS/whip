@@ -29,15 +29,17 @@ class SSHClient {
     /**
     * Retrieves the details of an SSH key.
     * @param key - The SSH private key as a string.
-    * @returns A Promise that resolves to the details of the key, including its type and size.
+    * @param passphrase - The passphrase for an encrypted private key (optional).
+    * @returns A Promise that resolves to the details of the key, including its fingerprint, type and size.
     */
-    static getKeyDetails(key) {
+    static getKeyDetails(key, passphrase) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.getKeyDetails(key)
+            RNSSHClient.getKeyDetails(key, passphrase || null)
                 .then((result) => {
                 resolve({
                     keyType: result.keyType,
-                    keySize: result.keySize || 0
+                    keySize: result.keySize || 0,
+                    fingerprint: result.fingerprint
                 });
             })
                 .catch((error) => {

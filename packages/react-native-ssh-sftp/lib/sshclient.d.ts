@@ -75,6 +75,7 @@ export interface GeneratedKeyPair {
 export interface KeyDetails {
     keyType: string;
     keySize?: number;
+    fingerprint: string;
 }
 /**
  * @deprecated Use {@link GeneratedKeyPair} instead. This alias will be removed in a future major version.
@@ -98,12 +99,10 @@ export default class SSHClient {
     /**
     * Retrieves the details of an SSH key.
     * @param key - The SSH private key as a string.
-    * @returns A Promise that resolves to the details of the key, including its type and size.
+    * @param passphrase - The passphrase for an encrypted private key (optional).
+    * @returns A Promise that resolves to the details of the key, including its fingerprint, type and size.
     */
-    static getKeyDetails(key: string): Promise<{
-        keyType: string;
-        keySize: number;
-    }>;
+    static getKeyDetails(key: string, passphrase?: string): Promise<KeyDetails>;
     static generateKeyPair(type: string, passphrase?: string, keySize?: number, comment?: string): Promise<GeneratedKeyPair>;
     /**
      * Connects to an SSH server using a private key for authentication.
