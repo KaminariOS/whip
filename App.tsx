@@ -1245,7 +1245,6 @@ function AppContent() {
   const terminalVisible = navigation.tab === 'terminal' && !editorProfile;
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
   const activeTerminalVisible = immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
-  const totalTerminalCount = liveSessions.sessions.reduce((total, session) => total + session.terminals.sessions.length, 0);
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
     hostId: session.id,
     label: hostDisplayName(session.host),
@@ -1371,7 +1370,7 @@ function AppContent() {
         })}
 
         {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && (
-          <BottomNavigation activeTab={navigation.tab} sessionCount={totalTerminalCount} onSelect={selectTab} />
+          <BottomNavigation activeTab={navigation.tab} onSelect={selectTab} />
         )}
 
         {editorProfile && (
