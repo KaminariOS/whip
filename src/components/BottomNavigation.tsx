@@ -1,6 +1,7 @@
 import { CircleEllipsis, Server, SquareTerminal, Users, type LucideIcon } from 'lucide-react-native';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { cn } from '@/src/lib/utils';
 import { useTheme } from '@/src/theme';
@@ -27,8 +28,11 @@ const items: Array<{ tab: AppTab; labelKey: string; icon: LucideIcon }> = [
 export function BottomNavigation({ activeTab, sessionCount, onSelect }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const { bottom } = useSafeAreaInsets();
   return (
-    <View className="min-h-[66px] flex-row border-t border-border bg-background pt-1">
+    <View
+      className="flex-row border-t border-border bg-background pt-1"
+      style={{ minHeight: 66 + bottom, paddingBottom: bottom }}>
       {items.map(item => {
         const active = item.tab === activeTab;
         return (
