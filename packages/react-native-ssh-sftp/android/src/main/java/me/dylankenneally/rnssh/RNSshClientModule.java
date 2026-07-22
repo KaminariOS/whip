@@ -175,13 +175,25 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 }
 
   @ReactMethod
-  public void getKeyDetails(String privateKey, Promise promise) {
+  public void getKeyDetails(String privateKey, @Nullable String passphrase, Promise promise) {
+  KeyPair kpair = null;
   try {
     // Parse the key straight from memory. The previous implementation wrote the
     // private key to a temp file on disk, which briefly exposed it and could
     // leak if the process was killed mid-parse (review #3).
     JSch jsch = new JSch();
-    KeyPair kpair = KeyPair.load(jsch, privateKey.getBytes(), null);
+    kpair = KeyPair.load(jsch, privateKey.getBytes(StandardCharsets.UTF_8), null);
+
+    if (kpair.isEncrypted()) {
+      if (passphrase == null || passphrase.isEmpty()) {
+        promise.reject("E_KEY_PASSPHRASE_REQUIRED", "Private key passphrase is required");
+        return;
+      }
+      if (!kpair.decrypt(passphrase.getBytes(StandardCharsets.UTF_8))) {
+        promise.reject("E_KEY_PASSPHRASE_INVALID", "Private key passphrase is incorrect");
+        return;
+      }
+    }
 
     String keyType;
     switch (kpair.getKeyType()) {
@@ -201,15 +213,17 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
         keyType = "UNKNOWN";
     }
     int keySize = kpair.getKeySize();
-
-    kpair.dispose();
+    String fingerprint = kpair.getFingerPrint();
 
     WritableMap result = Arguments.createMap();
     result.putString("keyType", keyType);
     result.putInt("keySize", keySize);
+    result.putString("fingerprint", fingerprint);
     promise.resolve(result);
   } catch (Exception e) {
-    promise.reject("Error", e.getMessage());
+    promise.reject("E_KEY_INVALID", e.getMessage(), e);
+  } finally {
+    if (kpair != null) kpair.dispose();
   }
 }
 
