@@ -24,7 +24,9 @@ interface Props {
   queues: HerdHostQueue[];
   sessions: LiveSessionRailItem[];
   selectedHostId: string | null;
+  workspaceFilterId: string | null;
   onSelectHost: (hostId: string | null) => void;
+  onWorkspaceFilterChange: (hostId: string, workspaceId: string | null) => void;
   onCloseHost: (hostId: string) => void;
   onNewHost: () => void;
   onSelectWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
@@ -41,7 +43,9 @@ export function HerdScreen({
   queues,
   sessions,
   selectedHostId,
+  workspaceFilterId,
   onSelectHost,
+  onWorkspaceFilterChange,
   onCloseHost,
   onNewHost,
   onSelectWorkspace,
@@ -57,7 +61,6 @@ export function HerdScreen({
   const { t } = useTranslation();
   const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
   const selectedQueue = selectedHostId ? scopedQueues[0] : undefined;
-  const [workspaceFilterId, setWorkspaceFilterId] = useState<string | null>(null);
   const selectedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, workspaceFilterId);
   const selectedWorkspace = selectedQueue?.workspaces.find(
     workspace => workspace.workspace_id === selectedWorkspaceId,
@@ -78,14 +81,15 @@ export function HerdScreen({
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
   useEffect(() => {
-    if (workspaceFilterId && !selectedWorkspaceId) setWorkspaceFilterId(null);
-  }, [selectedWorkspaceId, workspaceFilterId]);
+    if (workspaceFilterId && !selectedWorkspaceId && selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, null);
+    }
+  }, [onWorkspaceFilterChange, selectedQueue, selectedWorkspaceId, workspaceFilterId]);
 
   const selectHost = (hostId: string | null) => {
     setCreating(false);
     setWorkspaceEditorMode(null);
     setWorkspaceMenuOpen(false);
-    setWorkspaceFilterId(null);
     onSelectHost(hostId);
   };
 
@@ -106,9 +110,11 @@ export function HerdScreen({
     setCreating(false);
     setWorkspaceEditorMode(null);
     setWorkspaceMenuOpen(false);
-    setWorkspaceFilterId(workspaceId);
     if (workspaceId && selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, workspaceId);
       runWorkspaceAction(() => onSelectWorkspace(selectedQueue.id, workspaceId));
+    } else if (selectedQueue) {
+      onWorkspaceFilterChange(selectedQueue.id, null);
     }
   };
 
@@ -121,7 +127,7 @@ export function HerdScreen({
 
   const openRenameWorkspace = (workspace: WorkspaceInfo | undefined = selectedWorkspace) => {
     if (!workspace) return;
-    setWorkspaceFilterId(workspace.workspace_id);
+    if (selectedQueue) onWorkspaceFilterChange(selectedQueue.id, workspace.workspace_id);
     setWorkspaceName(workspace.label);
     setWorkspaceCwd('');
     setWorkspaceMenuOpen(false);
@@ -151,7 +157,7 @@ export function HerdScreen({
         style: 'destructive',
         onPress: async () => {
           if (await runWorkspaceAction(() => onCloseWorkspace(selectedQueue.id, selectedWorkspace.workspace_id))) {
-            setWorkspaceFilterId(null);
+            onWorkspaceFilterChange(selectedQueue.id, null);
           }
         },
       },
