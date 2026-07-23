@@ -14,6 +14,7 @@ const ALERT_VIBRATION_PATTERN = [
   300, 100, 300, 100, 300, 100, 300, 2000,
   300, 100, 300, 100, 300, 100, 300, 2000,
 ];
+const SPEECH_TIMEOUT_MS = 10_000;
 const PERSISTENT_ALERT_TIMEOUT_MS = 60_000;
 
 Notifications.setNotificationHandler({
@@ -52,6 +53,7 @@ export async function alertAgent(
   });
   const body = agent.title || agent.custom_status || i18n.t('alerts.agentState', { status: agent.agent_status });
 
+  if (speak) await speakBeforeAlert(title);
   if (Platform.OS !== 'android') Vibration.vibrate();
   const notificationIdentifier = await Notifications.scheduleNotificationAsync({
     content: {
@@ -71,8 +73,32 @@ export async function alertAgent(
       PERSISTENT_ALERT_TIMEOUT_MS,
     ).catch(() => undefined);
   }
-  if (speak) {
-    Speech.stop();
-    Speech.speak(title, { language: i18n.resolvedLanguage === 'zh-Hant' ? 'zh-TW' : 'en-US' });
-  }
+}
+
+async function speakBeforeAlert(title: string): Promise<void> {
+  await Speech.stop().catch(() => undefined);
+  await new Promise<void>(resolve => {
+    let completed = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      if (timeout) clearTimeout(timeout);
+      resolve();
+    };
+
+    timeout = setTimeout(() => {
+      Speech.stop().catch(() => undefined).finally(finish);
+    }, SPEECH_TIMEOUT_MS);
+    try {
+      Speech.speak(title, {
+        language: i18n.resolvedLanguage === 'zh-Hant' ? 'zh-TW' : 'en-US',
+        onDone: finish,
+        onStopped: finish,
+        onError: finish,
+      });
+    } catch {
+      finish();
+    }
+  });
 }
