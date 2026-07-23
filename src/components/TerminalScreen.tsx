@@ -220,19 +220,18 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     const subscription = AppState.addEventListener('change', state => {
       const wasActive = previous === 'active';
       previous = state;
-      if (state !== 'active' && wasActive) {
-        if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-        if (terminalId) {
-          client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
-          reportStatus('disconnected', t('terminal.releasedInBackground'), 0);
-        }
-      } else if (state === 'active' && !wasActive && terminalId) {
+      if (
+        state === 'active'
+        && !wasActive
+        && terminalId
+        && !client.isTerminalBridgeRetained(terminalId)
+      ) {
         reconnectAttempt.current = 0;
         setConnectionGeneration(value => value + 1);
       }
     });
     return () => subscription.remove();
-  }, [client, t, terminalId]);
+  }, [client, terminalId]);
 
   useEffect(() => {
     reconnectAttempt.current = session?.reconnectAttempt || 0;
@@ -333,7 +332,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     if (message.type === 'input') {
       await sendInput(message.data);
     } else if (message.type === 'buffered-submit') {
-      if (await writeInput(message.data, false)) await writeInput('\r', false);
+      await writeInput(message.data, false);
     } else if (message.type === 'resize') {
       if (!terminalId) return;
       client.resizeTerminal(
