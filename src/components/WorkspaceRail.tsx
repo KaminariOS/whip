@@ -2,6 +2,7 @@ import { Plus, X } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { compareAgentStatusPriority } from '@/src/herdQueue';
 import { aggregateAgentStatus } from '@/src/liveHostSessions';
 import { cn } from '@/src/lib/utils';
 import { statusColor, useTheme } from '@/src/theme';
@@ -33,6 +34,9 @@ export function WorkspaceRail({
   const { t } = useTranslation();
   const allStatus = aggregateAgentStatus(workspaces.map(workspace => workspace.agent_status));
   const totalTabs = workspaces.reduce((total, workspace) => total + workspace.tab_count, 0);
+  const orderedWorkspaces = [...workspaces].sort((a, b) => (
+    compareAgentStatusPriority(a.agent_status, b.agent_status)
+  ));
 
   return (
     <View className="h-12 flex-row border-b border-border bg-background">
@@ -45,7 +49,7 @@ export function WorkspaceRail({
           busy={busy}
           onPress={() => onSelect(null)}
         />
-        {workspaces.map(workspace => (
+        {orderedWorkspaces.map(workspace => (
           <WorkspacePill
             key={workspace.workspace_id}
             label={workspace.label || workspace.workspace_id}

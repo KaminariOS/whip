@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   agentsForHerdFilter,
+  compareAgentStatusPriority,
   queuesForHerdFilter,
   resolveHerdWorkspaceFilter,
   type HerdHostQueue,
@@ -167,7 +168,7 @@ export function HerdScreen({
   };
 
   const sorted = [...queueAgents].sort((a, b) => (
-    priority(a.agent.agent_status) - priority(b.agent.agent_status)
+    compareAgentStatusPriority(a.agent.agent_status, b.agent.agent_status)
   ));
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
 
@@ -300,8 +301,4 @@ function AgentRow({ item, index, showHost, onOpenTerminal }: { item: HerdQueueAg
 function Metric({ value, label, status }: { value: number; label: string; status?: string }) {
   const { colors } = useTheme();
   return <View className="flex-1"><Text className="text-2xl font-semibold leading-[30px]" style={status ? { color: statusColor(status, colors) } : undefined}>{value}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground">{label}</Text></View>;
-}
-
-function priority(status: string): number {
-  return ({ blocked: 0, done: 1, working: 2, idle: 3, unknown: 4 } as Record<string, number>)[status] ?? 5;
 }
