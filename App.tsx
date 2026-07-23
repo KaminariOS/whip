@@ -114,6 +114,7 @@ import { useTheme } from './src/theme';
 import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 import { guiFontFamilies } from './src/lib/guiFonts';
+import { terminalFontFamily } from './src/lib/terminalFonts';
 import i18n, { languageForLocale } from './src/i18n';
 
 const guiFontAssets = {
@@ -123,6 +124,7 @@ const guiFontAssets = {
   [guiFontFamilies.bold]: require('./assets/gui-fonts/Inter-Bold.ttf'),
   [guiFontFamilies.extraBold]: require('./assets/gui-fonts/Inter-ExtraBold.ttf'),
   [guiFontFamilies.black]: require('./assets/gui-fonts/Inter-Black.ttf'),
+  [terminalFontFamily]: require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf'),
 };
 
 interface LiveRuntime {

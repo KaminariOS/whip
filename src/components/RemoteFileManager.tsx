@@ -37,9 +37,9 @@ import {
 } from '@/src/services/remoteFileTransfer';
 import { useTheme } from '@/src/theme';
 import { hapticPress } from './app-ui';
+import { CodeEditor, CodePreview } from './CodePreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { Text } from './ui/text';
 
 interface Props {
@@ -281,14 +281,10 @@ export function RemoteFileManager({ visible, client, initialPath, onClose }: Pro
               </Button>
             </View>
             {preview.editing ? (
-              <Input
-                autoCapitalize="none"
-                autoCorrect={false}
-                className="h-auto flex-1 rounded-none border-0 bg-terminal-canvas p-4 font-mono text-[12px] leading-[18px] text-terminal-text"
+              <CodeEditor
                 editable={!actionBusy}
-                multiline
+                filename={remoteEntryName(preview.entry)}
                 onChangeText={draft => updatePreview({ draft })}
-                textAlignVertical="top"
                 value={preview.draft}
               />
             ) : preview.kind === 'unsupported' ? (
@@ -319,6 +315,8 @@ export function RemoteFileManager({ visible, client, initialPath, onClose }: Pro
               </View>
             ) : preview.kind === 'markdown' ? (
               <MarkdownPreview content={preview.content || ''} />
+            ) : preview.kind === 'code' ? (
+              <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
             ) : (
               <ScrollView className="flex-1 bg-terminal-canvas" contentContainerClassName="p-4">
                 <ScrollView horizontal>
