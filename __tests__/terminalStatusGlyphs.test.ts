@@ -28,6 +28,20 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain("textAlignVertical: 'center'");
     expect(appUi).toContain("Platform.OS === 'android' && styles.statusGlyphTextAndroid");
     expect(appUi).toContain('transform: [{ translateY: -1 }]');
+    expect(appUi).not.toContain('textShadowColor');
+  });
+
+  it('keeps bloom inside non-idle circular connection indicators', () => {
+    const appUi = readFileSync(
+      resolve(__dirname, '../src/components/app-ui.tsx'),
+      'utf8',
+    );
+
+    expect(appUi).toContain("if (status === 'idle')");
+    expect(appUi).toContain('className="items-center justify-center overflow-hidden rounded-full"');
+    expect(appUi).toContain('statusBloomStyle(color, size)');
+    expect(appUi).toContain("const breathes = ['done', 'connected', 'active'].includes(status);");
+    expect(appUi).toContain('outputRange: [0.42, 0.82]');
   });
 
   it('keeps host and space status controls in Herd instead of Terminal', () => {

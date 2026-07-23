@@ -79,17 +79,31 @@ export function StatusBadge({ status, label, agentStatus = false, showIndicator 
 }
 
 export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: string; color: string; size?: number }) {
-  const { motion, style } = useStatusMotion(status);
+  const { motion, style, reduceMotion } = useStatusMotion(status);
+  const bloomStyle = useStatusBloom(status, reduceMotion);
 
   if (motion === 'spin') {
+    const iconSize = Math.max(11, size);
     return (
       <Animated.View style={style}>
-        <RefreshCw size={Math.max(11, size)} color={color} />
+        <RefreshCw size={iconSize} color={color} />
       </Animated.View>
     );
   }
 
-  return <Animated.View className="rounded-full" style={[{ width: size, height: size, backgroundColor: color }, style]} />;
+  if (status === 'idle') {
+    return <Animated.View className="rounded-full" style={[{ width: size, height: size, backgroundColor: color }, style]} />;
+  }
+
+  const frameSize = size + 8;
+  return (
+    <View
+      className="items-center justify-center overflow-hidden rounded-full"
+      style={{ width: frameSize, height: frameSize }}>
+      <Animated.View style={[statusBloomStyle(color, size), bloomStyle]} />
+      <Animated.View className="rounded-full" style={[{ width: size, height: size, backgroundColor: color }, style]} />
+    </View>
+  );
 }
 
 export function AnimatedAgentStatusGlyph({ status, color, size = 18 }: { status: string; color: string; size?: number }) {
@@ -208,6 +222,53 @@ function useReducedMotion() {
   }, []);
 
   return reduceMotion;
+}
+
+function useStatusBloom(status: string, reduceMotion: boolean) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const breathes = ['done', 'connected', 'active'].includes(status);
+
+  useEffect(() => {
+    progress.stopAnimation();
+    progress.setValue(0);
+    if (!breathes || reduceMotion) return;
+
+    const animation = Animated.loop(Animated.sequence([
+      Animated.timing(progress, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(progress, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    animation.start();
+    return () => animation.stop();
+  }, [breathes, progress, reduceMotion]);
+
+  if (!breathes || reduceMotion) return { opacity: 0.62 };
+  return {
+    opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.42, 0.82] }),
+    transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.78, 1.08] }) }],
+  };
+}
+
+function statusBloomStyle(color: string, size: number) {
+  return {
+    position: 'absolute',
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+    backgroundColor: colorWithAlpha(color, '38'),
+    boxShadow: [
+      {
+        offsetX: 0,
+        offsetY: 0,
+        blurRadius: Math.max(3, size * 0.5),
+        spreadDistance: 0,
+        color: colorWithAlpha(color, 'A3'),
+      },
+    ],
+  } as const;
+}
+
+function colorWithAlpha(color: string, alpha: string) {
+  return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }
 
 export function ScreenHeader({ title, subtitle, left, right }: { title: string; subtitle?: string; left?: ReactNode; right?: ReactNode }) {
