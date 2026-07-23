@@ -53,7 +53,6 @@ interface Props {
   onTerminalStatus: (terminalId: string, status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
-  onTerminalFontSizeChange: (fontSize: number) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
   onExit: () => void;
@@ -91,7 +90,6 @@ export function SessionScreen({
   onTerminalStatus,
   terminalPreferences,
   terminalControlUsage,
-  onTerminalFontSizeChange,
   onTerminalControlUse,
   onTerminalOpenLinksInAppChange,
   onExit,
@@ -612,7 +610,6 @@ export function SessionScreen({
                   setTerminalLinks(links);
                   setLinksBusy(false);
                 }}
-                onFontSizeChange={onTerminalFontSizeChange}
                 onControlUse={onTerminalControlUse}
                 onClose={() => onCloseTerminal(terminalSession.terminalId)}
                 onStatus={(status, error, reconnectAttempt) => {

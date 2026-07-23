@@ -35,7 +35,6 @@ interface Props {
   compact?: boolean;
   preview?: boolean;
   terminalPanHandlers?: GestureResponderHandlers;
-  onFontSizeChange: (fontSize: number) => void;
   onControlUse: (control: TerminalControlId) => void;
   linkScanRequest?: number;
   pasteRequest?: {
@@ -81,7 +80,7 @@ const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
 const TERMINAL_CONTROL_CLASS = 'min-h-[34px] min-w-12 rounded-sm border border-border bg-card/70 px-2.5 active:bg-card/80';
 
-export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onFontSizeChange, onControlUse, linkScanRequest = 0, pasteRequest, onRequestAttachment, onRequestFiles, onLinksScanned, onClose, onStatus }: Props) {
+export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onControlUse, linkScanRequest = 0, pasteRequest, onRequestAttachment, onRequestFiles, onLinksScanned, onClose, onStatus }: Props) {
   const { colors: appColors } = useTheme();
   const { t } = useTranslation();
   const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
@@ -116,12 +115,27 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [scrollPosition, setScrollPosition] = useState(scroll);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
+  const [terminalFontSize, setTerminalFontSize] = useState(() => ({
+    preference: preferences.fontSize,
+    value: preferences.fontSize,
+  }));
+  const configuredFontSize = terminalFontSize.preference === preferences.fontSize
+    ? terminalFontSize.value
+    : preferences.fontSize;
   const scrollThumb = terminalScrollThumb(scrollPosition);
   const presented = visible || preview;
 
   useEffect(() => {
     setScrollPosition(scroll);
   }, [scroll, terminalId]);
+
+  useEffect(() => {
+    setTerminalFontSize(current => (
+      current.preference === preferences.fontSize
+        ? current
+        : { preference: preferences.fontSize, value: preferences.fontSize }
+    ));
+  }, [preferences.fontSize]);
 
   const reportStatus = useEffectEvent(onStatus);
 
@@ -272,8 +286,12 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 
   useEffect(() => {
     if (!ready) return;
-    webView.current?.injectJavaScript(`window.herdrConfigure(${JSON.stringify({ ...preferences, backgroundImageUri: null })}); true;`);
-  }, [preferences, ready]);
+    webView.current?.injectJavaScript(`window.herdrConfigure(${JSON.stringify({
+      ...preferences,
+      fontSize: configuredFontSize,
+      backgroundImageUri: null,
+    })}); true;`);
+  }, [configuredFontSize, preferences, ready]);
 
   useEffect(() => {
     if (!linkScanRequest || !ready || !visible) return;
@@ -395,7 +413,10 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     } else if (message.type === 'font-size-change') {
       const fontSize = Number(message.fontSize);
       if (Number.isFinite(fontSize)) {
-        onFontSizeChange(Math.max(8, Math.min(24, Math.round(fontSize))));
+        setTerminalFontSize({
+          preference: preferences.fontSize,
+          value: Math.max(8, Math.min(24, Math.round(fontSize))),
+        });
       }
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(message.text || '');
