@@ -1,4 +1,5 @@
 import type { ConnectionProfile, HostProfile } from '../types';
+import { createSecureId } from './secureId';
 
 export const HOSTS_STORAGE_KEY = 'herdr.hosts.v2';
 export const LEGACY_PROFILE_KEY = 'herdr.connection.v1';
@@ -26,7 +27,7 @@ export const emptyConnectionProfile = (): ConnectionProfile => {
 };
 
 export function createHostId(): string {
-  return `host-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+  return createSecureId('host');
 }
 
 export function hostCredentialService(id: string): string {

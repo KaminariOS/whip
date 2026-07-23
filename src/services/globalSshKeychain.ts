@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
 
 import type { GlobalSshKey, GlobalSshKeyMaterial } from '../types';
+import { createSecureId } from '../lib/secureId';
 import { authenticateGlobalKeychain } from './appAuthentication';
 
 export const GLOBAL_SSH_KEYS_STORAGE_KEY = 'herdr.global-ssh-keys.v1';
@@ -84,7 +85,7 @@ export async function deleteGlobalSshKey(
 }
 
 function createGlobalSshKeyId(): string {
-  return `key-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+  return createSecureId('key');
 }
 
 async function replaceGlobalSshKeys(keys: GlobalSshKeyMaterial[]): Promise<void> {

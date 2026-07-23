@@ -1,4 +1,5 @@
 import {
+  createHostId,
   emptyConnectionProfile,
   hostCredentialService,
   hostDisplayName,
@@ -27,6 +28,13 @@ const profile: ConnectionProfile = {
 
 test('remembers credentials by default for new hosts', () => {
   expect(emptyConnectionProfile().rememberCredentials).toBe(true);
+});
+
+test('uses cryptographically generated UUIDs for host IDs', () => {
+  expect(createHostId()).toMatch(
+    /^host-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  expect(createHostId()).not.toBe(createHostId());
 });
 
 test('strips credentials from persisted host metadata', () => {
