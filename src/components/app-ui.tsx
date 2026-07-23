@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { RefreshCw, type LucideIcon } from 'lucide-react-native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Animated, Easing, Image, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Image, Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
@@ -98,7 +98,15 @@ export function AnimatedAgentStatusGlyph({ status, color, size = 18 }: { status:
   const glyphBoxSize = size + 4;
   return (
     <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
-      <Text className="text-center" style={{ color, fontSize: size, lineHeight: glyphBoxSize }}>{agentStatusGlyph(status, frame)}</Text>
+      <Text
+        className="text-center"
+        style={[
+          styles.statusGlyphText,
+          Platform.OS === 'android' && styles.statusGlyphTextAndroid,
+          { color, fontSize: size, lineHeight: glyphBoxSize },
+        ]}>
+        {agentStatusGlyph(status, frame)}
+      </Text>
     </Animated.View>
   );
 }
@@ -218,3 +226,13 @@ export function ScreenHeader({ title, subtitle, left, right }: { title: string; 
 export function SectionLabel({ children, className }: { children: ReactNode; className?: string }) {
   return <Text className={cn('px-1 text-sm font-semibold text-muted-foreground', className)}>{children}</Text>;
 }
+
+const styles = StyleSheet.create({
+  statusGlyphText: {
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  statusGlyphTextAndroid: {
+    transform: [{ translateY: -1 }],
+  },
+});

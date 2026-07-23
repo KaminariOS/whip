@@ -24,6 +24,10 @@ describe('terminal hierarchy status glyphs', () => {
     );
     expect(appUi).toContain('const glyphBoxSize = size + 4;');
     expect(appUi).toContain('lineHeight: glyphBoxSize');
+    expect(appUi).toContain('includeFontPadding: false');
+    expect(appUi).toContain("textAlignVertical: 'center'");
+    expect(appUi).toContain("Platform.OS === 'android' && styles.statusGlyphTextAndroid");
+    expect(appUi).toContain('transform: [{ translateY: -1 }]');
   });
 
   it('keeps host and space status controls in Herd instead of Terminal', () => {
