@@ -240,15 +240,6 @@ function AppContent() {
     i18n.changeLanguage(resolvedLanguage).catch(() => undefined);
   }, [resolvedLanguage]);
 
-  const updateTerminalFontSize = useCallback((fontSize: number) => {
-    const nextFontSize = Math.max(8, Math.min(24, Math.round(fontSize)));
-    setTerminalPreferences(current => (
-      current.fontSize === nextFontSize
-        ? current
-        : { ...current, fontSize: nextFontSize }
-    ));
-  }, []);
-
   const updateTerminalOpenLinksInApp = useCallback((openLinksInApp: boolean) => {
     setTerminalPreferences(current => (
       current.openLinksInApp === openLinksInApp
@@ -1364,7 +1355,6 @@ function AppContent() {
               visible={terminalVisible && session.id === activeSession?.id}
               terminalPreferences={terminalPreferences}
               terminalControlUsage={terminalControlUsage}
-              onTerminalFontSizeChange={updateTerminalFontSize}
               onTerminalControlUse={recordTerminalControlUse}
               onTerminalOpenLinksInAppChange={updateTerminalOpenLinksInApp}
               onExit={() => exitTerminalToHerd(session.id)}
@@ -1444,7 +1434,6 @@ function LiveSessionView({
   visible,
   terminalPreferences,
   terminalControlUsage,
-  onTerminalFontSizeChange,
   onTerminalControlUse,
   onTerminalOpenLinksInAppChange,
   onExit,
@@ -1459,7 +1448,6 @@ function LiveSessionView({
   visible: boolean;
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
-  onTerminalFontSizeChange: (fontSize: number) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
   onExit: () => void;
@@ -1491,7 +1479,6 @@ function LiveSessionView({
       onTerminalStatus={terminalStatus}
       terminalPreferences={terminalPreferences}
       terminalControlUsage={terminalControlUsage}
-      onTerminalFontSizeChange={onTerminalFontSizeChange}
       onTerminalControlUse={onTerminalControlUse}
       onTerminalOpenLinksInAppChange={onTerminalOpenLinksInAppChange}
       onExit={onExit}

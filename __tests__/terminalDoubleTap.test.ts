@@ -22,7 +22,9 @@ describe('terminal double tap', () => {
 
     expect(assets).toContain('doubleTapTabEnabled = options.doubleTapTab !== false');
     expect(assets).toContain('if (!doubleTapTabEnabled) lastTap = null');
-    expect(terminalScreen).toContain('window.herdrConfigure(${JSON.stringify({ ...preferences, backgroundImageUri: null })})');
+    expect(terminalScreen).toContain('window.herdrConfigure(${JSON.stringify({');
+    expect(terminalScreen).toContain('...preferences,');
+    expect(terminalScreen).toContain('fontSize: configuredFontSize');
   });
 
   it('does not carry a tap through a swipe, long press, or cancelled touch', () => {
