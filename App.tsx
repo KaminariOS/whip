@@ -1061,7 +1061,7 @@ function AppContent() {
     }
   };
 
-  const confirmDeleteHost = (target: ConnectionProfile) => {
+  const confirmDeleteHost = (target: HostProfile) => {
     Alert.alert(t('app.deleteHostTitle'), t('app.deleteHostCopy', { host: hostDisplayName(target) }), [
       { text: t('common.cancel'), style: 'cancel' },
       {
@@ -1280,6 +1280,11 @@ function AppContent() {
                 setEditorProfile(emptyConnectionProfile());
               }}
               onConnect={host => connectSavedHost(host).catch(error => setConnectError(String(error)))}
+              onDelete={confirmDeleteHost}
+              onDisconnect={host => {
+                const live = liveSessionsRef.current.sessions.find(session => session.hostId === host.id);
+                if (live) closeLiveHost(live.id);
+              }}
               onEdit={openHostEditor}
               onUnlockCredentials={unlockCredentialRecovery}
             />

@@ -1,9 +1,16 @@
-import { AlertCircle, Ellipsis, LockKeyhole, Plus, Server } from 'lucide-react-native';
-import { ScrollView, View } from 'react-native';
+import { AlertCircle, Ellipsis, LockKeyhole, LogOut, Plus, Server, Trash2 } from 'lucide-react-native';
+import { useRef, useState } from 'react';
+import { Animated, PanResponder, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
 import { hostDisplayName } from '@/src/lib/hostProfiles';
+import {
+  HOST_SWIPE_ACTION_WIDTH,
+  hostSwipeOffset,
+  shouldClaimHostSwipe,
+  shouldOpenHostSwipe,
+} from '@/src/lib/hostSwipeActions';
 import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
 import type { HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
@@ -22,11 +29,13 @@ interface Props {
   credentialRecoveryBusy: boolean;
   onAdd: () => void;
   onConnect: (host: HostProfile) => void;
+  onDelete: (host: HostProfile) => void;
+  onDisconnect: (host: HostProfile) => void;
   onEdit: (host: HostProfile) => void;
   onUnlockCredentials: () => Promise<boolean>;
 }
 
-export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onEdit, onUnlockCredentials }: Props) {
+export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
   const { t } = useTranslation();
   return (
     <View className="flex-1 bg-background">
@@ -81,26 +90,41 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                   const displayName = hostDisplayName(host);
                   const latencyMs = latencyMsByHostId[host.id];
                   return (
-                    <View className="min-h-[88px] flex-row items-center rounded-lg border border-border bg-card pr-2" key={host.id}>
-                      <Button
-                        accessibilityLabel={t('hosts.connectTo', { host: displayName })}
-                        className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
-                        disabled={Boolean(connectingHostId)}
-                        size="content"
-                        variant="ghost"
-                        onPress={hapticPress(() => onConnect(host))}>
-                        <View className="size-11 items-center justify-center rounded-full bg-accent"><Text className="text-[17px] font-semibold">{displayName.slice(0, 1).toUpperCase()}</Text></View>
-                        <View className="min-w-0 flex-1">
-                          <View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{displayName}</Text><StatusBadge status={state} label={label} /></View>
-                          <View className="mt-1 flex-row items-center gap-2">
-                            <Text className="min-w-0 flex-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== '22' ? `:${host.port}` : ''}</Text>
-                            <Text accessibilityLabel={latencyMs == null ? t('hosts.latencyUnavailable') : t('hosts.latency', { value: latencyMs })} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
-                          </View>
-                          <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')} · {host.rememberCredentials ? t('hosts.credentialSaved') : t('hosts.askOnConnect')}{host.lastConnectedAt ? ` · ${formatLastUsed(host.lastConnectedAt, t)}` : ''}</Text>
+                    <SwipeableHostRow
+                      key={host.id}
+                      connected={connected}
+                      displayName={displayName}
+                      onDelete={() => onDelete(host)}
+                      onDisconnect={() => onDisconnect(host)}>
+                      {({ closeActions, actionsOpen }) => (
+                        <View className="min-h-[88px] flex-row items-center rounded-lg border border-border bg-card pr-2">
+                          <Button
+                            accessibilityLabel={t('hosts.connectTo', { host: displayName })}
+                            className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
+                            disabled={Boolean(connectingHostId)}
+                            size="content"
+                            variant="ghost"
+                            onPress={hapticPress(() => {
+                              if (actionsOpen) closeActions();
+                              else onConnect(host);
+                            })}>
+                            <View className="size-11 items-center justify-center rounded-full bg-accent"><Text className="text-[17px] font-semibold">{displayName.slice(0, 1).toUpperCase()}</Text></View>
+                            <View className="min-w-0 flex-1">
+                              <View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{displayName}</Text><StatusBadge status={state} label={label} /></View>
+                              <View className="mt-1 flex-row items-center gap-2">
+                                <Text className="min-w-0 flex-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== '22' ? `:${host.port}` : ''}</Text>
+                                <Text accessibilityLabel={latencyMs == null ? t('hosts.latencyUnavailable') : t('hosts.latency', { value: latencyMs })} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
+                              </View>
+                              <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')} · {host.rememberCredentials ? t('hosts.credentialSaved') : t('hosts.askOnConnect')}{host.lastConnectedAt ? ` · ${formatLastUsed(host.lastConnectedAt, t)}` : ''}</Text>
+                            </View>
+                          </Button>
+                          <IconButton icon={Ellipsis} accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => {
+                            if (actionsOpen) closeActions();
+                            else onEdit(host);
+                          }} />
                         </View>
-                      </Button>
-                      <IconButton icon={Ellipsis} accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => onEdit(host)} />
-                    </View>
+                      )}
+                    </SwipeableHostRow>
                   );
                 })}
               </View>
@@ -113,6 +137,92 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
         <Icon as={LockKeyhole} className="text-muted-foreground" size={14} />
         <Text className="flex-1 text-[11px] leading-[15px] text-muted-foreground">{t('hosts.securityCopy')}</Text>
       </View>
+    </View>
+  );
+}
+
+function SwipeableHostRow({
+  children,
+  connected,
+  displayName,
+  onDelete,
+  onDisconnect,
+}: {
+  children: (controls: { actionsOpen: boolean; closeActions: () => void }) => React.ReactNode;
+  connected: boolean;
+  displayName: string;
+  onDelete: () => void;
+  onDisconnect: () => void;
+}) {
+  const { t } = useTranslation();
+  const translateX = useRef(new Animated.Value(0)).current;
+  const openRef = useRef(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+
+  const settle = (open: boolean) => {
+    openRef.current = open;
+    setActionsOpen(open);
+    Animated.spring(translateX, {
+      toValue: open ? -HOST_SWIPE_ACTION_WIDTH : 0,
+      damping: 24,
+      stiffness: 260,
+      mass: 0.8,
+      overshootClamping: true,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => (
+      shouldClaimHostSwipe(gesture.dx, gesture.dy, openRef.current)
+    ),
+    onPanResponderGrant: () => translateX.stopAnimation(),
+    onPanResponderMove: (_event, gesture) => {
+      translateX.setValue(hostSwipeOffset(gesture.dx, openRef.current));
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      settle(shouldOpenHostSwipe(gesture.dx, gesture.vx, openRef.current));
+    },
+    onPanResponderTerminate: () => settle(openRef.current),
+    onPanResponderTerminationRequest: () => false,
+  })).current;
+
+  const runAction = (action: () => void) => {
+    settle(false);
+    action();
+  };
+
+  return (
+    <View className="relative min-h-[88px] overflow-hidden rounded-lg">
+      <View
+        accessibilityElementsHidden={!actionsOpen}
+        className="absolute inset-y-0 right-0 flex-row"
+        importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'}
+        style={{ width: HOST_SWIPE_ACTION_WIDTH }}>
+        <Button
+          accessibilityLabel={t('hosts.disconnectHost', { host: displayName })}
+          className="h-full w-[76px] flex-col gap-1 rounded-none bg-warning"
+          disabled={!connected}
+          size="content"
+          onPress={hapticPress(() => runAction(onDisconnect))}>
+          <Icon as={LogOut} className="text-black" size={19} />
+          <Text className="text-[11px] font-semibold text-black">{t('hosts.disconnect')}</Text>
+        </Button>
+        <Button
+          accessibilityLabel={t('hosts.deleteHost', { host: displayName })}
+          className="h-full w-[76px] flex-col gap-1 rounded-none"
+          size="content"
+          variant="destructive"
+          onPress={hapticPress(() => runAction(onDelete))}>
+          <Icon as={Trash2} className="text-destructive-foreground" size={19} />
+          <Text className="text-[11px] font-semibold">{t('hosts.delete')}</Text>
+        </Button>
+      </View>
+      <Animated.View
+        style={{ transform: [{ translateX }] }}
+        {...panResponder.panHandlers}>
+        {children({ actionsOpen, closeActions: () => settle(false) })}
+      </Animated.View>
     </View>
   );
 }
