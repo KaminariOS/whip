@@ -1,4 +1,5 @@
 export const defaultTerminalControlOrder = [
+  'keyboard',
   'ctrl',
   'shift',
   'esc',

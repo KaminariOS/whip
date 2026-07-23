@@ -51,6 +51,40 @@ describe('terminal keyboard controls', () => {
     expect(screen).toContain("shift === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80'");
     expect(screen).toContain("if (control === 'attach')");
     expect(screen).toContain("if (control === 'files')");
+    expect(screen).toContain("if (control === 'keyboard')");
     expect(screen).not.toContain('CTRL+C');
+  });
+
+  it('starts with terminal keyboard input enabled and can switch to selection mode', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/TerminalScreen.tsx'),
+      'utf8',
+    );
+    const assets = readFileSync(
+      resolve(__dirname, '../scripts/sync-terminal-assets.mjs'),
+      'utf8',
+    );
+
+    expect(screen).toContain('const [keyboardEnabled, setKeyboardEnabled] = useState(true)');
+    expect(screen).toContain('window.herdrSetKeyboardEnabled(${keyboardEnabled})');
+    expect(screen).toContain('Keyboard.dismiss()');
+    expect(screen).toContain('{...(keyboardEnabled ? terminalPanHandlers : undefined)}');
+    expect(assets).toContain('let keyboardEnabled = true');
+    expect(assets).toContain('window.herdrSetKeyboardEnabled = enabled =>');
+    expect(assets).toContain('if (!keyboardEnabled) terminal.blur()');
+  });
+
+  it('keeps the composer from reopening the keyboard while selection mode is active', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/TerminalScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain('const composeInputRef = useRef<TextInputHandle | null>(null)');
+    expect(screen).toContain('ref={composeInputRef}');
+    expect(screen).toContain('autoFocus={keyboardEnabled}');
+    expect(screen).toContain('showSoftInputOnFocus={keyboardEnabled}');
+    expect(screen).toContain('if (composeOpen) {');
+    expect(screen).toContain('composeInputRef.current?.focus()');
   });
 });

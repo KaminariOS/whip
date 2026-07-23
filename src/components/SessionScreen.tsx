@@ -605,6 +605,11 @@ export function SessionScreen({
                   : undefined}
                 onRequestAttachment={openAttachments}
                 onRequestFiles={openFileManager}
+                onOpenLink={link => {
+                  if (terminalSession.terminalId !== activeTerminalSession?.terminalId) return;
+                  if (terminalPreferences.openLinksInApp) setLinksOpen(true);
+                  openTerminalLink(link);
+                }}
                 onLinksScanned={links => {
                   if (terminalSession.terminalId !== activeTerminalSession?.terminalId) return;
                   setTerminalLinks(links);

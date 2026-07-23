@@ -290,6 +290,8 @@ export const en = {
   'pane.closePane': 'Close pane',
 
   'terminal.paste': 'PASTE',
+  'terminal.disableKeyboard': 'Disable keyboard and enable text selection',
+  'terminal.enableKeyboard': 'Enable keyboard',
   'terminal.compose': 'Compose terminal input',
   'terminal.composePlaceholder': 'Edit a command or message before sending…',
   'terminal.sendBufferedInput': 'Send to terminal',
