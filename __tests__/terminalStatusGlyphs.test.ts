@@ -57,7 +57,10 @@ describe('terminal hierarchy status glyphs', () => {
     expect(hostRail).toContain("accessibilityLabel={t('rail.newHostSession')}");
     expect(workspaceRail).toContain("label={t('rail.allSpaces')}");
     expect(workspaceRail).toContain("accessibilityLabel={t('rail.newWorkspace')}");
-    expect(workspaceRail).toContain("accessibilityLabel={t('rail.workspaceActions')}");
+    expect(workspaceRail).toContain("accessibilityLabel={t('rail.closeWorkspace', { workspace: label })}");
+    expect(workspaceRail).toContain('onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}');
+    expect(workspaceRail).not.toContain('workspaceActions');
+    expect(herd).toContain('autoFocus selectTextOnFocus');
     expect(screen).not.toContain('snapshot.workspaces.map');
     expect(screen).toContain("accessibilityLabel={t('session.backToHerd')}");
   });

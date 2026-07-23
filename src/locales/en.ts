@@ -248,7 +248,7 @@ export const en = {
   'rail.disconnectHost': 'Disconnect {{host}}',
   'rail.allSpaces': 'All spaces',
   'rail.newWorkspace': 'New workspace',
-  'rail.workspaceActions': 'Workspace actions',
+  'rail.closeWorkspace': 'Close {{workspace}} space',
   'rail.space': 'Space',
   'rail.workspaceStatus': '{{workspace}}, {{status}}',
 

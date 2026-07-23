@@ -75,7 +75,6 @@ export function HerdScreen({
   const [command, setCommand] = useState('');
   const [cwd, setCwd] = useState('');
   const [workspaceEditorMode, setWorkspaceEditorMode] = useState<'create' | 'rename' | null>(null);
-  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -89,7 +88,6 @@ export function HerdScreen({
   const selectHost = (hostId: string | null) => {
     setCreating(false);
     setWorkspaceEditorMode(null);
-    setWorkspaceMenuOpen(false);
     onSelectHost(hostId);
   };
 
@@ -109,7 +107,6 @@ export function HerdScreen({
   const selectWorkspace = (workspaceId: string | null) => {
     setCreating(false);
     setWorkspaceEditorMode(null);
-    setWorkspaceMenuOpen(false);
     if (workspaceId && selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, workspaceId);
       runWorkspaceAction(() => onSelectWorkspace(selectedQueue.id, workspaceId));
@@ -121,7 +118,6 @@ export function HerdScreen({
   const openNewWorkspace = () => {
     setWorkspaceName('');
     setWorkspaceCwd('');
-    setWorkspaceMenuOpen(false);
     setWorkspaceEditorMode('create');
   };
 
@@ -130,7 +126,6 @@ export function HerdScreen({
     if (selectedQueue) onWorkspaceFilterChange(selectedQueue.id, workspace.workspace_id);
     setWorkspaceName(workspace.label);
     setWorkspaceCwd('');
-    setWorkspaceMenuOpen(false);
     setWorkspaceEditorMode('rename');
   };
 
@@ -147,16 +142,16 @@ export function HerdScreen({
     setWorkspaceCwd('');
   };
 
-  const confirmCloseWorkspace = () => {
-    if (!selectedQueue || !selectedWorkspace) return;
-    setWorkspaceMenuOpen(false);
-    Alert.alert(t('herd.closeWorkspaceTitle'), selectedWorkspace.label || selectedWorkspace.workspace_id, [
+  const confirmCloseWorkspace = (workspace: WorkspaceInfo) => {
+    if (!selectedQueue) return;
+    Alert.alert(t('herd.closeWorkspaceTitle'), workspace.label || workspace.workspace_id, [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('common.close'),
         style: 'destructive',
         onPress: async () => {
-          if (await runWorkspaceAction(() => onCloseWorkspace(selectedQueue.id, selectedWorkspace.workspace_id))) {
+          if (await runWorkspaceAction(() => onCloseWorkspace(selectedQueue.id, workspace.workspace_id))
+              && workspace.workspace_id === selectedWorkspaceId) {
             onWorkspaceFilterChange(selectedQueue.id, null);
           }
         },
@@ -186,22 +181,15 @@ export function HerdScreen({
           busy={workspaceBusy || !selectedQueue.running}
           onSelect={selectWorkspace}
           onNew={openNewWorkspace}
-          onActions={() => setWorkspaceMenuOpen(value => !value)}
           onRename={openRenameWorkspace}
+          onClose={confirmCloseWorkspace}
         />
-      ) : null}
-
-      {workspaceMenuOpen && selectedQueue ? (
-        <View className="min-h-[42px] flex-row items-stretch border-b border-border bg-background">
-          <WorkspaceAction label={t('herd.renameSpace')} disabled={!selectedWorkspace} onPress={() => openRenameWorkspace()} />
-          <WorkspaceAction label={t('herd.closeSpace')} danger disabled={!selectedWorkspace} onPress={confirmCloseWorkspace} />
-        </View>
       ) : null}
 
       {workspaceEditorMode && selectedQueue ? (
         <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
           <Text className="font-mono text-[8px] text-foreground">{workspaceEditorMode === 'rename' ? t('herd.rename') : t('herd.new')} {t('herd.space')}</Text>
-          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
+          <Input autoFocus selectTextOnFocus={workspaceEditorMode === 'rename'} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
           {workspaceEditorMode === 'create' ? (
             <Input className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder={t('herd.workingDirectoryOptional')} placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
           ) : null}
@@ -316,10 +304,4 @@ function Metric({ value, label, status }: { value: number; label: string; status
 
 function priority(status: string): number {
   return ({ blocked: 0, done: 1, working: 2, idle: 3, unknown: 4 } as Record<string, number>)[status] ?? 5;
-}
-
-function WorkspaceAction({ label, onPress, disabled = false, danger = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
-  return (
-    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-border px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={danger ? 'text-center text-[9px] font-semibold text-destructive' : 'text-center text-[9px] font-semibold text-foreground'}>{label}</Text></Button>
-  );
 }
