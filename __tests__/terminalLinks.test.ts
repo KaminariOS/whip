@@ -3,6 +3,8 @@ import {
   localTunnelUrl,
   terminalWebLinkTarget,
 } from '../src/lib/terminalLinks';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 describe('terminal web links', () => {
   it.each([
@@ -43,5 +45,19 @@ describe('terminal web links', () => {
   it('uses the protocol default port', () => {
     expect(terminalWebLinkTarget('https://example.com/path').port).toBe(443);
     expect(terminalWebLinkTarget('http://example.com/path').port).toBe(80);
+  });
+
+  it('routes every link through the persisted in-app toggle', () => {
+    const session = readFileSync(
+      resolve(__dirname, '../src/components/SessionScreen.tsx'),
+      'utf8',
+    );
+
+    expect(session).toContain('checked={terminalPreferences.openLinksInApp}');
+    expect(session).toContain('if (!terminalPreferences.openLinksInApp)');
+    expect(session).toContain('await Linking.openURL(target.url)');
+    expect(session.indexOf('await Linking.openURL(target.url)')).toBeLessThan(
+      session.indexOf('const tunnel = await client.openWebTunnel(target.url)'),
+    );
   });
 });

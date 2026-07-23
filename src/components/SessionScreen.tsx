@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Linking,
   Modal,
   PanResponder,
   ScrollView,
@@ -36,6 +37,7 @@ import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSh
 import { RemoteFileManager } from './RemoteFileManager';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 import { TerminalScreen } from './TerminalScreen';
 
@@ -53,6 +55,7 @@ interface Props {
   terminalControlUsage: TerminalControlUsage;
   onTerminalFontSizeChange: (fontSize: number) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
+  onTerminalOpenLinksInAppChange: (value: boolean) => void;
   onExit: () => void;
 }
 
@@ -90,6 +93,7 @@ export function SessionScreen({
   terminalControlUsage,
   onTerminalFontSizeChange,
   onTerminalControlUse,
+  onTerminalOpenLinksInAppChange,
   onExit,
 }: Props) {
   const { colors } = useTheme();
@@ -200,6 +204,10 @@ export function SessionScreen({
     try {
       await closeActiveTunnel();
       const target = terminalWebLinkTarget(value);
+      if (!terminalPreferences.openLinksInApp) {
+        await Linking.openURL(target.url);
+        return;
+      }
       const tunnel = await client.openWebTunnel(target.url);
       if (request !== browserRequestRef.current) {
         if (tunnel) await client.closeWebTunnel(tunnel.localPort).catch(() => undefined);
@@ -724,6 +732,17 @@ export function SessionScreen({
                   <Button accessibilityLabel={t('terminal.closeLinks')} className="size-11 rounded-full px-0" variant="ghost" onPress={dismissLinks}>
                     <X size={19} color={colors.text} />
                   </Button>
+                </View>
+                <View className="min-h-[66px] flex-row items-center border-b border-border px-4 py-3">
+                  <View className="min-w-0 flex-1 pr-4">
+                    <Text className="text-[14px] font-semibold text-foreground">{t('terminal.openLinksInApp')}</Text>
+                    <Text className="mt-0.5 text-[10px] leading-[14px] text-muted-foreground">{t('terminal.openLinksInAppCopy')}</Text>
+                  </View>
+                  <Switch
+                    accessibilityLabel={t('terminal.openLinksInApp')}
+                    checked={terminalPreferences.openLinksInApp}
+                    onCheckedChange={onTerminalOpenLinksInAppChange}
+                  />
                 </View>
                 {linksBusy ? (
                   <View className="flex-1 items-center justify-center gap-3 p-8">
