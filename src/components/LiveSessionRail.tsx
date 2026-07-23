@@ -2,6 +2,7 @@ import { Plus, X } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { compareAgentStatusPriority } from '@/src/herdQueue';
 import { cn } from '@/src/lib/utils';
 import { aggregateAgentStatus } from '@/src/liveHostSessions';
 import { statusColor as agentStatusColor, useTheme, type ThemeColors } from '@/src/theme';
@@ -30,12 +31,15 @@ export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onN
     agentStatus: aggregateAgentStatus(sessions.map(session => session.agentStatus)),
     terminalCount: sessions.reduce((total, session) => total + session.terminalCount, 0),
   };
+  const orderedSessions = [...sessions].sort((a, b) => (
+    compareAgentStatusPriority(a.agentStatus, b.agentStatus)
+  ));
 
   return (
     <View className="h-12 flex-row items-stretch border-b border-border bg-background">
       <ScrollView className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5" horizontal showsHorizontalScrollIndicator={false}>
         <HostPill session={allHosts} active={activeHostId === null} onSelect={() => onSelect(null)} />
-        {sessions.map(session => {
+        {orderedSessions.map(session => {
           const active = session.hostId === activeHostId;
           return <HostPill key={session.hostId} session={session} active={active} onSelect={() => onSelect(session.hostId)} onClose={() => onClose(session.hostId)} />;
         })}

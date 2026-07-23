@@ -1,5 +1,5 @@
 import { tabNameForAgent } from './lib/agentStatusEvents';
-import type { AgentInfo, TabInfo, WorkspaceInfo } from './types';
+import type { AgentInfo, AgentStatus, TabInfo, WorkspaceInfo } from './types';
 
 export interface HerdHostQueue {
   id: string;
@@ -18,6 +18,18 @@ export interface HerdQueueAgent {
   agent: AgentInfo;
   tabLabel: string;
   primaryLabel: string;
+}
+
+const AGENT_STATUS_SORT_PRIORITY: Record<AgentStatus, number> = {
+  blocked: 0,
+  done: 1,
+  working: 2,
+  idle: 3,
+  unknown: 4,
+};
+
+export function compareAgentStatusPriority(a: AgentStatus, b: AgentStatus): number {
+  return AGENT_STATUS_SORT_PRIORITY[a] - AGENT_STATUS_SORT_PRIORITY[b];
 }
 
 export function resolveHerdHostFilter(

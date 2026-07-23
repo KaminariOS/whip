@@ -1,5 +1,6 @@
 import {
   agentsForHerdFilter,
+  compareAgentStatusPriority,
   queuesForHerdFilter,
   resolveHerdHostFilter,
   resolveHerdWorkspaceFilter,
@@ -52,6 +53,18 @@ const queues = [
   queue('host-1', 'Studio', 'Build'),
   queue('host-2', 'Laptop', 'Review'),
 ];
+
+test('orders attention statuses before running and idle statuses', () => {
+  const statuses = ['idle', 'working', 'done', 'unknown', 'blocked'] as const;
+
+  expect([...statuses].sort(compareAgentStatusPriority)).toEqual([
+    'blocked',
+    'done',
+    'working',
+    'idle',
+    'unknown',
+  ]);
+});
 
 test('merges every host queue while retaining host and tab context', () => {
   expect(agentsForHerdFilter(queues, null).map(item => ({
