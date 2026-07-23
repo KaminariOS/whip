@@ -55,7 +55,7 @@ describe('Android SSH terminal protocol stream', () => {
 
     expect(client).toContain('clientSocketPath()');
     expect(client).toContain('this.requireClient().startHerdrBridge');
-    expect(client).not.toContain('remote-client-bridge');
+    expect(client).not.toContain('`${this.baseCommand()} remote-client-bridge`');
     expect(client).not.toContain('this.requireClient().prepareHerdrBridge');
     expect(client).toContain('private terminalBridges = new Set<string>()');
     expect(codec).toContain('ClientMessage::Hello');
@@ -73,7 +73,7 @@ describe('Android SSH terminal protocol stream', () => {
     );
 
     expect(javascript).toContain('this._herdrBridgeHandlers = new Map()');
-    expect(javascript).toContain('RNSSHClient.startHerdrBridge(command, protocol, terminalId, takeover');
+    expect(javascript).toContain('RNSSHClient.startHerdrBridge(socketPath, protocol, terminalId, takeover');
     expect(android).toContain('final Map<String, HerdrBridgeConnection> _herdrBridges');
     expect(android).toContain('value.putString("terminalId", terminalId)');
     expect(android).toContain('boolean clientWasReplaced = clientPool.get(key) != client;');

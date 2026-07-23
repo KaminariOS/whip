@@ -33,24 +33,15 @@ const profile: ConnectionProfile = {
 };
 
 function bridgeClient() {
-  let commandHandler: ((event: { data?: string }) => void) | null = null;
-  const startHerdrCommandStream = jest.fn(async (_command: string, handler: typeof commandHandler) => {
-    commandHandler = handler;
-  });
-  const writeHerdrCommandStream = jest.fn(async (script: string) => {
-    const marker = script.match(/WHIP_COMMAND_[A-Za-z0-9_]+/)?.[0];
-    if (!marker || !commandHandler) throw new Error('command stream was not initialized');
-    commandHandler({
-      data: `{"running":true,"protocol":17,"compatible":true,"socket":"/tmp/herdr.sock"}\n\u001e${marker}:0\u001f\n`,
-    });
-  });
   const native = {
-    startHerdrCommandStream,
-    writeHerdrCommandStream,
+    getRemoteHome: jest.fn(async () => '/home/herdr'),
+    requestHerdrApi: jest.fn(async () => JSON.stringify({
+      id: 'android_1',
+      result: { type: 'pong', version: 'test', protocol: 17 },
+    })),
     startHerdrBridge: jest.fn(async () => undefined),
     herdrBridgeResize: jest.fn(async () => undefined),
     closeHerdrBridge: jest.fn(),
-    closeHerdrCommandStream: jest.fn(),
     closeAllHerdrBridges: jest.fn(),
     off: jest.fn(),
     disconnect: jest.fn(),
