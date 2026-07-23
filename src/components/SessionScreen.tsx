@@ -424,9 +424,10 @@ export function SessionScreen({
     setEditorMode(null);
   };
 
-  const openRenameTab = () => {
-    if (!selectedTab) return;
-    setName(selectedTab.label);
+  const openRenameTab = (item: TabInfo | undefined = selectedTab) => {
+    if (!item) return;
+    if (item.tab_id !== selectedTab?.tab_id) chooseTab(item);
+    setName(item.label);
     setEditorMode('rename-tab');
     setMenuOpen(false);
   };
@@ -474,7 +475,7 @@ export function SessionScreen({
                 const label = item.label || item.tab_id;
                 return (
                   <View key={item.tab_id} className={cn('h-[30px] max-w-[170px] flex-row items-center overflow-hidden rounded-full bg-muted', active && 'bg-primary')}>
-                    <Button accessibilityLabel={t('session.openTab', { tab: label })} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={active ? openRenameTab : undefined}>
+                    <Button accessibilityLabel={t('session.openTab', { tab: label })} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={hapticPress(() => openRenameTab(item))}>
                       <AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status, colors)} size={12} />
                       <Text numberOfLines={1} className={cn('max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{label}</Text>
                       {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-muted-foreground', active && 'text-primary-foreground')}>{item.pane_count}</Text>}
@@ -513,7 +514,7 @@ export function SessionScreen({
       {editorMode && (
         <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
           <Text className="font-mono text-[8px] text-foreground">{editorMode.startsWith('rename') ? t('herd.rename') : t('herd.new')} {t('session.tab')}</Text>
-          <Input className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={name} onChangeText={setName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
+          <Input autoFocus selectTextOnFocus={editorMode === 'rename-tab'} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={name} onChangeText={setName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
           <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setEditorMode(null))}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
           <Button className="h-[34px] rounded-none px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
         </View>

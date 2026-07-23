@@ -23,11 +23,21 @@ describe('session tab labels', () => {
     );
 
     expect(rail).toContain(
-      'h-8 max-w-[180px] flex-row rounded-full bg-muted px-[11px] py-0',
+      'h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0',
     );
     expect(rail).toContain(
-      'max-w-32 pb-0.5 text-[11px] font-semibold leading-[18px]',
+      'max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px]',
     );
+  });
+
+  it('renders an immediate close control on every space', () => {
+    const rail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
+      'utf8',
+    );
+
+    expect(rail).toContain("accessibilityLabel={t('rail.closeWorkspace', { workspace: label })}");
+    expect(rail).toContain('onPress={hapticPress(onClose)}');
   });
 
   it('uses the app palette for Herd and Terminal header chrome', () => {
@@ -73,5 +83,16 @@ describe('session tab labels', () => {
 
     expect(screen).toContain("accessibilityLabel={t('session.closeTab', { tab: label })}");
     expect(screen).toContain('onPress={hapticPress(() => closeTab(item))}');
+  });
+
+  it('opens a focused rename field when any tab is long-pressed', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/SessionScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain('onLongPress={hapticPress(() => openRenameTab(item))}');
+    expect(screen).toContain('if (item.tab_id !== selectedTab?.tab_id) chooseTab(item);');
+    expect(screen).toContain("autoFocus selectTextOnFocus={editorMode === 'rename-tab'}");
   });
 });

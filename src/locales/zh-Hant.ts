@@ -239,7 +239,7 @@ export const zhHant: Record<string, string> = {
   'rail.disconnectHost': '中斷 {{host}}',
   'rail.allSpaces': '所有空間',
   'rail.newWorkspace': '新增工作區',
-  'rail.workspaceActions': '工作區操作',
+  'rail.closeWorkspace': '關閉 {{workspace}} 空間',
   'rail.space': '空間',
   'rail.workspaceStatus': '{{workspace}}，{{status}}',
   'session.backToHerd': '返回代理群',
