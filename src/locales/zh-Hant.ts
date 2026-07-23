@@ -91,6 +91,7 @@ export const zhHant: Record<string, string> = {
   'connection.herdrTarget': 'Herdr 目標',
   'connection.command': '指令',
   'connection.session': '工作階段',
+  'connection.socket': 'API Socket 覆寫',
   'connection.saveHost': '儲存主機',
   'connection.openingSsh': '正在開啟 SSH…',
   'connection.deleteHost': '刪除主機',

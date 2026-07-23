@@ -9,6 +9,7 @@ export interface HostProfile {
   username: string;
   authMode: AuthMode;
   herdrCommand: string;
+  herdrSocketPath?: string;
   sessionName: string;
   rememberCredentials: boolean;
   createdAt: string;

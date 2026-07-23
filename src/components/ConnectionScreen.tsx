@@ -230,6 +230,7 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
 
         <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.herdrTarget')}</Text>
         <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
+        <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
 
         {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
         <View className="mt-2 flex-row gap-2.5"><Button className="flex-1 rounded-full" variant="secondary" disabled={!canSave || connecting} onPress={hapticPress(() => onSave(profile))}><Text>{t('connection.saveHost')}</Text></Button><Button className="flex-1 rounded-full" disabled={!canConnect || connecting} onPress={hapticPress(() => onConnect(profile))}><Text>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text><Icon as={ArrowRight} className="text-primary-foreground" size={17} /></Button></View>

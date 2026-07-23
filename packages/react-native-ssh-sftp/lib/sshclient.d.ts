@@ -250,9 +250,9 @@ export default class SSHClient {
      * Closes the SSH shell.
      */
     closeShell(): void;
-    /** Starts Herdr's protocol-16 remote-client-bridge on a dedicated channel of this SSH session. */
+    /** Connects to Herdr's protocol-17 client socket on a dedicated channel of this SSH session. */
     prepareHerdrBridge(command: string, protocol: number, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, callback?: CallbackFunction<void>): Promise<void>;
-    startHerdrBridge(command: string, protocol: number, terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
+    startHerdrBridge(socketPath: string, protocol: number, terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
     herdrBridgeInput(terminalId: string, text: string): Promise<void>;
     herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx?: number, cellHeightPx?: number): Promise<void>;
     herdrBridgeScroll(terminalId: string, direction: 'up' | 'down', lines: number): Promise<void>;
@@ -265,6 +265,8 @@ export default class SSHClient {
     startHerdrEventStream(socketPath: string, handler: (data: string) => void, callback?: CallbackFunction<void>): Promise<void>;
     writeHerdrEventStream(value: string): Promise<void>;
     closeHerdrEventStream(): void;
+    requestHerdrApi(socketPath: string, request: string): Promise<string>;
+    getRemoteHome(): Promise<string>;
     startHerdrCommandStream(command: string, handler: (event: HerdrCommandStreamEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
     writeHerdrCommandStream(value: string): Promise<void>;
     closeHerdrCommandStream(): void;
