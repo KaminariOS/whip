@@ -31,7 +31,7 @@ describe('terminal input composer', () => {
   it('retains an unsent draft when the composer closes', () => {
     const screen = readSource('src/components/TerminalScreen.tsx');
     const closeCompose = screen.slice(
-      screen.indexOf('const closeCompose = () => {'),
+      screen.indexOf('const closeCompose = async () => {'),
       screen.indexOf('const submitCompose = () => {'),
     );
 
@@ -39,11 +39,11 @@ describe('terminal input composer', () => {
     expect(screen).toContain("setComposeText('');");
   });
 
-  it('keeps the composer background layer transparent', () => {
+  it('floats a transparent composer over the terminal without taking layout space', () => {
     const screen = readSource('src/components/TerminalScreen.tsx');
 
     expect(screen).toContain(
-      '<View className="border-t border-terminal-divider bg-transparent p-2">',
+      '<View className="absolute inset-x-0 bottom-full z-10 border-t border-terminal-divider bg-transparent p-2">',
     );
   });
 });

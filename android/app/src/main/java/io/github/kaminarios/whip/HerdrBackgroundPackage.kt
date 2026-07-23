@@ -12,6 +12,7 @@ class HerdrBackgroundPackage : ReactPackage {
       ClipboardAttachmentModule(reactContext),
       CredentialVaultModule(reactContext),
       HerdrBackgroundModule(reactContext),
+      HerdrSoftInputModule(reactContext),
       HerdrSystemSettingsModule(reactContext),
       PrivateKeyFilePickerModule(reactContext),
     )
