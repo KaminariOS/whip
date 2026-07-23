@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronLeft, Ellipsis, Globe2, Plus, X } from 'lucide-react-native';
+import { ChevronLeft, Ellipsis, FolderOpen, Globe2, Plus, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -32,6 +32,7 @@ import type { TerminalPreferences } from '../services/devicePreferences';
 import { sessionTabStatusColor, statusColor, useTheme } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
+import { RemoteFileManager } from './RemoteFileManager';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
@@ -113,6 +114,8 @@ export function SessionScreen({
   const [browserDisplayUrl, setBrowserDisplayUrl] = useState('');
   const [browserCanGoBack, setBrowserCanGoBack] = useState(false);
   const [browserLoading, setBrowserLoading] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [fileManagerPath, setFileManagerPath] = useState('~');
   const terminalWidthRef = useRef(0);
   const browserWebView = useRef<BrowserWebViewHandle | null>(null);
   const tunnelPortRef = useRef<number | null>(null);
@@ -425,6 +428,16 @@ export function SessionScreen({
     if (!await run(() => client.closeTab(item.tab_id))) pendingFocus.current = null;
   };
 
+  const openFileManager = () => {
+    setFileManagerPath(
+      selectedPane?.foreground_cwd
+      || selectedPane?.cwd
+      || workspace?.worktree?.checkout_path
+      || '~',
+    );
+    setFilesOpen(true);
+  };
+
   return (
     <View
       accessibilityElementsHidden={!visible}
@@ -460,6 +473,14 @@ export function SessionScreen({
             <Button accessibilityLabel={t('session.newTab')} className="h-[42px] w-11 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Plus size={16} color={colors.text} /></Button>
             <Button accessibilityLabel={t('session.actions')} className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
               <Ellipsis size={18} color={colors.text} />
+            </Button>
+            <Button
+              accessibilityLabel={t('terminal.openFiles')}
+              className="h-[42px] w-11 rounded-none px-0"
+              disabled={!selectedPane}
+              variant="ghost"
+              onPress={hapticPress(openFileManager)}>
+              <FolderOpen size={18} color={colors.text} />
             </Button>
             <Button
               accessibilityLabel={t('terminal.scanLinks')}
@@ -587,6 +608,12 @@ export function SessionScreen({
             <Text className="mt-2 text-center text-terminal-muted">{t('session.emptyTabCopy')}</Text>
           </View>
         )}
+        <RemoteFileManager
+          client={client}
+          initialPath={fileManagerPath}
+          visible={filesOpen}
+          onClose={() => setFilesOpen(false)}
+        />
         <Modal
           animationType="slide"
           onRequestClose={browserUrl ? leaveBrowser : dismissLinks}
