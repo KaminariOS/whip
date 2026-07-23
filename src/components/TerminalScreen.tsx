@@ -14,6 +14,7 @@ import {
 } from '../lib/terminalControls';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalPreferences } from '../services/devicePreferences';
+import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import type { TerminalFrame } from '../lib/terminalBridge';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
@@ -337,6 +338,15 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   }, []);
 
   useEffect(() => {
+    if (!visible && composeOpen) setComposeOpen(false);
+    setTerminalComposerOverlay(terminalId, visible && composeOpen).catch(() => {});
+  }, [composeOpen, terminalId, visible]);
+
+  useEffect(() => () => {
+    setTerminalComposerOverlay(terminalId, false).catch(() => {});
+  }, [terminalId]);
+
+  useEffect(() => {
     let insetTimer: ReturnType<typeof setTimeout> | null = null;
     const show = Keyboard.addListener('keyboardDidShow', event => {
       if (insetTimer) clearTimeout(insetTimer);
@@ -364,6 +374,14 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 
   useEffect(() => {
     if (!ready) return;
+    const timer = setTimeout(() => {
+      webView.current?.injectJavaScript('window.herdrFit(); true;');
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [composeOpen, keyboardInset, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
     if (!searchOpen) {
       webView.current?.injectJavaScript('window.herdrClearSearch(); true;');
       return;
@@ -387,6 +405,34 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const closeSearch = () => {
     setSearchOpen(false);
     if (keyboardEnabled) setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
+  };
+
+  const closeComposerKeyboard = async () => {
+    composeInputRef.current?.blur();
+    webView.current?.injectJavaScript('window.herdrBlur(); true;');
+    if (!keyboardVisible) {
+      Keyboard.dismiss();
+      return;
+    }
+
+    await new Promise<void>(resolve => {
+      let settled = false;
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const subscription = Keyboard.addListener('keyboardDidHide', () => {
+        if (settled) return;
+        settled = true;
+        if (timeout) clearTimeout(timeout);
+        subscription.remove();
+        resolve();
+      });
+      timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        subscription.remove();
+        resolve();
+      }, 1000);
+      Keyboard.dismiss();
+    });
   };
 
   const handleMessage = async (event: WebViewMessageEvent) => {
@@ -448,9 +494,17 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     setConnectionGeneration(value => value + 1);
   };
 
-  const closeCompose = () => {
+  const closeCompose = async () => {
+    await closeComposerKeyboard();
     setComposeOpen(false);
-    if (keyboardEnabled) setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
+    await setTerminalComposerOverlay(terminalId, false).catch(reason => setError(String(reason)));
+  };
+
+  const openCompose = () => {
+    setSearchOpen(false);
+    setTerminalComposerOverlay(terminalId, true).catch(reason => setError(String(reason))).finally(() => {
+      setComposeOpen(true);
+    });
   };
 
   const submitCompose = () => {
@@ -538,10 +592,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           onPress={() => {
             onControlUse(control);
             if (composeOpen) closeCompose();
-            else {
-              setSearchOpen(false);
-              setComposeOpen(true);
-            }
+            else openCompose();
           }}>
           <MessageCircle size={16} color={appColors.text} />
         </Button>
@@ -585,8 +636,13 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           armed={searchOpen}
           onPress={() => {
             onControlUse(control);
-            setComposeOpen(false);
-            setSearchOpen(value => !value);
+            if (composeOpen) {
+              closeCompose().finally(() => {
+                setSearchOpen(true);
+              });
+            } else {
+              setSearchOpen(value => !value);
+            }
           }}
         />
       );
@@ -700,7 +756,11 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           <Button accessibilityLabel={t('terminal.closeSearch')} className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><X size={17} color={colors.text} /></Button>
         </View>
       )}
-      <View className="relative flex-1" {...(keyboardEnabled ? terminalPanHandlers : undefined)}>
+      <View
+        className="relative flex-1"
+        style={keyboardInset > 0 && !composeOpen ? { paddingBottom: keyboardInset } : undefined}
+        {...(keyboardEnabled ? terminalPanHandlers : undefined)}
+      >
         <WebView
           ref={value => {
             webView.current = value as WebViewHandle | null;
@@ -749,9 +809,10 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       <View
         ref={controlsRef}
         collapsable={false}
-        style={keyboardInset > 0 ? { marginBottom: keyboardInset } : undefined}>
+        className="relative z-10"
+        style={keyboardInset > 0 ? { transform: [{ translateY: -keyboardInset }] } : undefined}>
         {composeOpen && (
-          <View className="border-t border-terminal-divider bg-transparent p-2">
+          <View className="absolute inset-x-0 bottom-full z-10 border-t border-terminal-divider bg-transparent p-2">
             <View className="flex-row items-end gap-2">
               <Button
                 accessibilityLabel={t('terminal.attach')}
@@ -820,7 +881,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           showsHorizontalScrollIndicator={false}
           className="flex-grow-0"
           contentContainerClassName="items-center gap-[5px] px-1.5 pt-[7px]"
-          contentContainerStyle={{ paddingBottom: 7 + (keyboardVisible ? 0 : bottomSafeAreaInset) }}>
+          contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}>
           {controlOrder.map(renderTerminalControl)}
         </ScrollView>
       </View>
