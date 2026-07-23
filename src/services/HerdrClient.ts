@@ -1,8 +1,10 @@
 import SSHClient, {
   type HerdrBridgeEvent,
+  type LsResult,
 } from '@dylankenneally/react-native-ssh-sftp';
 
 import { normalizePrivateKey } from '../lib/privateKey';
+import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
 import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import {
   apiEvent,
@@ -173,6 +175,20 @@ export class HerdrClient {
     const client = this.localForwards.get(localPort);
     this.localForwards.delete(localPort);
     if (client) await client.closeLocalForward(localPort);
+  }
+
+  async listRemoteDirectory(path?: string): Promise<{ path: string; entries: LsResult[] }> {
+    const resolvedPath = normalizeRemotePath(path, await this.remoteHomeDirectory());
+    const entries = await this.requireClient().sftpLs(resolvedPath);
+    return { path: resolvedPath, entries: sortRemoteEntries(entries) };
+  }
+
+  downloadRemoteFile(path: string, localDirectoryPath: string): Promise<string> {
+    return this.requireClient().sftpDownload(path, localDirectoryPath);
+  }
+
+  uploadRemoteFile(localFilePath: string, remoteDirectoryPath: string): Promise<void> {
+    return this.requireClient().sftpUpload(localFilePath, remoteDirectoryPath);
   }
 
   async openTerminal(
@@ -551,11 +567,16 @@ export class HerdrClient {
       if (!override.startsWith('/')) throw new Error('Herdr API socket override must be absolute');
       return override;
     }
-    if (!this.remoteHome) this.remoteHome = await this.requireClient().getRemoteHome();
+    const remoteHome = await this.remoteHomeDirectory();
     const dataDir = profile.sessionName.trim()
-      ? `${this.remoteHome}/.config/herdr/sessions/${profile.sessionName.trim()}`
-      : `${this.remoteHome}/.config/herdr`;
+      ? `${remoteHome}/.config/herdr/sessions/${profile.sessionName.trim()}`
+      : `${remoteHome}/.config/herdr`;
     return `${dataDir}/herdr.sock`;
+  }
+
+  private async remoteHomeDirectory(): Promise<string> {
+    if (!this.remoteHome) this.remoteHome = await this.requireClient().getRemoteHome();
+    return this.remoteHome;
   }
 
   private async clientSocketPath(): Promise<string> {
