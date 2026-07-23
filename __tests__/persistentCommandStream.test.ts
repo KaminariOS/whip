@@ -125,4 +125,44 @@ describe('direct Herdr API requests', () => {
     });
     expect(statusChecks).toBe(2);
   });
+
+  test('reconnects once when the initial SSH transport falsely reports the server offline', async () => {
+    const stale = apiClient(() => new Error('channel is not opened.'));
+    const fresh = apiClient(request => request.method === 'ping'
+      ? { type: 'pong', version: '0.7.4', protocol: 17 }
+      : {
+        type: 'session_snapshot',
+        snapshot: {
+          version: '0.7.4',
+          protocol: 17,
+          focused_workspace_id: 'w1',
+          focused_tab_id: null,
+          focused_pane_id: null,
+          workspaces: [{
+            workspace_id: 'w1',
+            number: 1,
+            label: 'work',
+            focused: true,
+            pane_count: 0,
+            tab_count: 0,
+            active_tab_id: null,
+            agent_status: 'idle',
+          }],
+          tabs: [],
+          panes: [],
+          layouts: [],
+          agents: [],
+        },
+      });
+    connectWithPassword.mockResolvedValueOnce(stale).mockResolvedValueOnce(fresh);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await expect(client.initialSnapshot()).resolves.toMatchObject({
+      server: { running: true },
+      workspaces: [{ workspace_id: 'w1', label: 'work' }],
+    });
+    expect(connectWithPassword).toHaveBeenCalledTimes(2);
+    expect(stale.disconnect).toHaveBeenCalledTimes(1);
+  });
 });

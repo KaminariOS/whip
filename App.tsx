@@ -866,7 +866,7 @@ function AppContent() {
       ));
       await runtime.client.connect(nextProfile);
       const initialSnapshotStartedAt = Date.now();
-      const initial = await runtime.client.snapshot();
+      const initial = await runtime.client.initialSnapshot();
       const initialLatencyMs = elapsedLatencyMs(initialSnapshotStartedAt);
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
       if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id);

@@ -369,6 +369,21 @@ export class HerdrClient {
     };
   }
 
+  /**
+   * Load the first snapshot on a newly authenticated transport.
+   *
+   * Some SSH servers briefly reject the first direct-streamlocal channel even
+   * though authentication succeeded and the Herdr socket is available. A normal
+   * probe must still represent an unavailable socket as an offline server, so
+   * confirm that first offline result once on a replacement SSH connection.
+   */
+  async initialSnapshot(): Promise<HerdrSnapshot> {
+    const initial = await this.snapshot();
+    if (initial.server.running) return initial;
+    await this.reconnectControl();
+    return this.snapshot();
+  }
+
   async openEventStream(
     paneIds: string[],
     onEvent: ApiEventHandler,
