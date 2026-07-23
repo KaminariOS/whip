@@ -1,9 +1,10 @@
-import { ChevronRight, ImagePlus, KeyRound, LogOut, Minus, Plus, ShieldCheck, Trash2 } from 'lucide-react-native';
+import { BellRing, ChevronRight, ImagePlus, KeyRound, LogOut, Minus, Plus, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Image, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import type { AppearancePreference, LanguagePreference, TerminalPreferences } from '@/src/services/devicePreferences';
+import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
 import { hapticPress, IconButton } from './app-ui';
 import { Button } from './ui/button';
@@ -64,6 +65,14 @@ export function SettingsSection(props: SettingsSectionProps) {
     }
   };
 
+  const changeNotificationSettings = async () => {
+    try {
+      await openNotificationSettings();
+    } catch (error) {
+      Alert.alert(t('settings.notificationSettingsError'), String(error));
+    }
+  };
+
   return (
     <View className="px-4 py-5">
         <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
@@ -73,6 +82,13 @@ export function SettingsSection(props: SettingsSectionProps) {
         <View className="overflow-hidden rounded-lg border border-border bg-card">
           <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
           <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
+          <ActionRow
+            title={t('settings.changeNotificationSettings')}
+            copy={t('settings.changeNotificationSettingsCopy')}
+            icon={BellRing}
+            onPress={changeNotificationSettings}
+            divided
+          />
         </View>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
@@ -80,6 +96,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           <ActionRow
             title={t('settings.globalKeychain')}
             copy={t('settings.globalKeychainCopy', { count: props.globalKeyCount })}
+            icon={KeyRound}
             onPress={props.onManageGlobalKeychain}
           />
           <SettingRow title={t('settings.biometricForKeys')} copy={t('settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
@@ -216,10 +233,10 @@ function SettingRow({ title, copy, value, onChange, divided = false }: { title: 
   return <View className={divided ? 'min-h-[82px] flex-row items-center border-t border-border p-3.5' : 'min-h-[82px] flex-row items-center p-3.5'}><View className="flex-1 pr-[18px]"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View><Switch checked={value} onCheckedChange={onChange} /></View>;
 }
 
-function ActionRow({ title, copy, onPress }: { title: string; copy: string; onPress: () => void }) {
+function ActionRow({ title, copy, icon, onPress, divided = false }: { title: string; copy: string; icon: LucideIcon; onPress: () => void | Promise<void>; divided?: boolean }) {
   return (
-    <Button className="min-h-[82px] justify-start rounded-none px-3.5 py-3" size="content" variant="ghost" onPress={hapticPress(onPress)}>
-      <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={KeyRound} className="text-primary" size={18} /></View>
+    <Button className={divided ? 'min-h-[82px] justify-start rounded-none border-t border-border px-3.5 py-3' : 'min-h-[82px] justify-start rounded-none px-3.5 py-3'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
+      <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={icon} className="text-primary" size={18} /></View>
       <View className="ml-3 min-w-0 flex-1"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View>
       <Icon as={ChevronRight} className="text-muted-foreground" size={18} />
     </Button>
