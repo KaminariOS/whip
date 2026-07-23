@@ -79,6 +79,7 @@ const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
+const TERMINAL_CONTROL_CLASS = 'min-h-[34px] min-w-12 rounded-sm border border-border bg-card/70 px-2.5 active:bg-card/80';
 
 export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onFontSizeChange, onControlUse, linkScanRequest = 0, pasteRequest, onRequestAttachment, onRequestFiles, onLinksScanned, onClose, onStatus }: Props) {
   const { colors: appColors } = useTheme();
@@ -471,7 +472,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           key={control}
           accessibilityLabel={t('terminal.compose')}
           accessibilityState={{ selected: composeOpen }}
-          className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', composeOpen && 'border-primary')}
+          className={cn(TERMINAL_CONTROL_CLASS, composeOpen && 'border-primary')}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
@@ -490,7 +491,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         <Button
           key={control}
           accessibilityLabel={t('terminal.attach')}
-          className="min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5"
+          className={TERMINAL_CONTROL_CLASS}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
@@ -505,7 +506,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         <Button
           key={control}
           accessibilityLabel={t('terminal.openFiles')}
-          className="min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5"
+          className={TERMINAL_CONTROL_CLASS}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
@@ -540,7 +541,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           }}
           onLongPress={() => setCtrl('locked')}
           delayLongPress={450}
-          className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', ctrl === 'armed' && 'border-primary', ctrl === 'locked' && 'border-primary bg-primary')}
+          className={cn(TERMINAL_CONTROL_CLASS, ctrl === 'armed' && 'border-primary', ctrl === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
           variant="secondary">
           <Text className={cn('font-mono text-[9px] font-bold text-foreground', ctrl === 'armed' && 'text-primary', ctrl === 'locked' && 'text-primary-foreground')}>CTRL</Text>
         </Button>
@@ -557,7 +558,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           }}
           onLongPress={() => setShift('locked')}
           delayLongPress={450}
-          className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', shift === 'armed' && 'border-primary', shift === 'locked' && 'border-primary bg-primary')}
+          className={cn(TERMINAL_CONTROL_CLASS, shift === 'armed' && 'border-primary', shift === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
           variant="secondary">
           <Text className={cn('font-mono text-[9px] font-bold text-foreground', shift === 'armed' && 'text-primary', shift === 'locked' && 'text-primary-foreground')}>SHIFT</Text>
         </Button>
@@ -574,7 +575,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         }}
         onLongPress={() => setAlt('locked')}
         delayLongPress={450}
-        className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', alt === 'armed' && 'border-primary', alt === 'locked' && 'border-primary bg-primary')}
+        className={cn(TERMINAL_CONTROL_CLASS, alt === 'armed' && 'border-primary', alt === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
         variant="secondary">
         <Text className={cn('font-mono text-[9px] font-bold text-foreground', alt === 'armed' && 'text-primary', alt === 'locked' && 'text-primary-foreground')}>ALT</Text>
       </Button>
@@ -772,5 +773,5 @@ interface ComposeAttachment {
 }
 
 function TerminalKey({ label, onPress, armed = false }: { label: string; onPress: () => void; armed?: boolean }) {
-  return <Button className={cn('min-h-[34px] min-w-12 rounded-sm border border-border bg-card px-2.5', armed && 'border-primary')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-foreground', armed && 'text-primary')}>{label}</Text></Button>;
+  return <Button className={cn(TERMINAL_CONTROL_CLASS, armed && 'border-primary')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-foreground', armed && 'text-primary')}>{label}</Text></Button>;
 }
