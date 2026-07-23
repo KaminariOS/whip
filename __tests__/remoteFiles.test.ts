@@ -7,6 +7,7 @@ import {
   joinRemotePath,
   normalizeRemotePath,
   parentRemotePath,
+  remoteCodeLanguage,
   remoteEntryName,
   remotePreviewKind,
   sortRemoteEntries,
@@ -56,9 +57,23 @@ describe('remote file previews', () => {
     expect(canPreviewRemoteTextFile('large.md', 600 * 1024)).toBe(false);
     expect(remotePreviewKind('README.md', 1000)).toBe('markdown');
     expect(remotePreviewKind('App.tsx', 1000)).toBe('code');
+    expect(remotePreviewKind('config.json', 1000)).toBe('code');
+    expect(remotePreviewKind('config.toml', 1000)).toBe('code');
+    expect(remotePreviewKind('config.yaml', 1000)).toBe('code');
     expect(remotePreviewKind('notes.txt', 1000)).toBe('text');
     expect(remotePreviewKind('photo.png', 1000)).toBe('image');
     expect(remotePreviewKind('archive.zip', 1000)).toBe('unsupported');
+  });
+
+  it('maps remote filenames to syntax highlighter languages', () => {
+    expect(remoteCodeLanguage('Component.tsx')).toBe('typescript');
+    expect(remoteCodeLanguage('Dockerfile')).toBe('dockerfile');
+    expect(remoteCodeLanguage('script.sh')).toBe('bash');
+    expect(remoteCodeLanguage('settings.json')).toBe('json');
+    expect(remoteCodeLanguage('settings.toml')).toBe('toml');
+    expect(remoteCodeLanguage('settings.yml')).toBe('yaml');
+    expect(remoteCodeLanguage('README.md')).toBe('markdown');
+    expect(remoteCodeLanguage('unknown.source')).toBe('plaintext');
   });
 
   it('formats file sizes compactly', () => {
@@ -68,15 +83,14 @@ describe('remote file previews', () => {
   });
 });
 
-test('places the remote file manager immediately before the terminal web button', () => {
-  const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
-  const files = screen.indexOf("accessibilityLabel={t('terminal.openFiles')}");
-  const web = screen.indexOf("accessibilityLabel={t('terminal.scanLinks')}");
-  expect(files).toBeGreaterThan(0);
-  expect(web).toBeGreaterThan(files);
-  expect(screen.slice(files, web)).toContain('<FolderOpen');
-  expect(screen).toContain('selectedPane?.foreground_cwd');
-  expect(screen).toContain('<RemoteFileManager');
+test('connects the adaptive terminal file control to the remote file manager', () => {
+  const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  const terminal = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+  expect(terminal).toContain("accessibilityLabel={t('terminal.openFiles')}");
+  expect(terminal).toContain('<FolderOpen');
+  expect(terminal).toContain('onRequestFiles?.()');
+  expect(session).toContain('selectedPane?.foreground_cwd');
+  expect(session).toContain('<RemoteFileManager');
 });
 
 test('uses the authenticated SSH client for SFTP listing, downloads, and uploads', () => {
@@ -100,4 +114,18 @@ test('supports native Markdown previews and file transfer actions', () => {
   expect(markdown).toContain('EnrichedMarkdownText');
   expect(markdown).toContain('flavor="github"');
   expect(transfer).toContain('File.pickFileAsync(');
+});
+
+test('uses the requested syntax highlighter and terminal font in previews and editors', () => {
+  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const preview = readFileSync(resolve(__dirname, '../src/components/CodePreview.tsx'), 'utf8');
+  expect(preview).toContain("from 'react-native-code-highlighter'");
+  expect(preview).toContain('remoteCodeLanguage(filename)');
+  expect(preview).toContain('atomOneDarkReasonable');
+  expect(preview).toContain('export function CodeEditor');
+  expect(preview).toContain('lineNumbers:');
+  expect(preview).toContain('fontFamily: terminalFontFamily');
+  expect(manager).toContain('<CodeEditor');
+  expect(app).toContain("require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf')");
 });

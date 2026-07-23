@@ -7,19 +7,67 @@ export type RemotePreviewKind = 'code' | 'image' | 'markdown' | 'text' | 'unsupp
 
 const CODE_EXTENSIONS = new Set([
   'bash', 'c', 'cc', 'cjs', 'cpp', 'css', 'fish', 'go', 'gradle', 'graphql', 'h',
-  'hpp', 'html', 'java', 'js', 'jsx', 'kt', 'kts', 'lua', 'mjs', 'nix', 'proto',
-  'py', 'rb', 'rs', 'scss', 'sh', 'sql', 'swift', 'ts', 'tsx', 'xml', 'zsh',
+  'hpp', 'html', 'java', 'js', 'json', 'jsx', 'kt', 'kts', 'lua', 'mjs', 'nix',
+  'proto', 'py', 'rb', 'rs', 'scss', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx',
+  'xml', 'yaml', 'yml', 'zsh',
 ]);
 
 const TEXT_EXTENSIONS = new Set([
-  'cfg', 'conf', 'csv', 'env', 'ini', 'json', 'lock', 'log', 'properties', 'toml',
-  'txt', 'yaml', 'yml',
+  'cfg', 'conf', 'csv', 'env', 'ini', 'lock', 'log', 'properties', 'txt',
 ]);
 
 const CODE_FILENAMES = new Set(['containerfile', 'dockerfile', 'gemfile', 'justfile', 'makefile']);
 const TEXT_FILENAMES = new Set(['license', 'readme']);
 const MARKDOWN_EXTENSIONS = new Set(['markdown', 'md', 'mdx']);
 const IMAGE_EXTENSIONS = new Set(['bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp']);
+
+const CODE_LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  bash: 'bash',
+  c: 'c',
+  cc: 'cpp',
+  cjs: 'javascript',
+  cpp: 'cpp',
+  css: 'css',
+  fish: 'shell',
+  go: 'go',
+  gradle: 'groovy',
+  graphql: 'graphql',
+  h: 'c',
+  hpp: 'cpp',
+  html: 'xml',
+  java: 'java',
+  js: 'javascript',
+  json: 'json',
+  jsx: 'javascript',
+  kt: 'kotlin',
+  kts: 'kotlin',
+  lua: 'lua',
+  mjs: 'javascript',
+  nix: 'nix',
+  proto: 'protobuf',
+  py: 'python',
+  rb: 'ruby',
+  rs: 'rust',
+  scss: 'scss',
+  sh: 'bash',
+  sql: 'sql',
+  swift: 'swift',
+  toml: 'toml',
+  ts: 'typescript',
+  tsx: 'typescript',
+  xml: 'xml',
+  yaml: 'yaml',
+  yml: 'yaml',
+  zsh: 'bash',
+};
+
+const CODE_LANGUAGE_BY_FILENAME: Record<string, string> = {
+  containerfile: 'dockerfile',
+  dockerfile: 'dockerfile',
+  gemfile: 'ruby',
+  justfile: 'makefile',
+  makefile: 'makefile',
+};
 
 export function remoteEntryName(entry: Pick<LsResult, 'filename'>): string {
   return entry.filename.replace(/\/+$/, '');
@@ -81,6 +129,14 @@ export function remotePreviewKind(filename: string, fileSize: number): RemotePre
   if (CODE_FILENAMES.has(base) || CODE_EXTENSIONS.has(extension)) return 'code';
   if (TEXT_FILENAMES.has(base) || base.startsWith('.env') || TEXT_EXTENSIONS.has(extension)) return 'text';
   return 'unsupported';
+}
+
+export function remoteCodeLanguage(filename: string): string {
+  const base = filename.toLowerCase().split('/').pop() || filename.toLowerCase();
+  if (CODE_LANGUAGE_BY_FILENAME[base]) return CODE_LANGUAGE_BY_FILENAME[base];
+  const extension = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1) : '';
+  if (MARKDOWN_EXTENSIONS.has(extension)) return 'markdown';
+  return CODE_LANGUAGE_BY_EXTENSION[extension] || 'plaintext';
 }
 
 export function formatRemoteFileSize(bytes: number): string {

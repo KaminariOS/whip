@@ -1,0 +1,1 @@
+export const terminalFontFamily = 'HerdrTerminalMono';
