@@ -91,7 +91,7 @@ describe('terminal renderer lifecycle', () => {
   it('closes tabs immediately without a confirmation prompt', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
 
-    expect(screen).toContain('onPress={closeTab}');
+    expect(screen).toContain('onPress={hapticPress(() => closeTab(item))}');
     expect(screen).not.toContain("Alert.alert('Close Herdr tab?'");
   });
 

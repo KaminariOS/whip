@@ -93,6 +93,19 @@ describe('session tab labels', () => {
 
     expect(screen).toContain('onLongPress={hapticPress(() => openRenameTab(item))}');
     expect(screen).toContain('if (item.tab_id !== selectedTab?.tab_id) chooseTab(item);');
-    expect(screen).toContain("autoFocus selectTextOnFocus={editorMode === 'rename-tab'}");
+    expect(screen).toContain("autoFocus selectTextOnFocus={editorMode.startsWith('rename')}");
+  });
+
+  it('uses direct, vertically centered controls for every pane', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/SessionScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).not.toContain("accessibilityLabel={t('session.actions')}");
+    expect(screen).toContain("accessibilityLabel={t('session.closePane', { pane: label })}");
+    expect(screen).toContain('onLongPress={hapticPress(() => openRenamePane(pane))}');
+    expect(screen).toContain('max-w-[112px] pb-0.5 text-[11px] font-semibold leading-[18px]');
+    expect(screen).toContain('h-7 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2 py-0');
   });
 });
