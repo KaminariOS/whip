@@ -29,35 +29,29 @@ const profile: ConnectionProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-function commandClient(responseFor: (script: string) => string) {
-  let handler: ((event: { data?: string; closed?: boolean; error?: string }) => void) | null = null;
-  const startHerdrCommandStream = jest.fn(async (_command: string, nextHandler: typeof handler) => {
-    handler = nextHandler;
-  });
-  const writeHerdrCommandStream = jest.fn(async (script: string) => {
-    const marker = script.match(/WHIP_COMMAND_[A-Za-z0-9_]+/)?.[0];
-    if (!marker || !handler) throw new Error('command stream was not initialized');
-    const output = responseFor(script);
-    handler({ data: `${output}\u001e${marker}:` });
-    handler({ data: '0\u001f\n' });
+function apiClient(responseFor: (request: { method: string; params: Record<string, unknown> }) => unknown) {
+  const requestHerdrApi = jest.fn(async (_socketPath: string, line: string) => {
+    const request = JSON.parse(line);
+    const result = responseFor(request);
+    if (result instanceof Error) throw result.message;
+    return JSON.stringify({ id: request.id, result });
   });
   return {
-    startHerdrCommandStream,
-    writeHerdrCommandStream,
-    closeHerdrCommandStream: jest.fn(),
+    requestHerdrApi,
+    getRemoteHome: jest.fn(async () => '/home/herdr'),
     closeAllHerdrBridges: jest.fn(),
     off: jest.fn(),
     disconnect: jest.fn(),
   } as unknown as SSHClient;
 }
 
-describe('persistent SSH command stream', () => {
+describe('direct Herdr API requests', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
   });
 
-  test('reuses one non-PTY shell for sequential Herdr commands', async () => {
-    const native = commandClient(() => '{"result":{}}\n');
+  test('sends control operations directly to the Unix socket', async () => {
+    const native = apiClient(() => ({ type: 'ok' }));
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
@@ -65,23 +59,23 @@ describe('persistent SSH command stream', () => {
     await client.focusWorkspace('space-1');
     await client.focusTab('tab-1');
 
-    expect(native.startHerdrCommandStream).toHaveBeenCalledTimes(1);
-    expect(native.startHerdrCommandStream).toHaveBeenCalledWith('/bin/sh', expect.any(Function));
-    expect(native.writeHerdrCommandStream).toHaveBeenCalledTimes(2);
-    expect(native.writeHerdrCommandStream).toHaveBeenNthCalledWith(
+    expect(native.requestHerdrApi).toHaveBeenCalledTimes(2);
+    expect(native.requestHerdrApi).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining("workspace focus 'space-1'"),
+      '/home/herdr/.config/herdr/sessions/main/herdr.sock',
+      expect.stringContaining('"method":"workspace.focus"'),
     );
-    expect(native.writeHerdrCommandStream).toHaveBeenNthCalledWith(
+    expect(native.requestHerdrApi).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining("tab focus 'tab-1'"),
+      '/home/herdr/.config/herdr/sessions/main/herdr.sock',
+      expect.stringContaining('"method":"tab.focus"'),
     );
   });
 
   test('serializes concurrent commands and preserves multiline UTF-8 output', async () => {
-    const native = commandClient(script => script.includes('pane read')
-      ? '{"result":{"read":{"text":"first\\n你好"}}}\n'
-      : '{"result":{}}\n');
+    const native = apiClient(request => request.method === 'pane.read'
+      ? { type: 'pane_read', read: { text: 'first\n你好' } }
+      : { type: 'ok' });
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
@@ -92,20 +86,13 @@ describe('persistent SSH command stream', () => {
     ]);
 
     expect(read).toBe('first\n你好');
-    expect(native.startHerdrCommandStream).toHaveBeenCalledTimes(1);
-    expect(native.writeHerdrCommandStream).toHaveBeenCalledTimes(2);
+    expect(native.requestHerdrApi).toHaveBeenCalledTimes(2);
   });
 
   test('rejects an in-flight command when the persistent stream closes', async () => {
-    let handler: ((event: { closed?: boolean; error?: string }) => void) | null = null;
     const native = {
-      startHerdrCommandStream: jest.fn(async (_command: string, nextHandler: typeof handler) => {
-        handler = nextHandler;
-      }),
-      writeHerdrCommandStream: jest.fn(async () => {
-        handler?.({ closed: true, error: 'socket is not established' });
-      }),
-      closeHerdrCommandStream: jest.fn(),
+      requestHerdrApi: jest.fn(async () => { throw 'socket is not established'; }),
+      getRemoteHome: jest.fn(async () => '/home/herdr'),
       off: jest.fn(),
       disconnect: jest.fn(),
     } as unknown as SSHClient;
@@ -118,14 +105,14 @@ describe('persistent SSH command stream', () => {
 
   test('rechecks an offline server so a later refresh discovers its workspaces', async () => {
     let statusChecks = 0;
-    const native = commandClient(script => {
-      if (script.includes('status server --json')) {
+    const native = apiClient(request => {
+      if (request.method === 'ping') {
         statusChecks += 1;
         return statusChecks === 1
-          ? '{"running":false}\n'
-          : '{"running":true,"protocol":17,"compatible":true,"socket":"/tmp/herdr.sock"}\n';
+          ? new Error('channel is not opened.')
+          : { type: 'pong', version: '0.7.4', protocol: 17 };
       }
-      return '{"result":{"type":"session_snapshot","snapshot":{"version":"0.7.4","protocol":17,"focused_workspace_id":"w1","focused_tab_id":"t1","focused_pane_id":"p1","workspaces":[{"workspace_id":"w1","number":1,"label":"work","focused":true,"pane_count":1,"tab_count":1,"active_tab_id":"t1","agent_status":"idle"}],"tabs":[],"panes":[],"layouts":[],"agents":[]}}}\n';
+      return { type: 'session_snapshot', snapshot: { version: '0.7.4', protocol: 17, focused_workspace_id: 'w1', focused_tab_id: 't1', focused_pane_id: 'p1', workspaces: [{ workspace_id: 'w1', number: 1, label: 'work', focused: true, pane_count: 1, tab_count: 1, active_tab_id: 't1', agent_status: 'idle' }], tabs: [], panes: [], layouts: [], agents: [] };
     });
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
