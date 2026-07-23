@@ -183,13 +183,16 @@ function useStatusMotion(status: string, rotateSpinning = true) {
   }, [motion, progress, reduceMotion, rotateSpinning]);
 
   const style = motion === 'spin' && rotateSpinning
-    ? { transform: [{ rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }
+    ? {
+        opacity: 1,
+        transform: [{ rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
+      }
     : motion === 'pulse'
       ? {
           opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.55] }),
           transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.82] }) }],
         }
-      : undefined;
+      : { opacity: 1, transform: [{ scale: 1 }] };
   return { motion, style, reduceMotion };
 }
 
@@ -241,7 +244,9 @@ function useStatusBloom(status: string, reduceMotion: boolean) {
     return () => animation.stop();
   }, [breathes, progress, reduceMotion]);
 
-  if (!breathes || reduceMotion) return { opacity: 0.62 };
+  if (!breathes || reduceMotion) {
+    return { opacity: 0.62, transform: [{ scale: 1 }] };
+  }
   return {
     opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.42, 0.82] }),
     transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.78, 1.08] }) }],

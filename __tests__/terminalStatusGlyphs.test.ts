@@ -44,6 +44,16 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain('outputRange: [0.42, 0.82]');
   });
 
+  it('keeps native animated props mounted when a connection spinner becomes idle', () => {
+    const appUi = readFileSync(
+      resolve(__dirname, '../src/components/app-ui.tsx'),
+      'utf8',
+    );
+
+    expect(appUi).toContain(': { opacity: 1, transform: [{ scale: 1 }] };');
+    expect(appUi).toContain('return { opacity: 0.62, transform: [{ scale: 1 }] };');
+  });
+
   it('keeps host and space status controls in Herd instead of Terminal', () => {
     const herd = readFileSync(resolve(__dirname, '../src/components/HerdScreen.tsx'), 'utf8');
     const hostRail = readFileSync(resolve(__dirname, '../src/components/LiveSessionRail.tsx'), 'utf8');
