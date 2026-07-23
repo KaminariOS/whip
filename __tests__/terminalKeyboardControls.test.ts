@@ -44,10 +44,11 @@ describe('terminal keyboard controls', () => {
     );
     expect(screen).toContain('{controlOrder.map(renderTerminalControl)}');
     expect(screen).toContain('onControlUse(control);');
-    expect(screen).toContain('border border-border bg-card');
-    expect(screen).toContain("ctrl === 'locked' && 'border-primary bg-primary'");
+    expect(screen).toContain('border border-border bg-card/70');
+    expect(screen).toContain('active:bg-card/80');
+    expect(screen).toContain("ctrl === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80'");
     expect(screen).toContain("ctrl === 'locked' && 'text-primary-foreground'");
-    expect(screen).toContain("shift === 'locked' && 'border-primary bg-primary'");
+    expect(screen).toContain("shift === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80'");
     expect(screen).toContain("if (control === 'attach')");
     expect(screen).toContain("if (control === 'files')");
     expect(screen).not.toContain('CTRL+C');
