@@ -8,6 +8,13 @@
     "userInterfaceStyle": "automatic",
     "plugins": [
       [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow Whip to attach photos you take to the remote terminal.",
+          "photosPermission": "Allow Whip to attach selected photos to the remote terminal."
+        }
+      ],
+      [
         "expo-localization",
         {
           "supportedLocales": ["en", "zh-Hant"]

@@ -12,7 +12,7 @@ describe('terminal input composer', () => {
     expect(screen).toContain('const [composeText, setComposeText] = useState');
     expect(screen).toContain('multiline');
     expect(screen).toContain('onChangeText={setComposeText}');
-    expect(screen).toContain('disabled={!composeText.trim()}');
+    expect(screen).toContain('disabled={!composeText.trim() && composeAttachments.length === 0}');
   });
 
   it('uses xterm paste semantics without pressing Enter after the composed input', () => {

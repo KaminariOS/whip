@@ -47,6 +47,9 @@ describe('terminal keyboard controls', () => {
     expect(screen).toContain('border border-border bg-card');
     expect(screen).toContain("ctrl === 'locked' && 'border-primary bg-primary'");
     expect(screen).toContain("ctrl === 'locked' && 'text-primary-foreground'");
+    expect(screen).toContain("shift === 'locked' && 'border-primary bg-primary'");
+    expect(screen).toContain("if (control === 'attach')");
+    expect(screen).toContain("if (control === 'files')");
     expect(screen).not.toContain('CTRL+C');
   });
 });

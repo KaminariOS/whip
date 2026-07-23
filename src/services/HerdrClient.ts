@@ -191,6 +191,26 @@ export class HerdrClient {
     return this.requireClient().sftpUpload(localFilePath, remoteDirectoryPath);
   }
 
+  async uploadTerminalAttachment(localFilePath: string): Promise<string> {
+    const client = this.requireClient();
+    const home = await this.remoteHomeDirectory();
+    const appDirectory = `${home}/.whip`;
+    const uploadDirectory = `${appDirectory}/uploads`;
+    for (const directory of [appDirectory, uploadDirectory]) {
+      try {
+        await client.sftpMkdir(directory);
+      } catch {
+        // mkdir reports an error when the directory already exists. Listing it
+        // distinguishes that harmless case from a real permissions/path error.
+        await client.sftpLs(directory);
+      }
+    }
+    await client.sftpUpload(localFilePath, uploadDirectory);
+    const filename = localFilePath.replace(/\\/g, '/').split('/').pop();
+    if (!filename) throw new Error('The selected attachment has no filename');
+    return `${uploadDirectory}/${filename}`;
+  }
+
   async openTerminal(
     terminalId: string,
     onFrame: TerminalFrameHandler,
