@@ -392,7 +392,7 @@ class SSHClient {
             });
         });
     }
-    startHerdrBridge(command, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, handler, callback) {
+    startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, handler, callback) {
         if (Platform.OS !== 'android') {
             return Promise.reject(new Error('Herdr remote-client-bridge is currently Android-only'));
         }
@@ -405,7 +405,7 @@ class SSHClient {
             if (!this._listeners[NATIVE_EVENT_HERDR_BRIDGE]) {
                 this.registerNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
             }
-            RNSSHClient.startHerdrBridge(command, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
+            RNSSHClient.startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
                 if (callback) callback(error);
                 if (error) {
                     this._herdrBridgeHandlers.delete(terminalId);
@@ -492,6 +492,22 @@ class SSHClient {
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
         RNSSHClient.closeHerdrEventStream(this._key);
         this._activeStream.herdrEventStream = false;
+    }
+    requestHerdrApi(socketPath, request) {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('Direct Herdr API requests are currently Android-only'));
+        }
+        return new Promise((resolve, reject) => {
+            RNSSHClient.requestHerdrApi(socketPath, request, this._key, (error, response) => error ? reject(error) : resolve(response));
+        });
+    }
+    getRemoteHome() {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('Remote home discovery is currently Android-only'));
+        }
+        return new Promise((resolve, reject) => {
+            RNSSHClient.getRemoteHome(this._key, (error, home) => error ? reject(error) : resolve(home));
+        });
     }
     startHerdrCommandStream(command, handler, callback) {
         if (Platform.OS !== 'android') {

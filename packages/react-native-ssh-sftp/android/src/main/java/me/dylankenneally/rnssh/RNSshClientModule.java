@@ -65,7 +65,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     volatile String terminalId;
     volatile boolean handshakeComplete = false;
     volatile boolean closedByClient = false;
-    ChannelExec channel = null;
+    ChannelDirectStreamLocal channel = null;
     DataOutputStream outputStream = null;
 
     HerdrBridgeConnection(@Nullable String terminalId) {
@@ -522,7 +522,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void startHerdrBridge(
-      final String command,
+      final String socketPath,
       final int protocol,
       final String terminalId,
       final boolean takeover,
@@ -575,7 +575,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           runHerdrBridgeConnection(
               client,
               connection,
-              command,
+              socketPath,
               protocol,
               columns,
               rows,
@@ -596,7 +596,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   private void runHerdrBridgeConnection(
       SSHClient client,
       HerdrBridgeConnection connection,
-      String command,
+      String socketPath,
       int protocol,
       int columns,
       int rows,
@@ -609,15 +609,15 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   ) {
     boolean callbackInvoked = false;
     try {
-      ChannelExec channel = (ChannelExec) client._session.openChannel("exec");
-      channel.setCommand(command);
+      ChannelDirectStreamLocal channel = (ChannelDirectStreamLocal) client._session.openChannel(
+          "direct-streamlocal@openssh.com"
+      );
+      channel.setSocketPath(socketPath);
       InputStream input = channel.getInputStream();
-      InputStream errorInput = channel.getErrStream();
       DataOutputStream output = new DataOutputStream(channel.getOutputStream());
       connection.channel = channel;
       connection.outputStream = output;
       channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
-      startHerdrBridgeErrorReader(errorInput, connection);
       writeHerdrMessage(connection, HerdrBridgeCodec.hello(
           protocol,
           columns,
@@ -1033,6 +1033,62 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
         client._herdrEventChannel = null;
       }
     }
+  }
+
+  @ReactMethod
+  public void requestHerdrApi(
+      final String socketPath,
+      final String request,
+      final String key,
+      final Callback callback
+  ) {
+    new Thread(new Runnable() {
+      public void run() {
+        ChannelDirectStreamLocal channel = null;
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client == null) throw new Exception("client is null");
+          channel = (ChannelDirectStreamLocal) client._session.openChannel(
+              "direct-streamlocal@openssh.com"
+          );
+          channel.setSocketPath(socketPath);
+          InputStream input = channel.getInputStream();
+          DataOutputStream output = new DataOutputStream(channel.getOutputStream());
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
+          output.write(request.getBytes(StandardCharsets.UTF_8));
+          output.flush();
+
+          BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
+          String response = reader.readLine();
+          if (response == null) throw new IOException("Herdr API socket closed without a response");
+          callback.invoke(null, response);
+        } catch (Exception error) {
+          callback.invoke(error.getMessage(), null);
+        } finally {
+          if (channel != null) channel.disconnect();
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
+  public void getRemoteHome(final String key, final Callback callback) {
+    new Thread(new Runnable() {
+      public void run() {
+        ChannelSftp channel = null;
+        try {
+          SSHClient client = clientPool.get(key);
+          if (client == null) throw new Exception("client is null");
+          channel = (ChannelSftp) client._session.openChannel("sftp");
+          channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
+          callback.invoke(null, channel.pwd());
+        } catch (Exception error) {
+          callback.invoke(error.getMessage(), null);
+        } finally {
+          if (channel != null) channel.disconnect();
+        }
+      }
+    }).start();
   }
 
   @ReactMethod

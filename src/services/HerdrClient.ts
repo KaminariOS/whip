@@ -1,6 +1,5 @@
 import SSHClient, {
   type HerdrBridgeEvent,
-  type HerdrCommandStreamEvent,
 } from '@dylankenneally/react-native-ssh-sftp';
 
 import { normalizePrivateKey } from '../lib/privateKey';
@@ -12,9 +11,11 @@ import {
   eventsSubscribeRequest,
   HerdrApiBridgeDecoder,
   type HerdrApiEvent,
+  type HerdrApiMessage,
+  type HerdrApiRequest,
   type SessionSnapshotResult,
 } from '../lib/herdrApiBridge';
-import { parseJsonResponse, shellQuote } from '../lib/shell';
+import { shellQuote } from '../lib/shell';
 import {
   type TerminalFrame,
 } from '../lib/terminalBridge';
@@ -42,12 +43,6 @@ interface TerminalSize {
   cellHeightPx: number;
 }
 
-interface PendingCommand {
-  marker: string;
-  resolve: (output: string) => void;
-  reject: (error: unknown) => void;
-}
-
 export const MAX_RETAINED_TERMINAL_BRIDGES = 3;
 
 export class HerdrClient {
@@ -61,15 +56,10 @@ export class HerdrClient {
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
+  private remoteHome: string | null = null;
+  private apiSequence = 0;
   private controlConnect: Promise<void> | null = null;
   private controlReconnect: Promise<void> | null = null;
-  private commandStreamOpening: Promise<void> | null = null;
-  private commandStreamReady = false;
-  private commandGeneration = 0;
-  private commandSequence = 0;
-  private commandBuffer = '';
-  private pendingCommand: PendingCommand | null = null;
-  private commandQueue: Promise<void> = Promise.resolve();
   private localForwards = new Map<number, SSHClient>();
 
   async connect(profile: ConnectionProfile): Promise<void> {
@@ -83,6 +73,7 @@ export class HerdrClient {
       this.client = await this.connectSsh(profile, port);
       this.profile = profile;
       this.apiServer = null;
+      this.remoteHome = null;
     })();
     this.controlConnect = task;
     try {
@@ -121,7 +112,6 @@ export class HerdrClient {
 
     const nextClient = await this.connectSsh(profile, port);
     const previousClient = this.client;
-    this.resetCommandStream('SSH control connection was replaced');
     this.client = nextClient;
     this.profile = profile;
     this.apiServer = null;
@@ -133,7 +123,6 @@ export class HerdrClient {
     this.terminalBridgeLru.clear();
     this.terminalOpenings.clear();
     previousClient?.off('Shell');
-    previousClient?.closeHerdrCommandStream();
     previousClient?.disconnect();
     for (const [localPort, tunnelClient] of this.localForwards) {
       if (tunnelClient === previousClient) this.localForwards.delete(localPort);
@@ -155,14 +144,13 @@ export class HerdrClient {
 
   disconnect(): void {
     this.closeEventStream();
-    this.resetCommandStream('SSH connection was closed');
-    this.client?.closeHerdrCommandStream();
     this.client?.closeAllHerdrBridges();
     this.client?.off('Shell');
     this.client?.disconnect();
     this.client = null;
     this.profile = null;
     this.apiServer = null;
+    this.remoteHome = null;
     this.terminalOpenings.clear();
     this.terminalConnections.clear();
     this.terminalSizes.clear();
@@ -303,9 +291,7 @@ export class HerdrClient {
   async snapshot(): Promise<HerdrSnapshot> {
     // A stopped server can be started independently after this SSH connection
     // was opened. Only cache a usable API endpoint so refreshes can discover it.
-    const server = this.apiServer?.running
-      ? this.apiServer
-      : await this.executeJson<ServerInfo>('status server --json');
+    const server = this.apiServer?.running ? this.apiServer : await this.probeServer();
     this.apiServer = server.running ? server : null;
     if (!server.running) {
       return {
@@ -322,14 +308,13 @@ export class HerdrClient {
     }
     assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
     if (!server.socket) throw new Error('Herdr server status did not include its API socket');
-    let output: string;
+    let result: SessionSnapshotResult;
     try {
-      output = await this.executeCommand(`${this.baseCommand()} api snapshot`);
+      result = await this.apiRequest<SessionSnapshotResult>('session.snapshot');
     } catch (error) {
       this.apiServer = null;
       throw error;
     }
-    const result = parseJsonResponse<SessionSnapshotResult>(output);
     if (!result || result.type !== 'session_snapshot' || !result.snapshot) {
       throw new Error('Herdr API socket did not return a session snapshot');
     }
@@ -354,7 +339,7 @@ export class HerdrClient {
     onClosed?: TerminalClosedHandler,
   ): Promise<void> {
     this.closeEventStream();
-    const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
+    const server = await this.requireBridgeServer();
     this.apiServer = server;
     if (!server.running || !server.socket) throw new Error('Herdr API socket is not available');
     const generation = ++this.eventGeneration;
@@ -404,203 +389,201 @@ export class HerdrClient {
   }
 
   async startServer(): Promise<void> {
-    await this.executeCommand(
-      `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`,
-    );
+    const command = `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`;
+    await this.requireClient().execute(this.loginShellCommand(command));
     this.apiServer = null;
   }
 
   readPane(paneId: string): Promise<string> {
-    return this.executeJson<{ text: string }>(
-      `pane read ${shellQuote(paneId)} --source recent --lines 160 --format ansi`,
-      'read',
-    ).then(read => read.text);
+    return this.apiRequest<{ type: 'pane_read'; read: { text: string } }>('pane.read', {
+      pane_id: paneId,
+      source: 'recent',
+      lines: 160,
+      format: 'ansi',
+      strip_ansi: false,
+    }).then(result => result.read.text);
   }
 
   async sendAgent(target: string, text: string): Promise<void> {
-    await this.executeJson(`agent send ${shellQuote(target)} ${shellQuote(`${text}\n`)}`);
+    await this.apiRequest('agent.prompt', { target, text });
   }
 
   async focusAgent(target: string): Promise<void> {
-    await this.executeFocusJson(`agent focus ${shellQuote(target)}`);
+    await this.apiFocus('agent.focus', { target });
   }
 
   async startAgent(name: string, command: string, cwd: string): Promise<void> {
-    const cwdArg = cwd.trim() ? `--cwd ${shellQuote(cwd.trim())}` : '';
-    await this.executeJson(
-      `agent start ${shellQuote(name.trim())} ${cwdArg} --focus -- sh -lc ${shellQuote(command.trim())}`,
-    );
+    const created = await this.apiRequest<{
+      type: 'workspace_created';
+      root_pane: { pane_id: string };
+    }>('workspace.create', {
+      label: name.trim() || null,
+      cwd: cwd.trim() || null,
+      focus: true,
+    });
+    if (name.trim()) {
+      await this.apiRequest('pane.rename', { pane_id: created.root_pane.pane_id, label: name.trim() });
+    }
+    await this.apiRequest('pane.send_input', {
+      pane_id: created.root_pane.pane_id,
+      text: command.trim(),
+      keys: ['Enter'],
+    });
   }
 
   async focusWorkspace(workspaceId: string): Promise<void> {
-    await this.executeFocusJson(`workspace focus ${shellQuote(workspaceId)}`);
+    await this.apiFocus('workspace.focus', { workspace_id: workspaceId });
   }
 
   async createWorkspace(label: string, cwd: string): Promise<void> {
-    const args = [
-      'workspace create',
-      label.trim() ? `--label ${shellQuote(label.trim())}` : '',
-      cwd.trim() ? `--cwd ${shellQuote(cwd.trim())}` : '',
-      '--focus',
-    ].filter(Boolean).join(' ');
-    await this.executeJson(args);
+    await this.apiRequest('workspace.create', {
+      label: label.trim() || null,
+      cwd: cwd.trim() || null,
+      focus: true,
+    });
   }
 
   async renameWorkspace(workspaceId: string, label: string): Promise<void> {
-    await this.executeJson(`workspace rename ${shellQuote(workspaceId)} ${shellQuote(label)}`);
+    await this.apiRequest('workspace.rename', { workspace_id: workspaceId, label });
   }
 
   async closeWorkspace(workspaceId: string): Promise<void> {
-    await this.executeJson(`workspace close ${shellQuote(workspaceId)}`);
+    await this.apiRequest('workspace.close', { workspace_id: workspaceId });
   }
 
   async createTab(workspaceId: string, label: string): Promise<void> {
-    await this.executeJson(
-      `tab create --workspace ${shellQuote(workspaceId)} ${label.trim() ? `--label ${shellQuote(label.trim())}` : ''} --focus`,
-    );
+    await this.apiRequest('tab.create', {
+      workspace_id: workspaceId,
+      label: label.trim() || null,
+      focus: true,
+    });
   }
 
   async focusTab(tabId: string): Promise<void> {
-    await this.executeFocusJson(`tab focus ${shellQuote(tabId)}`);
+    await this.apiFocus('tab.focus', { tab_id: tabId });
   }
 
   async focusPane(paneId: string): Promise<void> {
-    await this.executeFocusJson(`pane focus ${shellQuote(paneId)}`);
+    await this.apiFocus('pane.focus', { pane_id: paneId });
   }
 
   async renameTab(tabId: string, label: string): Promise<void> {
-    await this.executeJson(`tab rename ${shellQuote(tabId)} ${shellQuote(label)}`);
+    await this.apiRequest('tab.rename', { tab_id: tabId, label });
   }
 
   async closeTab(tabId: string): Promise<void> {
-    await this.executeJson(`tab close ${shellQuote(tabId)}`);
+    await this.apiRequest('tab.close', { tab_id: tabId });
   }
 
   async renamePane(paneId: string, label: string): Promise<void> {
-    const value = label.trim() ? shellQuote(label.trim()) : '--clear';
-    await this.executeJson(`pane rename ${shellQuote(paneId)} ${value}`);
+    await this.apiRequest('pane.rename', { pane_id: paneId, label: label.trim() || null });
   }
 
   async splitPane(paneId: string, direction: 'right' | 'down'): Promise<void> {
-    await this.executeJson(`pane split ${shellQuote(paneId)} --direction ${direction} --focus`);
+    await this.apiRequest('pane.split', { target_pane_id: paneId, direction, focus: true });
   }
 
   async zoomPane(paneId: string): Promise<void> {
-    await this.executeJson(`pane zoom ${shellQuote(paneId)} --toggle`);
+    await this.apiRequest('pane.zoom', { pane_id: paneId, mode: 'toggle' });
   }
 
   async closePane(paneId: string): Promise<void> {
-    await this.executeJson(`pane close ${shellQuote(paneId)}`);
+    await this.apiRequest('pane.close', { pane_id: paneId });
   }
 
   async runInPane(paneId: string, text: string): Promise<void> {
-    await this.executeJson(`pane run ${shellQuote(paneId)} ${shellQuote(text)}`);
+    await this.apiRequest('pane.send_input', { pane_id: paneId, text, keys: ['Enter'] });
   }
 
   async sendPaneKeys(paneId: string, keys: string[]): Promise<void> {
-    await this.executeJson(`pane send-keys ${shellQuote(paneId)} ${keys.map(shellQuote).join(' ')}`);
+    await this.apiRequest('pane.send_keys', { pane_id: paneId, keys });
   }
 
-  private async executeJson<T>(args: string, resultKey?: string): Promise<T> {
-    const output = await this.executeCommand(`${this.baseCommand()} ${args} 2>&1`);
-    return parseJsonResponse<T>(output, resultKey);
-  }
-
-  private async executeFocusJson<T>(args: string, resultKey?: string): Promise<T> {
+  private async apiFocus<T>(method: string, params: Record<string, unknown>): Promise<T> {
     const reconnecting = this.controlReconnect;
     if (reconnecting) await reconnecting;
     try {
-      return await this.executeJson<T>(args, resultKey);
+      return await this.apiRequest<T>(method, params);
     } catch (error) {
       if (!isUnavailableSshChannel(error)) throw error;
       await this.reconnectControl();
-      return this.executeJson<T>(args, resultKey);
+      return this.apiRequest<T>(method, params);
     }
   }
 
-  private executeText(args: string): Promise<string> {
-    return this.executeCommand(`${this.baseCommand()} ${args} 2>&1`);
-  }
-
-  private executeCommand(command: string): Promise<string> {
-    const task = this.commandQueue.then(() => this.runCommand(command));
-    this.commandQueue = task.then(() => undefined, () => undefined);
-    return task;
-  }
-
-  private async runCommand(command: string): Promise<string> {
-    await this.ensureCommandStream();
-    const id = `${this.commandGeneration}_${++this.commandSequence}`;
-    const marker = `WHIP_COMMAND_${id}`;
-    const result = new Promise<string>((resolve, reject) => {
-      this.pendingCommand = { marker, resolve, reject };
-    });
-    const script = `${command}\n__whip_status=$?\nprintf '\\036${marker}:%s\\037\\n' "$__whip_status"\n`;
-    try {
-      await this.requireClient().writeHerdrCommandStream(script);
-    } catch (error) {
-      this.failPendingCommand(error);
-    }
-    return result;
-  }
-
-  private async ensureCommandStream(): Promise<void> {
-    if (this.commandStreamReady) return;
-    if (this.commandStreamOpening) return this.commandStreamOpening;
-    const client = this.requireClient();
-    const generation = ++this.commandGeneration;
-    const task = client.startHerdrCommandStream(
-      '/bin/sh',
-      event => {
-        if (generation === this.commandGeneration) this.handleCommandStreamEvent(event);
-      },
+  private async apiRequest<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<T> {
+    const request: HerdrApiRequest = {
+      id: `android_${++this.apiSequence}`,
+      method,
+      params,
+    };
+    const response = await this.requireClient().requestHerdrApi(
+      await this.apiSocketPath(),
+      apiRequestLine(request),
     );
-    this.commandStreamOpening = task;
+    let message: HerdrApiMessage;
     try {
-      await task;
-      if (generation === this.commandGeneration) this.commandStreamReady = true;
-    } finally {
-      if (this.commandStreamOpening === task) this.commandStreamOpening = null;
+      message = JSON.parse(response) as HerdrApiMessage;
+    } catch {
+      throw new Error('Herdr API returned invalid JSON');
     }
-  }
-
-  private handleCommandStreamEvent(event: HerdrCommandStreamEvent): void {
-    if (event.data) {
-      this.commandBuffer += event.data;
-      this.resolveCommandFrame();
+    const error = apiErrorMessage(message);
+    if (error) throw new Error(error);
+    if (!Object.prototype.hasOwnProperty.call(message, 'result')) {
+      throw new Error('Herdr API response did not include a result');
     }
-    if (event.closed) {
-      this.commandStreamReady = false;
-      this.failPendingCommand(event.error || 'Herdr command stream closed');
+    return message.result as T;
+  }
+
+  /** Server startup is the only operation that needs the remote login environment. */
+  private loginShellCommand(command: string): string {
+    const bootstrap = 'exec "${SHELL:-/bin/sh}" -lc "$1"';
+    return `exec /bin/sh -c ${shellQuote(bootstrap)} whip ${shellQuote(command)}`;
+  }
+
+  private async apiSocketPath(): Promise<string> {
+    const profile = this.requireProfile();
+    const override = profile.herdrSocketPath?.trim();
+    if (override) {
+      if (!override.startsWith('/')) throw new Error('Herdr API socket override must be absolute');
+      return override;
     }
+    if (!this.remoteHome) this.remoteHome = await this.requireClient().getRemoteHome();
+    const dataDir = profile.sessionName.trim()
+      ? `${this.remoteHome}/.config/herdr/sessions/${profile.sessionName.trim()}`
+      : `${this.remoteHome}/.config/herdr`;
+    return `${dataDir}/herdr.sock`;
   }
 
-  private resolveCommandFrame(): void {
-    const pending = this.pendingCommand;
-    if (!pending) return;
-    const markerStart = `\u001e${pending.marker}:`;
-    const start = this.commandBuffer.indexOf(markerStart);
-    if (start < 0) return;
-    const end = this.commandBuffer.indexOf('\u001f', start + markerStart.length);
-    if (end < 0) return;
-    const output = this.commandBuffer.slice(0, start);
-    this.commandBuffer = this.commandBuffer.slice(end + 1).replace(/^\r?\n/, '');
-    this.pendingCommand = null;
-    pending.resolve(output);
+  private async clientSocketPath(): Promise<string> {
+    const apiSocket = await this.apiSocketPath();
+    return apiSocket.endsWith('.sock')
+      ? `${apiSocket.slice(0, -5)}-client.sock`
+      : `${apiSocket}-client`;
   }
 
-  private failPendingCommand(error: unknown): void {
-    const pending = this.pendingCommand;
-    this.pendingCommand = null;
-    this.commandBuffer = '';
-    pending?.reject(error);
-  }
-
-  private resetCommandStream(reason: string): void {
-    this.commandGeneration += 1;
-    this.commandStreamReady = false;
-    this.commandStreamOpening = null;
-    this.failPendingCommand(reason);
+  private async probeServer(): Promise<ServerInfo> {
+    const socket = await this.apiSocketPath();
+    try {
+      const pong = await this.apiRequest<{
+        type: 'pong';
+        version: string;
+        protocol: number;
+      }>('ping');
+      return {
+        running: true,
+        version: pong.version,
+        protocol: pong.protocol,
+        compatible: true,
+        socket,
+      };
+    } catch (error) {
+      if (!isUnavailableSshChannel(error)) throw error;
+      return { running: false, socket };
+    }
   }
 
   private baseCommand(): string {
@@ -674,7 +657,7 @@ export class HerdrClient {
     const server = await this.requireBridgeServer();
     this.evictLeastRecentlyUsedTerminal(terminalId);
     await this.requireClient().startHerdrBridge(
-      `${this.baseCommand()} remote-client-bridge`,
+      await this.clientSocketPath(),
       server.protocol,
       terminalId,
       true,
@@ -706,7 +689,7 @@ export class HerdrClient {
   }
 
   private async requireBridgeServer(): Promise<ServerInfo & { protocol: number }> {
-    const server = this.apiServer || await this.executeJson<ServerInfo>('status server --json');
+    const server = this.apiServer || await this.probeServer();
     this.apiServer = server;
     if (!server.running || typeof server.protocol !== 'number') {
       throw new Error('Herdr server protocol is unavailable');

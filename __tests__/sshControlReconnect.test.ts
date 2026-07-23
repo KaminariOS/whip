@@ -30,20 +30,14 @@ const profile: ConnectionProfile = {
 };
 
 function nativeClient(options: { output?: string; startError?: unknown } = {}) {
-  let handler: ((event: { data?: string; closed?: boolean; error?: string }) => void) | null = null;
-  const startHerdrCommandStream = jest.fn(async (_command: string, nextHandler: typeof handler) => {
+  const requestHerdrApi = jest.fn(async (_socketPath: string, requestLine: string) => {
     if (options.startError) throw options.startError;
-    handler = nextHandler;
-  });
-  const writeHerdrCommandStream = jest.fn(async (script: string) => {
-    const marker = script.match(/WHIP_COMMAND_[A-Za-z0-9_]+/)?.[0];
-    if (!marker || !handler) throw new Error('command stream was not initialized');
-    handler({ data: `${options.output ?? '{"result":{}}\n'}\u001e${marker}:0\u001f\n` });
+    const request = JSON.parse(requestLine);
+    return options.output ?? JSON.stringify({ id: request.id, result: { type: 'ok' } });
   });
   return {
-    startHerdrCommandStream,
-    writeHerdrCommandStream,
-    closeHerdrCommandStream: jest.fn(),
+    requestHerdrApi,
+    getRemoteHome: jest.fn(async () => '/home/herdr'),
     off: jest.fn(),
     disconnect: jest.fn(),
   } as unknown as SSHClient;
@@ -77,9 +71,10 @@ describe('SSH control reconnects', () => {
     await client.focusWorkspace('space-1');
 
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
-    expect(stale.startHerdrCommandStream).toHaveBeenCalledWith('/bin/sh', expect.any(Function));
-    expect(fresh.writeHerdrCommandStream).toHaveBeenCalledWith(
-      expect.stringContaining("'herdr' --session 'main' workspace focus 'space-1' 2>&1"),
+    expect(stale.requestHerdrApi).toHaveBeenCalledTimes(1);
+    expect(fresh.requestHerdrApi).toHaveBeenCalledWith(
+      '/home/herdr/.config/herdr/sessions/main/herdr.sock',
+      expect.stringContaining('"method":"workspace.focus"'),
     );
     expect(stale.disconnect).toHaveBeenCalledTimes(1);
   });
@@ -93,7 +88,6 @@ describe('SSH control reconnects', () => {
 
     await expect(client.createWorkspace('New space', '')).rejects.toBe('channel is not opened.');
     expect(connectWithPassword).toHaveBeenCalledTimes(1);
-    expect(stale.startHerdrCommandStream).toHaveBeenCalledTimes(1);
-    expect(stale.writeHerdrCommandStream).not.toHaveBeenCalled();
+    expect(stale.requestHerdrApi).toHaveBeenCalledTimes(1);
   });
 });

@@ -97,6 +97,7 @@ export const en = {
   'connection.herdrTarget': 'Herdr target',
   'connection.command': 'Command',
   'connection.session': 'Session',
+  'connection.socket': 'API socket override',
   'connection.saveHost': 'Save host',
   'connection.openingSsh': 'Opening SSH…',
   'connection.deleteHost': 'Delete host',

@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 describe('Android SSH terminal protocol stream', () => {
   const packageRoot = resolve(__dirname, '../packages/react-native-ssh-sftp');
 
-  test('exposes dedicated event and command streams without changing the raw shell path', () => {
+  test('exposes direct Herdr socket operations without changing the raw shell path', () => {
     const javascript = readFileSync(resolve(packageRoot, 'lib/sshclient.js'), 'utf8');
     const declarations = readFileSync(resolve(packageRoot, 'lib/sshclient.d.ts'), 'utf8');
     const android = readFileSync(
@@ -15,17 +15,17 @@ describe('Android SSH terminal protocol stream', () => {
     expect(javascript).toContain('startLineShell(ptyType, callback)');
     expect(javascript).toContain('RNSSHClient.startLineShell');
     expect(javascript).toContain('startHerdrEventStream(socketPath, handler, callback)');
-    expect(javascript).toContain('startHerdrCommandStream(command, handler, callback)');
+    expect(javascript).toContain('requestHerdrApi(socketPath, request)');
     expect(declarations).toContain('startLineShell(ptyType: PtyType');
-    expect(declarations).toContain('startHerdrCommandStream(command: string');
+    expect(declarations).toContain('requestHerdrApi(socketPath: string, request: string)');
     expect(android).toContain('public void startLineShell');
     expect(android).toContain('client._bufferedReader.readLine()');
     expect(android).toContain('sendLineShellEvent(key, line)');
     expect(android).toContain('final int chunkSize = 8192');
     expect(android).toContain('client._bufferedReader.read(chars)');
     expect(android).toContain('public void startHerdrEventStream');
-    expect(android).toContain('public void startHerdrCommandStream');
-    expect(android).toContain('if (client._herdrCommandChannel == channel)');
+    expect(android).toContain('public void requestHerdrApi');
+    expect(android).toContain('public void getRemoteHome');
   });
 
   test('subscribes to exec output before starting short-lived remote commands', () => {
@@ -45,7 +45,7 @@ describe('Android SSH terminal protocol stream', () => {
     expect(execute).toContain('if (channel != null) channel.disconnect();');
   });
 
-  test('Herdr terminals use protocol 17 remote-client-bridge on the primary SSH client', () => {
+  test('Herdr terminals use the protocol 17 client socket on the primary SSH client', () => {
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
     const terminalScreen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
     const codec = readFileSync(
@@ -53,9 +53,9 @@ describe('Android SSH terminal protocol stream', () => {
       'utf8',
     );
 
-    expect(client).toContain('remote-client-bridge');
+    expect(client).toContain('clientSocketPath()');
     expect(client).toContain('this.requireClient().startHerdrBridge');
-    expect(client).toContain("client.startHerdrCommandStream(\n      '/bin/sh'");
+    expect(client).not.toContain('remote-client-bridge');
     expect(client).not.toContain('this.requireClient().prepareHerdrBridge');
     expect(client).toContain('private terminalBridges = new Set<string>()');
     expect(codec).toContain('ClientMessage::Hello');
