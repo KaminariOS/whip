@@ -249,6 +249,14 @@ function AppContent() {
     ));
   }, []);
 
+  const updateTerminalOpenLinksInApp = useCallback((openLinksInApp: boolean) => {
+    setTerminalPreferences(current => (
+      current.openLinksInApp === openLinksInApp
+        ? current
+        : { ...current, openLinksInApp }
+    ));
+  }, []);
+
   const recordTerminalControlUse = useCallback((control: TerminalControlId) => {
     setTerminalControlUsage(current => incrementTerminalControlUsage(current, control));
   }, []);
@@ -1358,6 +1366,7 @@ function AppContent() {
               terminalControlUsage={terminalControlUsage}
               onTerminalFontSizeChange={updateTerminalFontSize}
               onTerminalControlUse={recordTerminalControlUse}
+              onTerminalOpenLinksInAppChange={updateTerminalOpenLinksInApp}
               onExit={() => exitTerminalToHerd(session.id)}
               onRefresh={refreshHost}
               onOpenPane={(sessionId, pane) => {
@@ -1437,6 +1446,7 @@ function LiveSessionView({
   terminalControlUsage,
   onTerminalFontSizeChange,
   onTerminalControlUse,
+  onTerminalOpenLinksInAppChange,
   onExit,
   onRefresh,
   onOpenPane,
@@ -1451,6 +1461,7 @@ function LiveSessionView({
   terminalControlUsage: TerminalControlUsage;
   onTerminalFontSizeChange: (fontSize: number) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
+  onTerminalOpenLinksInAppChange: (value: boolean) => void;
   onExit: () => void;
   onRefresh: (sessionId: string) => Promise<void>;
   onOpenPane: (sessionId: string, pane: PaneInfo) => void;
@@ -1482,6 +1493,7 @@ function LiveSessionView({
       terminalControlUsage={terminalControlUsage}
       onTerminalFontSizeChange={onTerminalFontSizeChange}
       onTerminalControlUse={onTerminalControlUse}
+      onTerminalOpenLinksInAppChange={onTerminalOpenLinksInAppChange}
       onExit={onExit}
     />
   );

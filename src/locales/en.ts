@@ -297,6 +297,8 @@ export const en = {
   'terminal.scanLinks': 'Scan terminal for web links',
   'terminal.linksTitle': 'Terminal links',
   'terminal.linksLatestFirst': 'Latest first',
+  'terminal.openLinksInApp': 'Open links in app',
+  'terminal.openLinksInAppCopy': 'In-app links use an SSH tunnel. Turn off to use your system default browser.',
   'terminal.scanningLinks': 'Scanning the current terminal…',
   'terminal.noLinks': 'No web links found',
   'terminal.noLinksCopy': 'HTTP and HTTPS links in this terminal will appear here.',

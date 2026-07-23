@@ -38,6 +38,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     scrollback: 5000,
     cursorBlink: true,
     doubleTapTab: true,
+    openLinksInApp: true,
     backgroundImageUri: null,
     backgroundDimming: 60,
   });
@@ -77,6 +78,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       scrollback: 9000,
       cursorBlink: false,
       doubleTapTab: true,
+      openLinksInApp: true,
       backgroundImageUri: null,
       backgroundDimming: 60,
     },
@@ -144,6 +146,18 @@ test('allows double-tap Tab to be explicitly disabled', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapTab: 'no' } }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     terminal: { doubleTapTab: true },
+  });
+});
+
+test('opens terminal links in app by default and allows it to be disabled', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { openLinksInApp: false } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { openLinksInApp: false },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { openLinksInApp: 'no' } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { openLinksInApp: true },
   });
 });
 

@@ -285,6 +285,8 @@ export const zhHant: Record<string, string> = {
   'terminal.scanLinks': '掃描終端機中的網頁連結',
   'terminal.linksTitle': '終端機連結',
   'terminal.linksLatestFirst': '最新優先',
+  'terminal.openLinksInApp': '在應用程式內開啟連結',
+  'terminal.openLinksInAppCopy': '在應用程式內開啟的連結會使用 SSH 通道。關閉後改用系統預設瀏覽器。',
   'terminal.scanningLinks': '正在掃描目前的終端機…',
   'terminal.noLinks': '找不到網頁連結',
   'terminal.noLinksCopy': '此終端機中的 HTTP 和 HTTPS 連結會顯示在這裡。',
