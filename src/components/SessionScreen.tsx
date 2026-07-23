@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronLeft, Ellipsis, Globe2, Plus, X } from 'lucide-react-native';
+import { ChevronLeft, Globe2, Plus, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -56,7 +56,7 @@ interface Props {
   onExit: () => void;
 }
 
-type EditorMode = 'tab' | 'rename-tab';
+type EditorMode = 'tab' | 'rename-tab' | 'rename-pane';
 type PendingFocus = {
   mode: 'create' | 'close';
   previousId: string | null;
@@ -83,7 +83,6 @@ export function SessionScreen({
   client,
   terminalState,
   onRefresh,
-  onOpenPane,
   onActivateTerminal,
   onCloseTerminal,
   onTerminalStatus,
@@ -100,7 +99,7 @@ export function SessionScreen({
   const [workspaceId, setWorkspaceId] = useState(focusedWorkspace?.workspace_id || '');
   const [tabId, setTabId] = useState(focusedWorkspace?.active_tab_id || '');
   const [editorMode, setEditorMode] = useState<EditorMode | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);
@@ -412,6 +411,8 @@ export function SessionScreen({
     let succeeded = true;
     if (editorMode === 'rename-tab' && selectedTab) {
       succeeded = await run(() => client.renameTab(selectedTab.tab_id, name));
+    } else if (editorMode === 'rename-pane' && editingPaneId) {
+      succeeded = await run(() => client.renamePane(editingPaneId, name));
     } else if (workspace) {
       pendingFocus.current = {
         mode: 'create',
@@ -421,6 +422,7 @@ export function SessionScreen({
     }
     if (!succeeded) pendingFocus.current = null;
     setName('');
+    setEditingPaneId(null);
     setEditorMode(null);
   };
 
@@ -428,15 +430,35 @@ export function SessionScreen({
     if (!item) return;
     if (item.tab_id !== selectedTab?.tab_id) chooseTab(item);
     setName(item.label);
+    setEditingPaneId(null);
     setEditorMode('rename-tab');
-    setMenuOpen(false);
   };
 
   const closeTab = async (item: TabInfo | undefined = selectedTab) => {
     if (!item) return;
-    setMenuOpen(false);
     pendingFocus.current = { mode: 'close', previousId: item.tab_id };
     if (!await run(() => client.closeTab(item.tab_id))) pendingFocus.current = null;
+  };
+
+  const openRenamePane = (pane: PaneInfo) => {
+    if (pane.pane_id !== selectedPane?.pane_id) choosePane(pane);
+    setName(pane.label || '');
+    setEditingPaneId(pane.pane_id);
+    setEditorMode('rename-pane');
+  };
+
+  const closePane = async (pane: PaneInfo) => {
+    if (editingPaneId === pane.pane_id) {
+      setEditingPaneId(null);
+      setEditorMode(null);
+    }
+    await run(() => client.closePane(pane.pane_id));
+  };
+
+  const closeEditor = () => {
+    setName('');
+    setEditingPaneId(null);
+    setEditorMode(null);
   };
 
   const openFileManager = () => {
@@ -488,9 +510,6 @@ export function SessionScreen({
               })}
             </ScrollView>
             <Button accessibilityLabel={t('session.newTab')} className="h-[42px] w-11 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Plus size={16} color={colors.text} /></Button>
-            <Button accessibilityLabel={t('session.actions')} className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
-              <Ellipsis size={18} color={colors.text} />
-            </Button>
             <Button
               accessibilityLabel={t('terminal.scanLinks')}
               className="h-[42px] w-11 rounded-none px-0"
@@ -503,19 +522,11 @@ export function SessionScreen({
         ) : null}
       </View>
 
-      {menuOpen && (
-        <View className="min-h-[42px] flex-row items-stretch border-b border-border bg-background">
-          <MenuAction label={t('session.renameTab')} disabled={!selectedTab} onPress={openRenameTab} />
-          <MenuAction label={t('session.paneActions')} disabled={!selectedPane} onPress={() => { if (selectedPane) onOpenPane(selectedPane); setMenuOpen(false); }} />
-          <MenuAction label={t('session.closeTabAction')} danger disabled={!selectedTab} onPress={closeTab} />
-        </View>
-      )}
-
       {editorMode && (
         <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
-          <Text className="font-mono text-[8px] text-foreground">{editorMode.startsWith('rename') ? t('herd.rename') : t('herd.new')} {t('session.tab')}</Text>
-          <Input autoFocus selectTextOnFocus={editorMode === 'rename-tab'} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={name} onChangeText={setName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
-          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setEditorMode(null))}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
+          <Text className="font-mono text-[8px] text-foreground">{editorMode.startsWith('rename') ? t('herd.rename') : t('herd.new')} {editorMode === 'rename-pane' ? t('session.pane') : t('session.tab')}</Text>
+          <Input autoFocus selectTextOnFocus={editorMode.startsWith('rename')} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={name} onChangeText={setName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
+          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(closeEditor)}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
           <Button className="h-[34px] rounded-none px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
         </View>
       )}
@@ -525,8 +536,17 @@ export function SessionScreen({
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
             {panes.map(pane => {
               const active = pane.terminal_id === selectedPane?.terminal_id;
+              const label = pane.label || pane.display_agent || pane.agent || 'shell';
               return (
-                <Button key={pane.pane_id} className={cn('h-7 max-w-40 rounded-full bg-muted px-2.5', active && 'bg-primary')} variant="ghost" onPress={hapticPress(() => choosePane(pane))} onLongPress={() => onOpenPane(pane)}><View className="size-[5px] rounded-full" style={{ backgroundColor: statusColor(pane.agent_status, colors) }} /><Text numberOfLines={1} className={cn('max-w-[126px] text-[11px] font-semibold text-muted-foreground', active && 'text-primary-foreground')}>{pane.label || pane.display_agent || pane.agent || 'shell'}</Text></Button>
+                <View key={pane.pane_id} className={cn('h-7 max-w-[174px] flex-row items-center overflow-hidden rounded-full bg-muted', active && 'bg-primary')}>
+                  <Button accessibilityLabel={t('session.openPane', { pane: label })} className="h-7 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2 py-0" variant="ghost" onPress={hapticPress(() => choosePane(pane))} onLongPress={hapticPress(() => openRenamePane(pane))}>
+                    <View className="size-[5px] rounded-full" style={{ backgroundColor: statusColor(pane.agent_status, colors) }} />
+                    <Text numberOfLines={1} className={cn('max-w-[112px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{label}</Text>
+                  </Button>
+                  <Button accessibilityLabel={t('session.closePane', { pane: label })} className="h-7 w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(() => closePane(pane))}>
+                    <X size={13} color={active ? colors.onPrimary : colors.textSecondary} />
+                  </Button>
+                </View>
               );
             })}
           </ScrollView>
@@ -754,11 +774,5 @@ export function SessionScreen({
         </Modal>
       </View>
     </View>
-  );
-}
-
-function MenuAction({ label, onPress, disabled = false, danger = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
-  return (
-    <Button className="h-auto min-w-0 flex-1 rounded-none border-r border-border px-1" disabled={disabled} variant="ghost" onPress={hapticPress(onPress)}><Text className={cn('text-center text-[9px] font-semibold text-foreground', danger && 'text-destructive')}>{label}</Text></Button>
   );
 }
