@@ -33,12 +33,16 @@ const profile: ConnectionProfile = {
 };
 
 function bridgeClient() {
+  const requestHerdrApi = jest.fn(async (_socketPath: string, requestLine: string) => {
+    const request = JSON.parse(requestLine);
+    return JSON.stringify({
+      id: request.id,
+      result: { type: 'pong', version: '0.7.4', protocol: 17 },
+    });
+  });
   const native = {
+    requestHerdrApi,
     getRemoteHome: jest.fn(async () => '/home/herdr'),
-    requestHerdrApi: jest.fn(async () => JSON.stringify({
-      id: 'android_1',
-      result: { type: 'pong', version: 'test', protocol: 17 },
-    })),
     startHerdrBridge: jest.fn(async () => undefined),
     herdrBridgeResize: jest.fn(async () => undefined),
     closeHerdrBridge: jest.fn(),

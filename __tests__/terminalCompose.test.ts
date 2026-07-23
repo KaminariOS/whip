@@ -15,7 +15,7 @@ describe('terminal input composer', () => {
     expect(screen).toContain('disabled={!composeText.trim()}');
   });
 
-  it('uses xterm paste semantics and presses Enter as a separate terminal write', () => {
+  it('uses xterm paste semantics without pressing Enter after the composed input', () => {
     const assets = readSource('scripts/sync-terminal-assets.mjs');
     const screen = readSource('src/components/TerminalScreen.tsx');
 
@@ -24,7 +24,8 @@ describe('terminal input composer', () => {
     expect(assets).toContain('const value = bufferedInput;');
     expect(assets).toContain("send({ type: 'buffered-submit', data: value });");
     expect(screen).toContain("message.type === 'buffered-submit'");
-    expect(screen).toContain("if (await writeInput(message.data, false)) await writeInput('\\r', false);");
+    expect(screen).toContain('await writeInput(message.data, false);');
+    expect(screen).not.toContain("await writeInput('\\r', false);");
   });
 
   it('retains an unsent draft when the composer closes', () => {

@@ -144,6 +144,20 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('evictLeastRecentlyUsedTerminal(terminalId)');
   });
 
+  it('keeps the terminal LRU alive while the app is backgrounded', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+    const appStateLifecycleEnd = '}, [client, terminalId]);';
+    const appStateLifecycleStart = screen.indexOf('let previous = AppState.currentState;');
+    const appStateLifecycle = screen.slice(
+      appStateLifecycleStart,
+      screen.indexOf(appStateLifecycleEnd, appStateLifecycleStart) + appStateLifecycleEnd.length,
+    );
+
+    expect(appStateLifecycle).toContain('!client.isTerminalBridgeRetained(terminalId)');
+    expect(appStateLifecycle).not.toContain('client.releaseTerminal(terminalId)');
+    expect(appStateLifecycle).not.toContain("reportStatus('disconnected'");
+  });
+
   it('resets the renderer in the same injection as the first terminal frame', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
 
