@@ -47,9 +47,14 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
       />
 
       {error ? (
-        <View className="mx-4 mt-4 flex-row items-start gap-2 rounded-md bg-destructive/10 p-3">
+        <View
+          accessibilityLiveRegion="polite"
+          className="mx-4 mt-4 flex-row items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3">
           <Icon as={AlertCircle} className="text-destructive" size={18} />
-          <Text className="flex-1 text-[13px] leading-[18px] text-destructive">{error}</Text>
+          <View className="min-w-0 flex-1">
+            <Text className="text-sm font-semibold text-destructive">{t('hosts.errorTitle')}</Text>
+            <Text className="mt-0.5 text-[13px] leading-[18px] text-destructive">{error}</Text>
+          </View>
         </View>
       ) : null}
 

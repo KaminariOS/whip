@@ -27,4 +27,14 @@ describe('host list layout', () => {
     expect(screen).toContain('<View className="gap-3">');
     expect(screen).toContain('rounded-lg border border-border bg-card pr-2');
   });
+
+  it('presents connection failures as a readable live-region message', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/HostsScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain('accessibilityLiveRegion="polite"');
+    expect(screen).toContain("t('hosts.errorTitle')");
+  });
 });

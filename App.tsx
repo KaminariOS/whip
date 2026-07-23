@@ -24,6 +24,10 @@ import { SessionScreen } from './src/components/SessionScreen';
 import { WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
+import {
+  classifyConnectionError,
+  connectionErrorTranslationKeys,
+} from './src/lib/connectionErrors';
 import { resolveColorScheme } from './src/lib/appearance';
 import { biometricResumeAction } from './src/lib/appAccess';
 import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from './src/lib/biometricSecurity';
@@ -841,6 +845,7 @@ function AppContent() {
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === nextProfile.id);
     if (existing) closeLiveHost(existing.id);
     let runtime: LiveRuntime | null = null;
+    let liveSessionOpened = false;
     try {
       if (!biometricVerified && requiresBiometricForKeyUse(nextProfile, biometricForKeysRef.current)) {
         if (!await verifyBiometric()) return false;
@@ -856,13 +861,6 @@ function AppContent() {
       if (persistProfile) setHosts(saved.hosts);
       const sessionId = nextProfile.id;
       runtime = createRuntime(sessionId, nextProfile);
-      runtimes.current.set(sessionId, runtime);
-      setLiveSessions(current => openLiveHostSession(
-        current,
-        savedHost,
-        sessionId,
-        activateSession,
-      ));
       await runtime.client.connect(nextProfile);
       const initialSnapshotStartedAt = Date.now();
       const initial = await runtime.client.initialSnapshot();
@@ -870,8 +868,17 @@ function AppContent() {
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
       if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
+      // Publish only fully initialized transports. A failed first handshake is
+      // an offline saved host, not a live session eligible for reconnect.
+      runtimes.current.set(sessionId, runtime);
       setLiveSessions(current => {
-        let next = updateLiveHostConnection(current, sessionId, { status: 'connected' });
+        let next = openLiveHostSession(
+          current,
+          savedHost,
+          sessionId,
+          activateSession,
+        );
+        next = updateLiveHostConnection(next, sessionId, { status: 'connected' });
         const request = beginLiveHostSync(next, sessionId);
         next = applyLiveHostSnapshot(
           request.state,
@@ -883,6 +890,7 @@ function AppContent() {
         );
         return replaceLiveHostTerminals(next, sessionId, restoredTerminals);
       });
+      liveSessionOpened = true;
       try {
         await ensureEventStream(sessionId, initial);
       } catch (error) {
@@ -897,8 +905,17 @@ function AppContent() {
       if (navigate) setNavigation(current => selectMobileTab(current, 'terminal'));
       return true;
     } catch (error) {
-      setConnectError(String(error));
-      if (runtime) scheduleReconnect(nextProfile.id, error);
+      setConnectError(t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
+        host: hostDisplayName(nextProfile),
+      }));
+      if (runtime) {
+        if (liveSessionOpened) {
+          scheduleReconnect(nextProfile.id, error);
+        } else {
+          runtime.refresh.invalidate();
+          runtime.client.disconnect();
+        }
+      }
       if (navigate) setNavigation(current => selectMobileTab(current, 'hosts'));
       return false;
     } finally {
