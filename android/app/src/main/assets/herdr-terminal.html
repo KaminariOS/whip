@@ -227,6 +227,7 @@
     const send = value => window.ReactNativeWebView.postMessage(JSON.stringify(value));
     let lastTap = null;
     let doubleTapTabEnabled = true;
+    let keyboardEnabled = true;
     installAndroidImeBridge(terminal, send, navigator.userAgent);
     const controlSequenceForKey = key => {
       const upper = key.length === 1 ? key.toUpperCase() : '';
@@ -346,6 +347,18 @@
       }
       send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
     };
+    const trimUrl = candidate => {
+      let value = candidate.replace(/[.,;:!?]+$/, '');
+      for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+        const opens = value.split(open).length - 1;
+        let closes = value.split(close).length - 1;
+        while (value.endsWith(close) && closes > opens) {
+          value = value.slice(0, -1);
+          closes -= 1;
+        }
+      }
+      return value;
+    };
     window.herdrScanLinks = () => {
       const logicalLines = [];
       let logicalLine = '';
@@ -362,18 +375,6 @@
 
       const links = [];
       const seen = new Set();
-      const trimUrl = candidate => {
-        let value = candidate.replace(/[.,;:!?]+$/, '');
-        for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
-          const opens = value.split(open).length - 1;
-          let closes = value.split(close).length - 1;
-          while (value.endsWith(close) && closes > opens) {
-            value = value.slice(0, -1);
-            closes -= 1;
-          }
-        }
-        return value;
-      };
       for (let index = logicalLines.length - 1; index >= 0; index -= 1) {
         const matches = [...logicalLines[index].matchAll(/https?:[/]{2}[^\s<>"']+/gi)];
         for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex -= 1) {
@@ -401,8 +402,14 @@
         cellHeightPx: rect ? Math.round((rect.height / terminal.rows) * scale) : 0
       });
     };
-    window.herdrFocus = () => terminal.focus();
+    window.herdrFocus = () => {
+      if (keyboardEnabled) terminal.focus();
+    };
     window.herdrBlur = () => terminal.blur();
+    window.herdrSetKeyboardEnabled = enabled => {
+      keyboardEnabled = enabled !== false;
+      if (!keyboardEnabled) terminal.blur();
+    };
     window.herdrFit = resize;
     const toolbar = document.getElementById('selection-toolbar');
     const hideToolbar = () => { toolbar.style.display = 'none'; };
@@ -422,22 +429,64 @@
       send({ type: 'clipboard-read' });
       hideToolbar();
     });
-    const selectWordAt = (x, y) => {
+    const bufferCellAt = (x, y) => {
       const screen = terminal.element?.querySelector('.xterm-screen');
       const rect = screen?.getBoundingClientRect();
-      if (!rect) return false;
+      if (!rect) return null;
       const col = Math.max(0, Math.min(terminal.cols - 1, Math.floor((x - rect.left) / (rect.width / terminal.cols))));
       const viewportRow = Math.max(0, Math.min(terminal.rows - 1, Math.floor((y - rect.top) / (rect.height / terminal.rows))));
       const row = terminal.buffer.active.viewportY + viewportRow;
+      return { col, row };
+    };
+    const wordRangeAt = (x, y) => {
+      const cell = bufferCellAt(x, y);
+      if (!cell) return null;
+      const { col, row } = cell;
       const line = terminal.buffer.active.getLine(row)?.translateToString(true) || '';
-      if (!line[col] || /\s/.test(line[col])) return false;
+      if (!line[col] || /\s/.test(line[col])) return null;
       const wordChar = character => character && /[A-Za-z0-9_./:@~+-]/.test(character);
       let start = col;
       let end = col + 1;
       while (start > 0 && wordChar(line[start - 1])) start -= 1;
       while (end < line.length && wordChar(line[end])) end += 1;
       terminal.select(start, row, Math.max(1, end - start));
-      return true;
+      return {
+        start: { col: start, row },
+        end: { col: Math.max(start, end - 1), row },
+      };
+    };
+    const selectRangeTo = (selection, cell) => {
+      const indexOf = point => point.row * terminal.cols + point.col;
+      const beforeWord = indexOf(cell) < indexOf(selection.start);
+      const start = beforeWord ? cell : selection.start;
+      const end = beforeWord ? selection.end : cell;
+      terminal.select(start.col, start.row, Math.max(1, indexOf(end) - indexOf(start) + 1));
+    };
+    const urlAtPoint = (x, y) => {
+      const cell = bufferCellAt(x, y);
+      if (!cell) return null;
+      const buffer = terminal.buffer.active;
+      let startRow = cell.row;
+      while (startRow > 0 && buffer.getLine(startRow)?.isWrapped) startRow -= 1;
+      let logicalLine = '';
+      let pointOffset = cell.col;
+      for (let row = startRow; row < buffer.length; row += 1) {
+        const line = buffer.getLine(row);
+        if (!line) break;
+        if (row === cell.row) pointOffset = logicalLine.length + cell.col;
+        logicalLine += line.translateToString(false);
+        if (!buffer.getLine(row + 1)?.isWrapped) break;
+      }
+      for (const match of logicalLine.matchAll(/https?:[/]{2}[^\s<>"']+/gi)) {
+        const value = trimUrl(match[0]);
+        const start = match.index || 0;
+        if (pointOffset < start || pointOffset >= start + value.length) continue;
+        try {
+          const parsed = new URL(value);
+          if (['http:', 'https:'].includes(parsed.protocol)) return parsed.href;
+        } catch {}
+      }
+      return null;
     };
     let touch = null;
     let pinch = null;
@@ -450,6 +499,11 @@
     );
     document.getElementById('terminal').addEventListener('touchstart', event => {
       if (event.target.closest?.('#selection-toolbar')) return;
+      if (!keyboardEnabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        terminal.blur();
+      }
       if (event.touches.length === 2) {
         if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
         event.preventDefault();
@@ -467,15 +521,25 @@
       if (event.touches.length !== 1) { touch = null; pinch = null; lastTap = null; return; }
       const point = event.touches[0];
       hideToolbar();
-      touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false };
+      touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false, selection: null };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
-        touch.longPressed = true;
-        lastTap = null;
-        event.preventDefault();
-        event.stopPropagation();
-        if (selectWordAt(touch.x, touch.y)) showToolbar(touch.x, touch.y);
-        else send({ type: 'clipboard-read' });
+        let selection = wordRangeAt(touch.x, touch.y);
+        if (!selection && !keyboardEnabled) {
+          const cell = bufferCellAt(touch.x, touch.y);
+          if (cell) {
+            selection = { start: cell, end: cell };
+            terminal.select(cell.col, cell.row, 1);
+          }
+        }
+        if (selection) {
+          touch.longPressed = true;
+          lastTap = null;
+          touch.selection = selection;
+          showToolbar(touch.x, touch.y);
+        } else {
+          send({ type: 'clipboard-read' });
+        }
       }, 420);
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchmove', event => {
@@ -498,6 +562,15 @@
       }
       if (!touch || event.touches.length !== 1) return;
       const point = event.touches[0];
+      if (touch.longPressed && !keyboardEnabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        const cell = bufferCellAt(point.clientX, point.clientY);
+        if (cell && touch.selection) selectRangeTo(touch.selection, cell);
+        touch.moved = true;
+        hideToolbar();
+        return;
+      }
       if (!touch.moved && Math.hypot(point.clientX - touch.x, point.clientY - touch.y) < 10) return;
       touch.moved = true;
       lastTap = null;
@@ -531,6 +604,19 @@
       if (touch.longPressed) {
         event.preventDefault();
         event.stopPropagation();
+        if (!keyboardEnabled && point) showToolbar(point.clientX, point.clientY);
+      }
+      if (!touch.moved && !touch.longPressed && point && !keyboardEnabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        const link = urlAtPoint(point.clientX, point.clientY);
+        if (link) send({ type: 'open-link', link });
+        else {
+          terminal.clearSelection();
+          hideToolbar();
+        }
+        touch = null;
+        return;
       }
       if (!touch.moved && !touch.longPressed && point) {
         const now = { time: Date.now(), x: point.clientX, y: point.clientY };

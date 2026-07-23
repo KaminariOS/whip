@@ -38,4 +38,12 @@ describe('terminal input composer', () => {
     expect(closeCompose).not.toContain("setComposeText('')");
     expect(screen).toContain("setComposeText('');");
   });
+
+  it('keeps the composer background layer transparent', () => {
+    const screen = readSource('src/components/TerminalScreen.tsx');
+
+    expect(screen).toContain(
+      '<View className="border-t border-terminal-divider bg-transparent p-2">',
+    );
+  });
 });

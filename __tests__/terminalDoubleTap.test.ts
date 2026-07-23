@@ -30,7 +30,7 @@ describe('terminal double tap', () => {
   it('does not carry a tap through a swipe, long press, or cancelled touch', () => {
     const assets = readSource('scripts/sync-terminal-assets.mjs');
 
-    expect(assets).toContain('touch.longPressed = true;\n        lastTap = null;');
+    expect(assets).toMatch(/touch\.longPressed = true;\s+lastTap = null;/);
     expect(assets).toContain('touch.moved = true;\n      lastTap = null;');
     expect(assets).toContain('pinch = null;\n      lastTap = null;');
   });

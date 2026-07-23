@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, FolderOpen, ImagePlus, MessageCircle, Paperclip, Send, X } from 'lucide-react-native';
-import { AppState, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers } from 'react-native';
+import { ChevronDown, ChevronUp, FolderOpen, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Paperclip, Send, X } from 'lucide-react-native';
+import { AppState, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview/lib/WebView.android';
@@ -45,6 +45,7 @@ interface Props {
   };
   onRequestAttachment?: () => void;
   onRequestFiles?: () => void;
+  onOpenLink?: (link: string) => void;
   onLinksScanned?: (links: string[]) => void;
   onClose: () => void;
   onStatus: (status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
@@ -80,7 +81,7 @@ const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
 const TERMINAL_CONTROL_CLASS = 'min-h-[34px] min-w-12 rounded-sm border border-border bg-card/70 px-2.5 active:bg-card/80';
 
-export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onControlUse, linkScanRequest = 0, pasteRequest, onRequestAttachment, onRequestFiles, onLinksScanned, onClose, onStatus }: Props) {
+export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onControlUse, linkScanRequest = 0, pasteRequest, onRequestAttachment, onRequestFiles, onOpenLink, onLinksScanned, onClose, onStatus }: Props) {
   const { colors: appColors } = useTheme();
   const { t } = useTranslation();
   const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
@@ -96,6 +97,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const reconnectAttempt = useRef(session?.reconnectAttempt || 0);
   const handledPasteRequest = useRef(0);
   const composeAttachmentsRef = useRef<ComposeAttachment[]>([]);
+  const composeInputRef = useRef<TextInputHandle | null>(null);
   const wasVisible = useRef(visible);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +113,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeText, setComposeText] = useState('');
   const [composeAttachments, setComposeAttachments] = useState<ComposeAttachment[]>([]);
+  const [keyboardEnabled, setKeyboardEnabled] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [scrollPosition, setScrollPosition] = useState(scroll);
@@ -170,7 +173,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     try {
       await client.writeToTerminal(terminalId, data);
-      if (refocusTerminal && keyboardVisible) webView.current?.injectJavaScript('window.herdrFocus(); true;');
+      if (refocusTerminal && keyboardEnabled && keyboardVisible) webView.current?.injectJavaScript('window.herdrFocus(); true;');
       return true;
     } catch (reason) {
       setError(String(reason));
@@ -278,11 +281,17 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     wasVisible.current = true;
     const timer = setTimeout(() => {
       webView.current?.injectJavaScript(
-        `window.herdrFit(); ${keyboardVisible ? 'window.herdrFocus();' : ''} true;`,
+        `window.herdrFit(); ${keyboardEnabled && keyboardVisible ? 'window.herdrFocus();' : ''} true;`,
       );
     }, 40);
     return () => clearTimeout(timer);
-  }, [keyboardVisible, ready, visible]);
+  }, [keyboardEnabled, keyboardVisible, ready, visible]);
+
+  useEffect(() => {
+    if (!ready) return;
+    webView.current?.injectJavaScript(`window.herdrSetKeyboardEnabled(${keyboardEnabled}); true;`);
+    if (!keyboardEnabled) Keyboard.dismiss();
+  }, [keyboardEnabled, ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -377,7 +386,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 
   const closeSearch = () => {
     setSearchOpen(false);
-    setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
+    if (keyboardEnabled) setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
   };
 
   const handleMessage = async (event: WebViewMessageEvent) => {
@@ -426,6 +435,8 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       setSearchResult({ count: message.count, index: message.index, invalid: Boolean(message.invalid) });
     } else if (message.type === 'link-scan-result') {
       onLinksScanned?.(Array.isArray(message.links) ? message.links.filter((link: unknown) => typeof link === 'string') : []);
+    } else if (message.type === 'open-link' && typeof message.link === 'string') {
+      onOpenLink?.(message.link);
     }
   };
 
@@ -439,7 +450,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
 
   const closeCompose = () => {
     setComposeOpen(false);
-    setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
+    if (keyboardEnabled) setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
   };
 
   const submitCompose = () => {
@@ -473,6 +484,35 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
             sendInput(key[1]);
           }}
         />
+      );
+    }
+    if (control === 'keyboard') {
+      return (
+        <Button
+          key={control}
+          accessibilityLabel={keyboardEnabled ? t('terminal.disableKeyboard') : t('terminal.enableKeyboard')}
+          accessibilityState={{ selected: keyboardEnabled }}
+          className={cn(TERMINAL_CONTROL_CLASS, keyboardEnabled && 'border-primary bg-primary/15')}
+          variant="secondary"
+          onPress={() => {
+            onControlUse(control);
+            const enabled = !keyboardEnabled;
+            setKeyboardEnabled(enabled);
+            if (enabled) {
+              setTimeout(() => {
+                if (composeOpen) {
+                  composeInputRef.current?.focus();
+                } else {
+                  webView.current?.injectJavaScript('window.herdrFocus(); true;');
+                }
+              }, 40);
+            } else {
+              Keyboard.dismiss();
+              webView.current?.injectJavaScript('window.herdrBlur(); true;');
+            }
+          }}>
+          <KeyboardIcon size={17} color={keyboardEnabled ? appColors.primary : appColors.text} />
+        </Button>
       );
     }
     if (control === 'paste') {
@@ -660,7 +700,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
           <Button accessibilityLabel={t('terminal.closeSearch')} className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><X size={17} color={colors.text} /></Button>
         </View>
       )}
-      <View className="relative flex-1" {...terminalPanHandlers}>
+      <View className="relative flex-1" {...(keyboardEnabled ? terminalPanHandlers : undefined)}>
         <WebView
           ref={value => {
             webView.current = value as WebViewHandle | null;
@@ -711,7 +751,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         collapsable={false}
         style={keyboardInset > 0 ? { marginBottom: keyboardInset } : undefined}>
         {composeOpen && (
-          <View className="border-t border-terminal-divider bg-terminal-panel p-2">
+          <View className="border-t border-terminal-divider bg-transparent p-2">
             <View className="flex-row items-end gap-2">
               <Button
                 accessibilityLabel={t('terminal.attach')}
@@ -742,7 +782,9 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
                   </ScrollView>
                 )}
                 <Input
-                  autoFocus
+                  ref={composeInputRef}
+                  autoFocus={keyboardEnabled}
+                  showSoftInputOnFocus={keyboardEnabled}
                   multiline
                   numberOfLines={3}
                   textAlignVertical="top"

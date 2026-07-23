@@ -278,6 +278,8 @@ export const zhHant: Record<string, string> = {
   'pane.closeTitle': '關閉窗格？',
   'pane.closePane': '關閉窗格',
   'terminal.paste': '貼上',
+  'terminal.disableKeyboard': '停用鍵盤並啟用文字選取',
+  'terminal.enableKeyboard': '啟用鍵盤',
   'terminal.compose': '編寫終端機輸入',
   'terminal.composePlaceholder': '傳送前編輯指令或訊息…',
   'terminal.sendBufferedInput': '傳送至終端機',
