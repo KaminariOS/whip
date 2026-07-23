@@ -147,16 +147,29 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   public void generateKeyPair(final String type, @Nullable final String passphrase, final int keySize, final String comment, final Callback callback) {
     new Thread(new Runnable() {
         public void run() {
+            KeyPair kpair = null;
             try {
                 int keyType = getKeyTypeFromString(type); // You'll implement this to translate string to type
                 JSch jsch = new JSch();
-                KeyPair kpair = KeyPair.genKeyPair(jsch, keyType, keySize);
+                kpair = KeyPair.genKeyPair(jsch, keyType, keySize);
 
                 // callback.invoke("Finger print: " + kpair.getFingerPrint());
                 ByteArrayOutputStream privateKeyOut = new ByteArrayOutputStream();
                 ByteArrayOutputStream publicKeyOut = new ByteArrayOutputStream();
-                kpair.writePrivateKey(privateKeyOut, passphrase.isEmpty() ? null : passphrase.getBytes());
-                kpair.writePublicKey(publicKeyOut, comment);
+                byte[] passphraseBytes = passphrase == null || passphrase.isEmpty()
+                    ? null
+                    : passphrase.getBytes(StandardCharsets.UTF_8);
+                String keyComment = comment == null || comment.trim().isEmpty() ? "herdr" : comment;
+                kpair.setPublicKeyComment(keyComment);
+                if (keyType == KeyPair.ED25519 || keyType == KeyPair.ED448) {
+                    // EdDSA keys do not have the legacy PEM representation used
+                    // by writePrivateKey(). JSch deliberately throws from that
+                    // path, so serialize them in the supported OpenSSH v1 format.
+                    kpair.writeOpenSSHv1PrivateKey(privateKeyOut, passphraseBytes);
+                } else {
+                    kpair.writePrivateKey(privateKeyOut, passphraseBytes);
+                }
+                kpair.writePublicKey(publicKeyOut, keyComment);
                 String privateKeyString = privateKeyOut.toString("UTF-8");
                 String publicKeyString = publicKeyOut.toString("UTF-8");
                 WritableMap keyMap = Arguments.createMap();
@@ -166,10 +179,11 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
                 privateKeyOut.close();
                 publicKeyOut.close();
-                kpair.dispose();
             } catch (Exception e) {
                 Log.e(LOGTAG, "Failed to generate key pair", e);
                 callback.invoke("Failed to generate key pair: " + e.toString());
+            } finally {
+                if (kpair != null) kpair.dispose();
             }
         }
     }).start();

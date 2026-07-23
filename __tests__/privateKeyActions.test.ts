@@ -46,3 +46,8 @@ test('derives a public key from the loaded private key', () => {
   expect(sshModule).toContain('kpair.writePublicKey(publicKeyOut, "herdr")');
   expect(sshModule).toContain('result.putString("publicKey"');
 });
+
+test('serializes generated Ed25519 keys in the supported OpenSSH format', () => {
+  expect(sshModule).toContain('if (keyType == KeyPair.ED25519 || keyType == KeyPair.ED448)');
+  expect(sshModule).toContain('kpair.writeOpenSSHv1PrivateKey(privateKeyOut, passphraseBytes)');
+});
