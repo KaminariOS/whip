@@ -28,6 +28,10 @@ test('encrypts credential backups with AES-GCM and binds them to the host id', (
 test('requires system authentication before retrieving the Block Store key', () => {
   expect(nativeSource).toContain('BiometricPrompt(');
   expect(nativeSource).toContain('BIOMETRIC_STRONG or DEVICE_CREDENTIAL');
+  expect(nativeSource).toContain('BiometricPrompt.CryptoObject(createAuthenticationCipher())');
+  expect(nativeSource).toContain('completeAuthenticationOperation(result)');
+  expect(nativeSource).toContain('result.cryptoObject?.cipher');
+  expect(nativeSource).toContain('cipher.doFinal(AUTHENTICATION_CHALLENGE)');
   expect(nativeSource.indexOf('onAuthenticationSucceeded')).toBeLessThan(
     nativeSource.indexOf('private fun retrieveRecoveryKey'),
   );

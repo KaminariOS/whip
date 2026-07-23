@@ -3,6 +3,7 @@ package io.github.kaminarios.whip
 import android.annotation.SuppressLint
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.util.Log
@@ -111,7 +112,12 @@ class CredentialVaultModule(
         executor,
         object : BiometricPrompt.AuthenticationCallback() {
           override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-            retrieveRecoveryKey()
+            try {
+              completeAuthenticationOperation(result)
+              retrieveRecoveryKey()
+            } catch (error: Throwable) {
+              finishUnlockError("E_CREDENTIAL_VAULT_AUTH", error)
+            }
           }
 
           override fun onAuthenticationError(errorCode: Int, errorMessage: CharSequence) {
@@ -126,7 +132,10 @@ class CredentialVaultModule(
         },
       )
       try {
-        activePrompt?.authenticate(buildPromptInfo())
+        activePrompt?.authenticate(
+          buildPromptInfo(),
+          BiometricPrompt.CryptoObject(createAuthenticationCipher()),
+        )
       } catch (error: Throwable) {
         finishUnlockError("E_CREDENTIAL_VAULT_AUTH", error)
       }
@@ -180,7 +189,12 @@ class CredentialVaultModule(
         executor,
         object : BiometricPrompt.AuthenticationCallback() {
           override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-            finishAppAuthenticationSuccess()
+            try {
+              completeAuthenticationOperation(result)
+              finishAppAuthenticationSuccess()
+            } catch (error: Throwable) {
+              finishAppAuthenticationError(failedCode, error)
+            }
           }
 
           override fun onAuthenticationError(errorCode: Int, errorMessage: CharSequence) {
@@ -195,7 +209,10 @@ class CredentialVaultModule(
         },
       )
       try {
-        activePrompt?.authenticate(promptInfo)
+        activePrompt?.authenticate(
+          promptInfo,
+          BiometricPrompt.CryptoObject(createAuthenticationCipher()),
+        )
       } catch (error: Throwable) {
         finishAppAuthenticationError(failedCode, error)
       }
@@ -230,7 +247,9 @@ class CredentialVaultModule(
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
       builder.setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
     } else {
-      builder.setDeviceCredentialAllowed(true)
+      builder
+        .setAllowedAuthenticators(BIOMETRIC_STRONG)
+        .setNegativeButtonText(reactApplicationContext.getString(R.string.biometric_cancel))
     }
     return builder.build()
   }
@@ -368,6 +387,63 @@ class CredentialVaultModule(
     return keyStore.getKey(WRAPPING_KEY_ALIAS, null) as? SecretKey
   }
 
+  private fun createAuthenticationCipher(): Cipher {
+    val key = loadAuthenticationKey() ?: createAuthenticationKey()
+    return try {
+      Cipher.getInstance(AES_TRANSFORMATION).apply {
+        init(Cipher.ENCRYPT_MODE, key)
+      }
+    } catch (error: KeyPermanentlyInvalidatedException) {
+      deleteAuthenticationKey()
+      Cipher.getInstance(AES_TRANSFORMATION).apply {
+        init(Cipher.ENCRYPT_MODE, createAuthenticationKey())
+      }
+    }
+  }
+
+  private fun createAuthenticationKey(): SecretKey {
+    val builder = KeyGenParameterSpec.Builder(
+      AUTHENTICATION_KEY_ALIAS,
+      KeyProperties.PURPOSE_ENCRYPT,
+    )
+      .setKeySize(256)
+      .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+      .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+      .setUserAuthenticationRequired(true)
+      .setInvalidatedByBiometricEnrollment(true)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      builder.setUserAuthenticationParameters(
+        0,
+        KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL,
+      )
+    } else {
+      @Suppress("DEPRECATION")
+      builder.setUserAuthenticationValidityDurationSeconds(-1)
+    }
+    val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+    generator.init(builder.build())
+    return generator.generateKey()
+  }
+
+  private fun loadAuthenticationKey(): SecretKey? {
+    val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+    return keyStore.getKey(AUTHENTICATION_KEY_ALIAS, null) as? SecretKey
+  }
+
+  private fun deleteAuthenticationKey() {
+    val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+    if (keyStore.containsAlias(AUTHENTICATION_KEY_ALIAS)) {
+      keyStore.deleteEntry(AUTHENTICATION_KEY_ALIAS)
+    }
+  }
+
+  private fun completeAuthenticationOperation(result: BiometricPrompt.AuthenticationResult) {
+    val cipher = requireNotNull(result.cryptoObject?.cipher) {
+      "Biometric authentication did not authorize the cryptographic operation"
+    }
+    cipher.doFinal(AUTHENTICATION_CHALLENGE)
+  }
+
   @SuppressLint("ApplySharedPref")
   @Synchronized
   private fun clearLocalRecoveryKey() {
@@ -462,7 +538,9 @@ class CredentialVaultModule(
     private const val LOCAL_PREFERENCES = "herdr_credential_vault_local"
     private const val WRAPPED_RECOVERY_KEY = "wrapped_recovery_key_v1"
     private const val WRAPPING_KEY_ALIAS = "io.github.kaminarios.whip.credential-vault.wrap.v1"
+    private const val AUTHENTICATION_KEY_ALIAS = "io.github.kaminarios.whip.biometric-gate.v1"
     private const val BLOCK_STORE_KEY = "io.github.kaminarios.whip.credential-vault.recovery.v1"
     private const val CREDENTIAL_AAD_PREFIX = "io.github.kaminarios.whip.credential-backup.v1"
+    private val AUTHENTICATION_CHALLENGE = byteArrayOf(0x57, 0x48, 0x49, 0x50)
   }
 }

@@ -68,6 +68,9 @@ test('stores private key material only in the device credential store', async ()
   });
 
   expect(result).toHaveLength(1);
+  expect(result[0].id).toMatch(
+    /^key-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
   expect(Keychain.setGenericPassword).toHaveBeenCalledWith(
     'global-ssh-keychain',
     expect.stringContaining('PRIVATE KEY'),
