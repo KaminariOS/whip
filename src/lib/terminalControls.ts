@@ -1,9 +1,12 @@
 export const defaultTerminalControlOrder = [
   'ctrl',
+  'shift',
   'esc',
   'tab',
   'paste',
   'compose',
+  'attach',
+  'files',
   'up',
   'left',
   'right',

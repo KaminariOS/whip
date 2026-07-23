@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronLeft, Ellipsis, FolderOpen, Globe2, Plus, X } from 'lucide-react-native';
+import { ChevronLeft, Ellipsis, Globe2, Plus, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -32,6 +32,7 @@ import type { TerminalPreferences } from '../services/devicePreferences';
 import { sessionTabStatusColor, statusColor, useTheme } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
+import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSheet';
 import { RemoteFileManager } from './RemoteFileManager';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -116,6 +117,15 @@ export function SessionScreen({
   const [browserLoading, setBrowserLoading] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [fileManagerPath, setFileManagerPath] = useState('~');
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+  const [attachmentTerminalId, setAttachmentTerminalId] = useState<string | null>(null);
+  const [pasteRequest, setPasteRequest] = useState<{
+    id: number;
+    terminalId: string;
+    text: string;
+    previewUri: string | null;
+    dispose: () => void;
+  } | null>(null);
   const terminalWidthRef = useRef(0);
   const browserWebView = useRef<BrowserWebViewHandle | null>(null);
   const tunnelPortRef = useRef<number | null>(null);
@@ -438,6 +448,12 @@ export function SessionScreen({
     setFilesOpen(true);
   };
 
+  const openAttachments = () => {
+    if (!activeTerminalSession || activeTerminalSession.status !== 'connected') return;
+    setAttachmentTerminalId(activeTerminalSession.terminalId);
+    setAttachmentsOpen(true);
+  };
+
   return (
     <View
       accessibilityElementsHidden={!visible}
@@ -473,14 +489,6 @@ export function SessionScreen({
             <Button accessibilityLabel={t('session.newTab')} className="h-[42px] w-11 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Plus size={16} color={colors.text} /></Button>
             <Button accessibilityLabel={t('session.actions')} className="h-[42px] w-11 rounded-none px-0" variant="ghost" onPress={hapticPress(() => setMenuOpen(value => !value))}>
               <Ellipsis size={18} color={colors.text} />
-            </Button>
-            <Button
-              accessibilityLabel={t('terminal.openFiles')}
-              className="h-[42px] w-11 rounded-none px-0"
-              disabled={!selectedPane}
-              variant="ghost"
-              onPress={hapticPress(openFileManager)}>
-              <FolderOpen size={18} color={colors.text} />
             </Button>
             <Button
               accessibilityLabel={t('terminal.scanLinks')}
@@ -560,6 +568,16 @@ export function SessionScreen({
                 preferences={terminalPreferences}
                 controlUsage={terminalControlUsage}
                 linkScanRequest={linkScanRequest}
+                pasteRequest={pasteRequest?.terminalId === terminalSession.terminalId
+                  ? {
+                      id: pasteRequest.id,
+                      text: pasteRequest.text,
+                      previewUri: pasteRequest.previewUri,
+                      dispose: pasteRequest.dispose,
+                    }
+                  : undefined}
+                onRequestAttachment={openAttachments}
+                onRequestFiles={openFileManager}
                 onLinksScanned={links => {
                   if (terminalSession.terminalId !== activeTerminalSession?.terminalId) return;
                   setTerminalLinks(links);
@@ -613,6 +631,24 @@ export function SessionScreen({
           initialPath={fileManagerPath}
           visible={filesOpen}
           onClose={() => setFilesOpen(false)}
+        />
+        <AttachmentPasteSheet
+          client={client}
+          visible={attachmentsOpen}
+          onClose={() => setAttachmentsOpen(false)}
+          onPaste={(attachment: PastedAttachment) => {
+            if (!attachmentTerminalId) {
+              attachment.dispose();
+              return;
+            }
+            setPasteRequest(current => ({
+              id: (current?.id || 0) + 1,
+              terminalId: attachmentTerminalId,
+              text: attachment.remotePath,
+              previewUri: attachment.previewUri,
+              dispose: attachment.dispose,
+            }));
+          }}
         />
         <Modal
           animationType="slide"

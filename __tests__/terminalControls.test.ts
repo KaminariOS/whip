@@ -6,8 +6,9 @@ import {
 } from '../src/lib/terminalControls';
 
 test('starts with common controls and keeps secondary navigation at the right end', () => {
-  expect(defaultTerminalControlOrder.slice(0, 9)).toEqual([
-    'ctrl', 'esc', 'tab', 'paste', 'compose', 'up', 'left', 'right', 'down',
+  expect(defaultTerminalControlOrder.slice(0, 12)).toEqual([
+    'ctrl', 'shift', 'esc', 'tab', 'paste', 'compose', 'attach', 'files',
+    'up', 'left', 'right', 'down',
   ]);
   expect(defaultTerminalControlOrder.slice(-4)).toEqual(['alt', 'find', 'shift-tab', 'home']);
   expect(defaultTerminalControlOrder).not.toContain('ctrl-c');
