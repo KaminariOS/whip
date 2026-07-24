@@ -18,13 +18,13 @@ describe('terminal double tap', () => {
 
   it('can be disabled through live terminal preferences', () => {
     const assets = readSource('scripts/sync-terminal-assets.mjs');
-    const terminalScreen = readSource('src/components/TerminalScreen.tsx');
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
 
     expect(assets).toContain('doubleTapTabEnabled = options.doubleTapTab !== false');
     expect(assets).toContain('if (!doubleTapTabEnabled) lastTap = null');
-    expect(terminalScreen).toContain('window.herdrConfigure(${JSON.stringify({');
-    expect(terminalScreen).toContain('...preferences,');
-    expect(terminalScreen).toContain('fontSize: configuredFontSize');
+    expect(renderer).toContain('window.herdrConfigure(${JSON.stringify(entry.target.key)}');
+    expect(renderer).toContain('...preferences,');
+    expect(renderer).toContain('fontSize: entry.fontSize');
   });
 
   it('does not carry a tap through a swipe, long press, or cancelled touch', () => {

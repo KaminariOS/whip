@@ -25,6 +25,7 @@ import {
   terminalTabSwipeOffset,
   type TerminalTabSwipeDirection,
 } from '@/src/lib/terminalTabSwipe';
+import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
 import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalControls';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSessionsState } from '../terminalSessions';
@@ -42,15 +43,23 @@ import { Text } from './ui/text';
 import { TerminalScreen } from './TerminalScreen';
 
 interface Props {
+  hostSessionId: string;
   visible: boolean;
   snapshot: HerdrSnapshot;
   client: HerdrClient;
   terminalState: TerminalSessionsState;
+  terminalTargets: readonly TerminalRenderTarget[];
   onRefresh: () => Promise<void>;
   onOpenPane: (pane: PaneInfo) => void;
   onActivateTerminal: (pane: PaneInfo) => void;
   onCloseTerminal: (terminalId: string) => void;
-  onTerminalStatus: (terminalId: string, status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
+  onTerminalStatus: (
+    hostSessionId: string,
+    terminalId: string,
+    status: TerminalSessionStatus,
+    error?: string,
+    reconnectAttempt?: number,
+  ) => void;
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   onTerminalControlUse: (control: TerminalControlId) => void;
@@ -80,10 +89,12 @@ interface BrowserWebViewHandle {
 const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
 
 export function SessionScreen({
+  hostSessionId,
   visible,
   snapshot,
   client,
   terminalState,
+  terminalTargets,
   onRefresh,
   onActivateTerminal,
   onCloseTerminal,
@@ -104,7 +115,6 @@ export function SessionScreen({
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);
   const [terminalWidth, setTerminalWidth] = useState(0);
   const [tabSwipe, setTabSwipe] = useState<TerminalTabSwipe | null>(null);
   const [linkScanRequest, setLinkScanRequest] = useState(0);
@@ -137,10 +147,6 @@ export function SessionScreen({
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
 
-  useEffect(() => {
-    if (visible) setTerminalSurfaceMounted(true);
-  }, [visible]);
-
   const workspace = snapshot.workspaces.find(item => item.workspace_id === workspaceId) || focusedWorkspace;
   const tabs = snapshot.tabs.filter(item => item.workspace_id === workspace?.workspace_id);
   const selectedTab = tabs.find(item => item.tab_id === tabId) || tabs.find(item => item.focused) || tabs[0];
@@ -161,6 +167,14 @@ export function SessionScreen({
   const activeTerminalSession = terminalState.sessions.find(
     session => session.terminalId === terminalState.activeTerminalId,
   );
+  const activeTarget = terminalTargets.find(target => (
+    target.hostSessionId === hostSessionId
+      && target.session.terminalId === activeTerminalSession?.terminalId
+  )) || null;
+  const previewTarget = terminalTargets.find(target => (
+    target.hostSessionId === hostSessionId
+      && target.session.terminalId === tabSwipe?.targetTerminalId
+  )) || null;
 
   const closeActiveTunnel = async () => {
     const localPort = tunnelPortRef.current;
@@ -229,6 +243,22 @@ export function SessionScreen({
     tunnelPortRef.current = null;
     if (localPort !== null) client.closeWebTunnel(localPort).catch(() => undefined);
   }, [client]);
+
+  useEffect(() => {
+    pendingPaneFocus.current = null;
+    lastActivePaneId.current = null;
+    pendingFocus.current = null;
+    browserRequestRef.current += 1;
+    setEditorMode(null);
+    setEditingPaneId(null);
+    setLinksOpen(false);
+    setBrowserUrl(null);
+    setBrowserCanGoBack(false);
+    setBrowserLoading(false);
+    setFilesOpen(false);
+    setAttachmentsOpen(false);
+    setPasteRequest(null);
+  }, [hostSessionId]);
 
   useEffect(() => {
     const pending = pendingFocus.current;
@@ -565,65 +595,62 @@ export function SessionScreen({
           terminalWidthRef.current = event.nativeEvent.layout.width;
           setTerminalWidth(event.nativeEvent.layout.width);
         }}>
-        {terminalSurfaceMounted && terminalState.sessions.map(terminalSession => {
-          // Fabric merges native-driver transform patches with React props. Keep
-          // transform array-shaped even after a swipe ends; changing it to null
-          // trips SurfaceMountingManager's synchronous-prop assertion.
-          const translateX = tabSwipe?.originTerminalId === terminalSession.terminalId
-            ? tabSwipeTranslateX
-            : tabSwipe?.targetTerminalId === terminalSession.terminalId
-              ? Animated.add(tabSwipeTranslateX, tabSwipe.direction * terminalWidth)
-              : 0;
-          return (
-            <Animated.View
-              key={terminalSession.terminalId}
-              pointerEvents="box-none"
-              style={[
-                StyleSheet.absoluteFill,
-                { transform: [{ translateX }] },
-              ]}>
-              <TerminalScreen
-                client={client}
-                compact
-                visible={visible && terminalSession.terminalId === activeTerminalSession?.terminalId}
-                preview={tabSwipe?.targetTerminalId === terminalSession.terminalId}
-                terminalPanHandlers={terminalSession.terminalId === activeTerminalSession?.terminalId
-                  ? terminalTabPanResponder.panHandlers
-                  : undefined}
-                session={terminalSession}
-                scroll={snapshot.panes.find(pane => pane.terminal_id === terminalSession.terminalId)?.scroll}
-                preferences={terminalPreferences}
-                controlUsage={terminalControlUsage}
-                linkScanRequest={linkScanRequest}
-                pasteRequest={pasteRequest?.terminalId === terminalSession.terminalId
-                  ? {
-                      id: pasteRequest.id,
-                      text: pasteRequest.text,
-                      previewUri: pasteRequest.previewUri,
-                      dispose: pasteRequest.dispose,
-                    }
-                  : undefined}
-                onRequestAttachment={openAttachments}
-                onRequestFiles={openFileManager}
-                onOpenLink={link => {
-                  if (terminalSession.terminalId !== activeTerminalSession?.terminalId) return;
-                  if (terminalPreferences.openLinksInApp) setLinksOpen(true);
-                  openTerminalLink(link);
-                }}
-                onLinksScanned={links => {
-                  if (terminalSession.terminalId !== activeTerminalSession?.terminalId) return;
-                  setTerminalLinks(links);
-                  setLinksBusy(false);
-                }}
-                onControlUse={onTerminalControlUse}
-                onClose={() => onCloseTerminal(terminalSession.terminalId)}
-                onStatus={(status, error, reconnectAttempt) => {
-                  onTerminalStatus(terminalSession.terminalId, status, error, reconnectAttempt);
-                }}
-              />
-            </Animated.View>
-          );
-        })}
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              transform: [{
+                translateX: tabSwipe && !previewTarget ? tabSwipeTranslateX : 0,
+              }],
+            },
+          ]}>
+          <TerminalScreen
+            activeTarget={activeTarget}
+            previewTarget={previewTarget}
+            targets={terminalTargets}
+            compact
+            visible={visible && Boolean(activeTarget)}
+            swipe={tabSwipe && previewTarget
+              ? { direction: tabSwipe.direction, offset: tabSwipeTranslateX }
+              : null}
+            terminalPanHandlers={terminalTabPanResponder.panHandlers}
+            preferences={terminalPreferences}
+            controlUsage={terminalControlUsage}
+            linkScanRequest={linkScanRequest}
+            pasteRequest={pasteRequest && pasteRequest.terminalId === activeTerminalSession?.terminalId
+              ? {
+                  id: pasteRequest.id,
+                  text: pasteRequest.text,
+                  previewUri: pasteRequest.previewUri,
+                  dispose: pasteRequest.dispose,
+                }
+              : undefined}
+            onRequestAttachment={openAttachments}
+            onRequestFiles={openFileManager}
+            onOpenLink={link => {
+              if (terminalPreferences.openLinksInApp) setLinksOpen(true);
+              openTerminalLink(link);
+            }}
+            onLinksScanned={links => {
+              setTerminalLinks(links);
+              setLinksBusy(false);
+            }}
+            onControlUse={onTerminalControlUse}
+            onClose={() => {
+              if (activeTerminalSession) onCloseTerminal(activeTerminalSession.terminalId);
+            }}
+            onStatus={(target, status, error, reconnectAttempt) => {
+              onTerminalStatus(
+                target.hostSessionId,
+                target.session.terminalId,
+                status,
+                error,
+                reconnectAttempt,
+              );
+            }}
+          />
+        </Animated.View>
         {tabSwipe
           && (!tabSwipe.targetTerminalId
             || !terminalState.sessions.some(session => session.terminalId === tabSwipe.targetTerminalId))

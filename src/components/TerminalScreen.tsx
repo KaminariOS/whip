@@ -1,10 +1,8 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, FolderOpen, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Paperclip, Send, X } from 'lucide-react-native';
-import { AppState, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
+import { Animated, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import WebView from 'react-native-webview/lib/WebView.android';
-import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import { cn } from '@/src/lib/utils';
 import {
@@ -12,29 +10,33 @@ import {
   type TerminalControlId,
   type TerminalControlUsage,
 } from '../lib/terminalControls';
-import type { HerdrClient } from '../services/HerdrClient';
+import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
-import type { TerminalFrame } from '../lib/terminalBridge';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
-import type { TerminalSession, TerminalSessionStatus } from '../terminalSessions';
-import type { PaneScrollInfo } from '../types';
+import type { TerminalSessionStatus } from '../terminalSessions';
 import { colors, useTheme } from '../theme';
-import { terminalHtml } from '../generated/terminalHtml';
+import {
+  TerminalRendererHost,
+  type TerminalRendererHandle,
+} from './TerminalRendererHost';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 
 interface Props {
-  client: HerdrClient;
+  activeTarget: TerminalRenderTarget | null;
+  previewTarget?: TerminalRenderTarget | null;
+  targets: readonly TerminalRenderTarget[];
   visible: boolean;
-  session: TerminalSession | null;
-  scroll?: PaneScrollInfo;
   preferences: TerminalPreferences;
   controlUsage: TerminalControlUsage;
   compact?: boolean;
-  preview?: boolean;
+  swipe?: {
+    direction: -1 | 1;
+    offset: Animated.Value;
+  } | null;
   terminalPanHandlers?: GestureResponderHandlers;
   onControlUse: (control: TerminalControlId) => void;
   linkScanRequest?: number;
@@ -49,11 +51,12 @@ interface Props {
   onOpenLink?: (link: string) => void;
   onLinksScanned?: (links: string[]) => void;
   onClose: () => void;
-  onStatus: (status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
-}
-
-interface WebViewHandle {
-  injectJavaScript: (script: string) => void;
+  onStatus: (
+    target: TerminalRenderTarget,
+    status: TerminalSessionStatus,
+    error?: string,
+    reconnectAttempt?: number,
+  ) => void;
 }
 
 const TERMINAL_KEYS: Partial<Record<TerminalControlId, readonly [string, string]>> = {
@@ -75,27 +78,40 @@ const TERMINAL_KEYS: Partial<Record<TerminalControlId, readonly [string, string]
   home: ['HOME', '\u001b[H'],
 };
 
-const MAX_RECONNECT_ATTEMPTS = 5;
-const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
-const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
 const TERMINAL_CONTROL_CLASS = 'min-h-[34px] min-w-12 rounded-sm border border-border bg-card/70 px-2.5 active:bg-card/80';
+const MAX_RECONNECT_ATTEMPTS = 5;
 
-export function TerminalScreen({ client, visible, session, scroll, preferences, controlUsage, compact = false, preview = false, terminalPanHandlers, onControlUse, linkScanRequest = 0, pasteRequest, onRequestAttachment, onRequestFiles, onOpenLink, onLinksScanned, onClose, onStatus }: Props) {
+export function TerminalScreen({
+  activeTarget,
+  previewTarget,
+  targets,
+  visible,
+  preferences,
+  controlUsage,
+  compact = false,
+  swipe,
+  terminalPanHandlers,
+  onControlUse,
+  linkScanRequest = 0,
+  pasteRequest,
+  onRequestAttachment,
+  onRequestFiles,
+  onOpenLink,
+  onLinksScanned,
+  onClose,
+  onStatus,
+}: Props) {
   const { colors: appColors } = useTheme();
   const { t } = useTranslation();
   const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
+  const session = activeTarget?.session || null;
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
   const status = session?.status || 'connecting';
-  const webView = useRef<WebViewHandle | null>(null);
+  const renderer = useRef<TerminalRendererHandle | null>(null);
   const controlsRef = useRef<View | null>(null);
-  const readyRef = useRef(false);
-  const resetOnNextFrame = useRef(true);
-  const pendingFrames = useRef<TerminalFrame[]>([]);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAttempt = useRef(session?.reconnectAttempt || 0);
   const handledPasteRequest = useRef(0);
   const composeAttachmentsRef = useRef<ComposeAttachment[]>([]);
   const composeInputRef = useRef<TextInputHandle | null>(null);
@@ -105,7 +121,6 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const [ctrl, setCtrl] = useState<TerminalModifierState>('off');
   const [shift, setShift] = useState<TerminalModifierState>('off');
   const [alt, setAlt] = useState<TerminalModifierState>('off');
-  const [connectionGeneration, setConnectionGeneration] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCase, setSearchCase] = useState(false);
@@ -117,157 +132,51 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   const [keyboardEnabled, setKeyboardEnabled] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
-  const [scrollPosition, setScrollPosition] = useState(scroll);
+  const [scrollPosition, setScrollPosition] = useState(activeTarget?.scroll);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
-  const [terminalFontSize, setTerminalFontSize] = useState(() => ({
-    preference: preferences.fontSize,
-    value: preferences.fontSize,
-  }));
-  const configuredFontSize = terminalFontSize.preference === preferences.fontSize
-    ? terminalFontSize.value
-    : preferences.fontSize;
   const scrollThumb = terminalScrollThumb(scrollPosition);
-  const presented = visible || preview;
 
   useEffect(() => {
-    setScrollPosition(scroll);
-  }, [scroll, terminalId]);
+    setScrollPosition(activeTarget?.scroll);
+    setError(null);
+    setSearchOpen(false);
+    setComposeOpen(false);
+    setCtrl('off');
+    setShift('off');
+    setAlt('off');
+    for (const attachment of composeAttachmentsRef.current) attachment.dispose();
+    composeAttachmentsRef.current = [];
+    setComposeAttachments([]);
+  }, [activeTarget?.key, activeTarget?.scroll]);
 
-  useEffect(() => {
-    setTerminalFontSize(current => (
-      current.preference === preferences.fontSize
-        ? current
-        : { preference: preferences.fontSize, value: preferences.fontSize }
-    ));
-  }, [preferences.fontSize]);
-
-  const reportStatus = useEffectEvent(onStatus);
-
-  const injectFrame = (frame: TerminalFrame) => {
-    const reset = resetOnNextFrame.current;
-    if (reset) resetOnNextFrame.current = false;
-    const resetScript = reset ? 'window.herdrReset(); ' : '';
-    if (typeof frame.final === 'boolean') {
-      webView.current?.injectJavaScript(
-        `${resetScript}window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}); true;`,
-      );
-      return;
-    }
-    for (let offset = 0; offset < frame.bytes.length; offset += FRAME_CHUNK_SIZE) {
-      const chunk = frame.bytes.slice(offset, offset + FRAME_CHUNK_SIZE);
-      const final = offset + FRAME_CHUNK_SIZE >= frame.bytes.length;
-      webView.current?.injectJavaScript(
-        `${offset === 0 ? resetScript : ''}window.herdrWriteBase64Chunk(${frame.seq}, ${JSON.stringify(chunk)}, ${final}); true;`,
-      );
-    }
-  };
-
-  const writeFrame = useEffectEvent((frame: TerminalFrame) => {
-    if (!readyRef.current) {
-      pendingFrames.current.push(frame);
-      return;
-    }
-    injectFrame(frame);
-  });
-
-  const writeInput = async (data: string, refocusTerminal = true): Promise<boolean> => {
+  const writeInput = async (
+    data: string,
+    target: TerminalRenderTarget | null = activeTarget,
+    refocusTerminal = true,
+  ): Promise<boolean> => {
+    if (!target) return false;
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     try {
-      await client.writeToTerminal(terminalId, data);
-      if (refocusTerminal && keyboardEnabled && keyboardVisible) webView.current?.injectJavaScript('window.herdrFocus(); true;');
+      await target.client.writeToTerminal(target.session.terminalId, data);
+      if (refocusTerminal && target.key === activeTarget?.key && keyboardEnabled && keyboardVisible) {
+        renderer.current?.focus();
+      }
       return true;
     } catch (reason) {
-      setError(String(reason));
+      if (target.key === activeTarget?.key) setError(String(reason));
       return false;
     }
   };
 
-  const sendInput = async (data: string) => {
+  const sendInput = async (data: string, target: TerminalRenderTarget | null = activeTarget) => {
+    if (!target) return false;
+    if (target.key !== activeTarget?.key) return writeInput(data, target, false);
     const value = applyTerminalModifiers(data, ctrl, alt, shift);
     if (ctrl === 'armed') setCtrl('off');
     if (shift === 'armed') setShift('off');
     if (alt === 'armed') setAlt('off');
-    return writeInput(value);
+    return writeInput(value, target);
   };
-
-  useEffect(() => {
-    // Visibility activates and touches the terminal's per-host LRU entry. The
-    // bridge stays attached when navigating elsewhere in the app, while the
-    // client evicts older hidden terminals before reaching SSH MaxSessions.
-    if (!terminalId || !visible) return;
-    if (AppState.currentState !== 'active') return;
-    let active = true;
-    const retained = client.isTerminalBridgeRetained(terminalId);
-    if (!retained) {
-      resetOnNextFrame.current = true;
-      pendingFrames.current = [];
-    }
-    setError(null);
-    if (!retained) reportStatus('connecting', undefined, reconnectAttempt.current);
-    const scheduleReconnect = (reason: string) => {
-      if (!active || AppState.currentState !== 'active') return;
-      const nextAttempt = reconnectAttempt.current + 1;
-      if (nextAttempt > MAX_RECONNECT_ATTEMPTS) {
-        reportStatus('error', reason, reconnectAttempt.current);
-        return;
-      }
-      reconnectAttempt.current = nextAttempt;
-      reportStatus('disconnected', reason, nextAttempt);
-      reconnectTimer.current = setTimeout(
-        () => active && setConnectionGeneration(value => value + 1),
-        Math.min(8000, 750 * (2 ** (nextAttempt - 1))),
-      );
-    };
-    client.openTerminal(
-      terminalId,
-      writeFrame,
-      reason => scheduleReconnect(reason || t('terminal.remoteClosed')),
-    ).then(() => {
-      if (active) {
-        reconnectAttempt.current = 0;
-        reportStatus('connected', undefined, 0);
-      }
-    }).catch(reason => {
-      const message = String(reason);
-      if (active) {
-        setError(message);
-        scheduleReconnect(message);
-      }
-    });
-    return () => {
-      active = false;
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-    };
-  }, [client, connectionGeneration, t, terminalId, visible]);
-
-  useEffect(() => {
-    if (!terminalId) return;
-    return () => {
-      client.releaseTerminal(terminalId).catch(() => client.closeTerminal(terminalId));
-    };
-  }, [client, terminalId]);
-
-  useEffect(() => {
-    let previous = AppState.currentState;
-    const subscription = AppState.addEventListener('change', state => {
-      const wasActive = previous === 'active';
-      previous = state;
-      if (
-        state === 'active'
-        && !wasActive
-        && terminalId
-        && !client.isTerminalBridgeRetained(terminalId)
-      ) {
-        reconnectAttempt.current = 0;
-        setConnectionGeneration(value => value + 1);
-      }
-    });
-    return () => subscription.remove();
-  }, [client, terminalId]);
-
-  useEffect(() => {
-    reconnectAttempt.current = session?.reconnectAttempt || 0;
-  }, [session?.reconnectAttempt]);
 
   useEffect(() => {
     if (!ready) {
@@ -275,37 +184,27 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       return;
     }
     if (!visible) {
-      if (wasVisible.current) webView.current?.injectJavaScript('window.herdrBlur(); true;');
+      if (wasVisible.current) renderer.current?.blur();
       wasVisible.current = false;
       return;
     }
     wasVisible.current = true;
     const timer = setTimeout(() => {
-      webView.current?.injectJavaScript(
-        `window.herdrFit(); ${keyboardEnabled && keyboardVisible ? 'window.herdrFocus();' : ''} true;`,
-      );
+      renderer.current?.fit();
+      if (keyboardEnabled && keyboardVisible) renderer.current?.focus();
     }, 40);
     return () => clearTimeout(timer);
   }, [keyboardEnabled, keyboardVisible, ready, visible]);
 
   useEffect(() => {
     if (!ready) return;
-    webView.current?.injectJavaScript(`window.herdrSetKeyboardEnabled(${keyboardEnabled}); true;`);
+    renderer.current?.setKeyboardEnabled(keyboardEnabled);
     if (!keyboardEnabled) Keyboard.dismiss();
   }, [keyboardEnabled, ready]);
 
   useEffect(() => {
-    if (!ready) return;
-    webView.current?.injectJavaScript(`window.herdrConfigure(${JSON.stringify({
-      ...preferences,
-      fontSize: configuredFontSize,
-      backgroundImageUri: null,
-    })}); true;`);
-  }, [configuredFontSize, preferences, ready]);
-
-  useEffect(() => {
     if (!linkScanRequest || !ready || !visible) return;
-    webView.current?.injectJavaScript('window.herdrScanLinks(); true;');
+    renderer.current?.scanLinks();
   }, [linkScanRequest, ready, visible]);
 
   useEffect(() => {
@@ -327,8 +226,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       pasteRequest.dispose?.();
       return;
     }
-    const value = JSON.stringify(pasteRequest.text).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-    webView.current?.injectJavaScript(`window.herdrPaste(${value}); true;`);
+    renderer.current?.paste(pasteRequest.text);
     pasteRequest.dispose?.();
   }, [composeOpen, pasteRequest, ready, visible]);
 
@@ -375,7 +273,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   useEffect(() => {
     if (!ready) return;
     const timer = setTimeout(() => {
-      webView.current?.injectJavaScript('window.herdrFit(); true;');
+      renderer.current?.fit();
     }, 40);
     return () => clearTimeout(timer);
   }, [composeOpen, keyboardInset, ready]);
@@ -383,33 +281,30 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
   useEffect(() => {
     if (!ready) return;
     if (!searchOpen) {
-      webView.current?.injectJavaScript('window.herdrClearSearch(); true;');
+      renderer.current?.clearSearch();
       return;
     }
-    const query = JSON.stringify(searchQuery).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-    webView.current?.injectJavaScript(`window.herdrSearch(${query}, ${searchCase}, ${searchRegex}, 0); true;`);
+    renderer.current?.search(searchQuery, searchCase, searchRegex, 0);
   }, [ready, searchCase, searchOpen, searchQuery, searchRegex]);
 
   const pasteClipboard = async () => {
     const value = await Clipboard.getString();
     if (!value) return;
-    const encoded = JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-    webView.current?.injectJavaScript(`window.herdrPaste(${encoded}); true;`);
+    renderer.current?.paste(value);
   };
 
   const moveSearch = (direction: -1 | 1) => {
-    const query = JSON.stringify(searchQuery).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-    webView.current?.injectJavaScript(`window.herdrSearch(${query}, ${searchCase}, ${searchRegex}, ${direction}); true;`);
+    renderer.current?.search(searchQuery, searchCase, searchRegex, direction);
   };
 
   const closeSearch = () => {
     setSearchOpen(false);
-    if (keyboardEnabled) setTimeout(() => webView.current?.injectJavaScript('window.herdrFocus(); true;'), 40);
+    if (keyboardEnabled) setTimeout(() => renderer.current?.focus(), 40);
   };
 
   const closeComposerKeyboard = async () => {
     composeInputRef.current?.blur();
-    webView.current?.injectJavaScript('window.herdrBlur(); true;');
+    renderer.current?.blur();
     if (!keyboardVisible) {
       Keyboard.dismiss();
       return;
@@ -435,63 +330,8 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     });
   };
 
-  const handleMessage = async (event: WebViewMessageEvent) => {
-    const message = JSON.parse(event.nativeEvent.data);
-    if (message.type === 'ready') {
-      readyRef.current = true;
-      setReady(true);
-      const frames = pendingFrames.current;
-      pendingFrames.current = [];
-      for (const frame of frames) injectFrame(frame);
-      return;
-    }
-    if (message.type === 'input') {
-      await sendInput(message.data);
-    } else if (message.type === 'buffered-submit') {
-      await writeInput(message.data, false);
-    } else if (message.type === 'resize') {
-      if (!terminalId) return;
-      client.resizeTerminal(
-        terminalId,
-        message.cols,
-        message.rows,
-        message.cellWidthPx,
-        message.cellHeightPx,
-      );
-    } else if (message.type === 'scroll') {
-      setScrollPosition(current => moveTerminalScroll(current, message.direction, message.lines));
-      try {
-        await client.scrollTerminal(terminalId, message.direction, message.lines);
-      } catch (reason) {
-        setError(String(reason));
-      }
-    } else if (message.type === 'font-size-change') {
-      const fontSize = Number(message.fontSize);
-      if (Number.isFinite(fontSize)) {
-        setTerminalFontSize({
-          preference: preferences.fontSize,
-          value: Math.max(8, Math.min(24, Math.round(fontSize))),
-        });
-      }
-    } else if (message.type === 'clipboard-write') {
-      Clipboard.setString(message.text || '');
-    } else if (message.type === 'clipboard-read') {
-      await pasteClipboard();
-    } else if (message.type === 'search-result') {
-      setSearchResult({ count: message.count, index: message.index, invalid: Boolean(message.invalid) });
-    } else if (message.type === 'link-scan-result') {
-      onLinksScanned?.(Array.isArray(message.links) ? message.links.filter((link: unknown) => typeof link === 'string') : []);
-    } else if (message.type === 'open-link' && typeof message.link === 'string') {
-      onOpenLink?.(message.link);
-    }
-  };
-
   const retryNow = () => {
-    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-    client.closeTerminal(terminalId);
-    reconnectAttempt.current = 0;
-    onStatus('connecting', undefined, 0);
-    setConnectionGeneration(value => value + 1);
+    renderer.current?.retry();
   };
 
   const closeCompose = async () => {
@@ -511,8 +351,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
     const attachmentPaths = composeAttachmentsRef.current.map(attachment => attachment.remotePath);
     const submitted = [composeText.trimEnd(), ...attachmentPaths].filter(Boolean).join(' ');
     if (!submitted) return;
-    const value = JSON.stringify(submitted).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-    webView.current?.injectJavaScript(`window.herdrSubmit(${value}); true;`);
+    renderer.current?.submit(submitted);
     setComposeText('');
     for (const attachment of composeAttachmentsRef.current) attachment.dispose();
     composeAttachmentsRef.current = [];
@@ -557,12 +396,12 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
                 if (composeOpen) {
                   composeInputRef.current?.focus();
                 } else {
-                  webView.current?.injectJavaScript('window.herdrFocus(); true;');
+                  renderer.current?.focus();
                 }
               }, 40);
             } else {
               Keyboard.dismiss();
-              webView.current?.injectJavaScript('window.herdrBlur(); true;');
+              renderer.current?.blur();
             }
           }}>
           <KeyboardIcon size={17} color={keyboardEnabled ? appColors.primary : appColors.text} />
@@ -704,7 +543,7 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
       accessibilityElementsHidden={!visible || !session}
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
-      className={cn('flex-1 bg-transparent', (!presented || !session) && 'absolute inset-0 opacity-0')}>
+      className={cn('flex-1 bg-transparent', (!visible || !session) && 'absolute inset-0 opacity-0')}>
       {preferences.backgroundImageUri && (
         <View
           accessibilityElementsHidden
@@ -761,18 +600,32 @@ export function TerminalScreen({ client, visible, session, scroll, preferences, 
         style={keyboardInset > 0 && !composeOpen ? { paddingBottom: keyboardInset } : undefined}
         {...(keyboardEnabled ? terminalPanHandlers : undefined)}
       >
-        <WebView
-          ref={value => {
-            webView.current = value as WebViewHandle | null;
+        <TerminalRendererHost
+          ref={renderer}
+          activeTarget={activeTarget}
+          previewTarget={previewTarget}
+          targets={targets}
+          visible={visible}
+          preferences={preferences}
+          swipe={swipe}
+          onReady={() => setReady(true)}
+          onInput={async (target, data) => {
+            await sendInput(data, target);
           }}
-          source={{ html: terminalHtml, baseUrl: 'file:///android_asset/' }}
-          originWhitelist={['file://*', 'about:blank']}
-          allowFileAccess
-          javaScriptEnabled
-          textZoom={100}
-          onMessage={handleMessage}
+          onScroll={(target, direction, lines) => {
+            if (target.key === activeTarget?.key) {
+              setScrollPosition(current => moveTerminalScroll(current, direction, lines));
+            }
+          }}
+          onFontSizeChange={() => undefined}
+          onSearchResult={(count, index, invalid) => setSearchResult({ count, index, invalid })}
+          onLinksScanned={links => onLinksScanned?.(links)}
+          onOpenLink={link => onOpenLink?.(link)}
+          onStatus={onStatus}
+          onError={(target, message) => {
+            if (target.key === activeTarget?.key) setError(message);
+          }}
           style={WEBVIEW_STYLE}
-          containerStyle={WEBVIEW_CONTAINER_STYLE}
         />
         {scrollThumb && (
           <View

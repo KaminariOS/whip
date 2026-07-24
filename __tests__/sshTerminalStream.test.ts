@@ -47,7 +47,7 @@ describe('Android SSH terminal protocol stream', () => {
 
   test('Herdr terminals use the protocol 17 client socket on the primary SSH client', () => {
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
-    const terminalScreen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+    const renderer = readFileSync(resolve(__dirname, '../src/components/TerminalRendererHost.tsx'), 'utf8');
     const codec = readFileSync(
       resolve(packageRoot, 'android/src/main/java/me/dylankenneally/rnssh/HerdrBridgeCodec.java'),
       'utf8',
@@ -62,7 +62,7 @@ describe('Android SSH terminal protocol stream', () => {
     expect(codec).toContain('static final int PROTOCOL_VERSION = 17');
     expect(codec).toContain('RenderEncoding::TerminalAnsi');
     expect(codec).toContain('ClientLaunchMode::TerminalAttach');
-    expect(terminalScreen).toContain('window.herdrWriteBase64Chunk');
+    expect(renderer).toContain('window.herdrWriteBase64Chunk');
   });
 
   test('keeps one direct-attach bridge per terminal inside the primary SSH session', () => {

@@ -18,14 +18,15 @@ describe('terminal input composer', () => {
   it('uses xterm paste semantics without pressing Enter after the composed input', () => {
     const assets = readSource('scripts/sync-terminal-assets.mjs');
     const screen = readSource('src/components/TerminalScreen.tsx');
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
 
     expect(assets).toContain("window.herdrSubmit = data => {");
     expect(assets).toContain('terminal.paste(data);');
     expect(assets).toContain('const value = bufferedInput;');
     expect(assets).toContain("send({ type: 'buffered-submit', data: value });");
-    expect(screen).toContain("message.type === 'buffered-submit'");
-    expect(screen).toContain('await writeInput(message.data, false);');
-    expect(screen).not.toContain("await writeInput('\\r', false);");
+    expect(renderer).toContain("message.type === 'buffered-submit'");
+    expect(renderer).toContain('entry.target.client.writeToTerminal(entry.target.session.terminalId, message.data)');
+    expect(screen).not.toContain("writeInput('\\r'");
   });
 
   it('retains an unsent draft when the composer closes', () => {
