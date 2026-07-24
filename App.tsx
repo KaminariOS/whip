@@ -1237,10 +1237,10 @@ function AppContent() {
     await refreshHost(sessionId);
   };
 
-  const startAgent = async (sessionId: string, name: string, command: string, cwd: string) => {
+  const startAgent = async (sessionId: string, workspaceId: string, name: string, command: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) return;
-    await runtime.client.startAgent(name, command, cwd);
+    await runtime.client.startAgent(workspaceId, name, command);
     await refreshHost(sessionId);
   };
 

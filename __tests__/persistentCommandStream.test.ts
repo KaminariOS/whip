@@ -72,6 +72,35 @@ describe('direct Herdr API requests', () => {
     );
   });
 
+  test('starts an agent in a new tab in the selected workspace', async () => {
+    const native = apiClient(request => request.method === 'tab.create'
+      ? { type: 'tab_created', root_pane: { pane_id: 'pane-new' } }
+      : { type: 'ok' });
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await client.startAgent('space-1', ' Codex ', ' codex ');
+
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    expect(requests.map(request => request.method)).toEqual([
+      'tab.create',
+      'pane.rename',
+      'pane.send_input',
+    ]);
+    expect(requests[0].params).toEqual({
+      workspace_id: 'space-1',
+      label: 'Codex',
+      focus: true,
+    });
+    expect(requests[1].params).toEqual({ pane_id: 'pane-new', label: 'Codex' });
+    expect(requests[2].params).toEqual({
+      pane_id: 'pane-new',
+      text: 'codex',
+      keys: ['Enter'],
+    });
+  });
+
   test('serializes concurrent commands and preserves multiline UTF-8 output', async () => {
     const native = apiClient(request => request.method === 'pane.read'
       ? { type: 'pane_read', read: { text: 'first\n你好' } }

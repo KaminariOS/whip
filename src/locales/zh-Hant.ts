@@ -226,7 +226,7 @@ export const zhHant: Record<string, string> = {
   'herd.done': '已完成',
   'herd.attentionQueue': '待處理佇列',
   'herd.startAgent': '啟動代理程式',
-  'herd.startAgentOn': '在 {{host}} 上啟動代理程式',
+  'herd.startAgentIn': '在 {{workspace}} 中啟動代理程式',
   'herd.agentName': '代理程式名稱',
   'herd.commandExample': '指令，例如 claude',
   'herd.launch': '啟動',

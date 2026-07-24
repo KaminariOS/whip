@@ -23,4 +23,14 @@ describe('terminal to Herd navigation', () => {
     expect(app).toContain('setHerdWorkspaceFilter(sessionId, workspaceId)');
     expect(app).toContain('onExit={() => exitTerminalToHerd(session.id)}');
   });
+
+  it('only starts an agent inside the selected space', () => {
+    const app = readSource('App.tsx');
+    const herd = readSource('src/components/HerdScreen.tsx');
+
+    expect(herd).toContain('if (!selectedQueue || !selectedWorkspace || !name.trim() || !command.trim()) return;');
+    expect(herd).toContain('await onStart(selectedQueue.id, selectedWorkspace.workspace_id, name, command);');
+    expect(herd).toContain('{selectedWorkspace ? (');
+    expect(app).toContain('await runtime.client.startAgent(workspaceId, name, command);');
+  });
 });

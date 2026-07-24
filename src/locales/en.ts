@@ -234,7 +234,7 @@ export const en = {
   'herd.done': 'Done',
   'herd.attentionQueue': 'Attention queue',
   'herd.startAgent': 'Start agent',
-  'herd.startAgentOn': 'Start an agent on {{host}}',
+  'herd.startAgentIn': 'Start an agent in {{workspace}}',
   'herd.agentName': 'Agent name',
   'herd.commandExample': 'Command, e.g. claude',
   'herd.launch': 'Launch',
