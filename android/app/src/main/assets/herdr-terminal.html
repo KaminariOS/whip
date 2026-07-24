@@ -347,47 +347,97 @@
       }
       send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
     };
-    const trimUrl = candidate => {
-      let value = candidate.replace(/[.,;:!?]+$/, '');
-      for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
-        const opens = value.split(open).length - 1;
-        let closes = value.split(close).length - 1;
-        while (value.endsWith(close) && closes > opens) {
-          value = value.slice(0, -1);
-          closes -= 1;
+    function trimTerminalUrl(candidate) {
+  let value = candidate.replace(/[.,;:!?]+$/, '');
+  for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+    const opens = value.split(open).length - 1;
+    let closes = value.split(close).length - 1;
+    while (value.endsWith(close) && closes > opens) {
+      value = value.slice(0, -1);
+      closes -= 1;
+    }
+  }
+  return value;
+}
+    function extractTerminalLinks(rows, columns) {
+  const logicalLines = [];
+  let logicalLine = null;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!row.isWrapped || !logicalLine) {
+      if (logicalLine) logicalLines.push(logicalLine);
+      logicalLine = { text: '', endsAtColumnBoundary: false };
+    }
+
+    const nextIsWrapped = Boolean(rows[index + 1]?.isWrapped);
+    logicalLine.text += nextIsWrapped ? row.text : row.text.trimEnd();
+    logicalLine.endsAtColumnBoundary = !nextIsWrapped
+      && columns > 0
+      && row.text.trimEnd().length >= columns;
+  }
+  if (logicalLine) logicalLines.push(logicalLine);
+
+  // Some programs hard-wrap output by writing a newline at the terminal edge.
+  // Terminal UIs can also wrap a URL inside a decorated block, repeating a
+  // presentation prefix such as "  ┃  " on every continuation row.
+  const scanLines = logicalLines.map((line, index) => {
+    let text = line.text;
+    let current = index;
+    const urlAtEnd = text.match(/https?:[/]{2}[^\s<>"']+$/i);
+    if (!urlAtEnd) return text;
+
+    const prefix = text.slice(0, urlAtEnd.index);
+    const repeatsPresentationPrefix = prefix.length > 0
+      && !/[A-Za-z0-9]/.test(prefix)
+      && prefix + urlAtEnd[0] === text;
+
+    while (current + 1 < logicalLines.length) {
+      const next = logicalLines[current + 1];
+      let continuation = null;
+      if (repeatsPresentationPrefix) {
+        const repeatsPrefix = next.text.startsWith(prefix);
+        const preservesContentColumn = next.text.slice(0, prefix.length).trim() === '';
+        if (repeatsPrefix || preservesContentColumn) {
+          continuation = next.text.slice(prefix.length).match(/^[^\s<>"']+$/)?.[0] || null;
         }
+      } else if (logicalLines[current]?.endsAtColumnBoundary) {
+        continuation = next.text.match(/^[^\s<>"']+$/)?.[0] || null;
       }
-      return value;
-    };
+      if (!continuation || /^https?:[/]{2}/i.test(continuation)) break;
+      text += continuation;
+      current += 1;
+    }
+    return text;
+  });
+
+  const links = [];
+  const seen = new Set();
+  for (let index = scanLines.length - 1; index >= 0; index -= 1) {
+    const matches = [...scanLines[index].matchAll(/https?:[/]{2}[^\s<>"']+/gi)];
+    for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex -= 1) {
+      const value = trimTerminalUrl(matches[matchIndex][0]);
+      try {
+        const parsed = new URL(value);
+        if (!['http:', 'https:'].includes(parsed.protocol) || seen.has(parsed.href)) continue;
+        seen.add(parsed.href);
+        links.push(parsed.href);
+      } catch {}
+    }
+  }
+  return links;
+}
     window.herdrScanLinks = () => {
-      const logicalLines = [];
-      let logicalLine = '';
+      const rows = [];
       for (let row = 0; row < terminal.buffer.active.length; row += 1) {
         const bufferLine = terminal.buffer.active.getLine(row);
         if (!bufferLine) continue;
-        if (!bufferLine.isWrapped && logicalLine) {
-          logicalLines.push(logicalLine);
-          logicalLine = '';
-        }
-        logicalLine += bufferLine.translateToString(true);
+        rows.push({
+          text: bufferLine.translateToString(false),
+          isWrapped: bufferLine.isWrapped,
+        });
       }
-      if (logicalLine) logicalLines.push(logicalLine);
-
-      const links = [];
-      const seen = new Set();
-      for (let index = logicalLines.length - 1; index >= 0; index -= 1) {
-        const matches = [...logicalLines[index].matchAll(/https?:[/]{2}[^\s<>"']+/gi)];
-        for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex -= 1) {
-          const value = trimUrl(matches[matchIndex][0]);
-          try {
-            const parsed = new URL(value);
-            if (!['http:', 'https:'].includes(parsed.protocol) || seen.has(parsed.href)) continue;
-            seen.add(parsed.href);
-            links.push(parsed.href);
-          } catch {}
-        }
-      }
-      send({ type: 'link-scan-result', links });
+      send({ type: 'link-scan-result', links: extractTerminalLinks(rows, terminal.cols) });
     };
     const resize = () => {
       fit.fit();
@@ -478,7 +528,7 @@
         if (!buffer.getLine(row + 1)?.isWrapped) break;
       }
       for (const match of logicalLine.matchAll(/https?:[/]{2}[^\s<>"']+/gi)) {
-        const value = trimUrl(match[0]);
+        const value = trimTerminalUrl(match[0]);
         const start = match.index || 0;
         if (pointOffset < start || pointOffset >= start + value.length) continue;
         try {
