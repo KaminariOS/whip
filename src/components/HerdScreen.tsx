@@ -36,7 +36,7 @@ interface Props {
   onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
   onRefresh: () => void;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
-  onStart: (hostId: string, name: string, command: string, cwd: string) => Promise<void>;
+  onStart: (hostId: string, workspaceId: string, name: string, command: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
 }
 
@@ -74,7 +74,6 @@ export function HerdScreen({
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('agent');
   const [command, setCommand] = useState('');
-  const [cwd, setCwd] = useState('');
   const [workspaceEditorMode, setWorkspaceEditorMode] = useState<'create' | 'rename' | null>(null);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
@@ -161,8 +160,8 @@ export function HerdScreen({
   };
 
   const start = async () => {
-    if (!selectedQueue || !name.trim() || !command.trim()) return;
-    await onStart(selectedQueue.id, name, command, cwd);
+    if (!selectedQueue || !selectedWorkspace || !name.trim() || !command.trim()) return;
+    await onStart(selectedQueue.id, selectedWorkspace.workspace_id, name, command);
     setCommand('');
     setCreating(false);
   };
@@ -228,7 +227,7 @@ export function HerdScreen({
 
             <View className="min-h-10 flex-row items-center justify-between">
               <Text className="px-1 text-sm font-semibold text-muted-foreground">{t('herd.attentionQueue')}</Text>
-              {selectedQueue ? (
+              {selectedWorkspace ? (
                 <Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(value => !value))}>
                   {creating ? <Icon as={X} size={16} color={colors.text} /> : <Icon as={Plus} size={16} />}
                   <Text>{creating ? t('common.close') : t('herd.startAgent')}</Text>
@@ -236,13 +235,12 @@ export function HerdScreen({
               ) : null}
             </View>
 
-            {creating && selectedQueue ? (
+            {creating && selectedWorkspace ? (
               <AnimatedEntrance className="mb-4">
                 <View className="gap-2.5 rounded-lg border border-border bg-card p-3.5">
-                  <Text className="mb-0.5 text-[17px] font-semibold leading-[22px]">{t('herd.startAgentOn', { host: selectedQueue.label })}</Text>
+                  <Text className="mb-0.5 text-[17px] font-semibold leading-[22px]">{t('herd.startAgentIn', { workspace: selectedWorkspace.label || selectedWorkspace.workspace_id })}</Text>
                   <Input value={name} onChangeText={setName} placeholder={t('herd.agentName')} />
                   <Input value={command} onChangeText={setCommand} placeholder={t('herd.commandExample')} autoCapitalize="none" />
-                  <Input value={cwd} onChangeText={setCwd} placeholder={t('herd.workingDirectoryOptional')} autoCapitalize="none" />
                   <View className="mt-0.5 flex-row justify-end gap-2"><Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(false))}><Text>{t('common.cancel')}</Text></Button><Button size="sm" disabled={!name.trim() || !command.trim()} onPress={hapticPress(start)}><Text>{t('herd.launch')}</Text></Button></View>
                 </View>
               </AnimatedEntrance>
