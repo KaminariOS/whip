@@ -18,14 +18,14 @@ describe('terminal pinch zoom', () => {
   });
 
   it('keeps the final font size local to its terminal instance', () => {
-    const terminalScreen = readSource('src/components/TerminalScreen.tsx');
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
     const sessionScreen = readSource('src/components/SessionScreen.tsx');
     const app = readSource('App.tsx');
 
-    expect(terminalScreen).toContain("message.type === 'font-size-change'");
-    expect(terminalScreen).toContain('setTerminalFontSize({');
-    expect(terminalScreen).toContain('fontSize: configuredFontSize');
-    expect(terminalScreen).toContain('preference: preferences.fontSize');
+    expect(renderer).toContain("message.type === 'font-size-change'");
+    expect(renderer).toContain('entry.fontSize = Math.max(8, Math.min(24');
+    expect(renderer).toContain('fontPreference: preferences.fontSize');
+    expect(renderer).toContain('fontSize: preferences.fontSize');
     expect(sessionScreen).not.toContain('onTerminalFontSizeChange');
     expect(app).not.toContain('updateTerminalFontSize');
     expect(app).not.toContain('onTerminalFontSizeChange');

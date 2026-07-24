@@ -21,7 +21,7 @@ describe('terminal to Herd navigation', () => {
     expect(app).toContain('pane.terminal_id === activeTerminalId');
     expect(app).toContain('setHerdHostFilterId(sessionId)');
     expect(app).toContain('setHerdWorkspaceFilter(sessionId, workspaceId)');
-    expect(app).toContain('onExit={() => exitTerminalToHerd(session.id)}');
+    expect(app).toContain('onExit={() => exitTerminalToHerd(activeSession.id)}');
   });
 
   it('only starts an agent inside the selected space', () => {

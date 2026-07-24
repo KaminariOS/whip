@@ -22,7 +22,7 @@ test('uploads attachments through SFTP and pastes the remote path into the activ
   expect(client).toContain('await client.sftpUpload(localFilePath, uploadDirectory)');
   expect(session).toContain('<AttachmentPasteSheet');
   expect(session).toContain('terminalId: attachmentTerminalId');
-  expect(terminal).toContain('window.herdrPaste(${value})');
+  expect(terminal).toContain('renderer.current?.paste(pasteRequest.text)');
   expect(terminal).toContain('setComposeText(current =>');
 });
 

@@ -88,10 +88,11 @@ await Promise.all([
   ),
 ]);
 
-const terminalHtml = `<!doctype html>
+const terminalSessionHtml = `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
+  <base href="file:///android_asset/">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <link rel="stylesheet" href="xterm.css">
   <style>
@@ -184,7 +185,7 @@ const terminalHtml = `<!doctype html>
     const fit = new FitAddon.FitAddon();
     terminal.loadAddon(fit);
     terminal.open(document.getElementById('terminal'));
-    const send = value => window.ReactNativeWebView.postMessage(JSON.stringify(value));
+    const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');
     let lastTap = null;
     let doubleTapTabEnabled = true;
     let keyboardEnabled = true;
@@ -587,6 +588,174 @@ const terminalHtml = `<!doctype html>
       fontReady.catch(() => undefined),
       new Promise(resolve => setTimeout(resolve, 1500)),
     ]).then(initializeTerminal);
+  </script>
+</body>
+</html>`;
+
+const terminalSessionStyle = terminalSessionHtml
+  .match(/<style>\n([\s\S]*?)\n  <\/style>/)?.[1]
+  ?.replace(
+    'html, body, #terminal {',
+    'html, body, #terminals, .terminal-session, .terminal-session #terminal {',
+  );
+const terminalSessionMarkup = terminalSessionHtml
+  .match(/<body>\n([\s\S]*?)\n  <script src="xterm.js">/)?.[1];
+const terminalSessionScript = terminalSessionHtml
+  .match(/  <script>\n([\s\S]*?)\n  <\/script>\n<\/body>/)?.[1]
+  ?.replace(
+    'const initializeTerminal = () => {',
+    'const initializeTerminal = () => {\n      if (disposed) return;',
+  )
+  .replace(
+    "const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');",
+    'const send = value => report(value);',
+  )
+  .replaceAll("document.getElementById('", "root.querySelector('#")
+  .replaceAll('window.herdr', 'api.herdr')
+  .replace(
+    "window.visualViewport?.addEventListener('scroll', resize);",
+    `window.visualViewport?.addEventListener('scroll', resize);
+    api.herdrDispose = () => {
+      disposed = true;
+      window.removeEventListener('resize', resize);
+      window.visualViewport?.removeEventListener('resize', resize);
+      window.visualViewport?.removeEventListener('scroll', resize);
+      terminal.dispose();
+    };`,
+  );
+
+if (!terminalSessionStyle || !terminalSessionMarkup || !terminalSessionScript) {
+  throw new Error('Failed to extract the multiplexed terminal document');
+}
+
+const terminalHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base href="file:///android_asset/">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <link rel="stylesheet" href="xterm.css">
+  <style>
+    ${terminalSessionStyle}
+    #terminals { position: relative; }
+    .terminal-session {
+      position: absolute;
+      inset: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateX(0);
+    }
+    .terminal-session.presented {
+      visibility: visible;
+      pointer-events: auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="terminals"></div>
+  <script src="xterm.js"></script>
+  <script src="addon-fit.js"></script>
+  <script>
+    const terminalMarkup = ${JSON.stringify(terminalSessionMarkup).replaceAll('<', '\\u003c')};
+    const createTerminalSession = (root, report) => {
+      let disposed = false;
+      const api = {
+        herdrDispose: () => { disposed = true; },
+      };
+      ${terminalSessionScript}
+      return api;
+    };
+
+    const terminals = new Map();
+    let activeKey = null;
+    const send = value => window.ReactNativeWebView.postMessage(JSON.stringify(value));
+    const call = (key, method, args = []) => {
+      const entry = terminals.get(key);
+      if (!entry) return;
+      if (!entry.ready) {
+        entry.pending.push([method, args]);
+        return;
+      }
+      entry.api[method]?.(...args);
+    };
+    const receive = (entry, value) => {
+      if (!value || typeof value.type !== 'string') return;
+      if (value.type === 'ready') {
+        entry.ready = true;
+        const pending = entry.pending;
+        entry.pending = [];
+        for (const [method, args] of pending) call(entry.key, method, args);
+        send({ type: 'terminal-ready', key: entry.key });
+        if (entry.key === activeKey) call(entry.key, 'herdrFit');
+        return;
+      }
+      send({ ...value, key: entry.key });
+    };
+    const create = key => {
+      if (!key || terminals.has(key)) return terminals.get(key);
+      const root = document.createElement('div');
+      root.className = 'terminal-session';
+      root.innerHTML = terminalMarkup;
+      const entry = { key, root, api: null, ready: false, pending: [] };
+      terminals.set(key, entry);
+      document.getElementById('terminals').appendChild(root);
+      entry.api = createTerminalSession(root, value => receive(entry, value));
+      return entry;
+    };
+    const present = keys => {
+      const presented = new Set(keys.filter(Boolean));
+      for (const entry of terminals.values()) {
+        const visible = presented.has(entry.key);
+        entry.root.classList.toggle('presented', visible);
+        if (!visible) {
+          entry.root.style.transform = 'translateX(0)';
+          call(entry.key, 'herdrBlur');
+        }
+      }
+    };
+
+    window.herdrCreate = key => { create(key); };
+    window.herdrRemove = key => {
+      const entry = terminals.get(key);
+      if (!entry) return;
+      entry.api.herdrDispose?.();
+      entry.root.remove();
+      terminals.delete(key);
+      if (activeKey === key) activeKey = null;
+    };
+    window.herdrActivate = key => {
+      create(key);
+      activeKey = key || null;
+      present(key ? [key] : []);
+      if (key) {
+        call(key, 'herdrFit');
+        call(key, 'herdrFocus');
+      }
+    };
+    window.herdrSwipe = (originKey, targetKey, direction, offset) => {
+      create(originKey);
+      create(targetKey);
+      present([originKey, targetKey]);
+      const width = window.innerWidth;
+      const origin = terminals.get(originKey);
+      const target = terminals.get(targetKey);
+      if (origin) origin.root.style.transform = 'translateX(' + offset + 'px)';
+      if (target) target.root.style.transform = 'translateX(' + (offset + direction * width) + 'px)';
+    };
+    window.herdrWriteBase64Chunk = (key, sequence, data, final) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final]);
+    window.herdrReset = key => call(key, 'herdrReset');
+    window.herdrConfigure = (key, options) => call(key, 'herdrConfigure', [options]);
+    window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
+    window.herdrSubmit = (key, data) => call(key, 'herdrSubmit', [data]);
+    window.herdrClearSearch = key => call(key, 'herdrClearSearch');
+    window.herdrSearch = (key, query, caseSensitive, regex, direction) => call(key, 'herdrSearch', [query, caseSensitive, regex, direction]);
+    window.herdrScanLinks = key => call(key, 'herdrScanLinks');
+    window.herdrFocus = key => call(key, 'herdrFocus');
+    window.herdrBlur = key => call(key, 'herdrBlur');
+    window.herdrSetKeyboardEnabled = (key, enabled) => call(key, 'herdrSetKeyboardEnabled', [enabled]);
+    window.herdrFit = key => call(key, 'herdrFit');
+
+    send({ type: 'ready' });
   </script>
 </body>
 </html>`;

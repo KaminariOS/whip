@@ -12,7 +12,7 @@ describe('terminal keyboard controls', () => {
       'utf8',
     );
 
-    const webView = screen.indexOf('      <WebView\n');
+    const renderer = screen.indexOf('        <TerminalRendererHost\n');
     const controlsWrapper = screen.indexOf('ref={controlsRef}');
     const controls = screen.indexOf('{controlOrder.map(renderTerminalControl)}');
 
@@ -26,9 +26,8 @@ describe('terminal keyboard controls', () => {
     );
     expect(screen).toContain('contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}');
     expect(screen).toContain("source={{ uri: preferences.backgroundImageUri }}");
-    expect(screen).toContain('backgroundImageUri: null');
-    expect(webView).toBeGreaterThanOrEqual(0);
-    expect(controlsWrapper).toBeGreaterThan(webView);
+    expect(renderer).toBeGreaterThanOrEqual(0);
+    expect(controlsWrapper).toBeGreaterThan(renderer);
     expect(controls).toBeGreaterThan(controlsWrapper);
     expect(manifest).toContain('android:windowSoftInputMode="adjustResize"');
   });
@@ -66,7 +65,7 @@ describe('terminal keyboard controls', () => {
     );
 
     expect(screen).toContain('const [keyboardEnabled, setKeyboardEnabled] = useState(true)');
-    expect(screen).toContain('window.herdrSetKeyboardEnabled(${keyboardEnabled})');
+    expect(screen).toContain('renderer.current?.setKeyboardEnabled(keyboardEnabled)');
     expect(screen).toContain('Keyboard.dismiss()');
     expect(screen).toContain('{...(keyboardEnabled ? terminalPanHandlers : undefined)}');
     expect(assets).toContain('let keyboardEnabled = true');

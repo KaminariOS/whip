@@ -5,11 +5,20 @@ import { Script } from 'node:vm';
 const assets = resolve(__dirname, '../android/app/src/main/assets');
 const sourceFonts = resolve(__dirname, '../assets/terminal-fonts');
 const generated = resolve(__dirname, '../src/generated/terminalHtml.ts');
-const terminalScreen = resolve(__dirname, '../src/components/TerminalScreen.tsx');
+const terminalRenderer = resolve(__dirname, '../src/components/TerminalRendererHost.tsx');
+
+function readTerminalMarkup(html: string): string {
+  const encoded = html.match(
+    /const terminalMarkup = (.*);\n {4}const createTerminalSession/,
+  )?.[1];
+  if (!encoded) throw new Error('Generated terminal host does not embed terminal markup');
+  return JSON.parse(encoded);
+}
 
 describe('Android terminal assets', () => {
   it('embeds the WezTerm font stack and loads it before xterm initialization', () => {
     const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
+    const markup = readTerminalMarkup(html);
 
     expect(html).toContain("url('data:font/ttf;base64,");
     expect(html).toContain("font-family: 'Herdr Terminal Mono'");
@@ -46,8 +55,8 @@ describe('Android terminal assets', () => {
     expect(html).toContain('overviewRuler: { width: 1 }');
     expect(html).toContain('allowTransparency: true');
     expect(html).toContain("background: 'rgba(0,0,0,0)'");
-    expect(html).toContain('<img id="terminal-background-image" alt="" />');
-    expect(html).toContain('<div id="terminal-background-glass"></div>');
+    expect(markup).toContain('<img id="terminal-background-image" alt="" />');
+    expect(markup).toContain('<div id="terminal-background-glass"></div>');
     expect(html).toContain('mix-blend-mode: screen');
     expect(html).toContain('backgroundImage.src = backgroundUri');
     expect(html).toContain(
@@ -153,8 +162,8 @@ describe('Android terminal assets', () => {
   });
 
   it('keeps Android text scaling from corrupting xterm character measurements', () => {
-    const screen = readFileSync(terminalScreen, 'utf8');
+    const renderer = readFileSync(terminalRenderer, 'utf8');
 
-    expect(screen).toContain('textZoom={100}');
+    expect(renderer).toContain('textZoom={100}');
   });
 });

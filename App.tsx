@@ -46,6 +46,10 @@ import {
   type TerminalControlUsage,
 } from './src/lib/terminalControls';
 import {
+  terminalRendererKey,
+  type TerminalRenderTarget,
+} from './src/lib/terminalRenderer';
+import {
   parseAgentNotificationTarget,
   resolveAgentNotificationTarget,
 } from './src/lib/notificationNavigation';
@@ -1165,6 +1169,19 @@ function AppContent() {
   const activeSession = getActiveLiveHostSession(liveSessions);
   const activeRuntime = activeSession ? runtimes.current.get(activeSession.id) : undefined;
   const activeClient = activeRuntime?.client;
+  const terminalTargets: TerminalRenderTarget[] = liveSessions.sessions.flatMap(session => {
+    const runtime = runtimes.current.get(session.id);
+    if (!runtime) return [];
+    return session.terminals.sessions.map(terminal => ({
+      key: terminalRendererKey(session.id, terminal.terminalId),
+      hostSessionId: session.id,
+      client: runtime.client,
+      session: terminal,
+      scroll: session.snapshot.panes.find(
+        pane => pane.terminal_id === terminal.terminalId,
+      )?.scroll,
+    }));
+  });
   const snapshot = activeSession?.snapshot;
   const selectedPane = selectedPaneId && snapshot
     ? snapshot.panes.find(pane => pane.pane_id === selectedPaneId) || null
@@ -1366,31 +1383,27 @@ function AppContent() {
           </View>
         )}
 
-        {liveSessions.sessions.map(session => {
-          const runtime = runtimes.current.get(session.id);
-          if (!runtime) return null;
-          return (
-            <LiveSessionView
-              key={session.id}
-              session={session}
-              client={runtime.client}
-              visible={terminalVisible && session.id === activeSession?.id}
-              terminalPreferences={terminalPreferences}
-              terminalControlUsage={terminalControlUsage}
-              onTerminalControlUse={recordTerminalControlUse}
-              onTerminalOpenLinksInAppChange={updateTerminalOpenLinksInApp}
-              onExit={() => exitTerminalToHerd(session.id)}
-              onRefresh={refreshHost}
-              onOpenPane={(sessionId, pane) => {
-                setLiveSessions(current => selectLiveHostSession(current, sessionId));
-                setSelectedPaneId(pane.pane_id);
-              }}
-              onActivateTerminal={activatePaneTerminal}
-              onCloseTerminal={closeTerminal}
-              onTerminalStatus={updateTerminalStatus}
-            />
-          );
-        })}
+        {activeSession && activeRuntime && (
+          <LiveSessionView
+            session={activeSession}
+            client={activeRuntime.client}
+            visible={terminalVisible}
+            terminalTargets={terminalTargets}
+            terminalPreferences={terminalPreferences}
+            terminalControlUsage={terminalControlUsage}
+            onTerminalControlUse={recordTerminalControlUse}
+            onTerminalOpenLinksInAppChange={updateTerminalOpenLinksInApp}
+            onExit={() => exitTerminalToHerd(activeSession.id)}
+            onRefresh={refreshHost}
+            onOpenPane={(sessionId, pane) => {
+              setLiveSessions(current => selectLiveHostSession(current, sessionId));
+              setSelectedPaneId(pane.pane_id);
+            }}
+            onActivateTerminal={activatePaneTerminal}
+            onCloseTerminal={closeTerminal}
+            onTerminalStatus={updateTerminalStatus}
+          />
+        )}
 
         {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && (
           <BottomNavigation activeTab={navigation.tab} onSelect={selectTab} />
@@ -1454,6 +1467,7 @@ function LiveSessionView({
   session,
   client,
   visible,
+  terminalTargets,
   terminalPreferences,
   terminalControlUsage,
   onTerminalControlUse,
@@ -1468,6 +1482,7 @@ function LiveSessionView({
   session: LiveHostSession;
   client: HerdrClient;
   visible: boolean;
+  terminalTargets: readonly TerminalRenderTarget[];
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   onTerminalControlUse: (control: TerminalControlId) => void;
@@ -1484,21 +1499,20 @@ function LiveSessionView({
   const openPane = useCallback((pane: PaneInfo) => onOpenPane(sessionId, pane), [onOpenPane, sessionId]);
   const activateTerminal = useCallback((pane: PaneInfo) => onActivateTerminal(sessionId, pane), [onActivateTerminal, sessionId]);
   const closeTerminal = useCallback((terminalId: string) => onCloseTerminal(sessionId, terminalId), [onCloseTerminal, sessionId]);
-  const terminalStatus = useCallback((terminalId: string, status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => (
-    onTerminalStatus(sessionId, terminalId, status, error, reconnectAttempt)
-  ), [onTerminalStatus, sessionId]);
 
   return (
     <SessionScreen
+      hostSessionId={sessionId}
       visible={visible}
       snapshot={session.snapshot}
       client={client}
       terminalState={session.terminals}
+      terminalTargets={terminalTargets}
       onRefresh={refresh}
       onOpenPane={openPane}
       onActivateTerminal={activateTerminal}
       onCloseTerminal={closeTerminal}
-      onTerminalStatus={terminalStatus}
+      onTerminalStatus={onTerminalStatus}
       terminalPreferences={terminalPreferences}
       terminalControlUsage={terminalControlUsage}
       onTerminalControlUse={onTerminalControlUse}

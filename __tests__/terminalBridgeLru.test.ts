@@ -1,9 +1,6 @@
 import SSHClient from '@dylankenneally/react-native-ssh-sftp';
 
-import {
-  HerdrClient,
-  MAX_RETAINED_TERMINAL_BRIDGES,
-} from '../src/services/HerdrClient';
+import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('@dylankenneally/react-native-ssh-sftp', () => ({
@@ -53,30 +50,33 @@ function bridgeClient() {
   return native;
 }
 
-describe('terminal bridge LRU', () => {
+describe('terminal bridge channels', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
   });
 
-  test('retains three bridges and evicts the least recently focused terminal', async () => {
-    const native = bridgeClient();
-    connectWithPassword.mockResolvedValue(native);
-    const client = new HerdrClient();
-    await client.connect(profile);
+  test('retains every opened bridge across SSH clients without a maximum', async () => {
+    const saviorNative = bridgeClient();
+    const oracleNative = bridgeClient();
+    connectWithPassword
+      .mockResolvedValueOnce(saviorNative)
+      .mockResolvedValueOnce(oracleNative);
+    const savior = new HerdrClient();
+    const oracle = new HerdrClient();
+    await savior.connect(profile);
+    await oracle.connect({ ...profile, id: 'host-2', host: 'oracle.example.test' });
 
-    await client.openTerminal('term-1', jest.fn());
-    await client.openTerminal('term-2', jest.fn());
-    await client.openTerminal('term-3', jest.fn());
-    await client.openTerminal('term-1', jest.fn());
-    await client.openTerminal('term-4', jest.fn());
+    for (let index = 1; index <= 8; index += 1) {
+      await savior.openTerminal(`savior-${index}`, jest.fn());
+      await oracle.openTerminal(`oracle-${index}`, jest.fn());
+    }
 
-    expect(MAX_RETAINED_TERMINAL_BRIDGES).toBe(3);
-    expect(native.startHerdrBridge).toHaveBeenCalledTimes(4);
-    expect(native.closeHerdrBridge).toHaveBeenCalledWith('term-2');
-    expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
-    expect(client.isTerminalBridgeRetained('term-2')).toBe(false);
-    expect(client.isTerminalBridgeRetained('term-3')).toBe(true);
-    expect(client.isTerminalBridgeRetained('term-4')).toBe(true);
+    expect(saviorNative.closeHerdrBridge).not.toHaveBeenCalled();
+    expect(oracleNative.closeHerdrBridge).not.toHaveBeenCalled();
+    for (let index = 1; index <= 8; index += 1) {
+      expect(savior.isTerminalBridgeRetained(`savior-${index}`)).toBe(true);
+      expect(oracle.isTerminalBridgeRetained(`oracle-${index}`)).toBe(true);
+    }
   });
 
   test('explicit release removes a retained bridge immediately', async () => {
@@ -90,5 +90,18 @@ describe('terminal bridge LRU', () => {
 
     expect(client.isTerminalBridgeRetained('term-1')).toBe(false);
     expect(native.closeHerdrBridge).toHaveBeenCalledWith('term-1');
+  });
+
+  test('detaching a WebView controller keeps its SSH bridge warm', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await client.openTerminal('term-1', jest.fn());
+    await client.detachTerminal('term-1');
+
+    expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
+    expect(native.closeHerdrBridge).not.toHaveBeenCalled();
   });
 });

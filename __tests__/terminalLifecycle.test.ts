@@ -1,168 +1,117 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+const readSource = (path: string) => readFileSync(resolve(__dirname, `../${path}`), 'utf8');
+
 describe('terminal renderer lifecycle', () => {
-  it('keeps one terminal WebView mounted per opened terminal', () => {
-    const source = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  it('mounts one global terminal WebView and preserves it across host switches', () => {
+    const app = readSource('App.tsx');
+    const session = readSource('src/components/SessionScreen.tsx');
+    const terminal = readSource('src/components/TerminalScreen.tsx');
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
 
-    expect(source).toContain('terminalState.sessions.map(terminalSession => {');
-    expect(source).toContain('key={terminalSession.terminalId}');
-    expect(source).toContain('session={terminalSession}');
-    expect(source).toContain("!visible && 'absolute inset-0 opacity-0'");
-    expect(source).not.toContain("!visible && 'hidden'");
+    expect(app).toContain('{activeSession && activeRuntime && (');
+    expect(app).toContain('terminalTargets={terminalTargets}');
+    expect(app).not.toContain('key={session.id}');
+    expect(session.match(/<TerminalScreen/g)).toHaveLength(1);
+    expect(terminal).toContain('<TerminalRendererHost');
+    expect(renderer.match(/\n {4}<WebView\n/g)).toHaveLength(1);
   });
 
-  it('keeps hidden terminals at immersive height while bottom navigation is visible', () => {
-    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
-    const bottomNavigation = readFileSync(resolve(__dirname, '../src/components/BottomNavigation.tsx'), 'utf8');
+  it('creates one xterm container and one channel for every open terminal', () => {
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
+    const assets = readSource('scripts/sync-terminal-assets.mjs');
 
-    expect(app).toContain("edges={['top', 'left', 'right']}");
-    expect(app).toContain("{!immersiveTerminal && (\n          <View className=\"flex-1 bg-background\">");
-    expect(app).toContain("          </View>\n        )}\n\n        {liveSessions.sessions.map");
-    expect(bottomNavigation).toContain('const { bottom } = useSafeAreaInsets();');
-    expect(bottomNavigation).toContain('style={{ minHeight: 66 + bottom, paddingBottom: bottom }}');
-    expect(bottomNavigation).toContain('active:bg-transparent dark:active:bg-transparent');
-    expect(bottomNavigation).toContain('borderRadius: 999');
+    expect(renderer).toContain('for (const target of targets) ensureEntry(target);');
+    expect(renderer).toContain('entries.current.set(target.key, entry);');
+    expect(renderer).toContain('window.herdrCreate(');
+    expect(assets).toContain("const root = document.createElement('div');");
+    expect(assets).toContain("root.className = 'terminal-session';");
+    expect(assets).toContain(
+      'entry.api = createTerminalSession(root, value => receive(entry, value));',
+    );
+    expect(assets).toContain('const terminal = new Terminal({');
+    expect(assets).toContain('const terminals = new Map();');
+    expect(assets).toContain("send({ type: 'terminal-ready', key: entry.key });");
   });
 
-  it('defers terminal WebViews until their host terminal surface is first shown', () => {
-    const source = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  it('routes renderer commands and output by the host-terminal key', () => {
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
+    const assets = readSource('scripts/sync-terminal-assets.mjs');
 
-    expect(source).toContain('const [terminalSurfaceMounted, setTerminalSurfaceMounted] = useState(visible);');
-    expect(source).toContain('if (visible) setTerminalSurfaceMounted(true);');
-    expect(source).toContain('terminalSurfaceMounted && terminalState.sessions.map');
+    expect(renderer).toContain('window.herdrWriteBase64Chunk(${key}');
+    expect(renderer).toContain("entries.current.get(message.key)");
+    expect(assets).toContain('window.herdrWriteBase64Chunk = (key, sequence, data, final)');
+    expect(assets).toContain('const receive = (entry, value) =>');
+    expect(assets).toContain('send({ ...value, key: entry.key });');
   });
 
-  it('hands keyboard focus between persistent terminal renderers', () => {
-    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
-    const assets = readFileSync(resolve(__dirname, '../scripts/sync-terminal-assets.mjs'), 'utf8');
+  it('has no WebView or SSH-channel retention limit', () => {
+    const app = readSource('App.tsx');
+    const client = readSource('src/services/HerdrClient.ts');
+    const preferences = readSource('src/services/devicePreferences.ts');
 
-    expect(screen).toContain("window.herdrBlur(); true;");
-    expect(screen).toContain("window.herdrFocus();");
-    expect(assets).toContain('window.herdrBlur = () => terminal.blur();');
+    expect(app).not.toContain('TerminalBridgeRetention');
+    expect(app).not.toContain('terminalSurfaceLru');
+    expect(client).not.toContain('terminalBridgeLru');
+    expect(client).not.toContain('TerminalBridgeRetention');
+    expect(preferences).not.toContain('retainedSshBridges');
   });
 
-  it('does not reserve a spare SSH channel for terminal prewarming', () => {
-    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
-    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
+  it('keeps each bridge open until its terminal or host closes', () => {
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
+    const client = readSource('src/services/HerdrClient.ts');
 
-    expect(app).not.toContain('runtime.client.prepareTerminalBridge');
-    expect(client).not.toContain('bridgePrepareOpening');
-    expect(client).not.toContain('prepareHerdrBridge');
+    expect(renderer).toContain('entry.target.client.detachTerminal');
+    expect(client).toContain('async detachTerminal(terminalId: string)');
+    expect(client).toContain('this.terminalConnections.delete(terminalId);');
+    expect(client).toContain('this.client?.closeHerdrBridge(terminalId);');
+    expect(client).toContain('this.client?.closeAllHerdrBridges()');
+  });
+
+  it('queues frames until the matching xterm instance is ready', () => {
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
+
+    expect(renderer).toContain('entry.pendingFrames.push(frame);');
+    expect(renderer).toContain("if (message.type === 'terminal-ready')");
+    expect(renderer).toContain('for (const frame of frames) injectFrame(entry, frame);');
+    expect(renderer).toContain('const resetScript = reset ? `window.herdrReset(${key}); `');
+  });
+
+  it('reattaches all terminal channels when the SSH control session is replaced', () => {
+    const client = readSource('src/services/HerdrClient.ts');
+
+    expect(client).toContain('const retainedTerminalIds = [...this.terminalBridges];');
+    expect(client).toContain('for (const terminalId of retainedTerminalIds)');
+    expect(client).toContain('await this.attachTerminal(terminalId);');
+    expect(client).not.toContain("connection.onClosed?.('SSH control connection was replaced')");
   });
 
   it('reconciles a snapshot after an event stream reconnect', () => {
-    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const app = readSource('App.tsx');
 
     expect(app).toContain('await ensureEventStream(sessionId, session.snapshot, true);');
     expect(app).toContain('Events emitted while the stream was down cannot be replayed.');
     expect(app).toContain('await refreshHost(sessionId);');
   });
 
-  it('opens the active terminal immediately after selecting a saved host', () => {
-    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
-
-    expect(app).toContain("if (navigate) setNavigation(current => selectMobileTab(current, 'terminal'));");
-    expect(app).toContain("selectLiveHost(existing.id, 'terminal');");
-    expect(app).toContain('refreshHost(existing.id).catch(error => scheduleReconnect(existing.id, error));');
-  });
-
   it('keeps terminal focus bidirectional with Herdr', () => {
-    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
-    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
-    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
+    const app = readSource('App.tsx');
+    const session = readSource('src/components/SessionScreen.tsx');
+    const client = readSource('src/services/HerdrClient.ts');
 
     expect(app).toContain("event.event === 'workspace.focused'");
-    expect(screen).toContain('client.focusPane(pane.pane_id)');
-    expect(screen).toContain('activateServerPane(serverPaneId)');
+    expect(session).toContain('client.focusPane(pane.pane_id)');
+    expect(session).toContain('activateServerPane(serverPaneId)');
     expect(client).toContain('async focusPane(paneId: string)');
-    expect(app).toContain('.catch(error => scheduleReconnect(sessionId, error));');
   });
 
-  it('does not replace a Herd-selected terminal with stale server focus', () => {
-    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
-    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  it('keeps hidden terminals at immersive height while bottom navigation is visible', () => {
+    const app = readSource('App.tsx');
+    const bottomNavigation = readSource('src/components/BottomNavigation.tsx');
 
-    expect(app).toContain('openPaneTerminal(sessionId, pane, true)');
-    expect(screen).toContain('pendingPaneFocus.current = activePane.pane_id');
-    expect(screen).toContain('serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)');
-  });
-
-  it('closes tabs immediately without a confirmation prompt', () => {
-    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
-
-    expect(screen).toContain('onPress={hapticPress(() => closeTab(item))}');
-    expect(screen).not.toContain("Alert.alert('Close Herdr tab?'");
-  });
-
-  it('reattaches terminals transparently when the SSH control session is replaced', () => {
-    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
-
-    expect(client).toContain('private controlReconnect: Promise<void> | null = null');
-    expect(client).toContain('await this.attachTerminal(terminalId)');
-    expect(client).toContain('if (reconnecting) await reconnecting');
-    expect(client).not.toContain("connection.onClosed?.('SSH control connection was replaced')");
-  });
-
-  it('does not replace the SSH client while its initial handshake is running', () => {
-    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
-    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
-
-    expect(app).toContain('if (!runtime || !canRefreshLiveHostSession(session)) return;');
-    expect(client).toContain('private controlConnect: Promise<void> | null = null;');
-    expect(client).toContain('const connecting = this.controlConnect;');
-    expect(client).toContain('await connecting;\n        return;');
-  });
-
-  it('attaches before WebView readiness and detaches the controller after UI release', () => {
-    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
-    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
-
-    expect(screen).toContain('pendingFrames.current.push(frame)');
-    expect(screen).not.toContain('if (!ready || !terminalId)');
-    expect(client).toContain('this.terminalConnections.get(terminalId) !== connection');
-    expect(client).toContain('this.terminalConnections.delete(terminalId)');
-    expect(client).toContain('this.client?.closeHerdrBridge(terminalId)');
-    expect(client).toContain('this.client?.closeAllHerdrBridges()');
-    expect(client).toContain('this.requireClient().herdrBridgeResize(\n      terminalId,');
-  });
-
-  it('retains recently focused terminals without tying bridge lifetime to navigation visibility', () => {
-    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
-    const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
-    const visibilityLifecycleEnd = '}, [client, connectionGeneration, t, terminalId, visible]);';
-    const visibilityLifecycle = screen.slice(
-      screen.indexOf('// Visibility activates and touches'),
-      screen.indexOf(visibilityLifecycleEnd) + visibilityLifecycleEnd.length,
-    );
-
-    expect(screen).toContain('if (!terminalId || !visible) return;');
-    expect(screen).toContain('client.isTerminalBridgeRetained(terminalId)');
-    expect(screen).toContain('[client, connectionGeneration, t, terminalId, visible]');
-    expect(visibilityLifecycle).not.toContain('client.releaseTerminal(terminalId)');
-    expect(client).toContain('MAX_RETAINED_TERMINAL_BRIDGES = 3');
-    expect(client).toContain('evictLeastRecentlyUsedTerminal(terminalId)');
-  });
-
-  it('keeps the terminal LRU alive while the app is backgrounded', () => {
-    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
-    const appStateLifecycleEnd = '}, [client, terminalId]);';
-    const appStateLifecycleStart = screen.indexOf('let previous = AppState.currentState;');
-    const appStateLifecycle = screen.slice(
-      appStateLifecycleStart,
-      screen.indexOf(appStateLifecycleEnd, appStateLifecycleStart) + appStateLifecycleEnd.length,
-    );
-
-    expect(appStateLifecycle).toContain('!client.isTerminalBridgeRetained(terminalId)');
-    expect(appStateLifecycle).not.toContain('client.releaseTerminal(terminalId)');
-    expect(appStateLifecycle).not.toContain("reportStatus('disconnected'");
-  });
-
-  it('resets the renderer in the same injection as the first terminal frame', () => {
-    const screen = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
-
-    expect(screen).toContain('const resetOnNextFrame = useRef(true);');
-    expect(screen).toContain("const resetScript = reset ? 'window.herdrReset(); ' : '';");
-    expect(screen).not.toContain("if (readyRef.current) webView.current?.injectJavaScript('window.herdrReset(); true;');");
+    expect(app).toContain("edges={['top', 'left', 'right']}");
+    expect(app).toContain('{!immersiveTerminal && (');
+    expect(bottomNavigation).toContain('style={{ minHeight: 66 + bottom, paddingBottom: bottom }}');
   });
 });

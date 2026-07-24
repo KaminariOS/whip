@@ -45,8 +45,6 @@ interface TerminalSize {
   cellHeightPx: number;
 }
 
-export const MAX_RETAINED_TERMINAL_BRIDGES = 3;
-
 export class HerdrClient {
   private client: SSHClient | null = null;
   private profile: ConnectionProfile | null = null;
@@ -54,7 +52,8 @@ export class HerdrClient {
   private terminalOpenings = new Map<string, Promise<void>>();
   private terminalSizes = new Map<string, TerminalSize>();
   private terminalBridges = new Set<string>();
-  private terminalBridgeLru = new Map<string, true>();
+  private terminalBridgeGenerations = new Map<string, number>();
+  private terminalBridgeSequence = 0;
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
@@ -118,12 +117,10 @@ export class HerdrClient {
     this.profile = profile;
     this.apiServer = null;
     this.eventClient = null;
-    const retainedTerminalIds = [...this.terminalBridgeLru.keys()].filter(terminalId => (
-      this.terminalBridges.has(terminalId)
-    ));
+    const retainedTerminalIds = [...this.terminalBridges];
     this.terminalBridges.clear();
-    this.terminalBridgeLru.clear();
     this.terminalOpenings.clear();
+    this.terminalBridgeGenerations.clear();
     previousClient?.off('Shell');
     previousClient?.disconnect();
     for (const [localPort, tunnelClient] of this.localForwards) {
@@ -131,7 +128,7 @@ export class HerdrClient {
     }
 
     // A control reconnect is transport maintenance, not a terminal failure.
-    // Restore only the bounded LRU set on the replacement SSH session while
+    // Restore every open terminal channel on the replacement SSH session while
     // preserving each terminal's frame and close callbacks.
     for (const terminalId of retainedTerminalIds) {
       try {
@@ -157,7 +154,7 @@ export class HerdrClient {
     this.terminalConnections.clear();
     this.terminalSizes.clear();
     this.terminalBridges.clear();
-    this.terminalBridgeLru.clear();
+    this.terminalBridgeGenerations.clear();
     this.controlReconnect = null;
     this.localForwards.clear();
   }
@@ -224,7 +221,6 @@ export class HerdrClient {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) {
       await opening;
-      this.touchTerminalBridge(terminalId);
       return;
     }
 
@@ -281,7 +277,7 @@ export class HerdrClient {
   closeTerminal(terminalId: string): void {
     this.terminalConnections.delete(terminalId);
     this.terminalBridges.delete(terminalId);
-    this.terminalBridgeLru.delete(terminalId);
+    this.terminalBridgeGenerations.delete(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -301,8 +297,19 @@ export class HerdrClient {
 
     this.terminalConnections.delete(terminalId);
     this.terminalBridges.delete(terminalId);
-    this.terminalBridgeLru.delete(terminalId);
+    this.terminalBridgeGenerations.delete(terminalId);
     this.client?.closeHerdrBridge(terminalId);
+  }
+
+  async detachTerminal(terminalId: string): Promise<void> {
+    const connection = this.terminalConnections.get(terminalId);
+    const opening = this.terminalOpenings.get(terminalId);
+    if (opening) await opening.catch(() => undefined);
+
+    // Do not detach a replacement controller installed while this renderer was
+    // unmounting. The SSH bridge remains open until the terminal or host closes.
+    if (this.terminalConnections.get(terminalId) !== connection) return;
+    this.terminalConnections.delete(terminalId);
   }
 
   async closeTerminalBridge(terminalId: string): Promise<void> {
@@ -312,7 +319,7 @@ export class HerdrClient {
     this.terminalOpenings.delete(terminalId);
     this.terminalSizes.delete(terminalId);
     this.terminalBridges.delete(terminalId);
-    this.terminalBridgeLru.delete(terminalId);
+    this.terminalBridgeGenerations.delete(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -320,7 +327,7 @@ export class HerdrClient {
     this.terminalConnections.clear();
     this.terminalOpenings.clear();
     this.terminalBridges.clear();
-    this.terminalBridgeLru.clear();
+    this.terminalBridgeGenerations.clear();
     this.client?.closeAllHerdrBridges();
   }
 
@@ -698,10 +705,7 @@ export class HerdrClient {
   }
 
   private async ensureTerminalBridge(terminalId: string, requestedSize?: TerminalSize): Promise<void> {
-    if (this.terminalBridges.has(terminalId)) {
-      this.touchTerminalBridge(terminalId);
-      return;
-    }
+    if (this.terminalBridges.has(terminalId)) return;
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) return opening;
     const size = requestedSize || this.terminalSizes.get(terminalId) || {
@@ -711,37 +715,27 @@ export class HerdrClient {
       cellHeightPx: 0,
     };
     const server = await this.requireBridgeServer();
-    this.evictLeastRecentlyUsedTerminal(terminalId);
-    await this.requireClient().startHerdrBridge(
-      await this.clientSocketPath(),
-      server.protocol,
-      terminalId,
-      true,
-      size.columns,
-      size.rows,
-      size.cellWidthPx,
-      size.cellHeightPx,
-      event => this.handleHerdrBridgeEvent(terminalId, event),
-    );
-    this.terminalBridges.add(terminalId);
-    this.touchTerminalBridge(terminalId);
-  }
-
-  private touchTerminalBridge(terminalId: string): void {
-    if (!this.terminalBridges.has(terminalId)) return;
-    this.terminalBridgeLru.delete(terminalId);
-    this.terminalBridgeLru.set(terminalId, true);
-  }
-
-  private evictLeastRecentlyUsedTerminal(incomingTerminalId: string): void {
-    if (this.terminalBridges.has(incomingTerminalId)) return;
-    while (this.terminalBridges.size >= MAX_RETAINED_TERMINAL_BRIDGES) {
-      const oldestTerminalId = this.terminalBridgeLru.keys().next().value as string | undefined;
-      if (!oldestTerminalId) return;
-      this.terminalBridgeLru.delete(oldestTerminalId);
-      this.terminalBridges.delete(oldestTerminalId);
-      this.client?.closeHerdrBridge(oldestTerminalId);
+    const generation = ++this.terminalBridgeSequence;
+    this.terminalBridgeGenerations.set(terminalId, generation);
+    try {
+      await this.requireClient().startHerdrBridge(
+        await this.clientSocketPath(),
+        server.protocol,
+        terminalId,
+        true,
+        size.columns,
+        size.rows,
+        size.cellWidthPx,
+        size.cellHeightPx,
+        event => this.handleHerdrBridgeEvent(terminalId, generation, event),
+      );
+    } catch (error) {
+      if (this.terminalBridgeGenerations.get(terminalId) === generation) {
+        this.terminalBridgeGenerations.delete(terminalId);
+      }
+      throw error;
     }
+    this.terminalBridges.add(terminalId);
   }
 
   private async requireBridgeServer(): Promise<ServerInfo & { protocol: number }> {
@@ -754,7 +748,12 @@ export class HerdrClient {
     return server as ServerInfo & { protocol: number };
   }
 
-  private handleHerdrBridgeEvent(terminalId: string, event: HerdrBridgeEvent): void {
+  private handleHerdrBridgeEvent(
+    terminalId: string,
+    generation: number,
+    event: HerdrBridgeEvent,
+  ): void {
+    if (this.terminalBridgeGenerations.get(terminalId) !== generation) return;
     if (event.type === 'terminal') {
       if (
         typeof event.seq === 'number'
@@ -777,7 +776,7 @@ export class HerdrClient {
     }
     if (event.type === 'closed') {
       this.terminalBridges.delete(terminalId);
-      this.terminalBridgeLru.delete(terminalId);
+      this.terminalBridgeGenerations.delete(terminalId);
       this.terminalConnections.get(terminalId)?.onClosed?.(
         event.text || 'Herdr remote-client-bridge closed',
       );

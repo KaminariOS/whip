@@ -41,7 +41,8 @@ describe('terminal tab swiping', () => {
   it('keeps the animated transform prop array-shaped while swipe state changes', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
 
-    expect(screen).toContain('{ transform: [{ translateX }] }');
+    expect(screen).toContain('translateX: tabSwipe && !previewTarget ? tabSwipeTranslateX : 0');
+    expect(screen).toContain('? { direction: tabSwipe.direction, offset: tabSwipeTranslateX }');
     expect(screen).toContain('pointerEvents="box-none"');
     expect(screen).not.toContain('tabSwipe?.originTerminalId === terminalSession.terminalId && {');
     expect(screen).not.toContain('tabSwipe?.targetTerminalId === terminalSession.terminalId && {');
