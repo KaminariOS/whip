@@ -3,8 +3,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import androidImeBridge from './android-ime-bridge.cjs';
+import terminalLinkExtraction from './terminal-link-extraction.cjs';
 
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
+const { extractTerminalLinks, trimTerminalUrl } = terminalLinkExtraction;
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = resolve(root, 'android/app/src/main/assets');
@@ -305,47 +307,19 @@ const terminalHtml = `<!doctype html>
       }
       send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
     };
-    const trimUrl = candidate => {
-      let value = candidate.replace(/[.,;:!?]+$/, '');
-      for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
-        const opens = value.split(open).length - 1;
-        let closes = value.split(close).length - 1;
-        while (value.endsWith(close) && closes > opens) {
-          value = value.slice(0, -1);
-          closes -= 1;
-        }
-      }
-      return value;
-    };
+    ${trimTerminalUrl.toString()}
+    ${extractTerminalLinks.toString()}
     window.herdrScanLinks = () => {
-      const logicalLines = [];
-      let logicalLine = '';
+      const rows = [];
       for (let row = 0; row < terminal.buffer.active.length; row += 1) {
         const bufferLine = terminal.buffer.active.getLine(row);
         if (!bufferLine) continue;
-        if (!bufferLine.isWrapped && logicalLine) {
-          logicalLines.push(logicalLine);
-          logicalLine = '';
-        }
-        logicalLine += bufferLine.translateToString(true);
+        rows.push({
+          text: bufferLine.translateToString(false),
+          isWrapped: bufferLine.isWrapped,
+        });
       }
-      if (logicalLine) logicalLines.push(logicalLine);
-
-      const links = [];
-      const seen = new Set();
-      for (let index = logicalLines.length - 1; index >= 0; index -= 1) {
-        const matches = [...logicalLines[index].matchAll(/https?:[/]{2}[^\\s<>"']+/gi)];
-        for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex -= 1) {
-          const value = trimUrl(matches[matchIndex][0]);
-          try {
-            const parsed = new URL(value);
-            if (!['http:', 'https:'].includes(parsed.protocol) || seen.has(parsed.href)) continue;
-            seen.add(parsed.href);
-            links.push(parsed.href);
-          } catch {}
-        }
-      }
-      send({ type: 'link-scan-result', links });
+      send({ type: 'link-scan-result', links: extractTerminalLinks(rows, terminal.cols) });
     };
     const resize = () => {
       fit.fit();
@@ -436,7 +410,7 @@ const terminalHtml = `<!doctype html>
         if (!buffer.getLine(row + 1)?.isWrapped) break;
       }
       for (const match of logicalLine.matchAll(/https?:[/]{2}[^\\s<>"']+/gi)) {
-        const value = trimUrl(match[0]);
+        const value = trimTerminalUrl(match[0]);
         const start = match.index || 0;
         if (pointOffset < start || pointOffset >= start + value.length) continue;
         try {
