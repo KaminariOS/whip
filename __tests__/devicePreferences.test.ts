@@ -39,6 +39,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     cursorBlink: true,
     doubleTapTab: true,
     openLinksInApp: true,
+    pauseResizeInBackground: true,
     backgroundImageUri: null,
     backgroundDimming: 60,
   });
@@ -79,6 +80,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       cursorBlink: false,
       doubleTapTab: true,
       openLinksInApp: true,
+      pauseResizeInBackground: true,
       backgroundImageUri: null,
       backgroundDimming: 60,
     },
@@ -158,6 +160,22 @@ test('opens terminal links in app by default and allows it to be disabled', asyn
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { openLinksInApp: 'no' } }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     terminal: { openLinksInApp: true },
+  });
+});
+
+test('pauses background resize commands by default and allows it to be disabled', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    terminal: { pauseResizeInBackground: false },
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { pauseResizeInBackground: false },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    terminal: { pauseResizeInBackground: 'no' },
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { pauseResizeInBackground: true },
   });
 });
 

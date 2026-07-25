@@ -78,6 +78,27 @@ describe('terminal renderer lifecycle', () => {
     expect(renderer).toContain('const resetScript = reset ? `window.herdrReset(${key}); `');
   });
 
+  it('pauses terminal resize commands while the app is backgrounded', () => {
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
+
+    expect(renderer).toContain('const appState = useRef(AppState.currentState);');
+    expect(renderer).toContain('appState.current = state;');
+    expect(renderer).toContain(
+      "if (preferences.pauseResizeInBackground && appState.current !== 'active') return;",
+    );
+    expect(renderer).toContain(
+      'entry.target.client.releaseTerminal(entry.target.session.terminalId)',
+    );
+    expect(renderer).toContain('preferences.pauseResizeInBackground');
+    expect(renderer).toContain(
+      '|| !entry.target.client.isTerminalBridgeRetained(entry.target.session.terminalId)',
+    );
+    expect(renderer).toContain(
+      'if (preferences.pauseResizeInBackground && visible && activeKey.current)',
+    );
+    expect(renderer).toContain('window.herdrFit(${JSON.stringify(activeKey.current)});');
+  });
+
   it('reattaches all terminal channels when the SSH control session is replaced', () => {
     const client = readSource('src/services/HerdrClient.ts');
 

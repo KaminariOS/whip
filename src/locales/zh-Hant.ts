@@ -189,6 +189,8 @@ export const zhHant: Record<string, string> = {
   'settings.reopenTerminalCopy': 'Herdr 啟動時開啟上次使用的終端機。',
   'settings.doubleTapTab': '雙擊傳送 Tab',
   'settings.doubleTapTabCopy': '雙擊終端機時傳送 Tab 鍵。',
+  'settings.pauseResizeInBackground': '背景執行時暫停調整大小',
+  'settings.pauseResizeInBackgroundCopy': 'Herdr 在背景執行時釋放手機的終端機大小控制權。',
   'settings.fontSize': '字型大小',
   'settings.scrollback': '回捲行數',
   'settings.lines': '{{count}} 行',
