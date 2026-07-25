@@ -196,6 +196,8 @@ export const en = {
   'settings.reopenTerminalCopy': 'Open the last terminal when Herdr starts.',
   'settings.doubleTapTab': 'Double tap sends Tab',
   'settings.doubleTapTabCopy': 'Send a Tab key when you double tap the terminal.',
+  'settings.pauseResizeInBackground': 'Pause resize in background',
+  'settings.pauseResizeInBackgroundCopy': 'Release phone resize control while Herdr is in the background.',
   'settings.fontSize': 'Font size',
   'settings.scrollback': 'Scrollback',
   'settings.lines': '{{count}} lines',

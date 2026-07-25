@@ -19,6 +19,7 @@ export interface TerminalPreferences {
   cursorBlink: boolean;
   doubleTapTab: boolean;
   openLinksInApp: boolean;
+  pauseResizeInBackground: boolean;
   backgroundImageUri: string | null;
   backgroundDimming: number;
 }
@@ -60,6 +61,7 @@ export const defaultDevicePreferences: DevicePreferences = {
     cursorBlink: true,
     doubleTapTab: true,
     openLinksInApp: true,
+    pauseResizeInBackground: true,
     backgroundImageUri: null,
     backgroundDimming: 60,
   },
@@ -127,6 +129,9 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         openLinksInApp: typeof terminal.openLinksInApp === 'boolean'
           ? terminal.openLinksInApp
           : defaultDevicePreferences.terminal.openLinksInApp,
+        pauseResizeInBackground: typeof terminal.pauseResizeInBackground === 'boolean'
+          ? terminal.pauseResizeInBackground
+          : defaultDevicePreferences.terminal.pauseResizeInBackground,
         backgroundImageUri: typeof terminal.backgroundImageUri === 'string' && terminal.backgroundImageUri
           ? terminal.backgroundImageUri
           : null,

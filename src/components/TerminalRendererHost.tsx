@@ -105,6 +105,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const hostReady = useRef(false);
   const entries = useRef(new Map<string, RendererEntry>());
   const activeKey = useRef<string | null>(null);
+  const appState = useRef(AppState.currentState);
   activeKey.current = activeTarget?.key || null;
 
   const reportReady = useEffectEvent(() => onReady?.());
@@ -150,6 +151,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject]);
 
   const connectEntry = useCallback((entry: RendererEntry) => {
+    if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
     if (entry.connecting || entry.controllerAttached) return;
     entry.connecting = true;
     entry.controllerAttached = true;
@@ -193,7 +195,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportError(entry.target, message);
       scheduleReconnect(message);
     });
-  }, [injectFrame]);
+  }, [injectFrame, preferences.pauseResizeInBackground]);
 
   const ensureEntry = useCallback((target: TerminalRenderTarget | null | undefined): RendererEntry | null => {
     if (!target) return null;
@@ -309,18 +311,37 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     const subscription = AppState.addEventListener('change', state => {
       const wasActive = previous === 'active';
       previous = state;
-      if (state !== 'active' || wasActive) return;
+      appState.current = state;
+      if (state !== 'active') {
+        if (wasActive && preferences.pauseResizeInBackground) {
+          for (const entry of entries.current.values()) {
+            if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+            entry.reconnectTimer = null;
+            entry.controllerAttached = false;
+            entry.connecting = false;
+            entry.target.client.releaseTerminal(entry.target.session.terminalId).catch(() => undefined);
+          }
+        }
+        return;
+      }
+      if (wasActive) return;
       for (const entry of entries.current.values()) {
-        if (!entry.target.client.isTerminalBridgeRetained(entry.target.session.terminalId)) {
+        if (
+          preferences.pauseResizeInBackground
+          || !entry.target.client.isTerminalBridgeRetained(entry.target.session.terminalId)
+        ) {
           entry.controllerAttached = false;
           entry.connecting = false;
           entry.reconnectAttempt = 0;
           connectEntry(entry);
         }
       }
+      if (preferences.pauseResizeInBackground && visible && activeKey.current) {
+        inject(`window.herdrFit(${JSON.stringify(activeKey.current)});`);
+      }
     });
     return () => subscription.remove();
-  }, [connectEntry]);
+  }, [connectEntry, inject, preferences.pauseResizeInBackground, visible]);
 
   useEffect(() => () => {
     for (const entry of entries.current.values()) {
@@ -362,6 +383,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportError(entry.target, String(reason));
       }
     } else if (message.type === 'resize') {
+      if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
       entry.target.client.resizeTerminal(
         entry.target.session.terminalId,
         message.cols,
