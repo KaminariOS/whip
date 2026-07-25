@@ -1,6 +1,7 @@
 import {
   agentsForHerdFilter,
-  compareAgentStatusPriority,
+  orderByAgentStatusPriority,
+  tabAgentStateChangeSequence,
   queuesForHerdFilter,
   resolveHerdHostFilter,
   resolveHerdWorkspaceFilter,
@@ -57,13 +58,57 @@ const queues = [
 test('orders attention statuses before running and idle statuses', () => {
   const statuses = ['idle', 'working', 'done', 'unknown', 'blocked'] as const;
 
-  expect([...statuses].sort(compareAgentStatusPriority)).toEqual([
+  expect(orderByAgentStatusPriority(statuses, status => status)).toEqual([
     'blocked',
     'done',
     'working',
     'idle',
     'unknown',
   ]);
+  expect(statuses).toEqual(['idle', 'working', 'done', 'unknown', 'blocked']);
+});
+
+test('orders equal statuses by the most recent native state change', () => {
+  const agents = [
+    { id: 'distributedTraining', status: 'idle', stateChangeSequence: 105 },
+    { id: 'blocked', status: 'blocked', stateChangeSequence: 400 },
+    { id: 'newer-idle', status: 'idle', stateChangeSequence: 379 },
+    { id: 'missing-sequence', status: 'idle', stateChangeSequence: undefined },
+  ] as const;
+
+  expect(orderByAgentStatusPriority(
+    agents,
+    item => item.status,
+    item => item.stateChangeSequence,
+  ).map(item => item.id)).toEqual([
+    'blocked',
+    'newer-idle',
+    'distributedTraining',
+    'missing-sequence',
+  ]);
+});
+
+test('uses the newest matching agent state change to order aggregate tabs', () => {
+  const host = queue('host-1', 'Studio', 'distributedTraining');
+  const distributedTraining = host.tabs[0];
+  const agents = [
+    { ...host.agents[0], state_change_seq: 105 },
+    {
+      ...host.agents[0],
+      terminal_id: 'terminal-2',
+      pane_id: 'pane-2',
+      state_change_seq: 379,
+    },
+    {
+      ...host.agents[0],
+      terminal_id: 'terminal-3',
+      pane_id: 'pane-3',
+      agent_status: 'blocked' as const,
+      state_change_seq: 500,
+    },
+  ];
+
+  expect(tabAgentStateChangeSequence(distributedTraining, agents)).toBe(379);
 });
 
 test('merges every host queue while retaining host and tab context', () => {

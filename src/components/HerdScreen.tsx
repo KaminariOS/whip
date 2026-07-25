@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   agentsForHerdFilter,
-  compareAgentStatusPriority,
+  orderByAgentStatusPriority,
   queuesForHerdFilter,
   resolveHerdWorkspaceFilter,
   type HerdHostQueue,
@@ -166,9 +166,11 @@ export function HerdScreen({
     setCreating(false);
   };
 
-  const sorted = [...queueAgents].sort((a, b) => (
-    compareAgentStatusPriority(a.agent.agent_status, b.agent.agent_status)
-  ));
+  const sorted = orderByAgentStatusPriority(
+    queueAgents,
+    item => item.agent.agent_status,
+    item => item.agent.state_change_seq,
+  );
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
 
   return (

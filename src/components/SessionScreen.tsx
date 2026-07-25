@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview/lib/WebView.android';
 
+import { orderByAgentStatusPriority, tabAgentStateChangeSequence } from '@/src/herdQueue';
 import { cn } from '@/src/lib/utils';
 import { serverFocusMatchesPendingPane } from '@/src/lib/terminalFocus';
 import { terminalWebLinkTarget } from '@/src/lib/terminalLinks';
@@ -148,7 +149,11 @@ export function SessionScreen({
   const pendingFocus = useRef<PendingFocus | null>(null);
 
   const workspace = snapshot.workspaces.find(item => item.workspace_id === workspaceId) || focusedWorkspace;
-  const tabs = snapshot.tabs.filter(item => item.workspace_id === workspace?.workspace_id);
+  const tabs = orderByAgentStatusPriority(
+    snapshot.tabs.filter(item => item.workspace_id === workspace?.workspace_id),
+    item => item.agent_status,
+    item => tabAgentStateChangeSequence(item, snapshot.agents),
+  );
   const selectedTab = tabs.find(item => item.tab_id === tabId) || tabs.find(item => item.focused) || tabs[0];
   const panes = snapshot.panes.filter(item => item.tab_id === selectedTab?.tab_id);
   const serverWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
