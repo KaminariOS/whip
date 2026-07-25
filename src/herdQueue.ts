@@ -32,6 +32,44 @@ export function compareAgentStatusPriority(a: AgentStatus, b: AgentStatus): numb
   return AGENT_STATUS_SORT_PRIORITY[a] - AGENT_STATUS_SORT_PRIORITY[b];
 }
 
+export function orderByAgentStatusPriority<T>(
+  items: readonly T[],
+  statusOf: (item: T) => AgentStatus,
+  stateChangeSequenceOf?: (item: T) => number | undefined,
+): T[] {
+  return [...items].sort((a, b) => {
+    const statusPriority = compareAgentStatusPriority(statusOf(a), statusOf(b));
+    if (statusPriority !== 0 || !stateChangeSequenceOf) return statusPriority;
+
+    const aSequence = stateChangeSequenceOf(a);
+    const bSequence = stateChangeSequenceOf(b);
+    if (aSequence === bSequence) return 0;
+    if (aSequence === undefined) return 1;
+    if (bSequence === undefined) return -1;
+    return aSequence > bSequence ? -1 : 1;
+  });
+}
+
+export function tabAgentStateChangeSequence(
+  tab: Pick<TabInfo, 'tab_id' | 'agent_status'>,
+  agents: readonly AgentInfo[],
+): number | undefined {
+  let latest: number | undefined;
+  for (const agent of agents) {
+    if (
+      agent.tab_id !== tab.tab_id
+      || agent.agent_status !== tab.agent_status
+      || agent.state_change_seq === undefined
+    ) {
+      continue;
+    }
+    latest = latest === undefined
+      ? agent.state_change_seq
+      : Math.max(latest, agent.state_change_seq);
+  }
+  return latest;
+}
+
 export function resolveHerdHostFilter(
   queues: HerdHostQueue[],
   requestedHostId: string | null,

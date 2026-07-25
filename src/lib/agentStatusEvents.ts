@@ -68,6 +68,9 @@ export function agentFromStatusEvent(
   for (const field of ['agent', 'title', 'display_agent', 'custom_status'] as const) {
     if (typeof data[field] === 'string') next[field] = data[field];
   }
+  if (typeof data.state_change_seq === 'number' && Number.isFinite(data.state_change_seq)) {
+    next.state_change_seq = data.state_change_seq;
+  }
   if (isStringRecord(data.state_labels)) next.state_labels = data.state_labels;
   return next;
 }

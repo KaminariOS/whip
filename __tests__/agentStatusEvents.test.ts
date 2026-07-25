@@ -68,12 +68,14 @@ describe('agent status events', () => {
       agent_status: 'idle',
       title: 'Silver price found',
       display_agent: 'Codex',
+      state_change_seq: 42,
       state_labels: { idle: 'Ready' },
     })).toEqual({
       ...agent,
       agent_status: 'idle',
       title: 'Silver price found',
       display_agent: 'Codex',
+      state_change_seq: 42,
       state_labels: { idle: 'Ready' },
     });
     expect(agentFromStatusEvent(agent, { agent_status: 'invalid' })).toBeNull();
