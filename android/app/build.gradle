@@ -80,6 +80,30 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def uploadKeystoreProperties = new Properties()
+def uploadKeystorePropertiesPath = System.getenv('WHIP_UPLOAD_KEYSTORE_PROPERTIES')
+def uploadKeystorePropertiesFile = uploadKeystorePropertiesPath
+    ? file(uploadKeystorePropertiesPath)
+    : new File(System.getProperty('user.home'), '.config/whip/upload-keystore.properties')
+def hasUploadSigning = uploadKeystorePropertiesFile.isFile()
+
+if (hasUploadSigning) {
+    uploadKeystorePropertiesFile.withInputStream {
+        uploadKeystoreProperties.load(it)
+    }
+
+    def requiredUploadSigningProperties = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+    def missingUploadSigningProperties = requiredUploadSigningProperties.findAll {
+        !uploadKeystoreProperties.getProperty(it)
+    }
+    if (!missingUploadSigningProperties.isEmpty()) {
+        throw new GradleException(
+            "Missing upload signing properties in ${uploadKeystorePropertiesFile}: " +
+                missingUploadSigningProperties.join(', ')
+        )
+    }
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -101,15 +125,23 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (hasUploadSigning) {
+            upload {
+                storeFile file(uploadKeystoreProperties.getProperty('storeFile'))
+                storePassword uploadKeystoreProperties.getProperty('storePassword')
+                keyAlias uploadKeystoreProperties.getProperty('keyAlias')
+                keyPassword uploadKeystoreProperties.getProperty('keyPassword')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Local Play bundles use the private upload key. CI preview APKs keep
+            // their existing debug-key identity when no upload key is available.
+            signingConfig hasUploadSigning ? signingConfigs.upload : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -121,6 +153,15 @@ android {
         jniLibs {
             useLegacyPackaging = (findProperty('expo.useLegacyPackaging') ?: 'false').toBoolean()
         }
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    if (taskGraph.hasTask(':app:bundleRelease') && !hasUploadSigning) {
+        throw new GradleException(
+            'Release app bundles require ~/.config/whip/upload-keystore.properties ' +
+                'or WHIP_UPLOAD_KEYSTORE_PROPERTIES.'
+        )
     }
 }
 
