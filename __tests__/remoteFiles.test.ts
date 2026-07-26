@@ -56,6 +56,8 @@ describe('remote file previews', () => {
     expect(canPreviewRemoteTextFile('photo.png', 1000)).toBe(false);
     expect(canPreviewRemoteTextFile('large.md', 600 * 1024)).toBe(false);
     expect(remotePreviewKind('README.md', 1000)).toBe('markdown');
+    expect(remotePreviewKind('index.html', 1000)).toBe('html');
+    expect(remotePreviewKind('legacy.htm', 1000)).toBe('html');
     expect(remotePreviewKind('App.tsx', 1000)).toBe('code');
     expect(remotePreviewKind('config.json', 1000)).toBe('code');
     expect(remotePreviewKind('config.toml', 1000)).toBe('code');
@@ -114,6 +116,17 @@ test('supports native Markdown previews and file transfer actions', () => {
   expect(markdown).toContain('EnrichedMarkdownText');
   expect(markdown).toContain('flavor="github"');
   expect(transfer).toContain('File.pickFileAsync(');
+});
+
+test('renders HTML previews in a locked-down WebView while retaining source editing', () => {
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const preview = readFileSync(resolve(__dirname, '../src/components/HtmlPreview.tsx'), 'utf8');
+  expect(manager).toContain('<HtmlPreview');
+  expect(manager).toContain("kind === 'html'");
+  expect(preview).toContain('javaScriptEnabled={false}');
+  expect(preview).toContain('allowFileAccess={false}');
+  expect(preview).toContain('originWhitelist={[]}');
+  expect(preview).toContain('buildSandboxedHtmlPreview');
 });
 
 test('uses the requested syntax highlighter and terminal font in previews and editors', () => {
