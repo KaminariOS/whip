@@ -57,6 +57,13 @@ describe('Android background monitoring', () => {
     expect(app).not.toContain("state === 'active') {\n        resumeLiveConnections();\n      } else");
   });
 
+  it('periodically verifies live hosts while the app is active', () => {
+    expect(app).toContain('const LIVE_HOST_HEARTBEAT_MS = 15_000;');
+    expect(app).toContain("if (AppState.currentState === 'active') resumeLiveConnections();");
+    expect(app).toContain('}, LIVE_HOST_HEARTBEAT_MS);');
+    expect(app).toContain('clearInterval(heartbeat);');
+  });
+
   it('retains the SSH runtimes when Android removes the UI task', () => {
     expect(app).toContain('let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;');
     expect(app).toContain('retainedBackgroundRuntimes = runtimes.current;');

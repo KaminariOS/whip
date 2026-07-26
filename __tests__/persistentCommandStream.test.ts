@@ -155,6 +155,24 @@ describe('direct Herdr API requests', () => {
     expect(statusChecks).toBe(2);
   });
 
+  test('rejects a stale SSH transport instead of reporting an empty Herdr server', async () => {
+    const native = {
+      requestHerdrApi: jest.fn(async () => { throw 'channel is not opened.'; }),
+      getRemoteHome: jest.fn()
+        .mockResolvedValueOnce('/home/herdr')
+        .mockRejectedValueOnce('session is down'),
+      closeAllHerdrBridges: jest.fn(),
+      off: jest.fn(),
+      disconnect: jest.fn(),
+    } as unknown as SSHClient;
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await expect(client.snapshot()).rejects.toBe('session is down');
+    expect(native.getRemoteHome).toHaveBeenCalledTimes(2);
+  });
+
   test('reconnects once when the initial SSH transport falsely reports the server offline', async () => {
     const stale = apiClient(() => new Error('channel is not opened.'));
     const fresh = apiClient(request => request.method === 'ping'
