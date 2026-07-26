@@ -38,6 +38,7 @@ import {
 import { useTheme } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview } from './CodePreview';
+import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -315,6 +316,11 @@ export function RemoteFileManager({ visible, client, initialPath, onClose }: Pro
               </View>
             ) : preview.kind === 'markdown' ? (
               <MarkdownPreview content={preview.content || ''} />
+            ) : preview.kind === 'html' ? (
+              <HtmlPreview
+                content={preview.content || ''}
+                filename={remoteEntryName(preview.entry)}
+              />
             ) : preview.kind === 'code' ? (
               <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
             ) : (
@@ -383,7 +389,7 @@ export function RemoteFileManager({ visible, client, initialPath, onClose }: Pro
                           ? <Folder size={18} color={colors.primary} />
                           : kind === 'image'
                             ? <ImageIcon size={18} color={colors.textSecondary} />
-                            : kind === 'code'
+                            : kind === 'code' || kind === 'html'
                               ? <FileCode2 size={18} color={colors.textSecondary} />
                               : <FileText size={18} color={colors.textSecondary} />}
                       </View>
@@ -413,7 +419,7 @@ export function RemoteFileManager({ visible, client, initialPath, onClose }: Pro
 }
 
 function isTextPreview(kind: RemotePreviewKind): boolean {
-  return kind === 'code' || kind === 'markdown' || kind === 'text';
+  return kind === 'code' || kind === 'html' || kind === 'markdown' || kind === 'text';
 }
 
 function isPickerCancellation(reason: unknown): boolean {

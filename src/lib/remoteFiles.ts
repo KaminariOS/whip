@@ -3,11 +3,11 @@ import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
 export const MAX_REMOTE_TEXT_PREVIEW_BYTES = 512 * 1024;
 export const MAX_REMOTE_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
 
-export type RemotePreviewKind = 'code' | 'image' | 'markdown' | 'text' | 'unsupported';
+export type RemotePreviewKind = 'code' | 'html' | 'image' | 'markdown' | 'text' | 'unsupported';
 
 const CODE_EXTENSIONS = new Set([
   'bash', 'c', 'cc', 'cjs', 'cpp', 'css', 'fish', 'go', 'gradle', 'graphql', 'h',
-  'hpp', 'html', 'java', 'js', 'json', 'jsx', 'kt', 'kts', 'lua', 'mjs', 'nix',
+  'hpp', 'java', 'js', 'json', 'jsx', 'kt', 'kts', 'lua', 'mjs', 'nix',
   'proto', 'py', 'rb', 'rs', 'scss', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx',
   'xml', 'yaml', 'yml', 'zsh',
 ]);
@@ -18,6 +18,7 @@ const TEXT_EXTENSIONS = new Set([
 
 const CODE_FILENAMES = new Set(['containerfile', 'dockerfile', 'gemfile', 'justfile', 'makefile']);
 const TEXT_FILENAMES = new Set(['license', 'readme']);
+const HTML_EXTENSIONS = new Set(['htm', 'html']);
 const MARKDOWN_EXTENSIONS = new Set(['markdown', 'md', 'mdx']);
 const IMAGE_EXTENSIONS = new Set(['bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp']);
 
@@ -113,7 +114,7 @@ export function sortRemoteEntries(entries: LsResult[]): LsResult[] {
 }
 
 export function canPreviewRemoteTextFile(filename: string, fileSize: number): boolean {
-  return ['code', 'markdown', 'text'].includes(remotePreviewKind(filename, fileSize));
+  return ['code', 'html', 'markdown', 'text'].includes(remotePreviewKind(filename, fileSize));
 }
 
 export function remotePreviewKind(filename: string, fileSize: number): RemotePreviewKind {
@@ -125,6 +126,7 @@ export function remotePreviewKind(filename: string, fileSize: number): RemotePre
     return fileSize <= MAX_REMOTE_IMAGE_PREVIEW_BYTES ? 'image' : 'unsupported';
   }
   if (fileSize > MAX_REMOTE_TEXT_PREVIEW_BYTES) return 'unsupported';
+  if (HTML_EXTENSIONS.has(extension)) return 'html';
   if (MARKDOWN_EXTENSIONS.has(extension)) return 'markdown';
   if (CODE_FILENAMES.has(base) || CODE_EXTENSIONS.has(extension)) return 'code';
   if (TEXT_FILENAMES.has(base) || base.startsWith('.env') || TEXT_EXTENSIONS.has(extension)) return 'text';
