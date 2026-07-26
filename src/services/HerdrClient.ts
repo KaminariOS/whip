@@ -645,6 +645,11 @@ export class HerdrClient {
       };
     } catch (error) {
       if (!isUnavailableSshChannel(error)) throw error;
+      // A missing Herdr socket and a stale SSH session can both surface as an
+      // unavailable direct-streamlocal channel. Verify a second SSH subsystem
+      // before publishing an offline server snapshot; if that channel also
+      // fails, the caller must reconnect instead of erasing its workspaces.
+      await this.requireClient().getRemoteHome();
       return { running: false, socket };
     }
   }

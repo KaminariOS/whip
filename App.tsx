@@ -136,6 +136,8 @@ const guiFontAssets = {
   [terminalFontFamily]: require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf'),
 };
 
+const LIVE_HOST_HEARTBEAT_MS = 15_000;
+
 interface LiveRuntime {
   client: HerdrClient;
   profile: ConnectionProfile;
@@ -772,8 +774,12 @@ function AppContent() {
         resumeLiveConnections();
       }
     });
+    const heartbeat = setInterval(() => {
+      if (AppState.currentState === 'active') resumeLiveConnections();
+    }, LIVE_HOST_HEARTBEAT_MS);
     return () => {
       subscription.remove();
+      clearInterval(heartbeat);
     };
   }, [liveSessions.sessions.length]);
 
