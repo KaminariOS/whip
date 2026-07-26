@@ -376,7 +376,7 @@ export const zhHant: Record<string, string> = {
   'app.connectAuthenticationError': '{{host}} 拒絕 SSH 認證資料。請檢查使用者名稱及金鑰或密碼。',
   'app.connectKeyError': 'Whip 無法使用 {{host}} 的 SSH 金鑰。請檢查金鑰及其通關密語。',
   'app.connectHostKeyError': '無法驗證 {{host}} 的 SSH 身分。請檢查主機後再試一次。',
-  'app.connectProtocolError': '{{host}} 使用不相容的 Herdr 通訊協定。請更新 Whip 或 Herdr 後再試一次。',
+  'app.connectProtocolError': '{{host}} 使用不相容的 Herdr 通訊協定。Whip 支援通訊協定 {{expectedProtocol}}，但伺服器回報 {{receivedProtocol}}。請更新 Whip 或 Herdr 後再試一次。',
   'app.connectHerdrUnavailableError': '已透過 SSH 連線至 {{host}}，但 Herdr 無法使用。請確認 Herdr 已安裝且正在執行。',
   'app.connectUnknownError': '無法連線至 {{host}}。請檢查主機設定後再試一次。',
   'app.loadHostsError': '無法載入已儲存的主機：{{error}}',

@@ -26,6 +26,7 @@ import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
 import {
   classifyConnectionError,
+  connectionErrorContext,
   connectionErrorTranslationKeys,
 } from './src/lib/connectionErrors';
 import { resolveColorScheme } from './src/lib/appearance';
@@ -911,6 +912,7 @@ function AppContent() {
     } catch (error) {
       setConnectError(t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
         host: hostDisplayName(nextProfile),
+        ...connectionErrorContext(error),
       }));
       if (runtime) {
         if (liveSessionOpened) {
