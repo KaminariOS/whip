@@ -1,5 +1,6 @@
 import {
   classifyConnectionError,
+  connectionErrorContext,
   connectionErrorTranslationKeys,
 } from '../src/lib/connectionErrors';
 
@@ -24,5 +25,20 @@ describe('connection error presentation', () => {
     expect(Object.values(connectionErrorTranslationKeys)).not.toContain(
       'java.net.UnknownHostException',
     );
+  });
+
+  it('preserves expected and reported protocol versions for the user-facing error', () => {
+    expect(connectionErrorContext(
+      'Herdr protocol mismatch: Whip supports 17, server reports 16',
+    )).toEqual({
+      expectedProtocol: '17',
+      receivedProtocol: '16',
+    });
+    expect(connectionErrorContext(
+      new Error('Herdr protocol mismatch: Android bridge supports 17, server reports 18'),
+    )).toEqual({
+      expectedProtocol: '17',
+      receivedProtocol: '18',
+    });
   });
 });

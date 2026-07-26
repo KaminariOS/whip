@@ -21,6 +21,30 @@ export const connectionErrorTranslationKeys: Record<ConnectionErrorKind, string>
   unknown: 'app.connectUnknownError',
 };
 
+export function connectionErrorContext(error: unknown): Record<string, string> {
+  if (error && typeof error === 'object' && 'expected' in error) {
+    const mismatch = error as { expected?: unknown; received?: unknown };
+    if (typeof mismatch.expected === 'number') {
+      return {
+        expectedProtocol: String(mismatch.expected),
+        receivedProtocol: mismatch.received === undefined
+          ? 'unavailable'
+          : String(mismatch.received),
+      };
+    }
+  }
+
+  const match = errorText(error).match(
+    /(?:Whip|Android bridge) supports (\d+), server reports ([^\r\n]+)/i,
+  );
+  return match
+    ? {
+      expectedProtocol: match[1],
+      receivedProtocol: match[2].trim(),
+    }
+    : {};
+}
+
 export function classifyConnectionError(error: unknown): ConnectionErrorKind {
   const message = errorText(error).toLowerCase();
 
