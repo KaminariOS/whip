@@ -150,7 +150,6 @@ export function TerminalScreen({
   const scrollThumb = terminalScrollThumb(scrollPosition);
 
   useEffect(() => {
-    setScrollPosition(activeTarget?.scroll);
     setError(null);
     setSearchOpen(false);
     setComposeOpen(false);
@@ -160,7 +159,11 @@ export function TerminalScreen({
     for (const attachment of composeAttachmentsRef.current) attachment.dispose();
     composeAttachmentsRef.current = [];
     setComposeAttachments([]);
-  }, [activeTarget?.key, activeTarget?.scroll, setAlt, setCtrl, setShift]);
+  }, [activeTarget?.key, setAlt, setCtrl, setShift]);
+
+  useEffect(() => {
+    setScrollPosition(activeTarget?.scroll);
+  }, [activeTarget?.key, activeTarget?.scroll]);
 
   const writeInput = async (
     data: string,
