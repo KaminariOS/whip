@@ -271,6 +271,8 @@ export const en = {
   'session.pane': 'Pane',
   'session.openPane': 'Open {{pane}} pane',
   'session.closePane': 'Close {{pane}} pane',
+  'session.serverUnavailable': 'HERDR UNAVAILABLE',
+  'session.serverUnavailableCopy': 'Return to Herd to start Herdr, or open an SSH shell there to install it.',
   'session.emptyWorkspace': 'EMPTY WORKSPACE',
   'session.noWorkspaces': 'NO WORKSPACES',
   'session.createTab': 'Create a Herdr tab to open a terminal.',
