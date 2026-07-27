@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, FolderOpen, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Paperclip, Send, X } from 'lucide-react-native';
 import { Animated, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -83,6 +83,19 @@ const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
 const TERMINAL_CONTROL_CLASS = 'min-h-[34px] min-w-12 rounded-sm border border-border bg-card/70 px-2.5 active:bg-card/80';
 const MAX_RECONNECT_ATTEMPTS = 5;
 
+function useTerminalModifierState() {
+  const [value, setValue] = useState<TerminalModifierState>('off');
+  const valueRef = useRef<TerminalModifierState>('off');
+  const update = useCallback((
+    next: TerminalModifierState | ((current: TerminalModifierState) => TerminalModifierState),
+  ) => {
+    const resolved = typeof next === 'function' ? next(valueRef.current) : next;
+    valueRef.current = resolved;
+    setValue(resolved);
+  }, []);
+  return [value, valueRef, update] as const;
+}
+
 export function TerminalScreen({
   activeTarget,
   previewTarget,
@@ -118,9 +131,9 @@ export function TerminalScreen({
   const wasVisible = useRef(visible);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ctrl, setCtrl] = useState<TerminalModifierState>('off');
-  const [shift, setShift] = useState<TerminalModifierState>('off');
-  const [alt, setAlt] = useState<TerminalModifierState>('off');
+  const [ctrl, ctrlRef, setCtrl] = useTerminalModifierState();
+  const [shift, shiftRef, setShift] = useTerminalModifierState();
+  const [alt, altRef, setAlt] = useTerminalModifierState();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCase, setSearchCase] = useState(false);
@@ -147,7 +160,7 @@ export function TerminalScreen({
     for (const attachment of composeAttachmentsRef.current) attachment.dispose();
     composeAttachmentsRef.current = [];
     setComposeAttachments([]);
-  }, [activeTarget?.key, activeTarget?.scroll]);
+  }, [activeTarget?.key, activeTarget?.scroll, setAlt, setCtrl, setShift]);
 
   const writeInput = async (
     data: string,
@@ -171,10 +184,15 @@ export function TerminalScreen({
   const sendInput = async (data: string, target: TerminalRenderTarget | null = activeTarget) => {
     if (!target) return false;
     if (target.key !== activeTarget?.key) return writeInput(data, target, false);
-    const value = applyTerminalModifiers(data, ctrl, alt, shift);
-    if (ctrl === 'armed') setCtrl('off');
-    if (shift === 'armed') setShift('off');
-    if (alt === 'armed') setAlt('off');
+    const value = applyTerminalModifiers(
+      data,
+      ctrlRef.current,
+      altRef.current,
+      shiftRef.current,
+    );
+    if (ctrlRef.current === 'armed') setCtrl('off');
+    if (shiftRef.current === 'armed') setShift('off');
+    if (altRef.current === 'armed') setAlt('off');
     return writeInput(value, target);
   };
 
