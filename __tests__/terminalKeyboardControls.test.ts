@@ -52,6 +52,9 @@ describe('terminal keyboard controls', () => {
     expect(screen).toContain("if (control === 'files')");
     expect(screen).toContain("if (control === 'keyboard')");
     expect(screen).toContain('const [ctrl, ctrlRef, setCtrl] = useTerminalModifierState()');
+    expect(screen).toContain('const activeTargetRef = useRef(activeTarget)');
+    expect(screen).toContain('activeTargetRef.current = activeTarget');
+    expect(screen).toContain("target.key !== activeTargetRef.current?.key");
     expect(screen).toContain('ctrlRef.current,');
     expect(screen).toContain("if (ctrlRef.current === 'armed') setCtrl('off')");
     expect(screen).not.toContain('CTRL+C');

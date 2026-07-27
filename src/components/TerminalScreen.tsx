@@ -124,6 +124,7 @@ export function TerminalScreen({
   const title = session?.title || '';
   const status = session?.status || 'connecting';
   const renderer = useRef<TerminalRendererHandle | null>(null);
+  const activeTargetRef = useRef(activeTarget);
   const controlsRef = useRef<View | null>(null);
   const handledPasteRequest = useRef(0);
   const composeAttachmentsRef = useRef<ComposeAttachment[]>([]);
@@ -148,6 +149,7 @@ export function TerminalScreen({
   const [scrollPosition, setScrollPosition] = useState(activeTarget?.scroll);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
   const scrollThumb = terminalScrollThumb(scrollPosition);
+  activeTargetRef.current = activeTarget;
 
   useEffect(() => {
     setError(null);
@@ -167,26 +169,34 @@ export function TerminalScreen({
 
   const writeInput = async (
     data: string,
-    target: TerminalRenderTarget | null = activeTarget,
+    target: TerminalRenderTarget | null = activeTargetRef.current,
     refocusTerminal = true,
   ): Promise<boolean> => {
     if (!target) return false;
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     try {
       await target.client.writeToTerminal(target.session.terminalId, data);
-      if (refocusTerminal && target.key === activeTarget?.key && keyboardEnabled && keyboardVisible) {
+      if (
+        refocusTerminal
+        && target.key === activeTargetRef.current?.key
+        && keyboardEnabled
+        && keyboardVisible
+      ) {
         renderer.current?.focus();
       }
       return true;
     } catch (reason) {
-      if (target.key === activeTarget?.key) setError(String(reason));
+      if (target.key === activeTargetRef.current?.key) setError(String(reason));
       return false;
     }
   };
 
-  const sendInput = async (data: string, target: TerminalRenderTarget | null = activeTarget) => {
+  const sendInput = async (
+    data: string,
+    target: TerminalRenderTarget | null = activeTargetRef.current,
+  ) => {
     if (!target) return false;
-    if (target.key !== activeTarget?.key) return writeInput(data, target, false);
+    if (target.key !== activeTargetRef.current?.key) return writeInput(data, target, false);
     const value = applyTerminalModifiers(
       data,
       ctrlRef.current,
