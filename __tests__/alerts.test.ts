@@ -91,6 +91,21 @@ test('posts the notification immediately when speech is disabled', async () => {
   expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
 });
 
+test('uses a short vibration without arming a persistent alert for a brief notification', async () => {
+  await alertAgent(agent, false, {
+    hostId: 'host-1',
+    paneId: agent.pane_id,
+  }, 'work', 'brief');
+
+  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(expect.objectContaining({
+    content: expect.objectContaining({
+      vibrate: [0, 200],
+    }),
+    trigger: { channelId: 'agent-state-brief-v1' },
+  }));
+  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
+});
+
 test('still posts the alert when speech reports an error', async () => {
   const pending = alertAgent(agent, true, {
     hostId: 'host-1',

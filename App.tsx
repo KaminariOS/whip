@@ -33,7 +33,7 @@ import { resolveColorScheme } from './src/lib/appearance';
 import { biometricResumeAction } from './src/lib/appAccess';
 import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from './src/lib/biometricSecurity';
 import {
-  activeTabSuppressesNotifications,
+  activeTabUsesBriefAlerts,
   agentFromStatusEvent,
   tabNameForAgent,
   agentStatusFromEvent,
@@ -488,25 +488,25 @@ function AppContent() {
           const currentAgent = session?.snapshot.agents.find(agent => agent.pane_id === paneId);
           const agent = currentAgent ? agentFromStatusEvent(currentAgent, event.data) : null;
           const previous = runtime.previousStatuses?.get(paneId);
+          const useBriefAlert = agent
+            ? activeTabUsesBriefAlerts(
+              agent,
+              session?.snapshot.tabs ?? [],
+              AppState.currentState === 'active',
+              liveSessionsRef.current.activeSessionId === sessionId,
+            )
+            : false;
           if (
             agentStatus
             && agent
             && alertsEnabledRef.current
-            && shouldNotifyAgentTransition(
-              previous,
-              agentStatus,
-              activeTabSuppressesNotifications(
-                agent,
-                session?.snapshot.tabs ?? [],
-                AppState.currentState === 'active',
-                liveSessionsRef.current.activeSessionId === sessionId,
-              ),
-            )
+            && shouldNotifyAgentTransition(previous, agentStatus)
           ) {
             alertAgent(agent, ttsEnabledRef.current, {
               hostId: sessionId,
               paneId,
-            }, session ? tabNameForAgent(agent, session.snapshot.tabs) : undefined).catch(() => undefined);
+            }, session ? tabNameForAgent(agent, session.snapshot.tabs) : undefined,
+            useBriefAlert ? 'brief' : 'persistent').catch(() => undefined);
           }
           if (agentStatus) runtime.previousStatuses?.set(paneId, agentStatus);
           setLiveSessions(current => applyLiveHostAgentStatus(current, sessionId, paneId, event.data));
@@ -598,20 +598,18 @@ function AppContent() {
         if (alertsEnabledRef.current && runtime.previousStatuses) {
           for (const agent of snapshot.agents) {
             const previous = runtime.previousStatuses.get(agent.pane_id);
-            if (shouldNotifyAgentTransition(
-              previous,
-              agent.agent_status,
-              activeTabSuppressesNotifications(
-                agent,
-                snapshot.tabs,
-                AppState.currentState === 'active',
-                liveSessionsRef.current.activeSessionId === sessionId,
-              ),
-            )) {
+            const useBriefAlert = activeTabUsesBriefAlerts(
+              agent,
+              snapshot.tabs,
+              AppState.currentState === 'active',
+              liveSessionsRef.current.activeSessionId === sessionId,
+            );
+            if (shouldNotifyAgentTransition(previous, agent.agent_status)) {
               alertAgent(agent, ttsEnabledRef.current, {
                 hostId: sessionId,
                 paneId: agent.pane_id,
-              }, tabNameForAgent(agent, snapshot.tabs)).catch(() => undefined);
+              }, tabNameForAgent(agent, snapshot.tabs),
+              useBriefAlert ? 'brief' : 'persistent').catch(() => undefined);
             }
           }
         }
