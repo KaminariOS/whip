@@ -40,6 +40,20 @@ describe('terminal input composer', () => {
     expect(screen).toContain("setComposeText('');");
   });
 
+  it('does not close the composer when live scroll metadata changes', () => {
+    const screen = readSource('src/components/TerminalScreen.tsx');
+    const terminalReset = screen.slice(
+      screen.indexOf('useEffect(() => {\n    setError(null);'),
+      screen.indexOf('useEffect(() => {\n    setScrollPosition(activeTarget?.scroll);'),
+    );
+
+    expect(terminalReset).toContain('setComposeOpen(false)');
+    expect(terminalReset).not.toContain('activeTarget?.scroll');
+    expect(screen).toContain(
+      'useEffect(() => {\n    setScrollPosition(activeTarget?.scroll);\n  }, [activeTarget?.key, activeTarget?.scroll]);',
+    );
+  });
+
   it('floats a transparent composer over the terminal without taking layout space', () => {
     const screen = readSource('src/components/TerminalScreen.tsx');
 
