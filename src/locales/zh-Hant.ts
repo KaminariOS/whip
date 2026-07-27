@@ -261,6 +261,8 @@ export const zhHant: Record<string, string> = {
   'session.pane': '窗格',
   'session.openPane': '開啟 {{pane}} 窗格',
   'session.closePane': '關閉 {{pane}} 窗格',
+  'session.serverUnavailable': 'HERDR 無法使用',
+  'session.serverUnavailableCopy': '返回代理群以啟動 Herdr，或在該處開啟 SSH Shell 進行安裝。',
   'session.emptyWorkspace': '工作區是空的',
   'session.noWorkspaces': '沒有工作區',
   'session.createTab': '建立 Herdr 分頁以開啟終端機。',

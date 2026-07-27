@@ -64,8 +64,12 @@ describe('plain SSH shell fallback', () => {
       'utf8',
     );
 
-    expect(screen).toContain('{!activeTarget && !selectedTab && (');
-    expect(screen).toContain('{!activeTarget && selectedTab && panes.length === 0 && (');
+    expect(screen).toContain(
+      '{!activeTarget && snapshot.server.running && !selectedTab && (',
+    );
+    expect(screen).toContain(
+      '{!activeTarget && snapshot.server.running && selectedTab && panes.length === 0 && (',
+    );
   });
 
   it('opens a dedicated interactive PTY and streams decoded text frames', async () => {

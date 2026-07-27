@@ -690,13 +690,22 @@ export function SessionScreen({
               <Text className="font-mono text-[10px] font-black text-terminal-text">{tabSwipe.targetLabel}</Text>
             </Animated.View>
           )}
-        {!activeTarget && !selectedTab && (
+        {!activeTarget && !snapshot.server.running && (
+          <View className="flex-1 items-center justify-center p-[30px]">
+            <Text className="font-mono font-black text-terminal-text">{t('session.serverUnavailable')}</Text>
+            <Text className="mt-2 text-center text-terminal-muted">{t('session.serverUnavailableCopy')}</Text>
+            <Button className="mt-5 rounded-full px-5" variant="secondary" onPress={hapticPress(onExit)}>
+              <Text>{t('session.backToHerd')}</Text>
+            </Button>
+          </View>
+        )}
+        {!activeTarget && snapshot.server.running && !selectedTab && (
           <View className="flex-1 items-center justify-center p-[30px]">
             <Text className="font-mono font-black text-terminal-text">{workspace ? t('session.emptyWorkspace') : t('session.noWorkspaces')}</Text>
             <Text className="mt-2 text-center text-terminal-muted">{workspace ? t('session.createTab') : t('session.createWorkspace')}</Text>
           </View>
         )}
-        {!activeTarget && selectedTab && panes.length === 0 && (
+        {!activeTarget && snapshot.server.running && selectedTab && panes.length === 0 && (
           <View className="flex-1 items-center justify-center p-[30px]">
             <Text className="font-mono font-black text-terminal-text">{t('session.emptyTab')}</Text>
             <Text className="mt-2 text-center text-terminal-muted">{t('session.emptyTabCopy')}</Text>
