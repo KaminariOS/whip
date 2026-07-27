@@ -105,44 +105,44 @@ if (hasUploadSigning) {
 }
 
 android {
-    ndkVersion rootProject.ext.ndkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
-    compileSdk rootProject.ext.compileSdkVersion
+    ndkVersion = rootProject.ext.ndkVersion
+    buildToolsVersion = rootProject.ext.buildToolsVersion
+    compileSdk = rootProject.ext.compileSdkVersion
 
-    namespace "io.github.kaminarios.whip"
+    namespace = "io.github.kaminarios.whip"
     defaultConfig {
-        applicationId "io.github.kaminarios.whip"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        applicationId = "io.github.kaminarios.whip"
+        minSdkVersion = rootProject.ext.minSdkVersion
+        targetSdkVersion = rootProject.ext.targetSdkVersion
+        versionCode = 1
+        versionName = "1.0"
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
     signingConfigs {
         debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            storeFile = file('debug.keystore')
+            storePassword = 'android'
+            keyAlias = 'androiddebugkey'
+            keyPassword = 'android'
         }
         if (hasUploadSigning) {
             upload {
-                storeFile file(uploadKeystoreProperties.getProperty('storeFile'))
-                storePassword uploadKeystoreProperties.getProperty('storePassword')
-                keyAlias uploadKeystoreProperties.getProperty('keyAlias')
-                keyPassword uploadKeystoreProperties.getProperty('keyPassword')
+                storeFile = file(uploadKeystoreProperties.getProperty('storeFile'))
+                storePassword = uploadKeystoreProperties.getProperty('storePassword')
+                keyAlias = uploadKeystoreProperties.getProperty('keyAlias')
+                keyPassword = uploadKeystoreProperties.getProperty('keyPassword')
             }
         }
     }
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            signingConfig = signingConfigs.debug
         }
         release {
             // Local Play bundles use the private upload key. CI preview APKs keep
             // their existing debug-key identity when no upload key is available.
-            signingConfig hasUploadSigning ? signingConfigs.upload : signingConfigs.debug
-            minifyEnabled enableProguardInReleaseBuilds
+            signingConfig = hasUploadSigning ? signingConfigs.upload : signingConfigs.debug
+            minifyEnabled = enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
