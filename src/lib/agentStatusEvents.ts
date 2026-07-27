@@ -17,15 +17,14 @@ export function agentStatusFromEvent(value: unknown): AgentStatus | null {
 export function shouldNotifyAgentTransition(
   previous: AgentStatus | undefined,
   next: AgentStatus,
-  suppressActiveTabNotifications: boolean,
 ): boolean {
-  if (!previous || previous === next || suppressActiveTabNotifications) return false;
+  if (!previous || previous === next) return false;
   // Herdr projects an unseen Idle detector state as Done. A public Idle state
   // is already seen, so clients should not reconstruct completion from it.
   return next === 'blocked' || next === 'done';
 }
 
-export function activeTabSuppressesNotifications(
+export function activeTabUsesBriefAlerts(
   agent: Pick<AgentInfo, 'tab_id'>,
   tabs: TabInfo[],
   appHasFocus: boolean,

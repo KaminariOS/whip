@@ -1,5 +1,5 @@
 import {
-  activeTabSuppressesNotifications,
+  activeTabUsesBriefAlerts,
   agentFromStatusEvent,
   agentNotificationTitle,
   agentStatusFromEvent,
@@ -27,16 +27,15 @@ describe('agent status events', () => {
   });
 
   test('treats public idle as already seen and done as completion', () => {
-    expect(shouldNotifyAgentTransition('working', 'idle', false)).toBe(false);
-    expect(shouldNotifyAgentTransition('working', 'done', false)).toBe(true);
-    expect(shouldNotifyAgentTransition('idle', 'idle', false)).toBe(false);
-    expect(shouldNotifyAgentTransition('unknown', 'idle', false)).toBe(false);
+    expect(shouldNotifyAgentTransition('working', 'idle')).toBe(false);
+    expect(shouldNotifyAgentTransition('working', 'done')).toBe(true);
+    expect(shouldNotifyAgentTransition('idle', 'idle')).toBe(false);
+    expect(shouldNotifyAgentTransition('unknown', 'idle')).toBe(false);
   });
 
-  test('suppresses native-style notifications for the active focused tab', () => {
-    expect(shouldNotifyAgentTransition('working', 'blocked', false)).toBe(true);
-    expect(shouldNotifyAgentTransition('working', 'blocked', true)).toBe(false);
-    expect(shouldNotifyAgentTransition('working', 'done', true)).toBe(false);
+  test('uses brief notifications for the active focused tab', () => {
+    expect(shouldNotifyAgentTransition('working', 'blocked')).toBe(true);
+    expect(shouldNotifyAgentTransition('working', 'done')).toBe(true);
     const tabs = [{
       tab_id: 'tab-1',
       workspace_id: 'workspace-1',
@@ -46,11 +45,11 @@ describe('agent status events', () => {
       pane_count: 1,
       agent_status: 'working' as const,
     }];
-    expect(activeTabSuppressesNotifications(agent, tabs, true, true)).toBe(true);
-    expect(activeTabSuppressesNotifications(agent, tabs, false, true)).toBe(false);
+    expect(activeTabUsesBriefAlerts(agent, tabs, true, true)).toBe(true);
+    expect(activeTabUsesBriefAlerts(agent, tabs, false, true)).toBe(false);
   });
 
-  test('does not suppress notifications for a focused tab on a background host', () => {
+  test('keeps the persistent alert for a focused tab on a background host', () => {
     const tabs = [{
       tab_id: 'tab-1',
       workspace_id: 'workspace-1',
@@ -60,7 +59,7 @@ describe('agent status events', () => {
       pane_count: 1,
       agent_status: 'working' as const,
     }];
-    expect(activeTabSuppressesNotifications(agent, tabs, true, false)).toBe(false);
+    expect(activeTabUsesBriefAlerts(agent, tabs, true, false)).toBe(false);
   });
 
   test('merges presentation metadata from a status event', () => {

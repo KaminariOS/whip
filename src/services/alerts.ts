@@ -8,14 +8,18 @@ import { agentNotificationTitle } from '../lib/agentStatusEvents';
 import { armPersistentAgentAlert } from './backgroundMonitoring';
 import i18n from '../i18n';
 
-const CHANNEL_ID = 'agent-state-v3';
+const PERSISTENT_CHANNEL_ID = 'agent-state-v3';
+const BRIEF_CHANNEL_ID = 'agent-state-brief-v1';
 const ALERT_VIBRATION_PATTERN = [
   300, 100, 300, 100, 300, 100, 300, 2000,
   300, 100, 300, 100, 300, 100, 300, 2000,
   300, 100, 300, 100, 300, 100, 300, 2000,
 ];
+const BRIEF_VIBRATION_PATTERN = [0, 200];
 const SPEECH_TIMEOUT_MS = 10_000;
 const PERSISTENT_ALERT_TIMEOUT_MS = 60_000;
+
+export type AgentAlertDuration = 'brief' | 'persistent';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -29,13 +33,20 @@ Notifications.setNotificationHandler({
 
 export async function prepareAlerts(): Promise<void> {
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+    await Notifications.setNotificationChannelAsync(PERSISTENT_CHANNEL_ID, {
       name: i18n.t('alerts.channelName'),
       importance: Notifications.AndroidImportance.HIGH,
       bypassDnd: true,
       enableLights: true,
       enableVibrate: true,
       vibrationPattern: ALERT_VIBRATION_PATTERN,
+    });
+    await Notifications.setNotificationChannelAsync(BRIEF_CHANNEL_ID, {
+      name: i18n.t('alerts.channelName'),
+      importance: Notifications.AndroidImportance.HIGH,
+      enableLights: true,
+      enableVibrate: true,
+      vibrationPattern: BRIEF_VIBRATION_PATTERN,
     });
   }
   await Notifications.requestPermissionsAsync();
@@ -46,6 +57,7 @@ export async function alertAgent(
   speak: boolean,
   target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
   tabName?: string,
+  duration: AgentAlertDuration = 'persistent',
 ): Promise<void> {
   const title = agentNotificationTitle(agent, tabName, {
     needsYou: name => i18n.t('alerts.needsYou', { name }),
@@ -55,21 +67,23 @@ export async function alertAgent(
 
   if (speak) await speakBeforeAlert(title);
   if (Platform.OS !== 'android') Vibration.vibrate();
+  const persistent = duration === 'persistent';
+  const channelId = persistent ? PERSISTENT_CHANNEL_ID : BRIEF_CHANNEL_ID;
   const notificationIdentifier = await Notifications.scheduleNotificationAsync({
     content: {
       title,
       body,
       sound: 'default',
-      vibrate: ALERT_VIBRATION_PATTERN,
+      vibrate: persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
       priority: Notifications.AndroidNotificationPriority.MAX,
       data: target,
     },
-    trigger: { channelId: CHANNEL_ID },
+    trigger: { channelId },
   });
-  if (Platform.OS === 'android') {
+  if (Platform.OS === 'android' && persistent) {
     armPersistentAgentAlert(
       notificationIdentifier,
-      CHANNEL_ID,
+      PERSISTENT_CHANNEL_ID,
       PERSISTENT_ALERT_TIMEOUT_MS,
     ).catch(() => undefined);
   }
