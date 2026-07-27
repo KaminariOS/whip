@@ -4,6 +4,7 @@ export interface TerminalSession {
   terminalId: string;
   paneId: string;
   title: string;
+  kind?: 'herdr' | 'ssh';
   status: TerminalSessionStatus;
   error?: string;
   reconnectAttempt: number;
@@ -20,6 +21,40 @@ export const emptyTerminalSessions: TerminalSessionsState = {
   sessions: [],
   activeTerminalId: null,
 };
+
+export const SSH_SHELL_TERMINAL_ID = '__whip_ssh_shell__';
+
+export function isSshShellTerminalId(terminalId: string): boolean {
+  return terminalId === SSH_SHELL_TERMINAL_ID;
+}
+
+export function openSshShellSession(
+  state: TerminalSessionsState,
+  title = 'SSH shell',
+): TerminalSessionsState {
+  const existing = state.sessions.find(session => isSshShellTerminalId(session.terminalId));
+  if (existing) {
+    return {
+      sessions: state.sessions.map(session => (
+        session.terminalId === existing.terminalId ? { ...session, title } : session
+      )),
+      activeTerminalId: existing.terminalId,
+    };
+  }
+
+  const session: TerminalSession = {
+    terminalId: SSH_SHELL_TERMINAL_ID,
+    paneId: SSH_SHELL_TERMINAL_ID,
+    title,
+    kind: 'ssh',
+    status: 'connecting',
+    reconnectAttempt: 0,
+  };
+  return {
+    sessions: [...state.sessions, session],
+    activeTerminalId: session.terminalId,
+  };
+}
 
 function titleForPane(pane: PaneInfo): string {
   return pane.label || pane.display_agent || pane.agent || pane.pane_id;
@@ -45,6 +80,7 @@ export function openTerminalSession(
     terminalId: pane.terminal_id,
     paneId: pane.pane_id,
     title: titleForPane(pane),
+    kind: 'herdr',
     status: 'connecting',
     reconnectAttempt: 0,
   };
@@ -74,8 +110,9 @@ export function reconcileTerminalSessions(
 ): TerminalSessionsState {
   const panesByTerminal = new Map(panes.map(pane => [pane.terminal_id, pane]));
   const sessions = state.sessions
-    .filter(session => panesByTerminal.has(session.terminalId))
+    .filter(session => session.kind === 'ssh' || panesByTerminal.has(session.terminalId))
     .map(session => {
+      if (session.kind === 'ssh') return session;
       const pane = panesByTerminal.get(session.terminalId)!;
       return {
         ...session,

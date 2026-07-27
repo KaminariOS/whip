@@ -1,7 +1,8 @@
 export interface TerminalFrame {
   type: 'terminal.frame';
   seq: number;
-  encoding: 'ansi';
+  /** Herdr bridge frames are base64 ANSI bytes; SSH shell frames are decoded UTF-8 text. */
+  encoding: 'ansi' | 'utf8';
   width: number;
   height: number;
   full: boolean;

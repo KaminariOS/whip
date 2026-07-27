@@ -127,6 +127,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       ...preferences,
       fontSize: entry.fontSize,
       backgroundImageUri: null,
+      localScrollback: entry.target.session.kind === 'ssh',
     })});`);
   }, [inject, preferences]);
 
@@ -139,6 +140,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     const reset = entry.resetOnNextFrame;
     if (reset) entry.resetOnNextFrame = false;
     const resetScript = reset ? `window.herdrReset(${key}); ` : '';
+    if (frame.encoding === 'utf8') {
+      inject(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)});`);
+      return;
+    }
     if (typeof frame.final === 'boolean') {
       inject(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final});`);
       return;

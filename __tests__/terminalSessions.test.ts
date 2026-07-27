@@ -1,6 +1,7 @@
 import {
   closeTerminalSession,
   emptyTerminalSessions,
+  openSshShellSession,
   openTerminalSession,
   reconcileTerminalSessions,
   selectTerminalSession,
@@ -91,5 +92,17 @@ describe('terminal session state', () => {
 
     expect(reconciled.sessions.map(session => session.terminalId)).toEqual(['term-1', 'term-3']);
     expect(reconciled.activeTerminalId).toBe('term-3');
+  });
+
+  test('keeps the plain SSH shell when an offline Herdr snapshot has no panes', () => {
+    const shell = openSshShellSession(emptyTerminalSessions);
+    const reconciled = reconcileTerminalSessions(shell, []);
+
+    expect(reconciled).toEqual(shell);
+    expect(reconciled.sessions[0]).toMatchObject({
+      kind: 'ssh',
+      title: 'SSH shell',
+      status: 'connecting',
+    });
   });
 });

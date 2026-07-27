@@ -560,6 +560,19 @@ export function SessionScreen({
               <Globe2 size={18} color={colors.text} />
             </Button>
           </>
+        ) : activeTerminalSession?.kind === 'ssh' ? (
+          <>
+            <Text className="flex-1 self-center px-2 font-mono text-[11px] font-semibold text-foreground">
+              {t('terminal.sshShell')}
+            </Text>
+            <Button
+              accessibilityLabel={t('terminal.closeSession')}
+              className="h-[42px] w-11 rounded-none px-0"
+              variant="ghost"
+              onPress={hapticPress(() => onCloseTerminal(activeTerminalSession.terminalId))}>
+              <X size={17} color={colors.text} />
+            </Button>
+          </>
         ) : null}
       </View>
 
@@ -677,13 +690,13 @@ export function SessionScreen({
               <Text className="font-mono text-[10px] font-black text-terminal-text">{tabSwipe.targetLabel}</Text>
             </Animated.View>
           )}
-        {!selectedTab && (
+        {!activeTarget && !selectedTab && (
           <View className="flex-1 items-center justify-center p-[30px]">
             <Text className="font-mono font-black text-terminal-text">{workspace ? t('session.emptyWorkspace') : t('session.noWorkspaces')}</Text>
             <Text className="mt-2 text-center text-terminal-muted">{workspace ? t('session.createTab') : t('session.createWorkspace')}</Text>
           </View>
         )}
-        {selectedTab && panes.length === 0 && (
+        {!activeTarget && selectedTab && panes.length === 0 && (
           <View className="flex-1 items-center justify-center p-[30px]">
             <Text className="font-mono font-black text-terminal-text">{t('session.emptyTab')}</Text>
             <Text className="mt-2 text-center text-terminal-muted">{t('session.emptyTabCopy')}</Text>

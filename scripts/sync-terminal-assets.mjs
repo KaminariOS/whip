@@ -189,6 +189,7 @@ const terminalSessionHtml = `<!doctype html>
     let lastTap = null;
     let doubleTapTabEnabled = true;
     let keyboardEnabled = true;
+    let localScrollback = false;
     installAndroidImeBridge(terminal, send, navigator.userAgent);
     const controlSequenceForKey = key => {
       const upper = key.length === 1 ? key.toUpperCase() : '';
@@ -242,6 +243,7 @@ const terminalSessionHtml = `<!doctype html>
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
       doubleTapTabEnabled = options.doubleTapTab !== false;
+      localScrollback = options.localScrollback === true;
       if (!doubleTapTabEnabled) lastTap = null;
       const backgroundUri = options.backgroundImageUri || '';
       const dimming = Math.max(0, Math.min(100, Number(options.backgroundDimming) || 0)) / 100;
@@ -516,7 +518,10 @@ const terminalSessionHtml = `<!doctype html>
       const lines = Math.trunc(total);
       touch.carry = total - lines;
       touch.lastY = point.clientY;
-      if (lines !== 0) send({ type: 'scroll', direction: lines > 0 ? 'up' : 'down', lines: Math.abs(lines) });
+      if (lines !== 0) {
+        if (localScrollback) terminal.scrollLines(-lines);
+        else send({ type: 'scroll', direction: lines > 0 ? 'up' : 'down', lines: Math.abs(lines) });
+      }
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchend', event => {
       if (pinch) {
@@ -743,6 +748,7 @@ const terminalHtml = `<!doctype html>
       if (target) target.root.style.transform = 'translateX(' + (offset + direction * width) + 'px)';
     };
     window.herdrWriteBase64Chunk = (key, sequence, data, final) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final]);
+    window.herdrWrite = (key, data) => call(key, 'herdrWrite', [data]);
     window.herdrReset = key => call(key, 'herdrReset');
     window.herdrConfigure = (key, options) => call(key, 'herdrConfigure', [options]);
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);

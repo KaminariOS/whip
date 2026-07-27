@@ -54,6 +54,7 @@ Screenshots were captured from the current Whip Android build on a Pixel 9 Pro.
 - Create, focus, rename, split, zoom, inspect, and close space resources.
 - Launch agents, send direct prompts, and send commands or special keys to a pane.
 - Attach to any selected pane through an immersive, xterm-compatible terminal.
+- Open a plain SSH login shell when Herdr is stopped, unavailable, or not installed yet.
 - Scan terminal scrollback for web links and open local or LAN services in the in-app browser through an on-demand SSH tunnel.
 - Use ANSI colors, modifier keys, touch scrolling, Page Up/Down, a position indicator, double-tap Tab, live resizing, and configurable terminal appearance.
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
@@ -79,7 +80,7 @@ Whip supports Android 7.0 and newer (`minSdk 24`). The current preview distribut
 
 ## Connect your first host
 
-You need an SSH server and Herdr on a laptop or server reachable from the phone. Confirm the same connection outside Whip first:
+You need an SSH server on a laptop or server reachable from the phone. If Herdr is already installed, confirm the same connection outside Whip first:
 
 ```bash
 ssh user@laptop.tailnet.ts.net 'herdr status server --json'
@@ -91,6 +92,8 @@ Then in Whip:
 2. Enter the Tailscale DNS name or `100.x.y.z` address, SSH user, and password or private key.
 3. Leave **Command** as `herdr`, or enter its absolute path if it is not in the non-interactive SSH `PATH`.
 4. Choose the Herdr session name and connect.
+
+If Herdr is not installed yet, Whip still keeps the SSH connection open. From the offline host screen, choose **Open SSH shell** and install or troubleshoot Herdr yourself; Whip never installs software on the host.
 
 Whip accepts Herdr releases that report protocol 17 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
 

@@ -5,10 +5,12 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { loadPersistedTerminals } from '../src/services/persistedTerminals';
+import { loadPersistedTerminals, savePersistedTerminals } from '../src/services/persistedTerminals';
+import { emptyTerminalSessions, openSshShellSession } from '../src/terminalSessions';
 import type { HerdrSnapshot, PaneInfo } from '../src/types';
 
 const mockGetItem = jest.mocked(AsyncStorage.getItem);
+const mockSetItem = jest.mocked(AsyncStorage.setItem);
 
 function pane(paneId: string, terminalId: string, tabId: string, focused = false): PaneInfo {
   return {
@@ -36,7 +38,10 @@ const snapshot: HerdrSnapshot = {
   layouts: [],
 };
 
-beforeEach(() => mockGetItem.mockReset());
+beforeEach(() => {
+  mockGetItem.mockReset();
+  mockSetItem.mockReset();
+});
 
 test('makes the server-focused pane active instead of the previously persisted terminal', async () => {
   mockGetItem.mockResolvedValue(JSON.stringify({
@@ -51,4 +56,13 @@ test('makes the server-focused pane active instead of the previously persisted t
       { terminalId: 'term-grok', paneId: 'p-grok' },
     ],
   });
+});
+
+test('does not persist an ephemeral SSH fallback shell as a Herdr pane', async () => {
+  await savePersistedTerminals('fresh', openSshShellSession(emptyTerminalSessions));
+
+  expect(mockSetItem).toHaveBeenCalledWith(
+    'herdr.terminal.sessions.v1.fresh',
+    JSON.stringify({ activeTerminalId: null, sessions: [] }),
+  );
 });
