@@ -5,6 +5,10 @@ test('encodes Ctrl+A for the program running inside the attached pane', () => {
   expect(applyTerminalModifiers('A', 'locked', 'off')).toBe('\u0001');
 });
 
+test('encodes Ctrl+C as the interrupt byte instead of a printable c', () => {
+  expect(applyTerminalModifiers('c', 'armed', 'off')).toBe('\u0003');
+});
+
 test('preserves direct control bytes from the terminal key rail', () => {
   expect(applyTerminalModifiers('\u0003', 'armed', 'off')).toBe('\u0003');
 });
