@@ -1,4 +1,4 @@
-import { ChevronRight, Plus, Sparkles, X } from 'lucide-react-native';
+import { ChevronRight, Plus, Sparkles, SquareTerminal, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +38,7 @@ interface Props {
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
   onStart: (hostId: string, workspaceId: string, name: string, command: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
+  onOpenSshShell: (hostId: string) => void;
 }
 
 export function HerdScreen({
@@ -57,6 +58,7 @@ export function HerdScreen({
   onOpenTerminal,
   onStart,
   onStartServer,
+  onOpenSshShell,
 }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -214,9 +216,15 @@ export function HerdScreen({
             <View className="size-16 items-center justify-center rounded-full bg-destructive/10"><Text className="text-[28px] font-bold text-destructive">!</Text></View>
             <Text className="mt-[18px] text-xl font-semibold leading-[26px]">{t('herd.serverOffline')}</Text>
             <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{t('herd.serverOfflineCopy', { host: selectedQueue.label })}</Text>
-            <Button className="mt-6 rounded-full px-5" disabled={selectedQueue.refreshing} onPress={hapticPress(() => onStartServer(selectedQueue.id))}>
-              <Text>{selectedQueue.refreshing ? t('herd.starting') : t('herd.startServer')}</Text>
-            </Button>
+            <View className="mt-6 flex-row gap-2.5">
+              <Button className="rounded-full px-5" disabled={selectedQueue.refreshing} onPress={hapticPress(() => onStartServer(selectedQueue.id))}>
+                <Text>{selectedQueue.refreshing ? t('herd.starting') : t('herd.startServer')}</Text>
+              </Button>
+              <Button className="rounded-full px-5" variant="secondary" onPress={hapticPress(() => onOpenSshShell(selectedQueue.id))}>
+                <Icon as={SquareTerminal} size={17} />
+                <Text>{t('herd.openSshShell')}</Text>
+              </Button>
+            </View>
           </View>
         ) : (
           <>

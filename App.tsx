@@ -114,6 +114,7 @@ import {
 } from './src/services/persistedLiveHosts';
 import {
   closeTerminalSession,
+  openSshShellSession,
   openTerminalSession,
   reconcileTerminalSessions,
   updateTerminalSession,
@@ -911,7 +912,14 @@ function AppContent() {
         const usedHosts = await markHostConnected(saved.hosts, nextProfile.id);
         setHosts(usedHosts);
       }
-      if (navigate) setNavigation(current => selectMobileTab(current, 'terminal'));
+      if (navigate) {
+        if (initial.server.running) {
+          setNavigation(current => selectMobileTab(current, 'terminal'));
+        } else {
+          setHerdHostFilterId(sessionId);
+          setNavigation(current => selectMobileTab(current, 'herd'));
+        }
+      }
       return true;
     } catch (error) {
       setConnectError(t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
@@ -1113,6 +1121,16 @@ function AppContent() {
   const activatePaneTerminal = useCallback((sessionId: string, pane: PaneInfo) => {
     setLiveSessions(current => updateLiveHostTerminals(current, sessionId, terminals => openTerminalSession(terminals, pane)));
   }, []);
+
+  const openSshShell = useCallback((sessionId: string) => {
+    setSelectedPaneId(null);
+    setLiveSessions(current => updateLiveHostTerminals(
+      current,
+      sessionId,
+      terminals => openSshShellSession(terminals, t('terminal.sshShell')),
+    ));
+    selectLiveHost(sessionId, 'terminal');
+  }, [selectLiveHost, t]);
 
   const openPaneTerminal = (sessionId: string, pane: PaneInfo, focusAgent = false) => {
     setSelectedPaneId(null);
@@ -1349,6 +1367,7 @@ function AppContent() {
                 onOpenTerminal={openAgentTerminal}
                 onStart={startAgent}
                 onStartServer={startServer}
+                onOpenSshShell={openSshShell}
               />
             ) : <ConnectRequiredScreen destination={t('nav.herd')} onPickHost={() => selectTab('hosts')} />
           )}

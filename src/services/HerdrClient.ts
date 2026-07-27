@@ -1,6 +1,7 @@
 import SSHClient, {
   type HerdrBridgeEvent,
   type LsResult,
+  PtyType,
 } from '@dylankenneally/react-native-ssh-sftp';
 
 import { normalizePrivateKey } from '../lib/privateKey';
@@ -21,6 +22,7 @@ import { shellQuote } from '../lib/shell';
 import {
   type TerminalFrame,
 } from '../lib/terminalBridge';
+import { isSshShellTerminalId } from '../terminalSessions';
 import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 
@@ -38,6 +40,11 @@ interface TerminalConnection {
   onClosed?: TerminalClosedHandler;
 }
 
+interface SshShellConnection extends TerminalConnection {
+  client: SSHClient;
+  sequence: number;
+}
+
 interface TerminalSize {
   columns: number;
   rows: number;
@@ -49,6 +56,7 @@ export class HerdrClient {
   private client: SSHClient | null = null;
   private profile: ConnectionProfile | null = null;
   private terminalConnections = new Map<string, TerminalConnection>();
+  private sshShellConnections = new Map<string, SshShellConnection>();
   private terminalOpenings = new Map<string, Promise<void>>();
   private terminalSizes = new Map<string, TerminalSize>();
   private terminalBridges = new Set<string>();
@@ -143,6 +151,9 @@ export class HerdrClient {
 
   disconnect(): void {
     this.closeEventStream();
+    for (const terminalId of this.sshShellConnections.keys()) {
+      this.closeSshShell(terminalId);
+    }
     this.client?.closeAllHerdrBridges();
     this.client?.off('Shell');
     this.client?.disconnect();
@@ -213,6 +224,33 @@ export class HerdrClient {
     onFrame: TerminalFrameHandler,
     onClosed?: TerminalClosedHandler,
   ): Promise<void> {
+    if (isSshShellTerminalId(terminalId)) {
+      const connection = this.sshShellConnections.get(terminalId);
+      if (connection) {
+        connection.onFrame = onFrame;
+        connection.onClosed = onClosed;
+        return;
+      }
+      const opening = this.terminalOpenings.get(terminalId);
+      if (opening) {
+        await opening;
+        const opened = this.sshShellConnections.get(terminalId);
+        if (opened) {
+          opened.onFrame = onFrame;
+          opened.onClosed = onClosed;
+        }
+        return;
+      }
+      const task = this.createSshShell(terminalId, onFrame, onClosed);
+      this.terminalOpenings.set(terminalId, task);
+      try {
+        await task;
+      } finally {
+        this.terminalOpenings.delete(terminalId);
+      }
+      return;
+    }
+
     this.terminalConnections.set(terminalId, { onFrame, onClosed });
 
     const reconnecting = this.controlReconnect;
@@ -236,6 +274,9 @@ export class HerdrClient {
   async writeToTerminal(terminalId: string, data: string): Promise<string> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening;
+    if (isSshShellTerminalId(terminalId)) {
+      return this.requireSshShell(terminalId).client.writeToShell(data);
+    }
     await this.ensureTerminalBridge(terminalId);
     await this.requireClient().herdrBridgeInput(terminalId, data);
     return '';
@@ -255,6 +296,11 @@ export class HerdrClient {
       cellHeightPx: Math.max(0, Math.round(cellHeightPx)),
     };
     this.terminalSizes.set(terminalId, size);
+    const sshShell = this.sshShellConnections.get(terminalId);
+    if (sshShell) {
+      sshShell.client.resizeShell(size.columns, size.rows);
+      return;
+    }
     if (this.terminalBridges.has(terminalId)) {
       this.requireClient().herdrBridgeResize(
         terminalId,
@@ -269,12 +315,17 @@ export class HerdrClient {
   async scrollTerminal(terminalId: string, direction: 'up' | 'down', lines: number): Promise<string> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening;
+    if (isSshShellTerminalId(terminalId)) return '';
     await this.ensureTerminalBridge(terminalId);
     await this.requireClient().herdrBridgeScroll(terminalId, direction, Math.max(1, Math.round(lines)));
     return '';
   }
 
   closeTerminal(terminalId: string): void {
+    if (isSshShellTerminalId(terminalId)) {
+      this.closeSshShell(terminalId);
+      return;
+    }
     this.terminalConnections.delete(terminalId);
     this.terminalBridges.delete(terminalId);
     this.terminalBridgeGenerations.delete(terminalId);
@@ -282,10 +333,18 @@ export class HerdrClient {
   }
 
   isTerminalBridgeRetained(terminalId: string): boolean {
-    return this.terminalBridges.has(terminalId) || this.terminalOpenings.has(terminalId);
+    return this.terminalBridges.has(terminalId)
+      || this.sshShellConnections.has(terminalId)
+      || this.terminalOpenings.has(terminalId);
   }
 
   async releaseTerminal(terminalId: string): Promise<void> {
+    if (isSshShellTerminalId(terminalId)) {
+      const opening = this.terminalOpenings.get(terminalId);
+      if (opening) await opening.catch(() => undefined);
+      this.closeSshShell(terminalId);
+      return;
+    }
     const connection = this.terminalConnections.get(terminalId);
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening.catch(() => undefined);
@@ -302,6 +361,10 @@ export class HerdrClient {
   }
 
   async detachTerminal(terminalId: string): Promise<void> {
+    if (isSshShellTerminalId(terminalId)) {
+      this.closeSshShell(terminalId);
+      return;
+    }
     const connection = this.terminalConnections.get(terminalId);
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening.catch(() => undefined);
@@ -315,6 +378,12 @@ export class HerdrClient {
   async closeTerminalBridge(terminalId: string): Promise<void> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening.catch(() => undefined);
+    if (isSshShellTerminalId(terminalId)) {
+      this.closeSshShell(terminalId);
+      this.terminalOpenings.delete(terminalId);
+      this.terminalSizes.delete(terminalId);
+      return;
+    }
     this.terminalConnections.delete(terminalId);
     this.terminalOpenings.delete(terminalId);
     this.terminalSizes.delete(terminalId);
@@ -324,6 +393,9 @@ export class HerdrClient {
   }
 
   async releaseAllTerminals(): Promise<void> {
+    for (const terminalId of this.sshShellConnections.keys()) {
+      this.closeSshShell(terminalId);
+    }
     this.terminalConnections.clear();
     this.terminalOpenings.clear();
     this.terminalBridges.clear();
@@ -690,6 +762,69 @@ export class HerdrClient {
           privateKey,
           profile.passphrase || undefined,
         );
+  }
+
+  private async createSshShell(
+    terminalId: string,
+    onFrame: TerminalFrameHandler,
+    onClosed?: TerminalClosedHandler,
+  ): Promise<void> {
+    const client = await this.connectSsh(this.requireProfile());
+    const connection: SshShellConnection = {
+      client,
+      onFrame,
+      onClosed,
+      sequence: 0,
+    };
+    const onData = (data: string) => {
+      const active = this.sshShellConnections.get(terminalId);
+      if (active !== connection) return;
+      const size = this.terminalSizes.get(terminalId) || {
+        columns: 80,
+        rows: 24,
+        cellWidthPx: 0,
+        cellHeightPx: 0,
+      };
+      active.onFrame({
+        type: 'terminal.frame',
+        seq: ++active.sequence,
+        encoding: 'utf8',
+        width: size.columns,
+        height: size.rows,
+        full: false,
+        bytes: data,
+      });
+    };
+    this.sshShellConnections.set(terminalId, connection);
+    try {
+      client.on('Shell', onData);
+      await client.startShell(PtyType.XTERM);
+      const size = this.terminalSizes.get(terminalId) || {
+        columns: 80,
+        rows: 24,
+        cellWidthPx: 0,
+        cellHeightPx: 0,
+      };
+      client.resizeShell(size.columns, size.rows);
+    } catch (error) {
+      this.closeSshShell(terminalId);
+      throw error;
+    }
+  }
+
+  private closeSshShell(terminalId: string): void {
+    const connection = this.sshShellConnections.get(terminalId);
+    if (!connection) return;
+    this.sshShellConnections.delete(terminalId);
+    connection.client.off('Shell');
+    connection.client.closeShell();
+    connection.client.disconnect();
+  }
+
+  private requireSshShell(terminalId: string): SshShellConnection {
+    const connection = this.sshShellConnections.get(terminalId);
+    if (!connection) throw new Error(`SSH shell ${terminalId} is not connected`);
+    return connection;
   }
 
   private async attachTerminal(terminalId: string): Promise<void> {

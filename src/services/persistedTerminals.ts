@@ -33,8 +33,12 @@ export async function loadPersistedTerminals(hostId: string, snapshot: HerdrSnap
 }
 
 export async function savePersistedTerminals(hostId: string, state: TerminalSessionsState): Promise<void> {
+  const sessions = state.sessions.filter(session => session.kind !== 'ssh');
+  const activeTerminalId = sessions.some(session => session.terminalId === state.activeTerminalId)
+    ? state.activeTerminalId
+    : sessions[0]?.terminalId ?? null;
   await AsyncStorage.setItem(`${PREFIX}${hostId}`, JSON.stringify({
-    activeTerminalId: state.activeTerminalId,
-    sessions: state.sessions.map(({ terminalId, paneId, title }) => ({ terminalId, paneId, title })),
+    activeTerminalId,
+    sessions: sessions.map(({ terminalId, paneId, title }) => ({ terminalId, paneId, title })),
   }));
 }
