@@ -132,7 +132,6 @@ test('uses the space label and only appends the tab for multi-tab spaces', () =>
     number: 2,
     label: 'Tests',
   });
-  multiTab.workspaces[0].tab_count = 2;
 
   expect(agentsForHerdFilter([singleTab, multiTab], null).map(item => item.primaryLabel)).toEqual([
     'Studio space',

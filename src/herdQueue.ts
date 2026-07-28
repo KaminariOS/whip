@@ -1,4 +1,3 @@
-import { tabNameForAgent } from './lib/agentStatusEvents';
 import type { AgentInfo, AgentStatus, TabInfo, WorkspaceInfo } from './types';
 
 export interface HerdHostQueue {
@@ -109,17 +108,26 @@ export function agentsForHerdFilter(
     : undefined;
   const resolvedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, selectedWorkspaceId);
 
-  return scopedQueues.flatMap(queue => (
-    queue.agents
+  return scopedQueues.flatMap(queue => {
+    const tabsById = new Map(queue.tabs.map(tab => [tab.tab_id, tab]));
+    const workspacesById = new Map(
+      queue.workspaces.map(workspace => [workspace.workspace_id, workspace]),
+    );
+    const tabCountsByWorkspace = new Map<string, number>();
+    for (const tab of queue.tabs) {
+      tabCountsByWorkspace.set(
+        tab.workspace_id,
+        (tabCountsByWorkspace.get(tab.workspace_id) ?? 0) + 1,
+      );
+    }
+
+    return queue.agents
       .filter(agent => !resolvedWorkspaceId || agent.workspace_id === resolvedWorkspaceId)
       .map(agent => {
-        const tabLabel = tabNameForAgent(agent, queue.tabs);
-        const workspaceLabel = queue.workspaces
-          .find(workspace => workspace.workspace_id === agent.workspace_id)
-          ?.label.trim() || agent.workspace_id;
-        const hasMultipleTabs = queue.tabs.filter(
-          tab => tab.workspace_id === agent.workspace_id,
-        ).length > 1;
+        const tabLabel = tabsById.get(agent.tab_id)?.label.trim() || agent.tab_id;
+        const workspaceLabel = workspacesById.get(agent.workspace_id)?.label.trim()
+          || agent.workspace_id;
+        const hasMultipleTabs = (tabCountsByWorkspace.get(agent.workspace_id) ?? 0) > 1;
 
         return {
           hostId: queue.id,
@@ -128,6 +136,6 @@ export function agentsForHerdFilter(
           tabLabel,
           primaryLabel: hasMultipleTabs ? `${workspaceLabel} · ${tabLabel}` : workspaceLabel,
         };
-      })
-  ));
+      });
+  });
 }
