@@ -20,11 +20,11 @@ import type { TerminalFrame } from '../lib/terminalBridge';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import type { TerminalSessionStatus } from '../terminalSessions';
-import { terminalHtml } from '../generated/terminalHtml';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
+const TERMINAL_SOURCE = { uri: 'file:///android_asset/herdr-terminal.html' } as const;
 
 interface WebViewHandle {
   injectJavaScript: (script: string) => void;
@@ -438,7 +438,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       ref={value => {
         webView.current = value as WebViewHandle | null;
       }}
-      source={{ html: terminalHtml, baseUrl: 'file:///android_asset/' }}
+      source={TERMINAL_SOURCE}
       originWhitelist={['file://*', 'about:blank']}
       allowFileAccess
       javaScriptEnabled

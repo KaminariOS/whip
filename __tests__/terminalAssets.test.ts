@@ -4,7 +4,6 @@ import { Script } from 'node:vm';
 
 const assets = resolve(__dirname, '../android/app/src/main/assets');
 const sourceFonts = resolve(__dirname, '../assets/terminal-fonts');
-const generated = resolve(__dirname, '../src/generated/terminalHtml.ts');
 const terminalRenderer = resolve(__dirname, '../src/components/TerminalRendererHost.tsx');
 
 function readTerminalMarkup(html: string): string {
@@ -16,11 +15,14 @@ function readTerminalMarkup(html: string): string {
 }
 
 describe('Android terminal assets', () => {
-  it('embeds the WezTerm font stack and loads it before xterm initialization', () => {
+  it('loads the packaged WezTerm font stack before xterm initialization', () => {
     const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
     const markup = readTerminalMarkup(html);
 
-    expect(html).toContain("url('data:font/ttf;base64,");
+    expect(html).not.toContain('data:font');
+    expect(html).toContain("url('jetbrains-mono-regular.ttf') format('truetype')");
+    expect(html).toContain("url('jetbrains-mono-bold.ttf') format('truetype')");
+    expect(html).toContain("url('symbols-nerd-font-mono-regular.ttf') format('truetype')");
     expect(html).toContain("font-family: 'Herdr Terminal Mono'");
     expect(html).toContain("font-family: 'Herdr Terminal Symbols'");
     expect(html).toContain("font-family: 'Herdr Terminal CJK'");
@@ -77,28 +79,11 @@ describe('Android terminal assets', () => {
     expect(() => new Script(inlineScript!)).not.toThrow();
   });
 
-  it('embeds all vendored font files unchanged inside the WebView HTML', () => {
+  it('keeps font bytes out of the WebView HTML', () => {
     const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
-    const embeddedFonts = [
-      ...html.matchAll(/src: url\('data:font\/ttf;base64,([^']+)'\)/g),
-    ];
 
-    expect(embeddedFonts).toHaveLength(3);
-    expect(
-      Buffer.from(embeddedFonts[0][1], 'base64').equals(
-        readFileSync(resolve(sourceFonts, 'JetBrainsMono-Regular.ttf')),
-      ),
-    ).toBe(true);
-    expect(
-      Buffer.from(embeddedFonts[1][1], 'base64').equals(
-        readFileSync(resolve(sourceFonts, 'JetBrainsMono-Bold.ttf')),
-      ),
-    ).toBe(true);
-    expect(
-      Buffer.from(embeddedFonts[2][1], 'base64').equals(
-        readFileSync(resolve(sourceFonts, 'SymbolsNerdFontMono-Regular.ttf')),
-      ),
-    ).toBe(true);
+    expect(Buffer.byteLength(html)).toBeLessThan(100_000);
+    expect(html).not.toMatch(/base64,[A-Za-z0-9+/=]{100,}/);
   });
 
   it.each([
@@ -152,13 +137,14 @@ describe('Android terminal assets', () => {
     );
   });
 
-  it('generates the same HTML for Metro so terminal changes do not require an APK rebuild', () => {
-    const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
-    const module = readFileSync(generated, 'utf8');
-    const encoded = module.match(/export const terminalHtml = (.*);\n$/)?.[1];
+  it('loads the packaged terminal document without copying it into the Metro bundle', () => {
+    const renderer = readFileSync(terminalRenderer, 'utf8');
 
-    expect(encoded).toBeDefined();
-    expect(JSON.parse(encoded!)).toBe(html);
+    expect(renderer).toContain(
+      "const TERMINAL_SOURCE = { uri: 'file:///android_asset/herdr-terminal.html' } as const;",
+    );
+    expect(renderer).toContain('source={TERMINAL_SOURCE}');
+    expect(renderer).not.toContain("from '../generated/terminalHtml'");
   });
 
   it('keeps Android text scaling from corrupting xterm character measurements', () => {
