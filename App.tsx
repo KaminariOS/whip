@@ -902,17 +902,7 @@ function AppContent() {
         return replaceLiveHostTerminals(next, sessionId, restoredTerminals);
       });
       liveSessionOpened = true;
-      try {
-        await ensureEventStream(sessionId, initial);
-      } catch (error) {
-        runtime.eventStatus = 'closed';
-        scheduleEventReconnect(sessionId, error);
-      }
       setEditorProfile(null);
-      if (markUsed) {
-        const usedHosts = await markHostConnected(saved.hosts, nextProfile.id);
-        setHosts(usedHosts);
-      }
       if (navigate) {
         if (initial.server.running) {
           setNavigation(current => selectMobileTab(current, 'terminal'));
@@ -920,6 +910,25 @@ function AppContent() {
           setHerdHostFilterId(sessionId);
           setNavigation(current => selectMobileTab(current, 'herd'));
         }
+      }
+
+      // The initial snapshot is sufficient to render the destination. Open the
+      // event stream and persist recency after navigation so neither another
+      // SSH channel nor local storage delays the visible connection.
+      const connectedRuntime = runtime;
+      ensureEventStream(sessionId, initial)
+        .then(() => {
+          if (initial.server.running) return refreshHost(sessionId);
+          return undefined;
+        })
+        .catch(error => {
+          connectedRuntime.eventStatus = 'closed';
+          scheduleEventReconnect(sessionId, error);
+        });
+      if (markUsed) {
+        markHostConnected(saved.hosts, nextProfile.id)
+          .then(setHosts)
+          .catch(() => undefined);
       }
       return true;
     } catch (error) {
@@ -1089,7 +1098,7 @@ function AppContent() {
         setConnectError(t('app.enterCredential'));
         return;
       }
-      await connect(nextProfile);
+      await connect(nextProfile, { persistProfile: false });
     } catch (error) {
       setConnectError(String(error));
     } finally {

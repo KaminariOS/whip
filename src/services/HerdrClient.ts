@@ -30,6 +30,33 @@ type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
 type ApiEventHandler = (event: HerdrApiEvent) => void;
 
+interface CachedApiSocketPath {
+  fingerprint: string;
+  socketPath: string;
+}
+
+const apiSocketPathCache = new Map<string, CachedApiSocketPath>();
+
+function apiSocketPathFingerprint(profile: ConnectionProfile): string {
+  return [
+    profile.host.trim(),
+    profile.port.trim(),
+    profile.username.trim(),
+    profile.sessionName.trim(),
+  ].join('\n');
+}
+
+function cachedApiSocketPath(profile: ConnectionProfile): string | null {
+  const cached = apiSocketPathCache.get(profile.id);
+  return cached?.fingerprint === apiSocketPathFingerprint(profile)
+    ? cached.socketPath
+    : null;
+}
+
+export function clearHerdrSocketPathCache(): void {
+  apiSocketPathCache.clear();
+}
+
 export function isUnavailableSshChannel(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /channel (?:is )?not open(?:ed)?|session is down|socket is not established/i.test(message);
@@ -65,6 +92,8 @@ export class HerdrClient {
   private eventClient: SSHClient | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
+  private resolvedApiSocketPath: string | null = null;
+  private resolvedApiSocketPathFromCache = false;
   private remoteHome: string | null = null;
   private apiSequence = 0;
   private controlConnect: Promise<void> | null = null;
@@ -82,6 +111,10 @@ export class HerdrClient {
       this.client = await this.connectSsh(profile, port);
       this.profile = profile;
       this.apiServer = null;
+      this.resolvedApiSocketPath = profile.herdrSocketPath?.trim()
+        ? null
+        : cachedApiSocketPath(profile);
+      this.resolvedApiSocketPathFromCache = Boolean(this.resolvedApiSocketPath);
       this.remoteHome = null;
     })();
     this.controlConnect = task;
@@ -125,6 +158,11 @@ export class HerdrClient {
     this.profile = profile;
     this.apiServer = null;
     this.eventClient = null;
+    this.resolvedApiSocketPath = profile.herdrSocketPath?.trim()
+      ? null
+      : cachedApiSocketPath(profile);
+    this.resolvedApiSocketPathFromCache = Boolean(this.resolvedApiSocketPath);
+    this.remoteHome = null;
     const retainedTerminalIds = [...this.terminalBridges];
     this.terminalBridges.clear();
     this.terminalOpenings.clear();
@@ -160,6 +198,8 @@ export class HerdrClient {
     this.client = null;
     this.profile = null;
     this.apiServer = null;
+    this.resolvedApiSocketPath = null;
+    this.resolvedApiSocketPathFromCache = false;
     this.remoteHome = null;
     this.terminalOpenings.clear();
     this.terminalConnections.clear();
@@ -409,34 +449,68 @@ export class HerdrClient {
     const server = this.apiServer?.running ? this.apiServer : await this.probeServer();
     this.apiServer = server.running ? server : null;
     if (!server.running) {
-      return {
-        server,
-        focused_workspace_id: null,
-        focused_tab_id: null,
-        focused_pane_id: null,
-        agents: [],
-        workspaces: [],
-        tabs: [],
-        panes: [],
-        layouts: [],
-      };
+      return this.offlineSnapshot(server);
     }
     assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
     if (!server.socket) throw new Error('Herdr server status did not include its API socket');
-    let result: SessionSnapshotResult;
     try {
-      result = await this.apiRequest<SessionSnapshotResult>('session.snapshot');
+      return await this.requestSessionSnapshot(server.socket);
     } catch (error) {
       this.apiServer = null;
       throw error;
     }
+  }
+
+  /**
+   * Load the first snapshot on a newly authenticated transport.
+   *
+   * The snapshot already carries the Herdr version and protocol, so it is also
+   * the initial availability probe. Retry only the direct-streamlocal channel;
+   * replacing a freshly authenticated SSH session doubles cold-connect latency
+   * and delays the offline Herd recovery screen.
+   */
+  async initialSnapshot(): Promise<HerdrSnapshot> {
+    let socket = await this.apiSocketPath();
+    try {
+      return await this.requestSessionSnapshot(socket);
+    } catch (error) {
+      if (!isUnavailableSshChannel(error)) throw error;
+    }
+
+    // A cached absolute path may have become stale after an account or home
+    // directory change. Resolve it once through the current SSH session before
+    // treating the Herdr socket as unavailable.
+    if (this.resolvedApiSocketPathFromCache) {
+      this.invalidateCachedApiSocketPath();
+      socket = await this.apiSocketPath();
+    }
+
+    try {
+      return await this.requestSessionSnapshot(socket);
+    } catch (error) {
+      if (!isUnavailableSshChannel(error)) throw error;
+      this.apiServer = null;
+      return this.offlineSnapshot({ running: false, socket });
+    }
+  }
+
+  private async requestSessionSnapshot(socket: string): Promise<HerdrSnapshot> {
+    const result = await this.apiRequest<SessionSnapshotResult>('session.snapshot', {}, socket);
     if (!result || result.type !== 'session_snapshot' || !result.snapshot) {
       throw new Error('Herdr API socket did not return a session snapshot');
     }
     const snapshot = result.snapshot;
     assertHerdrProtocolCompatible(snapshot.protocol);
+    const server: ServerInfo = {
+      running: true,
+      version: snapshot.version,
+      protocol: snapshot.protocol,
+      compatible: true,
+      socket,
+    };
+    this.apiServer = server;
     return {
-      server: { ...server, version: snapshot.version, protocol: snapshot.protocol, compatible: true },
+      server,
       focused_workspace_id: snapshot.focused_workspace_id ?? null,
       focused_tab_id: snapshot.focused_tab_id ?? null,
       focused_pane_id: snapshot.focused_pane_id ?? null,
@@ -448,19 +522,18 @@ export class HerdrClient {
     };
   }
 
-  /**
-   * Load the first snapshot on a newly authenticated transport.
-   *
-   * Some SSH servers briefly reject the first direct-streamlocal channel even
-   * though authentication succeeded and the Herdr socket is available. A normal
-   * probe must still represent an unavailable socket as an offline server, so
-   * confirm that first offline result once on a replacement SSH connection.
-   */
-  async initialSnapshot(): Promise<HerdrSnapshot> {
-    const initial = await this.snapshot();
-    if (initial.server.running) return initial;
-    await this.reconnectControl();
-    return this.snapshot();
+  private offlineSnapshot(server: ServerInfo): HerdrSnapshot {
+    return {
+      server,
+      focused_workspace_id: null,
+      focused_tab_id: null,
+      focused_pane_id: null,
+      agents: [],
+      workspaces: [],
+      tabs: [],
+      panes: [],
+      layouts: [],
+    };
   }
 
   async openEventStream(
@@ -644,6 +717,7 @@ export class HerdrClient {
   private async apiRequest<T = unknown>(
     method: string,
     params: Record<string, unknown> = {},
+    socketPath?: string,
   ): Promise<T> {
     const request: HerdrApiRequest = {
       id: `android_${++this.apiSequence}`,
@@ -651,7 +725,7 @@ export class HerdrClient {
       params,
     };
     const response = await this.requireClient().requestHerdrApi(
-      await this.apiSocketPath(),
+      socketPath ?? await this.apiSocketPath(),
       apiRequestLine(request),
     );
     let message: HerdrApiMessage;
@@ -681,11 +755,31 @@ export class HerdrClient {
       if (!override.startsWith('/')) throw new Error('Herdr API socket override must be absolute');
       return override;
     }
+    if (this.resolvedApiSocketPath) return this.resolvedApiSocketPath;
     const remoteHome = await this.remoteHomeDirectory();
     const dataDir = profile.sessionName.trim()
       ? `${remoteHome}/.config/herdr/sessions/${profile.sessionName.trim()}`
       : `${remoteHome}/.config/herdr`;
-    return `${dataDir}/herdr.sock`;
+    const socketPath = `${dataDir}/herdr.sock`;
+    this.resolvedApiSocketPath = socketPath;
+    this.resolvedApiSocketPathFromCache = false;
+    apiSocketPathCache.set(profile.id, {
+      fingerprint: apiSocketPathFingerprint(profile),
+      socketPath,
+    });
+    return socketPath;
+  }
+
+  private invalidateCachedApiSocketPath(): void {
+    if (!this.resolvedApiSocketPathFromCache) return;
+    const profile = this.requireProfile();
+    const cached = apiSocketPathCache.get(profile.id);
+    if (cached?.socketPath === this.resolvedApiSocketPath) {
+      apiSocketPathCache.delete(profile.id);
+    }
+    this.resolvedApiSocketPath = null;
+    this.resolvedApiSocketPathFromCache = false;
+    this.remoteHome = null;
   }
 
   private async remoteHomeDirectory(): Promise<string> {
@@ -701,13 +795,13 @@ export class HerdrClient {
   }
 
   private async probeServer(): Promise<ServerInfo> {
-    const socket = await this.apiSocketPath();
+    let socket = await this.apiSocketPath();
     try {
       const pong = await this.apiRequest<{
         type: 'pong';
         version: string;
         protocol: number;
-      }>('ping');
+      }>('ping', {}, socket);
       return {
         running: true,
         version: pong.version,
@@ -717,6 +811,27 @@ export class HerdrClient {
       };
     } catch (error) {
       if (!isUnavailableSshChannel(error)) throw error;
+      if (this.resolvedApiSocketPathFromCache) {
+        this.invalidateCachedApiSocketPath();
+        socket = await this.apiSocketPath();
+        try {
+          const pong = await this.apiRequest<{
+            type: 'pong';
+            version: string;
+            protocol: number;
+          }>('ping', {}, socket);
+          return {
+            running: true,
+            version: pong.version,
+            protocol: pong.protocol,
+            compatible: true,
+            socket,
+          };
+        } catch (retryError) {
+          if (!isUnavailableSshChannel(retryError)) throw retryError;
+          return { running: false, socket };
+        }
+      }
       // A missing Herdr socket and a stale SSH session can both surface as an
       // unavailable direct-streamlocal channel. Verify a second SSH subsystem
       // before publishing an offline server snapshot; if that channel also
