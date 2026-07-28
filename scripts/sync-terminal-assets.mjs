@@ -719,10 +719,11 @@ const terminalHtml = `<!doctype html>
       if (activeKey === key) activeKey = null;
     };
     window.herdrActivate = key => {
-      create(key);
+      const entry = create(key);
       activeKey = key || null;
       present(key ? [key] : []);
-      if (key) {
+      if (entry) {
+        entry.root.style.transform = 'translateX(0)';
         call(key, 'herdrFit');
         call(key, 'herdrFocus');
       }

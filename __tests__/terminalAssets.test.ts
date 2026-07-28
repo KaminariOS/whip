@@ -152,4 +152,53 @@ describe('Android terminal assets', () => {
 
     expect(renderer).toContain('textZoom={100}');
   });
+
+  it('resets the activated terminal after a native-driven tab swipe settles', () => {
+    const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
+    const hostScript = html.match(
+      /(const terminals = new Map\(\);[\s\S]*?)(?= {4}window\.herdrWriteBase64Chunk)/,
+    )?.[1];
+    const roots: Array<{
+      classList: { toggle: jest.Mock };
+      innerHTML: string;
+      remove: jest.Mock;
+      style: { transform?: string };
+    }> = [];
+    const terminalHost = { appendChild: jest.fn() };
+    const context = {
+      createTerminalSession: jest.fn(() => ({})),
+      document: {
+        createElement: jest.fn(() => {
+          const root = {
+            classList: { toggle: jest.fn() },
+            innerHTML: '',
+            remove: jest.fn(),
+            style: {},
+          };
+          roots.push(root);
+          return root;
+        }),
+        getElementById: jest.fn(() => terminalHost),
+      },
+      terminalMarkup: '',
+      window: {
+        innerWidth: 400,
+        ReactNativeWebView: { postMessage: jest.fn() },
+      } as {
+        herdrActivate?: (key: string) => void;
+        herdrSwipe?: (originKey: string, targetKey: string, direction: number, offset: number) => void;
+        innerWidth: number;
+        ReactNativeWebView: { postMessage: jest.Mock };
+      },
+    };
+
+    expect(hostScript).toBeDefined();
+    new Script(hostScript!).runInNewContext(context);
+    context.window.herdrActivate!('origin');
+    context.window.herdrSwipe!('origin', 'target', 1, -60);
+    expect(roots[1].style.transform).toBe('translateX(340px)');
+
+    context.window.herdrActivate!('target');
+    expect(roots[1].style.transform).toBe('translateX(0)');
+  });
 });
