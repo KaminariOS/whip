@@ -72,6 +72,37 @@ describe('direct Herdr API requests', () => {
     );
   });
 
+  test('opens a new API socket for each request because normal Herdr responses close the connection', async () => {
+    const native = apiClient(request => request.method === 'ping'
+      ? { type: 'pong', version: '0.7.4', protocol: 17 }
+      : {
+        type: 'session_snapshot',
+        snapshot: {
+          version: '0.7.4',
+          protocol: 17,
+          focused_workspace_id: null,
+          focused_tab_id: null,
+          focused_pane_id: null,
+          workspaces: [],
+          tabs: [],
+          panes: [],
+          layouts: [],
+          agents: [],
+        },
+      });
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await expect(client.initialSnapshot()).resolves.toMatchObject({
+      server: { running: true },
+    });
+
+    const methods = jest.mocked(native.requestHerdrApi).mock.calls
+      .map(([, line]) => JSON.parse(line).method);
+    expect(methods).toEqual(['ping', 'session.snapshot']);
+  });
+
   test('starts an agent in a new tab in the selected workspace', async () => {
     const native = apiClient(request => request.method === 'tab.create'
       ? { type: 'tab_created', root_pane: { pane_id: 'pane-new' } }

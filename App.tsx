@@ -56,6 +56,10 @@ import {
 } from './src/lib/notificationNavigation';
 import { createRefreshCoordinator, type RefreshCoordinator } from './src/lib/refreshCoordinator';
 import {
+  createEventRefreshScheduler,
+  type EventRefreshScheduler,
+} from './src/lib/eventRefreshScheduler';
+import {
   applyLiveHostAgentStatus,
   applyLiveHostFocus,
   applyLiveHostLayoutUpdate,
@@ -150,7 +154,7 @@ interface LiveRuntime {
   eventStatus: 'closed' | 'opening' | 'open';
   eventReconnectAttempts: number;
   eventReconnectTimer: ReturnType<typeof setTimeout> | null;
-  eventRefreshTimer: ReturnType<typeof setTimeout> | null;
+  eventRefresh: EventRefreshScheduler;
 }
 
 interface SnapshotMeasurement {
@@ -173,7 +177,7 @@ function disposeRuntimes(target: Map<string, LiveRuntime>): void {
   for (const runtime of target.values()) {
     if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
     if (runtime.eventReconnectTimer) clearTimeout(runtime.eventReconnectTimer);
-    if (runtime.eventRefreshTimer) clearTimeout(runtime.eventRefreshTimer);
+    runtime.eventRefresh.cancel();
     runtime.refresh.invalidate();
     runtime.client.releaseAllTerminals()
       .finally(() => runtime.client.disconnect());
@@ -401,9 +405,8 @@ function AppContent() {
 
   const clearEventTimers = (runtime: LiveRuntime) => {
     if (runtime.eventReconnectTimer) clearTimeout(runtime.eventReconnectTimer);
-    if (runtime.eventRefreshTimer) clearTimeout(runtime.eventRefreshTimer);
     runtime.eventReconnectTimer = null;
-    runtime.eventRefreshTimer = null;
+    runtime.eventRefresh.cancel();
   };
 
   const scheduleEventReconnect = (sessionId: string, cause: unknown) => {
@@ -512,11 +515,7 @@ function AppContent() {
           if (agentStatus) runtime.previousStatuses?.set(paneId, agentStatus);
           setLiveSessions(current => applyLiveHostAgentStatus(current, sessionId, paneId, event.data));
         }
-        if (runtime.eventRefreshTimer) return;
-        runtime.eventRefreshTimer = setTimeout(() => {
-          runtime.eventRefreshTimer = null;
-          refreshHost(sessionId).catch(() => undefined);
-        }, 120);
+        runtime.eventRefresh.schedule(event.event);
       },
       reason => {
         if (runtimes.current.get(sessionId) !== runtime) return;
@@ -583,7 +582,9 @@ function AppContent() {
       eventStatus: 'closed',
       eventReconnectAttempts: 0,
       eventReconnectTimer: null,
-      eventRefreshTimer: null,
+      eventRefresh: createEventRefreshScheduler(() => {
+        refreshHost(sessionId).catch(() => undefined);
+      }),
     } as LiveRuntime;
     runtime.refresh = createRefreshCoordinator(
       async () => {
