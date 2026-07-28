@@ -38,6 +38,11 @@ The target transport is one persistent newline-delimited JSON bridge to Herdr's 
 
 If Herdr needs a new bridge command, it should be a neutral API/stdio bridge in Herdr, not an Android-specific endpoint and not a second source of runtime truth.
 
+Herdr's current Unix API accepts one normal request and then closes that socket
+connection; only subscriptions remain open. Until the neutral stdio bridge
+exists, control requests must use separate short-lived stream-local channels.
+Do not treat the existing Unix API socket itself as a multiplexed transport.
+
 ### Terminal plane
 
 Each opened Herdr terminal owns an independent SSH exec channel and runs Herdr's client-protocol bridge:
