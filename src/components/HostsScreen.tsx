@@ -206,7 +206,7 @@ function SwipeableHostRow({
         style={{ width: HOST_SWIPE_ACTION_WIDTH }}>
         <Button
           accessibilityLabel={t('hosts.disconnectHost', { host: displayName })}
-          className="h-full w-[76px] flex-col gap-1 rounded-none bg-warning"
+          className="h-full w-[76px] flex-col gap-1 rounded-l-lg rounded-r-none bg-warning"
           disabled={!connected}
           size="content"
           onPress={hapticPress(() => runAction(onDisconnect))}>
