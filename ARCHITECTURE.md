@@ -42,6 +42,11 @@ Herdr's current Unix API accepts one normal request and then closes that socket
 connection; only subscriptions remain open. Until the neutral stdio bridge
 exists, control requests must use separate short-lived stream-local channels.
 Do not treat the existing Unix API socket itself as a multiplexed transport.
+The first `session.snapshot` response also supplies the version and protocol, so
+cold connections use it as the availability handshake instead of opening a
+separate ping channel. Whip caches each resolved absolute socket path for the
+life of the app process and re-resolves it through the current SSH session if a
+cached path stops accepting channels.
 
 ### Terminal plane
 
