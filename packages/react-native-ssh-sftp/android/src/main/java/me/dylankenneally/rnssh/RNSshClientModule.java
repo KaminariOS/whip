@@ -102,6 +102,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     ChannelExec _herdrCommandChannel = null;
     DataOutputStream _herdrCommandOutputStream = null;
     ChannelSftp _sftpSession = null;
+    volatile boolean _forwardAgent = false;
     Boolean _downloadContinue = false;
     Boolean _uploadContinue = false;
   }
@@ -394,6 +395,15 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   private void connectToHostByKeyViaJump(final String host, final Integer port, final String username, final ReadableMap passwordOrKey, final String jumpKey, final String key, final Callback callback) {
     connectToHost(host, port, username, null, passwordOrKey, jumpKey, key, callback);
   }
+
+  @ReactMethod
+  public void setAgentForwarding(final String key, final boolean enabled) {
+    SSHClient client = clientPool.get(key);
+    if (client != null) {
+      client._forwardAgent = enabled;
+    }
+  }
+
   private int getKeyTypeFromString(String type) throws IllegalArgumentException {
     if (type == null) {
         throw new IllegalArgumentException("Key type cannot be null");
@@ -593,6 +603,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           Session session = client._session;
 
           channel = (ChannelExec) session.openChannel("exec");
+          channel.setAgentForwarding(client._forwardAgent);
           channel.setCommand(command);
           InputStream in = channel.getInputStream();
           channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
@@ -638,8 +649,9 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           }
           Session session = client._session;
 
-          Channel channel = session.openChannel("shell");
-          ((ChannelShell)channel).setPtyType(ptyType);
+          ChannelShell channel = (ChannelShell) session.openChannel("shell");
+          channel.setAgentForwarding(client._forwardAgent);
+          channel.setPtyType(ptyType);
           channel.connect(SSH_CHANNEL_CONNECT_TIMEOUT_MS);
 
           InputStream in = channel.getInputStream();
@@ -1409,6 +1421,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
             return;
           }
           channel = (ChannelExec) client._session.openChannel("exec");
+          channel.setAgentForwarding(client._forwardAgent);
           channel.setCommand(command);
           InputStream input = channel.getInputStream();
           output = new DataOutputStream(channel.getOutputStream());

@@ -8,6 +8,7 @@ export interface HostProfile {
   port: string;
   username: string;
   jumpHostId?: string;
+  forwardAgent?: boolean;
   authMode: AuthMode;
   herdrCommand: string;
   herdrSocketPath?: string;

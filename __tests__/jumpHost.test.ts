@@ -17,6 +17,7 @@ jest.mock('@dylankenneally/react-native-ssh-sftp', () => ({
 
 const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
 const connectWithPasswordViaJump = jest.mocked(SSHClient.connectWithPasswordViaJump);
+const connectWithKey = jest.mocked(SSHClient.connectWithKey);
 
 function profile(
   id: string,
@@ -45,6 +46,7 @@ function nativeClient() {
     closeAllHerdrBridges: jest.fn(),
     off: jest.fn(),
     disconnect: jest.fn(),
+    setAgentForwarding: jest.fn(),
   } as unknown as SSHClient;
 }
 
@@ -52,6 +54,7 @@ describe('SSH jump hosts', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
     connectWithPasswordViaJump.mockReset();
+    connectWithKey.mockReset();
   });
 
   it('connects a nested ProxyJump chain from the outermost host to the destination', async () => {
@@ -114,6 +117,42 @@ describe('SSH jump hosts', () => {
     )).rejects.toThrow('jump authentication failed');
 
     expect(outer.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('enables agent forwarding on an opted-in private-key host', async () => {
+    const target = nativeClient();
+    connectWithKey.mockResolvedValueOnce(target);
+    const targetProfile: ConnectionProfile = {
+      ...profile('target', 'target.example.test'),
+      authMode: 'key',
+      secret: 'private-key',
+      forwardAgent: true,
+    };
+    const client = new HerdrClient();
+
+    await client.connect(targetProfile);
+
+    expect(connectWithKey).toHaveBeenCalledWith(
+      'target.example.test',
+      22,
+      'target-user',
+      'private-key',
+      undefined,
+    );
+    expect(target.setAgentForwarding).toHaveBeenCalledWith(true);
+  });
+
+  it('requests agent forwarding on every native shell and exec channel', () => {
+    const android = readFileSync(
+      resolve(
+        __dirname,
+        '../packages/react-native-ssh-sftp/android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java',
+      ),
+      'utf8',
+    );
+
+    expect(android).toContain('volatile boolean _forwardAgent = false');
+    expect(android.match(/setAgentForwarding\(client\._forwardAgent\)/g)).toHaveLength(3);
   });
 
   it('uses strict OpenSSH hostname resolution semantics on the jump server', () => {
