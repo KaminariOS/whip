@@ -13,7 +13,6 @@ export interface HostProfile {
   herdrCommand: string;
   herdrSocketPath?: string;
   sessionName: string;
-  rememberCredentials: boolean;
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;

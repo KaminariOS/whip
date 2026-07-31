@@ -44,7 +44,7 @@ export async function loadHostProfiles(): Promise<HostProfile[]> {
   const host = toHostProfile(migrated);
 
   await AsyncStorage.setItem(HOSTS_STORAGE_KEY, JSON.stringify([host]));
-  if (host.rememberCredentials && migrated.secret) {
+  if (migrated.secret) {
     await writeCredential(migrated);
   }
   return [host];
@@ -78,7 +78,7 @@ export async function saveConnectionProfile(
   const nextHosts = upsertHost(hosts, host);
   await AsyncStorage.setItem(HOSTS_STORAGE_KEY, JSON.stringify(nextHosts));
 
-  if (profile.rememberCredentials && profile.secret) {
+  if (profile.secret) {
     await writeCredential(profile);
   } else {
     await Keychain.resetGenericPassword({ service: hostCredentialService(profile.id) });
@@ -122,7 +122,6 @@ async function writeCredential(profile: ConnectionProfile): Promise<void> {
 
 async function migrateStoredCredentialBackups(hosts: HostProfile[]): Promise<void> {
   for (const host of hosts) {
-    if (!host.rememberCredentials) continue;
     try {
       const credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
       const secrets = parseCredential(credential ? credential.password : null);

@@ -1,6 +1,5 @@
 import type { HostProfile } from '../types';
 
-type SavedCredentialProfile = Pick<HostProfile, 'authMode' | 'rememberCredentials'>;
 type KeyProfile = Pick<HostProfile, 'authMode'>;
 
 export function requiresBiometricForKeyUse(
@@ -11,8 +10,8 @@ export function requiresBiometricForKeyUse(
 }
 
 export function requiresBiometricForSavedKey(
-  profile: SavedCredentialProfile,
+  profile: KeyProfile,
   biometricForKeys: boolean,
 ): boolean {
-  return requiresBiometricForKeyUse(profile, biometricForKeys) && profile.rememberCredentials;
+  return requiresBiometricForKeyUse(profile, biometricForKeys);
 }

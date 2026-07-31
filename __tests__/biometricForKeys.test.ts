@@ -3,11 +3,10 @@ import { resolve } from 'node:path';
 
 import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from '../src/lib/biometricSecurity';
 
-test('protects only remembered private-key credentials when enabled', () => {
-  expect(requiresBiometricForSavedKey({ authMode: 'key', rememberCredentials: true }, true)).toBe(true);
-  expect(requiresBiometricForSavedKey({ authMode: 'password', rememberCredentials: true }, true)).toBe(false);
-  expect(requiresBiometricForSavedKey({ authMode: 'key', rememberCredentials: false }, true)).toBe(false);
-  expect(requiresBiometricForSavedKey({ authMode: 'key', rememberCredentials: true }, false)).toBe(false);
+test('protects saved private-key credentials when enabled', () => {
+  expect(requiresBiometricForSavedKey({ authMode: 'key' }, true)).toBe(true);
+  expect(requiresBiometricForSavedKey({ authMode: 'password' }, true)).toBe(false);
+  expect(requiresBiometricForSavedKey({ authMode: 'key' }, false)).toBe(false);
 });
 
 test('protects every private-key SSH connection while enabled', () => {

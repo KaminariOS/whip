@@ -110,7 +110,7 @@ export async function restoreCredentialBackups(
   let failed = 0;
   for (const host of hosts) {
     const ciphertext = backups[host.id];
-    if (!ciphertext || !host.rememberCredentials) continue;
+    if (!ciphertext) continue;
     try {
       const credential = parseCredential(await module.decryptCredential(ciphertext, host.id));
       if (!credential.secret) throw new Error('Credential backup is empty');
@@ -127,7 +127,7 @@ export async function recoverCredentialForHost(
   host: HostProfile,
 ): Promise<StoredCredential | null> {
   const module = nativeModule();
-  if (!module || !host.rememberCredentials) return null;
+  if (!module) return null;
   const ciphertext = (await loadBackups())[host.id];
   if (!ciphertext || !await module.hasLocalRecoveryKey()) return null;
   try {
