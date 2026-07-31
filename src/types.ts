@@ -38,6 +38,16 @@ export interface GlobalSshKeyMaterial extends GlobalSshKey {
   passphrase: string;
 }
 
+export interface KnownHost {
+  id: string;
+  host: string;
+  port: number;
+  keyType: string;
+  publicKey: string;
+  fingerprint: string;
+  createdAt: string;
+}
+
 export interface AgentInfo {
   terminal_id: string;
   name?: string;

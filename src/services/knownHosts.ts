@@ -1,0 +1,183 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import SSHClient from '@dylankenneally/react-native-ssh-sftp';
+
+import { createSecureId } from '../lib/secureId';
+import type { KnownHost } from '../types';
+
+export const KNOWN_HOSTS_STORAGE_KEY = 'herdr.known-hosts.v1';
+export const UNKNOWN_HOST_KEY_PREFIX = 'E_HOST_KEY_UNKNOWN:';
+export const CHANGED_HOST_KEY_PREFIX = 'E_HOST_KEY_CHANGED:';
+
+export interface UnknownHostKeyChallenge {
+  host: string;
+  port: number;
+  keyType: string;
+  publicKey: string;
+  fingerprint: string;
+}
+
+let knownHostsMutation = Promise.resolve();
+
+export async function loadKnownHosts(): Promise<KnownHost[]> {
+  const value = await AsyncStorage.getItem(KNOWN_HOSTS_STORAGE_KEY);
+  const hosts = parseKnownHosts(value);
+  configureNativeKnownHosts(hosts);
+  return hosts;
+}
+
+export async function trustKnownHost(
+  hosts: KnownHost[],
+  challenge: UnknownHostKeyChallenge,
+): Promise<KnownHost[]> {
+  const normalizedHost = normalizeHost(challenge.host);
+  const duplicate = hosts.some(entry => (
+    normalizeHost(entry.host) === normalizedHost
+    && entry.port === challenge.port
+    && entry.keyType === challenge.keyType
+    && entry.publicKey === challenge.publicKey
+  ));
+  if (duplicate) {
+    configureNativeKnownHosts(hosts);
+    return hosts;
+  }
+
+  const next = [
+    ...hosts,
+    {
+      id: createSecureId('known-host'),
+      host: normalizedHost,
+      port: challenge.port,
+      keyType: challenge.keyType,
+      publicKey: challenge.publicKey,
+      fingerprint: challenge.fingerprint,
+      createdAt: new Date().toISOString(),
+    },
+  ].sort(compareKnownHosts);
+  await replaceKnownHosts(next);
+  return next;
+}
+
+export async function deleteKnownHost(hosts: KnownHost[], id: string): Promise<KnownHost[]> {
+  const next = hosts.filter(entry => entry.id !== id);
+  await replaceKnownHosts(next);
+  return next;
+}
+
+export function parseUnknownHostKey(error: unknown): UnknownHostKeyChallenge | null {
+  const text = error instanceof Error ? error.message : String(error);
+  const parsed = parseHostKeyPayload(text, UNKNOWN_HOST_KEY_PREFIX);
+  if (
+    !parsed
+    || typeof parsed.keyType !== 'string'
+    || typeof parsed.publicKey !== 'string'
+    || typeof parsed.fingerprint !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    host: parsed.host,
+    port: parsed.port,
+    keyType: parsed.keyType,
+    publicKey: parsed.publicKey,
+    fingerprint: parsed.fingerprint,
+  };
+}
+
+export function hostKeyErrorHost(error: unknown): string | null {
+  const text = error instanceof Error ? error.message : String(error);
+  const parsed = parseHostKeyPayload(text, UNKNOWN_HOST_KEY_PREFIX)
+    || parseHostKeyPayload(text, CHANGED_HOST_KEY_PREFIX);
+  if (!parsed) return null;
+  return parsed.port === 22 ? parsed.host : `[${parsed.host}]:${parsed.port}`;
+}
+
+function parseHostKeyPayload(
+  text: string,
+  prefix: string,
+): { host: string; port: number; [key: string]: unknown } | null {
+  const prefixIndex = text.indexOf(prefix);
+  if (prefixIndex < 0) return null;
+  try {
+    const parsed = JSON.parse(text.slice(prefixIndex + prefix.length));
+    if (
+      !parsed
+      || typeof parsed !== 'object'
+      || typeof parsed.host !== 'string'
+      || typeof parsed.port !== 'number'
+      || !Number.isInteger(parsed.port)
+      || parsed.port < 1
+      || parsed.port > 65535
+    ) {
+      return null;
+    }
+    return {
+      ...parsed,
+      host: normalizeHost(parsed.host),
+      port: parsed.port,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function serializeKnownHosts(hosts: KnownHost[]): string {
+  return hosts
+    .map(entry => `${knownHostAlias(entry.host, entry.port)} ${entry.keyType} ${entry.publicKey}`)
+    .join('\n');
+}
+
+function configureNativeKnownHosts(hosts: KnownHost[]): void {
+  SSHClient.setKnownHosts(serializeKnownHosts(hosts));
+}
+
+async function replaceKnownHosts(hosts: KnownHost[]): Promise<void> {
+  const operation = knownHostsMutation.then(async () => {
+    await AsyncStorage.setItem(KNOWN_HOSTS_STORAGE_KEY, JSON.stringify(hosts));
+    configureNativeKnownHosts(hosts);
+  });
+  knownHostsMutation = operation.catch(() => undefined);
+  await operation;
+}
+
+function parseKnownHosts(value: string | null): KnownHost[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isKnownHost).sort(compareKnownHosts);
+  } catch {
+    return [];
+  }
+}
+
+function isKnownHost(value: unknown): value is KnownHost {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Partial<KnownHost>;
+  return Boolean(
+    entry.id
+    && typeof entry.host === 'string'
+    && typeof entry.port === 'number'
+    && Number.isInteger(entry.port)
+    && entry.port > 0
+    && entry.port <= 65535
+    && typeof entry.keyType === 'string'
+    && typeof entry.publicKey === 'string'
+    && typeof entry.fingerprint === 'string'
+    && typeof entry.createdAt === 'string',
+  );
+}
+
+function knownHostAlias(host: string, port: number): string {
+  const normalized = normalizeHost(host);
+  return port === 22 ? normalized : `[${normalized}]:${port}`;
+}
+
+function normalizeHost(host: string): string {
+  return host.trim().toLowerCase();
+}
+
+function compareKnownHosts(left: KnownHost, right: KnownHost): number {
+  return left.host.localeCompare(right.host)
+    || left.port - right.port
+    || left.keyType.localeCompare(right.keyType);
+}

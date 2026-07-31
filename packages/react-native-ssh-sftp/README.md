@@ -16,8 +16,10 @@ A full set of [documentation is available on Mintlify](https://dylankenneally-re
 
 Below is a quick installation and usage guide to get up and running. The [full documentation](https://dylankenneally-react-native-ssh-sftp-96.mintlify.app) is recommended in addition to the below.
 
-> [!WARNING]
-> **Host key verification is not performed.** This library does not verify or pin the remote server's host key (on Android `StrictHostKeyChecking` is disabled, and on iOS the host key is not checked), so connections are susceptible to man-in-the-middle attacks. Until this is addressed, only connect over networks you trust. See the [security guide](https://dylankenneally-react-native-ssh-sftp-96.mintlify.app/guides/security) for details.
+> [!NOTE]
+> This project-owned fork supports strict Android host-key verification through
+> `SSHClient.setKnownHosts()`. The iOS implementation still does not verify host
+> keys.
 
 ## Installation
 
