@@ -24,6 +24,7 @@ export function MoreScreen(props: Props) {
         biometricForKeys={props.biometricForKeys}
         biometricOnResume={props.biometricOnResume}
         globalKeyCount={props.globalKeyCount}
+        knownHostCount={props.knownHostCount}
         appearance={props.appearance}
         language={props.language}
         keepScreenOn={props.keepScreenOn}
@@ -34,6 +35,7 @@ export function MoreScreen(props: Props) {
         onBiometricForKeysChange={props.onBiometricForKeysChange}
         onBiometricOnResumeChange={props.onBiometricOnResumeChange}
         onManageGlobalKeychain={props.onManageGlobalKeychain}
+        onManageKnownHosts={props.onManageKnownHosts}
         onAppearanceChange={props.onAppearanceChange}
         onLanguageChange={props.onLanguageChange}
         onKeepScreenOnChange={props.onKeepScreenOnChange}

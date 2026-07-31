@@ -17,6 +17,7 @@ import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
 import { HerdScreen } from './src/components/HerdScreen';
 import { GlobalKeychainScreen } from './src/components/GlobalKeychainScreen';
 import { HostsScreen } from './src/components/HostsScreen';
+import { KnownHostsScreen } from './src/components/KnownHostsScreen';
 import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
@@ -111,6 +112,13 @@ import {
   type CredentialRecoveryStatus,
 } from './src/services/credentialVault';
 import { loadGlobalSshKeys, unlockGlobalSshKeychain } from './src/services/globalSshKeychain';
+import {
+  hostKeyErrorHost,
+  loadKnownHosts,
+  parseUnknownHostKey,
+  trustKnownHost,
+  type UnknownHostKeyChallenge,
+} from './src/services/knownHosts';
 import { loadPersistedTerminals, savePersistedTerminals } from './src/services/persistedTerminals';
 import {
   loadPersistedLiveHosts,
@@ -126,7 +134,7 @@ import {
   type TerminalSessionStatus,
 } from './src/terminalSessions';
 import { useTheme } from './src/theme';
-import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, PaneInfo } from './src/types';
+import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, KnownHost, PaneInfo } from './src/types';
 import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
 import { guiFontFamilies } from './src/lib/guiFonts';
 import { terminalFontFamily } from './src/lib/terminalFonts';
@@ -170,6 +178,7 @@ interface ConnectOptions {
   trackConnecting?: boolean;
   activateSession?: boolean;
   biometricVerified?: boolean;
+  promptForUnknownHosts?: boolean;
 }
 
 let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;
@@ -206,6 +215,7 @@ function AppContent() {
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const hostsRef = useRef<HostProfile[]>([]);
+  const knownHostsRef = useRef<KnownHost[]>([]);
   const persistedLiveHostsRef = useRef<PersistedLiveHosts>({ hostIds: [], activeHostId: null });
   const restoredTerminalHostIdsRef = useRef(new Set<string>());
   const restoreStarted = useRef(false);
@@ -222,7 +232,10 @@ function AppContent() {
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
   const [globalSshKeys, setGlobalSshKeys] = useState<GlobalSshKey[]>([]);
   const [unlockedGlobalKeys, setUnlockedGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
+  const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
+  const [knownHostsOpen, setKnownHostsOpen] = useState(false);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
+  const [knownHostsLoaded, setKnownHostsLoaded] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [liveHostsLoaded, setLiveHostsLoaded] = useState(false);
   const [liveHostRestoreComplete, setLiveHostRestoreComplete] = useState(false);
@@ -271,6 +284,7 @@ function AppContent() {
 
   liveSessionsRef.current = liveSessions;
   hostsRef.current = hosts;
+  knownHostsRef.current = knownHosts;
   alertsEnabledRef.current = alertsEnabled;
   ttsEnabledRef.current = ttsEnabled;
 
@@ -308,6 +322,10 @@ function AppContent() {
       .catch(error => setConnectError(t('app.loadHostsError', { error: String(error) })))
       .finally(() => setProfilesLoaded(true));
     loadGlobalSshKeys().then(setGlobalSshKeys).catch(() => undefined);
+    loadKnownHosts()
+      .then(setKnownHosts)
+      .catch(() => undefined)
+      .finally(() => setKnownHostsLoaded(true));
     prepareAlerts().catch(() => undefined);
     loadDevicePreferences()
       .then(preferences => {
@@ -723,6 +741,27 @@ function AppContent() {
     setGlobalSshKeys(keys.map(({ secret: _secret, passphrase: _passphrase, ...key }) => key));
   };
 
+  const confirmUnknownHost = useCallback((challenge: UnknownHostKeyChallenge): Promise<boolean> => (
+    new Promise(resolve => {
+      const displayHost = challenge.port === 22
+        ? challenge.host
+        : `[${challenge.host}]:${challenge.port}`;
+      Alert.alert(
+        t('knownHosts.trustTitle'),
+        t('knownHosts.trustCopy', {
+          host: displayHost,
+          keyType: challenge.keyType,
+          fingerprint: challenge.fingerprint,
+        }),
+        [
+          { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
+          { text: t('knownHosts.trust'), onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    })
+  ), [t]);
+
   useEffect(() => {
     let previousState = AppState.currentState;
     const subscription = AppState.addEventListener('change', state => {
@@ -786,6 +825,10 @@ function AppContent() {
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (knownHostsOpen) {
+        setKnownHostsOpen(false);
+        return true;
+      }
       if (unlockedGlobalKeys !== null) {
         setUnlockedGlobalKeys(null);
         return true;
@@ -804,7 +847,7 @@ function AppContent() {
       return result.handled;
     });
     return () => subscription.remove();
-  }, [editorProfile, navigation, selectedPaneId, unlockedGlobalKeys]);
+  }, [editorProfile, knownHostsOpen, navigation, selectedPaneId, unlockedGlobalKeys]);
 
   const selectTab = (tab: AppTab) => setNavigation(current => selectMobileTab(current, tab));
 
@@ -848,6 +891,7 @@ function AppContent() {
       trackConnecting = true,
       activateSession = true,
       biometricVerified = false,
+      promptForUnknownHosts = navigate,
     } = options;
     if (trackConnecting) {
       setConnecting(true);
@@ -881,7 +925,24 @@ function AppContent() {
       if (persistProfile) setHosts(saved.hosts);
       const sessionId = nextProfile.id;
       runtime = createRuntime(sessionId, nextProfile);
-      await runtime.client.connect(nextProfile, jumpProfiles);
+      let trustedKeys = 0;
+      while (true) {
+        try {
+          await runtime.client.connect(nextProfile, jumpProfiles);
+          break;
+        } catch (error) {
+          const challenge = parseUnknownHostKey(error);
+          if (!challenge || !promptForUnknownHosts) throw error;
+          if (trustedKeys >= jumpProfiles.length + 1) throw error;
+          if (!await confirmUnknownHost(challenge)) {
+            throw new Error(t('knownHosts.notTrusted'));
+          }
+          const nextKnownHosts = await trustKnownHost(knownHostsRef.current, challenge);
+          knownHostsRef.current = nextKnownHosts;
+          setKnownHosts(nextKnownHosts);
+          trustedKeys += 1;
+        }
+      }
       const initialSnapshotStartedAt = Date.now();
       const initial = await runtime.client.initialSnapshot();
       const initialLatencyMs = elapsedLatencyMs(initialSnapshotStartedAt);
@@ -942,7 +1003,7 @@ function AppContent() {
       return true;
     } catch (error) {
       setConnectError(t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
-        host: hostDisplayName(nextProfile),
+        host: hostKeyErrorHost(error) || hostDisplayName(nextProfile),
         ...connectionErrorContext(error),
       }));
       if (runtime) {
@@ -1027,13 +1088,13 @@ function AppContent() {
   });
 
   useEffect(() => {
-    if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || restoreStarted.current) return;
+    if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !knownHostsLoaded || restoreStarted.current) return;
     restoreStarted.current = true;
     restorePersistedLiveHosts().catch(error => {
       setConnectError(t('app.restoreLiveHostsError', { error: String(error) }));
       setLiveHostRestoreComplete(true);
     });
-  }, [liveHostsLoaded, preferencesLoaded, profilesLoaded, t]);
+  }, [knownHostsLoaded, liveHostsLoaded, preferencesLoaded, profilesLoaded, t]);
 
   const saveHost = async (nextProfile: ConnectionProfile) => {
     setConnectError(null);
@@ -1329,7 +1390,7 @@ function AppContent() {
     }
   };
 
-  if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded) {
+  if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !knownHostsLoaded) {
     return <View className="flex-1 items-center justify-center bg-background"><WhipMark accessibilityLabel={t('app.loading')} size={64} /></View>;
   }
 
@@ -1417,6 +1478,7 @@ function AppContent() {
               biometricForKeys={biometricForKeys}
               biometricOnResume={biometricOnResume}
               globalKeyCount={globalSshKeys.length}
+              knownHostCount={knownHosts.length}
               appearance={appearance}
               language={language}
               keepScreenOn={keepScreenOn}
@@ -1428,6 +1490,7 @@ function AppContent() {
               onBiometricForKeysChange={value => { updateBiometricForKeys(value).catch(() => undefined); }}
               onBiometricOnResumeChange={value => { updateBiometricOnResume(value).catch(() => undefined); }}
               onManageGlobalKeychain={() => { openGlobalKeychain().catch(() => undefined); }}
+              onManageKnownHosts={() => setKnownHostsOpen(true)}
               onAppearanceChange={updateAppearance}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
@@ -1462,7 +1525,7 @@ function AppContent() {
           />
         )}
 
-        {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && (
+        {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && !knownHostsOpen && (
           <BottomNavigation activeTab={navigation.tab} onSelect={selectTab} />
         )}
 
@@ -1493,6 +1556,19 @@ function AppContent() {
               initialKeys={unlockedGlobalKeys}
               onChanged={updateGlobalKeys}
               onClose={() => setUnlockedGlobalKeys(null)}
+            />
+          </View>
+        )}
+
+        {knownHostsOpen && (
+          <View className="absolute inset-0 z-60 bg-background">
+            <KnownHostsScreen
+              initialHosts={knownHosts}
+              onChanged={next => {
+                knownHostsRef.current = next;
+                setKnownHosts(next);
+              }}
+              onClose={() => setKnownHostsOpen(false)}
             />
           </View>
         )}

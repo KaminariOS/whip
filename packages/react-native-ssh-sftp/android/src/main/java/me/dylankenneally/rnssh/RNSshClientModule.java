@@ -30,6 +30,7 @@ import com.jcraft.jsch.ChannelSftp.LsEntry;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.HostKey;
 import com.jcraft.jsch.Proxy;
 import com.jcraft.jsch.Session;
 import com.jcraft.jsch.SocketFactory;
@@ -37,6 +38,7 @@ import com.jcraft.jsch.SftpException;
 import com.jcraft.jsch.SftpProgressMonitor;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -49,10 +51,12 @@ import java.net.IDN;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Vector;
@@ -325,6 +329,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   private static final String DOWNLOAD_PATH = Environment.getExternalStorageDirectory().getPath();
 
   Map<String, SSHClient> clientPool = new HashMap<>();
+  private volatile String knownHosts = "";
 
   public RNSshClientModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -402,6 +407,11 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     if (client != null) {
       client._forwardAgent = enabled;
     }
+  }
+
+  @ReactMethod
+  public void setKnownHosts(final String value) {
+    knownHosts = value != null ? value : "";
   }
 
   private int getKeyTypeFromString(String type) throws IllegalArgumentException {
@@ -530,8 +540,10 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   private void connectToHost(final String host, final Integer port, final String username, final String password, final ReadableMap keyPairs, @Nullable final String jumpKey, final String key, final Callback callback) {
     new Thread(new Runnable()  {
       public void run() {
+        JSch jsch = new JSch();
+        Session session = null;
         try {
-          JSch jsch = new JSch();
+          jsch.setKnownHosts(new ByteArrayInputStream(knownHosts.getBytes(StandardCharsets.UTF_8)));
 
           if (password == null) {
             byte[] privateKey = keyPairs.getString("privateKey").getBytes();
@@ -547,7 +559,8 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           String connectionHost = jumpKey != null
               ? host
               : resolver.resolve(host).getHostAddress();
-          Session session = jsch.getSession(username, connectionHost, port);
+          session = jsch.getSession(username, connectionHost, port);
+          session.setHostKeyAlias(hostKeyAlias(host, port));
           if (password != null)
             session.setPassword(password);
 
@@ -560,7 +573,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           }
 
           Properties properties = new Properties();
-          properties.setProperty("StrictHostKeyChecking", "no");
+          properties.setProperty("StrictHostKeyChecking", "yes");
           session.setConfig(properties);
           // Without SSH-level probes, a lost mobile network path can leave
           // channel reads blocked forever: the TCP socket still appears open,
@@ -580,13 +593,50 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           }
         } catch (JSchException error) {
           Log.e(LOGTAG, "Connection failed: " + error.getMessage());
-          callback.invoke(error.getMessage());
+          callback.invoke(hostKeyError(error, session, host, port));
         } catch (Exception error) {
           Log.e(LOGTAG, "Connection failed: " + error.getMessage());
           callback.invoke(error.getMessage());
         }
       }
     }).start();
+  }
+
+  private String hostKeyAlias(String host, int port) {
+    String normalized = host.trim().toLowerCase(Locale.ROOT);
+    return port == 22 ? normalized : "[" + normalized + "]:" + port;
+  }
+
+  private String hostKeyError(JSchException error, @Nullable Session session, String host, int port) {
+    String message = error.getMessage();
+    HostKey hostKey = session != null ? session.getHostKey() : null;
+    if (hostKey == null || message == null) return message;
+
+    boolean unknown = message.contains("reject HostKey");
+    boolean changed = message.contains("HostKey has been changed");
+    if (!unknown && !changed) return message;
+
+    try {
+      JSONObject payload = new JSONObject();
+      payload.put("host", host.trim().toLowerCase(Locale.ROOT));
+      payload.put("port", port);
+      payload.put("keyType", hostKey.getType());
+      payload.put("publicKey", hostKey.getKey());
+      payload.put("fingerprint", sha256Fingerprint(hostKey.getKey()));
+      return (unknown ? "E_HOST_KEY_UNKNOWN:" : "E_HOST_KEY_CHANGED:") + payload;
+    } catch (Exception payloadError) {
+      Log.e(LOGTAG, "Failed to describe SSH host key: " + payloadError.getMessage());
+      return message;
+    }
+  }
+
+  private String sha256Fingerprint(String publicKey) throws Exception {
+    byte[] keyBytes = Base64.decode(publicKey, Base64.DEFAULT);
+    byte[] digest = MessageDigest.getInstance("SHA-256").digest(keyBytes);
+    return "SHA256:" + Base64.encodeToString(
+        digest,
+        Base64.NO_WRAP | Base64.NO_PADDING
+    );
   }
 
 

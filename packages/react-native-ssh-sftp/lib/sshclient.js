@@ -27,6 +27,16 @@ export var PtyType;
  */
 class SSHClient {
     /**
+     * Replaces the process-wide OpenSSH known_hosts repository used by new
+     * Android SSH sessions.
+     */
+    static setKnownHosts(knownHosts) {
+        if (Platform.OS !== 'android') {
+            throw new Error('SSH known hosts are currently Android-only');
+        }
+        RNSSHClient.setKnownHosts(knownHosts);
+    }
+    /**
     * Retrieves the details of an SSH key.
     * @param key - The SSH private key as a string.
     * @param passphrase - The passphrase for an encrypted private key (optional).

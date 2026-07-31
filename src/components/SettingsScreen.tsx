@@ -1,4 +1,4 @@
-import { BellRing, ChevronRight, ImagePlus, KeyRound, LogOut, Minus, Plus, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react-native';
+import { BellRing, ChevronRight, Fingerprint, ImagePlus, KeyRound, LogOut, Minus, Plus, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Image, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +18,7 @@ export interface SettingsSectionProps {
   biometricForKeys: boolean;
   biometricOnResume: boolean;
   globalKeyCount: number;
+  knownHostCount: number;
   appearance: AppearancePreference;
   language: LanguagePreference;
   keepScreenOn: boolean;
@@ -28,6 +29,7 @@ export interface SettingsSectionProps {
   onBiometricForKeysChange: (value: boolean) => void;
   onBiometricOnResumeChange: (value: boolean) => void;
   onManageGlobalKeychain: () => void;
+  onManageKnownHosts: () => void;
   onAppearanceChange: (value: AppearancePreference) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
@@ -98,6 +100,13 @@ export function SettingsSection(props: SettingsSectionProps) {
             copy={t('settings.globalKeychainCopy', { count: props.globalKeyCount })}
             icon={KeyRound}
             onPress={props.onManageGlobalKeychain}
+          />
+          <ActionRow
+            title={t('settings.knownHosts')}
+            copy={t('settings.knownHostsCopy', { count: props.knownHostCount })}
+            icon={Fingerprint}
+            onPress={props.onManageKnownHosts}
+            divided
           />
           <SettingRow title={t('settings.biometricForKeys')} copy={t('settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
           <SettingRow title={t('settings.biometricOnResume')} copy={t('settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />

@@ -13,6 +13,7 @@ describe('connection error presentation', () => {
     ['com.jcraft.jsch.JSchException: Auth fail', 'authentication'],
     ['com.jcraft.jsch.JSchException: invalid privatekey', 'invalidKey'],
     ['HostKey has been changed', 'hostKey'],
+    ['E_HOST_KEY_CHANGED:{"host":"thinker"}', 'hostKey'],
     ['Herdr protocol mismatch: Whip supports 17, server reports 16', 'incompatibleProtocol'],
     ['Herdr API socket is not available', 'herdrUnavailable'],
     ['unexpected native failure', 'unknown'],

@@ -21,6 +21,9 @@ Herdr-specific changes:
 - configure JSch server-alive probes so a half-open mobile SSH connection is
   closed after three missed 5-second probes, allowing the app to reconnect
   instead of leaving terminal and event streams frozen;
+- load a process-wide OpenSSH `known_hosts` repository, verify every direct and
+  jump-host handshake strictly, and return unknown host keys to the app for
+  explicit trust-on-first-use confirmation;
 - subscribe to exec-channel output before starting short-lived Herdr commands,
   preventing their first response from being lost on fast remote hosts;
 - expose PTY resizing on Android and in the JavaScript API;

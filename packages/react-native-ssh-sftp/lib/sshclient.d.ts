@@ -98,6 +98,11 @@ export type PasswordOrKey = string | KeyPair;
  */
 export default class SSHClient {
     /**
+     * Replaces the process-wide OpenSSH known_hosts repository used by new
+     * Android SSH sessions.
+     */
+    static setKnownHosts(knownHosts: string): void;
+    /**
     * Retrieves the details of an SSH key.
     * @param key - The SSH private key as a string.
     * @param passphrase - The passphrase for an encrypted private key (optional).

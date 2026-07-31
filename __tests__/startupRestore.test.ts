@@ -5,7 +5,9 @@ describe('startup host restoration', () => {
   const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
 
   it('renders the application after local state loads without waiting for SSH', () => {
-    expect(app).toContain('if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded)');
+    expect(app).toContain(
+      'if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !knownHostsLoaded)',
+    );
     expect(app).not.toContain(
       'if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !liveHostRestoreComplete)',
     );
