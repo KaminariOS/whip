@@ -153,6 +153,11 @@ export default class SSHClient {
      */
     constructor(host: string, port: number, username: string, passwordOrKey: PasswordOrKey, callback: CallbackFunction<void>, jumpClient?: SSHClient);
     /**
+     * Enables or disables SSH agent forwarding for subsequently opened shell
+     * and exec channels.
+     */
+    setAgentForwarding(enabled: boolean): void;
+    /**
      * Generates a unique client key, used to identify which native callback and
      * event belongs to which instance.
      *

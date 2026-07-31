@@ -15,6 +15,7 @@ export const emptyConnectionProfile = (): ConnectionProfile => {
     port: '22',
     username: '',
     jumpHostId: undefined,
+    forwardAgent: false,
     authMode: 'password',
     secret: '',
     passphrase: '',
@@ -58,6 +59,7 @@ export function toHostProfile(profile: ConnectionProfile, previous?: HostProfile
     port: profile.port.trim() || '22',
     username: profile.username.trim(),
     jumpHostId: profile.jumpHostId?.trim() || undefined,
+    forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
     authMode: profile.authMode,
     herdrCommand: profile.herdrCommand.trim() || 'herdr',
     herdrSocketPath: profile.herdrSocketPath?.trim() || '',
@@ -91,7 +93,10 @@ export function parseHosts(value: string | null): HostProfile[] {
   try {
     const parsed = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return sortHosts(parsed.filter(isHostProfile));
+    return sortHosts(parsed.filter(isHostProfile).map(profile => ({
+      ...profile,
+      forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
+    })));
   } catch {
     return [];
   }
@@ -147,6 +152,7 @@ export function migrateLegacyProfile(value: string | null): ConnectionProfile | 
       port: parsed.port || '22',
       username: parsed.username,
       jumpHostId: undefined,
+      forwardAgent: false,
       authMode: parsed.authMode === 'key' ? 'key' : 'password',
       secret: '',
       passphrase: '',

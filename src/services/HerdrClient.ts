@@ -909,8 +909,8 @@ export class HerdrClient {
     jumpClient: SSHClient | null = null,
   ): Promise<SSHClient> {
     const privateKey = normalizePrivateKey(profile.secret);
-    if (profile.authMode === 'password') {
-      return jumpClient
+    const connection = profile.authMode === 'password'
+      ? (jumpClient
         ? SSHClient.connectWithPasswordViaJump(
             host,
             port,
@@ -918,10 +918,9 @@ export class HerdrClient {
             profile.secret,
             jumpClient,
           )
-        : SSHClient.connectWithPassword(host, port, profile.username.trim(), profile.secret);
-    }
-    return jumpClient
-      ? SSHClient.connectWithKeyViaJump(
+        : SSHClient.connectWithPassword(host, port, profile.username.trim(), profile.secret))
+      : (jumpClient
+        ? SSHClient.connectWithKeyViaJump(
           host,
           port,
           profile.username.trim(),
@@ -929,13 +928,17 @@ export class HerdrClient {
           profile.passphrase || undefined,
           jumpClient,
         )
-      : SSHClient.connectWithKey(
+        : SSHClient.connectWithKey(
           host,
           port,
           profile.username.trim(),
           privateKey,
           profile.passphrase || undefined,
-        );
+        ));
+    return connection.then(client => {
+      if (profile.forwardAgent) client.setAgentForwarding(true);
+      return client;
+    });
   }
 
   private disconnectSsh(client: SSHClient): void {

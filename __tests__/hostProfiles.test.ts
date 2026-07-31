@@ -32,6 +32,16 @@ test('remembers credentials by default for new hosts', () => {
   expect(emptyConnectionProfile().rememberCredentials).toBe(true);
 });
 
+test('keeps agent forwarding opt-in for new and legacy hosts', () => {
+  expect(emptyConnectionProfile().forwardAgent).toBe(false);
+  expect(parseHosts(JSON.stringify([toHostProfile(profile)]))[0].forwardAgent).toBe(false);
+  expect(migrateLegacyProfile(JSON.stringify({
+    host: 'savior.tailnet.ts.net',
+    username: 'kosumi',
+    authMode: 'key',
+  }))?.forwardAgent).toBe(false);
+});
+
 test('uses cryptographically generated UUIDs for host IDs', () => {
   expect(createHostId()).toMatch(
     /^host-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -51,6 +61,15 @@ test('persists the selected jump host without copying its credentials', () => {
 
   expect(host.jumpHostId).toBe('host-bastion');
   expect(host).not.toHaveProperty('secret');
+});
+
+test('persists agent forwarding only for private-key hosts', () => {
+  expect(toHostProfile({ ...profile, forwardAgent: true }).forwardAgent).toBe(true);
+  expect(toHostProfile({
+    ...profile,
+    authMode: 'password',
+    forwardAgent: true,
+  }).forwardAgent).toBe(false);
 });
 
 test('migrates the legacy single profile into a stable first host', () => {

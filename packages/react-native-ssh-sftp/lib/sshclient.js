@@ -298,6 +298,19 @@ class SSHClient {
         RNSSHClient.connectToHost(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
     }
     /**
+     * Enables or disables SSH agent forwarding for subsequently opened shell
+     * and exec channels.
+     *
+     * The native client exposes only identities already loaded for this SSH
+     * connection; private key material is never copied to the remote host.
+     */
+    setAgentForwarding(enabled) {
+        if (Platform.OS !== 'android') {
+            throw new Error('SSH agent forwarding is currently Android-only');
+        }
+        RNSSHClient.setAgentForwarding(this._key, enabled);
+    }
+    /**
      * Executes a command on the SSH server.
      * @param command The command to execute.
      * @param callback Optional callback function to handle the result asynchronously.

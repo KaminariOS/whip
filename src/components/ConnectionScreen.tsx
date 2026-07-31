@@ -106,6 +106,13 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     setProfile(current => ({ ...current, secret: '', passphrase: '' }));
     setKeyActionsOpen(false);
   };
+  const setAuthMode = (authMode: ConnectionProfile['authMode']) => {
+    setProfile(current => ({
+      ...current,
+      authMode,
+      forwardAgent: authMode === 'key' && Boolean(current.forwardAgent),
+    }));
+  };
   const applyPrivateKey = (value: string) => {
     const privateKey = normalizePrivateKey(value);
     if (!privateKey) {
@@ -216,7 +223,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         />
 
         <View className="mb-4 flex-row rounded-full bg-muted p-1">
-          {(['password', 'key'] as const).map(mode => <Button className={cn('h-[38px] flex-1 rounded-full', profile.authMode === mode && 'bg-background')} key={mode} variant="ghost" onPress={hapticPress(() => update('authMode', mode))}><Text className={cn('text-[13px] font-semibold', profile.authMode !== mode && 'text-muted-foreground')}>{mode === 'password' ? t('hosts.password') : t('connection.privateKey')}</Text></Button>)}
+          {(['password', 'key'] as const).map(mode => <Button className={cn('h-[38px] flex-1 rounded-full', profile.authMode === mode && 'bg-background')} key={mode} variant="ghost" onPress={hapticPress(() => setAuthMode(mode))}><Text className={cn('text-[13px] font-semibold', profile.authMode !== mode && 'text-muted-foreground')}>{mode === 'password' ? t('hosts.password') : t('connection.privateKey')}</Text></Button>)}
         </View>
 
         {profile.authMode === 'password' ? (
@@ -238,6 +245,22 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
             </Text>
         ) : null}
         {profile.authMode === 'key' ? <Field label={t('connection.keyPassphrase')} value={profile.passphrase} onChangeText={value => update('passphrase', value)} secureTextEntry /> : null}
+
+        <View className="mb-3.5 mt-0.5 min-h-[82px] flex-row items-center gap-4 border-y border-border">
+          <View className="flex-1">
+            <Text className="text-[15px] font-semibold leading-5">{t('connection.agentForwarding')}</Text>
+            <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">
+              {profile.authMode === 'key'
+                ? t('connection.agentForwardingCopy')
+                : t('connection.agentForwardingKeyRequired')}
+            </Text>
+          </View>
+          <Switch
+            checked={Boolean(profile.forwardAgent)}
+            disabled={profile.authMode !== 'key'}
+            onCheckedChange={value => update('forwardAgent', value)}
+          />
+        </View>
 
         <View className="mb-3.5 mt-0.5 min-h-[74px] flex-row items-center gap-4 border-y border-border"><View className="flex-1"><Text className="text-[15px] font-semibold leading-5">{t('connection.rememberCredentials')}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('connection.rememberCopy')}</Text></View><Switch checked={profile.rememberCredentials} onCheckedChange={value => update('rememberCredentials', value)} /></View>
 
