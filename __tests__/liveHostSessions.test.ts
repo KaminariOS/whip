@@ -40,7 +40,6 @@ function host(id: string): HostProfile {
     authMode: 'key',
     herdrCommand: 'herdr',
     sessionName: 'main',
-    rememberCredentials: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   };

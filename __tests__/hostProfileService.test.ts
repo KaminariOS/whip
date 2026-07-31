@@ -3,7 +3,7 @@ import * as Keychain from 'react-native-keychain';
 
 import { toHostProfile } from '../src/lib/hostProfiles';
 import { deleteHostProfile, saveConnectionProfile } from '../src/services/hostProfiles';
-import { removeCredentialBackup } from '../src/services/credentialVault';
+import { backupCredential, removeCredentialBackup } from '../src/services/credentialVault';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -36,12 +36,31 @@ const profile: ConnectionProfile = {
   passphrase: '',
   herdrCommand: 'herdr',
   sessionName: '',
-  rememberCredentials: true,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-test('removes a remembered credential when its private key is cleared', async () => {
+test('always stores a provided credential', async () => {
+  const withKey = {
+    ...profile,
+    secret: 'PRIVATE KEY',
+    passphrase: 'key phrase',
+  };
+
+  await saveConnectionProfile([toHostProfile(profile)], withKey);
+
+  expect(Keychain.setGenericPassword).toHaveBeenCalledWith(
+    'kosumi',
+    JSON.stringify({ secret: 'PRIVATE KEY', passphrase: 'key phrase' }),
+    { service: 'io.github.kaminarios.whip.ssh.host.host-1' },
+  );
+  expect(backupCredential).toHaveBeenCalledWith('host-1', {
+    secret: 'PRIVATE KEY',
+    passphrase: 'key phrase',
+  });
+});
+
+test('removes a saved credential when its private key is cleared', async () => {
   await saveConnectionProfile([toHostProfile(profile)], profile);
 
   expect(AsyncStorage.setItem).toHaveBeenCalled();

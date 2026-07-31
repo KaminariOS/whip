@@ -23,13 +23,16 @@ const profile: ConnectionProfile = {
   passphrase: '',
   herdrCommand: 'herdr',
   sessionName: '',
-  rememberCredentials: true,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-test('remembers credentials by default for new hosts', () => {
-  expect(emptyConnectionProfile().rememberCredentials).toBe(true);
+test('removes the legacy remember-credentials flag from stored hosts', () => {
+  const [host] = parseHosts(JSON.stringify([{
+    ...toHostProfile(profile),
+    rememberCredentials: false,
+  }]));
+  expect(host).not.toHaveProperty('rememberCredentials');
 });
 
 test('keeps agent forwarding opt-in for new and legacy hosts', () => {
@@ -79,7 +82,6 @@ test('migrates the legacy single profile into a stable first host', () => {
     username: 'kosumi',
     authMode: 'key',
     herdrCommand: 'herdr',
-    rememberCredentials: true,
   }));
   expect(migrated).toMatchObject({
     id: 'host-legacy-default',

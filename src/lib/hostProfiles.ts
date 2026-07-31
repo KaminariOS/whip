@@ -22,7 +22,6 @@ export const emptyConnectionProfile = (): ConnectionProfile => {
     herdrCommand: 'herdr',
     herdrSocketPath: '',
     sessionName: '',
-    rememberCredentials: true,
     createdAt: now,
     updatedAt: now,
   };
@@ -64,7 +63,6 @@ export function toHostProfile(profile: ConnectionProfile, previous?: HostProfile
     herdrCommand: profile.herdrCommand.trim() || 'herdr',
     herdrSocketPath: profile.herdrSocketPath?.trim() || '',
     sessionName: profile.sessionName.trim(),
-    rememberCredentials: profile.rememberCredentials,
     createdAt: previous?.createdAt || profile.createdAt || now,
     updatedAt: now,
     lastConnectedAt: previous?.lastConnectedAt || profile.lastConnectedAt,
@@ -93,10 +91,14 @@ export function parseHosts(value: string | null): HostProfile[] {
   try {
     const parsed = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return sortHosts(parsed.filter(isHostProfile).map(profile => ({
-      ...profile,
-      forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
-    })));
+    return sortHosts(parsed.filter(isHostProfile).map(profile => {
+      const host = { ...profile } as HostProfile & { rememberCredentials?: boolean };
+      delete host.rememberCredentials;
+      return {
+        ...host,
+        forwardAgent: host.authMode === 'key' && Boolean(host.forwardAgent),
+      };
+    }));
   } catch {
     return [];
   }
@@ -159,7 +161,6 @@ export function migrateLegacyProfile(value: string | null): ConnectionProfile | 
       herdrCommand: parsed.herdrCommand || 'herdr',
       herdrSocketPath: parsed.herdrSocketPath || '',
       sessionName: parsed.sessionName || '',
-      rememberCredentials: Boolean(parsed.rememberCredentials),
       createdAt: now,
       updatedAt: now,
     };
