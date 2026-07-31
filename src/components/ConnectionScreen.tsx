@@ -1,12 +1,13 @@
-import { ArrowRight, ChevronLeft, ClipboardPaste, Copy, FileUp, KeyRound, Sparkles, Trash2, X } from 'lucide-react-native';
+import { ArrowRight, Check, ChevronDown, ChevronLeft, ClipboardPaste, Copy, FileUp, KeyRound, Network, Sparkles, Trash2, X } from 'lucide-react-native';
 import SSHClient from '@dylankenneally/react-native-ssh-sftp';
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { normalizePrivateKey } from '@/src/lib/privateKey';
+import { hostDisplayName, jumpHostCandidates } from '@/src/lib/hostProfiles';
 import { cn } from '@/src/lib/utils';
-import type { ConnectionProfile, GlobalSshKeyMaterial } from '@/src/types';
+import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -16,6 +17,7 @@ import { Text } from './ui/text';
 
 interface Props {
   initialProfile: ConnectionProfile;
+  hosts: HostProfile[];
   connecting: boolean;
   error: string | null;
   onCancel: () => void;
@@ -38,15 +40,20 @@ type PrivateKeyFilePickerModule = {
 
 const privateKeyFilePicker = NativeModules.PrivateKeyFilePicker as PrivateKeyFilePickerModule | undefined;
 
-export function ConnectionScreen({ initialProfile, connecting, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys }: Props) {
+export function ConnectionScreen({ initialProfile, hosts, connecting, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys }: Props) {
   const { t } = useTranslation();
   const [profile, setProfile] = useState(initialProfile);
   const [keyInspection, setKeyInspection] = useState<KeyInspection>({ state: 'idle' });
   const [keyActionsOpen, setKeyActionsOpen] = useState(false);
   const [globalKeys, setGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [generatingKey, setGeneratingKey] = useState(false);
+  const [jumpHostPickerOpen, setJumpHostPickerOpen] = useState(false);
 
-  useEffect(() => { setProfile(initialProfile); setKeyActionsOpen(false); }, [initialProfile]);
+  useEffect(() => {
+    setProfile(initialProfile);
+    setKeyActionsOpen(false);
+    setJumpHostPickerOpen(false);
+  }, [initialProfile]);
 
   useEffect(() => {
     if (profile.authMode !== 'key' || !profile.secret.trim()) {
@@ -90,6 +97,8 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
   const update = <K extends keyof ConnectionProfile>(key: K, value: ConnectionProfile[K]) => setProfile(current => ({ ...current, [key]: value }));
   const canSave = Boolean(profile.host.trim() && profile.username.trim());
   const canConnect = Boolean(canSave && profile.secret);
+  const jumpHosts = jumpHostCandidates(hosts, profile.id);
+  const selectedJumpHost = hosts.find(host => host.id === profile.jumpHostId);
   const privateKeyAccessibilityLabel = keyInspection.state === 'valid'
     ? t('connection.keyA11y', { fingerprint: keyInspection.fingerprint, keyType: keyInspection.keyType })
     : t('connection.loadedKeyA11y');
@@ -201,6 +210,10 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
         <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.sshDestination')}</Text>
         <View className="flex-row gap-2.5"><Field label={t('connection.hostOrIp')} value={profile.host} placeholder="laptop.tailnet.ts.net" onChangeText={value => update('host', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.port')} value={profile.port} onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-[88px]" /></View>
         <Field label={t('connection.sshUser')} value={profile.username} placeholder="kosumi" onChangeText={value => update('username', value)} autoCapitalize="none" />
+        <JumpHostField
+          jumpHost={selectedJumpHost}
+          onPress={() => setJumpHostPickerOpen(true)}
+        />
 
         <View className="mb-4 flex-row rounded-full bg-muted p-1">
           {(['password', 'key'] as const).map(mode => <Button className={cn('h-[38px] flex-1 rounded-full', profile.authMode === mode && 'bg-background')} key={mode} variant="ghost" onPress={hapticPress(() => update('authMode', mode))}><Text className={cn('text-[13px] font-semibold', profile.authMode !== mode && 'text-muted-foreground')}>{mode === 'password' ? t('hosts.password') : t('connection.privateKey')}</Text></Button>)}
@@ -254,6 +267,16 @@ export function ConnectionScreen({ initialProfile, connecting, error, onCancel, 
         onClose={() => setGlobalKeys(null)}
         onSelect={selectGlobalKey}
       />
+      <JumpHostPicker
+        hosts={jumpHosts}
+        selectedHostId={profile.jumpHostId}
+        visible={jumpHostPickerOpen}
+        onClose={() => setJumpHostPickerOpen(false)}
+        onSelect={jumpHostId => {
+          update('jumpHostId', jumpHostId);
+          setJumpHostPickerOpen(false);
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -266,6 +289,33 @@ function Field({ label, className, multiline, ...props }: FieldProps) {
 
 function KeyIdentity({ fingerprint, keyType }: { fingerprint: string; keyType: string }) {
   return <View className="min-w-0 flex-1 justify-center"><Text className="shrink font-mono text-[12px] leading-[17px]" ellipsizeMode="middle" numberOfLines={1}>{fingerprint}</Text><Text className="text-[11px] font-semibold leading-[17px] text-muted-foreground" numberOfLines={1}>{keyType}</Text></View>;
+}
+
+function JumpHostField({ jumpHost, onPress }: { jumpHost?: HostProfile; onPress: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <View className="mb-3.5">
+      <Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.jumpHost')}</Text>
+      <Button
+        accessibilityLabel={t('connection.chooseJumpHost')}
+        className="h-[52px] justify-start rounded-md border border-border bg-card px-3.5"
+        variant="ghost"
+        onPress={hapticPress(onPress)}>
+        <Icon as={Network} size={18} />
+        <View className="min-w-0 flex-1">
+          <Text className="text-[14px] font-medium" numberOfLines={1}>
+            {jumpHost ? hostDisplayName(jumpHost) : t('connection.directConnection')}
+          </Text>
+          {jumpHost ? (
+            <Text className="mt-0.5 text-[11px] text-muted-foreground" numberOfLines={1}>
+              {jumpHost.username}@{jumpHost.host}:{jumpHost.port}
+            </Text>
+          ) : null}
+        </View>
+        <Icon as={ChevronDown} className="text-muted-foreground" size={17} />
+      </Button>
+    </View>
+  );
 }
 
 function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPublic, onGenerate, onGlobalKeychain, onPaste, onSelectFile }: {
@@ -332,6 +382,54 @@ function GlobalKeyPicker({ keys, visible, onClose, onSelect }: {
                 </View>
               </Button>
             ))}
+          </ScrollView>
+          <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function JumpHostPicker({ hosts, selectedHostId, visible, onClose, onSelect }: {
+  hosts: HostProfile[];
+  selectedHostId?: string;
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (hostId: string | undefined) => void;
+}) {
+  const { t } = useTranslation();
+  const options: Array<HostProfile | null> = [null, ...hosts];
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <Pressable accessibilityLabel={t('connection.closeJumpHostPicker')} className="flex-1 justify-end bg-black/55" onPress={onClose}>
+        <Pressable className="max-h-[72%] rounded-t-[28px] border-t border-border bg-card px-4 pb-8 pt-5" onPress={event => event.stopPropagation()}>
+          <Text className="px-2 text-lg font-semibold">{t('connection.chooseJumpHost')}</Text>
+          <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">{t('connection.jumpHostCopy')}</Text>
+          <ScrollView>
+            {options.map(host => {
+              const selected = host ? host.id === selectedHostId : !selectedHostId;
+              return (
+                <Button
+                  key={host?.id || 'direct'}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  className="min-h-[62px] justify-start rounded-xl px-3 py-2"
+                  size="content"
+                  variant="ghost"
+                  onPress={hapticPress(() => onSelect(host?.id))}>
+                  <Icon as={host ? Network : ArrowRight} size={19} />
+                  <View className="ml-1 min-w-0 flex-1">
+                    <Text className="text-[15px] font-medium" numberOfLines={1}>
+                      {host ? hostDisplayName(host) : t('connection.directConnection')}
+                    </Text>
+                    <Text className="mt-0.5 text-[11px] text-muted-foreground" numberOfLines={1}>
+                      {host ? `${host.username}@${host.host}:${host.port}` : t('connection.directConnectionCopy')}
+                    </Text>
+                  </View>
+                  {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
+                </Button>
+              );
+            })}
           </ScrollView>
           <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
         </Pressable>

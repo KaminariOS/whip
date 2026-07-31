@@ -23,7 +23,7 @@ import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
 import { WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
-import { emptyConnectionProfile, hostDisplayName } from './src/lib/hostProfiles';
+import { emptyConnectionProfile, hostDisplayName, resolveJumpHostChain } from './src/lib/hostProfiles';
 import {
   classifyConnectionError,
   connectionErrorContext,
@@ -101,6 +101,7 @@ import {
   deleteHostProfile,
   loadConnectionProfile,
   loadHostProfiles,
+  loadJumpHostConnectionProfiles,
   markHostConnected,
   saveConnectionProfile,
 } from './src/services/hostProfiles';
@@ -858,7 +859,15 @@ function AppContent() {
     let runtime: LiveRuntime | null = null;
     let liveSessionOpened = false;
     try {
-      if (!biometricVerified && requiresBiometricForKeyUse(nextProfile, biometricForKeysRef.current)) {
+      const jumpProfiles = await loadJumpHostConnectionProfiles(hostsRef.current, nextProfile);
+      const jumpWithoutCredential = jumpProfiles.find(profile => !profile.secret);
+      if (jumpWithoutCredential) {
+        throw new Error(`${hostDisplayName(jumpWithoutCredential)} needs a saved SSH credential before it can be used as a jump host`);
+      }
+      const protectedConnection = [nextProfile, ...jumpProfiles].some(profile => (
+        requiresBiometricForKeyUse(profile, biometricForKeysRef.current)
+      ));
+      if (!biometricVerified && protectedConnection) {
         if (!await verifyBiometric()) return false;
       }
       const saved = persistProfile
@@ -872,7 +881,7 @@ function AppContent() {
       if (persistProfile) setHosts(saved.hosts);
       const sessionId = nextProfile.id;
       runtime = createRuntime(sessionId, nextProfile);
-      await runtime.client.connect(nextProfile);
+      await runtime.client.connect(nextProfile, jumpProfiles);
       const initialSnapshotStartedAt = Date.now();
       const initial = await runtime.client.initialSnapshot();
       const initialLatencyMs = elapsedLatencyMs(initialSnapshotStartedAt);
@@ -959,14 +968,27 @@ function AppContent() {
     const persistedHosts = persisted.hostIds
       .map(hostId => hostsRef.current.find(item => item.id === hostId))
       .filter((host): host is HostProfile => Boolean(host));
-    const hasProtectedKey = persistedHosts.some(host => (
-      requiresBiometricForSavedKey(host, biometricForKeysRef.current)
-    ));
+    const hasProtectedKey = persistedHosts.some(host => {
+      try {
+        return [host, ...resolveJumpHostChain(hostsRef.current, host)].some(candidate => (
+          requiresBiometricForSavedKey(candidate, biometricForKeysRef.current)
+        ));
+      } catch {
+        return requiresBiometricForSavedKey(host, biometricForKeysRef.current);
+      }
+    });
     const protectedKeyAccessGranted = !hasProtectedKey || await verifyBiometric();
     await Promise.allSettled(persisted.hostIds.map(async hostId => {
       const host = hostsRef.current.find(item => item.id === hostId);
       if (!host) return;
-      const protectedKey = requiresBiometricForSavedKey(host, biometricForKeysRef.current);
+      let protectedKey = requiresBiometricForSavedKey(host, biometricForKeysRef.current);
+      try {
+        protectedKey = [host, ...resolveJumpHostChain(hostsRef.current, host)].some(candidate => (
+          requiresBiometricForSavedKey(candidate, biometricForKeysRef.current)
+        ));
+      } catch {
+        // The normal connect path reports a missing or cyclic jump-host configuration.
+      }
       if (protectedKey && !protectedKeyAccessGranted) return;
       try {
         const profile = await loadConnectionProfile(host);
@@ -1449,6 +1471,7 @@ function AppContent() {
             <ConnectionScreen
               key={editorProfile.id}
               initialProfile={editorProfile}
+              hosts={hosts}
               connecting={connecting}
               error={connectError}
               onCancel={() => {

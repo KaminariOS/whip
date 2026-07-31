@@ -1,5 +1,10 @@
 package me.dylankenneally.rnssh;
 
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Environment;
 import android.util.Log;
 import android.util.Base64;
@@ -25,7 +30,9 @@ import com.jcraft.jsch.ChannelSftp.LsEntry;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.Proxy;
 import com.jcraft.jsch.Session;
+import com.jcraft.jsch.SocketFactory;
 import com.jcraft.jsch.SftpException;
 import com.jcraft.jsch.SftpProgressMonitor;
 
@@ -35,8 +42,17 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.IDN;
+import java.net.InetAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Vector;
@@ -90,6 +106,219 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     Boolean _uploadContinue = false;
   }
 
+  private static class AndroidHostResolver {
+    @Nullable
+    private final Network network;
+    @Nullable
+    private final String searchDomains;
+    private final List<InetAddress> dnsServers;
+
+    AndroidHostResolver(
+        @Nullable Network network,
+        @Nullable String searchDomains,
+        List<InetAddress> dnsServers
+    ) {
+      this.network = network;
+      this.searchDomains = searchDomains;
+      this.dnsServers = dnsServers;
+    }
+
+    InetAddress resolve(String host) throws IOException {
+      Log.d(LOGTAG, "Resolving " + host + " on Android network " + network);
+      IOException firstError = null;
+      List<String> candidates = new ArrayList<>();
+      candidates.add(host);
+      if (!host.contains(".") && searchDomains != null) {
+        for (String domain : searchDomains.trim().split("\\s+")) {
+          if (!domain.isEmpty()) candidates.add(host + "." + domain);
+        }
+      }
+
+      for (String candidate : candidates) {
+        try {
+          InetAddress[] addresses = resolveAll(candidate);
+          if (addresses.length > 0) {
+            return addresses[0];
+          }
+        } catch (IOException error) {
+          if (firstError == null) firstError = error;
+        }
+      }
+
+      // Some native SSH clients can still resolve through a VPN when Android's
+      // Java resolver returns UnknownHostException. Query the DNS servers
+      // exposed by that VPN directly so JSch gets the same address.
+      List<String> rawCandidates = new ArrayList<>(candidates);
+      Collections.reverse(rawCandidates);
+      for (String candidate : rawCandidates) {
+        for (InetAddress dnsServer : dnsServers) {
+          try {
+            InetAddress address = resolveViaDns(candidate, dnsServer);
+            if (address != null) return address;
+          } catch (IOException ignored) {
+            // Continue through the remaining VPN DNS servers and candidates.
+          }
+        }
+      }
+
+      if (firstError != null) throw firstError;
+      throw new IOException("No addresses found for " + host);
+    }
+
+    private InetAddress[] resolveAll(String host) throws IOException {
+      return network != null
+          ? network.getAllByName(host)
+          : InetAddress.getAllByName(host);
+    }
+
+    @Nullable
+    private InetAddress resolveViaDns(String host, InetAddress dnsServer) throws IOException {
+      byte[] query = dnsQuery(host);
+      int queryId = unsigned16(query, 0);
+      byte[] response = new byte[1500];
+      DatagramPacket request = new DatagramPacket(query, query.length, dnsServer, 53);
+      DatagramPacket reply = new DatagramPacket(response, response.length);
+
+      try (DatagramSocket socket = new DatagramSocket()) {
+        if (network != null) network.bindSocket(socket);
+        socket.connect(dnsServer, 53);
+        socket.setSoTimeout(3_000);
+        socket.send(request);
+        socket.receive(reply);
+      }
+
+      int length = reply.getLength();
+      if (length < 12 || unsigned16(response, 0) != queryId || (unsigned16(response, 2) & 0x000f) != 0) {
+        return null;
+      }
+      int offset = 12;
+      int questionCount = unsigned16(response, 4);
+      int answerCount = unsigned16(response, 6);
+      for (int i = 0; i < questionCount; i++) {
+        offset = skipDnsName(response, offset, length) + 4;
+        if (offset > length) return null;
+      }
+      for (int i = 0; i < answerCount; i++) {
+        offset = skipDnsName(response, offset, length);
+        if (offset + 10 > length) return null;
+        int type = unsigned16(response, offset);
+        int dataLength = unsigned16(response, offset + 8);
+        offset += 10;
+        if (offset + dataLength > length) return null;
+        if (type == 1 && dataLength == 4) {
+          byte[] address = new byte[4];
+          System.arraycopy(response, offset, address, 0, 4);
+          return InetAddress.getByAddress(host, address);
+        }
+        offset += dataLength;
+      }
+      return null;
+    }
+
+    private static byte[] dnsQuery(String host) throws IOException {
+      ByteArrayOutputStream output = new ByteArrayOutputStream();
+      int queryId = (int) (System.nanoTime() & 0xffff);
+      writeUnsigned16(output, queryId);
+      writeUnsigned16(output, 0x0100);
+      writeUnsigned16(output, 1);
+      writeUnsigned16(output, 0);
+      writeUnsigned16(output, 0);
+      writeUnsigned16(output, 0);
+      for (String label : IDN.toASCII(host).split("\\.")) {
+        byte[] bytes = label.getBytes(StandardCharsets.US_ASCII);
+        if (bytes.length == 0 || bytes.length > 63) {
+          throw new IOException("Invalid DNS name: " + host);
+        }
+        output.write(bytes.length);
+        output.write(bytes);
+      }
+      output.write(0);
+      writeUnsigned16(output, 1);
+      writeUnsigned16(output, 1);
+      return output.toByteArray();
+    }
+
+    private static void writeUnsigned16(ByteArrayOutputStream output, int value) {
+      output.write((value >>> 8) & 0xff);
+      output.write(value & 0xff);
+    }
+
+    private static int unsigned16(byte[] bytes, int offset) {
+      return ((bytes[offset] & 0xff) << 8) | (bytes[offset + 1] & 0xff);
+    }
+
+    private static int skipDnsName(byte[] bytes, int offset, int length) throws IOException {
+      while (offset < length) {
+        int labelLength = bytes[offset] & 0xff;
+        if ((labelLength & 0xc0) == 0xc0) {
+          if (offset + 1 >= length) throw new IOException("Invalid compressed DNS name");
+          return offset + 2;
+        }
+        offset += 1;
+        if (labelLength == 0) return offset;
+        offset += labelLength;
+      }
+      throw new IOException("Invalid DNS name");
+    }
+  }
+
+  private static class JumpHostProxy implements Proxy {
+    private final Session jumpSession;
+    private Channel channel;
+    private InputStream inputStream;
+    private OutputStream outputStream;
+
+    JumpHostProxy(Session jumpSession) {
+      this.jumpSession = jumpSession;
+    }
+
+    @Override
+    public void connect(SocketFactory socketFactory, String host, int port, int timeout) throws Exception {
+      if (jumpSession == null || !jumpSession.isConnected()) {
+        throw new JSchException("Jump host SSH connection is not active");
+      }
+      // Match OpenSSH ProxyJump: pass the destination hostname through the
+      // direct-tcpip request and let the jump server resolve it.
+      Channel nextChannel = jumpSession.getStreamForwarder(host, port);
+      try {
+        InputStream nextInputStream = nextChannel.getInputStream();
+        OutputStream nextOutputStream = nextChannel.getOutputStream();
+        nextChannel.connect(timeout);
+        channel = nextChannel;
+        inputStream = nextInputStream;
+        outputStream = nextOutputStream;
+      } catch (Exception error) {
+        nextChannel.disconnect();
+        throw error;
+      }
+    }
+
+    @Override
+    public InputStream getInputStream() {
+      return inputStream;
+    }
+
+    @Override
+    public OutputStream getOutputStream() {
+      return outputStream;
+    }
+
+    @Override
+    public Socket getSocket() {
+      return null;
+    }
+
+    @Override
+    public void close() {
+      if (channel != null) {
+        channel.disconnect();
+        channel = null;
+      }
+      inputStream = null;
+      outputStream = null;
+    }
+  }
+
   private final ReactApplicationContext reactContext;
   private static final String LOGTAG = "RNSSHClient";
   private static final String DOWNLOAD_PATH = Environment.getExternalStorageDirectory().getPath();
@@ -99,6 +328,38 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   public RNSshClientModule(ReactApplicationContext reactContext) {
     super(reactContext);
     this.reactContext = reactContext;
+  }
+
+  @Nullable
+  private Network getSshNetwork(ConnectivityManager connectivityManager) {
+    Network activeNetwork = connectivityManager.getActiveNetwork();
+    for (Network network : connectivityManager.getAllNetworks()) {
+      NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(network);
+      if (
+          capabilities != null
+          && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+          && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+      ) {
+        return network;
+      }
+    }
+    return activeNetwork;
+  }
+
+  private AndroidHostResolver createHostResolver() {
+    ConnectivityManager connectivityManager = (ConnectivityManager)
+        reactContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+    Network network = connectivityManager != null
+        ? getSshNetwork(connectivityManager)
+        : null;
+    LinkProperties linkProperties = connectivityManager != null && network != null
+        ? connectivityManager.getLinkProperties(network)
+        : null;
+    return new AndroidHostResolver(
+        network,
+        linkProperties != null ? linkProperties.getDomains() : null,
+        linkProperties != null ? linkProperties.getDnsServers() : Collections.emptyList()
+    );
   }
 
   @Override
@@ -116,12 +377,22 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   private void connectToHostByPassword(final String host, final Integer port, final String username, final String passwordOrKey, final String key, final Callback callback) {
-    connectToHost(host, port, username, passwordOrKey, null, key, callback);
+    connectToHost(host, port, username, passwordOrKey, null, null, key, callback);
   }
 
   @ReactMethod
   private void connectToHostByKey(final String host, final Integer port, final String username, final ReadableMap passwordOrKey, final String key, final Callback callback) {
-    connectToHost(host, port, username, null, passwordOrKey, key, callback);
+    connectToHost(host, port, username, null, passwordOrKey, null, key, callback);
+  }
+
+  @ReactMethod
+  private void connectToHostByPasswordViaJump(final String host, final Integer port, final String username, final String passwordOrKey, final String jumpKey, final String key, final Callback callback) {
+    connectToHost(host, port, username, passwordOrKey, null, jumpKey, key, callback);
+  }
+
+  @ReactMethod
+  private void connectToHostByKeyViaJump(final String host, final Integer port, final String username, final ReadableMap passwordOrKey, final String jumpKey, final String key, final Callback callback) {
+    connectToHost(host, port, username, null, passwordOrKey, jumpKey, key, callback);
   }
   private int getKeyTypeFromString(String type) throws IllegalArgumentException {
     if (type == null) {
@@ -246,7 +517,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 }
 
 
-  private void connectToHost(final String host, final Integer port, final String username,final String password, final ReadableMap keyPairs, final String key, final Callback callback) {
+  private void connectToHost(final String host, final Integer port, final String username, final String password, final ReadableMap keyPairs, @Nullable final String jumpKey, final String key, final Callback callback) {
     new Thread(new Runnable()  {
       public void run() {
         try {
@@ -259,10 +530,24 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
             jsch.addIdentity("default", privateKey, publicKey, passphrase);
           }
 
-          Session session = jsch.getSession(username, host, port);
-
+          AndroidHostResolver resolver = createHostResolver();
+          // A proxied session must retain the hostname so the jump server gets
+          // the first opportunity to resolve it, matching OpenSSH ProxyJump.
+          // Direct sessions still resolve through Android's selected VPN.
+          String connectionHost = jumpKey != null
+              ? host
+              : resolver.resolve(host).getHostAddress();
+          Session session = jsch.getSession(username, connectionHost, port);
           if (password != null)
             session.setPassword(password);
+
+          if (jumpKey != null) {
+            SSHClient jumpClient = clientPool.get(jumpKey);
+            if (jumpClient == null || jumpClient._session == null || !jumpClient._session.isConnected()) {
+              throw new JSchException("Jump host SSH connection is not active");
+            }
+            session.setProxy(new JumpHostProxy(jumpClient._session));
+          }
 
           Properties properties = new Properties();
           properties.setProperty("StrictHostKeyChecking", "no");

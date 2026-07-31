@@ -3,8 +3,10 @@ import {
   emptyConnectionProfile,
   hostCredentialService,
   hostDisplayName,
+  jumpHostCandidates,
   migrateLegacyProfile,
   parseHosts,
+  resolveJumpHostChain,
   sortHosts,
   toHostProfile,
 } from '../src/lib/hostProfiles';
@@ -44,6 +46,13 @@ test('strips credentials from persisted host metadata', () => {
   expect(host.name).toBe('Savior');
 });
 
+test('persists the selected jump host without copying its credentials', () => {
+  const host = toHostProfile({ ...profile, jumpHostId: 'host-bastion' });
+
+  expect(host.jumpHostId).toBe('host-bastion');
+  expect(host).not.toHaveProperty('secret');
+});
+
 test('migrates the legacy single profile into a stable first host', () => {
   const migrated = migrateLegacyProfile(JSON.stringify({
     host: 'savior.tailnet.ts.net',
@@ -78,4 +87,26 @@ test('uses the hostname or IP as the default display name', () => {
   expect(hostDisplayName({ name: '', username: 'root', host: 'box.example.test' })).toBe('box.example.test');
   expect(hostDisplayName({ name: 'Builder', username: 'root', host: '192.0.2.10' })).toBe('Builder');
   expect(hostDisplayName({ name: '', username: 'root', host: '192.0.2.10' })).toBe('192.0.2.10');
+});
+
+test('resolves nested jump hosts from the outermost host inward', () => {
+  const outer = { ...toHostProfile(profile), id: 'outer', name: 'Outer' };
+  const inner = { ...toHostProfile(profile), id: 'inner', name: 'Inner', jumpHostId: outer.id };
+  const target = { ...toHostProfile(profile), id: 'target', jumpHostId: inner.id };
+
+  expect(resolveJumpHostChain([target, inner, outer], target).map(host => host.id))
+    .toEqual(['outer', 'inner']);
+});
+
+test('excludes self references and jump-host cycles from picker candidates', () => {
+  const target = { ...toHostProfile(profile), id: 'target', jumpHostId: undefined };
+  const safe = { ...toHostProfile(profile), id: 'safe' };
+  const dependent = { ...toHostProfile(profile), id: 'dependent', jumpHostId: target.id };
+
+  expect(jumpHostCandidates([target, safe, dependent], target.id).map(host => host.id))
+    .toEqual(['safe']);
+  expect(() => resolveJumpHostChain(
+    [{ ...target, jumpHostId: dependent.id }, dependent],
+    { ...target, jumpHostId: dependent.id },
+  )).toThrow('cycle');
 });

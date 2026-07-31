@@ -119,6 +119,7 @@ export default class SSHClient {
      *          Otherwise, it rejects with an error.
      */
     static connectWithKey(host: string, port: number, username: string, privateKey: string, passphrase?: string, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
+    static connectWithKeyViaJump(host: string, port: number, username: string, privateKey: string, passphrase: string | undefined, jumpClient: SSHClient, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
     /**
      * Connects to an SSH server using password authentication.
      *
@@ -131,6 +132,7 @@ export default class SSHClient {
      * @throws If there is an error during the connection process.
      */
     static connectWithPassword(host: string, port: number, username: string, password: string, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
+    static connectWithPasswordViaJump(host: string, port: number, username: string, password: string, jumpClient: SSHClient, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
     private static _keyCounter;
     private _key;
     private _listeners;
@@ -149,7 +151,7 @@ export default class SSHClient {
      * @param passwordOrKey The password or private key for authentication.
      * @param callback The callback function to be called after the connection is established.
      */
-    constructor(host: string, port: number, username: string, passwordOrKey: PasswordOrKey, callback: CallbackFunction<void>);
+    constructor(host: string, port: number, username: string, passwordOrKey: PasswordOrKey, callback: CallbackFunction<void>, jumpClient?: SSHClient);
     /**
      * Generates a unique client key, used to identify which native callback and
      * event belongs to which instance.

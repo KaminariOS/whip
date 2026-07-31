@@ -5,7 +5,7 @@ const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
 
 describe('initial host connection failures', () => {
   test('publishes a live host only after SSH and the initial snapshot succeed', () => {
-    const connect = app.indexOf('await runtime.client.connect(nextProfile);');
+    const connect = app.indexOf('await runtime.client.connect(nextProfile, jumpProfiles);');
     const snapshot = app.indexOf('const initial = await runtime.client.initialSnapshot();');
     const publishRuntime = app.indexOf('runtimes.current.set(sessionId, runtime);', connect);
     const publishSession = app.indexOf('let next = openLiveHostSession(', connect);

@@ -89,6 +89,19 @@ class SSHClient {
             });
         });
     }
+    static connectWithKeyViaJump(host, port, username, privateKey, passphrase, jumpClient, callback) {
+        return new Promise((resolve, reject) => {
+            const result = new SSHClient(host, port, username, { privateKey, passphrase }, (error) => {
+                if (callback) {
+                    callback(error);
+                }
+                if (error) {
+                    return reject(error);
+                }
+                resolve(result);
+            }, jumpClient);
+        });
+    }
     /**
      * Connects to an SSH server using password authentication.
      *
@@ -113,6 +126,19 @@ class SSHClient {
             });
         });
     }
+    static connectWithPasswordViaJump(host, port, username, password, jumpClient, callback) {
+        return new Promise((resolve, reject) => {
+            const result = new SSHClient(host, port, username, password, (error) => {
+                if (callback) {
+                    callback(error);
+                }
+                if (error) {
+                    return reject(error);
+                }
+                resolve(result);
+            }, jumpClient);
+        });
+    }
     /**
      * Creates a new SSHClient instance.
      * Should not be called directly; use the `connectWithKey` or `connectWithPassword` factory functions instead.
@@ -122,7 +148,7 @@ class SSHClient {
      * @param passwordOrKey The password or private key for authentication.
      * @param callback The callback function to be called after the connection is established.
      */
-    constructor(host, port, username, passwordOrKey, callback) {
+    constructor(host, port, username, passwordOrKey, callback, jumpClient) {
         this._key = SSHClient.getRandomClientKey();
         this._listeners = {};
         this._counters = {
@@ -140,7 +166,7 @@ class SSHClient {
         this.host = host;
         this.port = port;
         this.username = username;
-        this.connect(passwordOrKey, callback);
+        this.connect(passwordOrKey, callback, jumpClient);
     }
     /**
      * Generates a unique client key, used to identify which native callback and
@@ -244,13 +270,27 @@ class SSHClient {
      * @param passwordOrKey - The password or key to authenticate with the server.
      * @param callback - The callback function to be called after the connection attempt.
      */
-    connect(passwordOrKey, callback) {
+    connect(passwordOrKey, callback, jumpClient) {
+        if (jumpClient && Platform.OS !== 'android') {
+            callback(new Error('SSH jump hosts are currently Android-only'));
+            return;
+        }
         if (Platform.OS === 'android') {
             if (typeof passwordOrKey === 'string') {
-                RNSSHClient.connectToHostByPassword(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
+                if (jumpClient) {
+                    RNSSHClient.connectToHostByPasswordViaJump(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, (error) => { callback(error); });
+                }
+                else {
+                    RNSSHClient.connectToHostByPassword(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
+                }
             }
             else {
-                RNSSHClient.connectToHostByKey(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
+                if (jumpClient) {
+                    RNSSHClient.connectToHostByKeyViaJump(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, (error) => { callback(error); });
+                }
+                else {
+                    RNSSHClient.connectToHostByKey(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
+                }
             }
             return;
         }

@@ -8,6 +8,7 @@ import {
   hostCredentialService,
   migrateLegacyProfile,
   parseHosts,
+  resolveJumpHostChain,
   sortHosts,
   toHostProfile,
   upsertHost,
@@ -60,6 +61,14 @@ export async function loadConnectionProfile(host: HostProfile): Promise<Connecti
   };
 }
 
+export async function loadJumpHostConnectionProfiles(
+  hosts: HostProfile[],
+  profile: Pick<HostProfile, 'id' | 'jumpHostId'>,
+): Promise<ConnectionProfile[]> {
+  const jumpHosts = resolveJumpHostChain(hosts, profile);
+  return Promise.all(jumpHosts.map(loadConnectionProfile));
+}
+
 export async function saveConnectionProfile(
   hosts: HostProfile[],
   profile: ConnectionProfile,
@@ -88,7 +97,12 @@ export async function markHostConnected(hosts: HostProfile[], id: string): Promi
 }
 
 export async function deleteHostProfile(hosts: HostProfile[], id: string): Promise<HostProfile[]> {
-  const next = hosts.filter(host => host.id !== id);
+  const now = new Date().toISOString();
+  const next = hosts
+    .filter(host => host.id !== id)
+    .map(host => host.jumpHostId === id
+      ? { ...host, jumpHostId: undefined, updatedAt: now }
+      : host);
   await AsyncStorage.setItem(HOSTS_STORAGE_KEY, JSON.stringify(next));
   await Keychain.resetGenericPassword({ service: hostCredentialService(id) });
   await removeCredentialBackup(id);

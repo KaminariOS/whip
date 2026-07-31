@@ -82,6 +82,8 @@ interface TerminalSize {
 export class HerdrClient {
   private client: SSHClient | null = null;
   private profile: ConnectionProfile | null = null;
+  private jumpProfiles: ConnectionProfile[] = [];
+  private proxyClients = new Map<SSHClient, SSHClient[]>();
   private terminalConnections = new Map<string, TerminalConnection>();
   private sshShellConnections = new Map<string, SshShellConnection>();
   private terminalOpenings = new Map<string, Promise<void>>();
@@ -100,16 +102,16 @@ export class HerdrClient {
   private controlReconnect: Promise<void> | null = null;
   private localForwards = new Map<number, SSHClient>();
 
-  async connect(profile: ConnectionProfile): Promise<void> {
+  async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
     const port = Number(profile.port);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error('SSH port must be between 1 and 65535');
-    }
+    this.validateSshPort(port);
+    jumpProfiles.forEach(jumpProfile => this.validateSshPort(Number(jumpProfile.port)));
 
     if (this.controlConnect) return this.controlConnect;
     const task = (async () => {
-      this.client = await this.connectSsh(profile, port);
+      this.client = await this.connectSsh(profile, port, jumpProfiles);
       this.profile = profile;
+      this.jumpProfiles = jumpProfiles;
       this.apiServer = null;
       this.resolvedApiSocketPath = profile.herdrSocketPath?.trim()
         ? null
@@ -148,9 +150,7 @@ export class HerdrClient {
 
   private async replaceControlConnection(profile: ConnectionProfile): Promise<void> {
     const port = Number(profile.port);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error('SSH port must be between 1 and 65535');
-    }
+    this.validateSshPort(port);
 
     const nextClient = await this.connectSsh(profile, port);
     const previousClient = this.client;
@@ -168,7 +168,7 @@ export class HerdrClient {
     this.terminalOpenings.clear();
     this.terminalBridgeGenerations.clear();
     previousClient?.off('Shell');
-    previousClient?.disconnect();
+    if (previousClient) this.disconnectSsh(previousClient);
     for (const [localPort, tunnelClient] of this.localForwards) {
       if (tunnelClient === previousClient) this.localForwards.delete(localPort);
     }
@@ -194,9 +194,10 @@ export class HerdrClient {
     }
     this.client?.closeAllHerdrBridges();
     this.client?.off('Shell');
-    this.client?.disconnect();
+    if (this.client) this.disconnectSsh(this.client);
     this.client = null;
     this.profile = null;
+    this.jumpProfiles = [];
     this.apiServer = null;
     this.resolvedApiSocketPath = null;
     this.resolvedApiSocketPathFromCache = false;
@@ -866,17 +867,90 @@ export class HerdrClient {
     return this.profile;
   }
 
-  private async connectSsh(profile: ConnectionProfile, port = Number(profile.port)): Promise<SSHClient> {
+  private async connectSsh(
+    profile: ConnectionProfile,
+    port = Number(profile.port),
+    jumpProfiles = this.jumpProfiles,
+  ): Promise<SSHClient> {
+    const proxyClients: SSHClient[] = [];
+    let proxyClient: SSHClient | null = null;
+
+    try {
+      for (const jumpProfile of jumpProfiles) {
+        const jumpPort = Number(jumpProfile.port);
+        this.validateSshPort(jumpPort);
+        proxyClient = await this.connectDirectSsh(
+          jumpProfile,
+          jumpProfile.host.trim(),
+          jumpPort,
+          proxyClient,
+        );
+        proxyClients.push(proxyClient);
+      }
+
+      const client = await this.connectDirectSsh(
+        profile,
+        profile.host.trim(),
+        port,
+        proxyClient,
+      );
+      if (proxyClients.length > 0) this.proxyClients.set(client, proxyClients);
+      return client;
+    } catch (error) {
+      [...proxyClients].reverse().forEach(client => client.disconnect());
+      throw error;
+    }
+  }
+
+  private connectDirectSsh(
+    profile: ConnectionProfile,
+    host: string,
+    port: number,
+    jumpClient: SSHClient | null = null,
+  ): Promise<SSHClient> {
     const privateKey = normalizePrivateKey(profile.secret);
-    return profile.authMode === 'password'
-      ? SSHClient.connectWithPassword(profile.host.trim(), port, profile.username.trim(), profile.secret)
+    if (profile.authMode === 'password') {
+      return jumpClient
+        ? SSHClient.connectWithPasswordViaJump(
+            host,
+            port,
+            profile.username.trim(),
+            profile.secret,
+            jumpClient,
+          )
+        : SSHClient.connectWithPassword(host, port, profile.username.trim(), profile.secret);
+    }
+    return jumpClient
+      ? SSHClient.connectWithKeyViaJump(
+          host,
+          port,
+          profile.username.trim(),
+          privateKey,
+          profile.passphrase || undefined,
+          jumpClient,
+        )
       : SSHClient.connectWithKey(
-          profile.host.trim(),
+          host,
           port,
           profile.username.trim(),
           privateKey,
           profile.passphrase || undefined,
         );
+  }
+
+  private disconnectSsh(client: SSHClient): void {
+    client.disconnect();
+    const proxyClients = this.proxyClients.get(client);
+    this.proxyClients.delete(client);
+    if (proxyClients) {
+      [...proxyClients].reverse().forEach(proxyClient => proxyClient.disconnect());
+    }
+  }
+
+  private validateSshPort(port: number): void {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('SSH port must be between 1 and 65535');
+    }
   }
 
   private async createSshShell(
@@ -933,7 +1007,7 @@ export class HerdrClient {
     this.sshShellConnections.delete(terminalId);
     connection.client.off('Shell');
     connection.client.closeShell();
-    connection.client.disconnect();
+    this.disconnectSsh(connection.client);
   }
 
   private requireSshShell(terminalId: string): SshShellConnection {
