@@ -89,7 +89,7 @@ jobs:
               --latest=false
               --prerelease
               --title "Whip $RELEASE_TAG (experimental preview)"
-              --notes "Experimental preview. Connect only through a trusted Tailnet. SSH host keys are not yet verified. This ARM64 APK is preview-signed, and its signing identity may change before a stable release."
+              --notes "Experimental preview. SSH host identities are verified against Whip's global known-hosts list. This ARM64 APK is preview-signed, and its signing identity may change before a stable release."
             )
             gh release create "${release_args[@]}"
           fi
