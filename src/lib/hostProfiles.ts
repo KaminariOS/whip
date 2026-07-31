@@ -14,6 +14,7 @@ export const emptyConnectionProfile = (): ConnectionProfile => {
     host: '',
     port: '22',
     username: '',
+    jumpHostId: undefined,
     authMode: 'password',
     secret: '',
     passphrase: '',
@@ -56,6 +57,7 @@ export function toHostProfile(profile: ConnectionProfile, previous?: HostProfile
     host: profile.host.trim(),
     port: profile.port.trim() || '22',
     username: profile.username.trim(),
+    jumpHostId: profile.jumpHostId?.trim() || undefined,
     authMode: profile.authMode,
     herdrCommand: profile.herdrCommand.trim() || 'herdr',
     herdrSocketPath: profile.herdrSocketPath?.trim() || '',
@@ -95,6 +97,43 @@ export function parseHosts(value: string | null): HostProfile[] {
   }
 }
 
+export function resolveJumpHostChain(
+  hosts: HostProfile[],
+  profile: Pick<HostProfile, 'id' | 'jumpHostId'>,
+): HostProfile[] {
+  const byId = new Map(hosts.map(host => [host.id, host]));
+  const seen = new Set([profile.id]);
+  const chain: HostProfile[] = [];
+  let jumpHostId = profile.jumpHostId;
+
+  while (jumpHostId) {
+    if (seen.has(jumpHostId)) {
+      throw new Error('Jump host configuration contains a cycle');
+    }
+    const jumpHost = byId.get(jumpHostId);
+    if (!jumpHost) {
+      throw new Error(`Jump host ${jumpHostId} no longer exists`);
+    }
+    seen.add(jumpHostId);
+    chain.unshift(jumpHost);
+    jumpHostId = jumpHost.jumpHostId;
+  }
+
+  return chain;
+}
+
+export function jumpHostCandidates(hosts: HostProfile[], profileId: string): HostProfile[] {
+  return hosts.filter(candidate => {
+    if (candidate.id === profileId) return false;
+    try {
+      resolveJumpHostChain(hosts, { id: profileId, jumpHostId: candidate.id });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function migrateLegacyProfile(value: string | null): ConnectionProfile | null {
   if (!value) return null;
   try {
@@ -107,6 +146,7 @@ export function migrateLegacyProfile(value: string | null): ConnectionProfile | 
       host: parsed.host,
       port: parsed.port || '22',
       username: parsed.username,
+      jumpHostId: undefined,
       authMode: parsed.authMode === 'key' ? 'key' : 'password',
       secret: '',
       passphrase: '',

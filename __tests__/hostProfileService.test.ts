@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
 
 import { toHostProfile } from '../src/lib/hostProfiles';
-import { saveConnectionProfile } from '../src/services/hostProfiles';
+import { deleteHostProfile, saveConnectionProfile } from '../src/services/hostProfiles';
 import { removeCredentialBackup } from '../src/services/credentialVault';
 import type { ConnectionProfile } from '../src/types';
 
@@ -49,4 +49,19 @@ test('removes a remembered credential when its private key is cleared', async ()
     service: 'io.github.kaminarios.whip.ssh.host.host-1',
   });
   expect(removeCredentialBackup).toHaveBeenCalledWith('host-1');
+});
+
+test('clears jump-host references when the selected host is deleted', async () => {
+  const jumpHost = { ...toHostProfile(profile), id: 'jump' };
+  const target = { ...toHostProfile(profile), id: 'target', jumpHostId: jumpHost.id };
+
+  const next = await deleteHostProfile([target, jumpHost], jumpHost.id);
+
+  expect(next).toHaveLength(1);
+  expect(next[0]).toMatchObject({ id: 'target' });
+  expect(next[0].jumpHostId).toBeUndefined();
+  expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(
+    'herdr.hosts.v2',
+    JSON.stringify(next),
+  );
 });
