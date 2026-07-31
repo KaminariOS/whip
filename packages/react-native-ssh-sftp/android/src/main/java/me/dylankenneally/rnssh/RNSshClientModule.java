@@ -132,12 +132,12 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
       Log.d(LOGTAG, "Resolving " + host + " on Android network " + network);
       IOException firstError = null;
       List<String> candidates = new ArrayList<>();
-      candidates.add(host);
-      if (!host.contains(".") && searchDomains != null) {
+      if (!host.contains(".") && !host.contains(":") && searchDomains != null) {
         for (String domain : searchDomains.trim().split("\\s+")) {
           if (!domain.isEmpty()) candidates.add(host + "." + domain);
         }
       }
+      candidates.add(host);
 
       for (String candidate : candidates) {
         try {
@@ -153,9 +153,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
       // Some native SSH clients can still resolve through a VPN when Android's
       // Java resolver returns UnknownHostException. Query the DNS servers
       // exposed by that VPN directly so JSch gets the same address.
-      List<String> rawCandidates = new ArrayList<>(candidates);
-      Collections.reverse(rawCandidates);
-      for (String candidate : rawCandidates) {
+      for (String candidate : candidates) {
         for (InetAddress dnsServer : dnsServers) {
           try {
             InetAddress address = resolveViaDns(candidate, dnsServer);
