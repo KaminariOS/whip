@@ -16,5 +16,22 @@
       }
     },
     "production": {}
+  },
+  "submit": {
+    "internal": {
+      "android": {
+        "serviceAccountKeyPath": ".eas-secrets/google-play-service-account.json",
+        "track": "internal",
+        "releaseStatus": "completed"
+      }
+    },
+    "production-draft": {
+      "android": {
+        "serviceAccountKeyPath": ".eas-secrets/google-play-service-account.json",
+        "track": "production",
+        "releaseStatus": "draft",
+        "changesNotSentForReview": true
+      }
+    }
   }
 }

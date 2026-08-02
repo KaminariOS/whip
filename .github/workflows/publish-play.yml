@@ -1,0 +1,133 @@
+name: Publish Android app bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit_profile:
+        description: Google Play destination
+        required: true
+        default: production-draft
+        type: choice
+        options:
+          - production-draft
+          - internal
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-play
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and submit Android bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: google-play
+    env:
+      NODE_ENV: production
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK packages
+        run: >-
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          "platforms;android-36"
+          "build-tools;36.0.0"
+          "ndk;27.1.12297006"
+          "cmake;3.22.1"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
+
+      - name: Install JavaScript dependencies
+        run: npm ci --include=dev
+
+      - name: Prepare signing and Play credentials
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          required=(
+            ANDROID_UPLOAD_KEYSTORE_BASE64
+            ANDROID_UPLOAD_KEYSTORE_PASSWORD
+            ANDROID_UPLOAD_KEY_ALIAS
+            ANDROID_UPLOAD_KEY_PASSWORD
+            GOOGLE_PLAY_SERVICE_ACCOUNT_JSON
+            EXPO_TOKEN
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          mkdir -p .eas-secrets
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" \
+            | base64 --decode > .eas-secrets/upload-keystore.jks
+          printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" \
+            > .eas-secrets/google-play-service-account.json
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$GITHUB_WORKSPACE/.eas-secrets/upload-keystore.jks" \
+            "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" \
+            "$ANDROID_UPLOAD_KEY_ALIAS" \
+            "$ANDROID_UPLOAD_KEY_PASSWORD" \
+            > .eas-secrets/upload-keystore.properties
+          chmod 600 .eas-secrets/*
+
+      - name: Build signed ARM64 app bundle
+        working-directory: android
+        env:
+          WHIP_UPLOAD_KEYSTORE_PROPERTIES: ${{ github.workspace }}/.eas-secrets/upload-keystore.properties
+        run: >-
+          ./gradlew app:bundleRelease
+          -PreactNativeArchitectures=arm64-v8a
+          --no-daemon
+
+      - name: Create bundle checksum
+        run: >-
+          sha256sum android/app/build/outputs/bundle/release/app-release.aab
+          > android/app/build/outputs/bundle/release/app-release.aab.sha256
+
+      - name: Upload app bundle artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: whip-play-app-bundle
+          path: |
+            android/app/build/outputs/bundle/release/app-release.aab
+            android/app/build/outputs/bundle/release/app-release.aab.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Submit bundle to Google Play
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SUBMIT_PROFILE: ${{ inputs.submit_profile }}
+        run: >-
+          npx --yes eas-cli@21.3.0 submit
+          --platform android
+          --profile "$SUBMIT_PROFILE"
+          --path android/app/build/outputs/bundle/release/app-release.aab
+          --non-interactive
+          --wait
