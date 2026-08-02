@@ -173,6 +173,36 @@ npx eas-cli build --profile preview --platform android
 
 The `development` profile creates an Expo development client. The `preview` profile creates an installable APK.
 
+### Google Play publishing
+
+The manually triggered `Publish Android app bundle` GitHub Actions workflow builds a signed ARM64 `.aab` and uploads it through EAS Submit. Its default `production-draft` profile leaves the release in Google Play Console for manual review; the `internal` profile publishes it to internal testers.
+
+Before the first run, create a Google Play service account with Play Console access and an Expo access token, then configure these GitHub repository or `google-play` environment secrets:
+
+- `ANDROID_UPLOAD_KEYSTORE_BASE64`: the base64-encoded Play upload keystore
+- `ANDROID_UPLOAD_KEYSTORE_PASSWORD`
+- `ANDROID_UPLOAD_KEY_ALIAS`
+- `ANDROID_UPLOAD_KEY_PASSWORD`
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`: the complete service-account JSON document
+- `EXPO_TOKEN`
+
+For example:
+
+```bash
+base64 -w 0 /path/to/upload-keystore.jks | gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64
+gh secret set ANDROID_UPLOAD_KEYSTORE_PASSWORD
+gh secret set ANDROID_UPLOAD_KEY_ALIAS
+gh secret set ANDROID_UPLOAD_KEY_PASSWORD
+gh secret set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON < /path/to/google-play-service-account.json
+gh secret set EXPO_TOKEN
+```
+
+Increment `versionCode` in `android/app/build.gradle` for every Play upload, commit the release, and start a draft upload with:
+
+```bash
+gh workflow run publish-play.yml -f submit_profile=production-draft
+```
+
 ### Validation
 
 ```bash
