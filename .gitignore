@@ -68,6 +68,7 @@ yarn-error.log
 .metro-health-check*
 .expo/
 .eas-secrets/
+.expo_token
 
 # testing
 /coverage
