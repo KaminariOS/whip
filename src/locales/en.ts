@@ -179,8 +179,6 @@ export const en = {
   'knownHosts.notTrusted': 'The SSH host key was not trusted.',
 
   'settings.title': 'Settings',
-  'settings.connectedCopy': 'Dashboard updates and terminal traffic use the authenticated SSH connection.',
-  'settings.disconnectedCopy': 'Select a saved host to open a Herdr connection.',
   'settings.notifications': 'Notifications',
   'settings.agentNotifications': 'Agent notifications',
   'settings.agentNotificationsCopy': 'Notify when an agent is blocked or done.',

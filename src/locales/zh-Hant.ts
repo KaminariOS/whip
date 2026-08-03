@@ -171,8 +171,6 @@ export const zhHant: Record<string, string> = {
   'knownHosts.trust': '信任主機',
   'knownHosts.notTrusted': '未信任此 SSH 主機金鑰。',
   'settings.title': '設定',
-  'settings.connectedCopy': '儀表板更新與終端機流量會使用已驗證的 SSH 連線。',
-  'settings.disconnectedCopy': '選擇已儲存的主機以開啟 Herdr 連線。',
   'settings.notifications': '通知',
   'settings.agentNotifications': '代理程式通知',
   'settings.agentNotificationsCopy': '代理程式受阻或完成時通知。',

@@ -18,7 +18,6 @@ export function MoreScreen(props: Props) {
         <Text className="mt-1 text-sm text-muted-foreground">{props.connectedHost ? t('more.connectedTo', { host: props.connectedHost }) : t('more.noConnection')}</Text>
       </View>
       <SettingsSection
-        host={props.host}
         alertsEnabled={props.alertsEnabled}
         ttsEnabled={props.ttsEnabled}
         biometricForKeys={props.biometricForKeys}
