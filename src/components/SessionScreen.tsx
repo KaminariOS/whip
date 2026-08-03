@@ -525,11 +525,12 @@ export function SessionScreen({
       pointerEvents={visible ? 'auto' : 'none'}
       className={cn('flex-1 bg-terminal-canvas', !visible && 'absolute inset-0 opacity-0')}>
       <TerminalBackground preferences={terminalPreferences} />
-      <View className="h-[42px] flex-row border-b border-border bg-transparent">
-        <Button accessibilityLabel={t('session.backToHerd')} className="h-[42px] w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
-          <ChevronLeft size={21} color={colors.text} />
-        </Button>
-        {workspace ? (
+      <View className="absolute inset-x-0 top-0 z-30">
+        <View className="h-[42px] flex-row border-b border-border bg-transparent">
+          <Button accessibilityLabel={t('session.backToHerd')} className="h-[42px] w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
+            <ChevronLeft size={21} color={colors.text} />
+          </Button>
+          {workspace ? (
           <>
             <ScrollView className="min-w-0 flex-1" horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
               {tabs.map(item => {
@@ -574,39 +575,40 @@ export function SessionScreen({
               <X size={17} color={colors.text} />
             </Button>
           </>
-        ) : null}
+          ) : null}
+        </View>
+
+        {editorMode && (
+          <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
+            <Text className="font-mono text-[8px] text-foreground">{editorMode.startsWith('rename') ? t('herd.rename') : t('herd.new')} {editorMode === 'rename-pane' ? t('session.pane') : t('session.tab')}</Text>
+            <Input autoFocus selectTextOnFocus={editorMode.startsWith('rename')} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={name} onChangeText={setName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
+            <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(closeEditor)}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
+            <Button className="h-[34px] rounded-none px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
+          </View>
+        )}
+
+        {selectedTab && panes.length > 1 && (
+          <View className="h-[37px] flex-row border-b border-border bg-transparent">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
+              {panes.map(pane => {
+                const active = pane.terminal_id === selectedPane?.terminal_id;
+                const label = pane.label || pane.display_agent || pane.agent || 'shell';
+                return (
+                  <View key={pane.pane_id} className={cn('h-7 max-w-[174px] flex-row items-center overflow-hidden rounded-full bg-muted', active && 'bg-primary')}>
+                    <Button accessibilityLabel={t('session.openPane', { pane: label })} className="h-7 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2 py-0" variant="ghost" onPress={hapticPress(() => choosePane(pane))} onLongPress={hapticPress(() => openRenamePane(pane))}>
+                      <View className="size-[5px] rounded-full" style={{ backgroundColor: statusColor(pane.agent_status, colors) }} />
+                      <Text numberOfLines={1} className={cn('max-w-[112px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{label}</Text>
+                    </Button>
+                    <Button accessibilityLabel={t('session.closePane', { pane: label })} className="h-7 w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(() => closePane(pane))}>
+                      <X size={13} color={active ? colors.onPrimary : colors.textSecondary} />
+                    </Button>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
       </View>
-
-      {editorMode && (
-        <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
-          <Text className="font-mono text-[8px] text-foreground">{editorMode.startsWith('rename') ? t('herd.rename') : t('herd.new')} {editorMode === 'rename-pane' ? t('session.pane') : t('session.tab')}</Text>
-          <Input autoFocus selectTextOnFocus={editorMode.startsWith('rename')} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={name} onChangeText={setName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
-          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(closeEditor)}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
-          <Button className="h-[34px] rounded-none px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
-        </View>
-      )}
-
-      {selectedTab && panes.length > 1 && (
-        <View className="h-[37px] flex-row border-b border-border bg-transparent">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
-            {panes.map(pane => {
-              const active = pane.terminal_id === selectedPane?.terminal_id;
-              const label = pane.label || pane.display_agent || pane.agent || 'shell';
-              return (
-                <View key={pane.pane_id} className={cn('h-7 max-w-[174px] flex-row items-center overflow-hidden rounded-full bg-muted', active && 'bg-primary')}>
-                  <Button accessibilityLabel={t('session.openPane', { pane: label })} className="h-7 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2 py-0" variant="ghost" onPress={hapticPress(() => choosePane(pane))} onLongPress={hapticPress(() => openRenamePane(pane))}>
-                    <View className="size-[5px] rounded-full" style={{ backgroundColor: statusColor(pane.agent_status, colors) }} />
-                    <Text numberOfLines={1} className={cn('max-w-[112px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{label}</Text>
-                  </Button>
-                  <Button accessibilityLabel={t('session.closePane', { pane: label })} className="h-7 w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(() => closePane(pane))}>
-                    <X size={13} color={active ? colors.onPrimary : colors.textSecondary} />
-                  </Button>
-                </View>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
 
       <View
         className="relative flex-1 overflow-hidden bg-transparent"
