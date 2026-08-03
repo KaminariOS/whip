@@ -1472,7 +1472,6 @@ function AppContent() {
           {navigation.tab === 'more' && (
             <MoreScreen
               connectedHost={activeSession ? hostDisplayName(activeSession.host) : null}
-              host={activeSession?.host.host || null}
               alertsEnabled={alertsEnabled}
               ttsEnabled={ttsEnabled}
               biometricForKeys={biometricForKeys}

@@ -23,7 +23,6 @@ export interface SettingsSectionProps {
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
-  host: string | null;
   onAlertsChange: (value: boolean) => void;
   onTtsChange: (value: boolean) => void;
   onBiometricForKeysChange: (value: boolean) => void;
@@ -78,9 +77,7 @@ export function SettingsSection(props: SettingsSectionProps) {
   return (
     <View className="px-4 py-5">
         <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
-        <View className="mb-7 mt-4 rounded-lg bg-muted p-4"><Text className="text-base font-semibold leading-6">{props.host || t('common.notConnected')}</Text><Text className="mt-1 text-sm leading-[21px] text-muted-foreground">{props.host ? t('settings.connectedCopy') : t('settings.disconnectedCopy')}</Text></View>
-
-        <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
+        <Text className="mb-3 mt-4 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
         <View className="overflow-hidden rounded-lg border border-border bg-card">
           <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
           <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
