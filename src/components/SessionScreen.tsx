@@ -41,7 +41,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
-import { TerminalScreen } from './TerminalScreen';
+import { TerminalBackground, TerminalScreen } from './TerminalScreen';
 
 interface Props {
   hostSessionId: string;
@@ -524,7 +524,8 @@ export function SessionScreen({
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible ? 'auto' : 'none'}
       className={cn('flex-1 bg-terminal-canvas', !visible && 'absolute inset-0 opacity-0')}>
-      <View className="h-[42px] flex-row border-b border-border bg-background">
+      <TerminalBackground preferences={terminalPreferences} />
+      <View className="h-[42px] flex-row border-b border-border bg-transparent">
         <Button accessibilityLabel={t('session.backToHerd')} className="h-[42px] w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
           <ChevronLeft size={21} color={colors.text} />
         </Button>
@@ -586,7 +587,7 @@ export function SessionScreen({
       )}
 
       {selectedTab && panes.length > 1 && (
-        <View className="h-[37px] flex-row border-b border-border bg-background">
+        <View className="h-[37px] flex-row border-b border-border bg-transparent">
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
             {panes.map(pane => {
               const active = pane.terminal_id === selectedPane?.terminal_id;
@@ -608,7 +609,7 @@ export function SessionScreen({
       )}
 
       <View
-        className="relative flex-1 overflow-hidden bg-terminal-canvas"
+        className="relative flex-1 overflow-hidden bg-transparent"
         onLayout={event => {
           terminalWidthRef.current = event.nativeEvent.layout.width;
           setTerminalWidth(event.nativeEvent.layout.width);

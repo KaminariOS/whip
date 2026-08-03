@@ -40,7 +40,7 @@ describe('session tab labels', () => {
     expect(rail).toContain('onPress={hapticPress(onClose)}');
   });
 
-  it('uses the app palette for Herd and Terminal header chrome', () => {
+  it('keeps terminal header chrome transparent over its shared background', () => {
     const hostRail = readFileSync(
       resolve(__dirname, '../src/components/LiveSessionRail.tsx'),
       'utf8',
@@ -56,7 +56,9 @@ describe('session tab labels', () => {
 
     expect(hostRail).toContain('border-b border-border bg-background');
     expect(workspaceRail).toContain('border-b border-border bg-background');
-    expect(screen).toContain('h-[42px] flex-row border-b border-border bg-background');
+    expect(screen).toContain('<TerminalBackground preferences={terminalPreferences} />');
+    expect(screen).toContain('h-[42px] flex-row border-b border-border bg-transparent');
+    expect(screen).toContain('h-[37px] flex-row border-b border-border bg-transparent');
     expect(hostRail).not.toContain('bg-terminal-panel');
     expect(workspaceRail).not.toContain('bg-terminal-panel');
   });
