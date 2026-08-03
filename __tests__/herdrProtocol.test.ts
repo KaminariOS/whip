@@ -1,15 +1,21 @@
 import {
   assertHerdrProtocolCompatible,
   HERDR_PROTOCOL_VERSION,
+  HERDR_PROTOCOL_VERSIONS,
+  HERDR_PROTOCOL_VERSIONS_LABEL,
   HerdrProtocolMismatchError,
   isHerdrProtocolMismatch,
 } from '../src/lib/herdrProtocol';
 
 describe('Herdr protocol compatibility', () => {
-  test('accepts only the protocol implemented by the Android bridge', () => {
-    expect(HERDR_PROTOCOL_VERSION).toBe(17);
+  test('accepts both protocols implemented by the Android bridge', () => {
+    expect(HERDR_PROTOCOL_VERSION).toBe(18);
+    expect(HERDR_PROTOCOL_VERSIONS).toEqual([17, 18]);
+    expect(HERDR_PROTOCOL_VERSIONS_LABEL).toBe('17 and 18');
     expect(() => assertHerdrProtocolCompatible(17)).not.toThrow();
+    expect(() => assertHerdrProtocolCompatible(18)).not.toThrow();
     expect(() => assertHerdrProtocolCompatible(16)).toThrow(HerdrProtocolMismatchError);
+    expect(() => assertHerdrProtocolCompatible(19)).toThrow(HerdrProtocolMismatchError);
     expect(() => assertHerdrProtocolCompatible(17, false)).toThrow(HerdrProtocolMismatchError);
   });
 

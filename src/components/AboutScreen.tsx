@@ -5,7 +5,7 @@ import { Alert, Linking, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
-import { HERDR_PROTOCOL_VERSION } from '@/src/lib/herdrProtocol';
+import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
 import type { ServerInfo } from '@/src/types';
 import { hapticPress, WhipMark } from './app-ui';
 import { Button } from './ui/button';
@@ -46,11 +46,11 @@ export function AboutSection({ server }: AboutSectionProps) {
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>
           <View className="overflow-hidden rounded-lg border border-border bg-card">
-            <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: HERDR_PROTOCOL_VERSION })} />
+            <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: HERDR_PROTOCOL_VERSIONS_LABEL })} />
             <AboutRow label={t('about.connectedHost')} value={connectedVersion} detail={connectedProtocol} divided />
           </View>
           <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
-            {t('about.compatibilityCopy', { version: HERDR_PROTOCOL_VERSION })}
+            {t('about.compatibilityCopy', { versions: HERDR_PROTOCOL_VERSIONS_LABEL })}
           </Text>
 
           <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.terminalFonts')}</Text>

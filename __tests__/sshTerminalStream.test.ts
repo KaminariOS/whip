@@ -45,7 +45,7 @@ describe('Android SSH terminal protocol stream', () => {
     expect(execute).toContain('if (channel != null) channel.disconnect();');
   });
 
-  test('Herdr terminals use the protocol 17 client socket on the primary SSH client', () => {
+  test('Herdr terminals use the supported client-protocol socket on the primary SSH client', () => {
     const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
     const renderer = readFileSync(resolve(__dirname, '../src/components/TerminalRendererHost.tsx'), 'utf8');
     const codec = readFileSync(
@@ -59,7 +59,10 @@ describe('Android SSH terminal protocol stream', () => {
     expect(client).not.toContain('this.requireClient().prepareHerdrBridge');
     expect(client).toContain('private terminalBridges = new Set<string>()');
     expect(codec).toContain('ClientMessage::Hello');
-    expect(codec).toContain('static final int PROTOCOL_VERSION = 17');
+    expect(codec).toContain('static final int MIN_PROTOCOL_VERSION = 17');
+    expect(codec).toContain('static final int MAX_PROTOCOL_VERSION = 18');
+    expect(codec).toContain('variant == 10 && protocol == 17');
+    expect(codec).toContain('variant == 11 && protocol == 18');
     expect(codec).toContain('RenderEncoding::TerminalAnsi');
     expect(codec).toContain('ClientLaunchMode::TerminalAttach');
     expect(renderer).toContain('window.herdrWriteBase64Chunk');

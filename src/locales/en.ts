@@ -25,7 +25,7 @@ export const en = {
   'about.supportedHerdr': 'Supported Herdr',
   'about.connectedHost': 'Connected host',
   'about.versionUnavailable': 'Version unavailable',
-  'about.compatibilityCopy': 'Whip works with Herdr releases that report protocol {{version}}. Other protocol versions are rejected to prevent incompatible commands.',
+  'about.compatibilityCopy': 'Whip works with Herdr releases that report protocol {{versions}}. Other protocol versions are rejected to prevent incompatible commands.',
   'about.terminalFonts': 'Terminal fonts',
   'about.terminalTextFont': 'Text',
   'about.terminalCjkFont': 'CJK',

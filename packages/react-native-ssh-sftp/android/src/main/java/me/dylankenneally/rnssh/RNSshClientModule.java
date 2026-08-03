@@ -988,7 +988,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
       while (clientPool.get(key) == client && channel.isConnected()) {
         byte[] payload = readHerdrPayload(input);
         if (payload == null) break;
-        HerdrBridgeCodec.Message message = HerdrBridgeCodec.decode(payload);
+        HerdrBridgeCodec.Message message = HerdrBridgeCodec.decode(payload, protocol);
         if ("welcome".equals(message.type)) {
           if (message.text != null) {
             throw new IOException("Herdr bridge rejected protocol " + protocol + ": " + message.text);

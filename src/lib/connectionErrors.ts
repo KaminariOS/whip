@@ -24,7 +24,7 @@ export const connectionErrorTranslationKeys: Record<ConnectionErrorKind, string>
 export function connectionErrorContext(error: unknown): Record<string, string> {
   if (error && typeof error === 'object' && 'expected' in error) {
     const mismatch = error as { expected?: unknown; received?: unknown };
-    if (typeof mismatch.expected === 'number') {
+    if (typeof mismatch.expected === 'number' || typeof mismatch.expected === 'string') {
       return {
         expectedProtocol: String(mismatch.expected),
         receivedProtocol: mismatch.received === undefined
@@ -35,7 +35,7 @@ export function connectionErrorContext(error: unknown): Record<string, string> {
   }
 
   const match = errorText(error).match(
-    /(?:Whip|Android bridge) supports (\d+), server reports ([^\r\n]+)/i,
+    /(?:Whip|Android bridge) supports (.+?), server reports ([^\r\n]+)/i,
   );
   return match
     ? {
