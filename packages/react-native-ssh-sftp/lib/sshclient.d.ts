@@ -23,7 +23,7 @@ export type CallbackFunction<T> = (error: CBError, response?: T) => void;
  */
 export type EventHandler = (value: any) => void;
 export interface HerdrBridgeEvent {
-    type: 'terminal' | 'closed' | 'graphics' | 'notify' | 'clipboard' | 'title' | 'reload_sound_config' | 'mouse_capture' | 'prefix_input_source' | 'ignored';
+    type: 'terminal' | 'closed' | 'graphics' | 'notify' | 'clipboard' | 'title' | 'reload_sound_config' | 'mouse_capture' | 'kitty_keyboard_report_all' | 'prefix_input_source' | 'ignored';
     terminalId?: string;
     seq?: number;
     width?: number;
@@ -262,7 +262,7 @@ export default class SSHClient {
      * Closes the SSH shell.
      */
     closeShell(): void;
-    /** Connects to Herdr's protocol-17 client socket on a dedicated channel of this SSH session. */
+    /** Connects to a supported Herdr client-protocol socket on a dedicated channel of this SSH session. */
     prepareHerdrBridge(command: string, protocol: number, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, callback?: CallbackFunction<void>): Promise<void>;
     startHerdrBridge(socketPath: string, protocol: number, terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
     herdrBridgeInput(terminalId: string, text: string): Promise<void>;

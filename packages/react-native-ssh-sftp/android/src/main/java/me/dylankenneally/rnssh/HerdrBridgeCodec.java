@@ -5,7 +5,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 final class HerdrBridgeCodec {
-  static final int PROTOCOL_VERSION = 17;
+  static final int MIN_PROTOCOL_VERSION = 17;
+  static final int MAX_PROTOCOL_VERSION = 18;
   static final int MAX_FRAME_SIZE = 32 * 1024 * 1024;
 
   static final class Message {
@@ -32,10 +33,12 @@ final class HerdrBridgeCodec {
       int cellWidthPx,
       int cellHeightPx
   ) throws IOException {
-    if (protocol != PROTOCOL_VERSION) {
+    if (!supportsProtocol(protocol)) {
       throw new IOException(
           "Herdr protocol mismatch: Android bridge supports "
-              + PROTOCOL_VERSION
+              + MIN_PROTOCOL_VERSION
+              + " and "
+              + MAX_PROTOCOL_VERSION
               + ", server reports "
               + protocol
       );
@@ -98,7 +101,10 @@ final class HerdrBridgeCodec {
     return frame(encoder.finish());
   }
 
-  static Message decode(byte[] payload) throws IOException {
+  static Message decode(byte[] payload, int protocol) throws IOException {
+    if (!supportsProtocol(protocol)) {
+      throw new IOException("Cannot decode unsupported Herdr protocol " + protocol);
+    }
     Decoder decoder = new Decoder(payload);
     long variant = decoder.unsigned();
     Message message;
@@ -136,13 +142,23 @@ final class HerdrBridgeCodec {
     } else if (variant == 9) {
       message = new Message("mouse_capture");
       message.flag = decoder.bool();
+    } else if (variant == 10 && protocol == 17) {
+      message = new Message("prefix_input_source");
+      message.flag = decoder.bool();
     } else if (variant == 10) {
+      message = new Message("kitty_keyboard_report_all");
+      message.flag = decoder.bool();
+    } else if (variant == 11 && protocol == 18) {
       message = new Message("prefix_input_source");
       message.flag = decoder.bool();
     } else {
       message = new Message("ignored");
     }
     return message;
+  }
+
+  private static boolean supportsProtocol(int protocol) {
+    return protocol >= MIN_PROTOCOL_VERSION && protocol <= MAX_PROTOCOL_VERSION;
   }
 
   private static byte[] frame(byte[] payload) throws IOException {

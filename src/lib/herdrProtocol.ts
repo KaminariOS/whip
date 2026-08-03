@@ -1,15 +1,17 @@
-/** Wire protocol implemented by the bundled Android Herdr bridge codec. */
-export const HERDR_PROTOCOL_VERSION = 17;
+/** Wire protocols implemented by the bundled Android Herdr bridge codec. */
+export const HERDR_PROTOCOL_VERSIONS = [17, 18] as const;
+export const HERDR_PROTOCOL_VERSION = HERDR_PROTOCOL_VERSIONS.at(-1)!;
+export const HERDR_PROTOCOL_VERSIONS_LABEL = HERDR_PROTOCOL_VERSIONS.join(' and ');
 
 export class HerdrProtocolMismatchError extends Error {
-  readonly expected: number;
+  readonly expected: string;
   readonly received: number | undefined;
 
   constructor(received: number | undefined) {
     const actual = received === undefined ? 'unavailable' : String(received);
-    super(`Herdr protocol mismatch: Whip supports ${HERDR_PROTOCOL_VERSION}, server reports ${actual}`);
+    super(`Herdr protocol mismatch: Whip supports ${HERDR_PROTOCOL_VERSIONS_LABEL}, server reports ${actual}`);
     this.name = 'HerdrProtocolMismatchError';
-    this.expected = HERDR_PROTOCOL_VERSION;
+    this.expected = HERDR_PROTOCOL_VERSIONS_LABEL;
     this.received = received;
   }
 }
@@ -18,7 +20,11 @@ export function assertHerdrProtocolCompatible(
   protocol: number | undefined,
   serverCompatible = true,
 ): asserts protocol is number {
-  if (!serverCompatible || protocol !== HERDR_PROTOCOL_VERSION) {
+  if (
+    !serverCompatible
+    || protocol === undefined
+    || !(HERDR_PROTOCOL_VERSIONS as readonly number[]).includes(protocol)
+  ) {
     throw new HerdrProtocolMismatchError(protocol);
   }
 }
