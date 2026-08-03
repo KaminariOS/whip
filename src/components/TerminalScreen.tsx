@@ -83,6 +83,29 @@ const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
 const TERMINAL_CONTROL_CLASS = 'min-h-[34px] min-w-12 rounded-sm border border-border bg-card/70 px-2.5 active:bg-card/80';
 const MAX_RECONNECT_ATTEMPTS = 5;
 
+export function TerminalBackground({ preferences }: { preferences: TerminalPreferences }) {
+  if (!preferences.backgroundImageUri) return null;
+
+  return (
+    <View
+      accessibilityElementsHidden
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, BACKGROUND_SCREEN_STYLE]}>
+      <Image
+        resizeMode="cover"
+        source={{ uri: preferences.backgroundImageUri }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: `rgba(0,0,0,${preferences.backgroundDimming / 100})` },
+        ]}
+      />
+    </View>
+  );
+}
+
 function useTerminalModifierState() {
   const [value, setValue] = useState<TerminalModifierState>('off');
   const valueRef = useRef<TerminalModifierState>('off');
@@ -575,24 +598,7 @@ export function TerminalScreen({
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
       className={cn('flex-1 bg-transparent', (!visible || !session) && 'absolute inset-0 opacity-0')}>
-      {preferences.backgroundImageUri && (
-        <View
-          accessibilityElementsHidden
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, BACKGROUND_SCREEN_STYLE]}>
-          <Image
-            resizeMode="cover"
-            source={{ uri: preferences.backgroundImageUri }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View
-            style={[
-              StyleSheet.absoluteFill,
-              { backgroundColor: `rgba(0,0,0,${preferences.backgroundDimming / 100})` },
-            ]}
-          />
-        </View>
-      )}
+      {!compact && <TerminalBackground preferences={preferences} />}
       {!compact && (
         <View className="h-[30px] flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-3">
           <View className="size-1.5 rounded-full bg-white" />
