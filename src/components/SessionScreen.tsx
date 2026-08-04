@@ -475,6 +475,9 @@ export function SessionScreen({
     } else if (editorMode === 'rename-pane' && editingPaneId) {
       succeeded = await run(() => client.renamePane(editingPaneId, name));
     } else if (workspace) {
+      // Creating a focused tab intentionally replaces the current pane choice.
+      // Do not let the old pane's pending-focus guard reject the new server pane.
+      pendingPaneFocus.current = null;
       pendingFocus.current = {
         mode: 'create',
         previousId: snapshot.tabs.find(item => item.focused)?.tab_id || selectedTab?.tab_id || null,
@@ -497,6 +500,8 @@ export function SessionScreen({
 
   const closeTab = async (item: TabInfo | undefined = selectedTab) => {
     if (!item) return;
+    // Herdr focuses a surviving tab after closing the current one.
+    pendingPaneFocus.current = null;
     pendingFocus.current = { mode: 'close', previousId: item.tab_id };
     if (!await run(() => client.closeTab(item.tab_id))) pendingFocus.current = null;
   };
