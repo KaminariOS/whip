@@ -5,6 +5,7 @@ import { Platform, Vibration } from 'react-native';
 import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
+import type { CacheTier } from '../lib/cacheTtl';
 import { armPersistentAgentAlert } from './backgroundMonitoring';
 import i18n from '../i18n';
 
@@ -115,4 +116,37 @@ async function speakBeforeAlert(title: string): Promise<void> {
       finish();
     }
   });
+}
+
+export async function alertCacheExpiry(
+  tier: CacheTier,
+  name: string,
+  body: string,
+  speak: boolean,
+  target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
+): Promise<void> {
+  const title = tier === 'warn'
+    ? i18n.t('alerts.cacheWarning', { name })
+    : i18n.t('alerts.cacheExpiring', { name });
+
+  if (speak) await speakBeforeAlert(title);
+  if (Platform.OS !== 'android') Vibration.vibrate();
+  const notificationIdentifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title,
+      body,
+      sound: 'default',
+      vibrate: ALERT_VIBRATION_PATTERN,
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      data: target,
+    },
+    trigger: { channelId: PERSISTENT_CHANNEL_ID },
+  });
+  if (Platform.OS === 'android') {
+    armPersistentAgentAlert(
+      notificationIdentifier,
+      PERSISTENT_CHANNEL_ID,
+      PERSISTENT_ALERT_TIMEOUT_MS,
+    ).catch(() => undefined);
+  }
 }

@@ -11,6 +11,7 @@ import {
   type HerdHostQueue,
   type HerdQueueAgent,
 } from '@/src/herdQueue';
+import { cacheTierColor, cacheTierFromTokens } from '@/src/lib/cacheTtl';
 import {
   HERD_TAB_MAX_DRAG,
   herdTabSwipeOffset,
@@ -20,6 +21,7 @@ import {
 import { statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, AnimatedEntrance, hapticPress, StatusBadge } from './app-ui';
+import { CacheBadge } from './ui/CacheBadge';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -340,6 +342,8 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
   const agentLabel = agent.display_agent || agent.name || agent.agent || 'agent';
   const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
   const tone = statusColor(agent.agent_status, colors);
+  const cache = cacheTierFromTokens(agent.tokens);
+  const cacheColor = cache.tier ? cacheTierColor(cache.tier, { success: colors.working, warning: colors.warning, destructive: colors.error }) : null;
   const context = [
     ...(showHost ? [item.hostLabel] : []),
     agentLabel,
@@ -428,7 +432,7 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
               onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'close-tab') commitClose(); }}
               onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
               <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
-              <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
+              <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text>{cache.tier && cacheColor ? <CacheBadge label={cache.label!} color={cacheColor} /> : null}<StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
               <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
             </Button>
           </Animated.View>

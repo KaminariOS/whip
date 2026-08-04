@@ -470,4 +470,6 @@ export const en = {
   'status.reconnecting': 'Reconnecting',
   'status.disconnected': 'Disconnected',
   'status.error': 'Error',
+  'alerts.cacheWarning': 'Cache warning · {{name}}',
+  'alerts.cacheExpiring': 'Cache expiring · {{name}}',
 } as const;

@@ -455,4 +455,6 @@ export const zhHant: Record<string, string> = {
   'status.reconnecting': '重新連線中',
   'status.disconnected': '已中斷連線',
   'status.error': '錯誤',
+  'alerts.cacheWarning': '快取警告 · {{name}}',
+  'alerts.cacheExpiring': '快取即將過期 · {{name}}',
 };

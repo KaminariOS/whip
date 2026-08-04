@@ -87,7 +87,8 @@ import {
   initialMobileNavigation,
   selectMobileTab,
 } from './src/mobileNavigation';
-import { alertAgent, prepareAlerts } from './src/services/alerts';
+import { cacheTierFromTokens, shouldNotifyCacheTransition, type CacheTier } from './src/lib/cacheTtl';
+import { alertAgent, alertCacheExpiry, prepareAlerts } from './src/services/alerts';
 import { authenticateAppAccess } from './src/services/appAuthentication';
 import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
 import {
@@ -159,6 +160,7 @@ interface LiveRuntime {
   profile: ConnectionProfile;
   refresh: RefreshCoordinator<SnapshotMeasurement>;
   previousStatuses: Map<string, AgentStatus> | null;
+  previousCacheTiers: Map<string, CacheTier> | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   eventPaneKey: string | null;
@@ -492,10 +494,30 @@ function AppContent() {
         if (event.event === 'pane.updated') {
           const pane = event.data.pane;
           if (pane && typeof pane === 'object' && typeof (pane as PaneInfo).pane_id === 'string') {
+            const paneInfo = pane as PaneInfo;
+            const nextCache = cacheTierFromTokens(paneInfo.tokens);
+            const prevCacheTier = runtime.previousCacheTiers?.get(paneInfo.pane_id) ?? null;
+            if (
+              nextCache.tier
+              && alertsEnabledRef.current
+              && shouldNotifyCacheTransition(prevCacheTier, nextCache.tier)
+            ) {
+              const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+              const agent = session?.snapshot.agents.find(a => a.pane_id === paneInfo.pane_id);
+              const agentName = agent?.display_agent || agent?.name || agent?.agent || paneInfo.pane_id;
+              alertCacheExpiry(
+                nextCache.tier,
+                agentName,
+                agent?.title || agent?.cwd || paneInfo.cwd || 'Cache TTL alert',
+                ttsEnabledRef.current,
+                { hostId: sessionId, paneId: paneInfo.pane_id },
+              ).catch(() => undefined);
+            }
+            if (nextCache.tier) runtime.previousCacheTiers?.set(paneInfo.pane_id, nextCache.tier);
             setLiveSessions(current => applyLiveHostPaneUpdate(
               current,
               sessionId,
-              pane as PaneInfo,
+              paneInfo,
             ));
           }
         }
@@ -599,6 +621,7 @@ function AppContent() {
       client: new HerdrClient(),
       profile,
       previousStatuses: null,
+      previousCacheTiers: null,
       reconnectAttempts: 0,
       reconnectTimer: null,
       eventPaneKey: null,
@@ -639,6 +662,26 @@ function AppContent() {
           }
         }
         runtime.previousStatuses = statuses;
+        const cacheTiers = new Map<string, CacheTier>();
+        if (alertsEnabledRef.current && runtime.previousCacheTiers) {
+          for (const pane of snapshot.panes) {
+            const cache = cacheTierFromTokens(pane.tokens);
+            if (cache.tier) cacheTiers.set(pane.pane_id, cache.tier);
+            const prevTier = runtime.previousCacheTiers.get(pane.pane_id) ?? null;
+            if (cache.tier && shouldNotifyCacheTransition(prevTier, cache.tier)) {
+              const agent = snapshot.agents.find(a => a.pane_id === pane.pane_id);
+              const agentName = agent?.display_agent || agent?.name || agent?.agent || pane.pane_id;
+              alertCacheExpiry(
+                cache.tier,
+                agentName,
+                agent?.title || agent?.cwd || pane.cwd || 'Cache TTL alert',
+                ttsEnabledRef.current,
+                { hostId: sessionId, paneId: pane.pane_id },
+              ).catch(() => undefined);
+            }
+          }
+        }
+        runtime.previousCacheTiers = cacheTiers;
         setLiveSessions(current => {
           const session = findLiveHostSession(current, sessionId);
           if (!session) return current;
@@ -953,6 +996,11 @@ function AppContent() {
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
       if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
+      runtime.previousCacheTiers = new Map(
+        initial.panes
+          .map(pane => [pane.pane_id, cacheTierFromTokens(pane.tokens).tier] as const)
+          .filter((entry): entry is [string, CacheTier] => entry[1] !== null),
+      );
       // Publish only fully initialized transports. A failed first handshake is
       // an offline saved host, not a live session eligible for reconnect.
       runtimes.current.set(sessionId, runtime);
