@@ -24,7 +24,7 @@
     "babel-preset-expo": "~57.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "expo": "~57.0.9",
+    "expo": "~57.0.10",
     "expo-application": "~57.0.2",
     "expo-crypto": "~57.0.1",
     "expo-dev-client": "~57.0.10",
