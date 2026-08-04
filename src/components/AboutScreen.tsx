@@ -8,12 +8,13 @@ import { useTranslation } from 'react-i18next';
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
 import type { ServerInfo } from '@/src/types';
-import { hapticPress, WhipMark } from './app-ui';
+import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 export const WHIP_RELEASES_URL = 'https://github.com/KaminariOS/whip/releases';
+export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 
 export interface AboutSectionProps {
   server: ServerInfo | null;
@@ -34,6 +35,19 @@ export function AboutSection({ server }: AboutSectionProps) {
       message: t('about.shareMessage', { url: WHIP_RELEASES_URL }),
     }).catch(error => {
       Alert.alert(t('about.shareError'), String(error));
+    });
+  };
+  const openHerdrWebsite = () => {
+    Linking.openURL(HERDR_WEBSITE_URL).catch(error => {
+      Alert.alert(t('about.herdrWebsiteError'), String(error));
+    });
+  };
+  const shareHerdrWebsite = () => {
+    Share.share({
+      title: t('about.shareHerdrTitle'),
+      message: t('about.shareHerdrMessage', { url: HERDR_WEBSITE_URL }),
+    }).catch(error => {
+      Alert.alert(t('about.shareHerdrError'), String(error));
     });
   };
 
@@ -83,6 +97,28 @@ export function AboutSection({ server }: AboutSectionProps) {
               size="content"
               variant="outline"
               onPress={hapticPress(shareReleases)}>
+              <Icon as={Share2} size={21} />
+            </Button>
+          </View>
+          <View className="mt-2.5 flex-row gap-2.5">
+            <Button
+              accessibilityRole="link"
+              className="h-auto min-w-0 flex-1 justify-start rounded-lg border border-border bg-card px-4 py-4"
+              variant="outline"
+              onPress={hapticPress(openHerdrWebsite)}>
+              <HerdrMark size={44} accessibilityLabel={t('about.herdrIcon')} />
+              <View className="min-w-0 flex-1">
+                <Text className="text-[15px] font-semibold leading-5">{t('about.herdrWebsite')}</Text>
+                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">herdr.dev</Text>
+              </View>
+              <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
+            </Button>
+            <Button
+              accessibilityLabel={t('about.shareHerdrWebsite')}
+              className="w-14 self-stretch rounded-lg border border-border bg-card px-0"
+              size="content"
+              variant="outline"
+              onPress={hapticPress(shareHerdrWebsite)}>
               <Icon as={Share2} size={21} />
             </Button>
           </View>

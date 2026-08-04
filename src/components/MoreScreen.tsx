@@ -5,9 +5,7 @@ import { AboutSection, type AboutSectionProps } from './AboutScreen';
 import { SettingsSection, type SettingsSectionProps } from './SettingsScreen';
 import { Text } from './ui/text';
 
-interface Props extends SettingsSectionProps, AboutSectionProps {
-  connectedHost: string | null;
-}
+type Props = SettingsSectionProps & AboutSectionProps;
 
 export function MoreScreen(props: Props) {
   const { t } = useTranslation();
@@ -15,7 +13,6 @@ export function MoreScreen(props: Props) {
     <ScrollView className="flex-1 bg-background">
       <View className="border-b border-border px-5 py-5">
         <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
-        <Text className="mt-1 text-sm text-muted-foreground">{props.connectedHost ? t('more.connectedTo', { host: props.connectedHost }) : t('more.noConnection')}</Text>
       </View>
       <AboutSection server={props.server} />
       <SettingsSection
