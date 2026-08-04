@@ -127,6 +127,17 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('async focusPane(paneId: string)');
   });
 
+  it('accepts Herdr pane focus when creating or closing a tab', () => {
+    const session = readSource('src/components/SessionScreen.tsx');
+
+    expect(session).toMatch(
+      /else if \(workspace\) \{[\s\S]*?pendingPaneFocus\.current = null;[\s\S]*?client\.createTab/,
+    );
+    expect(session).toMatch(
+      /const closeTab = async[\s\S]*?pendingPaneFocus\.current = null;[\s\S]*?client\.closeTab/,
+    );
+  });
+
   it('uses the full display while an active terminal is visible', () => {
     const app = readSource('App.tsx');
     const bottomNavigation = readSource('src/components/BottomNavigation.tsx');
