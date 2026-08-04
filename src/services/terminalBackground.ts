@@ -1,5 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
-import * as ImagePicker from 'expo-image-picker';
+
+import { pickImageFromLibrary } from './imageLibraryPicker';
 
 const BACKGROUND_DIRECTORY_NAME = 'terminal-backgrounds';
 const MANAGED_BACKGROUND_PREFIX = 'herdr-terminal-background-';
@@ -7,24 +8,23 @@ const MANAGED_BACKGROUND_PREFIX = 'herdr-terminal-background-';
 export async function selectTerminalBackgroundImage(
   currentUri: string | null,
 ): Promise<string | undefined> {
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],
-    allowsEditing: false,
-    quality: 0.9,
-  });
-  if (result.canceled || !result.assets[0]) return undefined;
+  const picked = await pickImageFromLibrary();
+  if (!picked) return undefined;
 
-  const asset = result.assets[0];
-  const source = new File(asset.uri);
-  const directory = managedBackgroundDirectory();
-  directory.create({ idempotent: true });
-  const destination = new File(
-    directory,
-    `${MANAGED_BACKGROUND_PREFIX}${Date.now()}${imageExtension(asset.fileName, asset.mimeType)}`,
-  );
-  await source.copy(destination);
-  await removeTerminalBackgroundImage(currentUri);
-  return destination.uri;
+  try {
+    const source = new File(picked.uri);
+    const directory = managedBackgroundDirectory();
+    directory.create({ idempotent: true });
+    const destination = new File(
+      directory,
+      `${MANAGED_BACKGROUND_PREFIX}${Date.now()}${imageExtension(picked.name, picked.mimeType)}`,
+    );
+    await source.copy(destination);
+    await removeTerminalBackgroundImage(currentUri);
+    return destination.uri;
+  } finally {
+    picked.dispose();
+  }
 }
 
 export async function migrateTerminalBackgroundImage(uri: string | null): Promise<string | null> {

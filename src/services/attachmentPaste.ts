@@ -3,6 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { NativeModules, Platform } from 'react-native';
 
 import { attachmentUploadName } from '../lib/attachmentPaste';
+import { pickImageFromLibrary, type PickedLibraryImage } from './imageLibraryPicker';
 
 export type AttachmentSource = 'camera' | 'photo' | 'file' | 'clipboard';
 
@@ -42,6 +43,7 @@ export async function hasClipboardAttachment(): Promise<boolean> {
 export async function pickLocalAttachment(source: AttachmentSource): Promise<LocalAttachment | null> {
   let picked: ClipboardAttachmentResult | null = null;
   let clipboardCopy: File | null = null;
+  let libraryImage: PickedLibraryImage | null = null;
 
   if (source === 'camera') {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -54,13 +56,8 @@ export async function pickLocalAttachment(source: AttachmentSource): Promise<Loc
     const asset = result.canceled ? null : result.assets[0];
     if (asset) picked = { uri: asset.uri, name: asset.fileName || undefined, mimeType: asset.mimeType };
   } else if (source === 'photo') {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: false,
-      mediaTypes: ['images'],
-      quality: 1,
-    });
-    const asset = result.canceled ? null : result.assets[0];
-    if (asset) picked = { uri: asset.uri, name: asset.fileName || undefined, mimeType: asset.mimeType };
+    libraryImage = await pickImageFromLibrary();
+    if (libraryImage) picked = { uri: libraryImage.uri, name: libraryImage.name, mimeType: libraryImage.mimeType };
   } else if (source === 'file') {
     const result = await File.pickFileAsync({ multipleFiles: false });
     if (!result.canceled && result.result) {
@@ -95,6 +92,7 @@ export async function pickLocalAttachment(source: AttachmentSource): Promise<Loc
     throw error;
   } finally {
     if (clipboardCopy?.exists) clipboardCopy.delete();
+    libraryImage?.dispose();
   }
 }
 
