@@ -1,4 +1,4 @@
-import { BellRing, Check, ChevronRight, Fingerprint, ImagePlus, KeyRound, LogOut, Minus, Plus, ShieldCheck, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { BellRing, Check, ChevronRight, Fingerprint, ImagePlus, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Image, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,7 +44,6 @@ export interface SettingsSectionProps {
   onAgentCommandChange: (value: string) => void;
   terminalPreferences: TerminalPreferences;
   onTerminalPreferencesChange: (value: TerminalPreferences) => void;
-  onDisconnect?: () => void;
 }
 
 export function SettingsSection(props: SettingsSectionProps) {
@@ -182,9 +181,6 @@ export function SettingsSection(props: SettingsSectionProps) {
           />
         </View>
 
-        <View className="mt-7 flex-row items-start gap-3 rounded-lg bg-muted p-4"><Icon as={ShieldCheck} size={21} /><View className="flex-1"><Text className="text-sm font-semibold leading-[19px]">{t('settings.privateBoundary')}</Text><Text className="mt-1 text-xs leading-[18px] text-muted-foreground">{t('settings.privateBoundaryCopy')}</Text></View></View>
-
-        {props.onDisconnect ? <Button className="mt-6 rounded-full" variant="destructive" onPress={hapticPress(props.onDisconnect)}><Icon as={LogOut} className="text-destructive-foreground" size={17} /><Text>{t('settings.disconnect')}</Text></Button> : null}
         <VolumeKeyActionSheet
           keyName={volumeKeyEditor}
           value={volumeKeyEditor === 'down'

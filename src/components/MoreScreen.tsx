@@ -17,6 +17,7 @@ export function MoreScreen(props: Props) {
         <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
         <Text className="mt-1 text-sm text-muted-foreground">{props.connectedHost ? t('more.connectedTo', { host: props.connectedHost }) : t('more.noConnection')}</Text>
       </View>
+      <AboutSection server={props.server} />
       <SettingsSection
         alertsEnabled={props.alertsEnabled}
         ttsEnabled={props.ttsEnabled}
@@ -42,9 +43,7 @@ export function MoreScreen(props: Props) {
         onReopenTerminalOnLaunchChange={props.onReopenTerminalOnLaunchChange}
         onAgentCommandChange={props.onAgentCommandChange}
         onTerminalPreferencesChange={props.onTerminalPreferencesChange}
-        onDisconnect={props.onDisconnect}
       />
-      <AboutSection server={props.server} />
     </ScrollView>
   );
 }

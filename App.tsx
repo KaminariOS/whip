@@ -1529,7 +1529,6 @@ function AppContent() {
               onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
               onAgentCommandChange={setAgentCommand}
               onTerminalPreferencesChange={setTerminalPreferences}
-              onDisconnect={activeSession ? () => closeLiveHost(activeSession.id) : undefined}
             />
           )}
 
