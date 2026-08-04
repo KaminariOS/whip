@@ -27,11 +27,13 @@ import {
   type TerminalTabSwipeDirection,
 } from '@/src/lib/terminalTabSwipe';
 import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
+import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '@/src/lib/volumeKeys';
 import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalControls';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
+import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import { sessionTabStatusColor, statusColor, useTheme } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
@@ -352,6 +354,24 @@ export function SessionScreen({
   swipeContextRef.current = { tabs, selectedTab, activeTerminalSession, snapshot };
   const chooseTabRef = useRef(chooseTab);
   chooseTabRef.current = chooseTab;
+
+  const handleVolumeKey = useEffectEvent((key: TerminalVolumeKey) => {
+    if (!visible) return;
+    const configured = key === 'up'
+      ? terminalPreferences.volumeUpAction
+      : terminalPreferences.volumeDownAction;
+    const action = resolveTerminalVolumeKeyAction(configured, key);
+    if (action?.type !== 'terminal-tab') return;
+    const context = swipeContextRef.current;
+    const currentIndex = context.tabs.findIndex(item => item.tab_id === context.selectedTab?.tab_id);
+    const targetIndex = neighborTabIndex(currentIndex, context.tabs.length, action.direction);
+    if (targetIndex !== null) chooseTabRef.current(context.tabs[targetIndex]);
+  });
+
+  useEffect(() => {
+    const subscription = addTerminalVolumeKeyListener(handleVolumeKey);
+    return () => subscription.remove();
+  }, []);
 
   const beginTabSwipe = (direction: TerminalTabSwipeDirection): TerminalTabSwipe | null => {
     const context = swipeContextRef.current;

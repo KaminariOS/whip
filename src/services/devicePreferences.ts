@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { parseTerminalControlUsage, type TerminalControlUsage } from '../lib/terminalControls';
+import {
+  parseTerminalVolumeKeyAction,
+  type TerminalVolumeKeyAction,
+} from '../lib/volumeKeys';
 import type { AppTab } from '../types';
 import {
   migrateTerminalBackgroundImage,
@@ -15,6 +19,8 @@ const LEGACY_DEVICE_PREFERENCES_KEYS = [
 
 export interface TerminalPreferences {
   fullscreen: boolean;
+  volumeUpAction: TerminalVolumeKeyAction;
+  volumeDownAction: TerminalVolumeKeyAction;
   fontSize: number;
   scrollback: number;
   cursorBlink: boolean;
@@ -60,6 +66,8 @@ export const defaultDevicePreferences: DevicePreferences = {
   lastTab: 'hosts',
   terminal: {
     fullscreen: true,
+    volumeUpAction: 'none',
+    volumeDownAction: 'none',
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
@@ -130,6 +138,14 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         fullscreen: typeof terminal.fullscreen === 'boolean'
           ? terminal.fullscreen
           : defaultDevicePreferences.terminal.fullscreen,
+        volumeUpAction: parseTerminalVolumeKeyAction(
+          terminal.volumeUpAction,
+          defaultDevicePreferences.terminal.volumeUpAction,
+        ),
+        volumeDownAction: parseTerminalVolumeKeyAction(
+          terminal.volumeDownAction,
+          defaultDevicePreferences.terminal.volumeDownAction,
+        ),
         fontSize,
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),
         cursorBlink: terminal.cursorBlink ?? defaultDevicePreferences.terminal.cursorBlink,

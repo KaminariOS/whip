@@ -35,6 +35,8 @@ beforeEach(() => {
 test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.terminal).toEqual({
     fullscreen: true,
+    volumeUpAction: 'none',
+    volumeDownAction: 'none',
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
@@ -79,6 +81,8 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     terminalControlUsage: {},
     terminal: {
       fullscreen: true,
+      volumeUpAction: 'none',
+      volumeDownAction: 'none',
       fontSize: 8,
       scrollback: 9000,
       cursorBlink: false,
@@ -174,6 +178,22 @@ test('uses fullscreen terminals by default and allows fullscreen to be disabled'
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { fullscreen: 'no' } }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     terminal: { fullscreen: true },
+  });
+});
+
+test('configures volume keys independently and defaults invalid actions to volume only', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    terminal: { volumeUpAction: 'scroll', volumeDownAction: 'vertical-arrow' },
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { volumeUpAction: 'scroll', volumeDownAction: 'vertical-arrow' },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    terminal: { volumeUpAction: 'louder', volumeDownAction: 1 },
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { volumeUpAction: 'none', volumeDownAction: 'none' },
   });
 });
 

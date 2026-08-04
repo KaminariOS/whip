@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, FolderOpen, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Paperclip, Send, X } from 'lucide-react-native';
 import { Animated, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +15,8 @@ import type { TerminalPreferences } from '../services/devicePreferences';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
+import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '../lib/volumeKeys';
+import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import { colors, useTheme } from '../theme';
 import {
@@ -231,6 +233,25 @@ export function TerminalScreen({
     if (altRef.current === 'armed') setAlt('off');
     return writeInput(value, target);
   };
+
+  const handleVolumeKey = useEffectEvent((key: TerminalVolumeKey) => {
+    if (!visible || !session) return;
+    const configured = key === 'up' ? preferences.volumeUpAction : preferences.volumeDownAction;
+    const action = resolveTerminalVolumeKeyAction(configured, key);
+    if (!action || action.type === 'terminal-tab') return;
+    if (action.type === 'font-size') {
+      renderer.current?.changeFontSize(action.delta);
+    } else if (action.type === 'scroll') {
+      renderer.current?.scroll(action.direction, 1);
+    } else {
+      sendInput(action.data);
+    }
+  });
+
+  useEffect(() => {
+    const subscription = addTerminalVolumeKeyListener(handleVolumeKey);
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (!ready) {

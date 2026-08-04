@@ -1,8 +1,14 @@
-import { BellRing, ChevronRight, Fingerprint, ImagePlus, KeyRound, LogOut, Minus, Plus, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react-native';
+import { BellRing, Check, ChevronRight, Fingerprint, ImagePlus, KeyRound, LogOut, Minus, Plus, ShieldCheck, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Image, StyleSheet, View } from 'react-native';
+import { Alert, Image, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
+import {
+  terminalVolumeKeyActions,
+  type TerminalVolumeKey,
+  type TerminalVolumeKeyAction,
+} from '@/src/lib/volumeKeys';
 import type { AppearancePreference, LanguagePreference, TerminalPreferences } from '@/src/services/devicePreferences';
 import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
@@ -43,6 +49,7 @@ export interface SettingsSectionProps {
 
 export function SettingsSection(props: SettingsSectionProps) {
   const [backgroundBusy, setBackgroundBusy] = useState(false);
+  const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const { t } = useTranslation();
 
   const chooseBackground = async () => {
@@ -139,6 +146,20 @@ export function SettingsSection(props: SettingsSectionProps) {
           <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
           <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
           <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
+          <ChoiceRow
+            title={t('settings.volumeUpKey')}
+            copy={t('settings.volumeKeyCopy')}
+            value={t(volumeKeyActionLabelKey('up', props.terminalPreferences.volumeUpAction))}
+            onPress={() => setVolumeKeyEditor('up')}
+            divided
+          />
+          <ChoiceRow
+            title={t('settings.volumeDownKey')}
+            copy={t('settings.volumeKeyCopy')}
+            value={t(volumeKeyActionLabelKey('down', props.terminalPreferences.volumeDownAction))}
+            onPress={() => setVolumeKeyEditor('down')}
+            divided
+          />
           <SettingRow title={t('settings.doubleTapTab')} copy={t('settings.doubleTapTabCopy')} value={props.terminalPreferences.doubleTapTab} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, doubleTapTab: value })} divided />
           <SettingRow title={t('settings.pauseResizeInBackground')} copy={t('settings.pauseResizeInBackgroundCopy')} value={props.terminalPreferences.pauseResizeInBackground} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, pauseResizeInBackground: value })} divided />
           <ValueRow title={t('settings.fontSize')} value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(24, props.terminalPreferences.fontSize + 1) })} divided />
@@ -164,6 +185,19 @@ export function SettingsSection(props: SettingsSectionProps) {
         <View className="mt-7 flex-row items-start gap-3 rounded-lg bg-muted p-4"><Icon as={ShieldCheck} size={21} /><View className="flex-1"><Text className="text-sm font-semibold leading-[19px]">{t('settings.privateBoundary')}</Text><Text className="mt-1 text-xs leading-[18px] text-muted-foreground">{t('settings.privateBoundaryCopy')}</Text></View></View>
 
         {props.onDisconnect ? <Button className="mt-6 rounded-full" variant="destructive" onPress={hapticPress(props.onDisconnect)}><Icon as={LogOut} className="text-destructive-foreground" size={17} /><Text>{t('settings.disconnect')}</Text></Button> : null}
+        <VolumeKeyActionSheet
+          keyName={volumeKeyEditor}
+          value={volumeKeyEditor === 'down'
+            ? props.terminalPreferences.volumeDownAction
+            : props.terminalPreferences.volumeUpAction}
+          onClose={() => setVolumeKeyEditor(null)}
+          onSelect={action => {
+            props.onTerminalPreferencesChange(volumeKeyEditor === 'down'
+              ? { ...props.terminalPreferences, volumeDownAction: action }
+              : { ...props.terminalPreferences, volumeUpAction: action });
+            setVolumeKeyEditor(null);
+          }}
+        />
       </View>
   );
 }
@@ -236,6 +270,56 @@ function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange:
 function ValueRow({ title, value, onDecrease, onIncrease, divided = false, disabled = false }: { title: string; value: string; onDecrease: () => void; onIncrease: () => void; divided?: boolean; disabled?: boolean }) {
   const { t } = useTranslation();
   return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5' : 'min-h-16 flex-row items-center px-3.5'}><Text className="text-[15px] font-semibold leading-5">{title}</Text><View className="ml-auto flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[92px] text-center text-xs text-muted-foreground/50' : 'min-w-[92px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
+}
+
+function ChoiceRow({ title, copy, value, onPress, divided = false }: { title: string; copy: string; value: string; onPress: () => void; divided?: boolean }) {
+  return (
+    <Button className={divided ? 'min-h-[82px] justify-start rounded-none border-t border-border px-3.5 py-3' : 'min-h-[82px] justify-start rounded-none px-3.5 py-3'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
+      <View className="min-w-0 flex-1 pr-3"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View>
+      <Text className="max-w-[130px] text-right text-xs font-semibold text-primary">{value}</Text>
+      <Icon as={ChevronRight} className="ml-1 text-muted-foreground" size={18} />
+    </Button>
+  );
+}
+
+function volumeKeyActionLabelKey(key: TerminalVolumeKey, action: TerminalVolumeKeyAction): string {
+  return `settings.volumeKeyAction.${key}.${action}`;
+}
+
+function VolumeKeyActionSheet({ keyName, value, onClose, onSelect }: { keyName: TerminalVolumeKey | null; value: TerminalVolumeKeyAction; onClose: () => void; onSelect: (action: TerminalVolumeKeyAction) => void }) {
+  const { bottom } = useSafeAreaInsets();
+  const { t } = useTranslation();
+  const direction = keyName || 'up';
+  return (
+    <Modal animationType="slide" transparent visible={keyName !== null} onRequestClose={onClose}>
+      <View className="flex-1 justify-end">
+        <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/55" onPress={onClose} />
+        <View className="rounded-t-[22px] border-t border-border bg-card px-4 pt-4" style={{ paddingBottom: Math.max(16, bottom) }}>
+          <View className="mb-3 flex-row items-center">
+            <View className="min-w-0 flex-1"><Text className="text-[18px] font-semibold">{t(direction === 'up' ? 'settings.volumeUpKey' : 'settings.volumeDownKey')}</Text><Text className="mt-0.5 text-xs text-muted-foreground">{t('settings.volumeKeySheetCopy')}</Text></View>
+            <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={onClose} />
+          </View>
+          <View className="overflow-hidden rounded-lg border border-border">
+            {terminalVolumeKeyActions.map((action, index) => {
+              const selected = action === value;
+              return (
+                <Button
+                  key={action}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
+                  variant={selected ? 'secondary' : 'ghost'}
+                  onPress={hapticPress(() => onSelect(action))}>
+                  <Text className="flex-1 text-left text-sm font-medium">{t(volumeKeyActionLabelKey(direction, action))}</Text>
+                  {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
+                </Button>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {

@@ -45,12 +45,14 @@ interface RendererEntry {
 
 export interface TerminalRendererHandle {
   blur: () => void;
+  changeFontSize: (delta: -1 | 1) => void;
   clearSearch: () => void;
   fit: () => void;
   focus: () => void;
   paste: (data: string) => void;
   retry: () => void;
   scanLinks: () => void;
+  scroll: (direction: 'up' | 'down', lines: number) => void;
   search: (query: string, caseSensitive: boolean, regex: boolean, direction: number) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
   submit: (data: string) => void;
@@ -238,6 +240,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   useImperativeHandle(forwardedRef, () => ({
     blur: () => activeCall('herdrBlur'),
+    changeFontSize: delta => activeCall('herdrChangeFontSize', [delta]),
     clearSearch: () => activeCall('herdrClearSearch'),
     fit: () => activeCall('herdrFit'),
     focus: () => activeCall('herdrFocus'),
@@ -256,6 +259,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       connectEntry(entry);
     },
     scanLinks: () => activeCall('herdrScanLinks'),
+    scroll: (direction, lines) => activeCall('herdrScroll', [direction, lines]),
     search: (query, caseSensitive, regex, direction) => activeCall(
       'herdrSearch',
       [query, caseSensitive, regex, direction],
