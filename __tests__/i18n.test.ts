@@ -13,4 +13,11 @@ describe('localization resources', () => {
     expect(zhHant['settings.language']).toBe('語言');
     expect(zhHant['connection.addPrivateKey']).toBe('新增私密金鑰');
   });
+
+  it('describes hosts as general SSH destinations', () => {
+    expect(en['hosts.emptyCopy']).toBe('Add an SSH destination to manage its Herdr session.');
+    expect(en['connection.hostOrIp']).toBe('SSH host or IP');
+    expect(en['app.connectUnreachableError']).not.toMatch(/tailscale/i);
+    expect(zhHant['hosts.emptyCopy']).not.toMatch(/tailscale/i);
+  });
 });
