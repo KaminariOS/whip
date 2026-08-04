@@ -8,14 +8,15 @@ import {
 } from '../src/lib/herdrProtocol';
 
 describe('Herdr protocol compatibility', () => {
-  test('accepts both protocols implemented by the Android bridge', () => {
-    expect(HERDR_PROTOCOL_VERSION).toBe(18);
-    expect(HERDR_PROTOCOL_VERSIONS).toEqual([17, 18]);
-    expect(HERDR_PROTOCOL_VERSIONS_LABEL).toBe('17 and 18');
+  test('accepts all protocols implemented by the Android bridge', () => {
+    expect(HERDR_PROTOCOL_VERSION).toBe(19);
+    expect(HERDR_PROTOCOL_VERSIONS).toEqual([17, 18, 19]);
+    expect(HERDR_PROTOCOL_VERSIONS_LABEL).toBe('17–19');
     expect(() => assertHerdrProtocolCompatible(17)).not.toThrow();
     expect(() => assertHerdrProtocolCompatible(18)).not.toThrow();
+    expect(() => assertHerdrProtocolCompatible(19)).not.toThrow();
     expect(() => assertHerdrProtocolCompatible(16)).toThrow(HerdrProtocolMismatchError);
-    expect(() => assertHerdrProtocolCompatible(19)).toThrow(HerdrProtocolMismatchError);
+    expect(() => assertHerdrProtocolCompatible(20)).toThrow(HerdrProtocolMismatchError);
     expect(() => assertHerdrProtocolCompatible(17, false)).toThrow(HerdrProtocolMismatchError);
   });
 

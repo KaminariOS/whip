@@ -120,7 +120,7 @@ For a destination that is not directly reachable, save and connect to the outer 
 
 If Herdr is not installed yet, Whip still keeps the SSH connection open. From the offline host screen, choose **Open SSH shell** and install or troubleshoot Herdr yourself; Whip never installs software on the host.
 
-Whip accepts Herdr releases that report protocol 17 or 18 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
+Whip accepts Herdr releases that report protocols 17 through 19 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
 
 ## How it works
 

@@ -9,7 +9,7 @@ Herdr-specific changes:
 
 - preserve the raw PTY stream and expose a line-shell mode that forwards large
   newline-delimited Herdr frames in bounded React Native event chunks;
-- connect directly to Herdr's protocol 17 or 18 client Unix socket through a persistent
+- connect directly to Herdr's protocol 17 through 19 client Unix socket through a persistent
   OpenSSH stream-local channel for terminal attach, input, resize, scrolling,
   and terminal-id-tagged chunked ANSI frame events;
 - connect directly to Herdr's Unix API socket through an OpenSSH stream-local

@@ -14,7 +14,7 @@ describe('connection error presentation', () => {
     ['com.jcraft.jsch.JSchException: invalid privatekey', 'invalidKey'],
     ['HostKey has been changed', 'hostKey'],
     ['E_HOST_KEY_CHANGED:{"host":"thinker"}', 'hostKey'],
-    ['Herdr protocol mismatch: Whip supports 17 and 18, server reports 16', 'incompatibleProtocol'],
+    ['Herdr protocol mismatch: Whip supports 17–19, server reports 16', 'incompatibleProtocol'],
     ['Herdr API socket is not available', 'herdrUnavailable'],
     ['unexpected native failure', 'unknown'],
   ] as const)('maps %s to a friendly %s message', (error, kind) => {
@@ -30,16 +30,16 @@ describe('connection error presentation', () => {
 
   it('preserves expected and reported protocol versions for the user-facing error', () => {
     expect(connectionErrorContext(
-      'Herdr protocol mismatch: Whip supports 17 and 18, server reports 16',
+      'Herdr protocol mismatch: Whip supports 17–19, server reports 16',
     )).toEqual({
-      expectedProtocol: '17 and 18',
+      expectedProtocol: '17–19',
       receivedProtocol: '16',
     });
     expect(connectionErrorContext(
-      new Error('Herdr protocol mismatch: Android bridge supports 17 and 18, server reports 19'),
+      new Error('Herdr protocol mismatch: Android bridge supports 17 through 19, server reports 20'),
     )).toEqual({
-      expectedProtocol: '17 and 18',
-      receivedProtocol: '19',
+      expectedProtocol: '17 through 19',
+      receivedProtocol: '20',
     });
   });
 });
