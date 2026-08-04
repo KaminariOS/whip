@@ -23,6 +23,18 @@ export function WhipMark({ size, accessibilityLabel }: { size: number; accessibi
   );
 }
 
+export function HerdrMark({ size, accessibilityLabel }: { size: number; accessibilityLabel?: string }) {
+  return (
+    <Image
+      accessibilityIgnoresInvertColors
+      accessibilityLabel={accessibilityLabel}
+      accessible={Boolean(accessibilityLabel)}
+      source={require('../../assets/herdr-icon.png')}
+      style={{ width: size, height: size, borderRadius: size / 4 }}
+    />
+  );
+}
+
 export function hapticPress(handler?: () => void | Promise<void>) {
   return () => {
     Haptics.selectionAsync().catch(() => undefined);

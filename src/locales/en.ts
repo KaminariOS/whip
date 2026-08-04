@@ -15,9 +15,6 @@ export const en = {
   'nav.terminal': 'Terminal',
   'nav.more': 'More',
 
-  'more.connectedTo': 'Connected to {{host}}',
-  'more.noConnection': 'No active connection',
-
   'about.title': 'About',
   'about.copy': 'Releases, version details, compatibility, and terminal fonts.',
   'about.expand': 'Expand About',
@@ -38,6 +35,13 @@ export const en = {
   'about.source': 'Releases',
   'about.githubRepository': 'GitHub releases',
   'about.githubError': 'Could not open GitHub',
+  'about.herdrWebsite': 'Herdr website',
+  'about.herdrWebsiteError': 'Could not open Herdr website',
+  'about.herdrIcon': 'Herdr icon',
+  'about.shareHerdrWebsite': 'Share Herdr website',
+  'about.shareHerdrTitle': 'Herdr',
+  'about.shareHerdrMessage': 'Visit Herdr: {{url}}',
+  'about.shareHerdrError': 'Could not share Herdr',
   'about.shareReleases': 'Share Whip releases',
   'about.shareTitle': 'Whip releases',
   'about.shareMessage': 'Download Whip releases: {{url}}',

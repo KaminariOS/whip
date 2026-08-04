@@ -54,4 +54,18 @@ describe('About screen', () => {
     expect(screen).toContain('className="w-14 self-stretch');
     expect(screen).toContain('size="content"');
   });
+
+  it('links to the Herdr website with the Herdr icon', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/AboutScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain("export const HERDR_WEBSITE_URL = 'https://herdr.dev/';");
+    expect(screen).toContain('Linking.openURL(HERDR_WEBSITE_URL)');
+    expect(screen).toContain('<HerdrMark size={44}');
+    expect(screen).toContain('>herdr.dev</Text>');
+    expect(screen).toContain("t('about.shareHerdrMessage', { url: HERDR_WEBSITE_URL })");
+    expect(screen).toContain("accessibilityLabel={t('about.shareHerdrWebsite')}");
+  });
 });

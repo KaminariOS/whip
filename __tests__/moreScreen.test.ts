@@ -12,6 +12,9 @@ test('shows settings and about content directly in More', () => {
   expect(screen.indexOf('<AboutSection')).toBeLessThan(screen.indexOf('<SettingsSection'));
   expect(screen).not.toContain('onOpenSettings');
   expect(screen).not.toContain('onOpenAbout');
+  expect(screen).not.toContain('connectedHost');
+  expect(screen).not.toContain("t('more.connectedTo'");
+  expect(screen).not.toContain("t('more.noConnection'");
 });
 
 test('does not show the Private SSH boundary card', () => {
