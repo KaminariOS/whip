@@ -1,4 +1,5 @@
 export const HERD_TAB_CLOSE_DISTANCE = 96;
+export const HERD_TAB_MAX_DRAG = 144;
 
 export function shouldClaimHerdTabSwipe(
   dx: number,
@@ -9,7 +10,7 @@ export function shouldClaimHerdTabSwipe(
 }
 
 export function herdTabSwipeOffset(dx: number): number {
-  return Math.min(0, dx);
+  return Math.max(-HERD_TAB_MAX_DRAG, Math.min(0, dx));
 }
 
 export function shouldCloseHerdTabSwipe(
