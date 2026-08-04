@@ -1,6 +1,6 @@
 import { ChevronRight, Plus, Sparkles, SquareTerminal, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, PanResponder, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, Animated, Easing, PanResponder, RefreshControl, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -12,6 +12,7 @@ import {
   type HerdQueueAgent,
 } from '@/src/herdQueue';
 import {
+  HERD_TAB_MAX_DRAG,
   herdTabSwipeOffset,
   shouldClaimHerdTabSwipe,
   shouldCloseHerdTabSwipe,
@@ -25,6 +26,8 @@ import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { WorkspaceRail } from './WorkspaceRail';
+
+const HERD_AGENT_ROW_HEIGHT = 92;
 
 interface Props {
   queues: HerdHostQueue[];
@@ -329,6 +332,8 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
   const { t } = useTranslation();
   const { agent } = item;
   const translateX = useRef(new Animated.Value(0)).current;
+  const rowHeight = useRef(new Animated.Value(HERD_AGENT_ROW_HEIGHT)).current;
+  const rowWidthRef = useRef(0);
   const closingRef = useRef(closing);
   const committingRef = useRef(false);
   closingRef.current = closing;
@@ -355,14 +360,39 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
   const commitClose = hapticPress(() => {
     if (closingRef.current || committingRef.current) return;
     committingRef.current = true;
-    onCloseTab(item);
+    Animated.parallel([
+      Animated.timing(translateX, {
+        toValue: -Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG),
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(rowHeight, {
+        toValue: 0,
+        duration: 150,
+        delay: 50,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: false,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        onCloseTab(item);
+        return;
+      }
+      committingRef.current = false;
+      rowHeight.setValue(HERD_AGENT_ROW_HEIGHT);
+      restore();
+    });
   });
 
   const panResponder = useRef(PanResponder.create({
     onMoveShouldSetPanResponderCapture: (_event, gesture) => (
       !closingRef.current && shouldClaimHerdTabSwipe(gesture.dx, gesture.dy)
     ),
-    onPanResponderGrant: () => translateX.stopAnimation(),
+    onPanResponderGrant: () => {
+      translateX.stopAnimation();
+      rowHeight.stopAnimation();
+    },
     onPanResponderMove: (_event, gesture) => {
       translateX.setValue(herdTabSwipeOffset(gesture.dx));
     },
@@ -370,35 +400,41 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
       if (shouldCloseHerdTabSwipe(gesture.dx, gesture.vx)) commitClose();
       else restore();
     },
-    onPanResponderTerminate: restore,
+    onPanResponderTerminate: () => {
+      if (!committingRef.current) restore();
+    },
     onPanResponderTerminationRequest: () => false,
   })).current;
 
   return (
-    <AnimatedEntrance delay={Math.min(index * 45, 225)}>
-      <View className="relative min-h-[92px] overflow-hidden bg-destructive">
-        <View className="absolute inset-0 items-end justify-center pr-7">
-          <Icon as={X} className="text-destructive-foreground" size={22} />
+    <Animated.View className="overflow-hidden" style={{ height: rowHeight }}>
+      <AnimatedEntrance delay={Math.min(index * 45, 225)}>
+        <View
+          className="relative min-h-[92px] overflow-hidden bg-destructive"
+          onLayout={event => { rowWidthRef.current = event.nativeEvent.layout.width; }}>
+          <View className="absolute inset-0 items-end justify-center pr-7">
+            <Icon as={X} className="text-destructive-foreground" size={22} />
+          </View>
+          <Animated.View
+            className="bg-background"
+            style={{ transform: [{ translateX }] }}
+            {...panResponder.panHandlers}>
+            <Button
+              accessibilityActions={[{ name: 'close-tab', label: t('session.closeTab', { tab: item.tabLabel }) }]}
+              accessibilityLabel={t('herd.openAgentTerminal', { agent: item.primaryLabel, host: item.hostLabel })}
+              className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'}
+              disabled={closing}
+              variant="ghost"
+              onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'close-tab') commitClose(); }}
+              onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
+              <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
+              <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
+              <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
+            </Button>
+          </Animated.View>
         </View>
-        <Animated.View
-          className="bg-background"
-          style={{ transform: [{ translateX }] }}
-          {...panResponder.panHandlers}>
-          <Button
-            accessibilityActions={[{ name: 'close-tab', label: t('session.closeTab', { tab: item.tabLabel }) }]}
-            accessibilityLabel={t('herd.openAgentTerminal', { agent: item.primaryLabel, host: item.hostLabel })}
-            className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'}
-            disabled={closing}
-            variant="ghost"
-            onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'close-tab') commitClose(); }}
-            onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
-            <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
-            <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
-            <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
-          </Button>
-        </Animated.View>
-      </View>
-    </AnimatedEntrance>
+      </AnimatedEntrance>
+    </Animated.View>
   );
 }
 

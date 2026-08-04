@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import {
   HERD_TAB_CLOSE_DISTANCE,
+  HERD_TAB_MAX_DRAG,
   herdTabSwipeOffset,
   shouldClaimHerdTabSwipe,
   shouldCloseHerdTabSwipe,
@@ -16,9 +17,9 @@ describe('Herd tab swipe actions', () => {
     expect(shouldClaimHerdTabSwipe(-8, 0)).toBe(false);
   });
 
-  it('follows leftward movement without allowing a rightward drag', () => {
+  it('follows leftward movement within a bounded reveal', () => {
     expect(herdTabSwipeOffset(-40)).toBe(-40);
-    expect(herdTabSwipeOffset(-300)).toBe(-300);
+    expect(herdTabSwipeOffset(-300)).toBe(-HERD_TAB_MAX_DRAG);
     expect(herdTabSwipeOffset(40)).toBe(0);
   });
 
@@ -38,7 +39,9 @@ describe('Herd tab swipe actions', () => {
     expect(screen).toContain('shouldCloseHerdTabSwipe(gesture.dx, gesture.vx)');
     expect(screen).toContain('const visibleSorted = sorted.filter(');
     expect(screen).toContain('{visibleSorted.map((item, index) => (');
-    expect(screen).not.toContain('Animated.timing(translateX');
+    expect(screen).toContain('Animated.timing(translateX');
+    expect(screen).toContain('Animated.timing(rowHeight');
+    expect(screen).toContain('toValue: -Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG)');
     expect(screen).toContain('<Icon as={X} className="text-destructive-foreground" size={22} />');
     expect(screen).not.toContain('text-destructive-foreground">{t(\'common.close\')}');
     expect(screen).not.toContain('variant="destructive"');
