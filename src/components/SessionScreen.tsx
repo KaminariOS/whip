@@ -34,7 +34,7 @@ import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
-import { sessionTabStatusColor, statusColor, useTheme } from '../theme';
+import { sessionTabGlassStyle, sessionTabStatusColor, statusColor, useTheme } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSheet';
@@ -559,7 +559,10 @@ export function SessionScreen({
                 const itemSession = terminalState.sessions.find(session => itemPanes.some(pane => pane.terminal_id === session.terminalId));
                 const label = item.label || item.tab_id;
                 return (
-                  <View key={item.tab_id} className={cn('h-[30px] max-w-[170px] flex-row items-center overflow-hidden rounded-full bg-muted', active && 'bg-primary')}>
+                  <View
+                    key={item.tab_id}
+                    className="h-[30px] max-w-[170px] flex-row items-center overflow-hidden rounded-full border"
+                    style={sessionTabGlassStyle(active, colors)}>
                     <Button accessibilityLabel={t('session.openTab', { tab: label })} className="h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1" variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={hapticPress(() => openRenameTab(item))}>
                       <AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status, colors)} size={12} />
                       <Text numberOfLines={1} className={cn('max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{label}</Text>
@@ -614,7 +617,10 @@ export function SessionScreen({
                 const active = pane.terminal_id === selectedPane?.terminal_id;
                 const label = pane.label || pane.display_agent || pane.agent || 'shell';
                 return (
-                  <View key={pane.pane_id} className={cn('h-7 max-w-[174px] flex-row items-center overflow-hidden rounded-full bg-muted', active && 'bg-primary')}>
+                  <View
+                    key={pane.pane_id}
+                    className="h-7 max-w-[174px] flex-row items-center overflow-hidden rounded-full border"
+                    style={sessionTabGlassStyle(active, colors)}>
                     <Button accessibilityLabel={t('session.openPane', { pane: label })} className="h-7 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2 py-0" variant="ghost" onPress={hapticPress(() => choosePane(pane))} onLongPress={hapticPress(() => openRenamePane(pane))}>
                       <View className="size-[5px] rounded-full" style={{ backgroundColor: statusColor(pane.agent_status, colors) }} />
                       <Text numberOfLines={1} className={cn('max-w-[112px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{label}</Text>
