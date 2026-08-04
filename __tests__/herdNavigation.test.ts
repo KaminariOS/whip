@@ -24,13 +24,30 @@ describe('terminal to Herd navigation', () => {
     expect(app).toContain('onExit={() => exitTerminalToHerd(activeSession.id)}');
   });
 
-  it('only starts an agent inside the selected space', () => {
+  it('opens the selected space and offers the configured agent command when it is empty', () => {
     const app = readSource('App.tsx');
     const herd = readSource('src/components/HerdScreen.tsx');
+    const settings = readSource('src/components/SettingsScreen.tsx');
 
-    expect(herd).toContain('if (!selectedQueue || !selectedWorkspace || !name.trim() || !command.trim()) return;');
-    expect(herd).toContain('await onStart(selectedQueue.id, selectedWorkspace.workspace_id, name, command);');
-    expect(herd).toContain('{selectedWorkspace ? (');
-    expect(app).toContain('await runtime.client.startAgent(workspaceId, name, command);');
+    expect(herd).toContain('if (!selectedQueue || !selectedWorkspace) return;');
+    expect(herd).toContain('await runWorkspaceAction(() => onOpenSpace(');
+    expect(herd).toContain('{selectedQueue?.running && selectedWorkspace && queueAgents.length === 0 ? (');
+    expect(herd).toContain("t('herd.openSpace')");
+    expect(herd).toContain("accessibilityLabel={t('herd.openSpace')}");
+    expect(herd).not.toContain('variant="ghost" disabled={workspaceBusy} onPress={hapticPress(openSpace)}');
+    expect(herd).not.toContain('selectedQueue ? selectedQueue.address');
+    expect(herd.indexOf("accessibilityLabel={t('herd.openSpace')}"))
+      .toBeLessThan(herd.indexOf('<Metric value={queueAgents.length}'));
+    expect(herd).toContain("accessibilityLabel={t('herd.startAgent')}");
+    expect(herd).toContain('onStartAgent(');
+    expect(herd).toContain('agentCommand.trim()');
+    expect(app).toContain('const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {');
+    expect(app).toContain('await selectHerdWorkspace(sessionId, workspaceId);');
+    expect(app).toContain("selectLiveHost(sessionId, 'terminal');");
+    expect(app).toContain('onOpenSpace={openHerdWorkspace}');
+    expect(app).toContain("await runtime.client.startAgent(workspaceId, 'agent', command);");
+    expect(app).toContain('agentCommand={agentCommand}');
+    expect(settings).toContain("t('settings.agentCommand')");
+    expect(settings).toContain('onChangeText={props.onAgentCommandChange}');
   });
 });
