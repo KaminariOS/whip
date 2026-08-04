@@ -3,6 +3,7 @@ import {
   githubLightPalette,
   lightColors,
   resolveTheme,
+  sessionTabGlassStyle,
   sessionTabStatusColor,
   statusColor,
   terminalColors,
@@ -42,5 +43,16 @@ describe('application theme', () => {
     expect(sessionTabStatusColor('idle', 'connected', darkColors)).toBe(darkColors.idle);
     expect(sessionTabStatusColor('working', 'error', darkColors)).toBe(darkColors.blocked);
     expect(sessionTabStatusColor('working', 'disconnected', darkColors)).toBe(darkColors.idle);
+  });
+
+  test('keeps terminal tab glass translucent without fading its contents', () => {
+    expect(sessionTabGlassStyle(false, darkColors)).toEqual({
+      backgroundColor: `${darkColors.surface}B8`,
+      borderColor: `${darkColors.text}29`,
+    });
+    expect(sessionTabGlassStyle(true, darkColors)).toEqual({
+      backgroundColor: `${darkColors.primary}D6`,
+      borderColor: `${darkColors.onPrimary}47`,
+    });
   });
 });

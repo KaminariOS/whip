@@ -160,6 +160,17 @@ export function sessionTabStatusColor(
     : statusColor(agentStatus, palette);
 }
 
+export function sessionTabGlassStyle(active: boolean, palette: ThemeColors) {
+  return {
+    backgroundColor: colorWithAlpha(active ? palette.primary : palette.surface, active ? 'D6' : 'B8'),
+    borderColor: colorWithAlpha(active ? palette.onPrimary : palette.text, active ? '47' : '29'),
+  };
+}
+
+function colorWithAlpha(color: string, alpha: string) {
+  return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
+}
+
 export const radii = {
   sm: 8,
   md: 12,

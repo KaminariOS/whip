@@ -64,6 +64,17 @@ describe('session tab labels', () => {
     expect(workspaceRail).not.toContain('bg-terminal-panel');
   });
 
+  it('uses translucent glass styling for terminal tabs and panes', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/SessionScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen.match(/style=\{sessionTabGlassStyle\(active, colors\)\}/g)).toHaveLength(2);
+    expect(screen.match(/overflow-hidden rounded-full border/g)).toHaveLength(2);
+    expect(screen).not.toContain("rounded-full bg-muted', active && 'bg-primary'");
+  });
+
   it('leaves enough vertical space for Android font descenders', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/SessionScreen.tsx'),
