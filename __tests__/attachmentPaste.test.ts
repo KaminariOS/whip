@@ -45,6 +45,24 @@ test('registers Android clipboard attachments and requests camera access', () =>
   const manifest = readFileSync(resolve(__dirname, '../android/app/src/main/AndroidManifest.xml'), 'utf8');
 
   expect(nativePackage).toContain('ClipboardAttachmentModule(reactContext)');
+  expect(nativePackage).toContain('ImageLibraryPickerModule(reactContext)');
   expect(manifest).toContain('android.permission.CAMERA');
   expect(manifest).not.toContain('tools:node="remove"');
+});
+
+test('uses the lifecycle-safe native Android picker for library images', () => {
+  const picker = readFileSync(resolve(
+    __dirname,
+    '../android/app/src/main/java/io/github/kaminarios/whip/ImageLibraryPickerModule.kt',
+  ), 'utf8');
+  const attachmentService = readFileSync(resolve(
+    __dirname,
+    '../src/services/attachmentPaste.ts',
+  ), 'utf8');
+
+  expect(picker).toContain('ActivityEventListener');
+  expect(picker).toContain('MediaStore.ACTION_PICK_IMAGES');
+  expect(picker).toContain('Intent.ACTION_OPEN_DOCUMENT');
+  expect(picker).toContain('type = "image/*"');
+  expect(attachmentService).toContain('await pickImageFromLibrary()');
 });

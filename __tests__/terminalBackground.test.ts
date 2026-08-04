@@ -2,7 +2,8 @@ const mockExistingFiles = new Set<string>();
 const mockCopies: Array<{ source: string; destination: string; overwrite?: boolean }> = [];
 const mockDeletedFiles: string[] = [];
 const mockCreatedDirectories: string[] = [];
-const mockLaunchImageLibrary = jest.fn();
+const mockPickImageFromLibrary = jest.fn();
+const mockDisposePickedImage = jest.fn();
 
 jest.mock('expo-file-system', () => {
   const join = (...parts: Array<string | { uri: string }>) => parts.reduce<string>((path, part) => {
@@ -55,8 +56,8 @@ jest.mock('expo-file-system', () => {
   };
 });
 
-jest.mock('expo-image-picker', () => ({
-  launchImageLibraryAsync: (...args: unknown[]) => mockLaunchImageLibrary(...args),
+jest.mock('../src/services/imageLibraryPicker', () => ({
+  pickImageFromLibrary: () => mockPickImageFromLibrary(),
 }));
 
 import {
@@ -70,15 +71,18 @@ beforeEach(() => {
   mockCopies.length = 0;
   mockDeletedFiles.length = 0;
   mockCreatedDirectories.length = 0;
-  mockLaunchImageLibrary.mockReset();
+  mockPickImageFromLibrary.mockReset();
+  mockDisposePickedImage.mockReset();
 });
 
 test('copies selected images into the backed-up terminal background directory', async () => {
   const previousUri = 'file:///data/user/0/io.github.kaminarios.whip/files/herdr-terminal-background-old.webp';
   mockExistingFiles.add(previousUri);
-  mockLaunchImageLibrary.mockResolvedValue({
-    canceled: false,
-    assets: [{ uri: 'content://picker/background', fileName: 'wallpaper.png', mimeType: 'image/png' }],
+  mockPickImageFromLibrary.mockResolvedValue({
+    uri: 'file:///cache/image-library-picker/background',
+    name: 'wallpaper.png',
+    mimeType: 'image/png',
+    dispose: mockDisposePickedImage,
   });
   jest.spyOn(Date, 'now').mockReturnValueOnce(1234);
 
@@ -89,11 +93,12 @@ test('copies selected images into the backed-up terminal background directory', 
     'file:///data/user/0/io.github.kaminarios.whip/files/terminal-backgrounds',
   ]);
   expect(mockCopies).toEqual([{
-    source: 'content://picker/background',
+    source: 'file:///cache/image-library-picker/background',
     destination: 'file:///data/user/0/io.github.kaminarios.whip/files/terminal-backgrounds/herdr-terminal-background-1234.png',
     overwrite: undefined,
   }]);
   expect(mockDeletedFiles).toEqual([previousUri]);
+  expect(mockDisposePickedImage).toHaveBeenCalledTimes(1);
 });
 
 test('moves a legacy app-private image into the backed-up directory', async () => {
