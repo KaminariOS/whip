@@ -14,6 +14,7 @@ const LEGACY_DEVICE_PREFERENCES_KEYS = [
 ];
 
 export interface TerminalPreferences {
+  fullscreen: boolean;
   fontSize: number;
   scrollback: number;
   cursorBlink: boolean;
@@ -58,6 +59,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   agentCommand: 'opencode',
   lastTab: 'hosts',
   terminal: {
+    fullscreen: true,
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
@@ -125,6 +127,9 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
       lastTab: isAppTab(parsed.lastTab) ? parsed.lastTab : defaultDevicePreferences.lastTab,
       terminalControlUsage: parseTerminalControlUsage(parsed.terminalControlUsage),
       terminal: {
+        fullscreen: typeof terminal.fullscreen === 'boolean'
+          ? terminal.fullscreen
+          : defaultDevicePreferences.terminal.fullscreen,
         fontSize,
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),
         cursorBlink: terminal.cursorBlink ?? defaultDevicePreferences.terminal.cursorBlink,

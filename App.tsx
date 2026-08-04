@@ -197,12 +197,10 @@ function disposeRuntimes(target: Map<string, LiveRuntime>): void {
 
 function App() {
   const [guiFontsLoaded, guiFontError] = useFonts(guiFontAssets);
-  const { colors: theme, isDark } = useTheme();
   if (!guiFontsLoaded && !guiFontError) return null;
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.canvas} />
       <AppContent />
       <PortalHost />
     </SafeAreaProvider>
@@ -211,6 +209,7 @@ function App() {
 
 function AppContent() {
   const { t } = useTranslation();
+  const { colors: theme, isDark } = useTheme();
   const locales = useLocales();
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
@@ -1405,6 +1404,7 @@ function AppContent() {
   const terminalVisible = navigation.tab === 'terminal' && !editorProfile;
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
   const activeTerminalVisible = immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
+  const fullscreenTerminalVisible = activeTerminalVisible && terminalPreferences.fullscreen;
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
     hostId: session.id,
     label: hostDisplayName(session.host),
@@ -1414,9 +1414,16 @@ function AppContent() {
   }));
 
   return (
-    <SafeAreaView
-      className="flex-1 bg-background"
-      edges={['top', 'left', 'right']}>
+    <>
+      <StatusBar
+        animated
+        hidden={fullscreenTerminalVisible}
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.canvas}
+      />
+      <SafeAreaView
+        className="flex-1 bg-background"
+        edges={fullscreenTerminalVisible ? ['left', 'right'] : ['top', 'left', 'right']}>
       {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
       <View className="flex-1 bg-background">
         {!immersiveTerminal && (
@@ -1599,7 +1606,8 @@ function AppContent() {
         visible={appAccessLocked}
         onRetry={() => { authenticateLockedApp(); }}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </>
   );
 }
 

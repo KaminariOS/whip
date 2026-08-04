@@ -205,6 +205,8 @@ export const zhHant: Record<string, string> = {
   'settings.agentCommand': '代理程式指令',
   'settings.agentCommandCopy': '所選空間沒有代理程式時，「啟動代理程式」使用的指令。',
   'settings.terminal': '終端機',
+  'settings.fullscreenTerminal': '全螢幕終端機',
+  'settings.fullscreenTerminalCopy': '終端機開啟時隱藏 Android 狀態列。',
   'settings.keepScreenOn': '保持螢幕開啟',
   'settings.keepScreenOnCopy': '終端機開啟時防止裝置休眠。',
   'settings.reopenTerminal': '啟動時重新開啟終端機',

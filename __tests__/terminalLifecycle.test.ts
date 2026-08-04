@@ -127,11 +127,13 @@ describe('terminal renderer lifecycle', () => {
     expect(client).toContain('async focusPane(paneId: string)');
   });
 
-  it('keeps hidden terminals at immersive height while bottom navigation is visible', () => {
+  it('uses the full display while an active terminal is visible', () => {
     const app = readSource('App.tsx');
     const bottomNavigation = readSource('src/components/BottomNavigation.tsx');
 
-    expect(app).toContain("edges={['top', 'left', 'right']}");
+    expect(app).toContain('fullscreenTerminalVisible = activeTerminalVisible && terminalPreferences.fullscreen');
+    expect(app).toContain('hidden={fullscreenTerminalVisible}');
+    expect(app).toContain("edges={fullscreenTerminalVisible ? ['left', 'right'] : ['top', 'left', 'right']}");
     expect(app).toContain('{!immersiveTerminal && (');
     expect(bottomNavigation).toContain('style={{ minHeight: 66 + bottom, paddingBottom: bottom }}');
   });

@@ -34,6 +34,7 @@ beforeEach(() => {
 
 test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.terminal).toEqual({
+    fullscreen: true,
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
@@ -77,6 +78,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     lastTab: 'terminal',
     terminalControlUsage: {},
     terminal: {
+      fullscreen: true,
       fontSize: 8,
       scrollback: 9000,
       cursorBlink: false,
@@ -160,6 +162,18 @@ test('allows double-tap Tab to be explicitly disabled', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapTab: 'no' } }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     terminal: { doubleTapTab: true },
+  });
+});
+
+test('uses fullscreen terminals by default and allows fullscreen to be disabled', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { fullscreen: false } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { fullscreen: false },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { fullscreen: 'no' } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { fullscreen: true },
   });
 });
 
