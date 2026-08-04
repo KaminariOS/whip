@@ -50,6 +50,7 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.biometricOnResume).toBe(false);
   expect(defaultDevicePreferences.keepScreenOn).toBe(false);
   expect(defaultDevicePreferences.reopenTerminalOnLaunch).toBe(false);
+  expect(defaultDevicePreferences.agentCommand).toBe('opencode');
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
 });
 
@@ -72,6 +73,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     language: 'system',
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
+    agentCommand: 'opencode',
     lastTab: 'terminal',
     terminalControlUsage: {},
     terminal: {
@@ -85,6 +87,16 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       backgroundDimming: 60,
     },
   });
+});
+
+test('loads a configured agent command and rejects blank values', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ agentCommand: 'claude --dangerously-skip-permissions' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    agentCommand: 'claude --dangerously-skip-permissions',
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ agentCommand: '   ' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ agentCommand: 'opencode' });
 });
 
 test('loads biometric key protection only when explicitly enabled', async () => {

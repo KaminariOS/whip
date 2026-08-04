@@ -9,6 +9,7 @@ import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/
 import { hapticPress, IconButton } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
+import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 
@@ -23,6 +24,7 @@ export interface SettingsSectionProps {
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
+  agentCommand: string;
   onAlertsChange: (value: boolean) => void;
   onTtsChange: (value: boolean) => void;
   onBiometricForKeysChange: (value: boolean) => void;
@@ -33,6 +35,7 @@ export interface SettingsSectionProps {
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
   onReopenTerminalOnLaunchChange: (value: boolean) => void;
+  onAgentCommandChange: (value: string) => void;
   terminalPreferences: TerminalPreferences;
   onTerminalPreferencesChange: (value: TerminalPreferences) => void;
   onDisconnect?: () => void;
@@ -113,6 +116,22 @@ export function SettingsSection(props: SettingsSectionProps) {
         <View className="gap-3">
           <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
           <LanguageRow value={props.language} onChange={props.onLanguageChange} />
+        </View>
+
+        <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.herd')}</Text>
+        <View className="overflow-hidden rounded-lg border border-border bg-card">
+          <View className="p-3.5">
+            <Text className="text-[15px] font-semibold leading-5">{t('settings.agentCommand')}</Text>
+            <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('settings.agentCommandCopy')}</Text>
+            <Input
+              className="mt-3 font-mono"
+              value={props.agentCommand}
+              onChangeText={props.onAgentCommandChange}
+              placeholder="opencode"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
         </View>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.terminal')}</Text>

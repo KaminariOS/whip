@@ -28,6 +28,7 @@ export function MoreScreen(props: Props) {
         language={props.language}
         keepScreenOn={props.keepScreenOn}
         reopenTerminalOnLaunch={props.reopenTerminalOnLaunch}
+        agentCommand={props.agentCommand}
         terminalPreferences={props.terminalPreferences}
         onAlertsChange={props.onAlertsChange}
         onTtsChange={props.onTtsChange}
@@ -39,6 +40,7 @@ export function MoreScreen(props: Props) {
         onLanguageChange={props.onLanguageChange}
         onKeepScreenOnChange={props.onKeepScreenOnChange}
         onReopenTerminalOnLaunchChange={props.onReopenTerminalOnLaunchChange}
+        onAgentCommandChange={props.onAgentCommandChange}
         onTerminalPreferencesChange={props.onTerminalPreferencesChange}
         onDisconnect={props.onDisconnect}
       />

@@ -257,6 +257,7 @@ function AppContent() {
   const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
   const [reopenTerminalOnLaunch, setReopenTerminalOnLaunch] = useState(defaultDevicePreferences.reopenTerminalOnLaunch);
+  const [agentCommand, setAgentCommand] = useState(defaultDevicePreferences.agentCommand);
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
   const [terminalControlUsage, setTerminalControlUsage] = useState<TerminalControlUsage>(defaultDevicePreferences.terminalControlUsage);
   const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
@@ -339,6 +340,7 @@ function AppContent() {
         setLanguage(preferences.language);
         setKeepScreenOn(preferences.keepScreenOn);
         setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
+        setAgentCommand(preferences.agentCommand);
         applyAppearance(preferences.appearance);
         setTerminalPreferences(preferences.terminal);
         setTerminalControlUsage(preferences.terminalControlUsage);
@@ -369,11 +371,12 @@ function AppContent() {
       language,
       keepScreenOn,
       reopenTerminalOnLaunch,
+      agentCommand,
       lastTab: navigation.tab,
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [alertsEnabled, appearance, biometricForKeys, biometricOnResume, keepScreenOn, language, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [agentCommand, alertsEnabled, appearance, biometricForKeys, biometricOnResume, keepScreenOn, language, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
@@ -1350,6 +1353,11 @@ function AppContent() {
     await refreshHost(sessionId);
   };
 
+  const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {
+    await selectHerdWorkspace(sessionId, workspaceId);
+    selectLiveHost(sessionId, 'terminal');
+  };
+
   const createHerdWorkspace = async (sessionId: string, name: string, cwd: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
@@ -1371,10 +1379,10 @@ function AppContent() {
     await refreshHost(sessionId);
   };
 
-  const startAgent = async (sessionId: string, workspaceId: string, name: string, command: string) => {
+  const startHerdAgent = async (sessionId: string, workspaceId: string, command: string) => {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime) return;
-    await runtime.client.startAgent(workspaceId, name, command);
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    await runtime.client.startAgent(workspaceId, 'agent', command);
     await refreshHost(sessionId);
   };
 
@@ -1448,6 +1456,7 @@ function AppContent() {
                 sessions={railSessions}
                 selectedHostId={selectedHerdHostId}
                 workspaceFilterId={selectedHerdWorkspaceId}
+                agentCommand={agentCommand}
                 onSelectHost={selectHerdHost}
                 onWorkspaceFilterChange={setHerdWorkspaceFilter}
                 onCloseHost={closeLiveHost}
@@ -1458,7 +1467,8 @@ function AppContent() {
                 onCloseWorkspace={closeHerdWorkspace}
                 onRefresh={refreshHerd}
                 onOpenTerminal={openAgentTerminal}
-                onStart={startAgent}
+                onStartAgent={startHerdAgent}
+                onOpenSpace={openHerdWorkspace}
                 onStartServer={startServer}
                 onOpenSshShell={openSshShell}
               />
@@ -1482,6 +1492,7 @@ function AppContent() {
               language={language}
               keepScreenOn={keepScreenOn}
               reopenTerminalOnLaunch={reopenTerminalOnLaunch}
+              agentCommand={agentCommand}
               terminalPreferences={terminalPreferences}
               server={activeSession?.snapshot.server || null}
               onAlertsChange={setAlertsEnabled}
@@ -1494,6 +1505,7 @@ function AppContent() {
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
               onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
+              onAgentCommandChange={setAgentCommand}
               onTerminalPreferencesChange={setTerminalPreferences}
               onDisconnect={activeSession ? () => closeLiveHost(activeSession.id) : undefined}
             />

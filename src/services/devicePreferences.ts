@@ -40,6 +40,7 @@ export interface DevicePreferences {
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
+  agentCommand: string;
   lastTab: AppTab;
   terminal: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
@@ -54,6 +55,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   language: 'system',
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
+  agentCommand: 'opencode',
   lastTab: 'hosts',
   terminal: {
     fontSize: 8,
@@ -117,6 +119,9 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         : defaultDevicePreferences.language,
       keepScreenOn: parsed.keepScreenOn === true,
       reopenTerminalOnLaunch: parsed.reopenTerminalOnLaunch === true,
+      agentCommand: typeof parsed.agentCommand === 'string' && parsed.agentCommand.trim()
+        ? parsed.agentCommand
+        : defaultDevicePreferences.agentCommand,
       lastTab: isAppTab(parsed.lastTab) ? parsed.lastTab : defaultDevicePreferences.lastTab,
       terminalControlUsage: parseTerminalControlUsage(parsed.terminalControlUsage),
       terminal: {

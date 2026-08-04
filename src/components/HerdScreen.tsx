@@ -1,4 +1,4 @@
-import { ChevronRight, Plus, Sparkles, SquareTerminal, X } from 'lucide-react-native';
+import { ChevronRight, Plus, Sparkles, SquareTerminal } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -26,6 +26,7 @@ interface Props {
   sessions: LiveSessionRailItem[];
   selectedHostId: string | null;
   workspaceFilterId: string | null;
+  agentCommand: string;
   onSelectHost: (hostId: string | null) => void;
   onWorkspaceFilterChange: (hostId: string, workspaceId: string | null) => void;
   onCloseHost: (hostId: string) => void;
@@ -36,7 +37,8 @@ interface Props {
   onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
   onRefresh: () => void;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
-  onStart: (hostId: string, workspaceId: string, name: string, command: string) => Promise<void>;
+  onStartAgent: (hostId: string, workspaceId: string, command: string) => Promise<void>;
+  onOpenSpace: (hostId: string, workspaceId: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
   onOpenSshShell: (hostId: string) => void;
 }
@@ -46,6 +48,7 @@ export function HerdScreen({
   sessions,
   selectedHostId,
   workspaceFilterId,
+  agentCommand,
   onSelectHost,
   onWorkspaceFilterChange,
   onCloseHost,
@@ -56,7 +59,8 @@ export function HerdScreen({
   onCloseWorkspace,
   onRefresh,
   onOpenTerminal,
-  onStart,
+  onStartAgent,
+  onOpenSpace,
   onStartServer,
   onOpenSshShell,
 }: Props) {
@@ -73,9 +77,6 @@ export function HerdScreen({
   const working = queueAgents.filter(item => item.agent.agent_status === 'working').length;
   const done = queueAgents.filter(item => item.agent.agent_status === 'done').length;
   const refreshing = scopedQueues.some(queue => queue.refreshing);
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('agent');
-  const [command, setCommand] = useState('');
   const [workspaceEditorMode, setWorkspaceEditorMode] = useState<'create' | 'rename' | null>(null);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
@@ -88,7 +89,6 @@ export function HerdScreen({
   }, [onWorkspaceFilterChange, selectedQueue, selectedWorkspaceId, workspaceFilterId]);
 
   const selectHost = (hostId: string | null) => {
-    setCreating(false);
     setWorkspaceEditorMode(null);
     onSelectHost(hostId);
   };
@@ -107,7 +107,6 @@ export function HerdScreen({
   };
 
   const selectWorkspace = (workspaceId: string | null) => {
-    setCreating(false);
     setWorkspaceEditorMode(null);
     if (workspaceId && selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, workspaceId);
@@ -161,11 +160,21 @@ export function HerdScreen({
     ]);
   };
 
-  const start = async () => {
-    if (!selectedQueue || !selectedWorkspace || !name.trim() || !command.trim()) return;
-    await onStart(selectedQueue.id, selectedWorkspace.workspace_id, name, command);
-    setCommand('');
-    setCreating(false);
+  const openSpace = async () => {
+    if (!selectedQueue || !selectedWorkspace) return;
+    await runWorkspaceAction(() => onOpenSpace(
+      selectedQueue.id,
+      selectedWorkspace.workspace_id,
+    ));
+  };
+
+  const startAgent = async () => {
+    if (!selectedQueue || !selectedWorkspace || queueAgents.length > 0 || !agentCommand.trim()) return;
+    await runWorkspaceAction(() => onStartAgent(
+      selectedQueue.id,
+      selectedWorkspace.workspace_id,
+      agentCommand.trim(),
+    ));
   };
 
   const sorted = orderByAgentStatusPriority(
@@ -207,9 +216,11 @@ export function HerdScreen({
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} colors={[colors.text]} />}
       >
         <View className="p-4 pb-8">
-          <Text className="mb-6 px-1 text-xs leading-[17px] text-muted-foreground">
-            {selectedQueue ? selectedQueue.address : t('herd.mergedQueue', { hosts: hostCountLabel })}
-          </Text>
+          {!selectedQueue ? (
+            <Text className="mb-6 px-1 text-xs leading-[17px] text-muted-foreground">
+              {t('herd.mergedQueue', { hosts: hostCountLabel })}
+            </Text>
+          ) : null}
 
         {selectedQueue && !selectedQueue.running ? (
           <View className="min-h-[360px] items-center justify-center p-7">
@@ -228,6 +239,19 @@ export function HerdScreen({
           </View>
         ) : (
           <>
+            {selectedQueue?.running && selectedWorkspace && queueAgents.length === 0 ? (
+              <View className="mb-3 flex-row justify-end gap-2">
+                <Button accessibilityLabel={t('herd.startAgent')} className="rounded-full px-4" size="sm" disabled={workspaceBusy || !agentCommand.trim()} onPress={hapticPress(startAgent)}>
+                  <Icon as={Plus} size={16} />
+                  <Text>{t('herd.startAgent')}</Text>
+                </Button>
+                <Button accessibilityLabel={t('herd.openSpace')} className="rounded-full px-4" size="sm" variant="secondary" disabled={workspaceBusy} onPress={hapticPress(openSpace)}>
+                  <Icon as={SquareTerminal} size={16} />
+                  <Text>{t('herd.openSpace')}</Text>
+                </Button>
+              </View>
+            ) : null}
+
             <View className="mb-6 flex-row">
               <Metric value={queueAgents.length} label={t('herd.agents')} />
               <Metric value={working} label={t('herd.working')} status="working" />
@@ -235,26 +259,9 @@ export function HerdScreen({
               <Metric value={done} label={t('herd.done')} status="done" />
             </View>
 
-            <View className="min-h-10 flex-row items-center justify-between">
+            <View className="min-h-10 flex-row items-center">
               <Text className="px-1 text-sm font-semibold text-muted-foreground">{t('herd.attentionQueue')}</Text>
-              {selectedWorkspace ? (
-                <Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(value => !value))}>
-                  {creating ? <Icon as={X} size={16} color={colors.text} /> : <Icon as={Plus} size={16} />}
-                  <Text>{creating ? t('common.close') : t('herd.startAgent')}</Text>
-                </Button>
-              ) : null}
             </View>
-
-            {creating && selectedWorkspace ? (
-              <AnimatedEntrance className="mb-4">
-                <View className="gap-2.5 rounded-lg border border-border bg-card p-3.5">
-                  <Text className="mb-0.5 text-[17px] font-semibold leading-[22px]">{t('herd.startAgentIn', { workspace: selectedWorkspace.label || selectedWorkspace.workspace_id })}</Text>
-                  <Input value={name} onChangeText={setName} placeholder={t('herd.agentName')} />
-                  <Input value={command} onChangeText={setCommand} placeholder={t('herd.commandExample')} autoCapitalize="none" />
-                  <View className="mt-0.5 flex-row justify-end gap-2"><Button size="sm" variant="ghost" onPress={hapticPress(() => setCreating(false))}><Text>{t('common.cancel')}</Text></Button><Button size="sm" disabled={!name.trim() || !command.trim()} onPress={hapticPress(start)}><Text>{t('herd.launch')}</Text></Button></View>
-                </View>
-              </AnimatedEntrance>
-            ) : null}
 
             {sorted.length === 0 ? (
               <View className="min-h-[360px] items-center justify-center p-7">
