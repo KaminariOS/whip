@@ -1,6 +1,6 @@
-import { ChevronRight, Plus, Sparkles, SquareTerminal } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, View } from 'react-native';
+import { ChevronRight, Plus, Sparkles, SquareTerminal, X } from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, PanResponder, RefreshControl, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -11,6 +11,11 @@ import {
   type HerdHostQueue,
   type HerdQueueAgent,
 } from '@/src/herdQueue';
+import {
+  herdTabSwipeOffset,
+  shouldClaimHerdTabSwipe,
+  shouldCloseHerdTabSwipe,
+} from '@/src/lib/herdTabSwipeActions';
 import { statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, AnimatedEntrance, hapticPress, StatusBadge } from './app-ui';
@@ -35,6 +40,7 @@ interface Props {
   onCreateWorkspace: (hostId: string, name: string, cwd: string) => Promise<void>;
   onRenameWorkspace: (hostId: string, workspaceId: string, name: string) => Promise<void>;
   onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
+  onCloseTab: (hostId: string, tabId: string) => Promise<void>;
   onRefresh: () => void;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
   onStartAgent: (hostId: string, workspaceId: string, command: string) => Promise<void>;
@@ -57,6 +63,7 @@ export function HerdScreen({
   onCreateWorkspace,
   onRenameWorkspace,
   onCloseWorkspace,
+  onCloseTab,
   onRefresh,
   onOpenTerminal,
   onStartAgent,
@@ -81,6 +88,7 @@ export function HerdScreen({
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [closingTabKey, setClosingTabKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (workspaceFilterId && !selectedWorkspaceId && selectedQueue) {
@@ -177,10 +185,27 @@ export function HerdScreen({
     ));
   };
 
+  const closeTab = async (item: HerdQueueAgent): Promise<boolean> => {
+    const key = `${item.hostId}:${item.agent.tab_id}`;
+    setClosingTabKey(key);
+    try {
+      await onCloseTab(item.hostId, item.agent.tab_id);
+      return true;
+    } catch (error) {
+      Alert.alert(t('herd.commandFailed'), String(error));
+      return false;
+    } finally {
+      setClosingTabKey(null);
+    }
+  };
+
   const sorted = orderByAgentStatusPriority(
     queueAgents,
     item => item.agent.agent_status,
     item => item.agent.state_change_seq,
+  );
+  const visibleSorted = sorted.filter(
+    item => closingTabKey !== `${item.hostId}:${item.agent.tab_id}`,
   );
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
 
@@ -263,7 +288,7 @@ export function HerdScreen({
               <Text className="px-1 text-sm font-semibold text-muted-foreground">{t('herd.attentionQueue')}</Text>
             </View>
 
-            {sorted.length === 0 ? (
+            {visibleSorted.length === 0 ? (
               <View className="min-h-[360px] items-center justify-center p-7">
                 <View className="size-16 items-center justify-center rounded-full bg-muted"><Icon as={Sparkles} size={28} /></View>
                 <Text className="mt-[18px] text-xl font-semibold leading-[26px]">{t('herd.noAgents')}</Text>
@@ -271,13 +296,15 @@ export function HerdScreen({
               </View>
             ) : (
               <View className="border-y border-border">
-                {sorted.map((item, index) => (
+                {visibleSorted.map((item, index) => (
                   <AgentRow
                     key={`${item.hostId}:${item.agent.terminal_id}`}
                     item={item}
                     index={index}
                     showHost={selectedHostId === null}
                     onOpenTerminal={onOpenTerminal}
+                    closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
+                    onCloseTab={closeTab}
                   />
                 ))}
               </View>
@@ -290,10 +317,21 @@ export function HerdScreen({
   );
 }
 
-function AgentRow({ item, index, showHost, onOpenTerminal }: { item: HerdQueueAgent; index: number; showHost: boolean; onOpenTerminal: (hostId: string, agent: AgentInfo) => void }) {
+function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }: {
+  item: HerdQueueAgent;
+  index: number;
+  showHost: boolean;
+  closing: boolean;
+  onCloseTab: (item: HerdQueueAgent) => Promise<boolean>;
+  onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
+}) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const { agent } = item;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const closingRef = useRef(closing);
+  const committingRef = useRef(false);
+  closingRef.current = closing;
   const agentLabel = agent.display_agent || agent.name || agent.agent || 'agent';
   const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
   const tone = statusColor(agent.agent_status, colors);
@@ -302,13 +340,64 @@ function AgentRow({ item, index, showHost, onOpenTerminal }: { item: HerdQueueAg
     agentLabel,
     ...(agent.focused ? [t('herd.focused')] : []),
   ].join(' · ');
+
+  const restore = () => {
+    Animated.spring(translateX, {
+      toValue: 0,
+      damping: 24,
+      stiffness: 260,
+      mass: 0.8,
+      overshootClamping: true,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const commitClose = hapticPress(() => {
+    if (closingRef.current || committingRef.current) return;
+    committingRef.current = true;
+    onCloseTab(item);
+  });
+
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => (
+      !closingRef.current && shouldClaimHerdTabSwipe(gesture.dx, gesture.dy)
+    ),
+    onPanResponderGrant: () => translateX.stopAnimation(),
+    onPanResponderMove: (_event, gesture) => {
+      translateX.setValue(herdTabSwipeOffset(gesture.dx));
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      if (shouldCloseHerdTabSwipe(gesture.dx, gesture.vx)) commitClose();
+      else restore();
+    },
+    onPanResponderTerminate: restore,
+    onPanResponderTerminationRequest: () => false,
+  })).current;
+
   return (
     <AnimatedEntrance delay={Math.min(index * 45, 225)}>
-      <Button accessibilityLabel={t('herd.openAgentTerminal', { agent: item.primaryLabel, host: item.hostLabel })} className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'} variant="ghost" onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
-        <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
-        <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
-        <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
-      </Button>
+      <View className="relative min-h-[92px] overflow-hidden bg-destructive">
+        <View className="absolute inset-0 items-end justify-center pr-7">
+          <Icon as={X} className="text-destructive-foreground" size={22} />
+        </View>
+        <Animated.View
+          className="bg-background"
+          style={{ transform: [{ translateX }] }}
+          {...panResponder.panHandlers}>
+          <Button
+            accessibilityActions={[{ name: 'close-tab', label: t('session.closeTab', { tab: item.tabLabel }) }]}
+            accessibilityLabel={t('herd.openAgentTerminal', { agent: item.primaryLabel, host: item.hostLabel })}
+            className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'}
+            disabled={closing}
+            variant="ghost"
+            onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'close-tab') commitClose(); }}
+            onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
+            <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
+            <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
+            <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
+          </Button>
+        </Animated.View>
+      </View>
     </AnimatedEntrance>
   );
 }
