@@ -1,7 +1,7 @@
 /** Wire protocols implemented by the bundled Android Herdr bridge codec. */
-export const HERDR_PROTOCOL_VERSIONS = [17, 18] as const;
+export const HERDR_PROTOCOL_VERSIONS = [17, 18, 19] as const;
 export const HERDR_PROTOCOL_VERSION = HERDR_PROTOCOL_VERSIONS.at(-1)!;
-export const HERDR_PROTOCOL_VERSIONS_LABEL = HERDR_PROTOCOL_VERSIONS.join(' and ');
+export const HERDR_PROTOCOL_VERSIONS_LABEL = `${HERDR_PROTOCOL_VERSIONS[0]}–${HERDR_PROTOCOL_VERSION}`;
 
 export class HerdrProtocolMismatchError extends Error {
   readonly expected: string;

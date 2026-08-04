@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets;
 
 final class HerdrBridgeCodec {
   static final int MIN_PROTOCOL_VERSION = 17;
-  static final int MAX_PROTOCOL_VERSION = 18;
+  static final int MAX_PROTOCOL_VERSION = 19;
   static final int MAX_FRAME_SIZE = 32 * 1024 * 1024;
 
   static final class Message {
@@ -37,7 +37,7 @@ final class HerdrBridgeCodec {
       throw new IOException(
           "Herdr protocol mismatch: Android bridge supports "
               + MIN_PROTOCOL_VERSION
-              + " and "
+              + " through "
               + MAX_PROTOCOL_VERSION
               + ", server reports "
               + protocol
@@ -148,7 +148,7 @@ final class HerdrBridgeCodec {
     } else if (variant == 10) {
       message = new Message("kitty_keyboard_report_all");
       message.flag = decoder.bool();
-    } else if (variant == 11 && protocol == 18) {
+    } else if (variant == 11 && protocol >= 18) {
       message = new Message("prefix_input_source");
       message.flag = decoder.bool();
     } else {
