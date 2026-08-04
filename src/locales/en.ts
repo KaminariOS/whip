@@ -213,6 +213,8 @@ export const en = {
   'settings.agentCommand': 'Agent command',
   'settings.agentCommandCopy': 'Command used by Start agent when the selected space is empty.',
   'settings.terminal': 'Terminal',
+  'settings.fullscreenTerminal': 'Full-screen terminal',
+  'settings.fullscreenTerminalCopy': 'Hide the Android status bar while a terminal is open.',
   'settings.keepScreenOn': 'Keep screen on',
   'settings.keepScreenOnCopy': 'Prevent sleep while a terminal is open.',
   'settings.reopenTerminal': 'Reopen terminal on launch',
