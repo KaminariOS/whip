@@ -309,6 +309,18 @@
       backgroundGlass.style.backgroundColor = 'rgba(0,0,0,' + dimming + ')';
       setTimeout(resize, 0);
     };
+    api.herdrChangeFontSize = delta => {
+      const fontSize = Math.max(8, Math.min(24, Math.round(terminal.options.fontSize + Number(delta))));
+      if (fontSize === terminal.options.fontSize) return;
+      terminal.options.fontSize = fontSize;
+      resize();
+      send({ type: 'font-size-change', fontSize });
+    };
+    api.herdrScroll = (direction, lines) => {
+      const count = Math.max(1, Math.round(Number(lines) || 1));
+      if (localScrollback) terminal.scrollLines(direction === 'up' ? -count : count);
+      else send({ type: 'scroll', direction, lines: count });
+    };
     api.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
     api.herdrSubmit = data => {
       bufferedInput = '';
@@ -816,6 +828,8 @@
     window.herdrWrite = (key, data) => call(key, 'herdrWrite', [data]);
     window.herdrReset = key => call(key, 'herdrReset');
     window.herdrConfigure = (key, options) => call(key, 'herdrConfigure', [options]);
+    window.herdrChangeFontSize = (key, delta) => call(key, 'herdrChangeFontSize', [delta]);
+    window.herdrScroll = (key, direction, lines) => call(key, 'herdrScroll', [direction, lines]);
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
     window.herdrSubmit = (key, data) => call(key, 'herdrSubmit', [data]);
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');

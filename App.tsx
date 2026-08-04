@@ -51,6 +51,7 @@ import {
   terminalRendererKey,
   type TerminalRenderTarget,
 } from './src/lib/terminalRenderer';
+import type { TerminalVolumeKeyAction } from './src/lib/volumeKeys';
 import {
   parseAgentNotificationTarget,
   resolveAgentNotificationTarget,
@@ -120,6 +121,7 @@ import {
   type UnknownHostKeyChallenge,
 } from './src/services/knownHosts';
 import { loadPersistedTerminals, savePersistedTerminals } from './src/services/persistedTerminals';
+import { configureTerminalVolumeKeys } from './src/services/volumeKeys';
 import {
   loadPersistedLiveHosts,
   savePersistedLiveHosts,
@@ -1424,6 +1426,11 @@ function AppContent() {
       <SafeAreaView
         className="flex-1 bg-background"
         edges={fullscreenTerminalVisible ? ['left', 'right'] : ['top', 'left', 'right']}>
+      <TerminalVolumeKeyBinding
+        enabled={activeTerminalVisible}
+        volumeUpAction={terminalPreferences.volumeUpAction}
+        volumeDownAction={terminalPreferences.volumeDownAction}
+      />
       {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
       <View className="flex-1 bg-background">
         {!immersiveTerminal && (
@@ -1613,6 +1620,22 @@ function AppContent() {
 
 function TerminalKeepAwake() {
   useKeepAwake('herdr-terminal');
+  return null;
+}
+
+function TerminalVolumeKeyBinding({
+  enabled,
+  volumeUpAction,
+  volumeDownAction,
+}: {
+  enabled: boolean;
+  volumeUpAction: TerminalVolumeKeyAction;
+  volumeDownAction: TerminalVolumeKeyAction;
+}) {
+  useEffect(() => {
+    configureTerminalVolumeKeys(enabled, volumeUpAction, volumeDownAction);
+    return () => configureTerminalVolumeKeys(false, 'none', 'none');
+  }, [enabled, volumeDownAction, volumeUpAction]);
   return null;
 }
 

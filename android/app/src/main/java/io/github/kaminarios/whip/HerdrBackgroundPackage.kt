@@ -14,6 +14,7 @@ class HerdrBackgroundPackage : ReactPackage {
       HerdrBackgroundModule(reactContext),
       HerdrSoftInputModule(reactContext),
       HerdrSystemSettingsModule(reactContext),
+      HerdrVolumeKeysModule(reactContext),
       PrivateKeyFilePickerModule(reactContext),
     )
 
