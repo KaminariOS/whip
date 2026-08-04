@@ -1380,6 +1380,13 @@ function AppContent() {
     await refreshHost(sessionId);
   };
 
+  const closeHerdTab = async (sessionId: string, tabId: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    await runtime.client.closeTab(tabId);
+    await refreshHost(sessionId);
+  };
+
   const startHerdAgent = async (sessionId: string, workspaceId: string, command: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
@@ -1479,6 +1486,7 @@ function AppContent() {
                 onCreateWorkspace={createHerdWorkspace}
                 onRenameWorkspace={renameHerdWorkspace}
                 onCloseWorkspace={closeHerdWorkspace}
+                onCloseTab={closeHerdTab}
                 onRefresh={refreshHerd}
                 onOpenTerminal={openAgentTerminal}
                 onStartAgent={startHerdAgent}
