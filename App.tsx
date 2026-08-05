@@ -87,7 +87,7 @@ import {
   initialMobileNavigation,
   selectMobileTab,
 } from './src/mobileNavigation';
-import { cacheTierFromTokens, shouldNotifyCacheTransition, type CacheTier } from './src/lib/cacheTtl';
+import { cacheTierFromTokens, updateCacheTier, type CacheTier } from './src/lib/cacheTtl';
 import { alertAgent, alertCacheExpiry, prepareAlerts } from './src/services/alerts';
 import { authenticateAppAccess } from './src/services/appAuthentication';
 import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
@@ -495,25 +495,21 @@ function AppContent() {
           const pane = event.data.pane;
           if (pane && typeof pane === 'object' && typeof (pane as PaneInfo).pane_id === 'string') {
             const paneInfo = pane as PaneInfo;
-            const nextCache = cacheTierFromTokens(paneInfo.tokens);
-            const prevCacheTier = runtime.previousCacheTiers?.get(paneInfo.pane_id) ?? null;
-            if (
-              nextCache.tier
-              && alertsEnabledRef.current
-              && shouldNotifyCacheTransition(prevCacheTier, nextCache.tier)
-            ) {
-              const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-              const agent = session?.snapshot.agents.find(a => a.pane_id === paneInfo.pane_id);
-              const agentName = agent?.display_agent || agent?.name || agent?.agent || paneInfo.pane_id;
-              alertCacheExpiry(
-                nextCache.tier,
-                agentName,
-                agent?.title || agent?.cwd || paneInfo.cwd || 'Cache TTL alert',
-                ttsEnabledRef.current,
-                { hostId: sessionId, paneId: paneInfo.pane_id },
-              ).catch(() => undefined);
+            if (runtime.previousCacheTiers) {
+              const cacheUpdate = updateCacheTier(runtime.previousCacheTiers, paneInfo.pane_id, paneInfo.tokens);
+              if (cacheUpdate.tier && cacheUpdate.shouldNotify && alertsEnabledRef.current) {
+                const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+                const agent = session?.snapshot.agents.find(a => a.pane_id === paneInfo.pane_id);
+                const agentName = agent?.display_agent || agent?.name || agent?.agent || paneInfo.pane_id;
+                alertCacheExpiry(
+                  cacheUpdate.tier,
+                  agentName,
+                  agent?.title || agent?.cwd || paneInfo.cwd || 'Cache TTL alert',
+                  ttsEnabledRef.current,
+                  { hostId: sessionId, paneId: paneInfo.pane_id },
+                ).catch(() => undefined);
+              }
             }
-            if (nextCache.tier) runtime.previousCacheTiers?.set(paneInfo.pane_id, nextCache.tier);
             setLiveSessions(current => applyLiveHostPaneUpdate(
               current,
               sessionId,
@@ -662,24 +658,30 @@ function AppContent() {
           }
         }
         runtime.previousStatuses = statuses;
-        const cacheTiers = new Map<string, CacheTier>();
-        if (alertsEnabledRef.current && runtime.previousCacheTiers) {
-          for (const pane of snapshot.panes) {
-            const cache = cacheTierFromTokens(pane.tokens);
-            if (cache.tier) cacheTiers.set(pane.pane_id, cache.tier);
-            const prevTier = runtime.previousCacheTiers.get(pane.pane_id) ?? null;
-            if (cache.tier && shouldNotifyCacheTransition(prevTier, cache.tier)) {
-              const agent = snapshot.agents.find(a => a.pane_id === pane.pane_id);
-              const agentName = agent?.display_agent || agent?.name || agent?.agent || pane.pane_id;
-              alertCacheExpiry(
-                cache.tier,
-                agentName,
-                agent?.title || agent?.cwd || pane.cwd || 'Cache TTL alert',
-                ttsEnabledRef.current,
-                { hostId: sessionId, paneId: pane.pane_id },
-              ).catch(() => undefined);
-            }
+        const cacheTiers = new Map<string, CacheTier>(runtime.previousCacheTiers);
+        const seenPanes = new Set<string>();
+        for (const pane of snapshot.panes) {
+          seenPanes.add(pane.pane_id);
+          const cacheUpdate = updateCacheTier(cacheTiers, pane.pane_id, pane.tokens);
+          if (
+            alertsEnabledRef.current
+            && runtime.previousCacheTiers
+            && cacheUpdate.tier
+            && cacheUpdate.shouldNotify
+          ) {
+            const agent = snapshot.agents.find(a => a.pane_id === pane.pane_id);
+            const agentName = agent?.display_agent || agent?.name || agent?.agent || pane.pane_id;
+            alertCacheExpiry(
+              cacheUpdate.tier,
+              agentName,
+              agent?.title || agent?.cwd || pane.cwd || 'Cache TTL alert',
+              ttsEnabledRef.current,
+              { hostId: sessionId, paneId: pane.pane_id },
+            ).catch(() => undefined);
           }
+        }
+        for (const paneId of cacheTiers.keys()) {
+          if (!seenPanes.has(paneId)) cacheTiers.delete(paneId);
         }
         runtime.previousCacheTiers = cacheTiers;
         setLiveSessions(current => {

@@ -14,10 +14,25 @@ export function shouldNotifyCacheTransition(
   previous: CacheTier | null,
   next: CacheTier | null,
 ): boolean {
-  if (!next) return false;
+  if (!next || next === 'ok') return false;
   const severity = { ok: 0, warn: 1, crit: 2 };
   const prevSev = previous ? severity[previous] : -1;
   return severity[next] > prevSev;
+}
+
+export function updateCacheTier(
+  tierMap: Map<string, CacheTier>,
+  paneId: string,
+  tokens?: Record<string, string>,
+): { tier: CacheTier | null; shouldNotify: boolean } {
+  const { tier } = cacheTierFromTokens(tokens);
+  const previous = tierMap.get(paneId) ?? null;
+  if (tier) {
+    tierMap.set(paneId, tier);
+  } else {
+    tierMap.delete(paneId);
+  }
+  return { tier, shouldNotify: shouldNotifyCacheTransition(previous, tier) };
 }
 
 export function cacheTierColor(

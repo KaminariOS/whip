@@ -65,7 +65,16 @@ export async function alertAgent(
     finished: name => i18n.t('alerts.finished', { name }),
   });
   const body = agent.title || agent.custom_status || i18n.t('alerts.agentState', { status: agent.agent_status });
+  await sendAlert(title, body, speak, target, duration);
+}
 
+async function sendAlert(
+  title: string,
+  body: string,
+  speak: boolean,
+  target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
+  duration: AgentAlertDuration = 'persistent',
+): Promise<void> {
   if (speak) await speakBeforeAlert(title);
   if (Platform.OS !== 'android') Vibration.vibrate();
   const persistent = duration === 'persistent';
@@ -128,25 +137,5 @@ export async function alertCacheExpiry(
   const title = tier === 'warn'
     ? i18n.t('alerts.cacheWarning', { name })
     : i18n.t('alerts.cacheExpiring', { name });
-
-  if (speak) await speakBeforeAlert(title);
-  if (Platform.OS !== 'android') Vibration.vibrate();
-  const notificationIdentifier = await Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      sound: 'default',
-      vibrate: ALERT_VIBRATION_PATTERN,
-      priority: Notifications.AndroidNotificationPriority.MAX,
-      data: target,
-    },
-    trigger: { channelId: PERSISTENT_CHANNEL_ID },
-  });
-  if (Platform.OS === 'android') {
-    armPersistentAgentAlert(
-      notificationIdentifier,
-      PERSISTENT_CHANNEL_ID,
-      PERSISTENT_ALERT_TIMEOUT_MS,
-    ).catch(() => undefined);
-  }
+  await sendAlert(title, body, speak, target);
 }
