@@ -504,7 +504,7 @@ function AppContent() {
                 alertCacheExpiry(
                   cacheUpdate.tier,
                   agentName,
-                  agent?.title || agent?.cwd || paneInfo.cwd || 'Cache TTL alert',
+                  agent?.title || agent?.cwd || paneInfo.cwd || paneInfo.pane_id,
                   ttsEnabledRef.current,
                   { hostId: sessionId, paneId: paneInfo.pane_id },
                 ).catch(() => undefined);
@@ -674,7 +674,7 @@ function AppContent() {
             alertCacheExpiry(
               cacheUpdate.tier,
               agentName,
-              agent?.title || agent?.cwd || pane.cwd || 'Cache TTL alert',
+              agent?.title || agent?.cwd || pane.cwd || pane.pane_id,
               ttsEnabledRef.current,
               { hostId: sessionId, paneId: pane.pane_id },
             ).catch(() => undefined);
