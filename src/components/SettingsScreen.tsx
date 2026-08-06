@@ -1,9 +1,13 @@
-import { BellRing, Check, ChevronRight, Fingerprint, ImagePlus, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, ImagePlus, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Image, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
+import {
+  terminalDoubleTapActions,
+  type TerminalDoubleTapAction,
+} from '@/src/lib/terminalDoubleTap';
 import {
   terminalVolumeKeyActions,
   type TerminalVolumeKey,
@@ -48,6 +52,7 @@ export interface SettingsSectionProps {
 
 export function SettingsSection(props: SettingsSectionProps) {
   const [backgroundBusy, setBackgroundBusy] = useState(false);
+  const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const { t } = useTranslation();
 
@@ -159,7 +164,16 @@ export function SettingsSection(props: SettingsSectionProps) {
             onPress={() => setVolumeKeyEditor('down')}
             divided
           />
-          <SettingRow title={t('settings.doubleTapTab')} copy={t('settings.doubleTapTabCopy')} value={props.terminalPreferences.doubleTapTab} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, doubleTapTab: value })} divided />
+          <DoubleTapActionMenu
+            expanded={doubleTapExpanded}
+            value={props.terminalPreferences.doubleTapAction}
+            onToggle={() => setDoubleTapExpanded(expanded => !expanded)}
+            onSelect={action => {
+              props.onTerminalPreferencesChange({ ...props.terminalPreferences, doubleTapAction: action });
+              setDoubleTapExpanded(false);
+            }}
+            divided
+          />
           <SettingRow title={t('settings.pauseResizeInBackground')} copy={t('settings.pauseResizeInBackgroundCopy')} value={props.terminalPreferences.pauseResizeInBackground} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, pauseResizeInBackground: value })} divided />
           <ValueRow title={t('settings.fontSize')} value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(24, props.terminalPreferences.fontSize + 1) })} divided />
           <ValueRow title={t('settings.scrollback')} value={t('settings.lines', { count: props.terminalPreferences.scrollback })} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
@@ -280,6 +294,49 @@ function ChoiceRow({ title, copy, value, onPress, divided = false }: { title: st
 
 function volumeKeyActionLabelKey(key: TerminalVolumeKey, action: TerminalVolumeKeyAction): string {
   return `settings.volumeKeyAction.${key}.${action}`;
+}
+
+function doubleTapActionLabelKey(action: TerminalDoubleTapAction): string {
+  return `settings.doubleTapAction.${action}`;
+}
+
+function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = false }: { expanded: boolean; value: TerminalDoubleTapAction; onToggle: () => void; onSelect: (action: TerminalDoubleTapAction) => void; divided?: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <View className={divided ? 'border-t border-border' : ''}>
+      <Button
+        accessibilityState={{ expanded }}
+        className="min-h-[82px] justify-start rounded-none px-3.5 py-3"
+        size="content"
+        variant="ghost"
+        onPress={hapticPress(onToggle)}>
+        <View className="min-w-0 flex-1 pr-3"><Text className="text-[15px] font-semibold leading-5">{t('settings.doubleTap')}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('settings.doubleTapCopy')}</Text></View>
+        <Text className="max-w-[130px] text-right text-xs font-semibold text-primary">{t(doubleTapActionLabelKey(value))}</Text>
+        <Icon as={expanded ? ChevronUp : ChevronDown} className="ml-1 text-muted-foreground" size={18} />
+      </Button>
+      {expanded ? (
+        <View className="border-t border-border bg-muted/30 p-2">
+          <View className="overflow-hidden rounded-lg border border-border bg-card">
+            {terminalDoubleTapActions.map((action, index) => {
+              const selected = action === value;
+              return (
+                <Button
+                  key={action}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
+                  variant={selected ? 'secondary' : 'ghost'}
+                  onPress={hapticPress(() => onSelect(action))}>
+                  <Text className="flex-1 text-left text-sm font-medium">{t(doubleTapActionLabelKey(action))}</Text>
+                  {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
+                </Button>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function VolumeKeyActionSheet({ keyName, value, onClose, onSelect }: { keyName: TerminalVolumeKey | null; value: TerminalVolumeKeyAction; onClose: () => void; onSelect: (action: TerminalVolumeKeyAction) => void }) {

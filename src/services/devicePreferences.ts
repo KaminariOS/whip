@@ -1,5 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {
+  parseTerminalDoubleTapAction,
+  type TerminalDoubleTapAction,
+} from '../lib/terminalDoubleTap';
 import { parseTerminalControlUsage, type TerminalControlUsage } from '../lib/terminalControls';
 import {
   parseTerminalVolumeKeyAction,
@@ -24,7 +28,7 @@ export interface TerminalPreferences {
   fontSize: number;
   scrollback: number;
   cursorBlink: boolean;
-  doubleTapTab: boolean;
+  doubleTapAction: TerminalDoubleTapAction;
   openLinksInApp: boolean;
   pauseResizeInBackground: boolean;
   backgroundImageUri: string | null;
@@ -36,6 +40,7 @@ export type LanguagePreference = 'system' | 'en' | 'zh-Hant';
 
 type StoredTerminalPreferences = Partial<TerminalPreferences> & {
   backgroundOpacity?: unknown;
+  doubleTapTab?: unknown;
 };
 
 export interface DevicePreferences {
@@ -71,7 +76,7 @@ export const defaultDevicePreferences: DevicePreferences = {
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
-    doubleTapTab: true,
+    doubleTapAction: 'tab',
     openLinksInApp: true,
     pauseResizeInBackground: true,
     backgroundImageUri: null,
@@ -149,9 +154,12 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         fontSize,
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),
         cursorBlink: terminal.cursorBlink ?? defaultDevicePreferences.terminal.cursorBlink,
-        doubleTapTab: typeof terminal.doubleTapTab === 'boolean'
-          ? terminal.doubleTapTab
-          : defaultDevicePreferences.terminal.doubleTapTab,
+        doubleTapAction: parseTerminalDoubleTapAction(
+          terminal.doubleTapAction,
+          typeof terminal.doubleTapTab === 'boolean'
+            ? terminal.doubleTapTab ? 'tab' : 'none'
+            : defaultDevicePreferences.terminal.doubleTapAction,
+        ),
         openLinksInApp: typeof terminal.openLinksInApp === 'boolean'
           ? terminal.openLinksInApp
           : defaultDevicePreferences.terminal.openLinksInApp,

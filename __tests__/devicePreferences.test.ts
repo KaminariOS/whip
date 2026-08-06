@@ -40,7 +40,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     fontSize: 8,
     scrollback: 5000,
     cursorBlink: true,
-    doubleTapTab: true,
+    doubleTapAction: 'tab',
     openLinksInApp: true,
     pauseResizeInBackground: true,
     backgroundImageUri: null,
@@ -86,7 +86,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       fontSize: 8,
       scrollback: 9000,
       cursorBlink: false,
-      doubleTapTab: true,
+      doubleTapAction: 'tab',
       openLinksInApp: true,
       pauseResizeInBackground: true,
       backgroundImageUri: null,
@@ -157,15 +157,25 @@ test('loads terminal behavior toggles only when explicitly enabled', async () =>
   });
 });
 
-test('allows double-tap Tab to be explicitly disabled', async () => {
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapTab: false } }));
+test('loads double-tap actions and migrates the old Tab toggle', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapAction: 'paste' } }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
-    terminal: { doubleTapTab: false },
+    terminal: { doubleTapAction: 'paste' },
   });
 
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapTab: 'no' } }));
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapTab: false } }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
-    terminal: { doubleTapTab: true },
+    terminal: { doubleTapAction: 'none' },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapTab: true } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { doubleTapAction: 'tab' },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { doubleTapAction: 'launch-missiles' } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { doubleTapAction: 'tab' },
   });
 });
 

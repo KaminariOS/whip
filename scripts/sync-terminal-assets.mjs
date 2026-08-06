@@ -177,7 +177,7 @@ const terminalSessionHtml = `<!doctype html>
     terminal.open(document.getElementById('terminal'));
     const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');
     let lastTap = null;
-    let doubleTapTabEnabled = true;
+    let doubleTapAction = 'tab';
     let keyboardEnabled = true;
     let localScrollback = false;
     installAndroidImeBridge(terminal, send, navigator.userAgent);
@@ -232,9 +232,9 @@ const terminalSessionHtml = `<!doctype html>
       terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
-      doubleTapTabEnabled = options.doubleTapTab !== false;
+      doubleTapAction = ['none', 'paste', 'tab', 'escape'].includes(options.doubleTapAction) ? options.doubleTapAction : 'tab';
       localScrollback = options.localScrollback === true;
-      if (!doubleTapTabEnabled) lastTap = null;
+      if (doubleTapAction === 'none') lastTap = null;
       const backgroundUri = options.backgroundImageUri || '';
       const dimming = Math.max(0, Math.min(100, Number(options.backgroundDimming) || 0)) / 100;
       const backgroundLayer = document.getElementById('terminal-background-layer');
@@ -560,13 +560,14 @@ const terminalSessionHtml = `<!doctype html>
       }
       if (!touch.moved && !touch.longPressed && point) {
         const now = { time: Date.now(), x: point.clientX, y: point.clientY };
-        if (doubleTapTabEnabled && lastTap && now.time - lastTap.time <= doubleTapTimeoutMs && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) <= doubleTapDistancePx) {
+        if (doubleTapAction !== 'none' && lastTap && now.time - lastTap.time <= doubleTapTimeoutMs && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) <= doubleTapDistancePx) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          send({ type: 'input', data: '\\t' });
+          if (doubleTapAction === 'paste') send({ type: 'clipboard-read' });
+          else send({ type: 'input', data: doubleTapAction === 'escape' ? '\\u001b' : '\\t' });
           lastTap = null;
         } else {
-          lastTap = now;
+          lastTap = doubleTapAction === 'none' ? null : now;
         }
       }
       touch = null;
