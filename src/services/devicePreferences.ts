@@ -11,6 +11,10 @@ import {
 } from '../lib/volumeKeys';
 import type { AppTab } from '../types';
 import {
+  migrateAppBackgroundImage,
+  removeAppBackgroundImage,
+} from './appBackground';
+import {
   migrateTerminalBackgroundImage,
   removeTerminalBackgroundImage,
 } from './terminalBackground';
@@ -55,6 +59,9 @@ export interface DevicePreferences {
   biometricForKeys: boolean;
   biometricOnResume: boolean;
   appearance: AppearancePreference;
+  fullscreenApp: boolean;
+  appBackgroundImageUri: string | null;
+  appBackgroundDimming: number;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -71,6 +78,9 @@ export const defaultDevicePreferences: DevicePreferences = {
   biometricForKeys: false,
   biometricOnResume: false,
   appearance: 'system',
+  fullscreenApp: false,
+  appBackgroundImageUri: null,
+  appBackgroundDimming: 60,
   language: 'system',
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
@@ -104,17 +114,30 @@ export async function loadDevicePreferences(): Promise<DevicePreferences> {
 }
 
 async function migrateDevicePreferences(preferences: DevicePreferences): Promise<DevicePreferences> {
-  const previousUri = preferences.terminal.backgroundImageUri;
+  const previousTerminalUri = preferences.terminal.backgroundImageUri;
+  const previousAppUri = preferences.appBackgroundImageUri;
   try {
-    const backgroundImageUri = await migrateTerminalBackgroundImage(previousUri);
-    if (backgroundImageUri === previousUri) return preferences;
+    const [terminalBackgroundImageUri, appBackgroundImageUri] = await Promise.all([
+      migrateTerminalBackgroundImage(previousTerminalUri),
+      migrateAppBackgroundImage(previousAppUri),
+    ]);
+    if (
+      terminalBackgroundImageUri === previousTerminalUri
+      && appBackgroundImageUri === previousAppUri
+    ) return preferences;
 
     const migrated = {
       ...preferences,
-      terminal: { ...preferences.terminal, backgroundImageUri },
+      appBackgroundImageUri,
+      terminal: { ...preferences.terminal, backgroundImageUri: terminalBackgroundImageUri },
     };
     await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(migrated));
-    await removeTerminalBackgroundImage(previousUri);
+    if (terminalBackgroundImageUri !== previousTerminalUri) {
+      await removeTerminalBackgroundImage(previousTerminalUri);
+    }
+    if (appBackgroundImageUri !== previousAppUri) {
+      await removeAppBackgroundImage(previousAppUri);
+    }
     return migrated;
   } catch {
     // Keep using the previous setting and retry the migration next launch.
@@ -143,6 +166,16 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
       appearance: isAppearancePreference(parsed.appearance)
         ? parsed.appearance
         : defaultDevicePreferences.appearance,
+      fullscreenApp: parsed.fullscreenApp === true,
+      appBackgroundImageUri: typeof parsed.appBackgroundImageUri === 'string' && parsed.appBackgroundImageUri
+        ? parsed.appBackgroundImageUri
+        : null,
+      appBackgroundDimming: clampNumber(
+        parsed.appBackgroundDimming,
+        0,
+        100,
+        defaultDevicePreferences.appBackgroundDimming,
+      ),
       language: isLanguagePreference(parsed.language)
         ? parsed.language
         : defaultDevicePreferences.language,

@@ -39,7 +39,7 @@ interface Props {
 export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
   const { t } = useTranslation();
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1">
       <ScreenHeader
         title="Herdr"
         subtitle={t('hosts.subtitle')}

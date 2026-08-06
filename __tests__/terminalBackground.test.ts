@@ -65,6 +65,10 @@ import {
   removeTerminalBackgroundImage,
   selectTerminalBackgroundImage,
 } from '../src/services/terminalBackground';
+import {
+  removeAppBackgroundImage,
+  selectAppBackgroundImage,
+} from '../src/services/appBackground';
 
 beforeEach(() => {
   mockExistingFiles.clear();
@@ -132,4 +136,23 @@ test('does not delete similarly named files outside the managed app directory', 
   await removeTerminalBackgroundImage(externalUri);
 
   expect(mockDeletedFiles).toHaveLength(0);
+});
+
+test('stores and removes app backgrounds independently from terminal backgrounds', async () => {
+  const terminalUri = 'file:///data/user/0/io.github.kaminarios.whip/files/terminal-backgrounds/herdr-terminal-background-1.webp';
+  mockExistingFiles.add(terminalUri);
+  mockPickImageFromLibrary.mockResolvedValue({
+    uri: 'file:///cache/image-library-picker/app-background',
+    name: 'wallpaper.webp',
+    mimeType: 'image/webp',
+    dispose: mockDisposePickedImage,
+  });
+  jest.spyOn(Date, 'now').mockReturnValueOnce(5678);
+
+  await expect(selectAppBackgroundImage(null)).resolves.toBe(
+    'file:///data/user/0/io.github.kaminarios.whip/files/app-backgrounds/herdr-app-background-5678.webp',
+  );
+  await removeAppBackgroundImage(terminalUri);
+
+  expect(mockDeletedFiles).not.toContain(terminalUri);
 });

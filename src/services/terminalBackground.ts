@@ -1,92 +1,10 @@
-import { Directory, File, Paths } from 'expo-file-system';
+import { createManagedBackgroundImageStore } from './managedBackgroundImage';
 
-import { pickImageFromLibrary } from './imageLibraryPicker';
+const terminalBackgrounds = createManagedBackgroundImageStore(
+  'terminal-backgrounds',
+  'herdr-terminal-background-',
+);
 
-const BACKGROUND_DIRECTORY_NAME = 'terminal-backgrounds';
-const MANAGED_BACKGROUND_PREFIX = 'herdr-terminal-background-';
-
-export async function selectTerminalBackgroundImage(
-  currentUri: string | null,
-): Promise<string | undefined> {
-  const picked = await pickImageFromLibrary();
-  if (!picked) return undefined;
-
-  try {
-    const source = new File(picked.uri);
-    const directory = managedBackgroundDirectory();
-    directory.create({ idempotent: true });
-    const destination = new File(
-      directory,
-      `${MANAGED_BACKGROUND_PREFIX}${Date.now()}${imageExtension(picked.name, picked.mimeType)}`,
-    );
-    await source.copy(destination);
-    await removeTerminalBackgroundImage(currentUri);
-    return destination.uri;
-  } finally {
-    picked.dispose();
-  }
-}
-
-export async function migrateTerminalBackgroundImage(uri: string | null): Promise<string | null> {
-  if (!uri) return null;
-
-  const directory = managedBackgroundDirectory();
-  const restoredName = backedUpBackgroundName(uri);
-  if (restoredName) {
-    const restored = new File(directory, restoredName);
-    if (restored.exists) return restored.uri;
-  }
-
-  if (!isLegacyManagedBackground(uri)) return uri;
-  const source = new File(uri);
-  if (!source.exists) return uri;
-
-  directory.create({ idempotent: true });
-  const destination = new File(directory, source.name);
-  await source.copy(destination, { overwrite: true });
-  return destination.uri;
-}
-
-export async function removeTerminalBackgroundImage(uri: string | null): Promise<void> {
-  if (!isBackedUpBackground(uri) && !isLegacyManagedBackground(uri)) return;
-  const file = new File(uri);
-  if (file.exists) file.delete();
-}
-
-function managedBackgroundDirectory(): Directory {
-  return new Directory(Paths.document, BACKGROUND_DIRECTORY_NAME);
-}
-
-function isBackedUpBackground(uri: string | null): uri is string {
-  if (!uri) return false;
-  const directoryPrefix = `${managedBackgroundDirectory().uri.replace(/\/$/, '')}/`;
-  if (!uri.startsWith(directoryPrefix)) return false;
-  const name = uri.slice(directoryPrefix.length);
-  return name.startsWith(MANAGED_BACKGROUND_PREFIX) && !name.includes('/');
-}
-
-function backedUpBackgroundName(uri: string): string | null {
-  const marker = `/${BACKGROUND_DIRECTORY_NAME}/`;
-  const markerIndex = uri.lastIndexOf(marker);
-  if (markerIndex < 0) return null;
-  const name = uri.slice(markerIndex + marker.length);
-  return name.startsWith(MANAGED_BACKGROUND_PREFIX) && !name.includes('/') ? name : null;
-}
-
-function isLegacyManagedBackground(uri: string | null): uri is string {
-  if (!uri) return false;
-  const documentPrefix = `${Paths.document.uri.replace(/\/$/, '')}/`;
-  if (!uri.startsWith(documentPrefix)) return false;
-  const relativePath = uri.slice(documentPrefix.length);
-  return relativePath.startsWith(MANAGED_BACKGROUND_PREFIX) && !relativePath.includes('/');
-}
-
-function imageExtension(fileName?: string | null, mimeType?: string): string {
-  const match = fileName?.match(/\.(jpe?g|png|webp|gif|heic|heif)$/i);
-  if (match) return `.${match[1].toLowerCase().replace('jpeg', 'jpg')}`;
-  if (mimeType === 'image/png') return '.png';
-  if (mimeType === 'image/webp') return '.webp';
-  if (mimeType === 'image/gif') return '.gif';
-  if (mimeType === 'image/heic' || mimeType === 'image/heif') return '.heic';
-  return '.jpg';
-}
+export const selectTerminalBackgroundImage = terminalBackgrounds.select;
+export const migrateTerminalBackgroundImage = terminalBackgrounds.migrate;
+export const removeTerminalBackgroundImage = terminalBackgrounds.remove;

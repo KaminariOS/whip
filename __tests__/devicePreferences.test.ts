@@ -6,8 +6,16 @@ jest.mock('../src/services/terminalBackground', () => ({
   migrateTerminalBackgroundImage: jest.fn(uri => Promise.resolve(uri)),
   removeTerminalBackgroundImage: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../src/services/appBackground', () => ({
+  migrateAppBackgroundImage: jest.fn(uri => Promise.resolve(uri)),
+  removeAppBackgroundImage: jest.fn(() => Promise.resolve()),
+}));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  migrateAppBackgroundImage,
+  removeAppBackgroundImage,
+} from '../src/services/appBackground';
 import {
   defaultDevicePreferences,
   loadDevicePreferences,
@@ -22,6 +30,8 @@ const mockGetItem = jest.mocked(AsyncStorage.getItem);
 const mockSetItem = jest.mocked(AsyncStorage.setItem);
 const mockMigrateBackground = jest.mocked(migrateTerminalBackgroundImage);
 const mockRemoveBackground = jest.mocked(removeTerminalBackgroundImage);
+const mockMigrateAppBackground = jest.mocked(migrateAppBackgroundImage);
+const mockRemoveAppBackground = jest.mocked(removeAppBackgroundImage);
 
 beforeEach(() => {
   mockGetItem.mockReset();
@@ -30,6 +40,10 @@ beforeEach(() => {
   mockMigrateBackground.mockImplementation(uri => Promise.resolve(uri));
   mockRemoveBackground.mockReset();
   mockRemoveBackground.mockResolvedValue();
+  mockMigrateAppBackground.mockReset();
+  mockMigrateAppBackground.mockImplementation(uri => Promise.resolve(uri));
+  mockRemoveAppBackground.mockReset();
+  mockRemoveAppBackground.mockResolvedValue();
 });
 
 test('terminal preference defaults match the mobile renderer', () => {
@@ -50,6 +64,9 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.terminalControlUsage).toEqual({});
   expect(defaultDevicePreferences.persistentAlertDurationSeconds).toBe(30);
   expect(defaultDevicePreferences.appearance).toBe('system');
+  expect(defaultDevicePreferences.fullscreenApp).toBe(false);
+  expect(defaultDevicePreferences.appBackgroundImageUri).toBeNull();
+  expect(defaultDevicePreferences.appBackgroundDimming).toBe(60);
   expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.biometricForKeys).toBe(false);
   expect(defaultDevicePreferences.biometricOnResume).toBe(false);
@@ -76,6 +93,9 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     biometricForKeys: false,
     biometricOnResume: false,
     appearance: 'system',
+    fullscreenApp: false,
+    appBackgroundImageUri: null,
+    appBackgroundDimming: 60,
     language: 'system',
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
@@ -148,6 +168,14 @@ test('loads a valid appearance preference and rejects invalid values', async () 
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ appearance: 'sepia' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ appearance: 'system' });
+});
+
+test('uses the status bar by default and allows the whole app to be full-screen', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ fullscreenApp: true }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ fullscreenApp: true });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ fullscreenApp: 'yes' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ fullscreenApp: false });
 });
 
 test('loads a supported language preference and rejects invalid values', async () => {
@@ -283,6 +311,20 @@ test('sanitizes persisted terminal background preferences', async () => {
   expect(preferences.terminal.backgroundDimming).toBe(100);
 });
 
+test('sanitizes persisted app background preferences separately from the terminal', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    appBackgroundImageUri: 'file:///data/user/0/io.github.kaminarios.whip/files/app.webp',
+    appBackgroundDimming: -20,
+    terminal: { backgroundImageUri: 'file:///terminal.webp', backgroundDimming: 80 },
+  }));
+
+  const preferences = await loadDevicePreferences();
+  expect(preferences.appBackgroundImageUri).toBe('file:///data/user/0/io.github.kaminarios.whip/files/app.webp');
+  expect(preferences.appBackgroundDimming).toBe(0);
+  expect(preferences.terminal.backgroundImageUri).toBe('file:///terminal.webp');
+  expect(preferences.terminal.backgroundDimming).toBe(80);
+});
+
 test('persists new preferences under the v3 key', async () => {
   await saveDevicePreferences(defaultDevicePreferences);
   expect(mockSetItem).toHaveBeenCalledWith(
@@ -320,4 +362,20 @@ test('moves an existing terminal background into backed-up storage', async () =>
     JSON.stringify(preferences),
   );
   expect(mockRemoveBackground).toHaveBeenCalledWith(previousUri);
+});
+
+test('moves an existing app background into its own backed-up storage', async () => {
+  const previousUri = 'file:///data/user/0/io.github.kaminarios.whip/files/herdr-app-background-1.webp';
+  const backedUpUri = 'file:///data/user/0/io.github.kaminarios.whip/files/app-backgrounds/herdr-app-background-1.webp';
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ appBackgroundImageUri: previousUri }));
+  mockMigrateAppBackground.mockResolvedValueOnce(backedUpUri);
+
+  const preferences = await loadDevicePreferences();
+
+  expect(preferences.appBackgroundImageUri).toBe(backedUpUri);
+  expect(mockSetItem).toHaveBeenCalledWith(
+    'herdr.device.preferences.v3',
+    JSON.stringify(preferences),
+  );
+  expect(mockRemoveAppBackground).toHaveBeenCalledWith(previousUri);
 });

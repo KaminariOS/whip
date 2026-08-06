@@ -286,7 +286,7 @@ export function HerdScreen({
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1">
       <LiveSessionRail sessions={sessions} activeHostId={selectedHostId} onSelect={selectHost} onClose={onCloseHost} onNew={onNewHost} />
       {selectedQueue ? (
         <WorkspaceRail
@@ -313,7 +313,7 @@ export function HerdScreen({
       ) : null}
 
       <ScrollView
-        className="flex-1 bg-background"
+        className="flex-1"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} colors={[colors.text]} />}
       >
         <View className="p-4 pb-8">

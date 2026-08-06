@@ -11,7 +11,7 @@ export function MoreScreen(props: Props) {
   const { t } = useTranslation();
   return (
     <SettingsDetailsProvider>
-      <ScrollView className="flex-1 bg-background">
+      <ScrollView className="flex-1">
         <View className="border-b border-border px-5 py-5">
           <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
         </View>
@@ -25,6 +25,9 @@ export function MoreScreen(props: Props) {
         globalKeyCount={props.globalKeyCount}
         knownHostCount={props.knownHostCount}
         appearance={props.appearance}
+        fullscreenApp={props.fullscreenApp}
+        appBackgroundImageUri={props.appBackgroundImageUri}
+        appBackgroundDimming={props.appBackgroundDimming}
         language={props.language}
         keepScreenOn={props.keepScreenOn}
         reopenTerminalOnLaunch={props.reopenTerminalOnLaunch}
@@ -39,6 +42,9 @@ export function MoreScreen(props: Props) {
         onManageGlobalKeychain={props.onManageGlobalKeychain}
         onManageKnownHosts={props.onManageKnownHosts}
         onAppearanceChange={props.onAppearanceChange}
+        onFullscreenAppChange={props.onFullscreenAppChange}
+        onAppBackgroundImageChange={props.onAppBackgroundImageChange}
+        onAppBackgroundDimmingChange={props.onAppBackgroundDimmingChange}
         onLanguageChange={props.onLanguageChange}
         onKeepScreenOnChange={props.onKeepScreenOnChange}
         onReopenTerminalOnLaunchChange={props.onReopenTerminalOnLaunchChange}

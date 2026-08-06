@@ -30,6 +30,7 @@ import {
   type LanguagePreference,
   type TerminalPreferences,
 } from '@/src/services/devicePreferences';
+import { removeAppBackgroundImage, selectAppBackgroundImage } from '@/src/services/appBackground';
 import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
 import { hapticPress, IconButton } from './app-ui';
@@ -96,6 +97,9 @@ export interface SettingsSectionProps {
   globalKeyCount: number;
   knownHostCount: number;
   appearance: AppearancePreference;
+  fullscreenApp: boolean;
+  appBackgroundImageUri: string | null;
+  appBackgroundDimming: number;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -109,6 +113,9 @@ export interface SettingsSectionProps {
   onManageGlobalKeychain: () => void;
   onManageKnownHosts: () => void;
   onAppearanceChange: (value: AppearancePreference) => void;
+  onFullscreenAppChange: (value: boolean) => void;
+  onAppBackgroundImageChange: (value: string | null) => void;
+  onAppBackgroundDimmingChange: (value: number) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
   onReopenTerminalOnLaunchChange: (value: boolean) => void;
@@ -119,33 +126,58 @@ export interface SettingsSectionProps {
 }
 
 export function SettingsSection(props: SettingsSectionProps) {
-  const [backgroundBusy, setBackgroundBusy] = useState(false);
+  const [appBackgroundBusy, setAppBackgroundBusy] = useState(false);
+  const [terminalBackgroundBusy, setTerminalBackgroundBusy] = useState(false);
   const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const [historyManagerOpen, setHistoryManagerOpen] = useState(false);
   const { t } = useTranslation();
 
   const chooseBackground = async () => {
-    setBackgroundBusy(true);
+    setTerminalBackgroundBusy(true);
     try {
       const uri = await selectTerminalBackgroundImage(props.terminalPreferences.backgroundImageUri);
       if (uri) props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundImageUri: uri });
     } catch (error) {
       Alert.alert(t('settings.imageError'), String(error));
     } finally {
-      setBackgroundBusy(false);
+      setTerminalBackgroundBusy(false);
     }
   };
 
   const removeBackground = async () => {
-    setBackgroundBusy(true);
+    setTerminalBackgroundBusy(true);
     try {
       await removeTerminalBackgroundImage(props.terminalPreferences.backgroundImageUri);
       props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundImageUri: null });
     } catch (error) {
       Alert.alert(t('settings.removeImageError'), String(error));
     } finally {
-      setBackgroundBusy(false);
+      setTerminalBackgroundBusy(false);
+    }
+  };
+
+  const chooseAppBackground = async () => {
+    setAppBackgroundBusy(true);
+    try {
+      const uri = await selectAppBackgroundImage(props.appBackgroundImageUri);
+      if (uri) props.onAppBackgroundImageChange(uri);
+    } catch (error) {
+      Alert.alert(t('settings.imageError'), String(error));
+    } finally {
+      setAppBackgroundBusy(false);
+    }
+  };
+
+  const removeAppBackground = async () => {
+    setAppBackgroundBusy(true);
+    try {
+      await removeAppBackgroundImage(props.appBackgroundImageUri);
+      props.onAppBackgroundImageChange(null);
+    } catch (error) {
+      Alert.alert(t('settings.removeImageError'), String(error));
+    } finally {
+      setAppBackgroundBusy(false);
     }
   };
 
@@ -210,6 +242,31 @@ export function SettingsSection(props: SettingsSectionProps) {
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>
         <View className="gap-3">
           <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
+          <View className="overflow-hidden rounded-lg border border-border bg-card">
+            <SettingRow
+              title={t('settings.fullscreenApp')}
+              copy={t('settings.fullscreenAppCopy')}
+              value={props.fullscreenApp}
+              onChange={props.onFullscreenAppChange}
+            />
+          </View>
+          <View className="overflow-hidden rounded-lg border border-border bg-card">
+            <AppBackgroundRow
+              busy={appBackgroundBusy}
+              uri={props.appBackgroundImageUri}
+              dimming={props.appBackgroundDimming}
+              onChoose={chooseAppBackground}
+              onRemove={removeAppBackground}
+            />
+            <ValueRow
+              title={t('settings.backgroundDimming')}
+              value={`${props.appBackgroundDimming}%`}
+              disabled={!props.appBackgroundImageUri}
+              onDecrease={() => props.onAppBackgroundDimmingChange(Math.max(0, props.appBackgroundDimming - 5))}
+              onIncrease={() => props.onAppBackgroundDimmingChange(Math.min(100, props.appBackgroundDimming + 5))}
+              divided
+            />
+          </View>
           <LanguageRow value={props.language} onChange={props.onLanguageChange} />
         </View>
 
@@ -276,7 +333,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           <ValueRow title={t('settings.scrollback')} value={t('settings.lines', { count: props.terminalPreferences.scrollback })} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
           <SettingRow title={t('settings.blinkingCursor')} copy={t('settings.blinkingCursorCopy')} value={props.terminalPreferences.cursorBlink} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, cursorBlink: value })} divided />
           <TerminalBackgroundRow
-            busy={backgroundBusy}
+            busy={terminalBackgroundBusy}
             uri={props.terminalPreferences.backgroundImageUri}
             dimming={props.terminalPreferences.backgroundDimming}
             onChoose={chooseBackground}
@@ -680,6 +737,27 @@ function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { bus
         {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
         {uri ? <View className="absolute inset-0" style={{ backgroundColor: `rgba(24, 24, 24, ${dimming / 100})` }} /> : null}
         <View className="absolute inset-0 justify-end p-3"><Text style={styles.terminalPreviewText} className="text-xs text-terminal-text">user@host:~ $ herdr status</Text><Text style={styles.terminalPreviewText} className="mt-1 text-[10px] text-terminal-muted">{t('settings.terminalPreview')}</Text></View>
+      </View>
+      <View className="mt-3 flex-row gap-2">
+        <Button className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(onChoose)}><Icon as={ImagePlus} size={16} /><Text>{uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></Button>
+        {uri ? <Button className="rounded-full px-4" variant="ghost" disabled={busy} onPress={hapticPress(onRemove)}><Icon as={Trash2} className="text-destructive" size={16} /><Text className="text-destructive">{t('common.remove')}</Text></Button> : null}
+      </View>
+    </View>
+  );
+}
+
+function AppBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {
+  const { t } = useTranslation();
+  return (
+    <View className="p-3.5">
+      <View className="mb-3"><DetailsTitle title={t('settings.backgroundImage')} copy={t('settings.backgroundImageCopy')} /></View>
+      <View className="relative h-28 overflow-hidden rounded-md bg-background">
+        {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
+        {uri ? <View className="absolute inset-0 bg-background" style={{ opacity: dimming / 100 }} /> : null}
+        <View className="absolute inset-0 justify-between p-3">
+          <Text className="text-base font-semibold">Herdr</Text>
+          <Text className="text-xs text-muted-foreground">{t('settings.appPreview')}</Text>
+        </View>
       </View>
       <View className="mt-3 flex-row gap-2">
         <Button className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(onChoose)}><Icon as={ImagePlus} size={16} /><Text>{uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></Button>

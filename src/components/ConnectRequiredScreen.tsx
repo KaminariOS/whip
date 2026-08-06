@@ -10,7 +10,7 @@ import { Text } from './ui/text';
 export function ConnectRequiredScreen({ destination, onPickHost }: { destination: string; onPickHost: () => void }) {
   const { t } = useTranslation();
   return (
-    <View className="flex-1 items-center justify-center bg-background px-8">
+    <View className="flex-1 items-center justify-center px-8">
       <View className="size-16 items-center justify-center rounded-full bg-muted">
         <Icon as={Server} className="text-muted-foreground" size={27} />
       </View>

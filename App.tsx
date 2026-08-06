@@ -12,6 +12,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
+import { AppBackground } from './src/components/AppBackground';
 import { AppAccessLock } from './src/components/AppAccessLock';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
@@ -265,6 +266,9 @@ function AppContent() {
   const [appAccessLocked, setAppAccessLocked] = useState(false);
   const [appAccessAuthenticating, setAppAccessAuthenticating] = useState(false);
   const [appearance, setAppearance] = useState<AppearancePreference>(defaultDevicePreferences.appearance);
+  const [fullscreenApp, setFullscreenApp] = useState(defaultDevicePreferences.fullscreenApp);
+  const [appBackgroundImageUri, setAppBackgroundImageUri] = useState(defaultDevicePreferences.appBackgroundImageUri);
+  const [appBackgroundDimming, setAppBackgroundDimming] = useState(defaultDevicePreferences.appBackgroundDimming);
   const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
   const [reopenTerminalOnLaunch, setReopenTerminalOnLaunch] = useState(defaultDevicePreferences.reopenTerminalOnLaunch);
@@ -359,6 +363,9 @@ function AppContent() {
         biometricOnResumeRef.current = preferences.biometricOnResume;
         setBiometricOnResume(preferences.biometricOnResume);
         setAppearance(preferences.appearance);
+        setFullscreenApp(preferences.fullscreenApp);
+        setAppBackgroundImageUri(preferences.appBackgroundImageUri);
+        setAppBackgroundDimming(preferences.appBackgroundDimming);
         setLanguage(preferences.language);
         setKeepScreenOn(preferences.keepScreenOn);
         setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
@@ -395,6 +402,9 @@ function AppContent() {
       biometricForKeys,
       biometricOnResume,
       appearance,
+      fullscreenApp,
+      appBackgroundImageUri,
+      appBackgroundDimming,
       language,
       keepScreenOn,
       reopenTerminalOnLaunch,
@@ -403,7 +413,7 @@ function AppContent() {
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [agentCommand, alertsEnabled, appearance, biometricForKeys, biometricOnResume, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, biometricForKeys, biometricOnResume, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   useEffect(() => {
     if (!terminalHistoryLoaded) return;
@@ -1464,6 +1474,7 @@ function AppContent() {
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
   const activeTerminalVisible = immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
   const fullscreenTerminalVisible = activeTerminalVisible && terminalPreferences.fullscreen;
+  const fullscreenVisible = immersiveTerminal ? fullscreenTerminalVisible : fullscreenApp;
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
     hostId: session.id,
     label: hostDisplayName(session.host),
@@ -1476,13 +1487,13 @@ function AppContent() {
     <>
       <StatusBar
         animated
-        hidden={fullscreenTerminalVisible}
+        hidden={fullscreenVisible}
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={theme.canvas}
       />
       <SafeAreaView
         className="flex-1 bg-background"
-        edges={fullscreenTerminalVisible ? ['left', 'right'] : ['top', 'left', 'right']}>
+        edges={fullscreenVisible ? ['left', 'right'] : ['top', 'left', 'right']}>
       <TerminalVolumeKeyBinding
         enabled={activeTerminalVisible}
         volumeUpAction={terminalPreferences.volumeUpAction}
@@ -1492,7 +1503,8 @@ function AppContent() {
       <View className="flex-1 bg-background">
         <BlurTargetView ref={navigationBlurTargetRef} style={styles.navigationBlurTarget}>
         {!immersiveTerminal && (
-          <View className="flex-1 bg-background">
+          <View className="flex-1">
+          <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
           {navigation.tab === 'hosts' && (
             <HostsScreen
               hosts={hosts}
@@ -1564,6 +1576,9 @@ function AppContent() {
               globalKeyCount={globalSshKeys.length}
               knownHostCount={knownHosts.length}
               appearance={appearance}
+              fullscreenApp={fullscreenApp}
+              appBackgroundImageUri={appBackgroundImageUri}
+              appBackgroundDimming={appBackgroundDimming}
               language={language}
               keepScreenOn={keepScreenOn}
               reopenTerminalOnLaunch={reopenTerminalOnLaunch}
@@ -1579,6 +1594,9 @@ function AppContent() {
               onManageGlobalKeychain={() => { openGlobalKeychain().catch(() => undefined); }}
               onManageKnownHosts={() => setKnownHostsOpen(true)}
               onAppearanceChange={updateAppearance}
+              onFullscreenAppChange={setFullscreenApp}
+              onAppBackgroundImageChange={setAppBackgroundImageUri}
+              onAppBackgroundDimmingChange={setAppBackgroundDimming}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
               onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
