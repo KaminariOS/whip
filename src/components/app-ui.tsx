@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/src/lib/utils';
 import { agentStatusGlyph, statusMotionKind, statusTone } from '@/src/lib/statusMotion';
 import { useTheme } from '@/src/theme';
+import { GlassSurface } from './GlassSurface';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -306,14 +307,14 @@ function colorWithAlpha(color: string, alpha: string) {
 
 export function ScreenHeader({ title, subtitle, left, right }: { title: string; subtitle?: string; left?: ReactNode; right?: ReactNode }) {
   return (
-    <View className="min-h-16 flex-row items-center border-b border-border bg-background px-4 py-2">
+    <GlassSurface className="min-h-16 flex-row items-center border-b border-white/30 px-4 py-2 dark:border-white/10">
       {left ? <View className="mr-2 min-w-10">{left}</View> : null}
       <View className="min-w-0 flex-1">
         <Text className="text-[17px] font-semibold leading-6" numberOfLines={1}>{title}</Text>
         {subtitle ? <Text className="text-xs leading-4 text-muted-foreground" numberOfLines={1}>{subtitle}</Text> : null}
       </View>
       {right ? <View className="ml-2 min-w-10 items-end">{right}</View> : null}
-    </View>
+    </GlassSurface>
   );
 }
 

@@ -54,8 +54,8 @@ describe('session tab labels', () => {
       'utf8',
     );
 
-    expect(hostRail).toContain('border-b border-border bg-background');
-    expect(workspaceRail).toContain('border-b border-border bg-background');
+    expect(hostRail).toContain('<GlassSurface className="h-12');
+    expect(workspaceRail).toContain('<GlassSurface className="h-12');
     expect(screen).toContain('<TerminalBackground preferences={terminalPreferences} />');
     expect(screen).toContain('className="absolute inset-x-0 top-0 z-30"');
     expect(screen).toContain('h-[42px] flex-row border-b border-border bg-transparent');

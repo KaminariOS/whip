@@ -18,6 +18,7 @@ import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
 import { HerdScreen } from './src/components/HerdScreen';
 import { GlobalKeychainScreen } from './src/components/GlobalKeychainScreen';
+import { GlassProvider } from './src/components/GlassSurface';
 import { HostsScreen } from './src/components/HostsScreen';
 import { KnownHostsScreen } from './src/components/KnownHostsScreen';
 import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
@@ -269,6 +270,7 @@ function AppContent() {
   const [fullscreenApp, setFullscreenApp] = useState(defaultDevicePreferences.fullscreenApp);
   const [appBackgroundImageUri, setAppBackgroundImageUri] = useState(defaultDevicePreferences.appBackgroundImageUri);
   const [appBackgroundDimming, setAppBackgroundDimming] = useState(defaultDevicePreferences.appBackgroundDimming);
+  const [appGlassEnabled, setAppGlassEnabled] = useState(defaultDevicePreferences.appGlassEnabled);
   const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
   const [reopenTerminalOnLaunch, setReopenTerminalOnLaunch] = useState(defaultDevicePreferences.reopenTerminalOnLaunch);
@@ -366,6 +368,7 @@ function AppContent() {
         setFullscreenApp(preferences.fullscreenApp);
         setAppBackgroundImageUri(preferences.appBackgroundImageUri);
         setAppBackgroundDimming(preferences.appBackgroundDimming);
+        setAppGlassEnabled(preferences.appGlassEnabled);
         setLanguage(preferences.language);
         setKeepScreenOn(preferences.keepScreenOn);
         setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
@@ -405,6 +408,7 @@ function AppContent() {
       fullscreenApp,
       appBackgroundImageUri,
       appBackgroundDimming,
+      appGlassEnabled,
       language,
       keepScreenOn,
       reopenTerminalOnLaunch,
@@ -413,7 +417,7 @@ function AppContent() {
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, biometricForKeys, biometricOnResume, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, appGlassEnabled, biometricForKeys, biometricOnResume, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   useEffect(() => {
     if (!terminalHistoryLoaded) return;
@@ -1500,6 +1504,9 @@ function AppContent() {
         volumeDownAction={terminalPreferences.volumeDownAction}
       />
       {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
+      <GlassProvider
+        blurTarget={navigationBlurTargetRef}
+        enabled={appGlassEnabled && Boolean(appBackgroundImageUri)}>
       <View className="flex-1 bg-background">
         <BlurTargetView ref={navigationBlurTargetRef} style={styles.navigationBlurTarget}>
         {!immersiveTerminal && (
@@ -1579,6 +1586,7 @@ function AppContent() {
               fullscreenApp={fullscreenApp}
               appBackgroundImageUri={appBackgroundImageUri}
               appBackgroundDimming={appBackgroundDimming}
+              appGlassEnabled={appGlassEnabled}
               language={language}
               keepScreenOn={keepScreenOn}
               reopenTerminalOnLaunch={reopenTerminalOnLaunch}
@@ -1597,6 +1605,7 @@ function AppContent() {
               onFullscreenAppChange={setFullscreenApp}
               onAppBackgroundImageChange={setAppBackgroundImageUri}
               onAppBackgroundDimmingChange={setAppBackgroundDimming}
+              onAppGlassEnabledChange={setAppGlassEnabled}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
               onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
@@ -1697,6 +1706,7 @@ function AppContent() {
         visible={appAccessLocked}
         onRetry={() => { authenticateLockedApp(); }}
       />
+        </GlassProvider>
       </SafeAreaView>
     </>
   );

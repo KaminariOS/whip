@@ -16,6 +16,7 @@ import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
 import type { ServerInfo } from '@/src/types';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
+import { GlassBackdrop, GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -106,13 +107,14 @@ export function AboutSection({ server }: AboutSectionProps) {
       <Button
         accessibilityLabel={expanded ? t('about.collapse') : t('about.expand')}
         accessibilityState={{ expanded }}
-        className="min-h-[72px] w-full justify-start rounded-lg border border-border bg-card px-4 py-3"
+        className="min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-3 dark:border-white/10"
         size="content"
         variant="ghost"
         onPress={hapticPress(() => {
           if (!expanded) setContentMounted(true);
           setExpanded(value => !value);
         })}>
+        <GlassBackdrop />
         <View className="min-w-0 flex-1">
           <Text className="text-[17px] font-semibold leading-6">{t('about.title')}</Text>
           <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.copy')}</Text>
@@ -136,9 +138,10 @@ export function AboutSection({ server }: AboutSectionProps) {
           <View className="flex-row gap-2.5">
             <Button
               accessibilityRole="link"
-              className="h-auto min-w-0 flex-1 justify-start rounded-lg border border-border bg-card px-4 py-4"
+              className="h-auto min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
               variant="outline"
               onPress={hapticPress(openReleases)}>
+              <GlassBackdrop />
               <View className="size-11 items-center justify-center rounded-full bg-accent">
                 <Icon as={Code2} size={22} />
               </View>
@@ -150,19 +153,21 @@ export function AboutSection({ server }: AboutSectionProps) {
             </Button>
             <Button
               accessibilityLabel={t('about.shareReleases')}
-              className="w-14 self-stretch rounded-lg border border-border bg-card px-0"
+              className="w-14 self-stretch overflow-hidden rounded-lg border border-white/30 bg-transparent px-0 dark:border-white/10"
               size="content"
               variant="outline"
               onPress={hapticPress(shareReleases)}>
+              <GlassBackdrop />
               <Icon as={Share2} size={21} />
             </Button>
           </View>
           <View className="mt-2.5 flex-row gap-2.5">
             <Button
               accessibilityRole="link"
-              className="h-auto min-w-0 flex-1 justify-start rounded-lg border border-border bg-card px-4 py-4"
+              className="h-auto min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
               variant="outline"
               onPress={hapticPress(openHerdrWebsite)}>
+              <GlassBackdrop />
               <HerdrMark size={44} accessibilityLabel={t('about.herdrIcon')} />
               <View className="min-w-0 flex-1">
                 <Text className="text-[15px] font-semibold leading-5">{t('about.herdrWebsite')}</Text>
@@ -172,10 +177,11 @@ export function AboutSection({ server }: AboutSectionProps) {
             </Button>
             <Button
               accessibilityLabel={t('about.shareHerdrWebsite')}
-              className="w-14 self-stretch rounded-lg border border-border bg-card px-0"
+              className="w-14 self-stretch overflow-hidden rounded-lg border border-white/30 bg-transparent px-0 dark:border-white/10"
               size="content"
               variant="outline"
               onPress={hapticPress(shareHerdrWebsite)}>
+              <GlassBackdrop />
               <Icon as={Share2} size={21} />
             </Button>
           </View>
@@ -200,22 +206,22 @@ export function AboutSection({ server }: AboutSectionProps) {
           </View>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>
-          <View className="overflow-hidden rounded-lg border border-border bg-card">
+          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: HERDR_PROTOCOL_VERSIONS_LABEL })} />
             <AboutRow label={t('about.connectedHost')} value={connectedVersion} detail={connectedProtocol} divided />
-          </View>
+          </GlassSurface>
           <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
             {t('about.compatibilityCopy', { versions: HERDR_PROTOCOL_VERSIONS_LABEL })}
           </Text>
 
           <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.terminalFonts')}</Text>
-          <View className="overflow-hidden rounded-lg border border-border bg-card">
+          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <AboutRow label={t('about.terminalTextFont')} value={terminalFonts.text.displayName} />
             <AboutRow label={t('about.terminalCjkFont')} value={terminalFonts.cjk.displayName} divided />
             <AboutRow label={t('about.terminalSymbolFont')} value={terminalFonts.symbols.displayName} divided />
             <AboutRow label={t('about.terminalEmojiFont')} value={terminalFonts.emoji.displayName} divided />
             <AboutRow label={t('about.terminalFallbackFont')} value={terminalFonts.fallback.displayName} divided />
-          </View>
+          </GlassSurface>
 
           </View>
         ) : null}

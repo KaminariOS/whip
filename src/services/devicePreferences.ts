@@ -62,6 +62,7 @@ export interface DevicePreferences {
   fullscreenApp: boolean;
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
+  appGlassEnabled: boolean;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -81,6 +82,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   fullscreenApp: false,
   appBackgroundImageUri: null,
   appBackgroundDimming: 60,
+  appGlassEnabled: false,
   language: 'system',
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
@@ -176,6 +178,7 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         100,
         defaultDevicePreferences.appBackgroundDimming,
       ),
+      appGlassEnabled: parsed.appGlassEnabled === true,
       language: isLanguagePreference(parsed.language)
         ? parsed.language
         : defaultDevicePreferences.language,

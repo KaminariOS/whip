@@ -67,6 +67,7 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.fullscreenApp).toBe(false);
   expect(defaultDevicePreferences.appBackgroundImageUri).toBeNull();
   expect(defaultDevicePreferences.appBackgroundDimming).toBe(60);
+  expect(defaultDevicePreferences.appGlassEnabled).toBe(false);
   expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.biometricForKeys).toBe(false);
   expect(defaultDevicePreferences.biometricOnResume).toBe(false);
@@ -96,6 +97,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     fullscreenApp: false,
     appBackgroundImageUri: null,
     appBackgroundDimming: 60,
+    appGlassEnabled: false,
     language: 'system',
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
@@ -323,6 +325,14 @@ test('sanitizes persisted app background preferences separately from the termina
   expect(preferences.appBackgroundDimming).toBe(0);
   expect(preferences.terminal.backgroundImageUri).toBe('file:///terminal.webp');
   expect(preferences.terminal.backgroundDimming).toBe(80);
+});
+
+test('only enables the experimental app glass preference for an explicit boolean opt-in', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ appGlassEnabled: true }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ appGlassEnabled: true });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ appGlassEnabled: 'yes' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ appGlassEnabled: false });
 });
 
 test('persists new preferences under the v3 key', async () => {

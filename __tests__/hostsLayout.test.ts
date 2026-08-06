@@ -25,7 +25,7 @@ describe('host list layout', () => {
     );
 
     expect(screen).toContain('<View className="gap-3">');
-    expect(screen).toContain('rounded-lg border border-border bg-card pr-2');
+    expect(screen).toContain('<GlassSurface className="min-h-[88px]');
   });
 
   it('presents connection failures as a readable live-region message', () => {
@@ -36,5 +36,16 @@ describe('host list layout', () => {
 
     expect(screen).toContain('accessibilityLiveRegion="polite"');
     expect(screen).toContain("t('hosts.errorTitle')");
+  });
+
+  it('clips swipe actions to the amount revealed by the row', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/HostsScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain('width: Math.max(0, -translateX.value)');
+    expect(screen).toContain('style={actionRevealStyle}');
+    expect(screen).toContain('className="absolute inset-y-0 right-0 overflow-hidden"');
   });
 });

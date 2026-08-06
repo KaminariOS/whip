@@ -32,6 +32,7 @@ import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, AnimatedEntrance, hapticPress, StatusBadge } from './app-ui';
+import { GlassBackdrop, GlassSurface } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -301,7 +302,7 @@ export function HerdScreen({
       ) : null}
 
       {workspaceEditorMode && selectedQueue ? (
-        <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
+        <GlassSurface className="flex-row items-center gap-1.5 border-b border-white/30 p-[7px] dark:border-white/10">
           <Text className="font-mono text-[8px] text-foreground">{workspaceEditorMode === 'rename' ? t('herd.rename') : t('herd.new')} {t('herd.space')}</Text>
           <Input autoFocus selectTextOnFocus={workspaceEditorMode === 'rename'} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
           {workspaceEditorMode === 'create' ? (
@@ -309,7 +310,7 @@ export function HerdScreen({
           ) : null}
           <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
           <Button className="h-[34px] rounded-none px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
-        </View>
+        </GlassSurface>
       ) : null}
 
       <ScrollView
@@ -377,7 +378,7 @@ export function HerdScreen({
                 <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{selectedWorkspace ? t('herd.noAgentsWorkspace', { workspace: selectedWorkspace.label || selectedWorkspace.workspace_id }) : selectedQueue ? t('herd.noAgentsHost', { host: selectedQueue.label }) : t('herd.noAgentsMerged')}</Text>
               </View>
             ) : (
-              <View className="border-y border-border">
+              <View className="gap-2">
                 {visibleSorted.map((item, index) => (
                   <AgentRow
                     key={`${item.hostId}:${item.agent.terminal_id}`}
@@ -538,6 +539,9 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
   const contentStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
+  const actionRevealStyle = useAnimatedStyle(() => ({
+    width: Math.max(0, -translateX.value),
+  }));
 
   const restore = () => {
     translateX.value = withSpring(0, {
@@ -598,19 +602,24 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
     <Animated.View className="overflow-hidden" style={rowStyle}>
       <AnimatedEntrance delay={Math.min(index * 45, 225)}>
         <View
-          className="relative min-h-[92px] overflow-hidden bg-destructive"
+          className="relative min-h-[92px] overflow-hidden rounded-xl"
           onLayout={event => { rowWidthRef.current = event.nativeEvent.layout.width; }}>
-          <View className="absolute inset-0 items-end justify-center pr-7">
-            <Icon as={X} className="text-destructive-foreground" size={22} />
-          </View>
           <Animated.View
-            className="bg-background"
+            className="absolute inset-y-0 right-0 overflow-hidden rounded-r-xl bg-destructive"
+            style={actionRevealStyle}>
+            <View className="absolute inset-y-0 right-0 items-end justify-center pr-7" style={{ width: HERD_TAB_MAX_DRAG }}>
+              <Icon as={X} className="text-destructive-foreground" size={22} />
+            </View>
+          </Animated.View>
+          <Animated.View
+            className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10"
             style={contentStyle}
             {...panResponder.panHandlers}>
+            <GlassBackdrop />
             <Button
               accessibilityActions={[{ name: 'close-tab', label: t('session.closeTab', { tab: item.tabLabel }) }]}
               accessibilityLabel={t('herd.openAgentTerminal', { agent: item.primaryLabel, host: item.hostLabel })}
-              className={index > 0 ? 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none border-t border-border px-0 py-[13px]' : 'h-auto min-h-[92px] w-full justify-start gap-3 rounded-none px-0 py-[13px]'}
+              className="h-auto min-h-[90px] w-full justify-start gap-3 rounded-none px-3 py-[12px]"
               disabled={closing}
               variant="ghost"
               onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'close-tab') commitClose(); }}

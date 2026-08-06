@@ -15,6 +15,7 @@ import {
 import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
 import type { HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
+import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -60,11 +61,11 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
       ) : null}
 
       {credentialRecovery.state === 'locked' ? (
-        <View className="mx-4 mt-4 flex-row items-center gap-3 rounded-lg border border-border bg-card p-3.5">
+        <GlassSurface className="mx-4 mt-4 flex-row items-center gap-3 rounded-lg border border-white/30 p-3.5 dark:border-white/10">
           <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={LockKeyhole} className="text-primary" size={19} /></View>
           <View className="min-w-0 flex-1"><Text className="text-sm font-semibold">{t('hosts.recoveryLocked')}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('hosts.recoveryCopy', { count: credentialRecovery.count })}</Text></View>
           <Button className="rounded-full px-3.5" size="sm" disabled={credentialRecoveryBusy} onPress={hapticPress(async () => { await onUnlockCredentials(); })}><Text>{credentialRecoveryBusy ? t('hosts.unlocking') : t('hosts.unlock')}</Text></Button>
-        </View>
+        </GlassSurface>
       ) : null}
 
       {credentialRecovery.state === 'unavailable' ? (
@@ -103,7 +104,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                       onDelete={() => onDelete(host)}
                       onDisconnect={() => onDisconnect(host)}>
                       {({ closeActions, actionsOpen }) => (
-                        <View className="min-h-[88px] flex-row items-center rounded-lg border border-border bg-card pr-2">
+                        <GlassSurface className="min-h-[88px] flex-row items-center rounded-lg border border-white/30 pr-2 dark:border-white/10">
                           <Button
                             accessibilityLabel={t('hosts.connectTo', { host: displayName })}
                             className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
@@ -128,7 +129,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                             if (actionsOpen) closeActions();
                             else onEdit(host);
                           }} />
-                        </View>
+                        </GlassSurface>
                       )}
                     </SwipeableHostRow>
                   );
@@ -139,10 +140,10 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
         </View>
       </ScrollView>
 
-      <View className="min-h-11 flex-row items-center gap-2 border-t border-border px-[18px]">
+      <GlassSurface className="min-h-11 flex-row items-center gap-2 border-t border-white/30 px-[18px] dark:border-white/10">
         <Icon as={LockKeyhole} className="text-muted-foreground" size={14} />
         <Text className="flex-1 text-[11px] leading-[15px] text-muted-foreground">{t('hosts.securityCopy')}</Text>
-      </View>
+      </GlassSurface>
     </View>
   );
 }
@@ -166,6 +167,9 @@ function SwipeableHostRow({
   const [actionsOpen, setActionsOpen] = useState(false);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
+  }));
+  const actionRevealStyle = useAnimatedStyle(() => ({
+    width: Math.max(0, -translateX.value),
   }));
 
   const settle = (open: boolean) => {
@@ -201,30 +205,32 @@ function SwipeableHostRow({
 
   return (
     <View className="relative min-h-[88px] overflow-hidden rounded-lg">
-      <View
+      <Animated.View
         accessibilityElementsHidden={!actionsOpen}
-        className="absolute inset-y-0 right-0 flex-row"
+        className="absolute inset-y-0 right-0 overflow-hidden"
         importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'}
-        style={{ width: HOST_SWIPE_ACTION_WIDTH }}>
-        <Button
-          accessibilityLabel={t('hosts.disconnectHost', { host: displayName })}
-          className="h-full w-[76px] flex-col gap-1 rounded-l-lg rounded-r-none bg-warning"
-          disabled={!connected}
-          size="content"
-          onPress={hapticPress(() => runAction(onDisconnect))}>
-          <Icon as={LogOut} className="text-black" size={19} />
-          <Text className="text-[11px] font-semibold text-black">{t('hosts.disconnect')}</Text>
-        </Button>
-        <Button
-          accessibilityLabel={t('hosts.deleteHost', { host: displayName })}
-          className="h-full w-[76px] flex-col gap-1 rounded-none"
-          size="content"
-          variant="destructive"
-          onPress={hapticPress(() => runAction(onDelete))}>
-          <Icon as={Trash2} className="text-destructive-foreground" size={19} />
-          <Text className="text-[11px] font-semibold">{t('hosts.delete')}</Text>
-        </Button>
-      </View>
+        style={actionRevealStyle}>
+        <View className="absolute inset-y-0 right-0 flex-row" style={{ width: HOST_SWIPE_ACTION_WIDTH }}>
+          <Button
+            accessibilityLabel={t('hosts.disconnectHost', { host: displayName })}
+            className="h-full w-[76px] flex-col gap-1 rounded-l-lg rounded-r-none bg-warning"
+            disabled={!connected}
+            size="content"
+            onPress={hapticPress(() => runAction(onDisconnect))}>
+            <Icon as={LogOut} className="text-black" size={19} />
+            <Text className="text-[11px] font-semibold text-black">{t('hosts.disconnect')}</Text>
+          </Button>
+          <Button
+            accessibilityLabel={t('hosts.deleteHost', { host: displayName })}
+            className="h-full w-[76px] flex-col gap-1 rounded-none"
+            size="content"
+            variant="destructive"
+            onPress={hapticPress(() => runAction(onDelete))}>
+            <Icon as={Trash2} className="text-destructive-foreground" size={19} />
+            <Text className="text-[11px] font-semibold">{t('hosts.delete')}</Text>
+          </Button>
+        </View>
+      </Animated.View>
       <Animated.View
         style={animatedStyle}
         {...panResponder.panHandlers}>

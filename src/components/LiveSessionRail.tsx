@@ -8,6 +8,7 @@ import { aggregateAgentStatus } from '@/src/liveHostSessions';
 import { statusColor as agentStatusColor, useTheme, type ThemeColors } from '@/src/theme';
 import type { AgentStatus } from '@/src/types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
+import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -36,7 +37,7 @@ export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onN
   ));
 
   return (
-    <View className="h-12 flex-row items-stretch border-b border-border bg-background">
+    <GlassSurface className="h-12 flex-row items-stretch border-b border-white/30 dark:border-white/10">
       <ScrollView className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5" horizontal showsHorizontalScrollIndicator={false}>
         <HostPill session={allHosts} active={activeHostId === null} onSelect={() => onSelect(null)} />
         {orderedSessions.map(session => {
@@ -45,7 +46,7 @@ export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onN
         })}
       </ScrollView>
       <Button accessibilityLabel={t('rail.newHostSession')} className="h-12 w-[46px] rounded-none px-0" variant="ghost" onPress={hapticPress(onNew)}><Plus size={22} color={colors.text} /></Button>
-    </View>
+    </GlassSurface>
   );
 }
 

@@ -8,6 +8,7 @@ import { cn } from '@/src/lib/utils';
 import { statusColor, useTheme } from '@/src/theme';
 import type { WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
+import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -39,7 +40,7 @@ export function WorkspaceRail({
   ));
 
   return (
-    <View className="h-12 flex-row border-b border-border bg-background">
+    <GlassSurface className="h-12 flex-row border-b border-white/30 dark:border-white/10">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5">
         <WorkspacePill
           label={t('rail.allSpaces')}
@@ -66,7 +67,7 @@ export function WorkspaceRail({
       <Button accessibilityLabel={t('rail.newWorkspace')} className="h-12 w-12 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
         <Plus size={17} color={colors.text} />
       </Button>
-    </View>
+    </GlassSurface>
   );
 }
 

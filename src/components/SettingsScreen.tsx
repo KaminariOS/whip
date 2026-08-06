@@ -34,6 +34,7 @@ import { removeAppBackgroundImage, selectAppBackgroundImage } from '@/src/servic
 import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
 import { hapticPress, IconButton } from './app-ui';
+import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -100,6 +101,7 @@ export interface SettingsSectionProps {
   fullscreenApp: boolean;
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
+  appGlassEnabled: boolean;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -116,6 +118,7 @@ export interface SettingsSectionProps {
   onFullscreenAppChange: (value: boolean) => void;
   onAppBackgroundImageChange: (value: string | null) => void;
   onAppBackgroundDimmingChange: (value: number) => void;
+  onAppGlassEnabledChange: (value: boolean) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
   onReopenTerminalOnLaunchChange: (value: boolean) => void;
@@ -193,7 +196,7 @@ export function SettingsSection(props: SettingsSectionProps) {
     <View className="px-4 py-5">
         <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
         <Text className="mb-3 mt-4 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
-        <View className="overflow-hidden rounded-lg border border-border bg-card">
+        <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
           <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
           <ValueRow
             title={t('settings.backgroundAlertDuration')}
@@ -218,10 +221,10 @@ export function SettingsSection(props: SettingsSectionProps) {
             onPress={changeNotificationSettings}
             divided
           />
-        </View>
+        </GlassSurface>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
-        <View className="overflow-hidden rounded-lg border border-border bg-card">
+        <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
           <ActionRow
             title={t('settings.globalKeychain')}
             copy={t('settings.globalKeychainCopy', { count: props.globalKeyCount })}
@@ -237,20 +240,20 @@ export function SettingsSection(props: SettingsSectionProps) {
           />
           <SettingRow title={t('settings.biometricForKeys')} copy={t('settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
           <SettingRow title={t('settings.biometricOnResume')} copy={t('settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
-        </View>
+        </GlassSurface>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>
         <View className="gap-3">
           <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
-          <View className="overflow-hidden rounded-lg border border-border bg-card">
+          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <SettingRow
               title={t('settings.fullscreenApp')}
               copy={t('settings.fullscreenAppCopy')}
               value={props.fullscreenApp}
               onChange={props.onFullscreenAppChange}
             />
-          </View>
-          <View className="overflow-hidden rounded-lg border border-border bg-card">
+          </GlassSurface>
+          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <AppBackgroundRow
               busy={appBackgroundBusy}
               uri={props.appBackgroundImageUri}
@@ -266,12 +269,22 @@ export function SettingsSection(props: SettingsSectionProps) {
               onIncrease={() => props.onAppBackgroundDimmingChange(Math.min(100, props.appBackgroundDimming + 5))}
               divided
             />
-          </View>
+            <SettingRow
+              title={t('settings.experimentalGlass')}
+              copy={props.appBackgroundImageUri
+                ? t('settings.experimentalGlassCopy')
+                : t('settings.experimentalGlassRequiresImage')}
+              value={props.appGlassEnabled}
+              disabled={!props.appBackgroundImageUri}
+              onChange={props.onAppGlassEnabledChange}
+              divided
+            />
+          </GlassSurface>
           <LanguageRow value={props.language} onChange={props.onLanguageChange} />
         </View>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.herd')}</Text>
-        <View className="overflow-hidden rounded-lg border border-border bg-card">
+        <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
           <View className="p-3.5">
             <DetailsTitle
               title={t('settings.agentCommand')}
@@ -286,10 +299,10 @@ export function SettingsSection(props: SettingsSectionProps) {
               autoCorrect={false}
             />
           </View>
-        </View>
+        </GlassSurface>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.terminal')}</Text>
-        <View className="overflow-hidden rounded-lg border border-border bg-card">
+        <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
           <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
           <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
           <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
@@ -347,7 +360,7 @@ export function SettingsSection(props: SettingsSectionProps) {
             onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming: Math.min(100, props.terminalPreferences.backgroundDimming + 5) })}
             divided
           />
-        </View>
+        </GlassSurface>
 
         <VolumeKeyActionSheet
           keyName={volumeKeyEditor}
@@ -381,7 +394,7 @@ const appearanceOptions: { labelKey: string; value: AppearancePreference }[] = [
 function AppearanceRow({ value, onChange }: { value: AppearancePreference; onChange: (value: AppearancePreference) => void }) {
   const { t } = useTranslation();
   return (
-    <View className="rounded-lg border border-border bg-card p-3.5">
+    <GlassSurface className="rounded-lg border border-white/30 p-3.5 dark:border-white/10">
       <DetailsTitle
         title={t('settings.colorTheme')}
         copy={t('settings.colorThemeCopy')}
@@ -403,7 +416,7 @@ function AppearanceRow({ value, onChange }: { value: AppearancePreference; onCha
           );
         })}
       </View>
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -416,7 +429,7 @@ const languageOptions: { labelKey: string; value: LanguagePreference }[] = [
 function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange: (value: LanguagePreference) => void }) {
   const { t } = useTranslation();
   return (
-    <View className="rounded-lg border border-border bg-card p-3.5">
+    <GlassSurface className="rounded-lg border border-white/30 p-3.5 dark:border-white/10">
       <DetailsTitle
         title={t('settings.language')}
         copy={t('settings.languageCopy')}
@@ -437,7 +450,7 @@ function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange:
           );
         })}
       </View>
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -795,8 +808,8 @@ function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold
   );
 }
 
-function SettingRow({ title, copy, value, onChange, divided = false }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; divided?: boolean }) {
-  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}><View className="flex-1 pr-[18px]"><DetailsTitle title={title} copy={copy} /></View><Switch checked={value} onCheckedChange={onChange} /></View>;
+function SettingRow({ title, copy, value, onChange, divided = false, disabled = false }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; divided?: boolean; disabled?: boolean }) {
+  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}><View className="flex-1 pr-[18px]"><DetailsTitle title={title} copy={copy} /></View><Switch checked={value} disabled={disabled} onCheckedChange={onChange} /></View>;
 }
 
 function ActionRow({ title, copy, icon, value, onPress, divided = false }: { title: string; copy: string; icon: LucideIcon; value?: string; onPress: () => void | Promise<void>; divided?: boolean }) {

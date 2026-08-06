@@ -22,7 +22,8 @@ describe('About screen', () => {
     expect(screen).toContain('className="absolute inset-x-0 top-0 pb-6 pt-7"');
     expect(screen).toContain("pointerEvents={expanded ? 'auto' : 'none'}");
     expect(screen).toContain("t('about.copy')");
-    expect(screen).toContain('className="min-h-[72px] w-full justify-start rounded-lg border border-border bg-card');
+    expect(screen).toContain('className="min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent');
+    expect(screen).toContain('<GlassBackdrop />');
     expect(screen).toContain('variant="ghost"');
     expect(screen.indexOf("t('about.source')")).toBeLessThan(screen.indexOf('<WhipMark'));
   });

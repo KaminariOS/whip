@@ -1,8 +1,9 @@
-import { ScrollView, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AboutSection, type AboutSectionProps } from './AboutScreen';
 import { SettingsDetailsProvider, SettingsSection, type SettingsSectionProps } from './SettingsScreen';
+import { GlassSurface } from './GlassSurface';
 import { Text } from './ui/text';
 
 type Props = SettingsSectionProps & AboutSectionProps;
@@ -12,9 +13,9 @@ export function MoreScreen(props: Props) {
   return (
     <SettingsDetailsProvider>
       <ScrollView className="flex-1">
-        <View className="border-b border-border px-5 py-5">
+        <GlassSurface className="border-b border-white/30 px-5 py-5 dark:border-white/10">
           <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
-        </View>
+        </GlassSurface>
         <AboutSection server={props.server} />
         <SettingsSection
         alertsEnabled={props.alertsEnabled}
@@ -28,6 +29,7 @@ export function MoreScreen(props: Props) {
         fullscreenApp={props.fullscreenApp}
         appBackgroundImageUri={props.appBackgroundImageUri}
         appBackgroundDimming={props.appBackgroundDimming}
+        appGlassEnabled={props.appGlassEnabled}
         language={props.language}
         keepScreenOn={props.keepScreenOn}
         reopenTerminalOnLaunch={props.reopenTerminalOnLaunch}
@@ -45,6 +47,7 @@ export function MoreScreen(props: Props) {
         onFullscreenAppChange={props.onFullscreenAppChange}
         onAppBackgroundImageChange={props.onAppBackgroundImageChange}
         onAppBackgroundDimmingChange={props.onAppBackgroundDimmingChange}
+        onAppGlassEnabledChange={props.onAppGlassEnabledChange}
         onLanguageChange={props.onLanguageChange}
         onKeepScreenOnChange={props.onKeepScreenOnChange}
         onReopenTerminalOnLaunchChange={props.onReopenTerminalOnLaunchChange}
