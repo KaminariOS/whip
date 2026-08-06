@@ -282,6 +282,8 @@ export const en = {
   'settings.fontSize': 'Font size',
   'settings.scrollback': 'Scrollback',
   'settings.lines': '{{count}} lines',
+  'settings.cachedTerminals': 'Cached terminals',
+  'settings.cachedTerminalsCopy': 'Enter an integer greater than 2. Older terminal views are rebuilt when reopened.',
   'settings.blinkingCursor': 'Blinking cursor',
   'settings.blinkingCursorCopy': 'Animate the terminal cursor while the pane is active.',
   'settings.backgroundDimming': 'Background dimming',

@@ -18,11 +18,13 @@ describe('terminal renderer lifecycle', () => {
     expect(renderer.match(/\n {4}<WebView\n/g)).toHaveLength(1);
   });
 
-  it('creates one xterm container and one channel for every open terminal', () => {
+  it('creates xterm containers on demand for the active terminal and swipe preview', () => {
     const renderer = readSource('src/components/TerminalRendererHost.tsx');
     const assets = readSource('scripts/sync-terminal-assets.mjs');
 
-    expect(renderer).toContain('for (const target of targets) ensureEntry(target);');
+    expect(renderer).not.toContain('for (const target of targets) ensureEntry(target);');
+    expect(renderer).toContain('ensureEntry(activeTarget);');
+    expect(renderer).toContain('ensureEntry(previewTarget);');
     expect(renderer).toContain('entries.current.set(target.key, entry);');
     expect(renderer).toContain('window.herdrCreate(');
     expect(assets).toContain("const root = document.createElement('div');");
@@ -46,16 +48,23 @@ describe('terminal renderer lifecycle', () => {
     expect(assets).toContain('send({ ...value, key: entry.key });');
   });
 
-  it('has no WebView or SSH-channel retention limit', () => {
-    const app = readSource('App.tsx');
+  it('bounds xterm instances with a configurable LRU while keeping SSH bridges warm', () => {
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
     const client = readSource('src/services/HerdrClient.ts');
     const preferences = readSource('src/services/devicePreferences.ts');
+    const settings = readSource('src/components/SettingsScreen.tsx');
 
-    expect(app).not.toContain('TerminalBridgeRetention');
-    expect(app).not.toContain('terminalSurfaceLru');
+    expect(renderer).toContain('terminalRendererEvictionKeys(');
+    expect(renderer).toContain('preferences.xtermCacheCapacity');
+    expect(renderer).toContain('entry.target.client.detachTerminal(terminalId)');
+    expect(renderer).toContain('window.herdrRemove(${JSON.stringify(key)})');
+    expect(renderer).toContain('const knownTargets = useRef(new Map<string, TerminalRenderTarget>())');
+    expect(renderer).toContain('target.client.closeTerminalBridge(target.session.terminalId)');
     expect(client).not.toContain('terminalBridgeLru');
-    expect(client).not.toContain('TerminalBridgeRetention');
-    expect(preferences).not.toContain('retainedSshBridges');
+    expect(preferences).toContain('xtermCacheCapacity: number;');
+    expect(settings).toContain('function XtermCacheCapacityRow');
+    expect(settings).toContain('Number.isSafeInteger(parsed)');
+    expect(settings).toContain('inputMode="numeric"');
   });
 
   it('keeps each bridge open until its terminal or host closes', () => {

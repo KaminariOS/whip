@@ -54,6 +54,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     volumeDownAction: 'none',
     fontSize: 8,
     scrollback: 5000,
+    xtermCacheCapacity: 20,
     cursorBlink: true,
     doubleTapAction: 'tab',
     openLinksInApp: true,
@@ -111,6 +112,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       volumeDownAction: 'none',
       fontSize: 8,
       scrollback: 9000,
+      xtermCacheCapacity: 20,
       cursorBlink: false,
       doubleTapAction: 'tab',
       openLinksInApp: true,
@@ -311,6 +313,33 @@ test('sanitizes persisted terminal background preferences', async () => {
   expect(preferences.terminal.fontSize).toBe(24);
   expect(preferences.terminal.backgroundImageUri).toBe('file:///data/user/0/io.github.kaminarios.whip/files/background.webp');
   expect(preferences.terminal.backgroundDimming).toBe(100);
+});
+
+test('loads and bounds the xterm cache capacity', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { xtermCacheCapacity: 7 } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { xtermCacheCapacity: 7 },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { xtermCacheCapacity: 99 } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { xtermCacheCapacity: 99 },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { xtermCacheCapacity: 0 } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { xtermCacheCapacity: 20 },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { xtermCacheCapacity: 'all' } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { xtermCacheCapacity: 20 },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { xtermCacheCapacity: 3.5 } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { xtermCacheCapacity: 20 },
+  });
 });
 
 test('sanitizes persisted app background preferences separately from the terminal', async () => {

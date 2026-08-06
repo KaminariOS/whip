@@ -275,6 +275,8 @@ export const zhHant: Record<string, string> = {
   'settings.fontSize': '字型大小',
   'settings.scrollback': '回捲行數',
   'settings.lines': '{{count}} 行',
+  'settings.cachedTerminals': '快取的終端機',
+  'settings.cachedTerminalsCopy': '請輸入大於 2 的整數；較舊的終端機畫面會在重新開啟時重建。',
   'settings.blinkingCursor': '閃爍游標',
   'settings.blinkingCursorCopy': '窗格使用中時讓終端機游標閃爍。',
   'settings.backgroundDimming': '背景暗度',

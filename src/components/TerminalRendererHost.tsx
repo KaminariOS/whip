@@ -19,6 +19,10 @@ import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes'
 
 import type { TerminalFrame } from '../lib/terminalBridge';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
+import {
+  terminalRendererEvictionKeys,
+  touchTerminalRendererEntry,
+} from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import type { TerminalSessionStatus } from '../terminalSessions';
 
@@ -109,6 +113,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const webView = useRef<WebViewHandle | null>(null);
   const hostReady = useRef(false);
   const entries = useRef(new Map<string, RendererEntry>());
+  const knownTargets = useRef(new Map<string, TerminalRenderTarget>());
   const activeKey = useRef<string | null>(null);
   const appState = useRef(AppState.currentState);
   activeKey.current = activeTarget?.key || null;
@@ -127,6 +132,37 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const inject = useCallback((script: string) => {
     webView.current?.injectJavaScript(`${script} true;`);
   }, []);
+
+  const disposeEntry = useCallback((
+    key: string,
+    entry: RendererEntry,
+    closeBridge: boolean,
+  ) => {
+    if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+    entry.reconnectTimer = null;
+    entry.controllerAttached = false;
+    entry.connecting = false;
+    entries.current.delete(key);
+    const terminalId = entry.target.session.terminalId;
+    if (closeBridge) {
+      entry.target.client.closeTerminalBridge(terminalId).catch(() => undefined);
+    } else {
+      entry.target.client.detachTerminal(terminalId).catch(() => undefined);
+    }
+    if (hostReady.current) inject(`window.herdrRemove(${JSON.stringify(key)});`);
+  }, [inject]);
+
+  const pruneEntries = useCallback((protectedKeys: ReadonlySet<string>) => {
+    const evictions = terminalRendererEvictionKeys(
+      [...entries.current.keys()],
+      preferences.xtermCacheCapacity,
+      protectedKeys,
+    );
+    for (const key of evictions) {
+      const entry = entries.current.get(key);
+      if (entry) disposeEntry(key, entry, false);
+    }
+  }, [disposeEntry, preferences.xtermCacheCapacity]);
 
   const configureEntry = useCallback((entry: RendererEntry) => {
     inject(`window.herdrConfigure(${JSON.stringify(entry.target.key)}, ${JSON.stringify({
@@ -175,6 +211,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportStatus(entry.target, 'connecting', undefined, entry.reconnectAttempt);
     }
     const scheduleReconnect = (reason: string) => {
+      if (entries.current.get(entry.target.key) !== entry) return;
       entry.connecting = false;
       entry.controllerAttached = false;
       if (AppState.currentState !== 'active') return;
@@ -196,10 +233,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       frame => injectFrame(entry, frame),
       reason => scheduleReconnect(reason || 'Remote terminal closed'),
     ).then(() => {
+      if (entries.current.get(entry.target.key) !== entry) return;
       entry.connecting = false;
       entry.reconnectAttempt = 0;
       reportStatus(entry.target, 'connected', undefined, 0);
     }).catch(reason => {
+      if (entries.current.get(entry.target.key) !== entry) return;
       const message = String(reason);
       entry.connecting = false;
       entry.controllerAttached = false;
@@ -210,7 +249,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   const ensureEntry = useCallback((target: TerminalRenderTarget | null | undefined): RendererEntry | null => {
     if (!target) return null;
-    let entry = entries.current.get(target.key);
+    let entry = touchTerminalRendererEntry(entries.current, target.key);
     if (!entry) {
       entry = {
         target,
@@ -274,19 +313,28 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   useEffect(() => {
     const valid = new Map(targets.map(target => [target.key, target]));
-    for (const target of targets) ensureEntry(target);
+    for (const [key, target] of knownTargets.current) {
+      if (valid.has(key)) continue;
+      const entry = entries.current.get(key);
+      if (entry) disposeEntry(key, entry, true);
+      else target.client.closeTerminalBridge(target.session.terminalId).catch(() => undefined);
+    }
+    knownTargets.current = valid;
     for (const [key, entry] of entries.current) {
       const target = valid.get(key);
       if (target) {
         entry.target = target;
         continue;
       }
-      if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-      entry.target.client.closeTerminalBridge(entry.target.session.terminalId).catch(() => undefined);
-      entries.current.delete(key);
-      if (hostReady.current) inject(`window.herdrRemove(${JSON.stringify(key)});`);
+      disposeEntry(key, entry, true);
     }
-  }, [ensureEntry, inject, targets]);
+    ensureEntry(activeTarget);
+    ensureEntry(previewTarget);
+    pruneEntries(new Set([
+      activeTarget?.key,
+      previewTarget?.key,
+    ].filter((key): key is string => Boolean(key))));
+  }, [activeTarget, disposeEntry, ensureEntry, previewTarget, pruneEntries, targets]);
 
   useEffect(() => {
     for (const entry of entries.current.values()) {

@@ -16,6 +16,9 @@ import {
   type TerminalDoubleTapAction,
 } from '@/src/lib/terminalDoubleTap';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
+import {
+  MIN_XTERM_CACHE_CAPACITY,
+} from '@/src/lib/terminalRendererLru';
 import { cn } from '@/src/lib/utils';
 import {
   terminalVolumeKeyActions,
@@ -344,6 +347,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           <SettingRow title={t('settings.pauseResizeInBackground')} copy={t('settings.pauseResizeInBackgroundCopy')} value={props.terminalPreferences.pauseResizeInBackground} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, pauseResizeInBackground: value })} divided />
           <ValueRow title={t('settings.fontSize')} value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(24, props.terminalPreferences.fontSize + 1) })} divided />
           <ValueRow title={t('settings.scrollback')} value={t('settings.lines', { count: props.terminalPreferences.scrollback })} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
+          <XtermCacheCapacityRow value={props.terminalPreferences.xtermCacheCapacity} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, xtermCacheCapacity: value })} />
           <SettingRow title={t('settings.blinkingCursor')} copy={t('settings.blinkingCursorCopy')} value={props.terminalPreferences.cursorBlink} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, cursorBlink: value })} divided />
           <TerminalBackgroundRow
             busy={terminalBackgroundBusy}
@@ -460,6 +464,39 @@ function ValueRow({ title, copy, value, onDecrease, onIncrease, divided = false,
     ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2'
     : 'min-h-16 flex-row items-center px-3.5 py-2';
   return <View className={rowClassName}><View className="min-w-0 flex-1 pr-2">{copy ? <DetailsTitle title={title} copy={copy} /> : <Text className="text-[15px] font-semibold leading-5">{title}</Text>}</View><View className="flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[64px] text-center text-xs text-muted-foreground/50' : 'min-w-[64px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
+}
+
+function XtermCacheCapacityRow({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const parsed = Number(draft);
+    if (Number.isSafeInteger(parsed) && parsed >= MIN_XTERM_CACHE_CAPACITY) {
+      onChange(parsed);
+      setDraft(String(parsed));
+      return;
+    }
+    setDraft(String(value));
+  };
+  return (
+    <View className="min-h-16 flex-row items-center border-t border-border px-3.5 py-2">
+      <View className="min-w-0 flex-1 pr-3">
+        <DetailsTitle title={t('settings.cachedTerminals')} copy={t('settings.cachedTerminalsCopy')} />
+      </View>
+      <Input
+        accessibilityLabel={t('settings.cachedTerminals')}
+        className="h-10 w-20 text-center font-mono"
+        inputMode="numeric"
+        keyboardType="number-pad"
+        selectTextOnFocus
+        value={draft}
+        onBlur={commit}
+        onChangeText={text => setDraft(text.replace(/[^0-9]/g, ''))}
+        onSubmitEditing={commit}
+      />
+    </View>
+  );
 }
 
 function ChoiceRow({ title, copy, value, onPress, divided = false }: { title: string; copy: string; value: string; onPress: () => void; divided?: boolean }) {

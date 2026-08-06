@@ -9,6 +9,10 @@ import {
   parseTerminalVolumeKeyAction,
   type TerminalVolumeKeyAction,
 } from '../lib/volumeKeys';
+import {
+  DEFAULT_XTERM_CACHE_CAPACITY,
+  MIN_XTERM_CACHE_CAPACITY,
+} from '../lib/terminalRendererLru';
 import type { AppTab } from '../types';
 import {
   migrateAppBackgroundImage,
@@ -36,6 +40,7 @@ export interface TerminalPreferences {
   volumeDownAction: TerminalVolumeKeyAction;
   fontSize: number;
   scrollback: number;
+  xtermCacheCapacity: number;
   cursorBlink: boolean;
   doubleTapAction: TerminalDoubleTapAction;
   openLinksInApp: boolean;
@@ -95,6 +100,7 @@ export const defaultDevicePreferences: DevicePreferences = {
     volumeDownAction: 'none',
     fontSize: 8,
     scrollback: 5000,
+    xtermCacheCapacity: DEFAULT_XTERM_CACHE_CAPACITY,
     cursorBlink: true,
     doubleTapAction: 'tab',
     openLinksInApp: true,
@@ -204,6 +210,7 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         ),
         fontSize,
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),
+        xtermCacheCapacity: parseXtermCacheCapacity(terminal.xtermCacheCapacity),
         cursorBlink: terminal.cursorBlink ?? defaultDevicePreferences.terminal.cursorBlink,
         doubleTapAction: parseTerminalDoubleTapAction(
           terminal.doubleTapAction,
@@ -241,6 +248,14 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(min, Math.min(max, Math.round(value)))
     : fallback;
+}
+
+function parseXtermCacheCapacity(value: unknown): number {
+  return typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= MIN_XTERM_CACHE_CAPACITY
+    ? value
+    : DEFAULT_XTERM_CACHE_CAPACITY;
 }
 
 function isAppTab(value: unknown): value is AppTab {
