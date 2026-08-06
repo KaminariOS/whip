@@ -1,12 +1,13 @@
 import './global.css';
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { BlurTargetView } from 'expo-blur';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocales } from 'expo-localization';
 import { PortalHost } from '@rn-primitives/portal';
-import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, View } from 'react-native';
+import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -215,6 +216,7 @@ function AppContent() {
   const locales = useLocales();
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
+  const navigationBlurTargetRef = useRef<View | null>(null);
   const hostsRef = useRef<HostProfile[]>([]);
   const knownHostsRef = useRef<KnownHost[]>([]);
   const persistedLiveHostsRef = useRef<PersistedLiveHosts>({ hostIds: [], activeHostId: null });
@@ -1447,6 +1449,7 @@ function AppContent() {
       />
       {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
       <View className="flex-1 bg-background">
+        <BlurTargetView ref={navigationBlurTargetRef} style={styles.navigationBlurTarget}>
         {!immersiveTerminal && (
           <View className="flex-1 bg-background">
           {navigation.tab === 'hosts' && (
@@ -1564,9 +1567,10 @@ function AppContent() {
             onTerminalStatus={updateTerminalStatus}
           />
         )}
+        </BlurTargetView>
 
         {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && !knownHostsOpen && (
-          <BottomNavigation activeTab={navigation.tab} onSelect={selectTab} />
+          <BottomNavigation activeTab={navigation.tab} blurTarget={navigationBlurTargetRef} onSelect={selectTab} />
         )}
 
         {editorProfile && (
@@ -1632,6 +1636,12 @@ function AppContent() {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  navigationBlurTarget: {
+    flex: 1,
+  },
+});
 
 function TerminalKeepAwake() {
   useKeepAwake('herdr-terminal');

@@ -1,18 +1,19 @@
+import { BlurView } from 'expo-blur';
 import { CircleEllipsis, Server, SquareTerminal, type LucideIcon } from 'lucide-react-native';
+import { type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cn } from '@/src/lib/utils';
-import { useTheme } from '@/src/theme';
+import { useTheme, type ThemeColors } from '@/src/theme';
 import type { AppTab } from '@/src/types';
 import { hapticPress, HerdrMark } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
-import { Text } from './ui/text';
 
 interface Props {
   activeTab: AppTab;
+  blurTarget: RefObject<View | null>;
   onSelect: (tab: AppTab) => void;
 }
 
@@ -28,42 +29,92 @@ const items: NavigationItem[] = [
   { tab: 'more', labelKey: 'nav.more', icon: CircleEllipsis },
 ];
 
-export function BottomNavigation({ activeTab, onSelect }: Props) {
-  const { colors } = useTheme();
+export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
+  const { colors, isDark } = useTheme();
   const { t } = useTranslation();
   const { bottom } = useSafeAreaInsets();
   return (
     <View
-      className="flex-row border-t border-border bg-background pt-1"
-      style={{ minHeight: 66 + bottom, paddingBottom: bottom }}>
+      pointerEvents="box-none"
+      className="absolute inset-x-0 bottom-0 z-30 flex-row items-center justify-around bg-transparent px-6"
+      style={{ height: 56 + bottom, paddingBottom: bottom }}>
       {items.map(item => {
         const active = item.tab === activeTab;
         return (
-          <Button
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            className="h-14 flex-1 flex-col gap-0 rounded-none px-1 py-1 active:bg-transparent dark:active:bg-transparent"
-            key={item.tab}
-            variant="ghost"
-            onPress={hapticPress(() => onSelect(item.tab))}>
+          <View className="h-[60px] w-[60px] items-center justify-center" key={item.tab}>
             <View
-              className={cn('h-[30px] w-11 items-center justify-center', active && 'bg-accent')}
-              style={styles.iconIndicator}>
-              {'herdrMark' in item
-                ? <HerdrMark size={22} />
-                : <Icon as={item.icon} size={20} color={active ? colors.text : colors.textSecondary} strokeWidth={active ? 2.75 : 2} />}
-            </View>
-            <Text className={cn('text-[11px] font-medium leading-[15px] text-muted-foreground', active && 'text-foreground')}>{t(item.labelKey)}</Text>
-          </Button>
+              pointerEvents="none"
+              className="absolute h-[52px] w-[52px] rounded-full"
+              style={floatingBloomStyle(active, colors)}
+            />
+            <BlurView
+              pointerEvents="none"
+              blurMethod="dimezisBlurViewSdk31Plus"
+              blurReductionFactor={2}
+              blurTarget={blurTarget}
+              intensity={active ? 75 : 60}
+              tint={isDark ? 'dark' : 'light'}
+              style={[styles.glassSurface, floatingGlassEdgeStyle(active, colors)]}>
+              <View style={[styles.glassTint, floatingGlassTintStyle(active, colors)]} />
+            </BlurView>
+            <Button
+              accessibilityLabel={t(item.labelKey)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              className="h-12 w-12 rounded-full bg-transparent p-0 active:bg-white/10 dark:bg-transparent dark:active:bg-white/10"
+              variant="ghost"
+              onPress={hapticPress(() => onSelect(item.tab))}>
+              <View className={active ? 'items-center justify-center opacity-100' : 'items-center justify-center opacity-60'}>
+                {'herdrMark' in item
+                  ? <HerdrMark size={23} />
+                  : <Icon as={item.icon} size={23} color={active ? colors.text : colors.textSecondary} strokeWidth={active ? 2.75 : 2} />}
+              </View>
+            </Button>
+          </View>
         );
       })}
     </View>
   );
 }
 
+function floatingGlassEdgeStyle(active: boolean, colors: ThemeColors) {
+  const edgeColor = active ? colors.primary : colors.textSecondary;
+  return {
+    borderColor: colorWithAlpha(edgeColor, active ? 'E0' : '8F'),
+  };
+}
+
+function floatingGlassTintStyle(active: boolean, colors: ThemeColors) {
+  return {
+    backgroundColor: colorWithAlpha(active ? colors.surfaceRaised : colors.surface, active ? 'C4' : 'B8'),
+  };
+}
+
+function floatingBloomStyle(active: boolean, colors: ThemeColors) {
+  return {
+    backgroundColor: colorWithAlpha(active ? colors.primary : colors.textSecondary, active ? '70' : '3D'),
+    filter: [{ blur: active ? 7 : 5 }],
+  } as const;
+}
+
+function colorWithAlpha(color: string, alpha: string) {
+  return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
+}
+
 const styles = StyleSheet.create({
-  iconIndicator: {
-    borderRadius: 999,
+  glassSurface: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
     overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+  },
+  glassTint: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
 });
