@@ -1,6 +1,6 @@
-import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
-import { Alert, Image, LayoutAnimation, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Alert, Image, LayoutAnimation, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -8,6 +8,8 @@ import {
   terminalDoubleTapActions,
   type TerminalDoubleTapAction,
 } from '@/src/lib/terminalDoubleTap';
+import { terminalFontFamily } from '@/src/lib/terminalFonts';
+import { cn } from '@/src/lib/utils';
 import {
   terminalVolumeKeyActions,
   type TerminalVolumeKey,
@@ -94,6 +96,7 @@ export interface SettingsSectionProps {
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
   agentCommand: string;
+  terminalHistory: readonly string[];
   onAlertsChange: (value: boolean) => void;
   onPersistentAlertDurationChange: (value: number) => void;
   onTtsChange: (value: boolean) => void;
@@ -106,6 +109,7 @@ export interface SettingsSectionProps {
   onKeepScreenOnChange: (value: boolean) => void;
   onReopenTerminalOnLaunchChange: (value: boolean) => void;
   onAgentCommandChange: (value: string) => void;
+  onDeleteTerminalHistory: (entries: readonly string[]) => void;
   terminalPreferences: TerminalPreferences;
   onTerminalPreferencesChange: (value: TerminalPreferences) => void;
 }
@@ -114,6 +118,7 @@ export function SettingsSection(props: SettingsSectionProps) {
   const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
+  const [historyManagerOpen, setHistoryManagerOpen] = useState(false);
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
 
@@ -233,6 +238,14 @@ export function SettingsSection(props: SettingsSectionProps) {
           <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
           <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
           <SettingRow title={t('settings.useModifierKeyIcons')} copy={t('settings.useModifierKeyIconsCopy')} value={props.terminalPreferences.useModifierKeyIcons} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, useModifierKeyIcons: value })} divided />
+          <ActionRow
+            title={t('settings.terminalHistory')}
+            copy={t('settings.terminalHistoryCopy')}
+            icon={History}
+            value={t('settings.terminalHistoryCount', { count: props.terminalHistory.length })}
+            onPress={() => setHistoryManagerOpen(true)}
+            divided
+          />
           <ChoiceRow
             title={t('settings.volumeUpKey')}
             copy={t('settings.volumeKeyCopy')}
@@ -294,6 +307,12 @@ export function SettingsSection(props: SettingsSectionProps) {
               : { ...props.terminalPreferences, volumeUpAction: action });
             setVolumeKeyEditor(null);
           }}
+        />
+        <TerminalHistoryManager
+          entries={props.terminalHistory}
+          visible={historyManagerOpen}
+          onClose={() => setHistoryManagerOpen(false)}
+          onDelete={props.onDeleteTerminalHistory}
         />
       </View>
   );
@@ -471,6 +490,143 @@ function VolumeKeyActionSheet({ keyName, value, onClose, onSelect }: { keyName: 
   );
 }
 
+function TerminalHistoryManager({
+  entries,
+  visible,
+  onClose,
+  onDelete,
+}: {
+  entries: readonly string[];
+  visible: boolean;
+  onClose: () => void;
+  onDelete: (entries: readonly string[]) => void;
+}) {
+  const { top, bottom } = useSafeAreaInsets();
+  const { t } = useTranslation();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const allSelected = entries.length > 0 && selected.size === entries.length;
+
+  useEffect(() => {
+    if (!visible) setSelected(new Set());
+  }, [visible]);
+
+  useEffect(() => {
+    setSelected(current => new Set([...current].filter(entry => entries.includes(entry))));
+  }, [entries]);
+
+  const toggleEntry = (entry: string) => {
+    setSelected(current => {
+      const next = new Set(current);
+      if (next.has(entry)) next.delete(entry);
+      else next.add(entry);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected(allSelected ? new Set() : new Set(entries));
+  };
+
+  const confirmDelete = () => {
+    if (selected.size === 0) return;
+    const selectedEntries = [...selected];
+    Alert.alert(
+      t('settings.deleteHistoryTitle'),
+      t('settings.deleteHistoryCopy', { count: selectedEntries.length }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: () => {
+            onDelete(selectedEntries);
+            setSelected(new Set());
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      visible={visible}>
+      <View
+        className="flex-1 bg-background"
+        style={{ paddingTop: Math.max(12, top), paddingBottom: Math.max(12, bottom) }}>
+        <View className="flex-row items-center border-b border-border px-4 pb-3">
+          <View className="min-w-0 flex-1 pr-3">
+            <Text className="text-[20px] font-semibold leading-6">{t('settings.manageTerminalHistory')}</Text>
+            <Text className="mt-1 text-[12px] leading-4 text-muted-foreground">{t('settings.manageTerminalHistoryDescription')}</Text>
+          </View>
+          <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={onClose} />
+        </View>
+
+        <View className="min-h-12 flex-row items-center border-b border-border px-4 py-2">
+          <Text className="min-w-0 flex-1 text-[12px] font-semibold text-muted-foreground">
+            {t('settings.selectedHistoryCount', { count: selected.size })}
+          </Text>
+          <Button
+            className="h-9 rounded-full px-3"
+            disabled={entries.length === 0}
+            variant="ghost"
+            onPress={toggleAll}>
+            <Text className="text-[12px] font-semibold text-primary">
+              {t(allSelected ? 'settings.clearSelection' : 'settings.selectAll')}
+            </Text>
+          </Button>
+        </View>
+
+        {entries.length === 0 ? (
+          <View className="flex-1 items-center justify-center px-8">
+            <Icon as={History} className="text-muted-foreground" size={28} />
+            <Text className="mt-3 text-center text-[14px] text-muted-foreground">{t('settings.terminalHistoryEmpty')}</Text>
+          </View>
+        ) : (
+          <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+            {entries.map((entry, index) => {
+              const isSelected = selected.has(entry);
+              return (
+                <Button
+                  key={entry}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: isSelected }}
+                  className={cn('min-h-14 justify-start rounded-none px-4 py-3', index > 0 && 'border-t border-border')}
+                  size="content"
+                  variant="ghost"
+                  onPress={() => toggleEntry(entry)}>
+                  <View className={cn('size-5 items-center justify-center rounded border border-muted-foreground', isSelected && 'border-primary bg-primary')}>
+                    {isSelected ? <Icon as={Check} className="text-primary-foreground" size={14} /> : null}
+                  </View>
+                  <Text
+                    numberOfLines={4}
+                    className="min-w-0 flex-1 font-mono text-[14px] leading-5 text-foreground"
+                    style={{ fontFamily: terminalFontFamily }}>
+                    {entry}
+                  </Text>
+                </Button>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        <View className="border-t border-border px-4 pt-3">
+          <Button
+            className="rounded-full"
+            disabled={selected.size === 0}
+            variant="destructive"
+            onPress={hapticPress(confirmDelete)}>
+            <Trash2 size={17} color="#FFFFFF" />
+            <Text>{t('settings.deleteSelected')}</Text>
+          </Button>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {
   const { t } = useTranslation();
   return (
@@ -521,11 +677,12 @@ function SettingRow({ title, copy, value, onChange, divided = false }: { title: 
   return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}><View className="flex-1 pr-[18px]"><DetailsTitle title={title} copy={copy} /></View><Switch checked={value} onCheckedChange={onChange} /></View>;
 }
 
-function ActionRow({ title, copy, icon, onPress, divided = false }: { title: string; copy: string; icon: LucideIcon; onPress: () => void | Promise<void>; divided?: boolean }) {
+function ActionRow({ title, copy, icon, value, onPress, divided = false }: { title: string; copy: string; icon: LucideIcon; value?: string; onPress: () => void | Promise<void>; divided?: boolean }) {
   return (
     <Button className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
       <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={icon} className="text-primary" size={18} /></View>
       <View className="ml-3 min-w-0 flex-1"><DetailsTitle title={title} copy={copy} /></View>
+      {value ? <Text className="max-w-[90px] text-right text-xs font-semibold text-primary">{value}</Text> : null}
       <Icon as={ChevronRight} className="text-muted-foreground" size={18} />
     </Button>
   );

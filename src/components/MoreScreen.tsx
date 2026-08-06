@@ -29,6 +29,7 @@ export function MoreScreen(props: Props) {
         keepScreenOn={props.keepScreenOn}
         reopenTerminalOnLaunch={props.reopenTerminalOnLaunch}
         agentCommand={props.agentCommand}
+        terminalHistory={props.terminalHistory}
         terminalPreferences={props.terminalPreferences}
         onAlertsChange={props.onAlertsChange}
         onPersistentAlertDurationChange={props.onPersistentAlertDurationChange}
@@ -42,6 +43,7 @@ export function MoreScreen(props: Props) {
         onKeepScreenOnChange={props.onKeepScreenOnChange}
         onReopenTerminalOnLaunchChange={props.onReopenTerminalOnLaunchChange}
         onAgentCommandChange={props.onAgentCommandChange}
+        onDeleteTerminalHistory={props.onDeleteTerminalHistory}
         onTerminalPreferencesChange={props.onTerminalPreferencesChange}
         />
       </ScrollView>

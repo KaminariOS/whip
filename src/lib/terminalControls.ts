@@ -5,6 +5,7 @@ export const defaultTerminalControlOrder = [
   'esc',
   'tab',
   'paste',
+  'history',
   'compose',
   'attach',
   'files',

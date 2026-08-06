@@ -65,7 +65,9 @@ interface Props {
   ) => void;
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
+  terminalHistory: readonly string[];
   onTerminalControlUse: (control: TerminalControlId) => void;
+  onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
   onExit: () => void;
 }
@@ -104,7 +106,9 @@ export function SessionScreen({
   onTerminalStatus,
   terminalPreferences,
   terminalControlUsage,
+  terminalHistory,
   onTerminalControlUse,
+  onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
   onExit,
 }: Props) {
@@ -669,6 +673,7 @@ export function SessionScreen({
             terminalPanHandlers={terminalTabPanResponder.panHandlers}
             preferences={terminalPreferences}
             controlUsage={terminalControlUsage}
+            historyEntries={terminalHistory}
             linkScanRequest={linkScanRequest}
             pasteRequest={pasteRequest && pasteRequest.terminalId === activeTerminalSession?.terminalId
               ? {
@@ -689,6 +694,7 @@ export function SessionScreen({
               setLinksBusy(false);
             }}
             onControlUse={onTerminalControlUse}
+            onHistoryEntry={onTerminalHistoryEntry}
             onClose={() => {
               if (activeTerminalSession) onCloseTerminal(activeTerminalSession.terminalId);
             }}

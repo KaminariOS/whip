@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Option, Paperclip, Search, Send, X, type LucideIcon } from 'lucide-react-native';
-import { Animated, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Option, Paperclip, Search, Send, X, type LucideIcon } from 'lucide-react-native';
+import { Animated, Clipboard, Image, Keyboard, Modal, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -17,6 +17,7 @@ import { applyTerminalModifiers, type TerminalModifierState } from '../lib/termi
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
 import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '../lib/volumeKeys';
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
+import { terminalFontFamily } from '../lib/terminalFonts';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import { colors, useTheme } from '../theme';
 import {
@@ -35,6 +36,7 @@ interface Props {
   visible: boolean;
   preferences: TerminalPreferences;
   controlUsage: TerminalControlUsage;
+  historyEntries: readonly string[];
   compact?: boolean;
   swipe?: {
     direction: -1 | 1;
@@ -42,6 +44,7 @@ interface Props {
   } | null;
   terminalPanHandlers?: GestureResponderHandlers;
   onControlUse: (control: TerminalControlId) => void;
+  onHistoryEntry: (entry: string) => void;
   linkScanRequest?: number;
   pasteRequest?: {
     id: number;
@@ -157,10 +160,12 @@ export function TerminalScreen({
   visible,
   preferences,
   controlUsage,
+  historyEntries,
   compact = false,
   swipe,
   terminalPanHandlers,
   onControlUse,
+  onHistoryEntry,
   linkScanRequest = 0,
   pasteRequest,
   onRequestAttachment,
@@ -197,6 +202,7 @@ export function TerminalScreen({
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeText, setComposeText] = useState('');
   const [composeAttachments, setComposeAttachments] = useState<ComposeAttachment[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [keyboardEnabled, setKeyboardEnabled] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
@@ -209,6 +215,7 @@ export function TerminalScreen({
     setError(null);
     setSearchOpen(false);
     setComposeOpen(false);
+    setHistoryOpen(false);
     setCtrl('off');
     setShift('off');
     setAlt('off');
@@ -331,8 +338,9 @@ export function TerminalScreen({
       return;
     }
     renderer.current?.paste(pasteRequest.text);
+    onHistoryEntry(pasteRequest.text);
     pasteRequest.dispose?.();
-  }, [composeOpen, pasteRequest, ready, visible]);
+  }, [composeOpen, onHistoryEntry, pasteRequest, ready, visible]);
 
   useEffect(() => () => {
     for (const attachment of composeAttachmentsRef.current) attachment.dispose();
@@ -340,7 +348,10 @@ export function TerminalScreen({
   }, []);
 
   useEffect(() => {
-    if (!visible && composeOpen) setComposeOpen(false);
+    if (!visible) {
+      if (composeOpen) setComposeOpen(false);
+      setHistoryOpen(false);
+    }
     setTerminalComposerOverlay(terminalId, visible && composeOpen).catch(() => {});
   }, [composeOpen, terminalId, visible]);
 
@@ -395,6 +406,7 @@ export function TerminalScreen({
     const value = await Clipboard.getString();
     if (!value) return;
     renderer.current?.paste(value);
+    onHistoryEntry(value);
   };
 
   const moveSearch = (direction: -1 | 1) => {
@@ -446,6 +458,7 @@ export function TerminalScreen({
 
   const openCompose = () => {
     setSearchOpen(false);
+    setHistoryOpen(false);
     setTerminalComposerOverlay(terminalId, true).catch(reason => setError(String(reason))).finally(() => {
       setComposeOpen(true);
     });
@@ -456,10 +469,17 @@ export function TerminalScreen({
     const submitted = [composeText.trimEnd(), ...attachmentPaths].filter(Boolean).join(' ');
     if (!submitted) return;
     renderer.current?.submit(submitted);
+    onHistoryEntry(submitted);
     setComposeText('');
     for (const attachment of composeAttachmentsRef.current) attachment.dispose();
     composeAttachmentsRef.current = [];
     setComposeAttachments([]);
+  };
+
+  const selectHistoryEntry = (entry: string) => {
+    renderer.current?.paste(entry);
+    onHistoryEntry(entry);
+    setHistoryOpen(false);
   };
 
   const removeComposeAttachment = (id: number) => {
@@ -538,6 +558,31 @@ export function TerminalScreen({
         </Button>
       );
     }
+    if (control === 'history') {
+      return (
+        <Button
+          key={control}
+          accessibilityLabel={t('terminal.history')}
+          accessibilityState={{ expanded: historyOpen }}
+          className={cn(TERMINAL_ICON_CONTROL_CLASS, historyOpen && 'border-primary')}
+          variant="secondary"
+          onPress={() => {
+            onControlUse(control);
+            if (historyOpen) {
+              setHistoryOpen(false);
+            } else if (composeOpen) {
+              closeCompose().finally(() => setHistoryOpen(true));
+            } else {
+              setSearchOpen(false);
+              setHistoryOpen(true);
+            }
+          }}>
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            <History size={TERMINAL_ICON_SIZE} color={historyOpen ? appColors.primary : appColors.text} />
+          </View>
+        </Button>
+      );
+    }
     if (control === 'compose') {
       return (
         <Button
@@ -601,6 +646,7 @@ export function TerminalScreen({
           variant="secondary"
           onPress={() => {
             onControlUse(control);
+            setHistoryOpen(false);
             if (composeOpen) {
               closeCompose().finally(() => {
                 setSearchOpen(true);
@@ -748,6 +794,7 @@ export function TerminalScreen({
           onSearchResult={(count, index, invalid) => setSearchResult({ count, index, invalid })}
           onLinksScanned={links => onLinksScanned?.(links)}
           onOpenLink={link => onOpenLink?.(link)}
+          onPaste={(_target, text) => onHistoryEntry(text)}
           onStatus={onStatus}
           onError={(target, message) => {
             if (target.key === activeTarget?.key) setError(message);
@@ -865,6 +912,66 @@ export function TerminalScreen({
           {controlOrder.map(renderTerminalControl)}
         </ScrollView>
       </View>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setHistoryOpen(false)}
+        statusBarTranslucent
+        transparent
+        visible={historyOpen}>
+        <View className="flex-1 justify-end bg-black/50">
+          <Pressable
+            accessibilityLabel={t('terminal.closeHistory')}
+            className="flex-1"
+            onPress={() => setHistoryOpen(false)}
+          />
+          <View
+            className="rounded-t-3xl bg-background px-4 pt-3"
+            style={{ paddingBottom: Math.max(16, bottomSafeAreaInset) }}>
+            <View className="mb-2 flex-row items-center">
+              <View className="size-10 items-center justify-center rounded-full bg-muted">
+                <History size={18} color={appColors.text} />
+              </View>
+              <View className="min-w-0 flex-1 px-3">
+                <Text className="text-[17px] font-bold text-foreground">{t('terminal.historyTitle')}</Text>
+                <Text className="text-[11px] text-muted-foreground">{t('terminal.historyCopy')}</Text>
+              </View>
+              <Button
+                accessibilityLabel={t('terminal.closeHistory')}
+                className="size-10 rounded-full px-0"
+                variant="ghost"
+                onPress={() => setHistoryOpen(false)}>
+                <X size={19} color={appColors.text} />
+              </Button>
+            </View>
+            {historyEntries.length === 0 ? (
+              <View className="h-32 items-center justify-center px-6">
+                <Text className="text-center text-[13px] text-muted-foreground">{t('terminal.historyEmpty')}</Text>
+              </View>
+            ) : (
+              <ScrollView
+                className="max-h-[420px]"
+                keyboardShouldPersistTaps="always"
+                showsVerticalScrollIndicator={false}>
+                {historyEntries.map((entry, index) => (
+                  <Button
+                    key={entry}
+                    accessibilityLabel={t('terminal.useHistoryEntry', { text: entry })}
+                    className={cn('min-h-12 justify-start rounded-none px-2.5 py-2.5', index > 0 && 'border-t border-border')}
+                    variant="ghost"
+                    onPress={() => selectHistoryEntry(entry)}>
+                    <Text
+                      numberOfLines={3}
+                      className="flex-1 text-left font-mono text-[14px] leading-5 text-foreground"
+                      style={{ fontFamily: terminalFontFamily }}>
+                      {entry}
+                    </Text>
+                  </Button>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

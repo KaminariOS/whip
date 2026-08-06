@@ -76,6 +76,7 @@ interface Props {
   onSearchResult: (count: number, index: number, invalid: boolean) => void;
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
+  onPaste: (target: TerminalRenderTarget, text: string) => void;
   onStatus: (
     target: TerminalRenderTarget,
     status: TerminalSessionStatus,
@@ -100,6 +101,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onSearchResult,
   onLinksScanned,
   onOpenLink,
+  onPaste,
   onStatus,
   onError,
 }, forwardedRef) {
@@ -117,6 +119,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportSearch = useEffectEvent(onSearchResult);
   const reportLinks = useEffectEvent(onLinksScanned);
   const reportOpenLink = useEffectEvent(onOpenLink);
+  const reportPaste = useEffectEvent(onPaste);
   const reportStatus = useEffectEvent(onStatus);
   const reportError = useEffectEvent(onError);
 
@@ -421,7 +424,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       Clipboard.setString(message.text || '');
     } else if (message.type === 'clipboard-read') {
       const value = await Clipboard.getString();
-      if (value) inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(value)});`);
+      if (value) {
+        inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(value)});`);
+        reportPaste(entry.target, value);
+      }
     } else if (entry.target.key === activeKey.current && message.type === 'search-result') {
       reportSearch(message.count, message.index, Boolean(message.invalid));
     } else if (entry.target.key === activeKey.current && message.type === 'link-scan-result') {

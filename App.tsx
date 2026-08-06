@@ -49,6 +49,10 @@ import {
   type TerminalControlUsage,
 } from './src/lib/terminalControls';
 import {
+  addTerminalHistoryEntry,
+  removeTerminalHistoryEntries,
+} from './src/lib/terminalHistory';
+import {
   terminalRendererKey,
   type TerminalRenderTarget,
 } from './src/lib/terminalRenderer';
@@ -122,6 +126,7 @@ import {
   type UnknownHostKeyChallenge,
 } from './src/services/knownHosts';
 import { loadPersistedTerminals, savePersistedTerminals } from './src/services/persistedTerminals';
+import { loadTerminalHistory, saveTerminalHistory } from './src/services/terminalHistory';
 import { configureTerminalVolumeKeys } from './src/services/volumeKeys';
 import {
   loadPersistedLiveHosts,
@@ -242,6 +247,7 @@ function AppContent() {
   const [knownHostsLoaded, setKnownHostsLoaded] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [liveHostsLoaded, setLiveHostsLoaded] = useState(false);
+  const [terminalHistoryLoaded, setTerminalHistoryLoaded] = useState(false);
   const [liveHostRestoreComplete, setLiveHostRestoreComplete] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectingHostId, setConnectingHostId] = useState<string | null>(null);
@@ -265,6 +271,7 @@ function AppContent() {
   const [agentCommand, setAgentCommand] = useState(defaultDevicePreferences.agentCommand);
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
   const [terminalControlUsage, setTerminalControlUsage] = useState<TerminalControlUsage>(defaultDevicePreferences.terminalControlUsage);
+  const [terminalHistory, setTerminalHistory] = useState<string[]>([]);
   const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
   const [credentialRecoveryBusy, setCredentialRecoveryBusy] = useState(false);
   const applyAppearance = useEffectEvent((value: AppearancePreference) => {
@@ -286,6 +293,14 @@ function AppContent() {
 
   const recordTerminalControlUse = useCallback((control: TerminalControlId) => {
     setTerminalControlUsage(current => incrementTerminalControlUsage(current, control));
+  }, []);
+
+  const recordTerminalHistoryEntry = useCallback((entry: string) => {
+    setTerminalHistory(current => addTerminalHistoryEntry(current, entry));
+  }, []);
+
+  const deleteTerminalHistoryEntries = useCallback((entries: readonly string[]) => {
+    setTerminalHistory(current => removeTerminalHistoryEntries(current, entries));
   }, []);
 
   liveSessionsRef.current = liveSessions;
@@ -365,6 +380,10 @@ function AppContent() {
         persistedLiveHostsRef.current = value;
       })
       .finally(() => setLiveHostsLoaded(true));
+    loadTerminalHistory()
+      .then(setTerminalHistory)
+      .catch(() => undefined)
+      .finally(() => setTerminalHistoryLoaded(true));
   }, [t]);
 
   useEffect(() => {
@@ -385,6 +404,11 @@ function AppContent() {
       terminalControlUsage,
     }).catch(() => undefined);
   }, [agentCommand, alertsEnabled, appearance, biometricForKeys, biometricOnResume, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+
+  useEffect(() => {
+    if (!terminalHistoryLoaded) return;
+    saveTerminalHistory(terminalHistory).catch(() => undefined);
+  }, [terminalHistory, terminalHistoryLoaded]);
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
@@ -1415,7 +1439,7 @@ function AppContent() {
     }
   };
 
-  if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !knownHostsLoaded) {
+  if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !knownHostsLoaded || !terminalHistoryLoaded) {
     return <View className="flex-1 items-center justify-center bg-background"><WhipMark accessibilityLabel={t('app.loading')} size={64} /></View>;
   }
 
@@ -1525,6 +1549,7 @@ function AppContent() {
               keepScreenOn={keepScreenOn}
               reopenTerminalOnLaunch={reopenTerminalOnLaunch}
               agentCommand={agentCommand}
+              terminalHistory={terminalHistory}
               terminalPreferences={terminalPreferences}
               server={activeSession?.snapshot.server || null}
               onAlertsChange={setAlertsEnabled}
@@ -1539,6 +1564,7 @@ function AppContent() {
               onKeepScreenOnChange={setKeepScreenOn}
               onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
               onAgentCommandChange={setAgentCommand}
+              onDeleteTerminalHistory={deleteTerminalHistoryEntries}
               onTerminalPreferencesChange={setTerminalPreferences}
             />
           )}
@@ -1554,7 +1580,9 @@ function AppContent() {
             terminalTargets={terminalTargets}
             terminalPreferences={terminalPreferences}
             terminalControlUsage={terminalControlUsage}
+            terminalHistory={terminalHistory}
             onTerminalControlUse={recordTerminalControlUse}
+            onTerminalHistoryEntry={recordTerminalHistoryEntry}
             onTerminalOpenLinksInAppChange={updateTerminalOpenLinksInApp}
             onExit={() => exitTerminalToHerd(activeSession.id)}
             onRefresh={refreshHost}
@@ -1671,7 +1699,9 @@ function LiveSessionView({
   terminalTargets,
   terminalPreferences,
   terminalControlUsage,
+  terminalHistory,
   onTerminalControlUse,
+  onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
   onExit,
   onRefresh,
@@ -1686,7 +1716,9 @@ function LiveSessionView({
   terminalTargets: readonly TerminalRenderTarget[];
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
+  terminalHistory: readonly string[];
   onTerminalControlUse: (control: TerminalControlId) => void;
+  onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
   onExit: () => void;
   onRefresh: (sessionId: string) => Promise<void>;
@@ -1716,7 +1748,9 @@ function LiveSessionView({
       onTerminalStatus={onTerminalStatus}
       terminalPreferences={terminalPreferences}
       terminalControlUsage={terminalControlUsage}
+      terminalHistory={terminalHistory}
       onTerminalControlUse={onTerminalControlUse}
+      onTerminalHistoryEntry={onTerminalHistoryEntry}
       onTerminalOpenLinksInAppChange={onTerminalOpenLinksInAppChange}
       onExit={onExit}
     />

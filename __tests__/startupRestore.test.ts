@@ -6,7 +6,7 @@ describe('startup host restoration', () => {
 
   it('renders the application after local state loads without waiting for SSH', () => {
     expect(app).toContain(
-      'if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !knownHostsLoaded)',
+      'if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !knownHostsLoaded || !terminalHistoryLoaded)',
     );
     expect(app).not.toContain(
       'if (!profilesLoaded || !preferencesLoaded || !liveHostsLoaded || !liveHostRestoreComplete)',
