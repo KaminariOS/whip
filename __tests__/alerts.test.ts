@@ -76,7 +76,7 @@ test('delays the noisy notification and persistent alert until speech finishes',
   expect(armPersistentAgentAlert).toHaveBeenCalledWith(
     'notification-1',
     'agent-state-v3',
-    60_000,
+    30_000,
   );
 });
 

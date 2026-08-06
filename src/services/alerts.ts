@@ -17,7 +17,7 @@ const ALERT_VIBRATION_PATTERN = [
 ];
 const BRIEF_VIBRATION_PATTERN = [0, 200];
 const SPEECH_TIMEOUT_MS = 10_000;
-const PERSISTENT_ALERT_TIMEOUT_MS = 60_000;
+const PERSISTENT_ALERT_TIMEOUT_MS = 30_000;
 
 export type AgentAlertDuration = 'brief' | 'persistent';
 
