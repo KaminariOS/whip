@@ -458,14 +458,18 @@ function AppContent() {
     }).catch(() => undefined);
   }, [liveHostRestoreComplete, liveSessions]);
 
+  const backgroundHostCount = liveSessions.sessions.length;
+  const connectedBackgroundHostCount = liveSessions.sessions.filter(
+    session => session.status === 'connected',
+  ).length;
+
   useEffect(() => {
     if (!liveHostRestoreComplete) return;
-    const hostCount = liveSessions.sessions.length;
-    const operation = alertsEnabled && hostCount > 0
-      ? startBackgroundMonitoring(hostCount)
+    const operation = alertsEnabled && backgroundHostCount > 0
+      ? startBackgroundMonitoring(backgroundHostCount, connectedBackgroundHostCount)
       : stopBackgroundMonitoring();
     operation.catch(error => setConnectError(t('app.backgroundUnavailable', { error: String(error) })));
-  }, [alertsEnabled, liveHostRestoreComplete, liveSessions.sessions.length, t]);
+  }, [alertsEnabled, backgroundHostCount, connectedBackgroundHostCount, liveHostRestoreComplete, t]);
 
   useEffect(() => () => {
     if (

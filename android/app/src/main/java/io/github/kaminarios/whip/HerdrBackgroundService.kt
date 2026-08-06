@@ -19,7 +19,6 @@ class HerdrBackgroundService : Service() {
   override fun onCreate() {
     super.onCreate()
     createNotificationChannel()
-    acquireWakeLock()
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -28,8 +27,13 @@ class HerdrBackgroundService : Service() {
       ?.getIntExtra(EXTRA_HOST_COUNT, 0)
       ?.takeIf { it > 0 }
       ?: preferences.getInt(EXTRA_HOST_COUNT, 1)
+    val connectedHostCount = intent
+      ?.getIntExtra(EXTRA_CONNECTED_HOST_COUNT, 0)
+      ?.coerceIn(0, hostCount)
+      ?: 0
     preferences.edit { putInt(EXTRA_HOST_COUNT, hostCount) }
     promoteToForeground(hostCount)
+    setWakeLockHeld(connectedHostCount > 0)
     // The React Native runtime owns the SSH monitor. Do not restart only the
     // notification after Android has killed the whole application process.
     return START_NOT_STICKY
@@ -38,8 +42,7 @@ class HerdrBackgroundService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
-    wakeLock?.let { if (it.isHeld) it.release() }
-    wakeLock = null
+    releaseWakeLock()
     super.onDestroy()
   }
 
@@ -98,6 +101,7 @@ class HerdrBackgroundService : Service() {
 
   @SuppressLint("WakelockTimeout")
   private fun acquireWakeLock() {
+    if (wakeLock?.isHeld == true) return
     val powerManager = getSystemService(PowerManager::class.java)
     wakeLock = powerManager.newWakeLock(
       PowerManager.PARTIAL_WAKE_LOCK,
@@ -108,9 +112,19 @@ class HerdrBackgroundService : Service() {
     }
   }
 
+  private fun setWakeLockHeld(shouldHold: Boolean) {
+    if (shouldHold) acquireWakeLock() else releaseWakeLock()
+  }
+
+  private fun releaseWakeLock() {
+    wakeLock?.let { if (it.isHeld) it.release() }
+    wakeLock = null
+  }
+
   companion object {
     const val ACTION_START = "io.github.kaminarios.whip.action.START_BACKGROUND_MONITORING"
     const val EXTRA_HOST_COUNT = "host_count"
+    const val EXTRA_CONNECTED_HOST_COUNT = "connected_host_count"
     private const val CHANNEL_ID = "herdr-background-monitoring"
     private const val NOTIFICATION_ID = 1937
     private const val PREFERENCES = "herdr-background-monitoring"

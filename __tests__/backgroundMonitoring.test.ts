@@ -34,10 +34,20 @@ describe('Android background monitoring', () => {
     expect(service).toContain('PowerManager.PARTIAL_WAKE_LOCK');
   });
 
-  it('registers the native package and follows the notification preference', () => {
+  it('registers the native package and reports monitored and connected hosts', () => {
     expect(application).toContain('add(HerdrBackgroundPackage())');
-    expect(app).toContain('startBackgroundMonitoring(hostCount)');
+    expect(app).toContain("session => session.status === 'connected'");
+    expect(app).toContain('startBackgroundMonitoring(backgroundHostCount, connectedBackgroundHostCount)');
+    expect(module).toContain('HerdrBackgroundService.EXTRA_CONNECTED_HOST_COUNT');
     expect(app).toContain(': stopBackgroundMonitoring()');
+  });
+
+  it('holds the wake lock only while at least one host is connected', () => {
+    const onCreate = service.slice(service.indexOf('override fun onCreate'), service.indexOf('override fun onStartCommand'));
+    expect(onCreate).not.toContain('acquireWakeLock()');
+    expect(service).toContain('setWakeLockHeld(connectedHostCount > 0)');
+    expect(service).toContain('if (shouldHold) acquireWakeLock() else releaseWakeLock()');
+    expect(service).toContain('override fun onDestroy() {\n    releaseWakeLock()');
   });
 
   it('runs an insistent alert only while its notification is active', () => {

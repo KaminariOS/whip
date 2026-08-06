@@ -49,11 +49,16 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   @ReactMethod
-  fun start(hostCount: Double, promise: Promise) {
+  fun start(hostCount: Double, connectedHostCount: Double, promise: Promise) {
     try {
+      val monitoredHosts = hostCount.toInt().coerceAtLeast(1)
       val intent = Intent(context, HerdrBackgroundService::class.java).apply {
         action = HerdrBackgroundService.ACTION_START
-        putExtra(HerdrBackgroundService.EXTRA_HOST_COUNT, hostCount.toInt().coerceAtLeast(1))
+        putExtra(HerdrBackgroundService.EXTRA_HOST_COUNT, monitoredHosts)
+        putExtra(
+          HerdrBackgroundService.EXTRA_CONNECTED_HOST_COUNT,
+          connectedHostCount.toInt().coerceIn(0, monitoredHosts),
+        )
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         context.startForegroundService(intent)
