@@ -25,9 +25,6 @@ The app separates connection management from daily supervision: **Hosts** manage
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
-> [!WARNING]
-> Whip is an experimental personal project developed for my own needs. I do not know React Native, and I have not read or manually reviewed the generated code. Do not assume the app is secure; review it yourself before trusting it with sensitive systems or credentials. Verify every first-use SSH fingerprint through an independent trusted channel before accepting it.
-
 ## Preview
 
 <table>
