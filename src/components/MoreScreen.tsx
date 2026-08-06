@@ -2,7 +2,7 @@ import { ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AboutSection, type AboutSectionProps } from './AboutScreen';
-import { SettingsSection, type SettingsSectionProps } from './SettingsScreen';
+import { SettingsDetailsProvider, SettingsSection, type SettingsSectionProps } from './SettingsScreen';
 import { Text } from './ui/text';
 
 type Props = SettingsSectionProps & AboutSectionProps;
@@ -10,12 +10,13 @@ type Props = SettingsSectionProps & AboutSectionProps;
 export function MoreScreen(props: Props) {
   const { t } = useTranslation();
   return (
-    <ScrollView className="flex-1 bg-background">
-      <View className="border-b border-border px-5 py-5">
-        <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
-      </View>
-      <AboutSection server={props.server} />
-      <SettingsSection
+    <SettingsDetailsProvider>
+      <ScrollView className="flex-1 bg-background">
+        <View className="border-b border-border px-5 py-5">
+          <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
+        </View>
+        <AboutSection server={props.server} />
+        <SettingsSection
         alertsEnabled={props.alertsEnabled}
         persistentAlertDurationSeconds={props.persistentAlertDurationSeconds}
         ttsEnabled={props.ttsEnabled}
@@ -42,7 +43,8 @@ export function MoreScreen(props: Props) {
         onReopenTerminalOnLaunchChange={props.onReopenTerminalOnLaunchChange}
         onAgentCommandChange={props.onAgentCommandChange}
         onTerminalPreferencesChange={props.onTerminalPreferencesChange}
-      />
-    </ScrollView>
+        />
+      </ScrollView>
+    </SettingsDetailsProvider>
   );
 }

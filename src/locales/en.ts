@@ -193,6 +193,7 @@ export const en = {
   'knownHosts.notTrusted': 'The SSH host key was not trusted.',
 
   'settings.title': 'Settings',
+  'settings.details': '{{name}} details',
   'settings.notifications': 'Notifications',
   'settings.agentNotifications': 'Agent notifications',
   'settings.agentNotificationsCopy': 'Notify when an agent is blocked or done.',

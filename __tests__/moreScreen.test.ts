@@ -36,3 +36,19 @@ test('does not show a Disconnect SSH button', () => {
   expect(settings).not.toContain('onDisconnect');
   expect(settings).not.toContain("t('settings.disconnect')");
 });
+
+test('shows settings explanations in dismissible floating details', () => {
+  const settings = readFileSync(
+    resolve(__dirname, '../src/components/SettingsScreen.tsx'),
+    'utf8',
+  );
+
+  expect(settings).toContain('function DetailsTitle');
+  expect(settings).toContain('function SettingsDetailsProvider');
+  expect(settings).toContain('onTouchStart={() => setActiveDetails(null)}');
+  expect(settings).toContain('pointerEvents="none"');
+  expect(settings).toContain('bg-foreground/70');
+  expect(settings).toContain('activeDetails.containerHeight - activeDetails.anchorY + 8');
+  expect(settings).not.toContain('onLongPress');
+  expect(settings).not.toMatch(/<Text[^>]*>\{t\('settings\.[^']+Copy'/);
+});

@@ -1,5 +1,5 @@
-import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, ImagePlus, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
-import { useState } from 'react';
+import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
 import { Alert, Image, LayoutAnimation, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +35,51 @@ const DOUBLE_TAP_MENU_ANIMATION = LayoutAnimation.create(
   LayoutAnimation.Types.easeInEaseOut,
   LayoutAnimation.Properties.opacity,
 );
+
+const SettingsDetailsContext = createContext<{ showDetails: (copy: string, y: number) => void }>({
+  showDetails: (_copy: string, _y: number) => undefined,
+});
+
+export function SettingsDetailsProvider({ children }: { children: ReactNode }) {
+  const [activeDetails, setActiveDetails] = useState<{
+    copy: string;
+    anchorY: number;
+    containerHeight: number;
+  } | null>(null);
+  const containerRef = useRef<View>(null);
+  const showDetails = (copy: string, y: number) => {
+    containerRef.current?.measureInWindow((_x, containerY, _width, containerHeight) => {
+      setActiveDetails({
+        copy,
+        anchorY: y - containerY,
+        containerHeight,
+      });
+    });
+  };
+  const tooltipPosition = {
+    bottom: activeDetails
+      ? Math.max(12, activeDetails.containerHeight - activeDetails.anchorY + 8)
+      : 12,
+  };
+  return (
+    <SettingsDetailsContext.Provider value={{ showDetails }}>
+      <View ref={containerRef} className="flex-1" onTouchStart={() => setActiveDetails(null)}>
+        {children}
+        {activeDetails ? (
+          <View pointerEvents="none" className="absolute inset-0">
+            <View
+              className="absolute left-5 right-5 rounded-xl border border-border bg-foreground/70 px-4 py-3"
+              style={[styles.detailsTooltip, tooltipPosition]}>
+              <Text accessibilityLiveRegion="polite" className="text-sm leading-5 text-background">
+                {activeDetails.copy}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    </SettingsDetailsContext.Provider>
+  );
+}
 
 export interface SettingsSectionProps {
   alertsEnabled: boolean;
@@ -167,8 +212,10 @@ export function SettingsSection(props: SettingsSectionProps) {
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.herd')}</Text>
         <View className="overflow-hidden rounded-lg border border-border bg-card">
           <View className="p-3.5">
-            <Text className="text-[15px] font-semibold leading-5">{t('settings.agentCommand')}</Text>
-            <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('settings.agentCommandCopy')}</Text>
+            <DetailsTitle
+              title={t('settings.agentCommand')}
+              copy={t('settings.agentCommandCopy')}
+            />
             <Input
               className="mt-3 font-mono"
               value={props.agentCommand}
@@ -262,8 +309,10 @@ function AppearanceRow({ value, onChange }: { value: AppearancePreference; onCha
   const { t } = useTranslation();
   return (
     <View className="rounded-lg border border-border bg-card p-3.5">
-      <Text className="text-[15px] font-semibold leading-5">{t('settings.colorTheme')}</Text>
-      <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('settings.colorThemeCopy')}</Text>
+      <DetailsTitle
+        title={t('settings.colorTheme')}
+        copy={t('settings.colorThemeCopy')}
+      />
       <View className="mt-3 flex-row gap-2">
         {appearanceOptions.map(option => {
           const selected = option.value === value;
@@ -295,8 +344,10 @@ function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange:
   const { t } = useTranslation();
   return (
     <View className="rounded-lg border border-border bg-card p-3.5">
-      <Text className="text-[15px] font-semibold leading-5">{t('settings.language')}</Text>
-      <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('settings.languageCopy')}</Text>
+      <DetailsTitle
+        title={t('settings.language')}
+        copy={t('settings.languageCopy')}
+      />
       <View className="mt-3 flex-row gap-2">
         {languageOptions.map(option => {
           const selected = option.value === value;
@@ -320,15 +371,15 @@ function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange:
 function ValueRow({ title, copy, value, onDecrease, onIncrease, divided = false, disabled = false }: { title: string; copy?: string; value: string; onDecrease: () => void; onIncrease: () => void; divided?: boolean; disabled?: boolean }) {
   const { t } = useTranslation();
   const rowClassName = divided
-    ? `${copy ? 'min-h-[82px]' : 'min-h-16'} flex-row items-center border-t border-border px-3.5`
-    : `${copy ? 'min-h-[82px]' : 'min-h-16'} flex-row items-center px-3.5`;
-  return <View className={rowClassName}><View className="min-w-0 flex-1 pr-2"><Text className="text-[15px] font-semibold leading-5">{title}</Text>{copy ? <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text> : null}</View><View className="flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[64px] text-center text-xs text-muted-foreground/50' : 'min-w-[64px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
+    ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2'
+    : 'min-h-16 flex-row items-center px-3.5 py-2';
+  return <View className={rowClassName}><View className="min-w-0 flex-1 pr-2">{copy ? <DetailsTitle title={title} copy={copy} /> : <Text className="text-[15px] font-semibold leading-5">{title}</Text>}</View><View className="flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[64px] text-center text-xs text-muted-foreground/50' : 'min-w-[64px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
 }
 
 function ChoiceRow({ title, copy, value, onPress, divided = false }: { title: string; copy: string; value: string; onPress: () => void; divided?: boolean }) {
   return (
-    <Button className={divided ? 'min-h-[82px] justify-start rounded-none border-t border-border px-3.5 py-3' : 'min-h-[82px] justify-start rounded-none px-3.5 py-3'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
-      <View className="min-w-0 flex-1 pr-3"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View>
+    <Button className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
+      <View className="min-w-0 flex-1 pr-3"><DetailsTitle title={title} copy={copy} /></View>
       <Text className="max-w-[130px] text-right text-xs font-semibold text-primary">{value}</Text>
       <Icon as={ChevronRight} className="ml-1 text-muted-foreground" size={18} />
     </Button>
@@ -349,11 +400,11 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
     <View className={divided ? 'border-t border-border' : ''}>
       <Button
         accessibilityState={{ expanded }}
-        className="min-h-[82px] justify-start rounded-none px-3.5 py-3"
+        className="min-h-16 justify-start rounded-none px-3.5 py-2"
         size="content"
         variant="ghost"
         onPress={hapticPress(onToggle)}>
-        <View className="min-w-0 flex-1 pr-3"><Text className="text-[15px] font-semibold leading-5">{t('settings.doubleTap')}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('settings.doubleTapCopy')}</Text></View>
+        <View className="min-w-0 flex-1 pr-3"><DetailsTitle title={t('settings.doubleTap')} copy={t('settings.doubleTapCopy')} /></View>
         <Text className="max-w-[130px] text-right text-xs font-semibold text-primary">{t(doubleTapActionLabelKey(value))}</Text>
         <Icon as={expanded ? ChevronUp : ChevronDown} className="ml-1 text-muted-foreground" size={18} />
       </Button>
@@ -388,32 +439,34 @@ function VolumeKeyActionSheet({ keyName, value, onClose, onSelect }: { keyName: 
   const direction = keyName || 'up';
   return (
     <Modal animationType="slide" transparent visible={keyName !== null} onRequestClose={onClose}>
-      <View className="flex-1 justify-end">
-        <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/55" onPress={onClose} />
-        <View className="rounded-t-[22px] border-t border-border bg-card px-4 pt-4" style={{ paddingBottom: Math.max(16, bottom) }}>
-          <View className="mb-3 flex-row items-center">
-            <View className="min-w-0 flex-1"><Text className="text-[18px] font-semibold">{t(direction === 'up' ? 'settings.volumeUpKey' : 'settings.volumeDownKey')}</Text><Text className="mt-0.5 text-xs text-muted-foreground">{t('settings.volumeKeySheetCopy')}</Text></View>
-            <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={onClose} />
-          </View>
-          <View className="overflow-hidden rounded-lg border border-border">
-            {terminalVolumeKeyActions.map((action, index) => {
-              const selected = action === value;
-              return (
-                <Button
-                  key={action}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
-                  variant={selected ? 'secondary' : 'ghost'}
-                  onPress={hapticPress(() => onSelect(action))}>
-                  <Text className="flex-1 text-left text-sm font-medium">{t(volumeKeyActionLabelKey(direction, action))}</Text>
-                  {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
-                </Button>
-              );
-            })}
+      <SettingsDetailsProvider>
+        <View className="flex-1 justify-end">
+          <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/55" onPress={onClose} />
+          <View className="rounded-t-[22px] border-t border-border bg-card px-4 pt-4" style={{ paddingBottom: Math.max(16, bottom) }}>
+            <View className="mb-3 flex-row items-center">
+              <View className="min-w-0 flex-1"><DetailsTitle title={t(direction === 'up' ? 'settings.volumeUpKey' : 'settings.volumeDownKey')} copy={t('settings.volumeKeySheetCopy')} titleClassName="text-[18px] font-semibold" /></View>
+              <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={onClose} />
+            </View>
+            <View className="overflow-hidden rounded-lg border border-border">
+              {terminalVolumeKeyActions.map((action, index) => {
+                const selected = action === value;
+                return (
+                  <Button
+                    key={action}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
+                    variant={selected ? 'secondary' : 'ghost'}
+                    onPress={hapticPress(() => onSelect(action))}>
+                    <Text className="flex-1 text-left text-sm font-medium">{t(volumeKeyActionLabelKey(direction, action))}</Text>
+                    {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
+                  </Button>
+                );
+              })}
+            </View>
           </View>
         </View>
-      </View>
+      </SettingsDetailsProvider>
     </Modal>
   );
 }
@@ -422,7 +475,7 @@ function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { bus
   const { t } = useTranslation();
   return (
     <View className="border-t border-border p-3.5">
-      <View className="mb-3"><Text className="text-[15px] font-semibold leading-5">{t('settings.backgroundImage')}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('settings.backgroundImageCopy')}</Text></View>
+      <View className="mb-3"><DetailsTitle title={t('settings.backgroundImage')} copy={t('settings.backgroundImageCopy')} /></View>
       <View className="relative h-28 overflow-hidden rounded-md bg-terminal-canvas">
         {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
         {uri ? <View className="absolute inset-0" style={{ backgroundColor: `rgba(24, 24, 24, ${dimming / 100})` }} /> : null}
@@ -436,15 +489,43 @@ function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { bus
   );
 }
 
+function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold leading-5' }: { title: string; copy: string; titleClassName?: string }) {
+  const { showDetails } = useContext(SettingsDetailsContext);
+  const buttonRef = useRef<View>(null);
+  const { t } = useTranslation();
+  return (
+    <View className="min-w-0">
+      <View className="flex-row items-center">
+        <Text className={`min-w-0 flex-shrink ${titleClassName}`}>{title}</Text>
+        <Pressable
+          ref={buttonRef}
+          accessibilityHint={copy}
+          accessibilityLabel={t('settings.details', { name: title })}
+          accessibilityRole="button"
+          className="ml-1 size-8 items-center justify-center rounded-full active:bg-muted"
+          hitSlop={8}
+          onPress={event => {
+            event.stopPropagation();
+            buttonRef.current?.measureInWindow((_x, y) => {
+              showDetails(copy, y);
+            });
+          }}>
+          <Icon as={Info} className="text-muted-foreground" size={16} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function SettingRow({ title, copy, value, onChange, divided = false }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; divided?: boolean }) {
-  return <View className={divided ? 'min-h-[82px] flex-row items-center border-t border-border p-3.5' : 'min-h-[82px] flex-row items-center p-3.5'}><View className="flex-1 pr-[18px]"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View><Switch checked={value} onCheckedChange={onChange} /></View>;
+  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}><View className="flex-1 pr-[18px]"><DetailsTitle title={title} copy={copy} /></View><Switch checked={value} onCheckedChange={onChange} /></View>;
 }
 
 function ActionRow({ title, copy, icon, onPress, divided = false }: { title: string; copy: string; icon: LucideIcon; onPress: () => void | Promise<void>; divided?: boolean }) {
   return (
-    <Button className={divided ? 'min-h-[82px] justify-start rounded-none border-t border-border px-3.5 py-3' : 'min-h-[82px] justify-start rounded-none px-3.5 py-3'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
+    <Button className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
       <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={icon} className="text-primary" size={18} /></View>
-      <View className="ml-3 min-w-0 flex-1"><Text className="text-[15px] font-semibold leading-5">{title}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text></View>
+      <View className="ml-3 min-w-0 flex-1"><DetailsTitle title={title} copy={copy} /></View>
       <Icon as={ChevronRight} className="text-muted-foreground" size={18} />
     </Button>
   );
@@ -452,4 +533,11 @@ function ActionRow({ title, copy, icon, onPress, divided = false }: { title: str
 
 const styles = StyleSheet.create({
   terminalPreviewText: { fontFamily: 'monospace' },
+  detailsTooltip: {
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.24,
+    shadowRadius: 12,
+  },
 });

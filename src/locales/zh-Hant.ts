@@ -186,6 +186,7 @@ export const zhHant: Record<string, string> = {
   'knownHosts.trust': '信任主機',
   'knownHosts.notTrusted': '未信任此 SSH 主機金鑰。',
   'settings.title': '設定',
+  'settings.details': '{{name}}詳細資訊',
   'settings.notifications': '通知',
   'settings.agentNotifications': '代理程式通知',
   'settings.agentNotificationsCopy': '代理程式受阻或完成時通知。',
