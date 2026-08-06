@@ -1,7 +1,17 @@
 import * as Haptics from 'expo-haptics';
 import { RefreshCw, type LucideIcon } from 'lucide-react-native';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Animated, Easing, Image, Platform, StyleSheet, View } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, Image, Platform, StyleSheet, View } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { G, Path, Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 
@@ -144,31 +154,30 @@ export function AnimatedAgentStatusGlyph({ status, color, size = 18 }: { status:
 
 export function AnimatedEntrance({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
   const reduceMotion = useReducedMotion();
-  const progress = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
+  const progress = useSharedValue(reduceMotion ? 1 : 0);
 
   useEffect(() => {
     if (reduceMotion) {
-      progress.setValue(1);
+      cancelAnimation(progress);
+      progress.value = 1;
       return;
     }
-    const animation = Animated.timing(progress, {
-      toValue: 1,
+    progress.value = withDelay(delay, withTiming(1, {
       duration: 220,
-      delay,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    });
-    animation.start();
-    return () => animation.stop();
+    }));
+    return () => cancelAnimation(progress);
   }, [delay, progress, reduceMotion]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: 8 * (1 - progress.value) }],
+  }));
 
   return (
     <Animated.View
       className={className}
-      style={{
-        opacity: progress,
-        transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
-      }}>
+      style={animatedStyle}>
       {children}
     </Animated.View>
   );
@@ -177,39 +186,40 @@ export function AnimatedEntrance({ children, delay = 0, className }: { children:
 function useStatusMotion(status: string, rotateSpinning = true) {
   const motion = statusMotionKind(status);
   const reduceMotion = useReducedMotion();
-  const progress = useRef(new Animated.Value(0)).current;
+  const progress = useSharedValue(0);
 
   useEffect(() => {
-    progress.stopAnimation();
-    progress.setValue(0);
+    cancelAnimation(progress);
+    progress.value = 0;
     if (reduceMotion || motion === 'static' || (motion === 'spin' && !rotateSpinning)) return;
 
-    const animation = motion === 'spin'
-      ? Animated.loop(Animated.timing(progress, {
-          toValue: 1,
+    progress.value = motion === 'spin'
+      ? withRepeat(withTiming(1, {
           duration: 900,
           easing: Easing.linear,
-          useNativeDriver: true,
-        }))
-      : Animated.loop(Animated.sequence([
-          Animated.timing(progress, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-          Animated.timing(progress, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        ]));
-    animation.start();
-    return () => animation.stop();
+        }), -1)
+      : withRepeat(withSequence(
+          withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }),
+          withTiming(0, { duration: 700, easing: Easing.inOut(Easing.quad) }),
+        ), -1);
+    return () => cancelAnimation(progress);
   }, [motion, progress, reduceMotion, rotateSpinning]);
 
-  const style = motion === 'spin' && rotateSpinning
-    ? {
+  const style = useAnimatedStyle(() => {
+    if (motion === 'spin' && rotateSpinning) {
+      return {
         opacity: 1,
-        transform: [{ rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
-      }
-    : motion === 'pulse'
-      ? {
-          opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.55] }),
-          transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.82] }) }],
-        }
-      : { opacity: 1, transform: [{ scale: 1 }] };
+        transform: [{ rotate: `${progress.value * 360}deg` }],
+      };
+    }
+    if (motion === 'pulse') {
+      return {
+        opacity: 1 - (progress.value * 0.45),
+        transform: [{ scale: 1 - (progress.value * 0.18) }],
+      };
+    }
+    return { opacity: 1, transform: [{ scale: 1 }] };
+  }, [motion, rotateSpinning]);
   return { motion, style, reduceMotion };
 }
 
@@ -245,29 +255,30 @@ export function useReducedMotion() {
 }
 
 function useStatusBloom(status: string, reduceMotion: boolean) {
-  const progress = useRef(new Animated.Value(0)).current;
+  const progress = useSharedValue(0);
   const breathes = ['done', 'connected', 'active'].includes(status);
 
   useEffect(() => {
-    progress.stopAnimation();
-    progress.setValue(0);
+    cancelAnimation(progress);
+    progress.value = 0;
     if (!breathes || reduceMotion) return;
 
-    const animation = Animated.loop(Animated.sequence([
-      Animated.timing(progress, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.timing(progress, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-    ]));
-    animation.start();
-    return () => animation.stop();
+    progress.value = withRepeat(withSequence(
+      withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
+    ), -1);
+    return () => cancelAnimation(progress);
   }, [breathes, progress, reduceMotion]);
 
-  if (!breathes || reduceMotion) {
-    return { opacity: 0.62, transform: [{ scale: 1 }] };
-  }
-  return {
-    opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.42, 0.82] }),
-    transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.78, 1.08] }) }],
-  };
+  return useAnimatedStyle(() => {
+    if (!breathes || reduceMotion) {
+      return { opacity: 0.62, transform: [{ scale: 1 }] };
+    }
+    return {
+      opacity: 0.42 + (progress.value * 0.4),
+      transform: [{ scale: 0.78 + (progress.value * 0.3) }],
+    };
+  }, [breathes, reduceMotion]);
 }
 
 function statusBloomStyle(color: string, size: number) {

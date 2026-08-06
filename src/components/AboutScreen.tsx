@@ -1,8 +1,15 @@
 import { ChevronDown, ChevronUp, Code2, ExternalLink, Share2 } from 'lucide-react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Linking, Share, View } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
@@ -16,6 +23,8 @@ import { Text } from './ui/text';
 export const WHIP_RELEASES_URL = 'https://github.com/KaminariOS/whip/releases';
 export const WHIP_REPOSITORY_URL = 'https://github.com/KaminariOS/whip';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
+const ABOUT_EXPAND_DURATION = 340;
+const ABOUT_COLLAPSE_DURATION = 260;
 
 export interface AboutSectionProps {
   server: ServerInfo | null;
@@ -24,6 +33,24 @@ export interface AboutSectionProps {
 export function AboutSection({ server }: AboutSectionProps) {
   const [expanded, setExpanded] = useState(false);
   const { t } = useTranslation();
+  const contentHeight = useSharedValue(0);
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    cancelAnimation(progress);
+    progress.value = withTiming(expanded ? 1 : 0, {
+      duration: expanded ? ABOUT_EXPAND_DURATION : ABOUT_COLLAPSE_DURATION,
+      easing: Easing.inOut(Easing.cubic),
+    });
+    return () => cancelAnimation(progress);
+  }, [expanded, progress]);
+
+  const collapsibleStyle = useAnimatedStyle(() => ({
+    height: contentHeight.value * progress.value,
+    opacity: progress.value,
+    transform: [{ translateY: -8 * (1 - progress.value) }],
+  }));
+
   const whipVersion = Application.nativeApplicationVersion || Constants.expoConfig?.version || t('common.unavailable');
   const embeddedCommit = Constants.expoConfig?.extra?.gitCommit;
   const whipCommit = typeof embeddedCommit === 'string' && /^[0-9a-f]{7,64}$/i.test(embeddedCommit) ? embeddedCommit.slice(0, 12) : null;
@@ -83,8 +110,15 @@ export function AboutSection({ server }: AboutSectionProps) {
         </View>
         <Icon as={expanded ? ChevronUp : ChevronDown} className="text-muted-foreground" size={21} />
       </Button>
-      {expanded ? (
-        <View className="pb-6 pt-7">
+      <Animated.View
+        accessibilityElementsHidden={!expanded}
+        importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}
+        pointerEvents={expanded ? 'auto' : 'none'}
+        className="overflow-hidden"
+        style={collapsibleStyle}>
+        <View
+          className="absolute inset-x-0 top-0 pb-6 pt-7"
+          onLayout={event => { contentHeight.value = event.nativeEvent.layout.height; }}>
           <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('about.source')}</Text>
           <View className="flex-row gap-2.5">
             <Button
@@ -171,7 +205,7 @@ export function AboutSection({ server }: AboutSectionProps) {
           </View>
 
         </View>
-      ) : null}
+      </Animated.View>
     </View>
   );
 }

@@ -1,6 +1,13 @@
 import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Image, LayoutAnimation, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -25,18 +32,15 @@ import {
 } from '@/src/services/devicePreferences';
 import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
-import { hapticPress, IconButton, useReducedMotion } from './app-ui';
+import { hapticPress, IconButton } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 
-const DOUBLE_TAP_MENU_ANIMATION = LayoutAnimation.create(
-  220,
-  LayoutAnimation.Types.easeInEaseOut,
-  LayoutAnimation.Properties.opacity,
-);
+const DOUBLE_TAP_MENU_EXPAND_DURATION = 280;
+const DOUBLE_TAP_MENU_COLLAPSE_DURATION = 220;
 
 const SettingsDetailsContext = createContext<{ showDetails: (copy: string, y: number) => void }>({
   showDetails: (_copy: string, _y: number) => undefined,
@@ -120,11 +124,6 @@ export function SettingsSection(props: SettingsSectionProps) {
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const [historyManagerOpen, setHistoryManagerOpen] = useState(false);
   const { t } = useTranslation();
-  const reduceMotion = useReducedMotion();
-
-  const animateDoubleTapMenu = () => {
-    if (!reduceMotion) LayoutAnimation.configureNext(DOUBLE_TAP_MENU_ANIMATION);
-  };
 
   const chooseBackground = async () => {
     setBackgroundBusy(true);
@@ -264,11 +263,9 @@ export function SettingsSection(props: SettingsSectionProps) {
             expanded={doubleTapExpanded}
             value={props.terminalPreferences.doubleTapAction}
             onToggle={() => {
-              animateDoubleTapMenu();
               setDoubleTapExpanded(expanded => !expanded);
             }}
             onSelect={action => {
-              animateDoubleTapMenu();
               props.onTerminalPreferencesChange({ ...props.terminalPreferences, doubleTapAction: action });
               setDoubleTapExpanded(false);
             }}
@@ -415,6 +412,24 @@ function doubleTapActionLabelKey(action: TerminalDoubleTapAction): string {
 
 function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = false }: { expanded: boolean; value: TerminalDoubleTapAction; onToggle: () => void; onSelect: (action: TerminalDoubleTapAction) => void; divided?: boolean }) {
   const { t } = useTranslation();
+  const contentHeight = useSharedValue(0);
+  const progress = useSharedValue(expanded ? 1 : 0);
+
+  useEffect(() => {
+    cancelAnimation(progress);
+    progress.value = withTiming(expanded ? 1 : 0, {
+      duration: expanded ? DOUBLE_TAP_MENU_EXPAND_DURATION : DOUBLE_TAP_MENU_COLLAPSE_DURATION,
+      easing: Easing.inOut(Easing.cubic),
+    });
+    return () => cancelAnimation(progress);
+  }, [expanded, progress]);
+
+  const collapsibleStyle = useAnimatedStyle(() => ({
+    height: contentHeight.value * progress.value,
+    opacity: progress.value,
+    transform: [{ translateY: -6 * (1 - progress.value) }],
+  }));
+
   return (
     <View className={divided ? 'border-t border-border' : ''}>
       <Button
@@ -427,8 +442,15 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
         <Text className="max-w-[130px] text-right text-xs font-semibold text-primary">{t(doubleTapActionLabelKey(value))}</Text>
         <Icon as={expanded ? ChevronUp : ChevronDown} className="ml-1 text-muted-foreground" size={18} />
       </Button>
-      {expanded ? (
-        <View className="border-t border-border bg-muted/30 p-2">
+      <Animated.View
+        accessibilityElementsHidden={!expanded}
+        importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}
+        pointerEvents={expanded ? 'auto' : 'none'}
+        className="overflow-hidden"
+        style={collapsibleStyle}>
+        <View
+          className="absolute inset-x-0 top-0 border-t border-border bg-muted/30 p-2"
+          onLayout={event => { contentHeight.value = event.nativeEvent.layout.height; }}>
           <View className="overflow-hidden rounded-lg border border-border bg-card">
             {terminalDoubleTapActions.map((action, index) => {
               const selected = action === value;
@@ -447,7 +469,7 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
             })}
           </View>
         </View>
-      ) : null}
+      </Animated.View>
     </View>
   );
 }

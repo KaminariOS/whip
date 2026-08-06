@@ -11,7 +11,11 @@ describe('About screen', () => {
     expect(screen).toContain('const [expanded, setExpanded] = useState(false);');
     expect(screen).toContain('accessibilityState={{ expanded }}');
     expect(screen).toContain('setExpanded(value => !value)');
-    expect(screen).toContain('{expanded ? (');
+    expect(screen).toContain('progress.value = withTiming(expanded ? 1 : 0');
+    expect(screen).toContain('height: contentHeight.value * progress.value');
+    expect(screen).toContain('opacity: progress.value');
+    expect(screen).toContain('className="absolute inset-x-0 top-0 pb-6 pt-7"');
+    expect(screen).toContain("pointerEvents={expanded ? 'auto' : 'none'}");
     expect(screen).toContain("t('about.copy')");
     expect(screen).toContain('className="min-h-[72px] w-full justify-start rounded-lg border border-border bg-card');
     expect(screen).toContain('variant="ghost"');

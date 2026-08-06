@@ -7,12 +7,13 @@ import {
   useRef,
 } from 'react';
 import {
-  Animated,
   AppState,
   Clipboard,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import WebView from 'react-native-webview/lib/WebView.android';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
@@ -66,7 +67,7 @@ interface Props {
   preferences: TerminalPreferences;
   swipe?: {
     direction: -1 | 1;
-    offset: Animated.Value;
+    offset: SharedValue<number>;
   } | null;
   style?: StyleProp<ViewStyle>;
   onReady?: () => void;
@@ -297,6 +298,21 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
   }, [configureEntry, preferences]);
 
+  const updateSwipeOffset = useCallback((value: number) => {
+    if (!activeTarget || !previewTarget || !swipe) return;
+    inject(`window.herdrSwipe(${JSON.stringify(activeTarget.key)}, ${JSON.stringify(previewTarget.key)}, ${swipe.direction}, ${value});`);
+  }, [activeTarget, inject, previewTarget, swipe]);
+
+  useAnimatedReaction(
+    () => swipe?.offset.value ?? null,
+    (value, previousValue) => {
+      if (value !== null && value !== previousValue) {
+        scheduleOnRN(updateSwipeOffset, value);
+      }
+    },
+    [swipe?.offset, updateSwipeOffset],
+  );
+
   useEffect(() => {
     if (!hostReady.current) return;
     if (!visible || !activeTarget) {
@@ -307,16 +323,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       inject(`window.herdrActivate(${JSON.stringify(activeTarget.key)});`);
       return;
     }
-    const update = ({ value }: { value: number }) => {
-      inject(`window.herdrSwipe(${JSON.stringify(activeTarget.key)}, ${JSON.stringify(previewTarget.key)}, ${swipe.direction}, ${value});`);
-    };
-    const listener = swipe.offset.addListener(update);
-    swipe.offset.stopAnimation(value => update({ value }));
+    updateSwipeOffset(swipe.offset.get());
     return () => {
-      swipe.offset.removeListener(listener);
       inject(`window.herdrActivate(${JSON.stringify(activeKey.current)});`);
     };
-  }, [activeTarget, inject, previewTarget, swipe, visible]);
+  }, [activeTarget, inject, previewTarget, swipe, updateSwipeOffset, visible]);
 
   useEffect(() => {
     let previous = AppState.currentState;

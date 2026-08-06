@@ -41,7 +41,7 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain('className="items-center justify-center overflow-hidden rounded-full"');
     expect(appUi).toContain('statusBloomStyle(color, size)');
     expect(appUi).toContain("const breathes = ['done', 'connected', 'active'].includes(status);");
-    expect(appUi).toContain('outputRange: [0.42, 0.82]');
+    expect(appUi).toContain('opacity: 0.42 + (progress.value * 0.4)');
   });
 
   it('keeps native animated props mounted when a connection spinner becomes idle', () => {
@@ -50,7 +50,7 @@ describe('terminal hierarchy status glyphs', () => {
       'utf8',
     );
 
-    expect(appUi).toContain(': { opacity: 1, transform: [{ scale: 1 }] };');
+    expect(appUi).toContain('return { opacity: 1, transform: [{ scale: 1 }] };');
     expect(appUi).toContain('return { opacity: 0.62, transform: [{ scale: 1 }] };');
   });
 

@@ -1,6 +1,7 @@
 import { AlertCircle, Ellipsis, LockKeyhole, LogOut, Plus, Server, Trash2 } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { Animated, PanResponder, ScrollView, View } from 'react-native';
+import { PanResponder, ScrollView, View } from 'react-native';
+import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
@@ -160,30 +161,31 @@ function SwipeableHostRow({
   onDisconnect: () => void;
 }) {
   const { t } = useTranslation();
-  const translateX = useRef(new Animated.Value(0)).current;
+  const translateX = useSharedValue(0);
   const openRef = useRef(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
 
   const settle = (open: boolean) => {
     openRef.current = open;
     setActionsOpen(open);
-    Animated.spring(translateX, {
-      toValue: open ? -HOST_SWIPE_ACTION_WIDTH : 0,
+    translateX.value = withSpring(open ? -HOST_SWIPE_ACTION_WIDTH : 0, {
       damping: 24,
       stiffness: 260,
       mass: 0.8,
       overshootClamping: true,
-      useNativeDriver: true,
-    }).start();
+    });
   };
 
   const panResponder = useRef(PanResponder.create({
     onMoveShouldSetPanResponderCapture: (_event, gesture) => (
       shouldClaimHostSwipe(gesture.dx, gesture.dy, openRef.current)
     ),
-    onPanResponderGrant: () => translateX.stopAnimation(),
+    onPanResponderGrant: () => cancelAnimation(translateX),
     onPanResponderMove: (_event, gesture) => {
-      translateX.setValue(hostSwipeOffset(gesture.dx, openRef.current));
+      translateX.value = hostSwipeOffset(gesture.dx, openRef.current);
     },
     onPanResponderRelease: (_event, gesture) => {
       settle(shouldOpenHostSwipe(gesture.dx, gesture.vx, openRef.current));
@@ -224,7 +226,7 @@ function SwipeableHostRow({
         </Button>
       </View>
       <Animated.View
-        style={{ transform: [{ translateX }] }}
+        style={animatedStyle}
         {...panResponder.panHandlers}>
         {children({ actionsOpen, closeActions: () => settle(false) })}
       </Animated.View>

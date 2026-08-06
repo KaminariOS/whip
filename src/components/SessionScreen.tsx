@@ -3,7 +3,6 @@ import { ChevronLeft, Globe2, Plus, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   Linking,
   Modal,
   PanResponder,
@@ -11,6 +10,8 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview/lib/WebView.android';
@@ -148,7 +149,7 @@ export function SessionScreen({
   const browserWebView = useRef<BrowserWebViewHandle | null>(null);
   const tunnelPortRef = useRef<number | null>(null);
   const browserRequestRef = useRef(0);
-  const tabSwipeTranslateX = useRef(new Animated.Value(0)).current;
+  const tabSwipeTranslateX = useSharedValue(0);
   const tabSwipeRef = useRef<TerminalTabSwipe | null>(null);
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
@@ -186,6 +187,14 @@ export function SessionScreen({
     target.hostSessionId === hostSessionId
       && target.session.terminalId === tabSwipe?.targetTerminalId
   )) || null;
+  const activeTerminalSwipeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tabSwipe && !previewTarget ? tabSwipeTranslateX.value : 0 }],
+  }), [previewTarget, tabSwipe]);
+  const previewPlaceholderStyle = useAnimatedStyle(() => ({
+    transform: [{
+      translateX: tabSwipeTranslateX.value + (tabSwipe ? tabSwipe.direction * terminalWidth : 0),
+    }],
+  }), [tabSwipe, terminalWidth]);
 
   const closeActiveTunnel = async () => {
     const localPort = tunnelPortRef.current;
@@ -398,26 +407,31 @@ export function SessionScreen({
     return nextSwipe;
   };
 
+  const finishTabSwipe = (originTabId: string, targetTabId: string, commit: boolean) => {
+    const swipe = tabSwipeRef.current;
+    if (!swipe || swipe.originTabId !== originTabId || swipe.targetTabId !== targetTabId) return;
+    if (commit) {
+      const target = swipeContextRef.current.tabs.find(item => item.tab_id === targetTabId);
+      if (target) chooseTabRef.current(target);
+    }
+    tabSwipeRef.current = null;
+    setTabSwipe(null);
+    tabSwipeTranslateX.value = 0;
+  };
+
   const settleTabSwipe = (commit: boolean) => {
     const swipe = tabSwipeRef.current;
     if (!swipe) return;
     const destination = commit ? -swipe.direction * terminalWidthRef.current : 0;
-    Animated.spring(tabSwipeTranslateX, {
-      toValue: destination,
+    tabSwipeTranslateX.value = withSpring(destination, {
       damping: 24,
       stiffness: 240,
       mass: 0.8,
       overshootClamping: true,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished || tabSwipeRef.current !== swipe) return;
-      if (commit) {
-        const target = swipeContextRef.current.tabs.find(item => item.tab_id === swipe.targetTabId);
-        if (target) chooseTabRef.current(target);
+    }, finished => {
+      if (finished) {
+        scheduleOnRN(finishTabSwipe, swipe.originTabId, swipe.targetTabId, commit);
       }
-      tabSwipeRef.current = null;
-      setTabSwipe(null);
-      tabSwipeTranslateX.setValue(0);
     });
   };
 
@@ -439,11 +453,11 @@ export function SessionScreen({
       if (!direction) return;
       const swipe = tabSwipeRef.current || beginTabSwipe(direction);
       if (!swipe) return;
-      tabSwipeTranslateX.setValue(terminalTabSwipeOffset(
+      tabSwipeTranslateX.value = terminalTabSwipeOffset(
         gesture.dx,
         terminalWidthRef.current,
         swipe.direction,
-      ));
+      );
     },
     onPanResponderRelease: (_event, gesture) => {
       const swipe = tabSwipeRef.current;
@@ -463,8 +477,8 @@ export function SessionScreen({
     if (visible) return;
     tabSwipeRef.current = null;
     setTabSwipe(null);
-    tabSwipeTranslateX.stopAnimation();
-    tabSwipeTranslateX.setValue(0);
+    cancelAnimation(tabSwipeTranslateX);
+    tabSwipeTranslateX.value = 0;
   }, [tabSwipeTranslateX, visible]);
 
   const choosePane = (pane: PaneInfo) => {
@@ -655,11 +669,7 @@ export function SessionScreen({
           pointerEvents="box-none"
           style={[
             StyleSheet.absoluteFill,
-            {
-              transform: [{
-                translateX: tabSwipe && !previewTarget ? tabSwipeTranslateX : 0,
-              }],
-            },
+            activeTerminalSwipeStyle,
           ]}>
           <TerminalScreen
             activeTarget={activeTarget}
@@ -717,14 +727,7 @@ export function SessionScreen({
               pointerEvents="none"
               style={[
                 StyleSheet.absoluteFill,
-                {
-                  transform: [{
-                    translateX: Animated.add(
-                      tabSwipeTranslateX,
-                      tabSwipe.direction * terminalWidth,
-                    ),
-                  }],
-                },
+                previewPlaceholderStyle,
               ]}
               className="items-center justify-center bg-terminal-canvas p-[30px]">
               <Text className="font-mono text-[10px] font-black text-terminal-text">{tabSwipe.targetLabel}</Text>

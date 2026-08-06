@@ -39,9 +39,9 @@ describe('Herd tab swipe actions', () => {
     expect(screen).toContain('shouldCloseHerdTabSwipe(gesture.dx, gesture.vx)');
     expect(screen).toContain('const visibleSorted = sorted.filter(');
     expect(screen).toContain('{visibleSorted.map((item, index) => (');
-    expect(screen).toContain('Animated.timing(translateX');
-    expect(screen).toContain('Animated.timing(rowHeight');
-    expect(screen).toContain('toValue: -Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG)');
+    expect(screen).toContain('translateX.value = withTiming(-Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG)');
+    expect(screen).toContain('rowHeight.value = withDelay(50, withTiming(0');
+    expect(screen).toContain('scheduleOnRN(finishClose, Boolean(finished))');
     expect(screen).toContain('<Icon as={X} className="text-destructive-foreground" size={22} />');
     expect(screen).not.toContain('text-destructive-foreground">{t(\'common.close\')}');
     expect(screen).not.toContain('variant="destructive"');

@@ -31,11 +31,14 @@ describe('terminal double tap', () => {
     expect(settings).toContain('terminalDoubleTapActions.map');
     expect(settings).toContain('doubleTapAction: action');
     expect(settings).toContain('accessibilityState={{ expanded }}');
-    expect(settings).toContain('{expanded ? (');
     expect(settings).toContain('setDoubleTapExpanded(expanded => !expanded)');
-    expect(settings).toContain('LayoutAnimation.configureNext(DOUBLE_TAP_MENU_ANIMATION)');
-    expect(settings).toContain('LayoutAnimation.Types.easeInEaseOut');
-    expect(settings).toContain('useReducedMotion()');
+    expect(settings).toContain('const contentHeight = useSharedValue(0)');
+    expect(settings).toContain('progress.value = withTiming(expanded ? 1 : 0');
+    expect(settings).toContain('height: contentHeight.value * progress.value');
+    expect(settings).toContain('opacity: progress.value');
+    expect(settings).toContain("className=\"overflow-hidden\"");
+    expect(settings).toContain("className=\"absolute inset-x-0 top-0 border-t border-border bg-muted/30 p-2\"");
+    expect(settings).toContain("pointerEvents={expanded ? 'auto' : 'none'}");
   });
 
   it('does not carry a tap through a swipe, long press, or cancelled touch', () => {

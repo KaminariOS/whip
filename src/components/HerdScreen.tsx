@@ -1,6 +1,16 @@
 import { ChevronRight, Plus, Sparkles, SquareTerminal, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Easing, PanResponder, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, PanResponder, RefreshControl, ScrollView, View } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -331,8 +341,8 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
   const { colors } = useTheme();
   const { t } = useTranslation();
   const { agent } = item;
-  const translateX = useRef(new Animated.Value(0)).current;
-  const rowHeight = useRef(new Animated.Value(HERD_AGENT_ROW_HEIGHT)).current;
+  const translateX = useSharedValue(0);
+  const rowHeight = useSharedValue(HERD_AGENT_ROW_HEIGHT);
   const rowWidthRef = useRef(0);
   const closingRef = useRef(closing);
   const committingRef = useRef(false);
@@ -346,43 +356,43 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
     ...(agent.focused ? [t('herd.focused')] : []),
   ].join(' · ');
 
+  const rowStyle = useAnimatedStyle(() => ({ height: rowHeight.value }));
+  const contentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
   const restore = () => {
-    Animated.spring(translateX, {
-      toValue: 0,
+    translateX.value = withSpring(0, {
       damping: 24,
       stiffness: 260,
       mass: 0.8,
       overshootClamping: true,
-      useNativeDriver: true,
-    }).start();
+    });
+  };
+
+  const finishClose = (finished: boolean) => {
+    if (finished) {
+      onCloseTab(item);
+      return;
+    }
+    committingRef.current = false;
+    rowHeight.value = HERD_AGENT_ROW_HEIGHT;
+    restore();
   };
 
   const commitClose = hapticPress(() => {
     if (closingRef.current || committingRef.current) return;
     committingRef.current = true;
-    Animated.parallel([
-      Animated.timing(translateX, {
-        toValue: -Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG),
-        duration: 180,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(rowHeight, {
-        toValue: 0,
-        duration: 150,
-        delay: 50,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: false,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        onCloseTab(item);
-        return;
-      }
-      committingRef.current = false;
-      rowHeight.setValue(HERD_AGENT_ROW_HEIGHT);
-      restore();
+    translateX.value = withTiming(-Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG), {
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
     });
+    rowHeight.value = withDelay(50, withTiming(0, {
+      duration: 150,
+      easing: Easing.inOut(Easing.quad),
+    }, finished => {
+      scheduleOnRN(finishClose, Boolean(finished));
+    }));
   });
 
   const panResponder = useRef(PanResponder.create({
@@ -390,11 +400,11 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
       !closingRef.current && shouldClaimHerdTabSwipe(gesture.dx, gesture.dy)
     ),
     onPanResponderGrant: () => {
-      translateX.stopAnimation();
-      rowHeight.stopAnimation();
+      cancelAnimation(translateX);
+      cancelAnimation(rowHeight);
     },
     onPanResponderMove: (_event, gesture) => {
-      translateX.setValue(herdTabSwipeOffset(gesture.dx));
+      translateX.value = herdTabSwipeOffset(gesture.dx);
     },
     onPanResponderRelease: (_event, gesture) => {
       if (shouldCloseHerdTabSwipe(gesture.dx, gesture.vx)) commitClose();
@@ -407,7 +417,7 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
   })).current;
 
   return (
-    <Animated.View className="overflow-hidden" style={{ height: rowHeight }}>
+    <Animated.View className="overflow-hidden" style={rowStyle}>
       <AnimatedEntrance delay={Math.min(index * 45, 225)}>
         <View
           className="relative min-h-[92px] overflow-hidden bg-destructive"
@@ -417,7 +427,7 @@ function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }
           </View>
           <Animated.View
             className="bg-background"
-            style={{ transform: [{ translateX }] }}
+            style={contentStyle}
             {...panResponder.panHandlers}>
             <Button
               accessibilityActions={[{ name: 'close-tab', label: t('session.closeTab', { tab: item.tabLabel }) }]}
