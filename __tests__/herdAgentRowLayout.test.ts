@@ -12,11 +12,24 @@ describe('herd agent row layout', () => {
     expect(screen).toContain('windowSize={7}');
     expect(screen).toContain('removeClippedSubviews');
     expect(screen).toContain('ItemSeparatorComponent={AgentRowSeparator}');
+    expect(screen).not.toContain('getItemLayout={getHerdAgentLayout}');
     expect(screen).toContain('const AgentRow = memo(');
+    expect(screen).toContain(
+      '<Animated.View className="overflow-hidden rounded-xl" style={rowStyle}>',
+    );
     expect(screen).toContain('rounded-xl border border-white/30');
     expect(screen).toContain(
       'min-h-[90px] w-full justify-start gap-3 rounded-none px-3',
     );
+  });
+
+  it('lets enlarged Android text determine the resting row height', () => {
+    expect(screen).toContain('const HERD_AGENT_ROW_MIN_HEIGHT = 92;');
+    expect(screen).toContain(
+      'const restingHeightRef = useRef(HERD_AGENT_ROW_MIN_HEIGHT);',
+    );
+    expect(screen).toContain('const { height, width } = event.nativeEvent.layout;');
+    expect(screen).toContain('rowHeight.value = restingHeightRef.current;');
   });
 
   it('only reveals the destructive treatment while swiping', () => {

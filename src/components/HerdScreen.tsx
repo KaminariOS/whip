@@ -61,7 +61,7 @@ import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { WorkspaceRail } from './WorkspaceRail';
 
-const HERD_AGENT_ROW_HEIGHT = 92;
+const HERD_AGENT_ROW_MIN_HEIGHT = 92;
 
 interface Props {
   queues: HerdHostQueue[];
@@ -377,7 +377,6 @@ export function HerdScreen({
         updateCellsBatchingPeriod={50}
         removeClippedSubviews={Platform.OS === 'android'}
         keyExtractor={herdAgentKey}
-        getItemLayout={getHerdAgentLayout}
         renderItem={renderAgent}
         ItemSeparatorComponent={AgentRowSeparator}
         refreshControl={
@@ -655,7 +654,8 @@ const AgentRow = memo(
     const { t } = useTranslation();
     const { agent } = item;
     const translateX = useSharedValue(0);
-    const rowHeight = useSharedValue(HERD_AGENT_ROW_HEIGHT);
+    const rowHeight = useSharedValue(HERD_AGENT_ROW_MIN_HEIGHT);
+    const restingHeightRef = useRef(HERD_AGENT_ROW_MIN_HEIGHT);
     const rowWidthRef = useRef(0);
     const closingRef = useRef(closing);
     const committingRef = useRef(false);
@@ -696,7 +696,7 @@ const AgentRow = memo(
         return;
       }
       committingRef.current = false;
-      rowHeight.value = HERD_AGENT_ROW_HEIGHT;
+      rowHeight.value = restingHeightRef.current;
       restore();
     };
 
@@ -749,12 +749,20 @@ const AgentRow = memo(
     ).current;
 
     return (
-      <Animated.View className="overflow-hidden" style={rowStyle}>
+      <Animated.View className="overflow-hidden rounded-xl" style={rowStyle}>
         <AnimatedEntrance delay={Math.min(index * 45, 225)}>
           <View
             className="relative min-h-[92px] overflow-hidden rounded-xl"
             onLayout={event => {
-              rowWidthRef.current = event.nativeEvent.layout.width;
+              const { height, width } = event.nativeEvent.layout;
+              rowWidthRef.current = width;
+              restingHeightRef.current = Math.max(
+                HERD_AGENT_ROW_MIN_HEIGHT,
+                height,
+              );
+              if (!committingRef.current) {
+                rowHeight.value = restingHeightRef.current;
+              }
             }}
           >
             <Animated.View
@@ -857,14 +865,6 @@ const AgentRow = memo(
 
 function herdAgentKey(item: HerdQueueAgent): string {
   return `${item.hostId}:${item.agent.terminal_id}`;
-}
-
-function getHerdAgentLayout(
-  _data: ArrayLike<HerdQueueAgent> | null | undefined,
-  index: number,
-) {
-  const length = HERD_AGENT_ROW_HEIGHT + 8;
-  return { length, offset: length * index, index };
 }
 
 function AgentRowSeparator() {
