@@ -5,10 +5,10 @@ import { useTranslation } from 'react-i18next';
 import { compareAgentStatusPriority } from '@/src/herdQueue';
 import { aggregateAgentStatus } from '@/src/liveHostSessions';
 import { cn } from '@/src/lib/utils';
-import { statusColor, useTheme } from '@/src/theme';
+import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
-import { GlassSurface } from './GlassSurface';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -91,15 +91,23 @@ function WorkspacePill({
   onClose?: () => void;
 }) {
   const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   return (
-    <View className={cn('h-8 max-w-[190px] flex-row items-center overflow-hidden rounded-full bg-muted', active && 'bg-primary')}>
+    <View
+      className={cn(
+        'h-8 max-w-[190px] flex-row items-center overflow-hidden rounded-full',
+        appGlassEnabled && 'border',
+        !appGlassEnabled && 'bg-muted',
+        !appGlassEnabled && active && 'bg-primary',
+      )}
+      style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
       <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0" variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
         <AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={12} />
-        <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{label}</Text>
-        <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', active && 'text-primary-foreground')}>{count}</Text>
+        <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && (appGlassEnabled ? 'text-primary' : 'text-primary-foreground'))}>{label}</Text>
+        <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', active && (appGlassEnabled ? 'text-primary' : 'text-primary-foreground'))}>{count}</Text>
       </Button>
-      {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className="h-8 w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? colors.onPrimary : colors.textSecondary} /></Button> : null}
+      {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className="h-8 w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
     </View>
   );
 }

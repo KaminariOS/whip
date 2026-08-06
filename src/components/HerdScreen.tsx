@@ -50,10 +50,11 @@ import {
   shouldCloseHerdTabSwipe,
 } from '@/src/lib/herdTabSwipeActions';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
-import { statusColor, useTheme } from '@/src/theme';
+import { cn } from '@/src/lib/utils';
+import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, AnimatedEntrance, hapticPress, StatusBadge } from './app-ui';
-import { GlassBackdrop, GlassSurface } from './GlassSurface';
+import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -113,6 +114,7 @@ export function HerdScreen({
   onOpenSshShell,
 }: Props) {
   const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const { bottom } = useSafeAreaInsets();
   const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
@@ -439,9 +441,11 @@ export function HerdScreen({
                   <View className="mb-3 flex-row justify-end gap-2">
                     <Button
                       accessibilityLabel={t('herd.startAgent')}
-                      className="rounded-full px-4"
+                      className={cn('rounded-full px-4', appGlassEnabled && 'border')}
                       size="sm"
+                      variant={appGlassEnabled ? 'ghost' : 'default'}
                       disabled={workspaceBusy || !agentCommand.trim()}
+                      style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
                       onPress={hapticPress(startAgent)}
                     >
                       <Icon as={Plus} size={16} />
@@ -449,10 +453,11 @@ export function HerdScreen({
                     </Button>
                     <Button
                       accessibilityLabel={t('herd.runCommand')}
-                      className="rounded-full px-4"
+                      className={cn('rounded-full px-4', appGlassEnabled && 'border')}
                       size="sm"
-                      variant="secondary"
+                      variant={appGlassEnabled ? 'ghost' : 'secondary'}
                       disabled={workspaceBusy}
+                      style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
                       onPress={hapticPress(openCommandRunner)}
                     >
                       <Icon as={Play} size={16} />
@@ -460,10 +465,11 @@ export function HerdScreen({
                     </Button>
                     <Button
                       accessibilityLabel={t('herd.openSpace')}
-                      className="rounded-full px-4"
+                      className={cn('rounded-full px-4', appGlassEnabled && 'border')}
                       size="sm"
-                      variant="secondary"
+                      variant={appGlassEnabled ? 'ghost' : 'secondary'}
                       disabled={workspaceBusy}
+                      style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
                       onPress={hapticPress(openSpace)}
                     >
                       <Icon as={SquareTerminal} size={16} />

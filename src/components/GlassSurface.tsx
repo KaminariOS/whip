@@ -16,6 +16,10 @@ export function GlassProvider({ blurTarget, enabled, children }: GlassContextVal
   return <GlassContext.Provider value={{ blurTarget, enabled }}>{children}</GlassContext.Provider>;
 }
 
+export function useAppGlassEnabled(): boolean {
+  return useContext(GlassContext)?.enabled === true;
+}
+
 export function GlassBackdrop({ intensity = 36 }: { intensity?: number }) {
   const glass = useContext(GlassContext);
   const { colors, isDark } = useTheme();

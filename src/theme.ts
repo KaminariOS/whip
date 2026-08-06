@@ -167,6 +167,13 @@ export function sessionTabGlassStyle(active: boolean, palette: ThemeColors) {
   };
 }
 
+export function appGlassControlStyle(active: boolean, palette: ThemeColors) {
+  return {
+    backgroundColor: 'transparent',
+    borderColor: colorWithAlpha(active ? palette.primary : palette.text, active ? 'D6' : '47'),
+  };
+}
+
 function colorWithAlpha(color: string, alpha: string) {
   return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }

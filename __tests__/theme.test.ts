@@ -1,4 +1,5 @@
 import {
+  appGlassControlStyle,
   darkColors,
   githubLightPalette,
   lightColors,
@@ -53,6 +54,17 @@ describe('application theme', () => {
     expect(sessionTabGlassStyle(true, darkColors)).toEqual({
       backgroundColor: `${darkColors.primary}D6`,
       borderColor: `${darkColors.onPrimary}47`,
+    });
+  });
+
+  test('keeps app glass controls transparent', () => {
+    expect(appGlassControlStyle(false, darkColors)).toEqual({
+      backgroundColor: 'transparent',
+      borderColor: `${darkColors.text}47`,
+    });
+    expect(appGlassControlStyle(true, darkColors)).toEqual({
+      backgroundColor: 'transparent',
+      borderColor: `${darkColors.primary}D6`,
     });
   });
 });
