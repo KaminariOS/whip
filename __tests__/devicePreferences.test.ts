@@ -48,6 +48,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     backgroundDimming: 60,
   });
   expect(defaultDevicePreferences.terminalControlUsage).toEqual({});
+  expect(defaultDevicePreferences.persistentAlertDurationSeconds).toBe(30);
   expect(defaultDevicePreferences.appearance).toBe('system');
   expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.biometricForKeys).toBe(false);
@@ -70,6 +71,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
 
   await expect(loadDevicePreferences()).resolves.toEqual({
     alertsEnabled: false,
+    persistentAlertDurationSeconds: 30,
     ttsEnabled: true,
     biometricForKeys: false,
     biometricOnResume: false,
@@ -94,6 +96,23 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       backgroundImageUri: null,
       backgroundDimming: 60,
     },
+  });
+});
+
+test('loads and bounds the persistent alert duration', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ persistentAlertDurationSeconds: 45 }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    persistentAlertDurationSeconds: 45,
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ persistentAlertDurationSeconds: 90 }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    persistentAlertDurationSeconds: 60,
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ persistentAlertDurationSeconds: 'forever' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    persistentAlertDurationSeconds: 30,
   });
 });
 

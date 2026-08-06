@@ -13,7 +13,14 @@ import {
   type TerminalVolumeKey,
   type TerminalVolumeKeyAction,
 } from '@/src/lib/volumeKeys';
-import type { AppearancePreference, LanguagePreference, TerminalPreferences } from '@/src/services/devicePreferences';
+import {
+  MAX_PERSISTENT_ALERT_DURATION_SECONDS,
+  MIN_PERSISTENT_ALERT_DURATION_SECONDS,
+  PERSISTENT_ALERT_DURATION_STEP_SECONDS,
+  type AppearancePreference,
+  type LanguagePreference,
+  type TerminalPreferences,
+} from '@/src/services/devicePreferences';
 import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
 import { hapticPress, IconButton, useReducedMotion } from './app-ui';
@@ -31,6 +38,7 @@ const DOUBLE_TAP_MENU_ANIMATION = LayoutAnimation.create(
 
 export interface SettingsSectionProps {
   alertsEnabled: boolean;
+  persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
   biometricForKeys: boolean;
   biometricOnResume: boolean;
@@ -42,6 +50,7 @@ export interface SettingsSectionProps {
   reopenTerminalOnLaunch: boolean;
   agentCommand: string;
   onAlertsChange: (value: boolean) => void;
+  onPersistentAlertDurationChange: (value: number) => void;
   onTtsChange: (value: boolean) => void;
   onBiometricForKeysChange: (value: boolean) => void;
   onBiometricOnResumeChange: (value: boolean) => void;
@@ -105,6 +114,21 @@ export function SettingsSection(props: SettingsSectionProps) {
         <Text className="mb-3 mt-4 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
         <View className="overflow-hidden rounded-lg border border-border bg-card">
           <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
+          <ValueRow
+            title={t('settings.backgroundAlertDuration')}
+            copy={t('settings.backgroundAlertDurationCopy')}
+            value={t('settings.seconds', { count: props.persistentAlertDurationSeconds })}
+            disabled={!props.alertsEnabled}
+            onDecrease={() => props.onPersistentAlertDurationChange(Math.max(
+              MIN_PERSISTENT_ALERT_DURATION_SECONDS,
+              props.persistentAlertDurationSeconds - PERSISTENT_ALERT_DURATION_STEP_SECONDS,
+            ))}
+            onIncrease={() => props.onPersistentAlertDurationChange(Math.min(
+              MAX_PERSISTENT_ALERT_DURATION_SECONDS,
+              props.persistentAlertDurationSeconds + PERSISTENT_ALERT_DURATION_STEP_SECONDS,
+            ))}
+            divided
+          />
           <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
           <ActionRow
             title={t('settings.changeNotificationSettings')}
@@ -293,9 +317,12 @@ function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange:
   );
 }
 
-function ValueRow({ title, value, onDecrease, onIncrease, divided = false, disabled = false }: { title: string; value: string; onDecrease: () => void; onIncrease: () => void; divided?: boolean; disabled?: boolean }) {
+function ValueRow({ title, copy, value, onDecrease, onIncrease, divided = false, disabled = false }: { title: string; copy?: string; value: string; onDecrease: () => void; onIncrease: () => void; divided?: boolean; disabled?: boolean }) {
   const { t } = useTranslation();
-  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5' : 'min-h-16 flex-row items-center px-3.5'}><Text className="text-[15px] font-semibold leading-5">{title}</Text><View className="ml-auto flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[92px] text-center text-xs text-muted-foreground/50' : 'min-w-[92px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
+  const rowClassName = divided
+    ? `${copy ? 'min-h-[82px]' : 'min-h-16'} flex-row items-center border-t border-border px-3.5`
+    : `${copy ? 'min-h-[82px]' : 'min-h-16'} flex-row items-center px-3.5`;
+  return <View className={rowClassName}><View className="min-w-0 flex-1 pr-2"><Text className="text-[15px] font-semibold leading-5">{title}</Text>{copy ? <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{copy}</Text> : null}</View><View className="flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[64px] text-center text-xs text-muted-foreground/50' : 'min-w-[64px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
 }
 
 function ChoiceRow({ title, copy, value, onPress, divided = false }: { title: string; copy: string; value: string; onPress: () => void; divided?: boolean }) {

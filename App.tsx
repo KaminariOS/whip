@@ -221,6 +221,7 @@ function AppContent() {
   const restoredTerminalHostIdsRef = useRef(new Set<string>());
   const restoreStarted = useRef(false);
   const alertsEnabledRef = useRef(true);
+  const persistentAlertDurationSecondsRef = useRef(defaultDevicePreferences.persistentAlertDurationSeconds);
   const ttsEnabledRef = useRef(false);
   const handledNotificationIdRef = useRef<string | null>(null);
   const biometricOnResumeRef = useRef(defaultDevicePreferences.biometricOnResume);
@@ -249,6 +250,7 @@ function AppContent() {
   const [herdWorkspaceFilterIds, setHerdWorkspaceFilterIds] = useState<Record<string, string | null>>({});
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(true);
+  const [persistentAlertDurationSeconds, setPersistentAlertDurationSeconds] = useState(defaultDevicePreferences.persistentAlertDurationSeconds);
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [biometricForKeys, setBiometricForKeys] = useState(defaultDevicePreferences.biometricForKeys);
   const [biometricOnResume, setBiometricOnResume] = useState(defaultDevicePreferences.biometricOnResume);
@@ -288,6 +290,7 @@ function AppContent() {
   hostsRef.current = hosts;
   knownHostsRef.current = knownHosts;
   alertsEnabledRef.current = alertsEnabled;
+  persistentAlertDurationSecondsRef.current = persistentAlertDurationSeconds;
   ttsEnabledRef.current = ttsEnabled;
 
   useEffect(() => {
@@ -332,6 +335,7 @@ function AppContent() {
     loadDevicePreferences()
       .then(preferences => {
         setAlertsEnabled(preferences.alertsEnabled);
+        setPersistentAlertDurationSeconds(preferences.persistentAlertDurationSeconds);
         setTtsEnabled(preferences.ttsEnabled);
         biometricForKeysRef.current = preferences.biometricForKeys;
         setBiometricForKeys(preferences.biometricForKeys);
@@ -365,6 +369,7 @@ function AppContent() {
     if (!preferencesLoaded) return;
     saveDevicePreferences({
       alertsEnabled,
+      persistentAlertDurationSeconds,
       ttsEnabled,
       biometricForKeys,
       biometricOnResume,
@@ -377,7 +382,7 @@ function AppContent() {
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [agentCommand, alertsEnabled, appearance, biometricForKeys, biometricOnResume, keepScreenOn, language, navigation.tab, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [agentCommand, alertsEnabled, appearance, biometricForKeys, biometricOnResume, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   const updateAppearance = useCallback((value: AppearancePreference) => {
     setAppearance(value);
@@ -533,7 +538,8 @@ function AppContent() {
               hostId: sessionId,
               paneId,
             }, session ? tabNameForAgent(agent, session.snapshot.tabs) : undefined,
-            useBriefAlert ? 'brief' : 'persistent').catch(() => undefined);
+            useBriefAlert ? 'brief' : 'persistent',
+            persistentAlertDurationSecondsRef.current * 1_000).catch(() => undefined);
           }
           if (agentStatus) runtime.previousStatuses?.set(paneId, agentStatus);
           setLiveSessions(current => applyLiveHostAgentStatus(current, sessionId, paneId, event.data));
@@ -634,7 +640,8 @@ function AppContent() {
                 hostId: sessionId,
                 paneId: agent.pane_id,
               }, tabNameForAgent(agent, snapshot.tabs),
-              useBriefAlert ? 'brief' : 'persistent').catch(() => undefined);
+              useBriefAlert ? 'brief' : 'persistent',
+              persistentAlertDurationSecondsRef.current * 1_000).catch(() => undefined);
             }
           }
         }
@@ -1504,6 +1511,7 @@ function AppContent() {
           {navigation.tab === 'more' && (
             <MoreScreen
               alertsEnabled={alertsEnabled}
+              persistentAlertDurationSeconds={persistentAlertDurationSeconds}
               ttsEnabled={ttsEnabled}
               biometricForKeys={biometricForKeys}
               biometricOnResume={biometricOnResume}
@@ -1517,6 +1525,7 @@ function AppContent() {
               terminalPreferences={terminalPreferences}
               server={activeSession?.snapshot.server || null}
               onAlertsChange={setAlertsEnabled}
+              onPersistentAlertDurationChange={setPersistentAlertDurationSeconds}
               onTtsChange={setTtsEnabled}
               onBiometricForKeysChange={value => { updateBiometricForKeys(value).catch(() => undefined); }}
               onBiometricOnResumeChange={value => { updateBiometricOnResume(value).catch(() => undefined); }}

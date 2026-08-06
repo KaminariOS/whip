@@ -21,6 +21,10 @@ const LEGACY_DEVICE_PREFERENCES_KEYS = [
   'herdr.device.preferences.v1',
 ];
 
+export const MIN_PERSISTENT_ALERT_DURATION_SECONDS = 5;
+export const MAX_PERSISTENT_ALERT_DURATION_SECONDS = 60;
+export const PERSISTENT_ALERT_DURATION_STEP_SECONDS = 5;
+
 export interface TerminalPreferences {
   fullscreen: boolean;
   useModifierKeyIcons: boolean;
@@ -46,6 +50,7 @@ type StoredTerminalPreferences = Partial<TerminalPreferences> & {
 
 export interface DevicePreferences {
   alertsEnabled: boolean;
+  persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
   biometricForKeys: boolean;
   biometricOnResume: boolean;
@@ -61,6 +66,7 @@ export interface DevicePreferences {
 
 export const defaultDevicePreferences: DevicePreferences = {
   alertsEnabled: true,
+  persistentAlertDurationSeconds: 30,
   ttsEnabled: false,
   biometricForKeys: false,
   biometricOnResume: false,
@@ -125,6 +131,12 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
       : clampNumber(terminal.fontSize, 8, 24, defaultDevicePreferences.terminal.fontSize);
     return {
       alertsEnabled: parsed.alertsEnabled ?? defaultDevicePreferences.alertsEnabled,
+      persistentAlertDurationSeconds: clampNumber(
+        parsed.persistentAlertDurationSeconds,
+        MIN_PERSISTENT_ALERT_DURATION_SECONDS,
+        MAX_PERSISTENT_ALERT_DURATION_SECONDS,
+        defaultDevicePreferences.persistentAlertDurationSeconds,
+      ),
       ttsEnabled: parsed.ttsEnabled ?? defaultDevicePreferences.ttsEnabled,
       biometricForKeys: parsed.biometricForKeys === true,
       biometricOnResume: parsed.biometricOnResume === true,

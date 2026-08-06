@@ -91,6 +91,19 @@ test('posts the notification immediately when speech is disabled', async () => {
   expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
 });
 
+test('uses the configured persistent alert timeout', async () => {
+  await alertAgent(agent, false, {
+    hostId: 'host-1',
+    paneId: agent.pane_id,
+  }, 'work', 'persistent', 45_000);
+
+  expect(armPersistentAgentAlert).toHaveBeenCalledWith(
+    'notification-1',
+    'agent-state-v3',
+    45_000,
+  );
+});
+
 test('uses a short vibration without arming a persistent alert for a brief notification', async () => {
   await alertAgent(agent, false, {
     hostId: 'host-1',

@@ -17,7 +17,7 @@ const ALERT_VIBRATION_PATTERN = [
 ];
 const BRIEF_VIBRATION_PATTERN = [0, 200];
 const SPEECH_TIMEOUT_MS = 10_000;
-const PERSISTENT_ALERT_TIMEOUT_MS = 30_000;
+const DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS = 30_000;
 
 export type AgentAlertDuration = 'brief' | 'persistent';
 
@@ -58,6 +58,7 @@ export async function alertAgent(
   target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
   tabName?: string,
   duration: AgentAlertDuration = 'persistent',
+  persistentAlertTimeoutMs: number = DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS,
 ): Promise<void> {
   const title = agentNotificationTitle(agent, tabName, {
     needsYou: name => i18n.t('alerts.needsYou', { name }),
@@ -84,7 +85,7 @@ export async function alertAgent(
     armPersistentAgentAlert(
       notificationIdentifier,
       PERSISTENT_CHANNEL_ID,
-      PERSISTENT_ALERT_TIMEOUT_MS,
+      persistentAlertTimeoutMs,
     ).catch(() => undefined);
   }
 }

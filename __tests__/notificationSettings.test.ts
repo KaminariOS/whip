@@ -47,5 +47,6 @@ it('targets the notification settings screen across supported Android versions',
   expect(module).toContain('Settings.ACTION_APPLICATION_DETAILS_SETTINGS');
   expect(nativePackage).toContain('HerdrSystemSettingsModule(reactContext)');
   expect(settingsScreen).toContain("t('settings.changeNotificationSettings')");
+  expect(settingsScreen).toContain("t('settings.backgroundAlertDurationCopy')");
   expect(settingsScreen).toContain('onPress={changeNotificationSettings}');
 });
