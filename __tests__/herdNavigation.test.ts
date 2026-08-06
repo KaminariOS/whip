@@ -24,7 +24,7 @@ describe('terminal to Herd navigation', () => {
     expect(app).toContain('onExit={() => exitTerminalToHerd(activeSession.id)}');
   });
 
-  it('opens an empty selected space and offers the configured agent command in every selected space', () => {
+  it('opens any selected space and offers the configured agent command in every selected space', () => {
     const app = readSource('App.tsx');
     const herd = readSource('src/components/HerdScreen.tsx');
     const settings = readSource('src/components/SettingsScreen.tsx');
@@ -33,7 +33,7 @@ describe('terminal to Herd navigation', () => {
     expect(herd).toContain('await runWorkspaceAction(() => onOpenSpace(');
     expect(herd).toContain('{selectedQueue?.running && selectedWorkspace ? (');
     expect(herd).not.toContain('!selectedWorkspace || queueAgents.length > 0');
-    expect(herd).toContain('{queueAgents.length === 0 ? (');
+    expect(herd).not.toContain('{queueAgents.length === 0 ? (');
     expect(herd).toContain("t('herd.openSpace')");
     expect(herd).toContain("accessibilityLabel={t('herd.openSpace')}");
     expect(herd).not.toContain('variant="ghost" disabled={workspaceBusy} onPress={hapticPress(openSpace)}');

@@ -458,19 +458,17 @@ export function HerdScreen({
                       <Icon as={Play} size={16} />
                       <Text>{t('herd.run')}</Text>
                     </Button>
-                    {queueAgents.length === 0 ? (
-                      <Button
-                        accessibilityLabel={t('herd.openSpace')}
-                        className="rounded-full px-4"
-                        size="sm"
-                        variant="secondary"
-                        disabled={workspaceBusy}
-                        onPress={hapticPress(openSpace)}
-                      >
-                        <Icon as={SquareTerminal} size={16} />
-                        <Text>{t('herd.open')}</Text>
-                      </Button>
-                    ) : null}
+                    <Button
+                      accessibilityLabel={t('herd.openSpace')}
+                      className="rounded-full px-4"
+                      size="sm"
+                      variant="secondary"
+                      disabled={workspaceBusy}
+                      onPress={hapticPress(openSpace)}
+                    >
+                      <Icon as={SquareTerminal} size={16} />
+                      <Text>{t('herd.open')}</Text>
+                    </Button>
                   </View>
                 ) : null}
 
