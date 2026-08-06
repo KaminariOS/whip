@@ -35,6 +35,7 @@ beforeEach(() => {
 test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.terminal).toEqual({
     fullscreen: true,
+    useModifierKeyIcons: false,
     volumeUpAction: 'none',
     volumeDownAction: 'none',
     fontSize: 8,
@@ -81,6 +82,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     terminalControlUsage: {},
     terminal: {
       fullscreen: true,
+      useModifierKeyIcons: false,
       volumeUpAction: 'none',
       volumeDownAction: 'none',
       fontSize: 8,
@@ -188,6 +190,18 @@ test('uses fullscreen terminals by default and allows fullscreen to be disabled'
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { fullscreen: 'no' } }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     terminal: { fullscreen: true },
+  });
+});
+
+test('uses modifier key text by default and allows modifier key icons to be enabled', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { useModifierKeyIcons: true } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { useModifierKeyIcons: true },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { useModifierKeyIcons: 'yes' } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    terminal: { useModifierKeyIcons: false },
   });
 });
 

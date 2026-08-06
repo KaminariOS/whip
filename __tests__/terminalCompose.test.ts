@@ -8,7 +8,7 @@ describe('terminal input composer', () => {
     const screen = readSource('src/components/TerminalScreen.tsx');
 
     expect(screen).toContain("if (control === 'compose')");
-    expect(screen).toContain('<MessageCircle size={16}');
+    expect(screen).toContain('<MessageCircle size={TERMINAL_ICON_SIZE}');
     expect(screen).toContain('const [composeText, setComposeText] = useState');
     expect(screen).toContain('multiline');
     expect(screen).toContain('onChangeText={setComposeText}');

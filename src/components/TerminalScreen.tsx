@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, FolderOpen, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Paperclip, Send, X } from 'lucide-react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Option, Paperclip, Search, Send, X, type LucideIcon } from 'lucide-react-native';
 import { Animated, Clipboard, Image, Keyboard, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,7 @@ import {
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
 import { Button } from './ui/button';
+import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 
@@ -61,28 +62,56 @@ interface Props {
   ) => void;
 }
 
-const TERMINAL_KEYS: Partial<Record<TerminalControlId, readonly [string, string]>> = {
-  esc: ['ESC', '\u001b'],
-  tab: ['TAB', '\t'],
-  up: ['↑', '\u001b[A'],
-  left: ['←', '\u001b[D'],
-  right: ['→', '\u001b[C'],
-  down: ['↓', '\u001b[B'],
-  enter: ['ENTER', '\r'],
-  slash: ['/', '/'],
-  hyphen: ['-', '-'],
-  pipe: ['|', '|'],
-  tilde: ['~', '~'],
-  end: ['END', '\u001b[F'],
-  'page-up': ['PG↑', '\u001b[5~'],
-  'page-down': ['PG↓', '\u001b[6~'],
-  'shift-tab': ['⇧TAB', '\u001b[Z'],
-  home: ['HOME', '\u001b[H'],
+type TerminalKeyDefinition = readonly [label: string, input: string, face: 'text' | 'symbol'];
+
+const TERMINAL_KEYS: Partial<Record<TerminalControlId, TerminalKeyDefinition>> = {
+  esc: ['ESC', '\u001b', 'text'],
+  tab: ['TAB', '\t', 'text'],
+  up: ['↑', '\u001b[A', 'symbol'],
+  left: ['←', '\u001b[D', 'symbol'],
+  right: ['→', '\u001b[C', 'symbol'],
+  down: ['↓', '\u001b[B', 'symbol'],
+  enter: ['ENTER', '\r', 'text'],
+  slash: ['/', '/', 'symbol'],
+  hyphen: ['-', '-', 'symbol'],
+  pipe: ['|', '|', 'symbol'],
+  tilde: ['~', '~', 'symbol'],
+  end: ['END', '\u001b[F', 'text'],
+  'page-up': ['PG↑', '\u001b[5~', 'text'],
+  'page-down': ['PG↓', '\u001b[6~', 'text'],
+  'shift-tab': ['⇧TAB', '\u001b[Z', 'text'],
+  home: ['HOME', '\u001b[H', 'text'],
+};
+
+interface TerminalIconDefinition {
+  accessibilityKey: string;
+  icon?: LucideIcon;
+  label?: string;
+}
+
+const TERMINAL_KEY_ICONS: Partial<Record<TerminalControlId, TerminalIconDefinition>> = {
+  up: { icon: ArrowUp, accessibilityKey: 'terminal.upKey' },
+  left: { icon: ArrowLeft, accessibilityKey: 'terminal.leftKey' },
+  right: { icon: ArrowRight, accessibilityKey: 'terminal.rightKey' },
+  down: { icon: ArrowDown, accessibilityKey: 'terminal.downKey' },
+};
+
+const ICONIC_TERMINAL_KEYS: Partial<Record<TerminalControlId, TerminalIconDefinition>> = {
+  esc: { label: '⎋', accessibilityKey: 'terminal.escapeKey' },
+  tab: { icon: ArrowRightToLine, accessibilityKey: 'terminal.tabKey' },
+  enter: { icon: CornerDownLeft, accessibilityKey: 'terminal.enterKey' },
 };
 
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
-const TERMINAL_CONTROL_CLASS = 'min-h-[34px] min-w-12 rounded-sm border border-border bg-card/70 px-2.5 active:bg-card/80';
+const TERMINAL_ICON_CONTROL_CLASS = 'h-9 w-11 items-center justify-center rounded-sm border border-border bg-card/70 p-0 active:bg-card/80';
+const TERMINAL_TEXT_CONTROL_CLASS = 'h-9 min-w-11 items-center justify-center rounded-sm border border-border bg-card/70 px-2.5 py-0 active:bg-card/80';
+const TERMINAL_ICON_BOX_CLASS = 'size-5 items-center justify-center';
+const TERMINAL_ICON_SIZE = 18;
+const TERMINAL_CONTROL_LABEL_STYLE = {
+  includeFontPadding: false,
+  textAlignVertical: 'center',
+} as const;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 export function TerminalBackground({ preferences }: { preferences: TerminalPreferences }) {
@@ -443,10 +472,17 @@ export function TerminalScreen({
   const renderTerminalControl = (control: TerminalControlId) => {
     const key = TERMINAL_KEYS[control];
     if (key) {
+      const fixedIcon = TERMINAL_KEY_ICONS[control];
+      const iconicKey = ICONIC_TERMINAL_KEYS[control];
+      const useIconicKey = preferences.useModifierKeyIcons && Boolean(iconicKey);
+      const icon = fixedIcon?.icon ?? (useIconicKey ? iconicKey?.icon : undefined);
       return (
         <TerminalKey
           key={control}
-          label={key[0]}
+          label={useIconicKey && iconicKey?.label ? iconicKey.label : key[0]}
+          icon={icon}
+          accessibilityLabel={fixedIcon ? t(fixedIcon.accessibilityKey) : iconicKey ? t(iconicKey.accessibilityKey) : undefined}
+          symbolic={!icon && (useIconicKey || key[2] === 'symbol')}
           onPress={() => {
             onControlUse(control);
             sendInput(key[1]);
@@ -460,7 +496,7 @@ export function TerminalScreen({
           key={control}
           accessibilityLabel={keyboardEnabled ? t('terminal.disableKeyboard') : t('terminal.enableKeyboard')}
           accessibilityState={{ selected: keyboardEnabled }}
-          className={cn(TERMINAL_CONTROL_CLASS, keyboardEnabled && 'border-primary bg-primary/15')}
+          className={cn(TERMINAL_ICON_CONTROL_CLASS, keyboardEnabled && 'border-primary bg-primary/15')}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
@@ -479,20 +515,27 @@ export function TerminalScreen({
               renderer.current?.blur();
             }
           }}>
-          <KeyboardIcon size={17} color={keyboardEnabled ? appColors.primary : appColors.text} />
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            <KeyboardIcon size={TERMINAL_ICON_SIZE} color={keyboardEnabled ? appColors.primary : appColors.text} />
+          </View>
         </Button>
       );
     }
     if (control === 'paste') {
       return (
-        <TerminalKey
+        <Button
           key={control}
-          label={t('terminal.paste')}
+          accessibilityLabel={t('terminal.paste')}
+          className={TERMINAL_ICON_CONTROL_CLASS}
+          variant="secondary"
           onPress={() => {
             onControlUse(control);
             pasteClipboard().catch(reason => setError(String(reason)));
-          }}
-        />
+          }}>
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            <ClipboardPaste size={TERMINAL_ICON_SIZE} color={appColors.text} />
+          </View>
+        </Button>
       );
     }
     if (control === 'compose') {
@@ -501,14 +544,16 @@ export function TerminalScreen({
           key={control}
           accessibilityLabel={t('terminal.compose')}
           accessibilityState={{ selected: composeOpen }}
-          className={cn(TERMINAL_CONTROL_CLASS, composeOpen && 'border-primary')}
+          className={cn(TERMINAL_ICON_CONTROL_CLASS, composeOpen && 'border-primary')}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
             if (composeOpen) closeCompose();
             else openCompose();
           }}>
-          <MessageCircle size={16} color={appColors.text} />
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            <MessageCircle size={TERMINAL_ICON_SIZE} color={appColors.text} />
+          </View>
         </Button>
       );
     }
@@ -517,13 +562,15 @@ export function TerminalScreen({
         <Button
           key={control}
           accessibilityLabel={t('terminal.attach')}
-          className={TERMINAL_CONTROL_CLASS}
+          className={TERMINAL_ICON_CONTROL_CLASS}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
             onRequestAttachment?.();
           }}>
-          <Paperclip size={16} color={appColors.text} />
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            <Paperclip size={TERMINAL_ICON_SIZE} color={appColors.text} />
+          </View>
         </Button>
       );
     }
@@ -532,22 +579,26 @@ export function TerminalScreen({
         <Button
           key={control}
           accessibilityLabel={t('terminal.openFiles')}
-          className={TERMINAL_CONTROL_CLASS}
+          className={TERMINAL_ICON_CONTROL_CLASS}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
             onRequestFiles?.();
           }}>
-          <FolderOpen size={16} color={appColors.text} />
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            <FolderOpen size={TERMINAL_ICON_SIZE} color={appColors.text} />
+          </View>
         </Button>
       );
     }
     if (control === 'find') {
       return (
-        <TerminalKey
+        <Button
           key={control}
-          label={t('terminal.find')}
-          armed={searchOpen}
+          accessibilityLabel={t('terminal.find')}
+          accessibilityState={{ selected: searchOpen }}
+          className={cn(TERMINAL_ICON_CONTROL_CLASS, searchOpen && 'border-primary')}
+          variant="secondary"
           onPress={() => {
             onControlUse(control);
             if (composeOpen) {
@@ -557,14 +608,18 @@ export function TerminalScreen({
             } else {
               setSearchOpen(value => !value);
             }
-          }}
-        />
+          }}>
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            <Search size={TERMINAL_ICON_SIZE} color={searchOpen ? appColors.primary : appColors.text} />
+          </View>
+        </Button>
       );
     }
     if (control === 'ctrl') {
       return (
         <Button
           key={control}
+          accessibilityLabel={t('terminal.ctrlModifier')}
           accessibilityState={{ selected: ctrl !== 'off' }}
           onPress={() => {
             onControlUse(control);
@@ -572,9 +627,13 @@ export function TerminalScreen({
           }}
           onLongPress={() => setCtrl('locked')}
           delayLongPress={450}
-          className={cn(TERMINAL_CONTROL_CLASS, ctrl === 'armed' && 'border-primary', ctrl === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
+          className={cn(preferences.useModifierKeyIcons ? TERMINAL_ICON_CONTROL_CLASS : TERMINAL_TEXT_CONTROL_CLASS, ctrl === 'armed' && 'border-primary', ctrl === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
           variant="secondary">
-          <Text className={cn('font-mono text-[9px] font-bold text-foreground', ctrl === 'armed' && 'text-primary', ctrl === 'locked' && 'text-primary-foreground')}>CTRL</Text>
+          {preferences.useModifierKeyIcons ? (
+            <TerminalControlIcon icon={ChevronUp} className={cn(ctrl === 'armed' && 'text-primary', ctrl === 'locked' && 'text-primary-foreground')} />
+          ) : (
+            <TerminalControlLabel label="CTRL" className={cn(ctrl === 'armed' && 'text-primary', ctrl === 'locked' && 'text-primary-foreground')} />
+          )}
         </Button>
       );
     }
@@ -582,6 +641,7 @@ export function TerminalScreen({
       return (
         <Button
           key={control}
+          accessibilityLabel={t('terminal.shiftModifier')}
           accessibilityState={{ selected: shift !== 'off' }}
           onPress={() => {
             onControlUse(control);
@@ -589,9 +649,13 @@ export function TerminalScreen({
           }}
           onLongPress={() => setShift('locked')}
           delayLongPress={450}
-          className={cn(TERMINAL_CONTROL_CLASS, shift === 'armed' && 'border-primary', shift === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
+          className={cn(preferences.useModifierKeyIcons ? TERMINAL_ICON_CONTROL_CLASS : TERMINAL_TEXT_CONTROL_CLASS, shift === 'armed' && 'border-primary', shift === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
           variant="secondary">
-          <Text className={cn('font-mono text-[9px] font-bold text-foreground', shift === 'armed' && 'text-primary', shift === 'locked' && 'text-primary-foreground')}>SHIFT</Text>
+          {preferences.useModifierKeyIcons ? (
+            <TerminalControlIcon icon={ArrowBigUp} className={cn(shift === 'armed' && 'text-primary', shift === 'locked' && 'text-primary-foreground')} />
+          ) : (
+            <TerminalControlLabel label="SHIFT" className={cn(shift === 'armed' && 'text-primary', shift === 'locked' && 'text-primary-foreground')} />
+          )}
         </Button>
       );
     }
@@ -599,6 +663,7 @@ export function TerminalScreen({
     return (
       <Button
         key={control}
+        accessibilityLabel={t('terminal.altModifier')}
         accessibilityState={{ selected: alt !== 'off' }}
         onPress={() => {
           onControlUse(control);
@@ -606,9 +671,13 @@ export function TerminalScreen({
         }}
         onLongPress={() => setAlt('locked')}
         delayLongPress={450}
-        className={cn(TERMINAL_CONTROL_CLASS, alt === 'armed' && 'border-primary', alt === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
+        className={cn(preferences.useModifierKeyIcons ? TERMINAL_ICON_CONTROL_CLASS : TERMINAL_TEXT_CONTROL_CLASS, alt === 'armed' && 'border-primary', alt === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
         variant="secondary">
-        <Text className={cn('font-mono text-[9px] font-bold text-foreground', alt === 'armed' && 'text-primary', alt === 'locked' && 'text-primary-foreground')}>ALT</Text>
+        {preferences.useModifierKeyIcons ? (
+          <TerminalControlIcon icon={Option} className={cn(alt === 'armed' && 'text-primary', alt === 'locked' && 'text-primary-foreground')} />
+        ) : (
+          <TerminalControlLabel label="ALT" className={cn(alt === 'armed' && 'text-primary', alt === 'locked' && 'text-primary-foreground')} />
+        )}
       </Button>
     );
   };
@@ -807,6 +876,35 @@ interface ComposeAttachment {
   dispose: () => void;
 }
 
-function TerminalKey({ label, onPress, armed = false }: { label: string; onPress: () => void; armed?: boolean }) {
-  return <Button className={cn(TERMINAL_CONTROL_CLASS, armed && 'border-primary')} variant="secondary" onPress={onPress}><Text className={cn('font-mono text-[9px] font-bold text-foreground', armed && 'text-primary')}>{label}</Text></Button>;
+function TerminalKey({ label, icon, accessibilityLabel, symbolic = false, onPress }: { label: string; icon?: LucideIcon; accessibilityLabel?: string; symbolic?: boolean; onPress: () => void }) {
+  return (
+    <Button accessibilityLabel={accessibilityLabel} className={icon || symbolic ? TERMINAL_ICON_CONTROL_CLASS : TERMINAL_TEXT_CONTROL_CLASS} variant="secondary" onPress={onPress}>
+      {icon ? <TerminalControlIcon icon={icon} /> : <TerminalControlLabel label={label} symbolic={symbolic} />}
+    </Button>
+  );
+}
+
+function TerminalControlIcon({ icon, className }: { icon: LucideIcon; className?: string }) {
+  return (
+    <View className={TERMINAL_ICON_BOX_CLASS}>
+      <Icon as={icon} size={TERMINAL_ICON_SIZE} className={className} />
+    </View>
+  );
+}
+
+function TerminalControlLabel({ label, symbolic = false, className }: { label: string; symbolic?: boolean; className?: string }) {
+  const text = (
+    <Text
+      allowFontScaling={false}
+      numberOfLines={1}
+      className={cn('text-center font-mono font-bold text-foreground', symbolic ? 'text-[18px] leading-5' : 'text-[12px] leading-4', className)}
+      style={TERMINAL_CONTROL_LABEL_STYLE}>
+      {label}
+    </Text>
+  );
+  return symbolic ? (
+    <View className={TERMINAL_ICON_BOX_CLASS}>
+      {text}
+    </View>
+  ) : text;
 }

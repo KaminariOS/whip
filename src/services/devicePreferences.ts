@@ -23,6 +23,7 @@ const LEGACY_DEVICE_PREFERENCES_KEYS = [
 
 export interface TerminalPreferences {
   fullscreen: boolean;
+  useModifierKeyIcons: boolean;
   volumeUpAction: TerminalVolumeKeyAction;
   volumeDownAction: TerminalVolumeKeyAction;
   fontSize: number;
@@ -71,6 +72,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   lastTab: 'hosts',
   terminal: {
     fullscreen: true,
+    useModifierKeyIcons: false,
     volumeUpAction: 'none',
     volumeDownAction: 'none',
     fontSize: 8,
@@ -143,6 +145,7 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         fullscreen: typeof terminal.fullscreen === 'boolean'
           ? terminal.fullscreen
           : defaultDevicePreferences.terminal.fullscreen,
+        useModifierKeyIcons: terminal.useModifierKeyIcons === true,
         volumeUpAction: parseTerminalVolumeKeyAction(
           terminal.volumeUpAction,
           defaultDevicePreferences.terminal.volumeUpAction,

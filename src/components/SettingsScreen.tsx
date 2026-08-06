@@ -161,6 +161,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
           <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
           <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
+          <SettingRow title={t('settings.useModifierKeyIcons')} copy={t('settings.useModifierKeyIconsCopy')} value={props.terminalPreferences.useModifierKeyIcons} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, useModifierKeyIcons: value })} divided />
           <ChoiceRow
             title={t('settings.volumeUpKey')}
             copy={t('settings.volumeKeyCopy')}
