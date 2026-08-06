@@ -332,12 +332,13 @@ export function HerdScreen({
         item={item}
         index={index}
         showHost={selectedHostId === null}
+        showSpace={selectedWorkspaceId === null}
         onOpenTerminal={onOpenTerminal}
         closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
         onCloseTab={closeTab}
       />
     ),
-    [closeTab, closingTabKey, onOpenTerminal, selectedHostId],
+    [closeTab, closingTabKey, onOpenTerminal, selectedHostId, selectedWorkspaceId],
   );
 
   return (
@@ -639,6 +640,7 @@ const AgentRow = memo(
     item,
     index,
     showHost,
+    showSpace,
     closing,
     onCloseTab,
     onOpenTerminal,
@@ -646,6 +648,7 @@ const AgentRow = memo(
     item: HerdQueueAgent;
     index: number;
     showHost: boolean;
+    showSpace: boolean;
     closing: boolean;
     onCloseTab: (item: HerdQueueAgent) => Promise<boolean>;
     onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
@@ -662,6 +665,7 @@ const AgentRow = memo(
     closingRef.current = closing;
     const agentLabel =
       agent.display_agent || agent.name || agent.agent || 'agent';
+    const primaryLabel = showSpace ? item.primaryLabel : item.tabLabel;
     const stateLabel =
       agent.state_labels?.[agent.agent_status] ||
       agent.custom_status ||
@@ -794,7 +798,7 @@ const AgentRow = memo(
                   },
                 ]}
                 accessibilityLabel={t('herd.openAgentTerminal', {
-                  agent: item.primaryLabel,
+                  agent: primaryLabel,
                   host: item.hostLabel,
                 })}
                 className="h-auto min-h-[90px] w-full justify-start gap-3 rounded-none px-3 py-[12px]"
@@ -821,7 +825,7 @@ const AgentRow = memo(
                       className="flex-1 text-base font-semibold"
                       numberOfLines={1}
                     >
-                      {item.primaryLabel}
+                      {primaryLabel}
                     </Text>
                     <StatusBadge
                       showIndicator={false}
@@ -860,6 +864,7 @@ const AgentRow = memo(
     previous.item.primaryLabel === next.item.primaryLabel &&
     previous.item.tabLabel === next.item.tabLabel &&
     previous.showHost === next.showHost &&
+    previous.showSpace === next.showSpace &&
     previous.closing === next.closing,
 );
 

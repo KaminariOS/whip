@@ -37,4 +37,12 @@ describe('herd agent row layout', () => {
     expect(screen).toContain('style={actionRevealStyle}');
     expect(screen).toContain('overflow-hidden rounded-r-xl bg-destructive');
   });
+
+  it('omits the redundant space name when a space is selected', () => {
+    expect(screen).toContain('showSpace={selectedWorkspaceId === null}');
+    expect(screen).toContain(
+      'const primaryLabel = showSpace ? item.primaryLabel : item.tabLabel;',
+    );
+    expect(screen).toContain('previous.showSpace === next.showSpace');
+  });
 });
