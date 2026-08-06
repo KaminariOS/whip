@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>Keep your Herdr agents within reach.</strong><br>
-  An independent Android client for supervising agents, scoping hosts and spaces, and opening pane terminals over SSH.
+  <strong>Run your Herdr workflow from Android.</strong><br>
+  Monitor and chat with remote agents, work in their terminals, and move files over SSH from a native mobile interface.
 </p>
 
 <p align="center">
@@ -14,9 +14,9 @@
   <a href="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
 </p>
 
-Whip gives [Herdr](https://github.com/ogulcancelik/herdr) a touch-friendly Android interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. A terminal appears only when you choose to attach to a pane.
+Whip gives [Herdr](https://github.com/ogulcancelik/herdr) a touch-friendly Android interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
 
-The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints, **Herd** merges their agents into a scoped attention queue, **Terminal** lists open pane sessions, and **More** holds security, notification, appearance, and terminal preferences.
+The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints, **Herd** merges their agents into a scoped attention queue, **Terminal** keeps open pane sessions within reach, and **More** holds security, notification, appearance, and terminal preferences.
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
@@ -36,15 +36,29 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   </tr>
   <tr>
     <td align="center"><img src="assets/screenshots/terminal.png" alt="Whip terminal showing open tabs, the web-link browser action, and mobile keys" width="320"></td>
-    <td align="center"><img src="assets/screenshots/settings.png" alt="Whip More screen showing connection, notification, speech, and security settings" width="320"></td>
+    <td align="center"><img src="assets/screenshots/chat-composer.png" alt="Whip native chat composer open above Gboard voice input" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Work from anywhere</strong><br>Open a selected pane in the full-width terminal, then collect its web links in one tap.</td>
-    <td align="center"><strong>Tune your workflow</strong><br>Configure agent alerts, speech, security, appearance, and terminal behavior.</td>
+    <td align="center"><strong>Work from anywhere</strong><br>Keep remote terminal tabs warm, use mobile controls, and open discovered web links in one tap.</td>
+    <td align="center"><strong>Chat naturally</strong><br>Prompt a remote agent from the native multiline composer, including voice dictation through Gboard.</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/remote-files.png" alt="Whip Remote files screen browsing the current terminal directory over SFTP" width="320"></td>
+    <td align="center"><img src="assets/screenshots/jump-host-agent-forwarding.png" alt="Whip host editor showing jump-host selection and SSH agent forwarding" width="320"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Bring the filesystem with you</strong><br>Browse the terminal's current directory over SFTP and upload, download, edit, or preview remote files.</td>
+    <td align="center"><strong>Reach private hosts safely</strong><br>Build nested jump-host routes and opt into SSH agent forwarding without placing the private key on the server.</td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="assets/screenshots/settings.png" alt="Whip More screen using translucent glass surfaces over a custom background image" width="320"></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><strong>Make Whip yours</strong><br>Place translucent app surfaces over a custom background, then tune alerts, speech, security, navigation, and terminal behavior.</td>
   </tr>
 </table>
 
-Screenshots were captured from a Whip 0.2 preview build on a Pixel 9 Pro.
+Screenshots were captured from Whip 0.3.0 on a Pixel 9 Pro.
 
 ## What you can do
 
@@ -53,19 +67,21 @@ Screenshots were captured from a Whip 0.2 preview build on a Pixel 9 Pro.
 - Monitor every open host in one native attention queue, with per-host and per-space scopes.
 - See working, blocked, done, idle, and unknown agents, including their host and space context.
 - Move through Herdr hosts, spaces, tabs, panes, and agents without living in a terminal.
-- Create, focus, rename, split, zoom, inspect, and close space resources.
-- Launch agents, send direct prompts, and send commands or special keys to a pane.
+- Create, focus, rename, split, zoom, inspect, and close space resources, including swipe-to-close Herd tabs.
+- Launch agents and chat through a native multiline composer that works with Android keyboards, including Gboard voice input and suggestions.
+- Run editable commands from the Herd screen and reuse the same persistent input history available in the terminal.
 
 ### Work in terminals
 
 - Attach to any selected pane through an immersive, xterm-compatible terminal.
 - Open a plain SSH login shell when Herdr is stopped, unavailable, or not installed yet.
 - Keep multiple terminal surfaces warm while switching or swiping between tabs, with a buffered composer, ANSI colors, modifier keys, touch scrolling, Page Up/Down, selection, live resizing, and configurable appearance.
+- Reuse persistent input history, copy previous commands with a long press, and configure fullscreen behavior, volume-key and double-tap actions, and the number of cached xterm surfaces.
 - Scan terminal scrollback for web links and open local or LAN services in the in-app browser through an on-demand SSH tunnel.
 
 ### Move files and attachments
 
-- Browse remote files over SFTP; upload, download, edit, and preview code, text, Markdown, images, and sandboxed HTML.
+- Browse the active terminal's current directory over SFTP; upload, download, edit, and preview code, text, Markdown, images, and sandboxed HTML.
 - Upload a photo, file, camera capture, or clipboard image to the host and paste its remote path into the terminal composer.
 
 ### Connect securely
@@ -79,11 +95,13 @@ Screenshots were captured from a Whip 0.2 preview build on a Pixel 9 Pro.
 ### Make it yours
 
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
+- Set the duration of background agent alerts and customize terminal gestures, controls, history, fonts, and cached sessions.
 - Use the app in English or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.
+- Choose an app background image and optionally layer experimental translucent glass bars, rows, controls, and navigation over it.
 
 ## Install an experimental preview
 
-Preview APKs are currently ARM64-only prereleases. Their signing identity may change before Whip reaches a stable release, so Android may require you to uninstall an older preview before installing a newer one.
+Whip 0.3.0 preview APKs are currently ARM64-only prereleases. Their signing identity may change before Whip reaches a stable release, so Android may require you to uninstall an older preview before installing a newer one.
 
 1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
 2. Make the Herdr host reachable over SSH, preferably through a Tailnet you trust. An otherwise private destination can be reached through a saved jump host.
