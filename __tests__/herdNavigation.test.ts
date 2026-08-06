@@ -61,6 +61,7 @@ describe('terminal to Herd navigation', () => {
     expect(herd).toContain('onChangeText={setCommandDraft}');
     expect(herd).toContain('commandHistory.map((entry, index) => (');
     expect(herd).toContain('onPress={hapticPress(() => setCommandDraft(entry))}');
+    expect(herd).toContain('style={{ fontFamily: terminalFontFamily }}');
     expect(herd).toContain("Keyboard.addListener('keyboardDidShow'");
     expect(herd).toContain('commandComposerRef.current?.measureInWindow');
     expect(herd).toContain('Math.ceil(y + height - keyboardTop)');

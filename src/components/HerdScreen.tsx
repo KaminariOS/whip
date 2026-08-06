@@ -28,6 +28,7 @@ import {
   shouldClaimHerdTabSwipe,
   shouldCloseHerdTabSwipe,
 } from '@/src/lib/herdTabSwipeActions';
+import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, AnimatedEntrance, hapticPress, StatusBadge } from './app-ui';
@@ -477,7 +478,12 @@ export function HerdScreen({
                     disabled={workspaceBusy}
                     variant="ghost"
                     onPress={hapticPress(() => setCommandDraft(entry))}>
-                    <Text className="flex-1 text-left font-mono text-[13px] leading-[18px]" numberOfLines={2}>{entry}</Text>
+                    <Text
+                      className="flex-1 text-left font-mono text-[13px] leading-[18px]"
+                      numberOfLines={2}
+                      style={{ fontFamily: terminalFontFamily }}>
+                      {entry}
+                    </Text>
                   </Button>
                 ))}
               </ScrollView>
