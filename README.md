@@ -13,6 +13,7 @@
   <a href="https://github.com/KaminariOS/whip/actions/workflows/ci.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
   <a href="https://expo.dev"><img src="https://img.shields.io/badge/React%20Native%20%2B%20Expo-000020?logo=expo&amp;logoColor=white" alt="Built with React Native and Expo"></a>
+  <a href="#help-bring-whip-to-ios"><img src="https://img.shields.io/badge/iOS-help%20wanted-blue?logo=apple&amp;logoColor=white" alt="Help wanted for an iOS release"></a>
 </p>
 
 <p align="center">
@@ -239,6 +240,10 @@ The SSH bridge is maintained in [`packages/react-native-ssh-sftp`](packages/reac
 - Review the [roadmap](ROADMAP.md) for current priorities.
 
 Feedback is especially useful around Android device compatibility, real-world Herdr workflows, terminal ergonomics, and safe SSH trust UX.
+
+### Help bring Whip to iOS
+
+Whip's React Native and Expo code is designed to be portable to iOS, but I do not have a Mac or an Apple Developer account to build, test, sign, and publish an iOS release. If you have iOS development experience and access to the required Apple hardware and developer tools, community help with validating the native dependencies, preparing an iOS build, testing it on real devices, and working toward a TestFlight or App Store release would be greatly appreciated. Please start a discussion or open an issue if you would like to help.
 
 ## License
 
