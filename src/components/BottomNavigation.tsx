@@ -1,7 +1,7 @@
 import { BlurView } from 'expo-blur';
 import { CircleEllipsis, Server, SquareTerminal, type LucideIcon } from 'lucide-react-native';
 import { type RefObject } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -33,6 +33,9 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
   const { colors, isDark } = useTheme();
   const { t } = useTranslation();
   const { bottom } = useSafeAreaInsets();
+  // Four Android BlurViews recaptured the full screen whenever its tab changed,
+  // compounding the release transition stall. Keep native blur on iOS only.
+  const renderNativeBlur = Platform.OS !== 'android';
   return (
     <View
       pointerEvents="box-none"
@@ -47,15 +50,26 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
               className="absolute h-[68px] w-[68px] rounded-full"
               style={floatingBloomStyle(active, colors)}
             />
-            <BlurView
-              pointerEvents="none"
-              blurMethod="dimezisBlurViewSdk31Plus"
-              blurReductionFactor={2}
-              blurTarget={blurTarget}
-              intensity={active ? 34 : 26}
-              tint={isDark ? 'systemUltraThinMaterialDark' : 'default'}
-              style={[styles.glassSurface, floatingGlassEdgeStyle(active, colors)]}
-            />
+            {renderNativeBlur ? (
+              <BlurView
+                pointerEvents="none"
+                blurMethod="dimezisBlurViewSdk31Plus"
+                blurReductionFactor={2}
+                blurTarget={blurTarget}
+                intensity={active ? 34 : 26}
+                tint={isDark ? 'systemUltraThinMaterialDark' : 'default'}
+                style={[styles.glassSurface, floatingGlassEdgeStyle(active, colors)]}
+              />
+            ) : (
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.glassSurface,
+                  floatingGlassEdgeStyle(active, colors),
+                  floatingGlassFallbackStyle(isDark),
+                ]}
+              />
+            )}
             <Button
               accessibilityLabel={t(item.labelKey)}
               accessibilityRole="tab"
@@ -83,6 +97,12 @@ function floatingGlassEdgeStyle(active: boolean, colors: ThemeColors) {
   };
 }
 
+function floatingGlassFallbackStyle(isDark: boolean) {
+  return {
+    backgroundColor: isDark ? 'rgba(20,22,34,0.38)' : 'rgba(255,255,255,0.42)',
+  } as const;
+}
+
 function floatingBloomStyle(active: boolean, colors: ThemeColors) {
   const edgeColor = active ? colors.primary : colors.textSecondary;
   return {
@@ -102,6 +122,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 64,
     height: 64,
+    opacity: 0.62,
     overflow: 'hidden',
     borderRadius: 32,
     borderWidth: 1,

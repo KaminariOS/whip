@@ -228,6 +228,8 @@ function App() {
   );
 }
 
+const NavigationBlurTarget = Platform.OS === 'android' ? View : BlurTargetView;
+
 function AppContent() {
   const { t } = useTranslation();
   const { colors: theme, isDark } = useTheme();
@@ -1546,11 +1548,19 @@ function AppContent() {
         blurTarget={navigationBlurTargetRef}
         enabled={appGlassEnabled && Boolean(appBackgroundImageUri)}>
       <View className="flex-1 bg-background">
-        <BlurTargetView ref={navigationBlurTargetRef} style={styles.navigationBlurTarget}>
-        {!immersiveTerminal && (
-          <View className="flex-1">
+        <NavigationBlurTarget ref={navigationBlurTargetRef} style={styles.navigationBlurTarget}>
+          {/* Keep these screens mounted: rebuilding Herd's populated native tree made
+              release tab switches stall, while Terminal was already instant because
+              it used this same hide-without-unmounting pattern. */}
+          <View
+            importantForAccessibility={immersiveTerminal ? 'no-hide-descendants' : 'auto'}
+            pointerEvents={immersiveTerminal ? 'none' : 'auto'}
+            style={immersiveTerminal ? styles.hiddenTab : styles.tabScreen}>
           <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
-          {navigation.tab === 'hosts' && (
+          <View
+            importantForAccessibility={navigation.tab === 'hosts' ? 'auto' : 'no-hide-descendants'}
+            pointerEvents={navigation.tab === 'hosts' ? 'auto' : 'none'}
+            style={navigation.tab === 'hosts' ? styles.tabScreen : styles.hiddenTab}>
             <HostsScreen
               hosts={hosts}
               activeHostId={activeSession?.hostId || null}
@@ -1576,10 +1586,13 @@ function AppContent() {
               onEdit={openHostEditor}
               onUnlockCredentials={unlockCredentialRecovery}
             />
-          )}
+          </View>
 
-          {navigation.tab === 'herd' && (
-            liveSessions.sessions.length > 0 ? (
+          <View
+            importantForAccessibility={navigation.tab === 'herd' ? 'auto' : 'no-hide-descendants'}
+            pointerEvents={navigation.tab === 'herd' ? 'auto' : 'none'}
+            style={navigation.tab === 'herd' ? styles.tabScreen : styles.hiddenTab}>
+            {liveSessions.sessions.length > 0 ? (
               <HerdScreen
                 queues={herdQueues}
                 sessions={railSessions}
@@ -1604,14 +1617,17 @@ function AppContent() {
                 onStartServer={startServer}
                 onOpenSshShell={openSshShell}
               />
-            ) : <ConnectRequiredScreen destination={t('nav.herd')} onPickHost={() => selectTab('hosts')} />
-          )}
+            ) : <ConnectRequiredScreen destination={t('nav.herd')} onPickHost={() => selectTab('hosts')} />}
+          </View>
 
           {!activeSession && navigation.tab === 'terminal' && (
             <ConnectRequiredScreen destination={t('nav.terminal')} onPickHost={() => selectTab('hosts')} />
           )}
 
-          {navigation.tab === 'more' && (
+          <View
+            importantForAccessibility={navigation.tab === 'more' ? 'auto' : 'no-hide-descendants'}
+            pointerEvents={navigation.tab === 'more' ? 'auto' : 'none'}
+            style={navigation.tab === 'more' ? styles.tabScreen : styles.hiddenTab}>
             <MoreScreen
               alertsEnabled={alertsEnabled}
               persistentAlertDurationSeconds={persistentAlertDurationSeconds}
@@ -1651,10 +1667,9 @@ function AppContent() {
               onDeleteTerminalHistory={deleteTerminalHistoryEntries}
               onTerminalPreferencesChange={setTerminalPreferences}
             />
-          )}
+          </View>
 
           </View>
-        )}
 
         {activeSession && activeRuntime && (
           <LiveSessionView
@@ -1679,7 +1694,7 @@ function AppContent() {
             onTerminalStatus={updateTerminalStatus}
           />
         )}
-        </BlurTargetView>
+        </NavigationBlurTarget>
 
         {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && !knownHostsOpen && (
           <BottomNavigation activeTab={navigation.tab} blurTarget={navigationBlurTargetRef} onSelect={selectTab} />
@@ -1753,6 +1768,14 @@ function AppContent() {
 const styles = StyleSheet.create({
   navigationBlurTarget: {
     flex: 1,
+  },
+  tabScreen: {
+    flex: 1,
+  },
+  hiddenTab: {
+    position: 'absolute',
+    inset: 0,
+    opacity: 0,
   },
 });
 
