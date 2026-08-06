@@ -14,6 +14,11 @@
   <a href="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
 </p>
 
+<p align="center">
+  <strong><a href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip">Download Whip from Google Play</a></strong><br>
+  Early Access: <a href="https://groups.google.com/g/whip-community">join the Whip Community</a> to become an internal tester.
+</p>
+
 Whip gives [Herdr](https://github.com/ogulcancelik/herdr) a touch-friendly Android interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
 
 The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints, **Herd** merges their agents into a scoped attention queue, **Terminal** keeps open pane sessions within reach, and **More** holds security, notification, appearance, and terminal preferences.
