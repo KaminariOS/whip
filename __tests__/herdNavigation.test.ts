@@ -41,6 +41,7 @@ describe('terminal to Herd navigation', () => {
     expect(herd.indexOf("accessibilityLabel={t('herd.openSpace')}"))
       .toBeLessThan(herd.indexOf('<Metric value={queueAgents.length}'));
     expect(herd).toContain("accessibilityLabel={t('herd.startAgent')}");
+    expect(herd).toContain("<Text>{t('herd.agent')}</Text>");
     expect(herd).toContain('onStartAgent(');
     expect(herd).toContain('agentCommand.trim()');
     expect(app).toContain('const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {');
@@ -58,6 +59,8 @@ describe('terminal to Herd navigation', () => {
     const herd = readSource('src/components/HerdScreen.tsx');
 
     expect(herd).toContain("accessibilityLabel={t('herd.runCommand')}");
+    expect(herd).toContain("<Text>{t('herd.run')}</Text>");
+    expect(herd).toContain("<Text>{t('herd.open')}</Text>");
     expect(herd).toContain('onChangeText={setCommandDraft}');
     expect(herd).toContain('commandHistory.map((entry, index) => (');
     expect(herd).toContain('onPress={hapticPress(() => setCommandDraft(entry))}');

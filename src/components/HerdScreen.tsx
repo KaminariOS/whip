@@ -344,16 +344,16 @@ export function HerdScreen({
               <View className="mb-3 flex-row justify-end gap-2">
                 <Button accessibilityLabel={t('herd.startAgent')} className="rounded-full px-4" size="sm" disabled={workspaceBusy || !agentCommand.trim()} onPress={hapticPress(startAgent)}>
                   <Icon as={Plus} size={16} />
-                  <Text>{t('herd.startAgent')}</Text>
+                  <Text>{t('herd.agent')}</Text>
                 </Button>
                 <Button accessibilityLabel={t('herd.runCommand')} className="rounded-full px-4" size="sm" variant="secondary" disabled={workspaceBusy} onPress={hapticPress(openCommandRunner)}>
                   <Icon as={Play} size={16} />
-                  <Text>{t('herd.runCommand')}</Text>
+                  <Text>{t('herd.run')}</Text>
                 </Button>
                 {queueAgents.length === 0 ? (
                   <Button accessibilityLabel={t('herd.openSpace')} className="rounded-full px-4" size="sm" variant="secondary" disabled={workspaceBusy} onPress={hapticPress(openSpace)}>
                     <Icon as={SquareTerminal} size={16} />
-                    <Text>{t('herd.openSpace')}</Text>
+                    <Text>{t('herd.open')}</Text>
                   </Button>
                 ) : null}
               </View>
