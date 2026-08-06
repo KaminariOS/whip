@@ -1,6 +1,6 @@
-import { ChevronRight, Plus, Sparkles, SquareTerminal, X } from 'lucide-react-native';
+import { ChevronRight, History, Play, Plus, Sparkles, SquareTerminal, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, PanResponder, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   agentsForHerdFilter,
@@ -45,6 +46,7 @@ interface Props {
   selectedHostId: string | null;
   workspaceFilterId: string | null;
   agentCommand: string;
+  commandHistory: readonly string[];
   onSelectHost: (hostId: string | null) => void;
   onWorkspaceFilterChange: (hostId: string, workspaceId: string | null) => void;
   onCloseHost: (hostId: string) => void;
@@ -57,6 +59,7 @@ interface Props {
   onRefresh: () => void;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
   onStartAgent: (hostId: string, workspaceId: string, command: string) => Promise<void>;
+  onRunCommand: (hostId: string, workspaceId: string, command: string) => Promise<void>;
   onOpenSpace: (hostId: string, workspaceId: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
   onOpenSshShell: (hostId: string) => void;
@@ -68,6 +71,7 @@ export function HerdScreen({
   selectedHostId,
   workspaceFilterId,
   agentCommand,
+  commandHistory,
   onSelectHost,
   onWorkspaceFilterChange,
   onCloseHost,
@@ -80,12 +84,14 @@ export function HerdScreen({
   onRefresh,
   onOpenTerminal,
   onStartAgent,
+  onRunCommand,
   onOpenSpace,
   onStartServer,
   onOpenSshShell,
 }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const { bottom } = useSafeAreaInsets();
   const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
   const selectedQueue = selectedHostId ? scopedQueues[0] : undefined;
   const selectedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, workspaceFilterId);
@@ -102,6 +108,10 @@ export function HerdScreen({
   const [workspaceCwd, setWorkspaceCwd] = useState('');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [closingTabKey, setClosingTabKey] = useState<string | null>(null);
+  const [commandRunnerOpen, setCommandRunnerOpen] = useState(false);
+  const [commandDraft, setCommandDraft] = useState('');
+  const [commandKeyboardInset, setCommandKeyboardInset] = useState(0);
+  const commandComposerRef = useRef<View | null>(null);
 
   useEffect(() => {
     if (workspaceFilterId && !selectedWorkspaceId && selectedQueue) {
@@ -109,8 +119,34 @@ export function HerdScreen({
     }
   }, [onWorkspaceFilterChange, selectedQueue, selectedWorkspaceId, workspaceFilterId]);
 
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    let insetTimer: ReturnType<typeof setTimeout> | null = null;
+    const show = Keyboard.addListener('keyboardDidShow', event => {
+      if (insetTimer) clearTimeout(insetTimer);
+      setCommandKeyboardInset(0);
+      insetTimer = setTimeout(() => {
+        const keyboardTop = event.endCoordinates.screenY;
+        commandComposerRef.current?.measureInWindow((_x, y, _width, height) => {
+          setCommandKeyboardInset(Math.max(0, Math.ceil(y + height - keyboardTop)));
+        });
+      }, 50);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      if (insetTimer) clearTimeout(insetTimer);
+      insetTimer = null;
+      setCommandKeyboardInset(0);
+    });
+    return () => {
+      if (insetTimer) clearTimeout(insetTimer);
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   const selectHost = (hostId: string | null) => {
     setWorkspaceEditorMode(null);
+    setCommandRunnerOpen(false);
     onSelectHost(hostId);
   };
 
@@ -129,6 +165,7 @@ export function HerdScreen({
 
   const selectWorkspace = (workspaceId: string | null) => {
     setWorkspaceEditorMode(null);
+    setCommandRunnerOpen(false);
     if (workspaceId && selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, workspaceId);
       runWorkspaceAction(() => onSelectWorkspace(selectedQueue.id, workspaceId));
@@ -190,12 +227,37 @@ export function HerdScreen({
   };
 
   const startAgent = async () => {
-    if (!selectedQueue || !selectedWorkspace || queueAgents.length > 0 || !agentCommand.trim()) return;
+    if (!selectedQueue || !selectedWorkspace || !agentCommand.trim()) return;
     await runWorkspaceAction(() => onStartAgent(
       selectedQueue.id,
       selectedWorkspace.workspace_id,
       agentCommand.trim(),
     ));
+  };
+
+  const openCommandRunner = () => {
+    setCommandDraft('');
+    setCommandKeyboardInset(0);
+    setCommandRunnerOpen(true);
+  };
+
+  const closeCommandRunner = () => {
+    if (workspaceBusy) return;
+    setCommandKeyboardInset(0);
+    setCommandRunnerOpen(false);
+  };
+
+  const runCommand = async () => {
+    const command = commandDraft.trim();
+    if (!selectedQueue || !selectedWorkspace || !command) return;
+    const succeeded = await runWorkspaceAction(() => onRunCommand(
+      selectedQueue.id,
+      selectedWorkspace.workspace_id,
+      command,
+    ));
+    if (!succeeded) return;
+    setCommandDraft('');
+    setCommandRunnerOpen(false);
   };
 
   const closeTab = async (item: HerdQueueAgent): Promise<boolean> => {
@@ -277,16 +339,22 @@ export function HerdScreen({
           </View>
         ) : (
           <>
-            {selectedQueue?.running && selectedWorkspace && queueAgents.length === 0 ? (
+            {selectedQueue?.running && selectedWorkspace ? (
               <View className="mb-3 flex-row justify-end gap-2">
                 <Button accessibilityLabel={t('herd.startAgent')} className="rounded-full px-4" size="sm" disabled={workspaceBusy || !agentCommand.trim()} onPress={hapticPress(startAgent)}>
                   <Icon as={Plus} size={16} />
                   <Text>{t('herd.startAgent')}</Text>
                 </Button>
-                <Button accessibilityLabel={t('herd.openSpace')} className="rounded-full px-4" size="sm" variant="secondary" disabled={workspaceBusy} onPress={hapticPress(openSpace)}>
-                  <Icon as={SquareTerminal} size={16} />
-                  <Text>{t('herd.openSpace')}</Text>
+                <Button accessibilityLabel={t('herd.runCommand')} className="rounded-full px-4" size="sm" variant="secondary" disabled={workspaceBusy} onPress={hapticPress(openCommandRunner)}>
+                  <Icon as={Play} size={16} />
+                  <Text>{t('herd.runCommand')}</Text>
                 </Button>
+                {queueAgents.length === 0 ? (
+                  <Button accessibilityLabel={t('herd.openSpace')} className="rounded-full px-4" size="sm" variant="secondary" disabled={workspaceBusy} onPress={hapticPress(openSpace)}>
+                    <Icon as={SquareTerminal} size={16} />
+                    <Text>{t('herd.openSpace')}</Text>
+                  </Button>
+                ) : null}
               </View>
             ) : null}
 
@@ -326,8 +394,112 @@ export function HerdScreen({
         )}
         </View>
       </ScrollView>
+      <Modal
+        animationType="fade"
+        onRequestClose={closeCommandRunner}
+        statusBarTranslucent
+        transparent
+        visible={commandRunnerOpen}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          className="flex-1 justify-end bg-black/50">
+          <Pressable
+            accessibilityLabel={t('herd.closeCommandRunner')}
+            className="flex-1"
+            onPress={closeCommandRunner}
+          />
+          <View
+            className="rounded-t-3xl bg-background px-4 pt-3"
+            style={commandSheetStyle(bottom)}>
+            <View className="mb-3 flex-row items-center">
+              <View className="size-10 items-center justify-center rounded-full bg-muted">
+                <Icon as={Play} size={18} />
+              </View>
+              <View className="min-w-0 flex-1 px-3">
+                <Text className="text-[17px] font-bold">{t('herd.runCommand')}</Text>
+                <Text className="text-[11px] text-muted-foreground">{t('herd.runCommandCopy')}</Text>
+              </View>
+              <Button
+                accessibilityLabel={t('herd.closeCommandRunner')}
+                className="size-10 rounded-full px-0"
+                disabled={workspaceBusy}
+                variant="ghost"
+                onPress={closeCommandRunner}>
+                <Icon as={X} size={19} />
+              </Button>
+            </View>
+
+            <View
+              ref={commandComposerRef}
+              collapsable={false}
+              className="relative z-10 flex-row items-center gap-2 bg-background"
+              style={commandComposerStyle(commandKeyboardInset)}>
+              <Input
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                className="h-12 min-w-0 flex-1 font-mono text-[14px]"
+                editable={!workspaceBusy}
+                placeholder={t('herd.commandPlaceholder')}
+                placeholderTextColor={colors.textTertiary}
+                returnKeyType="go"
+                value={commandDraft}
+                onChangeText={setCommandDraft}
+                onSubmitEditing={() => { runCommand(); }}
+              />
+              <Button
+                accessibilityLabel={t('herd.runCommand')}
+                className="size-12 rounded-full px-0"
+                disabled={workspaceBusy || !commandDraft.trim()}
+                onPress={hapticPress(runCommand)}>
+                <Icon as={Play} size={18} />
+              </Button>
+            </View>
+
+            <View className="mb-1 mt-4 flex-row items-center gap-2 px-1">
+              <Icon as={History} size={15} color={colors.textSecondary} />
+              <Text className="text-[12px] font-semibold text-muted-foreground">{t('herd.commandHistory')}</Text>
+            </View>
+            {commandHistory.length === 0 ? (
+              <View className="h-20 items-center justify-center px-6">
+                <Text className="text-center text-[13px] text-muted-foreground">{t('herd.commandHistoryEmpty')}</Text>
+              </View>
+            ) : (
+              <ScrollView
+                className="max-h-52"
+                keyboardShouldPersistTaps="always"
+                showsVerticalScrollIndicator={false}>
+                {commandHistory.map((entry, index) => (
+                  <Button
+                    key={entry}
+                    accessibilityLabel={t('herd.useCommandHistory', { command: entry })}
+                    className={index > 0 ? 'min-h-11 justify-start rounded-none border-t border-border px-2.5 py-2' : 'min-h-11 justify-start rounded-none px-2.5 py-2'}
+                    disabled={workspaceBusy}
+                    variant="ghost"
+                    onPress={hapticPress(() => setCommandDraft(entry))}>
+                    <Text className="flex-1 text-left font-mono text-[13px] leading-[18px]" numberOfLines={2}>{entry}</Text>
+                  </Button>
+                ))}
+              </ScrollView>
+            )}
+
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
+}
+
+function commandSheetStyle(bottomInset: number) {
+  return {
+    paddingBottom: Math.max(16, bottomInset),
+  };
+}
+
+function commandComposerStyle(keyboardInset: number) {
+  return keyboardInset > 0
+    ? { transform: [{ translateY: -keyboardInset }] }
+    : undefined;
 }
 
 function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }: {

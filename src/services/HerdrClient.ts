@@ -616,7 +616,7 @@ export class HerdrClient {
     await this.apiFocus('agent.focus', { target });
   }
 
-  async startAgent(workspaceId: string, name: string, command: string): Promise<void> {
+  async startAgent(workspaceId: string, name: string, command: string): Promise<string> {
     const created = await this.apiRequest<{
       type: 'tab_created';
       root_pane: { pane_id: string };
@@ -633,6 +633,11 @@ export class HerdrClient {
       text: command.trim(),
       keys: ['Enter'],
     });
+    return created.root_pane.pane_id;
+  }
+
+  async runCommand(workspaceId: string, command: string): Promise<string> {
+    return this.startAgent(workspaceId, 'command', command);
   }
 
   async focusWorkspace(workspaceId: string): Promise<void> {

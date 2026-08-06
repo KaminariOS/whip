@@ -695,10 +695,10 @@ function AppContent() {
     return runtime;
   };
 
-  async function refreshHost(sessionId: string): Promise<void> {
+  async function refreshHostSnapshot(sessionId: string): Promise<HerdrSnapshot | null> {
     const runtime = runtimes.current.get(sessionId);
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-    if (!runtime || !canRefreshLiveHostSession(session)) return;
+    if (!runtime || !canRefreshLiveHostSession(session)) return null;
     const result = await runtime.refresh.request();
     if (result.status === 'applied') {
       clearReconnect(runtime);
@@ -711,6 +711,7 @@ function AppContent() {
         runtime.eventStatus = 'closed';
         scheduleEventReconnect(sessionId, error);
       }
+      return result.value.snapshot;
     } else if (result.status === 'failed') {
       setLiveSessions(current => {
         const currentSession = findLiveHostSession(current, sessionId);
@@ -719,6 +720,11 @@ function AppContent() {
       });
       scheduleReconnect(sessionId, result.error);
     }
+    return null;
+  }
+
+  async function refreshHost(sessionId: string): Promise<void> {
+    await refreshHostSnapshot(sessionId);
   }
 
   const resumeLiveConnections = useEffectEvent(() => {
@@ -1427,6 +1433,17 @@ function AppContent() {
     await refreshHost(sessionId);
   };
 
+  const runHerdCommand = async (sessionId: string, workspaceId: string, command: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    const paneId = await runtime.client.runCommand(workspaceId, command);
+    recordTerminalHistoryEntry(command);
+    const refreshedSnapshot = await refreshHostSnapshot(sessionId);
+    const pane = refreshedSnapshot?.panes.find(item => item.pane_id === paneId);
+    if (pane) openPaneTerminal(sessionId, pane);
+    else selectLiveHost(sessionId, 'terminal');
+  };
+
   const startServer = async (sessionId: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) return;
@@ -1512,6 +1529,7 @@ function AppContent() {
                 selectedHostId={selectedHerdHostId}
                 workspaceFilterId={selectedHerdWorkspaceId}
                 agentCommand={agentCommand}
+                commandHistory={terminalHistory}
                 onSelectHost={selectHerdHost}
                 onWorkspaceFilterChange={setHerdWorkspaceFilter}
                 onCloseHost={closeLiveHost}
@@ -1524,6 +1542,7 @@ function AppContent() {
                 onRefresh={refreshHerd}
                 onOpenTerminal={openAgentTerminal}
                 onStartAgent={startHerdAgent}
+                onRunCommand={runHerdCommand}
                 onOpenSpace={openHerdWorkspace}
                 onStartServer={startServer}
                 onOpenSshShell={openSshShell}
