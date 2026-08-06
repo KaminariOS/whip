@@ -155,7 +155,8 @@ describe('terminal renderer lifecycle', () => {
     expect(app).toMatch(/fullscreenVisible\s*=\s*immersiveTerminal\s*\?\s*fullscreenTerminalVisible\s*:\s*fullscreenApp/);
     expect(app).toContain('hidden={fullscreenVisible}');
     expect(app).toContain("edges={fullscreenVisible ? ['left', 'right'] : ['top', 'left', 'right']}");
-    expect(app).toContain('{!immersiveTerminal && (');
+    expect(app).toContain("style={immersiveTerminal ? styles.hiddenTab : styles.tabScreen}");
+    expect(app).toContain("importantForAccessibility={immersiveTerminal ? 'no-hide-descendants' : 'auto'}");
     expect(bottomNavigation).toContain('style={{ height: 120 + bottom, paddingBottom: bottom }}');
   });
 });
