@@ -52,11 +52,10 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
               blurMethod="dimezisBlurViewSdk31Plus"
               blurReductionFactor={2}
               blurTarget={blurTarget}
-              intensity={active ? 75 : 60}
-              tint={isDark ? 'dark' : 'light'}
-              style={[styles.glassSurface, floatingGlassEdgeStyle(active, colors)]}>
-              <View style={[styles.glassTint, floatingGlassTintStyle(active, colors)]} />
-            </BlurView>
+              intensity={active ? 34 : 26}
+              tint={isDark ? 'systemUltraThinMaterialDark' : 'default'}
+              style={[styles.glassSurface, floatingGlassEdgeStyle(active, colors)]}
+            />
             <Button
               accessibilityLabel={t(item.labelKey)}
               accessibilityRole="tab"
@@ -84,16 +83,13 @@ function floatingGlassEdgeStyle(active: boolean, colors: ThemeColors) {
   };
 }
 
-function floatingGlassTintStyle(active: boolean, colors: ThemeColors) {
-  return {
-    backgroundColor: colorWithAlpha(active ? colors.surfaceRaised : colors.surface, active ? 'C4' : 'B8'),
-  };
-}
-
 function floatingBloomStyle(active: boolean, colors: ThemeColors) {
+  const edgeColor = active ? colors.primary : colors.textSecondary;
   return {
-    backgroundColor: colorWithAlpha(active ? colors.primary : colors.textSecondary, active ? '70' : '3D'),
-    filter: [{ blur: active ? 7 : 5 }],
+    backgroundColor: 'transparent',
+    borderColor: colorWithAlpha(edgeColor, active ? 'B8' : '73'),
+    borderWidth: active ? 2 : 1,
+    filter: [{ blur: active ? 6 : 4 }],
   } as const;
 }
 
@@ -109,12 +105,5 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 24,
     borderWidth: 1,
-  },
-  glassTint: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
   },
 });

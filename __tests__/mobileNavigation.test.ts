@@ -33,9 +33,12 @@ test('bottom navigation shows icons without visible labels', () => {
   expect(app).toContain('blurTarget={navigationBlurTargetRef}');
   expect(bottomNavigation).toContain("import { BlurView } from 'expo-blur';");
   expect(bottomNavigation).toContain('blurMethod="dimezisBlurViewSdk31Plus"');
+  expect(bottomNavigation).toContain('intensity={active ? 34 : 26}');
+  expect(bottomNavigation).toContain("tint={isDark ? 'systemUltraThinMaterialDark' : 'default'}");
   expect(bottomNavigation).toContain('style={[styles.glassSurface, floatingGlassEdgeStyle(active, colors)]}');
-  expect(bottomNavigation).toContain("active ? 'C4' : 'B8'");
+  expect(bottomNavigation).not.toContain('floatingGlassTintStyle');
   expect(bottomNavigation).toContain('style={floatingBloomStyle(active, colors)}');
+  expect(bottomNavigation).toContain("backgroundColor: 'transparent'");
   expect(bottomNavigation).toContain('filter: [{ blur:');
   expect(bottomNavigation).not.toContain('glassHighlight');
   expect(bottomNavigation).toContain('<HerdrMark size={23} />');
