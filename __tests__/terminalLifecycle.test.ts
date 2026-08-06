@@ -146,6 +146,6 @@ describe('terminal renderer lifecycle', () => {
     expect(app).toContain('hidden={fullscreenTerminalVisible}');
     expect(app).toContain("edges={fullscreenTerminalVisible ? ['left', 'right'] : ['top', 'left', 'right']}");
     expect(app).toContain('{!immersiveTerminal && (');
-    expect(bottomNavigation).toContain('style={{ height: 56 + bottom, paddingBottom: bottom }}');
+    expect(bottomNavigation).toContain('style={{ height: 120 + bottom, paddingBottom: bottom }}');
   });
 });

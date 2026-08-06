@@ -36,15 +36,15 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
   return (
     <View
       pointerEvents="box-none"
-      className="absolute inset-x-0 bottom-0 z-30 flex-row items-center justify-around bg-transparent px-6"
-      style={{ height: 56 + bottom, paddingBottom: bottom }}>
+      className="absolute inset-x-0 bottom-0 z-30 flex-row items-center justify-around bg-transparent px-4"
+      style={{ height: 120 + bottom, paddingBottom: bottom }}>
       {items.map(item => {
         const active = item.tab === activeTab;
         return (
-          <View className="h-[60px] w-[60px] items-center justify-center" key={item.tab}>
+          <View className="h-[68px] w-[68px] items-center justify-center" key={item.tab}>
             <View
               pointerEvents="none"
-              className="absolute h-[52px] w-[52px] rounded-full"
+              className="absolute h-[68px] w-[68px] rounded-full"
               style={floatingBloomStyle(active, colors)}
             />
             <BlurView
@@ -60,13 +60,13 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
               accessibilityLabel={t(item.labelKey)}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
-              className="h-12 w-12 rounded-full bg-transparent p-0 active:bg-white/10 dark:bg-transparent dark:active:bg-white/10"
+              className="h-16 w-16 rounded-full bg-transparent p-0 active:bg-white/10 dark:bg-transparent dark:active:bg-white/10"
               variant="ghost"
               onPress={hapticPress(() => onSelect(item.tab))}>
               <View className={active ? 'items-center justify-center opacity-100' : 'items-center justify-center opacity-60'}>
                 {'herdrMark' in item
-                  ? <HerdrMark size={23} />
-                  : <Icon as={item.icon} size={23} color={active ? colors.text : colors.textSecondary} strokeWidth={active ? 2.75 : 2} />}
+                  ? <HerdrMark size={29} />
+                  : <Icon as={item.icon} size={29} color={active ? colors.text : colors.textSecondary} strokeWidth={active ? 2.75 : 2} />}
               </View>
             </Button>
           </View>
@@ -100,10 +100,10 @@ function colorWithAlpha(color: string, alpha: string) {
 const styles = StyleSheet.create({
   glassSurface: {
     position: 'absolute',
-    width: 48,
-    height: 48,
+    width: 64,
+    height: 64,
     overflow: 'hidden',
-    borderRadius: 24,
+    borderRadius: 32,
     borderWidth: 1,
   },
 });
