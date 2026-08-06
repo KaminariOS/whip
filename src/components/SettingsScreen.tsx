@@ -1,6 +1,6 @@
 import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, ImagePlus, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Image, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Image, LayoutAnimation, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -16,12 +16,18 @@ import {
 import type { AppearancePreference, LanguagePreference, TerminalPreferences } from '@/src/services/devicePreferences';
 import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
-import { hapticPress, IconButton } from './app-ui';
+import { hapticPress, IconButton, useReducedMotion } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
+
+const DOUBLE_TAP_MENU_ANIMATION = LayoutAnimation.create(
+  220,
+  LayoutAnimation.Types.easeInEaseOut,
+  LayoutAnimation.Properties.opacity,
+);
 
 export interface SettingsSectionProps {
   alertsEnabled: boolean;
@@ -55,6 +61,11 @@ export function SettingsSection(props: SettingsSectionProps) {
   const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const { t } = useTranslation();
+  const reduceMotion = useReducedMotion();
+
+  const animateDoubleTapMenu = () => {
+    if (!reduceMotion) LayoutAnimation.configureNext(DOUBLE_TAP_MENU_ANIMATION);
+  };
 
   const chooseBackground = async () => {
     setBackgroundBusy(true);
@@ -167,8 +178,12 @@ export function SettingsSection(props: SettingsSectionProps) {
           <DoubleTapActionMenu
             expanded={doubleTapExpanded}
             value={props.terminalPreferences.doubleTapAction}
-            onToggle={() => setDoubleTapExpanded(expanded => !expanded)}
+            onToggle={() => {
+              animateDoubleTapMenu();
+              setDoubleTapExpanded(expanded => !expanded);
+            }}
             onSelect={action => {
+              animateDoubleTapMenu();
               props.onTerminalPreferencesChange({ ...props.terminalPreferences, doubleTapAction: action });
               setDoubleTapExpanded(false);
             }}

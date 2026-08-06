@@ -33,6 +33,9 @@ describe('terminal double tap', () => {
     expect(settings).toContain('accessibilityState={{ expanded }}');
     expect(settings).toContain('{expanded ? (');
     expect(settings).toContain('setDoubleTapExpanded(expanded => !expanded)');
+    expect(settings).toContain('LayoutAnimation.configureNext(DOUBLE_TAP_MENU_ANIMATION)');
+    expect(settings).toContain('LayoutAnimation.Types.easeInEaseOut');
+    expect(settings).toContain('useReducedMotion()');
   });
 
   it('does not carry a tap through a swipe, long press, or cancelled touch', () => {

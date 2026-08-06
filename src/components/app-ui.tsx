@@ -221,7 +221,7 @@ function useSpinnerFrame(enabled: boolean) {
   return frame;
 }
 
-function useReducedMotion() {
+export function useReducedMotion() {
   const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
