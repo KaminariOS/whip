@@ -107,14 +107,8 @@ Whip 0.3.0 preview APKs are currently ARM64-only prereleases. Their signing iden
 
 1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
 2. Make the Herdr host reachable over SSH, preferably through a Tailnet you trust. An otherwise private destination can be reached through a saved jump host.
-3. Download the APK and checksum from [GitHub Releases](https://github.com/KaminariOS/whip/releases).
-4. Verify the download:
-
-   ```bash
-   sha256sum -c whip-experimental-arm64.apk.sha256
-   ```
-
-5. Allow installation from the app that downloaded the APK, then open Whip.
+3. Download the APK from [GitHub Releases](https://github.com/KaminariOS/whip/releases).
+4. Allow installation from the app that downloaded the APK, then open Whip.
 
 Whip supports Android 7.0 and newer (`minSdk 24`). The current preview distribution targets 64-bit ARM Android devices.
 
