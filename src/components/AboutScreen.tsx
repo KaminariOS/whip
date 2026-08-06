@@ -32,18 +32,24 @@ export interface AboutSectionProps {
 
 export function AboutSection({ server }: AboutSectionProps) {
   const [expanded, setExpanded] = useState(false);
+  const [contentMounted, setContentMounted] = useState(false);
+  const [contentMeasured, setContentMeasured] = useState(false);
   const { t } = useTranslation();
   const contentHeight = useSharedValue(0);
   const progress = useSharedValue(0);
 
   useEffect(() => {
     cancelAnimation(progress);
+    if (expanded && !contentMeasured) {
+      progress.value = 0;
+      return;
+    }
     progress.value = withTiming(expanded ? 1 : 0, {
       duration: expanded ? ABOUT_EXPAND_DURATION : ABOUT_COLLAPSE_DURATION,
       easing: Easing.inOut(Easing.cubic),
     });
     return () => cancelAnimation(progress);
-  }, [expanded, progress]);
+  }, [contentMeasured, expanded, progress]);
 
   const collapsibleStyle = useAnimatedStyle(() => ({
     height: contentHeight.value * progress.value,
@@ -103,7 +109,10 @@ export function AboutSection({ server }: AboutSectionProps) {
         className="min-h-[72px] w-full justify-start rounded-lg border border-border bg-card px-4 py-3"
         size="content"
         variant="ghost"
-        onPress={hapticPress(() => setExpanded(value => !value))}>
+        onPress={hapticPress(() => {
+          if (!expanded) setContentMounted(true);
+          setExpanded(value => !value);
+        })}>
         <View className="min-w-0 flex-1">
           <Text className="text-[17px] font-semibold leading-6">{t('about.title')}</Text>
           <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.copy')}</Text>
@@ -116,9 +125,13 @@ export function AboutSection({ server }: AboutSectionProps) {
         pointerEvents={expanded ? 'auto' : 'none'}
         className="overflow-hidden"
         style={collapsibleStyle}>
-        <View
-          className="absolute inset-x-0 top-0 pb-6 pt-7"
-          onLayout={event => { contentHeight.value = event.nativeEvent.layout.height; }}>
+        {contentMounted ? (
+          <View
+            className="absolute inset-x-0 top-0 pb-6 pt-7"
+            onLayout={event => {
+              contentHeight.value = event.nativeEvent.layout.height;
+              setContentMeasured(true);
+            }}>
           <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('about.source')}</Text>
           <View className="flex-row gap-2.5">
             <Button
@@ -204,7 +217,8 @@ export function AboutSection({ server }: AboutSectionProps) {
             <AboutRow label={t('about.terminalFallbackFont')} value={terminalFonts.fallback.displayName} divided />
           </View>
 
-        </View>
+          </View>
+        ) : null}
       </Animated.View>
     </View>
   );

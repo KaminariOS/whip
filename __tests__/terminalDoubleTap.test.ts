@@ -32,6 +32,11 @@ describe('terminal double tap', () => {
     expect(settings).toContain('doubleTapAction: action');
     expect(settings).toContain('accessibilityState={{ expanded }}');
     expect(settings).toContain('setDoubleTapExpanded(expanded => !expanded)');
+    expect(settings).toContain('const [contentMounted, setContentMounted] = useState(expanded);');
+    expect(settings).toContain('const [contentMeasured, setContentMeasured] = useState(false);');
+    expect(settings).toContain('if (!expanded) setContentMounted(true);');
+    expect(settings).toContain('{contentMounted ? (');
+    expect(settings).toContain('if (expanded && !contentMeasured)');
     expect(settings).toContain('const contentHeight = useSharedValue(0)');
     expect(settings).toContain('progress.value = withTiming(expanded ? 1 : 0');
     expect(settings).toContain('height: contentHeight.value * progress.value');

@@ -11,6 +11,11 @@ describe('About screen', () => {
     expect(screen).toContain('const [expanded, setExpanded] = useState(false);');
     expect(screen).toContain('accessibilityState={{ expanded }}');
     expect(screen).toContain('setExpanded(value => !value)');
+    expect(screen).toContain('const [contentMounted, setContentMounted] = useState(false);');
+    expect(screen).toContain('const [contentMeasured, setContentMeasured] = useState(false);');
+    expect(screen).toContain('if (!expanded) setContentMounted(true);');
+    expect(screen).toContain('{contentMounted ? (');
+    expect(screen).toContain('if (expanded && !contentMeasured)');
     expect(screen).toContain('progress.value = withTiming(expanded ? 1 : 0');
     expect(screen).toContain('height: contentHeight.value * progress.value');
     expect(screen).toContain('opacity: progress.value');

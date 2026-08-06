@@ -412,17 +412,23 @@ function doubleTapActionLabelKey(action: TerminalDoubleTapAction): string {
 
 function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = false }: { expanded: boolean; value: TerminalDoubleTapAction; onToggle: () => void; onSelect: (action: TerminalDoubleTapAction) => void; divided?: boolean }) {
   const { t } = useTranslation();
+  const [contentMounted, setContentMounted] = useState(expanded);
+  const [contentMeasured, setContentMeasured] = useState(false);
   const contentHeight = useSharedValue(0);
   const progress = useSharedValue(expanded ? 1 : 0);
 
   useEffect(() => {
     cancelAnimation(progress);
+    if (expanded && !contentMeasured) {
+      progress.value = 0;
+      return;
+    }
     progress.value = withTiming(expanded ? 1 : 0, {
       duration: expanded ? DOUBLE_TAP_MENU_EXPAND_DURATION : DOUBLE_TAP_MENU_COLLAPSE_DURATION,
       easing: Easing.inOut(Easing.cubic),
     });
     return () => cancelAnimation(progress);
-  }, [expanded, progress]);
+  }, [contentMeasured, expanded, progress]);
 
   const collapsibleStyle = useAnimatedStyle(() => ({
     height: contentHeight.value * progress.value,
@@ -437,7 +443,10 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
         className="min-h-16 justify-start rounded-none px-3.5 py-2"
         size="content"
         variant="ghost"
-        onPress={hapticPress(onToggle)}>
+        onPress={hapticPress(() => {
+          if (!expanded) setContentMounted(true);
+          onToggle();
+        })}>
         <View className="min-w-0 flex-1 pr-3"><DetailsTitle title={t('settings.doubleTap')} copy={t('settings.doubleTapCopy')} /></View>
         <Text className="max-w-[130px] text-right text-xs font-semibold text-primary">{t(doubleTapActionLabelKey(value))}</Text>
         <Icon as={expanded ? ChevronUp : ChevronDown} className="ml-1 text-muted-foreground" size={18} />
@@ -448,9 +457,13 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
         pointerEvents={expanded ? 'auto' : 'none'}
         className="overflow-hidden"
         style={collapsibleStyle}>
-        <View
-          className="absolute inset-x-0 top-0 border-t border-border bg-muted/30 p-2"
-          onLayout={event => { contentHeight.value = event.nativeEvent.layout.height; }}>
+        {contentMounted ? (
+          <View
+            className="absolute inset-x-0 top-0 border-t border-border bg-muted/30 p-2"
+            onLayout={event => {
+              contentHeight.value = event.nativeEvent.layout.height;
+              setContentMeasured(true);
+            }}>
           <View className="overflow-hidden rounded-lg border border-border bg-card">
             {terminalDoubleTapActions.map((action, index) => {
               const selected = action === value;
@@ -468,7 +481,8 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
               );
             })}
           </View>
-        </View>
+          </View>
+        ) : null}
       </Animated.View>
     </View>
   );
