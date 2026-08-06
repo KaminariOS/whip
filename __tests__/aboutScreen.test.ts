@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('About screen', () => {
@@ -81,10 +81,17 @@ describe('About screen', () => {
       resolve(__dirname, '../src/components/AboutScreen.tsx'),
       'utf8',
     );
+    const appUi = readFileSync(
+      resolve(__dirname, '../src/components/app-ui.tsx'),
+      'utf8',
+    );
 
     expect(screen).toContain("export const HERDR_WEBSITE_URL = 'https://herdr.dev/';");
     expect(screen).toContain('Linking.openURL(HERDR_WEBSITE_URL)');
     expect(screen).toContain('<HerdrMark size={44}');
+    expect(appUi).toContain("import Svg, { G, Path, Rect } from 'react-native-svg';");
+    expect(appUi).not.toContain('herdr-icon.png');
+    expect(existsSync(resolve(__dirname, '../assets/herdr-icon.png'))).toBe(false);
     expect(screen).toContain('>herdr.dev</Text>');
     expect(screen).toContain("t('about.shareHerdrMessage', { url: HERDR_WEBSITE_URL })");
     expect(screen).toContain("accessibilityLabel={t('about.shareHerdrWebsite')}");
