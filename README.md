@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong><a href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip">Download Whip from Google Play</a></strong><br>
+  <a href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="240"></a><br>
   Early Access: <a href="https://groups.google.com/g/whip-community">join the Whip Community</a> to become an internal tester.
 </p>
 
