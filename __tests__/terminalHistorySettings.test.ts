@@ -25,6 +25,15 @@ describe('terminal history settings', () => {
     expect(settings).toContain('font-mono text-[14px] leading-5');
   });
 
+  it('copies an entry on long press', () => {
+    const settings = readSource('src/components/SettingsScreen.tsx');
+
+    expect(settings).toContain('Clipboard.setString(entry);');
+    expect(settings).toContain('onLongPress={hapticPress(() => copyEntry(entry))}');
+    expect(settings).toContain("ToastAndroid.show(t('settings.historyEntryCopied')");
+    expect(settings).toContain("accessibilityHint={t('settings.copyHistoryEntryHint')}");
+  });
+
   it('loads and saves history from app state for terminal and settings consumers', () => {
     const app = readSource('App.tsx');
 

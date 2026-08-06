@@ -1,6 +1,6 @@
 import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Clipboard, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -563,6 +563,12 @@ function TerminalHistoryManager({
     setSelected(allSelected ? new Set() : new Set(entries));
   };
 
+  const copyEntry = (entry: string) => {
+    Clipboard.setString(entry);
+    if (Platform.OS === 'android') ToastAndroid.show(t('settings.historyEntryCopied'), ToastAndroid.SHORT);
+    else Alert.alert(t('settings.historyEntryCopied'));
+  };
+
   const confirmDelete = () => {
     if (selected.size === 0) return;
     const selectedEntries = [...selected];
@@ -627,12 +633,14 @@ function TerminalHistoryManager({
               return (
                 <Button
                   key={entry}
+                  accessibilityHint={t('settings.copyHistoryEntryHint')}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: isSelected }}
                   className={cn('min-h-14 justify-start rounded-none px-4 py-3', index > 0 && 'border-t border-border')}
                   size="content"
                   variant="ghost"
-                  onPress={() => toggleEntry(entry)}>
+                  onPress={() => toggleEntry(entry)}
+                  onLongPress={hapticPress(() => copyEntry(entry))}>
                   <View className={cn('size-5 items-center justify-center rounded border border-muted-foreground', isSelected && 'border-primary bg-primary')}>
                     {isSelected ? <Icon as={Check} className="text-primary-foreground" size={14} /> : null}
                   </View>

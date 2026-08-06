@@ -49,6 +49,10 @@ test('shows settings explanations in dismissible floating details', () => {
   expect(settings).toContain('pointerEvents="none"');
   expect(settings).toContain('bg-foreground/70');
   expect(settings).toContain('activeDetails.containerHeight - activeDetails.anchorY + 8');
-  expect(settings).not.toContain('onLongPress');
+  const detailsTitle = settings.slice(
+    settings.indexOf('function DetailsTitle'),
+    settings.indexOf('function SettingRow'),
+  );
+  expect(detailsTitle).not.toContain('onLongPress');
   expect(settings).not.toMatch(/<Text[^>]*>\{t\('settings\.[^']+Copy'/);
 });
