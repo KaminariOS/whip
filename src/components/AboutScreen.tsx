@@ -14,6 +14,7 @@ import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 export const WHIP_RELEASES_URL = 'https://github.com/KaminariOS/whip/releases';
+export const WHIP_REPOSITORY_URL = 'https://github.com/KaminariOS/whip';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 
 export interface AboutSectionProps {
@@ -24,6 +25,15 @@ export function AboutSection({ server }: AboutSectionProps) {
   const [expanded, setExpanded] = useState(false);
   const { t } = useTranslation();
   const whipVersion = Application.nativeApplicationVersion || Constants.expoConfig?.version || t('common.unavailable');
+  const embeddedCommit = Constants.expoConfig?.extra?.gitCommit;
+  const whipCommit = typeof embeddedCommit === 'string' && /^[0-9a-f]{7,64}$/i.test(embeddedCommit) ? embeddedCommit.slice(0, 12) : null;
+  const openCommit = () => {
+    if (!whipCommit) return;
+
+    Linking.openURL(`${WHIP_REPOSITORY_URL}/commit/${embeddedCommit}`).catch(error => {
+      Alert.alert(t('about.commitError'), String(error));
+    });
+  };
   const openReleases = () => {
     Linking.openURL(WHIP_RELEASES_URL).catch(error => {
       Alert.alert(t('about.githubError'), String(error));
@@ -128,6 +138,18 @@ export function AboutSection({ server }: AboutSectionProps) {
             <Text className="mt-4 text-[28px] font-semibold leading-9">Whip</Text>
             <Text className="mt-1 text-center text-sm leading-5 text-muted-foreground">{t('about.tagline')}</Text>
             <Text className="mt-1.5 text-center text-xs leading-[17px] text-muted-foreground/70">{t('common.version', { version: whipVersion })}</Text>
+            {whipCommit ? (
+              <Button
+                accessibilityLabel={t('about.openCommit', { hash: whipCommit })}
+                accessibilityRole="link"
+                className="mt-0.5 min-h-8 gap-1 px-2"
+                size="content"
+                variant="link"
+                onPress={hapticPress(openCommit)}>
+                <Text className="text-center text-xs leading-[17px] underline">{t('about.commit', { hash: whipCommit })}</Text>
+                <Icon as={ExternalLink} size={12} />
+              </Button>
+            ) : null}
           </View>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>

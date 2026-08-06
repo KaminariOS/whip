@@ -28,6 +28,27 @@ describe('About screen', () => {
     expect(screen).toContain("t('common.version', { version: whipVersion })");
   });
 
+  it('shows the embedded build commit when available', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/AboutScreen.tsx'),
+      'utf8',
+    );
+    const appConfig = readFileSync(
+      resolve(__dirname, '../app.config.js'),
+      'utf8',
+    );
+
+    expect(appConfig).toContain("execFileSync('git', ['rev-parse', 'HEAD']");
+    expect(appConfig).toContain('process.env.GITHUB_SHA');
+    expect(appConfig).toContain('gitCommit');
+    expect(screen).toContain('Constants.expoConfig?.extra?.gitCommit');
+    expect(screen).toContain('embeddedCommit.slice(0, 12)');
+    expect(screen).toContain("t('about.commit', { hash: whipCommit })");
+    expect(screen).toContain('`${WHIP_REPOSITORY_URL}/commit/${embeddedCommit}`');
+    expect(screen).toContain("accessibilityLabel={t('about.openCommit', { hash: whipCommit })}");
+    expect(screen).toContain('accessibilityRole="link"');
+  });
+
   it('shows the terminal font manifest', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/AboutScreen.tsx'),
