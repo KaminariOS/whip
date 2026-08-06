@@ -23,6 +23,11 @@ describe('terminal hierarchy status glyphs', () => {
       '<AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status, colors)} size={12} />',
     );
     expect(appUi).toContain('const glyphBoxSize = size + 4;');
+    expect(appUi).toContain('const AGENT_SPINNER_INTERVAL_MS = 125;');
+    expect(appUi).toContain('const agentSpinnerListeners = new Set<() => void>();');
+    expect(appUi).toContain('const frame = useAgentSpinnerFrame(spins && !reduceMotion);');
+    expect(appUi).toContain('const { style } = useStatusMotion(status, false);');
+    expect(appUi).toContain('{agentStatusGlyph(status, frame)}');
     expect(appUi).toContain('lineHeight: glyphBoxSize');
     expect(appUi).toContain('includeFontPadding: false');
     expect(appUi).toContain("textAlignVertical: 'center'");

@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import {
@@ -28,7 +29,12 @@ import Svg, { G, Path, Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
-import { agentStatusGlyph, statusMotionKind, statusTone } from '@/src/lib/statusMotion';
+import {
+  AGENT_SPINNER_FRAMES,
+  agentStatusGlyph,
+  statusMotionKind,
+  statusTone,
+} from '@/src/lib/statusMotion';
 import { useTheme } from '@/src/theme';
 import { GlassSurface } from './GlassSurface';
 import { Badge } from './ui/badge';
@@ -36,6 +42,40 @@ import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 const ReducedMotionContext = createContext(false);
+const AGENT_SPINNER_INTERVAL_MS = 125;
+const agentSpinnerListeners = new Set<() => void>();
+let agentSpinnerFrame = 0;
+let agentSpinnerInterval: ReturnType<typeof setInterval> | null = null;
+
+function subscribeAgentSpinner(listener: () => void) {
+  agentSpinnerListeners.add(listener);
+  if (!agentSpinnerInterval) {
+    agentSpinnerInterval = setInterval(() => {
+      agentSpinnerFrame = (agentSpinnerFrame + 1) % AGENT_SPINNER_FRAMES.length;
+      for (const notify of agentSpinnerListeners) notify();
+    }, AGENT_SPINNER_INTERVAL_MS);
+  }
+  return () => {
+    agentSpinnerListeners.delete(listener);
+    if (agentSpinnerListeners.size === 0 && agentSpinnerInterval) {
+      clearInterval(agentSpinnerInterval);
+      agentSpinnerInterval = null;
+      agentSpinnerFrame = 0;
+    }
+  };
+}
+
+function subscribeStaticSpinner() {
+  return () => undefined;
+}
+
+function getAgentSpinnerFrame() {
+  return agentSpinnerFrame;
+}
+
+function getStaticSpinnerFrame() {
+  return 0;
+}
 
 export function ReducedMotionProvider({ children }: { children: ReactNode }) {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -190,6 +230,9 @@ export function AnimatedAgentStatusGlyph({
   color: string;
   size?: number;
 }) {
+  const reduceMotion = useReducedMotion();
+  const spins = status === 'working' || status === 'running';
+  const frame = useAgentSpinnerFrame(spins && !reduceMotion);
   const { style } = useStatusMotion(status, false);
   const glyphBoxSize = size + 4;
   return (
@@ -202,7 +245,7 @@ export function AnimatedAgentStatusGlyph({
           { color, fontSize: size, lineHeight: glyphBoxSize },
         ]}
       >
-        {agentStatusGlyph(status)}
+        {agentStatusGlyph(status, frame)}
       </Text>
     </Animated.View>
   );
@@ -277,6 +320,14 @@ function useStatusMotion(status: string, rotateSpinning = true) {
     return { opacity: 1, transform: [{ scale: 1 }] };
   }, [motion, rotateSpinning]);
   return { motion, style, reduceMotion };
+}
+
+function useAgentSpinnerFrame(enabled: boolean) {
+  return useSyncExternalStore(
+    enabled ? subscribeAgentSpinner : subscribeStaticSpinner,
+    enabled ? getAgentSpinnerFrame : getStaticSpinnerFrame,
+    getStaticSpinnerFrame,
+  );
 }
 
 export function useReducedMotion() {
