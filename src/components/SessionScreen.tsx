@@ -187,9 +187,10 @@ export function SessionScreen({
     target.hostSessionId === hostSessionId
       && target.session.terminalId === tabSwipe?.targetTerminalId
   )) || null;
+  const activeSwipeNeedsPlaceholder = Boolean(tabSwipe && !previewTarget);
   const activeTerminalSwipeStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: tabSwipe && !previewTarget ? tabSwipeTranslateX.value : 0 }],
-  }), [previewTarget, tabSwipe]);
+    transform: [{ translateX: activeSwipeNeedsPlaceholder ? tabSwipeTranslateX.value : 0 }],
+  }), [activeSwipeNeedsPlaceholder]);
   const previewPlaceholderStyle = useAnimatedStyle(() => ({
     transform: [{
       translateX: tabSwipeTranslateX.value + (tabSwipe ? tabSwipe.direction * terminalWidth : 0),
