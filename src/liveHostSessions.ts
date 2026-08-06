@@ -330,27 +330,38 @@ export function applyLiveHostAgentStatus(
     const paneIndex = session.snapshot.panes.findIndex(pane => pane.pane_id === paneId);
     if (paneIndex < 0) return session;
 
-    const panes = session.snapshot.panes.map(pane => pane.pane_id === paneId
-      ? paneFromAgentStatusEvent(pane, agentStatus, data)
-      : pane);
+    const currentPane = session.snapshot.panes[paneIndex];
+    const updatedPane = paneFromAgentStatusEvent(
+      currentPane,
+      agentStatus,
+      data,
+    );
+    const panes = [...session.snapshot.panes];
+    panes[paneIndex] = updatedPane;
     const agents = session.snapshot.agents.map(agent => {
       if (agent.pane_id !== paneId) return agent;
       return agentFromStatusEvent(agent, data) ?? agent;
     });
-    const tabs = session.snapshot.tabs.map(tab => ({
-      ...tab,
-      agent_status: aggregateAgentStatus(
-        panes.filter(pane => pane.tab_id === tab.tab_id).map(pane => pane.agent_status),
-      ),
-    }));
-    const workspaces = session.snapshot.workspaces.map(workspace => ({
-      ...workspace,
-      agent_status: aggregateAgentStatus(
-        panes
-          .filter(pane => pane.workspace_id === workspace.workspace_id)
-          .map(pane => pane.agent_status),
-      ),
-    }));
+    const tabStatuses: AgentStatus[] = [];
+    const workspaceStatuses: AgentStatus[] = [];
+    for (const pane of panes) {
+      if (pane.tab_id === updatedPane.tab_id)
+        tabStatuses.push(pane.agent_status);
+      if (pane.workspace_id === updatedPane.workspace_id)
+        workspaceStatuses.push(pane.agent_status);
+    }
+    const tabStatus = aggregateAgentStatus(tabStatuses);
+    const workspaceStatus = aggregateAgentStatus(workspaceStatuses);
+    const tabs = session.snapshot.tabs.map(tab =>
+      tab.tab_id === updatedPane.tab_id
+        ? { ...tab, agent_status: tabStatus }
+        : tab,
+    );
+    const workspaces = session.snapshot.workspaces.map(workspace =>
+      workspace.workspace_id === updatedPane.workspace_id
+        ? { ...workspace, agent_status: workspaceStatus }
+        : workspace,
+    );
 
     return {
       ...session,

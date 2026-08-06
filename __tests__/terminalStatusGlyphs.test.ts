@@ -82,8 +82,8 @@ describe('terminal hierarchy status glyphs', () => {
       'utf8',
     );
 
-    expect(app).toContain(
-      'agentStatus: aggregateAgentStatus(session.snapshot.workspaces.map(workspace => workspace.agent_status))',
+    expect(app).toMatch(
+      /agentStatus:\s*aggregateAgentStatus\(\s*session\.snapshot\.workspaces\.map\(workspace => workspace\.agent_status\),?\s*\)/,
     );
     expect(rail).toContain(
       '<AnimatedAgentStatusGlyph status={session.agentStatus} color={sessionStatusColor(session, colors)} size={12} />',
@@ -93,7 +93,7 @@ describe('terminal hierarchy status glyphs', () => {
   it('uses one status glyph per Herd attention row', () => {
     const herd = readFileSync(resolve(__dirname, '../src/components/HerdScreen.tsx'), 'utf8');
 
-    expect(herd).toContain('<AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} />');
-    expect(herd).toContain('<StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} />');
+    expect(herd).toMatch(/<AnimatedAgentStatusGlyph\s+status={agent\.agent_status}\s+color={tone}\s*\/>/);
+    expect(herd).toMatch(/<StatusBadge\s+showIndicator={false}\s+status={agent\.agent_status}\s+label={stateLabel}\s*\/>/);
   });
 });

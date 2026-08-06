@@ -58,10 +58,19 @@ describe('Android background monitoring', () => {
   });
 
   it('periodically verifies live hosts while the app is active', () => {
-    expect(app).toContain('const LIVE_HOST_HEARTBEAT_MS = 15_000;');
-    expect(app).toContain("if (AppState.currentState === 'active') resumeLiveConnections();");
-    expect(app).toContain('}, LIVE_HOST_HEARTBEAT_MS);');
+    expect(app).toContain('const LIVE_HOST_HEALTHCHECK_MS = 15_000;');
+    expect(app).toContain('const LIVE_HOST_RECONCILE_MS = 120_000;');
+    expect(app).toContain(
+      "if (AppState.currentState === 'active') resumeLiveConnections(false);",
+    );
+    expect(app).toContain(
+      "if (AppState.currentState === 'active') resumeLiveConnections(true);",
+    );
+    expect(app).toMatch(
+      /shouldRefreshLiveHost\(\s*session,\s*runtime\.eventStatus === 'open',\s*reconcile,?\s*\)/,
+    );
     expect(app).toContain('clearInterval(heartbeat);');
+    expect(app).toContain('clearInterval(reconciliation);');
   });
 
   it('retains the SSH runtimes when Android removes the UI task', () => {

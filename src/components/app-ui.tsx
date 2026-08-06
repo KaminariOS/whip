@@ -1,7 +1,19 @@
 import * as Haptics from 'expo-haptics';
 import { RefreshCw, type LucideIcon } from 'lucide-react-native';
-import { useEffect, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Image, Platform, StyleSheet, View } from 'react-native';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
+import {
+  AccessibilityInfo,
+  Image,
+  Platform,
+  StyleSheet,
+  View,
+} from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -23,7 +35,42 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
-export function WhipMark({ size, accessibilityLabel }: { size: number; accessibilityLabel?: string }) {
+const ReducedMotionContext = createContext(false);
+
+export function ReducedMotionProvider({ children }: { children: ReactNode }) {
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then(value => {
+        if (mounted) setReduceMotion(value);
+      })
+      .catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReduceMotion,
+    );
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  return (
+    <ReducedMotionContext.Provider value={reduceMotion}>
+      {children}
+    </ReducedMotionContext.Provider>
+  );
+}
+
+export function WhipMark({
+  size,
+  accessibilityLabel,
+}: {
+  size: number;
+  accessibilityLabel?: string;
+}) {
   return (
     <Image
       accessibilityIgnoresInvertColors
@@ -134,9 +181,16 @@ export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: s
   );
 }
 
-export function AnimatedAgentStatusGlyph({ status, color, size = 18 }: { status: string; color: string; size?: number }) {
-  const { motion, style, reduceMotion } = useStatusMotion(status, false);
-  const frame = useSpinnerFrame(motion === 'spin' && !reduceMotion);
+export function AnimatedAgentStatusGlyph({
+  status,
+  color,
+  size = 18,
+}: {
+  status: string;
+  color: string;
+  size?: number;
+}) {
+  const { style } = useStatusMotion(status, false);
   const glyphBoxSize = size + 4;
   return (
     <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
@@ -146,8 +200,9 @@ export function AnimatedAgentStatusGlyph({ status, color, size = 18 }: { status:
           styles.statusGlyphText,
           Platform.OS === 'android' && styles.statusGlyphTextAndroid,
           { color, fontSize: size, lineHeight: glyphBoxSize },
-        ]}>
-        {agentStatusGlyph(status, frame)}
+        ]}
+      >
+        {agentStatusGlyph(status)}
       </Text>
     </Animated.View>
   );
@@ -224,35 +279,8 @@ function useStatusMotion(status: string, rotateSpinning = true) {
   return { motion, style, reduceMotion };
 }
 
-function useSpinnerFrame(enabled: boolean) {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    setFrame(0);
-    if (!enabled) return;
-    const interval = setInterval(() => setFrame(value => value + 1), 80);
-    return () => clearInterval(interval);
-  }, [enabled]);
-
-  return frame;
-}
-
 export function useReducedMotion() {
-  const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    AccessibilityInfo.isReduceMotionEnabled().then(value => {
-      if (mounted) setReduceMotion(value);
-    }).catch(() => undefined);
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => {
-      mounted = false;
-      subscription.remove();
-    };
-  }, []);
-
-  return reduceMotion;
+  return useContext(ReducedMotionContext);
 }
 
 function useStatusBloom(status: string, reduceMotion: boolean) {

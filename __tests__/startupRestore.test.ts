@@ -28,7 +28,7 @@ describe('startup host restoration', () => {
 
   it('keeps the display awake only while the terminal screen is visible', () => {
     expect(app).toContain("useKeepAwake('herdr-terminal')");
-    expect(app).toContain('activeTerminalVisible = immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId)');
+    expect(app).toMatch(/activeTerminalVisible\s*=\s*immersiveTerminal\s*&&\s*Boolean\(activeSession\?\.terminals\.activeTerminalId\)/);
     expect(app).toContain('keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null');
   });
 });

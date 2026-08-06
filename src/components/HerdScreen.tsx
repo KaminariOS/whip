@@ -1,6 +1,27 @@
-import { ChevronRight, History, Play, Plus, Sparkles, SquareTerminal, X } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import {
+  ChevronRight,
+  History,
+  Play,
+  Plus,
+  Sparkles,
+  SquareTerminal,
+  X,
+} from 'lucide-react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  PanResponder,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  View,
+  type ListRenderItemInfo,
+} from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -100,10 +121,19 @@ export function HerdScreen({
   const selectedWorkspace = selectedQueue?.workspaces.find(
     workspace => workspace.workspace_id === selectedWorkspaceId,
   );
-  const queueAgents = agentsForHerdFilter(queues, selectedHostId, selectedWorkspaceId);
-  const blocked = queueAgents.filter(item => item.agent.agent_status === 'blocked').length;
-  const working = queueAgents.filter(item => item.agent.agent_status === 'working').length;
-  const done = queueAgents.filter(item => item.agent.agent_status === 'done').length;
+  const queueAgents = useMemo(
+    () => agentsForHerdFilter(queues, selectedHostId, selectedWorkspaceId),
+    [queues, selectedHostId, selectedWorkspaceId],
+  );
+  const blocked = queueAgents.filter(
+    item => item.agent.agent_status === 'blocked',
+  ).length;
+  const working = queueAgents.filter(
+    item => item.agent.agent_status === 'working',
+  ).length;
+  const done = queueAgents.filter(
+    item => item.agent.agent_status === 'done',
+  ).length;
   const refreshing = scopedQueues.some(queue => queue.refreshing);
   const [workspaceEditorMode, setWorkspaceEditorMode] = useState<'create' | 'rename' | null>(null);
   const [workspaceName, setWorkspaceName] = useState('');
@@ -262,29 +292,53 @@ export function HerdScreen({
     setCommandRunnerOpen(false);
   };
 
-  const closeTab = async (item: HerdQueueAgent): Promise<boolean> => {
-    const key = `${item.hostId}:${item.agent.tab_id}`;
-    setClosingTabKey(key);
-    try {
-      await onCloseTab(item.hostId, item.agent.tab_id);
-      return true;
-    } catch (error) {
-      Alert.alert(t('herd.commandFailed'), String(error));
-      return false;
-    } finally {
-      setClosingTabKey(null);
-    }
-  };
-
-  const sorted = orderByAgentStatusPriority(
-    queueAgents,
-    item => item.agent.agent_status,
-    item => item.agent.state_change_seq,
+  const closeTab = useCallback(
+    async (item: HerdQueueAgent): Promise<boolean> => {
+      const key = `${item.hostId}:${item.agent.tab_id}`;
+      setClosingTabKey(key);
+      try {
+        await onCloseTab(item.hostId, item.agent.tab_id);
+        return true;
+      } catch (error) {
+        Alert.alert(t('herd.commandFailed'), String(error));
+        return false;
+      } finally {
+        setClosingTabKey(null);
+      }
+    },
+    [onCloseTab, t],
   );
-  const visibleSorted = sorted.filter(
-    item => closingTabKey !== `${item.hostId}:${item.agent.tab_id}`,
+
+  const sorted = useMemo(
+    () =>
+      orderByAgentStatusPriority(
+        queueAgents,
+        item => item.agent.agent_status,
+        item => item.agent.state_change_seq,
+      ),
+    [queueAgents],
+  );
+  const visibleSorted = useMemo(
+    () =>
+      sorted.filter(
+        item => closingTabKey !== `${item.hostId}:${item.agent.tab_id}`,
+      ),
+    [closingTabKey, sorted],
   );
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
+  const renderAgent = useCallback(
+    ({ item, index }: ListRenderItemInfo<HerdQueueAgent>) => (
+      <AgentRow
+        item={item}
+        index={index}
+        showHost={selectedHostId === null}
+        onOpenTerminal={onOpenTerminal}
+        closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
+        onCloseTab={closeTab}
+      />
+    ),
+    [closeTab, closingTabKey, onOpenTerminal, selectedHostId],
+  );
 
   return (
     <View className="flex-1">
@@ -313,89 +367,161 @@ export function HerdScreen({
         </GlassSurface>
       ) : null}
 
-      <ScrollView
+      <FlatList
         className="flex-1"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} colors={[colors.text]} />}
-      >
-        <View className="p-4 pb-8">
-          {!selectedQueue ? (
-            <Text className="mb-6 px-1 text-xs leading-[17px] text-muted-foreground">
-              {t('herd.mergedQueue', { hosts: hostCountLabel })}
-            </Text>
-          ) : null}
-
-        {selectedQueue && !selectedQueue.running ? (
-          <View className="min-h-[360px] items-center justify-center p-7">
-            <View className="size-16 items-center justify-center rounded-full bg-destructive/10"><Text className="text-[28px] font-bold text-destructive">!</Text></View>
-            <Text className="mt-[18px] text-xl font-semibold leading-[26px]">{t('herd.serverOffline')}</Text>
-            <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{t('herd.serverOfflineCopy', { host: selectedQueue.label })}</Text>
-            <View className="mt-6 flex-row gap-2.5">
-              <Button className="rounded-full px-5" disabled={selectedQueue.refreshing} onPress={hapticPress(() => onStartServer(selectedQueue.id))}>
-                <Text>{selectedQueue.refreshing ? t('herd.starting') : t('herd.startServer')}</Text>
-              </Button>
-              <Button className="rounded-full px-5" variant="secondary" onPress={hapticPress(() => onOpenSshShell(selectedQueue.id))}>
-                <Icon as={SquareTerminal} size={17} />
-                <Text>{t('herd.openSshShell')}</Text>
-              </Button>
-            </View>
-          </View>
-        ) : (
+        contentContainerClassName="px-4 pb-8"
+        data={selectedQueue && !selectedQueue.running ? [] : visibleSorted}
+        initialNumToRender={8}
+        windowSize={7}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews={Platform.OS === 'android'}
+        keyExtractor={herdAgentKey}
+        getItemLayout={getHerdAgentLayout}
+        renderItem={renderAgent}
+        ItemSeparatorComponent={AgentRowSeparator}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.textSecondary}
+            colors={[colors.text]}
+          />
+        }
+        ListHeaderComponent={
           <>
-            {selectedQueue?.running && selectedWorkspace ? (
-              <View className="mb-3 flex-row justify-end gap-2">
-                <Button accessibilityLabel={t('herd.startAgent')} className="rounded-full px-4" size="sm" disabled={workspaceBusy || !agentCommand.trim()} onPress={hapticPress(startAgent)}>
-                  <Icon as={Plus} size={16} />
-                  <Text>{t('herd.agent')}</Text>
-                </Button>
-                <Button accessibilityLabel={t('herd.runCommand')} className="rounded-full px-4" size="sm" variant="secondary" disabled={workspaceBusy} onPress={hapticPress(openCommandRunner)}>
-                  <Icon as={Play} size={16} />
-                  <Text>{t('herd.run')}</Text>
-                </Button>
-                {queueAgents.length === 0 ? (
-                  <Button accessibilityLabel={t('herd.openSpace')} className="rounded-full px-4" size="sm" variant="secondary" disabled={workspaceBusy} onPress={hapticPress(openSpace)}>
-                    <Icon as={SquareTerminal} size={16} />
-                    <Text>{t('herd.open')}</Text>
-                  </Button>
-                ) : null}
-              </View>
+            {!selectedQueue ? (
+              <Text className="mb-6 px-1 pt-4 text-xs leading-[17px] text-muted-foreground">
+                {t('herd.mergedQueue', { hosts: hostCountLabel })}
+              </Text>
             ) : null}
 
-            <View className="mb-6 flex-row">
-              <Metric value={queueAgents.length} label={t('herd.agents')} />
-              <Metric value={working} label={t('herd.working')} status="working" />
-              <Metric value={blocked} label={t('herd.needYou')} status="blocked" />
-              <Metric value={done} label={t('herd.done')} status="done" />
-            </View>
-
-            <View className="min-h-10 flex-row items-center">
-              <Text className="px-1 text-sm font-semibold text-muted-foreground">{t('herd.attentionQueue')}</Text>
-            </View>
-
-            {visibleSorted.length === 0 ? (
+            {selectedQueue && !selectedQueue.running ? (
               <View className="min-h-[360px] items-center justify-center p-7">
-                <View className="size-16 items-center justify-center rounded-full bg-muted"><Icon as={Sparkles} size={28} /></View>
-                <Text className="mt-[18px] text-xl font-semibold leading-[26px]">{t('herd.noAgents')}</Text>
-                <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{selectedWorkspace ? t('herd.noAgentsWorkspace', { workspace: selectedWorkspace.label || selectedWorkspace.workspace_id }) : selectedQueue ? t('herd.noAgentsHost', { host: selectedQueue.label }) : t('herd.noAgentsMerged')}</Text>
+                <View className="size-16 items-center justify-center rounded-full bg-destructive/10">
+                  <Text className="text-[28px] font-bold text-destructive">
+                    !
+                  </Text>
+                </View>
+                <Text className="mt-[18px] text-xl font-semibold leading-[26px]">
+                  {t('herd.serverOffline')}
+                </Text>
+                <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
+                  {t('herd.serverOfflineCopy', { host: selectedQueue.label })}
+                </Text>
+                <View className="mt-6 flex-row gap-2.5">
+                  <Button
+                    className="rounded-full px-5"
+                    disabled={selectedQueue.refreshing}
+                    onPress={hapticPress(() => onStartServer(selectedQueue.id))}
+                  >
+                    <Text>
+                      {selectedQueue.refreshing
+                        ? t('herd.starting')
+                        : t('herd.startServer')}
+                    </Text>
+                  </Button>
+                  <Button
+                    className="rounded-full px-5"
+                    variant="secondary"
+                    onPress={hapticPress(() =>
+                      onOpenSshShell(selectedQueue.id),
+                    )}
+                  >
+                    <Icon as={SquareTerminal} size={17} />
+                    <Text>{t('herd.openSshShell')}</Text>
+                  </Button>
+                </View>
               </View>
             ) : (
-              <View className="gap-2">
-                {visibleSorted.map((item, index) => (
-                  <AgentRow
-                    key={`${item.hostId}:${item.agent.terminal_id}`}
-                    item={item}
-                    index={index}
-                    showHost={selectedHostId === null}
-                    onOpenTerminal={onOpenTerminal}
-                    closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
-                    onCloseTab={closeTab}
+              <>
+                {selectedQueue?.running && selectedWorkspace ? (
+                  <View className="mb-3 flex-row justify-end gap-2">
+                    <Button
+                      accessibilityLabel={t('herd.startAgent')}
+                      className="rounded-full px-4"
+                      size="sm"
+                      disabled={workspaceBusy || !agentCommand.trim()}
+                      onPress={hapticPress(startAgent)}
+                    >
+                      <Icon as={Plus} size={16} />
+                      <Text>{t('herd.agent')}</Text>
+                    </Button>
+                    <Button
+                      accessibilityLabel={t('herd.runCommand')}
+                      className="rounded-full px-4"
+                      size="sm"
+                      variant="secondary"
+                      disabled={workspaceBusy}
+                      onPress={hapticPress(openCommandRunner)}
+                    >
+                      <Icon as={Play} size={16} />
+                      <Text>{t('herd.run')}</Text>
+                    </Button>
+                    {queueAgents.length === 0 ? (
+                      <Button
+                        accessibilityLabel={t('herd.openSpace')}
+                        className="rounded-full px-4"
+                        size="sm"
+                        variant="secondary"
+                        disabled={workspaceBusy}
+                        onPress={hapticPress(openSpace)}
+                      >
+                        <Icon as={SquareTerminal} size={16} />
+                        <Text>{t('herd.open')}</Text>
+                      </Button>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                <View className="mb-6 flex-row">
+                  <Metric value={queueAgents.length} label={t('herd.agents')} />
+                  <Metric
+                    value={working}
+                    label={t('herd.working')}
+                    status="working"
                   />
-                ))}
-              </View>
+                  <Metric
+                    value={blocked}
+                    label={t('herd.needYou')}
+                    status="blocked"
+                  />
+                  <Metric value={done} label={t('herd.done')} status="done" />
+                </View>
+
+                <View className="min-h-10 flex-row items-center">
+                  <Text className="px-1 text-sm font-semibold text-muted-foreground">
+                    {t('herd.attentionQueue')}
+                  </Text>
+                </View>
+              </>
             )}
           </>
-        )}
-        </View>
-      </ScrollView>
+        }
+        ListEmptyComponent={
+          selectedQueue?.running === false ? null : (
+            <View className="min-h-[360px] items-center justify-center p-7">
+              <View className="size-16 items-center justify-center rounded-full bg-muted">
+                <Icon as={Sparkles} size={28} />
+              </View>
+              <Text className="mt-[18px] text-xl font-semibold leading-[26px]">
+                {t('herd.noAgents')}
+              </Text>
+              <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
+                {selectedWorkspace
+                  ? t('herd.noAgentsWorkspace', {
+                      workspace:
+                        selectedWorkspace.label ||
+                        selectedWorkspace.workspace_id,
+                    })
+                  : selectedQueue
+                  ? t('herd.noAgentsHost', { host: selectedQueue.label })
+                  : t('herd.noAgentsMerged')}
+              </Text>
+            </View>
+          )
+        }
+      />
       <Modal
         animationType="fade"
         onRequestClose={closeCommandRunner}
@@ -509,130 +635,240 @@ function commandComposerStyle(keyboardInset: number) {
     : undefined;
 }
 
-function AgentRow({ item, index, showHost, closing, onCloseTab, onOpenTerminal }: {
-  item: HerdQueueAgent;
-  index: number;
-  showHost: boolean;
-  closing: boolean;
-  onCloseTab: (item: HerdQueueAgent) => Promise<boolean>;
-  onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
-}) {
-  const { colors } = useTheme();
-  const { t } = useTranslation();
-  const { agent } = item;
-  const translateX = useSharedValue(0);
-  const rowHeight = useSharedValue(HERD_AGENT_ROW_HEIGHT);
-  const rowWidthRef = useRef(0);
-  const closingRef = useRef(closing);
-  const committingRef = useRef(false);
-  closingRef.current = closing;
-  const agentLabel = agent.display_agent || agent.name || agent.agent || 'agent';
-  const stateLabel = agent.state_labels?.[agent.agent_status] || agent.custom_status || agent.agent_status;
-  const tone = statusColor(agent.agent_status, colors);
-  const context = [
-    ...(showHost ? [item.hostLabel] : []),
-    agentLabel,
-    ...(agent.focused ? [t('herd.focused')] : []),
-  ].join(' · ');
+const AgentRow = memo(
+  function AgentRow({
+    item,
+    index,
+    showHost,
+    closing,
+    onCloseTab,
+    onOpenTerminal,
+  }: {
+    item: HerdQueueAgent;
+    index: number;
+    showHost: boolean;
+    closing: boolean;
+    onCloseTab: (item: HerdQueueAgent) => Promise<boolean>;
+    onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
+  }) {
+    const { colors } = useTheme();
+    const { t } = useTranslation();
+    const { agent } = item;
+    const translateX = useSharedValue(0);
+    const rowHeight = useSharedValue(HERD_AGENT_ROW_HEIGHT);
+    const rowWidthRef = useRef(0);
+    const closingRef = useRef(closing);
+    const committingRef = useRef(false);
+    closingRef.current = closing;
+    const agentLabel =
+      agent.display_agent || agent.name || agent.agent || 'agent';
+    const stateLabel =
+      agent.state_labels?.[agent.agent_status] ||
+      agent.custom_status ||
+      agent.agent_status;
+    const tone = statusColor(agent.agent_status, colors);
+    const context = [
+      ...(showHost ? [item.hostLabel] : []),
+      agentLabel,
+      ...(agent.focused ? [t('herd.focused')] : []),
+    ].join(' · ');
 
-  const rowStyle = useAnimatedStyle(() => ({ height: rowHeight.value }));
-  const contentStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-  const actionRevealStyle = useAnimatedStyle(() => ({
-    width: Math.max(0, -translateX.value),
-  }));
-
-  const restore = () => {
-    translateX.value = withSpring(0, {
-      damping: 24,
-      stiffness: 260,
-      mass: 0.8,
-      overshootClamping: true,
-    });
-  };
-
-  const finishClose = (finished: boolean) => {
-    if (finished) {
-      onCloseTab(item);
-      return;
-    }
-    committingRef.current = false;
-    rowHeight.value = HERD_AGENT_ROW_HEIGHT;
-    restore();
-  };
-
-  const commitClose = hapticPress(() => {
-    if (closingRef.current || committingRef.current) return;
-    committingRef.current = true;
-    translateX.value = withTiming(-Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG), {
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-    });
-    rowHeight.value = withDelay(50, withTiming(0, {
-      duration: 150,
-      easing: Easing.inOut(Easing.quad),
-    }, finished => {
-      scheduleOnRN(finishClose, Boolean(finished));
+    const rowStyle = useAnimatedStyle(() => ({ height: rowHeight.value }));
+    const contentStyle = useAnimatedStyle(() => ({
+      transform: [{ translateX: translateX.value }],
     }));
-  });
+    const actionRevealStyle = useAnimatedStyle(() => ({
+      width: Math.max(0, -translateX.value),
+    }));
 
-  const panResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponderCapture: (_event, gesture) => (
-      !closingRef.current && shouldClaimHerdTabSwipe(gesture.dx, gesture.dy)
-    ),
-    onPanResponderGrant: () => {
-      cancelAnimation(translateX);
-      cancelAnimation(rowHeight);
-    },
-    onPanResponderMove: (_event, gesture) => {
-      translateX.value = herdTabSwipeOffset(gesture.dx);
-    },
-    onPanResponderRelease: (_event, gesture) => {
-      if (shouldCloseHerdTabSwipe(gesture.dx, gesture.vx)) commitClose();
-      else restore();
-    },
-    onPanResponderTerminate: () => {
-      if (!committingRef.current) restore();
-    },
-    onPanResponderTerminationRequest: () => false,
-  })).current;
+    const restore = () => {
+      translateX.value = withSpring(0, {
+        damping: 24,
+        stiffness: 260,
+        mass: 0.8,
+        overshootClamping: true,
+      });
+    };
 
-  return (
-    <Animated.View className="overflow-hidden" style={rowStyle}>
-      <AnimatedEntrance delay={Math.min(index * 45, 225)}>
-        <View
-          className="relative min-h-[92px] overflow-hidden rounded-xl"
-          onLayout={event => { rowWidthRef.current = event.nativeEvent.layout.width; }}>
-          <Animated.View
-            className="absolute inset-y-0 right-0 overflow-hidden rounded-r-xl bg-destructive"
-            style={actionRevealStyle}>
-            <View className="absolute inset-y-0 right-0 items-end justify-center pr-7" style={{ width: HERD_TAB_MAX_DRAG }}>
-              <Icon as={X} className="text-destructive-foreground" size={22} />
-            </View>
-          </Animated.View>
-          <Animated.View
-            className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10"
-            style={contentStyle}
-            {...panResponder.panHandlers}>
-            <GlassBackdrop />
-            <Button
-              accessibilityActions={[{ name: 'close-tab', label: t('session.closeTab', { tab: item.tabLabel }) }]}
-              accessibilityLabel={t('herd.openAgentTerminal', { agent: item.primaryLabel, host: item.hostLabel })}
-              className="h-auto min-h-[90px] w-full justify-start gap-3 rounded-none px-3 py-[12px]"
-              disabled={closing}
-              variant="ghost"
-              onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'close-tab') commitClose(); }}
-              onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}>
-              <View className="size-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tone}1F` }}><AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} /></View>
-              <View className="min-w-0 flex-1"><View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{item.primaryLabel}</Text><StatusBadge showIndicator={false} status={agent.agent_status} label={stateLabel} /></View><Text className="mt-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{agent.title || agent.foreground_cwd || agent.cwd || t('herd.untitledTask')}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{context}</Text></View>
-              <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
-            </Button>
-          </Animated.View>
-        </View>
-      </AnimatedEntrance>
-    </Animated.View>
-  );
+    const finishClose = (finished: boolean) => {
+      if (finished) {
+        onCloseTab(item);
+        return;
+      }
+      committingRef.current = false;
+      rowHeight.value = HERD_AGENT_ROW_HEIGHT;
+      restore();
+    };
+
+    const commitClose = hapticPress(() => {
+      if (closingRef.current || committingRef.current) return;
+      committingRef.current = true;
+      translateX.value = withTiming(
+        -Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG),
+        {
+          duration: 180,
+          easing: Easing.out(Easing.cubic),
+        },
+      );
+      rowHeight.value = withDelay(
+        50,
+        withTiming(
+          0,
+          {
+            duration: 150,
+            easing: Easing.inOut(Easing.quad),
+          },
+          finished => {
+            scheduleOnRN(finishClose, Boolean(finished));
+          },
+        ),
+      );
+    });
+
+    const panResponder = useRef(
+      PanResponder.create({
+        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+          !closingRef.current &&
+          shouldClaimHerdTabSwipe(gesture.dx, gesture.dy),
+        onPanResponderGrant: () => {
+          cancelAnimation(translateX);
+          cancelAnimation(rowHeight);
+        },
+        onPanResponderMove: (_event, gesture) => {
+          translateX.value = herdTabSwipeOffset(gesture.dx);
+        },
+        onPanResponderRelease: (_event, gesture) => {
+          if (shouldCloseHerdTabSwipe(gesture.dx, gesture.vx)) commitClose();
+          else restore();
+        },
+        onPanResponderTerminate: () => {
+          if (!committingRef.current) restore();
+        },
+        onPanResponderTerminationRequest: () => false,
+      }),
+    ).current;
+
+    return (
+      <Animated.View className="overflow-hidden" style={rowStyle}>
+        <AnimatedEntrance delay={Math.min(index * 45, 225)}>
+          <View
+            className="relative min-h-[92px] overflow-hidden rounded-xl"
+            onLayout={event => {
+              rowWidthRef.current = event.nativeEvent.layout.width;
+            }}
+          >
+            <Animated.View
+              className="absolute inset-y-0 right-0 overflow-hidden rounded-r-xl bg-destructive"
+              style={actionRevealStyle}
+            >
+              <View
+                className="absolute inset-y-0 right-0 items-end justify-center pr-7"
+                style={{ width: HERD_TAB_MAX_DRAG }}
+              >
+                <Icon
+                  as={X}
+                  className="text-destructive-foreground"
+                  size={22}
+                />
+              </View>
+            </Animated.View>
+            <Animated.View
+              className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10"
+              style={contentStyle}
+              {...panResponder.panHandlers}
+            >
+              <GlassBackdrop />
+              <Button
+                accessibilityActions={[
+                  {
+                    name: 'close-tab',
+                    label: t('session.closeTab', { tab: item.tabLabel }),
+                  },
+                ]}
+                accessibilityLabel={t('herd.openAgentTerminal', {
+                  agent: item.primaryLabel,
+                  host: item.hostLabel,
+                })}
+                className="h-auto min-h-[90px] w-full justify-start gap-3 rounded-none px-3 py-[12px]"
+                disabled={closing}
+                variant="ghost"
+                onAccessibilityAction={event => {
+                  if (event.nativeEvent.actionName === 'close-tab')
+                    commitClose();
+                }}
+                onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}
+              >
+                <View
+                  className="size-10 items-center justify-center rounded-full"
+                  style={{ backgroundColor: `${tone}1F` }}
+                >
+                  <AnimatedAgentStatusGlyph
+                    status={agent.agent_status}
+                    color={tone}
+                  />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <View className="flex-row items-center gap-2">
+                    <Text
+                      className="flex-1 text-base font-semibold"
+                      numberOfLines={1}
+                    >
+                      {item.primaryLabel}
+                    </Text>
+                    <StatusBadge
+                      showIndicator={false}
+                      status={agent.agent_status}
+                      label={stateLabel}
+                    />
+                  </View>
+                  <Text
+                    className="mt-1 text-[13px] leading-[18px] text-muted-foreground"
+                    numberOfLines={1}
+                  >
+                    {agent.title ||
+                      agent.foreground_cwd ||
+                      agent.cwd ||
+                      t('herd.untitledTask')}
+                  </Text>
+                  <Text
+                    className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70"
+                    numberOfLines={1}
+                  >
+                    {context}
+                  </Text>
+                </View>
+                <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
+              </Button>
+            </Animated.View>
+          </View>
+        </AnimatedEntrance>
+      </Animated.View>
+    );
+  },
+  (previous, next) =>
+    previous.item.agent === next.item.agent &&
+    previous.item.hostId === next.item.hostId &&
+    previous.item.hostLabel === next.item.hostLabel &&
+    previous.item.primaryLabel === next.item.primaryLabel &&
+    previous.item.tabLabel === next.item.tabLabel &&
+    previous.showHost === next.showHost &&
+    previous.closing === next.closing,
+);
+
+function herdAgentKey(item: HerdQueueAgent): string {
+  return `${item.hostId}:${item.agent.terminal_id}`;
+}
+
+function getHerdAgentLayout(
+  _data: ArrayLike<HerdQueueAgent> | null | undefined,
+  index: number,
+) {
+  const length = HERD_AGENT_ROW_HEIGHT + 8;
+  return { length, offset: length * index, index };
+}
+
+function AgentRowSeparator() {
+  return <View className="h-2" />;
 }
 
 function Metric({ value, label, status }: { value: number; label: string; status?: string }) {

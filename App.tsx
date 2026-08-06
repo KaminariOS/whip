@@ -1,6 +1,13 @@
 import './global.css';
 
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { BlurTargetView } from 'expo-blur';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
@@ -25,7 +32,7 @@ import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
-import { WhipMark } from './src/components/app-ui';
+import { ReducedMotionProvider, WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName, resolveJumpHostChain } from './src/lib/hostProfiles';
 import {
@@ -44,6 +51,7 @@ import {
   shouldNotifyAgentTransition,
 } from './src/lib/agentStatusEvents';
 import { isHerdrProtocolMismatch } from './src/lib/herdrProtocol';
+import { shouldRefreshLiveHost } from './src/lib/liveHostHeartbeat';
 import { nextReconnect } from './src/lib/reconnectPolicy';
 import {
   incrementTerminalControlUsage,
@@ -160,7 +168,8 @@ const guiFontAssets = {
   [terminalFontFamily]: require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf'),
 };
 
-const LIVE_HOST_HEARTBEAT_MS = 15_000;
+const LIVE_HOST_HEALTHCHECK_MS = 15_000;
+const LIVE_HOST_RECONCILE_MS = 120_000;
 
 interface LiveRuntime {
   client: HerdrClient;
@@ -211,8 +220,10 @@ function App() {
 
   return (
     <SafeAreaProvider>
-      <AppContent />
-      <PortalHost />
+      <ReducedMotionProvider>
+        <AppContent />
+        <PortalHost />
+      </ReducedMotionProvider>
     </SafeAreaProvider>
   );
 }
@@ -741,8 +752,19 @@ function AppContent() {
     await refreshHostSnapshot(sessionId);
   }
 
-  const resumeLiveConnections = useEffectEvent(() => {
-    for (const sessionId of runtimes.current.keys()) {
+  const resumeLiveConnections = useEffectEvent((reconcile = false) => {
+    for (const session of liveSessionsRef.current.sessions) {
+      const sessionId = session.id;
+      const runtime = runtimes.current.get(sessionId);
+      if (
+        !runtime ||
+        !shouldRefreshLiveHost(
+          session,
+          runtime.eventStatus === 'open',
+          reconcile,
+        )
+      )
+        continue;
       refreshHost(sessionId).catch(() => undefined);
     }
   });
@@ -868,15 +890,19 @@ function AppContent() {
     if (liveSessions.sessions.length === 0) return;
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
-        resumeLiveConnections();
+        resumeLiveConnections(true);
       }
     });
     const heartbeat = setInterval(() => {
-      if (AppState.currentState === 'active') resumeLiveConnections();
-    }, LIVE_HOST_HEARTBEAT_MS);
+      if (AppState.currentState === 'active') resumeLiveConnections(false);
+    }, LIVE_HOST_HEALTHCHECK_MS);
+    const reconciliation = setInterval(() => {
+      if (AppState.currentState === 'active') resumeLiveConnections(true);
+    }, LIVE_HOST_RECONCILE_MS);
     return () => {
       subscription.remove();
       clearInterval(heartbeat);
+      clearInterval(reconciliation);
     };
   }, [liveSessions.sessions.length]);
 
@@ -1343,19 +1369,23 @@ function AppContent() {
   const activeSession = getActiveLiveHostSession(liveSessions);
   const activeRuntime = activeSession ? runtimes.current.get(activeSession.id) : undefined;
   const activeClient = activeRuntime?.client;
-  const terminalTargets: TerminalRenderTarget[] = liveSessions.sessions.flatMap(session => {
-    const runtime = runtimes.current.get(session.id);
-    if (!runtime) return [];
-    return session.terminals.sessions.map(terminal => ({
-      key: terminalRendererKey(session.id, terminal.terminalId),
-      hostSessionId: session.id,
-      client: runtime.client,
-      session: terminal,
-      scroll: session.snapshot.panes.find(
-        pane => pane.terminal_id === terminal.terminalId,
-      )?.scroll,
-    }));
-  });
+  const terminalTargets: TerminalRenderTarget[] = useMemo(
+    () =>
+      liveSessions.sessions.flatMap(session => {
+        const runtime = runtimes.current.get(session.id);
+        if (!runtime) return [];
+        return session.terminals.sessions.map(terminal => ({
+          key: terminalRendererKey(session.id, terminal.terminalId),
+          hostSessionId: session.id,
+          client: runtime.client,
+          session: terminal,
+          scroll: session.snapshot.panes.find(
+            pane => pane.terminal_id === terminal.terminalId,
+          )?.scroll,
+        }));
+      }),
+    [liveSessions.sessions],
+  );
   const snapshot = activeSession?.snapshot;
   const selectedPane = selectedPaneId && snapshot
     ? snapshot.panes.find(pane => pane.pane_id === selectedPaneId) || null
@@ -1366,16 +1396,20 @@ function AppContent() {
   const selectedHerdWorkspaceId = selectedHerdHostId
     ? herdWorkspaceFilterIds[selectedHerdHostId] ?? null
     : null;
-  const herdQueues: HerdHostQueue[] = liveSessions.sessions.map(session => ({
-    id: session.id,
-    label: hostDisplayName(session.host),
-    address: session.host.host,
-    running: session.snapshot.server.running,
-    refreshing: session.sync.status === 'syncing',
-    agents: session.snapshot.agents,
-    workspaces: session.snapshot.workspaces,
-    tabs: session.snapshot.tabs,
-  }));
+  const herdQueues: HerdHostQueue[] = useMemo(
+    () =>
+      liveSessions.sessions.map(session => ({
+        id: session.id,
+        label: hostDisplayName(session.host),
+        address: session.host.host,
+        running: session.snapshot.server.running,
+        refreshing: session.sync.status === 'syncing',
+        agents: session.snapshot.agents,
+        workspaces: session.snapshot.workspaces,
+        tabs: session.snapshot.tabs,
+      })),
+    [liveSessions.sessions],
+  );
 
   const refreshActive = async () => {
     if (activeSession) await refreshHost(activeSession.id);
@@ -1389,7 +1423,7 @@ function AppContent() {
   };
 
   const openAgentTerminal = (sessionId: string, agent: AgentInfo) => {
-    const session = findLiveHostSession(liveSessions, sessionId);
+    const session = findLiveHostSession(liveSessionsRef.current, sessionId);
     const pane = session?.snapshot.panes.find(item => item.pane_id === agent.pane_id);
     if (!pane) return;
     openPaneTerminal(sessionId, pane, true);
@@ -1476,9 +1510,13 @@ function AppContent() {
 
   const terminalVisible = navigation.tab === 'terminal' && !editorProfile;
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
-  const activeTerminalVisible = immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
-  const fullscreenTerminalVisible = activeTerminalVisible && terminalPreferences.fullscreen;
-  const fullscreenVisible = immersiveTerminal ? fullscreenTerminalVisible : fullscreenApp;
+  const activeTerminalVisible =
+    immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
+  const fullscreenTerminalVisible =
+    activeTerminalVisible && terminalPreferences.fullscreen;
+  const fullscreenVisible = immersiveTerminal
+    ? fullscreenTerminalVisible
+    : fullscreenApp;
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
     hostId: session.id,
     label: hostDisplayName(session.host),

@@ -37,12 +37,13 @@ describe('Herd tab swipe actions', () => {
 
     expect(screen).toContain('onCloseTab(item.hostId, item.agent.tab_id)');
     expect(screen).toContain('shouldCloseHerdTabSwipe(gesture.dx, gesture.vx)');
-    expect(screen).toContain('const visibleSorted = sorted.filter(');
-    expect(screen).toContain('{visibleSorted.map((item, index) => (');
-    expect(screen).toContain('translateX.value = withTiming(-Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG)');
-    expect(screen).toContain('rowHeight.value = withDelay(50, withTiming(0');
+    expect(screen).toMatch(/const visibleSorted = useMemo\([\s\S]*?sorted\.filter\(/);
+    expect(screen).toContain('data={selectedQueue && !selectedQueue.running ? [] : visibleSorted}');
+    expect(screen).toContain('renderItem={renderAgent}');
+    expect(screen).toMatch(/translateX\.value = withTiming\(\s*-Math\.max\(rowWidthRef\.current, HERD_TAB_MAX_DRAG\)/);
+    expect(screen).toMatch(/rowHeight\.value = withDelay\(\s*50,\s*withTiming\(\s*0/);
     expect(screen).toContain('scheduleOnRN(finishClose, Boolean(finished))');
-    expect(screen).toContain('<Icon as={X} className="text-destructive-foreground" size={22} />');
+    expect(screen).toMatch(/<Icon\s+as=\{X\}\s+className="text-destructive-foreground"\s+size=\{22\}\s*\/>/);
     expect(screen).not.toContain('text-destructive-foreground">{t(\'common.close\')}');
     expect(screen).not.toContain('variant="destructive"');
     expect(app).toContain('await runtime.client.closeTab(tabId);');

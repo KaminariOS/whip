@@ -7,10 +7,16 @@ describe('herd agent row layout', () => {
     'utf8',
   );
 
-  it('separates agent rows into padded glass surfaces', () => {
-    expect(screen).toContain('<View className="gap-2">');
+  it('virtualizes agent rows as padded glass surfaces', () => {
+    expect(screen).toContain('<FlatList');
+    expect(screen).toContain('windowSize={7}');
+    expect(screen).toContain('removeClippedSubviews');
+    expect(screen).toContain('ItemSeparatorComponent={AgentRowSeparator}');
+    expect(screen).toContain('const AgentRow = memo(');
     expect(screen).toContain('rounded-xl border border-white/30');
-    expect(screen).toContain('min-h-[90px] w-full justify-start gap-3 rounded-none px-3');
+    expect(screen).toContain(
+      'min-h-[90px] w-full justify-start gap-3 rounded-none px-3',
+    );
   });
 
   it('only reveals the destructive treatment while swiping', () => {
