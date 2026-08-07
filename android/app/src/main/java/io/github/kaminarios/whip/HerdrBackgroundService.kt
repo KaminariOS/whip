@@ -5,16 +5,21 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.content.edit
+import com.facebook.react.HeadlessJsTaskService
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReactContext
+import com.facebook.react.jstasks.HeadlessJsTaskConfig
 
-class HerdrBackgroundService : Service() {
+class HerdrBackgroundService : HeadlessJsTaskService() {
   private var wakeLock: PowerManager.WakeLock? = null
+  private var monitoringTaskStarted = false
+  private var monitoringReactContext: ReactContext? = null
 
   override fun onCreate() {
     super.onCreate()
@@ -30,17 +35,36 @@ class HerdrBackgroundService : Service() {
       ?: preferences.getInt(EXTRA_HOST_COUNT, 1)
     preferences.edit { putInt(EXTRA_HOST_COUNT, hostCount) }
     promoteToForeground(hostCount)
-    // The React Native runtime owns the SSH monitor. Do not restart only the
-    // notification after Android has killed the whole application process.
+    keepReactNativeMonitoringActive()
+    // Do not restart only the notification after Android has killed the whole
+    // application process. The task is useful only alongside the live SSH runtimes.
     return START_NOT_STICKY
   }
 
-  override fun onBind(intent: Intent?): IBinder? = null
+  override fun onBind(intent: Intent): IBinder? = null
 
   override fun onDestroy() {
+    reactContext?.emitDeviceEvent(BACKGROUND_MONITORING_STOP_EVENT, null)
+    monitoringTaskStarted = false
+    monitoringReactContext = null
     wakeLock?.let { if (it.isHeld) it.release() }
     wakeLock = null
     super.onDestroy()
+  }
+
+  private fun keepReactNativeMonitoringActive() {
+    val currentReactContext = reactContext
+    if (monitoringTaskStarted && monitoringReactContext === currentReactContext) return
+    startTask(
+      HeadlessJsTaskConfig(
+        BACKGROUND_MONITORING_TASK,
+        Arguments.createMap(),
+        0,
+        true,
+      ),
+    )
+    monitoringTaskStarted = true
+    monitoringReactContext = currentReactContext
   }
 
   private fun createNotificationChannel() {
@@ -114,5 +138,7 @@ class HerdrBackgroundService : Service() {
     private const val CHANNEL_ID = "herdr-background-monitoring"
     private const val NOTIFICATION_ID = 1937
     private const val PREFERENCES = "herdr-background-monitoring"
+    private const val BACKGROUND_MONITORING_TASK = "HerdrBackgroundMonitoring"
+    private const val BACKGROUND_MONITORING_STOP_EVENT = "HerdrBackgroundMonitoringStopped"
   }
 }

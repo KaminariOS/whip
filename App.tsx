@@ -898,10 +898,10 @@ function AppContent() {
       }
     });
     const heartbeat = setInterval(() => {
-      if (AppState.currentState === 'active') resumeLiveConnections(false);
+      resumeLiveConnections(false);
     }, LIVE_HOST_HEALTHCHECK_MS);
     const reconciliation = setInterval(() => {
-      if (AppState.currentState === 'active') resumeLiveConnections(true);
+      resumeLiveConnections(true);
     }, LIVE_HOST_RECONCILE_MS);
     return () => {
       subscription.remove();
