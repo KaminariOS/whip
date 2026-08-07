@@ -204,7 +204,7 @@ export function TerminalScreen({
   const [composeText, setComposeText] = useState('');
   const [composeAttachments, setComposeAttachments] = useState<ComposeAttachment[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [keyboardEnabled, setKeyboardEnabled] = useState(true);
+  const [keyboardEnabled, setKeyboardEnabled] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [scrollPosition, setScrollPosition] = useState(activeTarget?.scroll);
@@ -301,12 +301,13 @@ export function TerminalScreen({
       return;
     }
     wasVisible.current = true;
+    renderer.current?.blur();
+    Keyboard.dismiss();
     const timer = setTimeout(() => {
       renderer.current?.fit();
-      if (keyboardEnabled && keyboardVisible) renderer.current?.focus();
     }, 40);
     return () => clearTimeout(timer);
-  }, [keyboardEnabled, keyboardVisible, ready, visible]);
+  }, [ready, visible]);
 
   useEffect(() => {
     if (!ready) return;

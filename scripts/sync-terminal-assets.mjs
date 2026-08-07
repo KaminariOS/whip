@@ -178,7 +178,7 @@ const terminalSessionHtml = `<!doctype html>
     const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');
     let lastTap = null;
     let doubleTapAction = 'tab';
-    let keyboardEnabled = true;
+    let keyboardEnabled = false;
     let localScrollback = false;
     installAndroidImeBridge(terminal, send, navigator.userAgent);
     const controlSequenceForKey = key => {
@@ -559,6 +559,7 @@ const terminalSessionHtml = `<!doctype html>
         return;
       }
       if (!touch.moved && !touch.longPressed && point) {
+        terminal.focus();
         const now = { time: Date.now(), x: point.clientX, y: point.clientY };
         if (doubleTapAction !== 'none' && lastTap && now.time - lastTap.time <= doubleTapTimeoutMs && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) <= doubleTapDistancePx) {
           event.preventDefault();
@@ -738,7 +739,6 @@ const terminalHtml = `<!doctype html>
       if (entry) {
         entry.root.style.transform = 'translateX(0)';
         call(key, 'herdrFit');
-        call(key, 'herdrFocus');
       }
     };
     window.herdrSwipe = (originKey, targetKey, direction, offset) => {

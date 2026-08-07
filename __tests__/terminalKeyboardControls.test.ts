@@ -60,7 +60,7 @@ describe('terminal keyboard controls', () => {
     expect(screen).not.toContain('CTRL+C');
   });
 
-  it('starts with terminal keyboard input enabled and can switch to selection mode', () => {
+  it('starts in selection mode and can enable terminal keyboard input', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/TerminalScreen.tsx'),
       'utf8',
@@ -70,13 +70,36 @@ describe('terminal keyboard controls', () => {
       'utf8',
     );
 
-    expect(screen).toContain('const [keyboardEnabled, setKeyboardEnabled] = useState(true)');
+    expect(screen).toContain('const [keyboardEnabled, setKeyboardEnabled] = useState(false)');
     expect(screen).toContain('renderer.current?.setKeyboardEnabled(keyboardEnabled)');
     expect(screen).toContain('Keyboard.dismiss()');
     expect(screen).toContain('{...(keyboardEnabled ? terminalPanHandlers : undefined)}');
-    expect(assets).toContain('let keyboardEnabled = true');
+    expect(assets).toContain('let keyboardEnabled = false');
     expect(assets).toContain('window.herdrSetKeyboardEnabled = enabled =>');
     expect(assets).toContain('if (!keyboardEnabled) terminal.blur()');
+  });
+
+  it('opens a terminal with the keyboard hidden until the user focuses it', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/TerminalScreen.tsx'),
+      'utf8',
+    );
+
+    const visibilityEffect = screen.slice(
+      screen.indexOf("if (!ready) {\n      wasVisible.current = visible;"),
+      screen.indexOf('renderer.current?.setKeyboardEnabled(keyboardEnabled);'),
+    );
+    expect(visibilityEffect).toContain('renderer.current?.blur();');
+    expect(visibilityEffect).toContain('Keyboard.dismiss();');
+    expect(visibilityEffect).not.toContain('renderer.current?.focus();');
+
+    const assets = readFileSync(
+      resolve(__dirname, '../scripts/sync-terminal-assets.mjs'),
+      'utf8',
+    );
+    expect(assets).toContain(
+      'if (!touch.moved && !touch.longPressed && point) {\n        terminal.focus();',
+    );
   });
 
   it('keeps the composer from reopening the keyboard while selection mode is active', () => {

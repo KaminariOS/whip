@@ -153,8 +153,11 @@ describe('Android terminal assets', () => {
     expect(renderer).toContain('textZoom={100}');
   });
 
-  it('resets the activated terminal after a native-driven tab swipe settles', () => {
+  it('resets an activated terminal without automatically focusing its keyboard', () => {
     const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
+    const activateScript = html.match(
+      /window\.herdrActivate = key => \{[\s\S]*?\n {4}\};/,
+    )?.[0];
     const hostScript = html.match(
       /(const terminals = new Map\(\);[\s\S]*?)(?= {4}window\.herdrWriteBase64Chunk)/,
     )?.[1];
@@ -192,6 +195,8 @@ describe('Android terminal assets', () => {
       },
     };
 
+    expect(activateScript).toContain("call(key, 'herdrFit');");
+    expect(activateScript).not.toContain('herdrFocus');
     expect(hostScript).toBeDefined();
     new Script(hostScript!).runInNewContext(context);
     context.window.herdrActivate!('origin');
