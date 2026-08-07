@@ -197,7 +197,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
   }, [inject]);
 
-  const connectEntry = useCallback((entry: RendererEntry) => {
+  const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
     if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
     if (entry.connecting || entry.controllerAttached) return;
     entry.connecting = true;
@@ -208,7 +208,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (!retained) {
       entry.resetOnNextFrame = true;
       entry.pendingFrames = [];
-      reportStatus(entry.target, 'connecting', undefined, entry.reconnectAttempt);
+      if (showConnecting) {
+        reportStatus(entry.target, 'connecting', undefined, entry.reconnectAttempt);
+      }
     }
     const scheduleReconnect = (reason: string) => {
       if (entries.current.get(entry.target.key) !== entry) return;
@@ -404,7 +406,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           entry.controllerAttached = false;
           entry.connecting = false;
           entry.reconnectAttempt = 0;
-          connectEntry(entry);
+          connectEntry(entry, !preferences.pauseResizeInBackground);
         }
       }
       if (preferences.pauseResizeInBackground && visible && activeKey.current) {

@@ -108,6 +108,15 @@ describe('terminal renderer lifecycle', () => {
     expect(renderer).toContain('window.herdrFit(${JSON.stringify(activeKey.current)});');
   });
 
+  it('reattaches a deliberately released background controller without a reconnect overlay', () => {
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
+
+    expect(renderer).toContain('const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {');
+    expect(renderer).toContain('if (showConnecting) {');
+    expect(renderer).toContain('connectEntry(entry, !preferences.pauseResizeInBackground);');
+    expect(renderer).toContain("reportStatus(entry.target, 'disconnected', reason, nextAttempt);");
+  });
+
   it('reattaches all terminal channels when the SSH control session is replaced', () => {
     const client = readSource('src/services/HerdrClient.ts');
 

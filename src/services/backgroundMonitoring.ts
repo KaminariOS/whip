@@ -1,7 +1,7 @@
 import { NativeModules, Platform } from 'react-native';
 
 interface HerdrBackgroundNativeModule {
-  start(hostCount: number, connectedHostCount: number): Promise<void>;
+  start(hostCount: number): Promise<void>;
   stop(): Promise<void>;
   armPersistentAlert(
     notificationIdentifier: string,
@@ -19,15 +19,10 @@ function nativeModule(): HerdrBackgroundNativeModule | null {
   return module;
 }
 
-export async function startBackgroundMonitoring(
-  hostCount: number,
-  connectedHostCount: number,
-): Promise<void> {
+export async function startBackgroundMonitoring(hostCount: number): Promise<void> {
   const module = nativeModule();
   if (!module) return;
-  const monitored = Math.max(1, Math.trunc(hostCount));
-  const connected = Math.min(monitored, Math.max(0, Math.trunc(connectedHostCount)));
-  await module.start(monitored, connected);
+  await module.start(Math.max(1, Math.trunc(hostCount)));
 }
 
 export async function stopBackgroundMonitoring(): Promise<void> {
