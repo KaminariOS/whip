@@ -102,6 +102,19 @@ describe('terminal keyboard controls', () => {
     );
   });
 
+  it('clears focused input when the app changes state without disabling keyboard mode', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/TerminalScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain("AppState.addEventListener('change', dismissFocusedInput)");
+    expect(screen).toContain('renderer.current?.blur();');
+    expect(screen).toContain('composeInputRef.current?.blur();');
+    expect(screen).toContain('Keyboard.dismiss();');
+    expect(screen).not.toContain('setKeyboardEnabled(false)');
+  });
+
   it('keeps the composer from reopening the keyboard while selection mode is active', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/TerminalScreen.tsx'),

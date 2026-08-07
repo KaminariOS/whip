@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Option, Paperclip, Search, Send, X, type LucideIcon } from 'lucide-react-native';
-import { Clipboard, Image, Keyboard, Modal, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
+import { AppState, Clipboard, Image, Keyboard, Modal, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -314,6 +314,16 @@ export function TerminalScreen({
     renderer.current?.setKeyboardEnabled(keyboardEnabled);
     if (!keyboardEnabled) Keyboard.dismiss();
   }, [keyboardEnabled, ready]);
+
+  useEffect(() => {
+    const dismissFocusedInput = () => {
+      renderer.current?.blur();
+      composeInputRef.current?.blur();
+      Keyboard.dismiss();
+    };
+    const subscription = AppState.addEventListener('change', dismissFocusedInput);
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (!linkScanRequest || !ready || !visible) return;
