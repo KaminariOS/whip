@@ -92,6 +92,9 @@ function WorkspacePill({
 }) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
+  const activeTextStyle = active
+    ? { color: appGlassEnabled ? colors.primary : colors.onPrimary }
+    : undefined;
   const { t } = useTranslation();
   return (
     <View
@@ -104,8 +107,8 @@ function WorkspacePill({
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
       <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0" variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
         <AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={12} />
-        <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', active && (appGlassEnabled ? 'text-primary' : 'text-primary-foreground'))}>{label}</Text>
-        <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', active && (appGlassEnabled ? 'text-primary' : 'text-primary-foreground'))}>{count}</Text>
+        <Text numberOfLines={1} className="max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground" style={activeTextStyle}>{label}</Text>
+        <Text className="font-mono text-[8px] leading-[18px] text-muted-foreground" style={activeTextStyle}>{count}</Text>
       </Button>
       {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className="h-8 w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
     </View>

@@ -30,6 +30,24 @@ describe('session tab labels', () => {
     );
   });
 
+  it('uses resolved theme colors for selected host and space labels', () => {
+    const hostRail = readFileSync(
+      resolve(__dirname, '../src/components/LiveSessionRail.tsx'),
+      'utf8',
+    );
+    const workspaceRail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
+      'utf8',
+    );
+
+    for (const rail of [hostRail, workspaceRail]) {
+      expect(rail).toContain(
+        'color: appGlassEnabled ? colors.primary : colors.onPrimary',
+      );
+      expect(rail.match(/style=\{activeTextStyle\}/g)).toHaveLength(2);
+    }
+  });
+
   it('renders an immediate close control on every space', () => {
     const rail = readFileSync(
       resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
