@@ -53,7 +53,7 @@ import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
-import { AnimatedAgentStatusGlyph, AnimatedEntrance, hapticPress, StatusBadge } from './app-ui';
+import { AnimatedAgentStatusGlyph, hapticPress, StatusBadge } from './app-ui';
 import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import { Button } from './ui/button';
@@ -329,10 +329,9 @@ export function HerdScreen({
   );
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
   const renderAgent = useCallback(
-    ({ item, index }: ListRenderItemInfo<HerdQueueAgent>) => (
+    ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
       <AgentRow
         item={item}
-        index={index}
         showHost={selectedHostId === null}
         showSpace={selectedWorkspaceId === null}
         onOpenTerminal={onOpenTerminal}
@@ -642,7 +641,6 @@ function commandComposerStyle(keyboardInset: number) {
 const AgentRow = memo(
   function AgentRow({
     item,
-    index,
     showHost,
     showSpace,
     closing,
@@ -650,7 +648,6 @@ const AgentRow = memo(
     onOpenTerminal,
   }: {
     item: HerdQueueAgent;
-    index: number;
     showHost: boolean;
     showSpace: boolean;
     closing: boolean;
@@ -758,7 +755,7 @@ const AgentRow = memo(
 
     return (
       <Animated.View className="overflow-hidden rounded-xl" style={rowStyle}>
-        <AnimatedEntrance delay={Math.min(index * 45, 225)}>
+        <>
           <View
             className="relative min-h-[92px] overflow-hidden rounded-xl"
             onLayout={event => {
@@ -857,7 +854,7 @@ const AgentRow = memo(
               </Button>
             </Animated.View>
           </View>
-        </AnimatedEntrance>
+        </>
       </Animated.View>
     );
   },

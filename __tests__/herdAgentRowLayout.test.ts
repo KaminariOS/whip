@@ -21,6 +21,9 @@ describe('herd agent row layout', () => {
     expect(screen).toContain(
       'min-h-[90px] w-full justify-start gap-3 rounded-none px-3',
     );
+    expect(screen).not.toContain(
+      '<AnimatedEntrance delay={Math.min(index * 45, 225)}>',
+    );
   });
 
   it('lets enlarged Android text determine the resting row height', () => {
