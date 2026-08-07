@@ -79,6 +79,21 @@ describe('terminal keyboard controls', () => {
     expect(assets).toContain('if (!keyboardEnabled) terminal.blur()');
   });
 
+  it('syncs keyboard mode when a terminal renderer becomes active for the first time', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/TerminalScreen.tsx'),
+      'utf8',
+    );
+
+    const keyboardModeEffect = screen.slice(
+      screen.indexOf('renderer.current?.setKeyboardEnabled(keyboardEnabled);'),
+      screen.indexOf("AppState.addEventListener('change', dismissFocusedInput)"),
+    );
+    expect(keyboardModeEffect).toContain(
+      '}, [activeTarget?.key, keyboardEnabled, ready]);',
+    );
+  });
+
   it('opens a terminal with the keyboard hidden until the user focuses it', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/TerminalScreen.tsx'),

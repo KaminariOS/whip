@@ -315,7 +315,7 @@ export function TerminalScreen({
     if (!ready) return;
     renderer.current?.setKeyboardEnabled(keyboardEnabled);
     if (!keyboardEnabled) Keyboard.dismiss();
-  }, [keyboardEnabled, ready]);
+  }, [activeTarget?.key, keyboardEnabled, ready]);
 
   useEffect(() => {
     const dismissFocusedInput = () => {
