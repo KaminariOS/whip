@@ -16,8 +16,10 @@ describe('Android SSH terminal protocol stream', () => {
     expect(javascript).toContain('RNSSHClient.startLineShell');
     expect(javascript).toContain('startHerdrEventStream(socketPath, handler, callback)');
     expect(javascript).toContain('requestHerdrApi(socketPath, request)');
+    expect(javascript).toContain('measureHostLatency()');
     expect(declarations).toContain('startLineShell(ptyType: PtyType');
     expect(declarations).toContain('requestHerdrApi(socketPath: string, request: string)');
+    expect(declarations).toContain('measureHostLatency(): Promise<number>');
     expect(android).toContain('public void startLineShell');
     expect(android).toContain('client._bufferedReader.readLine()');
     expect(android).toContain('sendLineShellEvent(key, line)');
@@ -25,6 +27,7 @@ describe('Android SSH terminal protocol stream', () => {
     expect(android).toContain('client._bufferedReader.read(chars)');
     expect(android).toContain('public void startHerdrEventStream');
     expect(android).toContain('public void requestHerdrApi');
+    expect(android).toContain('public void measureHostLatency');
     expect(android).toContain('public void getRemoteHome');
   });
 

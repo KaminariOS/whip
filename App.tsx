@@ -187,7 +187,7 @@ interface LiveRuntime {
 
 interface SnapshotMeasurement {
   snapshot: HerdrSnapshot;
-  latencyMs: number;
+  latencyMs: number | null;
 }
 
 interface ConnectOptions {
@@ -671,9 +671,11 @@ function AppContent() {
     runtime.refresh = createRefreshCoordinator(
       async () => {
         setLiveSessions(current => beginLiveHostSync(current, sessionId).state);
-        const startedAt = Date.now();
+        // Measure device-to-host network RTT separately from the much larger
+        // SSH/Herdr snapshot operation so control-plane work cannot inflate it.
+        const latencyMs = await runtime.client.measureLatency().catch(() => null);
         const snapshot = await runtime.client.snapshot();
-        return { snapshot, latencyMs: elapsedLatencyMs(startedAt) };
+        return { snapshot, latencyMs };
       },
       measurement => {
         if (runtimes.current.get(sessionId) !== runtime) return;
@@ -1028,9 +1030,7 @@ function AppContent() {
           trustedKeys += 1;
         }
       }
-      const initialSnapshotStartedAt = Date.now();
       const initial = await runtime.client.initialSnapshot();
-      const initialLatencyMs = elapsedLatencyMs(initialSnapshotStartedAt);
       const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
       if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
@@ -1052,7 +1052,7 @@ function AppContent() {
           request.generation,
           initial,
           new Date().toISOString(),
-          initialLatencyMs,
+          null,
         );
         return replaceLiveHostTerminals(next, sessionId, restoredTerminals);
       });
@@ -1864,10 +1864,6 @@ function LiveSessionView({
       onExit={onExit}
     />
   );
-}
-
-function elapsedLatencyMs(startedAt: number): number {
-  return Math.max(1, Date.now() - startedAt);
 }
 
 export default App;

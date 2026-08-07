@@ -592,6 +592,15 @@ export class HerdrClient {
     client?.closeHerdrEventStream();
   }
 
+  /** Measure device-to-host RTT without including SSH or snapshot work. */
+  async measureLatency(): Promise<number> {
+    const latencyMs = await this.requireClient().measureHostLatency();
+    if (!Number.isFinite(latencyMs) || latencyMs <= 0) {
+      throw new Error('Android returned an invalid host latency');
+    }
+    return Math.round(latencyMs);
+  }
+
   async startServer(): Promise<void> {
     const command = `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`;
     await this.requireClient().execute(this.loginShellCommand(command));

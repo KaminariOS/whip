@@ -31,7 +31,7 @@ export interface LiveHostSyncState {
   generation: number;
   error: string | null;
   lastSyncedAt: string | null;
-  /** Latest successful Herdr snapshot round-trip over the SSH control channel. */
+  /** Latest successful Android-to-host network round trip. */
   latencyMs: number | null;
 }
 

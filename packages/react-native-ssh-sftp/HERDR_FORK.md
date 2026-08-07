@@ -18,6 +18,8 @@ Herdr-specific changes:
 - send Herdr control requests directly to its Unix API socket through short-lived
   OpenSSH stream-local channels, avoiding remote shells, CLI startup, and PATH
   dependencies during normal operation;
+- measure Android-to-host network RTT directly, with a TCP-handshake fallback
+  when ICMP is blocked, so latency excludes SSH and Herdr control-plane work;
 - configure JSch server-alive probes so a half-open mobile SSH connection is
   closed after three missed 5-second probes, allowing the app to reconnect
   instead of leaving terminal and event streams frozen;

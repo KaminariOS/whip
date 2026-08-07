@@ -40,6 +40,7 @@ function apiClient(responseFor: (request: { method: string; params: Record<strin
   });
   return {
     requestHerdrApi,
+    measureHostLatency: jest.fn(async () => 42),
     getRemoteHome: jest.fn(async () => '/home/herdr'),
     closeAllHerdrBridges: jest.fn(),
     off: jest.fn(),
@@ -102,6 +103,54 @@ describe('direct Herdr API requests', () => {
     const methods = jest.mocked(native.requestHerdrApi).mock.calls
       .map(([, line]) => JSON.parse(line).method);
     expect(methods).toEqual(['session.snapshot']);
+  });
+
+  test('measures device-to-host latency instead of a session snapshot', async () => {
+    const native = apiClient(request => request.method === 'ping'
+      ? { type: 'pong' }
+      : { type: 'ok' });
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await expect(client.measureLatency()).resolves.toBe(42);
+
+    expect(native.measureHostLatency).toHaveBeenCalledTimes(1);
+    expect(native.requestHerdrApi).not.toHaveBeenCalled();
+  });
+
+  test('measures host latency independently while the event subscription is open', async () => {
+    const native = Object.assign(apiClient(request => request.method === 'session.snapshot'
+      ? {
+        type: 'session_snapshot',
+        snapshot: {
+          version: '0.7.4',
+          protocol: 17,
+          workspaces: [],
+          tabs: [],
+          panes: [],
+          layouts: [],
+          agents: [],
+        },
+      }
+      : { type: 'pong' }), {
+      startHerdrEventStream: jest.fn(async () => undefined),
+      writeHerdrEventStream: jest.fn(async () => undefined),
+      closeHerdrEventStream: jest.fn(),
+    });
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await client.initialSnapshot();
+    await client.openEventStream([], jest.fn());
+    jest.mocked(native.measureHostLatency).mockResolvedValueOnce(37);
+
+    await expect(client.measureLatency()).resolves.toBe(37);
+
+    const directMethods = jest.mocked(native.requestHerdrApi).mock.calls
+      .map(([, line]) => JSON.parse(line).method);
+    expect(directMethods).toEqual(['session.snapshot']);
+    expect(native.measureHostLatency).toHaveBeenCalledTimes(1);
+    expect(native.writeHerdrEventStream).toHaveBeenCalledTimes(1);
   });
 
   test('starts an agent in a new tab in the selected workspace', async () => {

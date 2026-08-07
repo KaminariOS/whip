@@ -564,6 +564,14 @@ class SSHClient {
             RNSSHClient.requestHerdrApi(socketPath, request, this._key, (error, response) => error ? reject(error) : resolve(response));
         });
     }
+    measureHostLatency() {
+        if (Platform.OS !== 'android') {
+            return Promise.reject(new Error('Host latency measurement is currently Android-only'));
+        }
+        return new Promise((resolve, reject) => {
+            RNSSHClient.measureHostLatency(this._key, (error, latencyMs) => error ? reject(error) : resolve(latencyMs));
+        });
+    }
     getRemoteHome() {
         if (Platform.OS !== 'android') {
             return Promise.reject(new Error('Remote home discovery is currently Android-only'));

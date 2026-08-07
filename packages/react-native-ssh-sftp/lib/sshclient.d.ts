@@ -278,6 +278,8 @@ export default class SSHClient {
     writeHerdrEventStream(value: string): Promise<void>;
     closeHerdrEventStream(): void;
     requestHerdrApi(socketPath: string, request: string): Promise<string>;
+    /** Measures device-to-host network RTT without SSH authentication or Herdr API work. */
+    measureHostLatency(): Promise<number>;
     getRemoteHome(): Promise<string>;
     startHerdrCommandStream(command: string, handler: (event: HerdrCommandStreamEvent) => void, callback?: CallbackFunction<void>): Promise<void>;
     writeHerdrCommandStream(value: string): Promise<void>;

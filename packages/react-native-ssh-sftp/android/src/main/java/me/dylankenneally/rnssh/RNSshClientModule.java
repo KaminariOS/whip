@@ -6,6 +6,7 @@ import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.os.Environment;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.Base64;
 import androidx.annotation.Nullable;
@@ -49,6 +50,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.IDN;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -61,6 +63,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.json.JSONObject;
 
@@ -80,6 +84,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   private static final int SSH_CHANNEL_CONNECT_TIMEOUT_MS = 5_000;
   private static final int SSH_SERVER_ALIVE_INTERVAL_MS = 5_000;
   private static final int SSH_SERVER_ALIVE_COUNT_MAX = 3;
+  private static final Pattern PING_TIME_PATTERN = Pattern.compile("time[=<]([0-9.]+)\\s*ms");
 
   private class HerdrBridgeConnection {
     volatile String terminalId;
@@ -1425,6 +1430,63 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           callback.invoke(error.getMessage(), null);
         } finally {
           if (channel != null) channel.disconnect();
+        }
+      }
+    }).start();
+  }
+
+  @ReactMethod
+  public void measureHostLatency(final String key, final Callback callback) {
+    new Thread(new Runnable() {
+      public void run() {
+        SSHClient client = clientPool.get(key);
+        if (client == null || client._session == null || !client._session.isConnected()) {
+          callback.invoke("client is null or disconnected", null);
+          return;
+        }
+        String host = client._session.getHost();
+        try {
+          Process process = new ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "2", host)
+              .redirectErrorStream(true)
+              .start();
+          BufferedReader reader = new BufferedReader(
+              new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)
+          );
+          String line;
+          while ((line = reader.readLine()) != null) {
+            Matcher matcher = PING_TIME_PATTERN.matcher(line);
+            if (matcher.find()) {
+              process.destroy();
+              callback.invoke(null, (double) Math.max(
+                  1,
+                  Math.round(Double.parseDouble(matcher.group(1)))
+              ));
+              return;
+            }
+          }
+          process.waitFor();
+        } catch (Exception error) {
+          Log.d(LOGTAG, "ICMP latency probe failed for " + host + ": " + error.getMessage());
+        }
+
+        // Some hosts block ICMP. A TCP handshake to the already configured SSH
+        // endpoint still measures network reachability without SSH auth or API work.
+        Socket socket = new Socket();
+        try {
+          long startedAt = SystemClock.elapsedRealtime();
+          socket.connect(new InetSocketAddress(host, client._session.getPort()), 2_000);
+          callback.invoke(null, (double) Math.max(
+              1,
+              SystemClock.elapsedRealtime() - startedAt
+          ));
+        } catch (Exception error) {
+          callback.invoke(error.getMessage(), null);
+        } finally {
+          try {
+            socket.close();
+          } catch (IOException ignored) {
+            // The probe socket may never have connected.
+          }
         }
       }
     }).start();
