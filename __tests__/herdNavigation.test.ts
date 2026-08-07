@@ -41,6 +41,7 @@ describe('terminal to Herd navigation', () => {
     expect(herd.indexOf("accessibilityLabel={t('herd.openSpace')}"))
       .toBeLessThan(herd.indexOf('<Metric value={queueAgents.length}'));
     expect(herd).toContain("accessibilityLabel={t('herd.startAgent')}");
+    expect(herd).toContain('className="mb-3 mt-1.5 flex-row justify-end gap-2"');
     expect(herd).toContain("<Text>{t('herd.agent')}</Text>");
     expect(herd).toContain('onStartAgent(');
     expect(herd).toContain('agentCommand.trim()');

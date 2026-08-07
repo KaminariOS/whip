@@ -437,7 +437,7 @@ export function HerdScreen({
             ) : (
               <>
                 {selectedQueue?.running && selectedWorkspace ? (
-                  <View className="mb-3 flex-row justify-end gap-2">
+                  <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
                     <Button
                       accessibilityLabel={t('herd.startAgent')}
                       className={cn('rounded-full px-4', appGlassEnabled && 'border')}
