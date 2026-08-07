@@ -26,6 +26,18 @@ describe('herd agent row layout', () => {
     );
   });
 
+  it('keeps queue controls and metrics outside the scrolling agent list', () => {
+    const fixedHeader = screen.indexOf('{selectedQueue?.running !== false ? (');
+    const scrollingList = screen.indexOf('<FlatList', fixedHeader);
+    const header = screen.slice(fixedHeader, scrollingList);
+
+    expect(fixedHeader).toBeGreaterThanOrEqual(0);
+    expect(scrollingList).toBeGreaterThan(fixedHeader);
+    expect(header).toContain("accessibilityLabel={t('herd.startAgent')}");
+    expect(header).toContain('<Metric value={queueAgents.length}');
+    expect(header).toContain("t('herd.attentionQueue')");
+  });
+
   it('lets enlarged Android text determine the resting row height', () => {
     expect(screen).toContain('const HERD_AGENT_ROW_MIN_HEIGHT = 92;');
     expect(screen).toContain(

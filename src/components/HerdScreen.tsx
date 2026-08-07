@@ -369,6 +369,78 @@ export function HerdScreen({
         </GlassSurface>
       ) : null}
 
+      {selectedQueue?.running !== false ? (
+        <View className="px-4">
+          {!selectedQueue ? (
+            <Text className="mb-6 px-1 pt-4 text-xs leading-[17px] text-muted-foreground">
+              {t('herd.mergedQueue', { hosts: hostCountLabel })}
+            </Text>
+          ) : null}
+
+          {selectedQueue?.running && selectedWorkspace ? (
+            <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
+              <Button
+                accessibilityLabel={t('herd.startAgent')}
+                className={cn('rounded-full px-4', appGlassEnabled && 'border')}
+                size="sm"
+                variant={appGlassEnabled ? 'ghost' : 'default'}
+                disabled={workspaceBusy || !agentCommand.trim()}
+                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+                onPress={hapticPress(startAgent)}
+              >
+                <Icon as={Plus} size={16} />
+                <Text>{t('herd.agent')}</Text>
+              </Button>
+              <Button
+                accessibilityLabel={t('herd.runCommand')}
+                className={cn('rounded-full px-4', appGlassEnabled && 'border')}
+                size="sm"
+                variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                disabled={workspaceBusy}
+                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+                onPress={hapticPress(openCommandRunner)}
+              >
+                <Icon as={Play} size={16} />
+                <Text>{t('herd.run')}</Text>
+              </Button>
+              <Button
+                accessibilityLabel={t('herd.openSpace')}
+                className={cn('rounded-full px-4', appGlassEnabled && 'border')}
+                size="sm"
+                variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                disabled={workspaceBusy}
+                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+                onPress={hapticPress(openSpace)}
+              >
+                <Icon as={SquareTerminal} size={16} />
+                <Text>{t('herd.open')}</Text>
+              </Button>
+            </View>
+          ) : null}
+
+          <View className="mb-6 flex-row">
+            <Metric value={queueAgents.length} label={t('herd.agents')} />
+            <Metric
+              value={working}
+              label={t('herd.working')}
+              status="working"
+            />
+            <Metric
+              value={blocked}
+              label={t('herd.needYou')}
+              status="blocked"
+            />
+            <Metric value={done} label={t('herd.done')} status="done" />
+          </View>
+
+          <View className="min-h-10 flex-row items-center">
+            <Text className="px-1 text-sm font-semibold text-muted-foreground">
+              {t('herd.attentionQueue')}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       <FlatList
         className="flex-1"
         contentContainerClassName="px-4 pb-8"
@@ -390,116 +462,44 @@ export function HerdScreen({
           />
         }
         ListHeaderComponent={
-          <>
-            {!selectedQueue ? (
-              <Text className="mb-6 px-1 pt-4 text-xs leading-[17px] text-muted-foreground">
-                {t('herd.mergedQueue', { hosts: hostCountLabel })}
-              </Text>
-            ) : null}
-
-            {selectedQueue && !selectedQueue.running ? (
-              <View className="min-h-[360px] items-center justify-center p-7">
-                <View className="size-16 items-center justify-center rounded-full bg-destructive/10">
-                  <Text className="text-[28px] font-bold text-destructive">
-                    !
-                  </Text>
-                </View>
-                <Text className="mt-[18px] text-xl font-semibold leading-[26px]">
-                  {t('herd.serverOffline')}
+          selectedQueue && !selectedQueue.running ? (
+            <View className="min-h-[360px] items-center justify-center p-7">
+              <View className="size-16 items-center justify-center rounded-full bg-destructive/10">
+                <Text className="text-[28px] font-bold text-destructive">
+                  !
                 </Text>
-                <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
-                  {t('herd.serverOfflineCopy', { host: selectedQueue.label })}
-                </Text>
-                <View className="mt-6 flex-row gap-2.5">
-                  <Button
-                    className="rounded-full px-5"
-                    disabled={selectedQueue.refreshing}
-                    onPress={hapticPress(() => onStartServer(selectedQueue.id))}
-                  >
-                    <Text>
-                      {selectedQueue.refreshing
-                        ? t('herd.starting')
-                        : t('herd.startServer')}
-                    </Text>
-                  </Button>
-                  <Button
-                    className="rounded-full px-5"
-                    variant="secondary"
-                    onPress={hapticPress(() =>
-                      onOpenSshShell(selectedQueue.id),
-                    )}
-                  >
-                    <Icon as={SquareTerminal} size={17} />
-                    <Text>{t('herd.openSshShell')}</Text>
-                  </Button>
-                </View>
               </View>
-            ) : (
-              <>
-                {selectedQueue?.running && selectedWorkspace ? (
-                  <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
-                    <Button
-                      accessibilityLabel={t('herd.startAgent')}
-                      className={cn('rounded-full px-4', appGlassEnabled && 'border')}
-                      size="sm"
-                      variant={appGlassEnabled ? 'ghost' : 'default'}
-                      disabled={workspaceBusy || !agentCommand.trim()}
-                      style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                      onPress={hapticPress(startAgent)}
-                    >
-                      <Icon as={Plus} size={16} />
-                      <Text>{t('herd.agent')}</Text>
-                    </Button>
-                    <Button
-                      accessibilityLabel={t('herd.runCommand')}
-                      className={cn('rounded-full px-4', appGlassEnabled && 'border')}
-                      size="sm"
-                      variant={appGlassEnabled ? 'ghost' : 'secondary'}
-                      disabled={workspaceBusy}
-                      style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                      onPress={hapticPress(openCommandRunner)}
-                    >
-                      <Icon as={Play} size={16} />
-                      <Text>{t('herd.run')}</Text>
-                    </Button>
-                    <Button
-                      accessibilityLabel={t('herd.openSpace')}
-                      className={cn('rounded-full px-4', appGlassEnabled && 'border')}
-                      size="sm"
-                      variant={appGlassEnabled ? 'ghost' : 'secondary'}
-                      disabled={workspaceBusy}
-                      style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                      onPress={hapticPress(openSpace)}
-                    >
-                      <Icon as={SquareTerminal} size={16} />
-                      <Text>{t('herd.open')}</Text>
-                    </Button>
-                  </View>
-                ) : null}
-
-                <View className="mb-6 flex-row">
-                  <Metric value={queueAgents.length} label={t('herd.agents')} />
-                  <Metric
-                    value={working}
-                    label={t('herd.working')}
-                    status="working"
-                  />
-                  <Metric
-                    value={blocked}
-                    label={t('herd.needYou')}
-                    status="blocked"
-                  />
-                  <Metric value={done} label={t('herd.done')} status="done" />
-                </View>
-
-                <View className="min-h-10 flex-row items-center">
-                  <Text className="px-1 text-sm font-semibold text-muted-foreground">
-                    {t('herd.attentionQueue')}
+              <Text className="mt-[18px] text-xl font-semibold leading-[26px]">
+                {t('herd.serverOffline')}
+              </Text>
+              <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
+                {t('herd.serverOfflineCopy', { host: selectedQueue.label })}
+              </Text>
+              <View className="mt-6 flex-row gap-2.5">
+                <Button
+                  className="rounded-full px-5"
+                  disabled={selectedQueue.refreshing}
+                  onPress={hapticPress(() => onStartServer(selectedQueue.id))}
+                >
+                  <Text>
+                    {selectedQueue.refreshing
+                      ? t('herd.starting')
+                      : t('herd.startServer')}
                   </Text>
-                </View>
-              </>
-            )}
-          </>
+                </Button>
+                <Button
+                  className="rounded-full px-5"
+                  variant="secondary"
+                  onPress={hapticPress(() =>
+                    onOpenSshShell(selectedQueue.id),
+                  )}
+                >
+                  <Icon as={SquareTerminal} size={17} />
+                  <Text>{t('herd.openSshShell')}</Text>
+                </Button>
+              </View>
+            </View>
+          ) : null
         }
         ListEmptyComponent={
           selectedQueue?.running === false ? null : (
