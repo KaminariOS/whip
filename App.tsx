@@ -1439,13 +1439,33 @@ function AppContent() {
   const selectHerdWorkspace = async (sessionId: string, workspaceId: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));
     await runtime.client.focusWorkspace(workspaceId);
     await refreshHost(sessionId);
   };
 
   const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {
-    await selectHerdWorkspace(sessionId, workspaceId);
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));
     selectLiveHost(sessionId, 'terminal');
+    await runtime.client.focusWorkspace(workspaceId);
+    const refreshedSnapshot = await refreshHostSnapshot(sessionId);
+    const workspace = refreshedSnapshot?.workspaces.find(item => item.workspace_id === workspaceId);
+    const tabId = workspace?.active_tab_id
+      || refreshedSnapshot?.tabs.find(item => item.workspace_id === workspaceId && item.focused)?.tab_id
+      || refreshedSnapshot?.tabs.find(item => item.workspace_id === workspaceId)?.tab_id;
+    const pane = refreshedSnapshot?.panes.find(item => item.tab_id === tabId && item.focused)
+      || refreshedSnapshot?.panes.find(item => item.tab_id === tabId);
+    if (pane) {
+      openPaneTerminal(sessionId, pane);
+    } else {
+      setLiveSessions(current => updateLiveHostTerminals(
+        current,
+        sessionId,
+        terminals => ({ ...terminals, activeTerminalId: null }),
+      ));
+    }
   };
 
   const createHerdWorkspace = async (sessionId: string, name: string, cwd: string) => {
@@ -1476,22 +1496,36 @@ function AppContent() {
     await refreshHost(sessionId);
   };
 
-  const startHerdAgent = async (sessionId: string, workspaceId: string, command: string) => {
-    const runtime = runtimes.current.get(sessionId);
-    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
-    await runtime.client.startAgent(workspaceId, 'agent', command);
-    await refreshHost(sessionId);
-  };
-
-  const runHerdCommand = async (sessionId: string, workspaceId: string, command: string) => {
-    const runtime = runtimes.current.get(sessionId);
-    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
-    const paneId = await runtime.client.runCommand(workspaceId, command);
-    recordTerminalHistoryEntry(command);
+  const openCreatedHerdPane = async (sessionId: string, paneId: string) => {
     const refreshedSnapshot = await refreshHostSnapshot(sessionId);
     const pane = refreshedSnapshot?.panes.find(item => item.pane_id === paneId);
     if (pane) openPaneTerminal(sessionId, pane);
     else selectLiveHost(sessionId, 'terminal');
+  };
+
+  const startHerdAgent = async (
+    sessionId: string,
+    workspaceId: string,
+    tabName: string,
+    command: string,
+  ) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    const paneId = await runtime.client.startAgent(workspaceId, tabName, command);
+    await openCreatedHerdPane(sessionId, paneId);
+  };
+
+  const runHerdCommand = async (
+    sessionId: string,
+    workspaceId: string,
+    tabName: string,
+    command: string,
+  ) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    const paneId = await runtime.client.runCommand(workspaceId, tabName, command);
+    recordTerminalHistoryEntry(command);
+    await openCreatedHerdPane(sessionId, paneId);
   };
 
   const startServer = async (sessionId: string) => {

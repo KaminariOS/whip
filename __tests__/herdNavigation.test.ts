@@ -44,12 +44,16 @@ describe('terminal to Herd navigation', () => {
     expect(herd).toContain('className="mb-3 mt-1.5 flex-row justify-end gap-2"');
     expect(herd).toContain("<Text>{t('herd.agent')}</Text>");
     expect(herd).toContain('onStartAgent(');
+    expect(herd).toContain('tabNameDraft.trim()');
+    expect(herd).toContain("placeholder={t('herd.tabNamePlaceholder')}");
     expect(herd).toContain('agentCommand.trim()');
     expect(app).toContain('const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {');
-    expect(app).toContain('await selectHerdWorkspace(sessionId, workspaceId);');
-    expect(app).toContain("selectLiveHost(sessionId, 'terminal');");
+    expect(app).toContain("selectLiveHost(sessionId, 'terminal');\n    await runtime.client.focusWorkspace(workspaceId);");
+    expect(app).toContain('refreshedSnapshot?.panes.find(item => item.tab_id === tabId && item.focused)');
+    expect(app).toContain('terminals => ({ ...terminals, activeTerminalId: null })');
     expect(app).toContain('onOpenSpace={openHerdWorkspace}');
-    expect(app).toContain("await runtime.client.startAgent(workspaceId, 'agent', command);");
+    expect(app).toContain('const paneId = await runtime.client.startAgent(workspaceId, tabName, command);');
+    expect(app).toContain('await openCreatedHerdPane(sessionId, paneId);');
     expect(app).toContain('agentCommand={agentCommand}');
     expect(settings).toContain("t('settings.agentCommand')");
     expect(settings).toContain('onChangeText={props.onAgentCommandChange}');
@@ -72,15 +76,28 @@ describe('terminal to Herd navigation', () => {
     expect(herd).toContain('style={commandSheetStyle(bottom)}');
     expect(herd).toContain('style={commandComposerStyle(commandKeyboardInset)}');
     expect(herd).toContain('await runWorkspaceAction(() => onRunCommand(');
+    expect(herd).toContain('tabName,\n      command,');
     expect(herd.indexOf("accessibilityLabel={t('herd.runCommand')}"))
       .toBeLessThan(herd.indexOf('<Metric value={queueAgents.length}'));
     expect(app).toContain('commandHistory={terminalHistory}');
     expect(app).toContain('onRunCommand={runHerdCommand}');
-    expect(app).toContain('const paneId = await runtime.client.runCommand(workspaceId, command);');
+    expect(app).toContain('const paneId = await runtime.client.runCommand(workspaceId, tabName, command);');
     expect(app).toContain('recordTerminalHistoryEntry(command);');
     expect(app).toContain('const refreshedSnapshot = await refreshHostSnapshot(sessionId);');
     expect(app).toContain('refreshedSnapshot?.panes.find(item => item.pane_id === paneId)');
     expect(app).toContain("if (pane) openPaneTerminal(sessionId, pane);");
     expect(app).toContain("else selectLiveHost(sessionId, 'terminal');");
+  });
+
+  it('applies the selected space locally before waiting for remote focus', () => {
+    const app = readSource('App.tsx');
+    const session = readSource('src/components/SessionScreen.tsx');
+
+    expect(app).toContain(
+      'setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));',
+    );
+    expect(session).toContain(
+      "if (!serverTabId) {\n      pendingPaneFocus.current = null;\n      setWorkspaceId(serverWorkspaceId);\n      setTabId('');",
+    );
   });
 });

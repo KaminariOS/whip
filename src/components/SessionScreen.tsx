@@ -303,7 +303,13 @@ export function SessionScreen({
 
   // Herdr owns focus. Follow focus changes made by the native or another remote client.
   useEffect(() => {
-    if (!serverWorkspaceId || !serverTabId) return;
+    if (!serverWorkspaceId) return;
+    if (!serverTabId) {
+      pendingPaneFocus.current = null;
+      setWorkspaceId(serverWorkspaceId);
+      setTabId('');
+      return;
+    }
     if (!serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)) return;
     setWorkspaceId(serverWorkspaceId);
     setTabId(serverTabId);

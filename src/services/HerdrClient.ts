@@ -645,8 +645,8 @@ export class HerdrClient {
     return created.root_pane.pane_id;
   }
 
-  async runCommand(workspaceId: string, command: string): Promise<string> {
-    return this.startAgent(workspaceId, 'command', command);
+  async runCommand(workspaceId: string, name: string, command: string): Promise<string> {
+    return this.startAgent(workspaceId, name, command);
   }
 
   async focusWorkspace(workspaceId: string): Promise<void> {

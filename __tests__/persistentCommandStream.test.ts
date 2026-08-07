@@ -190,7 +190,7 @@ describe('direct Herdr API requests', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await expect(client.runCommand('space-1', '  npm test  ')).resolves.toBe('pane-command');
+    await expect(client.runCommand('space-1', ' Checks ', '  npm test  ')).resolves.toBe('pane-command');
 
     const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
     expect(requests.map(request => request.method)).toEqual([
@@ -200,10 +200,10 @@ describe('direct Herdr API requests', () => {
     ]);
     expect(requests[0].params).toEqual({
       workspace_id: 'space-1',
-      label: 'command',
+      label: 'Checks',
       focus: true,
     });
-    expect(requests[1].params).toEqual({ pane_id: 'pane-command', label: 'command' });
+    expect(requests[1].params).toEqual({ pane_id: 'pane-command', label: 'Checks' });
     expect(requests[2].params).toEqual({
       pane_id: 'pane-command',
       text: 'npm test',
