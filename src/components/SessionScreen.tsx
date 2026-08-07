@@ -149,6 +149,8 @@ export function SessionScreen({
   const browserWebView = useRef<BrowserWebViewHandle | null>(null);
   const tunnelPortRef = useRef<number | null>(null);
   const browserRequestRef = useRef(0);
+  const remoteFilePathsRef = useRef(new Map<string, string>());
+  const fileManagerTerminalKeyRef = useRef<string | null>(null);
   const tabSwipeTranslateX = useSharedValue(0);
   const tabSwipeRef = useRef<TerminalTabSwipe | null>(null);
   const pendingPaneFocus = useRef<string | null>(null);
@@ -553,10 +555,20 @@ export function SessionScreen({
   };
 
   const openFileManager = () => {
+    if (!activeTerminalSession) return;
+    const terminalPane = snapshot.panes.find(
+      pane => pane.terminal_id === activeTerminalSession.terminalId,
+    );
+    const terminalWorkspace = snapshot.workspaces.find(
+      item => item.workspace_id === terminalPane?.workspace_id,
+    );
+    const terminalKey = `${hostSessionId}:${activeTerminalSession.terminalId}`;
+    fileManagerTerminalKeyRef.current = terminalKey;
     setFileManagerPath(
-      selectedPane?.foreground_cwd
-      || selectedPane?.cwd
-      || workspace?.worktree?.checkout_path
+      remoteFilePathsRef.current.get(terminalKey)
+      || terminalPane?.foreground_cwd
+      || terminalPane?.cwd
+      || terminalWorkspace?.worktree?.checkout_path
       || '~',
     );
     setFilesOpen(true);
@@ -765,6 +777,10 @@ export function SessionScreen({
           client={client}
           initialPath={fileManagerPath}
           visible={filesOpen}
+          onPathChange={path => {
+            const terminalKey = fileManagerTerminalKeyRef.current;
+            if (terminalKey) remoteFilePathsRef.current.set(terminalKey, path);
+          }}
           onClose={() => setFilesOpen(false)}
         />
         <AttachmentPasteSheet

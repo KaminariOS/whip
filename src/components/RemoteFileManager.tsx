@@ -47,6 +47,7 @@ interface Props {
   visible: boolean;
   client: HerdrClient;
   initialPath: string;
+  onPathChange: (path: string) => void;
   onClose: () => void;
 }
 
@@ -61,7 +62,7 @@ interface FilePreview {
   error: string | null;
 }
 
-export function RemoteFileManager({ visible, client, initialPath, onClose }: Props) {
+export function RemoteFileManager({ visible, client, initialPath, onPathChange, onClose }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
@@ -73,6 +74,8 @@ export function RemoteFileManager({ visible, client, initialPath, onClose }: Pro
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const previewRef = useRef<FilePreview | null>(null);
   const requestRef = useRef(0);
+  const onPathChangeRef = useRef(onPathChange);
+  onPathChangeRef.current = onPathChange;
 
   const replacePreview = useCallback((next: FilePreview | null) => {
     const previous = previewRef.current;
@@ -91,6 +94,7 @@ export function RemoteFileManager({ visible, client, initialPath, onClose }: Pro
       if (request !== requestRef.current) return;
       setPath(listing.path);
       setEntries(listing.entries);
+      onPathChangeRef.current(listing.path);
     } catch (reason) {
       if (request === requestRef.current) setError(String(reason));
     } finally {

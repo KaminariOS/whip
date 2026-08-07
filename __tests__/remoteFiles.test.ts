@@ -91,8 +91,19 @@ test('connects the adaptive terminal file control to the remote file manager', (
   expect(terminal).toContain("accessibilityLabel={t('terminal.openFiles')}");
   expect(terminal).toContain('<FolderOpen');
   expect(terminal).toContain('onRequestFiles?.()');
-  expect(session).toContain('selectedPane?.foreground_cwd');
+  expect(session).toContain('terminalPane?.foreground_cwd');
   expect(session).toContain('<RemoteFileManager');
+});
+
+test('remembers the last remote directory independently for each terminal', () => {
+  const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+
+  expect(session).toContain('const remoteFilePathsRef = useRef(new Map<string, string>());');
+  expect(session).toContain('const terminalKey = `${hostSessionId}:${activeTerminalSession.terminalId}`;');
+  expect(session).toContain('remoteFilePathsRef.current.get(terminalKey)');
+  expect(session).toContain('remoteFilePathsRef.current.set(terminalKey, path)');
+  expect(manager).toContain('onPathChangeRef.current(listing.path);');
 });
 
 test('uses the authenticated SSH client for SFTP listing, downloads, and uploads', () => {
