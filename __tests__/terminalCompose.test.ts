@@ -12,7 +12,15 @@ describe('terminal input composer', () => {
     expect(screen).toContain('const [composeText, setComposeText] = useState');
     expect(screen).toContain('multiline');
     expect(screen).toContain('onChangeText={setComposeText}');
-    expect(screen).toContain('disabled={!composeText.trim() && composeAttachments.length === 0}');
+    expect(screen).not.toContain('disabled={!composeText.trim() && composeAttachments.length === 0}');
+  });
+
+  it('sends Enter when the composer is empty', () => {
+    const screen = readSource('src/components/TerminalScreen.tsx');
+
+    expect(screen).toContain("const ENTER_INPUT = '\\r';");
+    expect(screen).toContain("enter: ['ENTER', ENTER_INPUT, 'text']");
+    expect(screen).toContain('if (!submitted) {\n      sendInput(ENTER_INPUT);\n      return;\n    }');
   });
 
   it('uses xterm paste semantics without pressing Enter after the composed input', () => {

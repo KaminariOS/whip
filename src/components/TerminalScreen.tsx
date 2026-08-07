@@ -68,6 +68,8 @@ interface Props {
 
 type TerminalKeyDefinition = readonly [label: string, input: string, face: 'text' | 'symbol'];
 
+const ENTER_INPUT = '\r';
+
 const TERMINAL_KEYS: Partial<Record<TerminalControlId, TerminalKeyDefinition>> = {
   esc: ['ESC', '\u001b', 'text'],
   tab: ['TAB', '\t', 'text'],
@@ -75,7 +77,7 @@ const TERMINAL_KEYS: Partial<Record<TerminalControlId, TerminalKeyDefinition>> =
   left: ['←', '\u001b[D', 'symbol'],
   right: ['→', '\u001b[C', 'symbol'],
   down: ['↓', '\u001b[B', 'symbol'],
-  enter: ['ENTER', '\r', 'text'],
+  enter: ['ENTER', ENTER_INPUT, 'text'],
   slash: ['/', '/', 'symbol'],
   hyphen: ['-', '-', 'symbol'],
   pipe: ['|', '|', 'symbol'],
@@ -479,7 +481,10 @@ export function TerminalScreen({
   const submitCompose = () => {
     const attachmentPaths = composeAttachmentsRef.current.map(attachment => attachment.remotePath);
     const submitted = [composeText.trimEnd(), ...attachmentPaths].filter(Boolean).join(' ');
-    if (!submitted) return;
+    if (!submitted) {
+      sendInput(ENTER_INPUT);
+      return;
+    }
     renderer.current?.submit(submitted);
     onHistoryEntry(submitted);
     setComposeText('');
@@ -898,7 +903,6 @@ export function TerminalScreen({
               <View className="gap-1.5">
                 <Button
                   accessibilityLabel={t('terminal.sendBufferedInput')}
-                  disabled={!composeText.trim() && composeAttachments.length === 0}
                   className="size-10 rounded-full bg-white px-0"
                   onPress={submitCompose}>
                   <Send size={17} color={colors.ink} />
