@@ -1,0 +1,1 @@
+Adds multi-host monitoring, native Herdr chat, persistent terminal sessions, remote file management, jump hosts, SSH agent forwarding, verified host keys, biometric-protected credentials, notifications, and customizable themes and terminal controls.
