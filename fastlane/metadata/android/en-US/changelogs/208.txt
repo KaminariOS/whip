@@ -1,0 +1,1 @@
+Improves Herd workspace navigation with larger, clearer rails and consolidated launch actions; remembers each terminal's remote file location; and fixes workspace and tab actions, keyboard mode synchronization, navigation control spacing, and Enter from an empty terminal composer.
