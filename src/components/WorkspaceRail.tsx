@@ -1,4 +1,4 @@
-import { Plus, X } from 'lucide-react-native';
+import { Layers3, Plus, X } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -47,6 +47,7 @@ export function WorkspaceRail({
           status={allStatus}
           count={totalTabs}
           active={selectedWorkspaceId === null}
+          aggregate
           busy={busy}
           onPress={() => onSelect(null)}
         />
@@ -76,6 +77,7 @@ function WorkspacePill({
   status,
   count,
   active,
+  aggregate = false,
   busy,
   onPress,
   onLongPress,
@@ -85,6 +87,7 @@ function WorkspacePill({
   status: WorkspaceInfo['agent_status'];
   count: number;
   active: boolean;
+  aggregate?: boolean;
   busy: boolean;
   onPress: () => void;
   onLongPress?: () => void;
@@ -110,7 +113,11 @@ function WorkspacePill({
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
       <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0" variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
         <AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={12} />
-        <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', activeTextClass)}>{label}</Text>
+        {aggregate ? (
+          <Layers3 size={15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
+        ) : (
+          <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', activeTextClass)}>{label}</Text>
+        )}
         <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', activeTextClass)}>{count}</Text>
       </Button>
       {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className="h-8 w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}

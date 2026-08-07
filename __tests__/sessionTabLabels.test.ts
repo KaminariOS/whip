@@ -47,6 +47,27 @@ describe('session tab labels', () => {
     }
   });
 
+  it('uses a server icon for the aggregate host pill', () => {
+    const rail = readFileSync(
+      resolve(__dirname, '../src/components/LiveSessionRail.tsx'),
+      'utf8',
+    );
+
+    expect(rail).toContain("import { Plus, Server, X } from 'lucide-react-native'");
+    expect(rail).toContain('<Server size={15}');
+  });
+
+  it('uses a layers icon for the aggregate space pill', () => {
+    const rail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
+      'utf8',
+    );
+
+    expect(rail).toContain("import { Layers3, Plus, X } from 'lucide-react-native'");
+    expect(rail).toContain('<Layers3 size={15}');
+    expect(rail).toContain('aggregate\n          busy={busy}');
+  });
+
   it('outlines non-focused host and space pills without glass', () => {
     const hostRail = readFileSync(
       resolve(__dirname, '../src/components/LiveSessionRail.tsx'),

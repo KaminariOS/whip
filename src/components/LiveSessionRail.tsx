@@ -1,4 +1,4 @@
-import { Plus, X } from 'lucide-react-native';
+import { Plus, Server, X } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -71,7 +71,11 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
       <Button accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: session.agentStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0" variant="ghost" onPress={hapticPress(onSelect)}>
         <AnimatedAgentStatusGlyph status={session.agentStatus} color={sessionStatusColor(session, colors)} size={12} />
-        <Text className={cn('max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', activeTextClass)} numberOfLines={1}>{session.label}</Text>
+        {session.hostId ? (
+          <Text className={cn('max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', activeTextClass)} numberOfLines={1}>{session.label}</Text>
+        ) : (
+          <Server size={15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
+        )}
         {session.terminalCount > 0 ? <Text className={cn('text-[10px] leading-[18px] text-muted-foreground', activeTextClass)}>{session.terminalCount}</Text> : null}
       </Button>
       {onClose ? <Button accessibilityLabel={t('rail.disconnectHost', { host: session.label })} className="h-8 w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
