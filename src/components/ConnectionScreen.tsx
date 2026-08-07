@@ -9,6 +9,7 @@ import { hostDisplayName, jumpHostCandidates } from '@/src/lib/hostProfiles';
 import { cn } from '@/src/lib/utils';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
+import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -206,11 +207,12 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 bg-background">
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
       <ScreenHeader title={profile.name.trim() ? t('connection.editHost') : t('connection.newHost')} left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled"><View className="p-4 pb-11">
         <View className="mb-[30px] flex-row items-center gap-3.5"><WhipMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">{t('connection.title')}</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">{t('connection.intro')}</Text></View></View>
 
+        <GlassSurface className="rounded-lg border border-white/30 p-4 dark:border-white/10">
         <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('connection.hostIdentity')}</Text>
         <Field label={t('connection.displayName')} value={profile.name} placeholder={profile.host.trim() || 'Savior'} onChangeText={value => update('name', value)} />
 
@@ -270,6 +272,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         <View className="mt-2 flex-row gap-2.5"><Button className="flex-1 rounded-full" variant="secondary" disabled={!canSave || connecting} onPress={hapticPress(() => onSave(profile))}><Text>{t('connection.saveHost')}</Text></Button><Button className="flex-1 rounded-full" disabled={!canConnect || connecting} onPress={hapticPress(() => onConnect(profile))}><Text>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text><Icon as={ArrowRight} className="text-primary-foreground" size={17} /></Button></View>
         {onDelete ? <Button className="mt-3.5 rounded-full" variant="destructive" onPress={hapticPress(onDelete)}><Icon as={Trash2} className="text-destructive-foreground" size={17} /><Text>{t('connection.deleteHost')}</Text></Button> : null}
         <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">{t('connection.hostKeyWarning')}</Text>
+        </GlassSurface>
       </View></ScrollView>
       <PrivateKeyActions
         hasKey={Boolean(profile.secret)}

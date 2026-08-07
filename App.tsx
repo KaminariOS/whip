@@ -1706,6 +1706,7 @@ function AppContent() {
 
         {editorProfile && (
           <View className="absolute inset-0 z-40 bg-background">
+            <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
             <ConnectionScreen
               key={editorProfile.id}
               initialProfile={editorProfile}
