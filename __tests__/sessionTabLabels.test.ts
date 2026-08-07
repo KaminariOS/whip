@@ -9,7 +9,7 @@ describe('session tab labels', () => {
     );
 
     expect(rail).toContain(
-      'h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0',
+      'h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0',
     );
     expect(rail).toContain(
       'max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px]',
@@ -23,7 +23,7 @@ describe('session tab labels', () => {
     );
 
     expect(rail).toContain(
-      'h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0',
+      'h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0',
     );
     expect(rail).toContain(
       'max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px]',
@@ -129,11 +129,11 @@ describe('session tab labels', () => {
       'utf8',
     );
 
-    expect(hostRail).toContain('<GlassSurface className="h-12');
-    expect(workspaceRail).toContain('<GlassSurface className="h-12');
+    expect(hostRail).toContain('<GlassSurface className="h-[62px]');
+    expect(workspaceRail).toContain('<GlassSurface className="h-[62px]');
     expect(screen).toContain('<TerminalBackground preferences={terminalPreferences} />');
     expect(screen).toContain('className="absolute inset-x-0 top-0 z-30"');
-    expect(screen).toContain('h-[42px] flex-row border-b border-border bg-transparent');
+    expect(screen).toContain('h-[55px] flex-row border-b border-border bg-transparent');
     expect(screen).toContain('h-[37px] flex-row border-b border-border bg-transparent');
     expect(hostRail).not.toContain('bg-terminal-panel');
     expect(workspaceRail).not.toContain('bg-terminal-panel');
@@ -157,7 +157,7 @@ describe('session tab labels', () => {
     );
 
     expect(screen).toContain(
-      'h-[30px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1',
+      'h-[39px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1',
     );
     expect(screen).toContain(
       'max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px]',

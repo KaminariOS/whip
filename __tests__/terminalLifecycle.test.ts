@@ -166,6 +166,6 @@ describe('terminal renderer lifecycle', () => {
     expect(app).toContain("edges={fullscreenVisible ? ['left', 'right'] : ['top', 'left', 'right']}");
     expect(app).toContain("style={immersiveTerminal ? styles.hiddenTab : styles.tabScreen}");
     expect(app).toContain("importantForAccessibility={immersiveTerminal ? 'no-hide-descendants' : 'auto'}");
-    expect(bottomNavigation).toContain('style={{ bottom: 8, height: 120 + bottom, paddingBottom: bottom }}');
+    expect(bottomNavigation).toContain('style={{ bottom: 16, height: 120 + bottom, paddingBottom: bottom }}');
   });
 });

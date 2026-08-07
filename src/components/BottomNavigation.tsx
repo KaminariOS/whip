@@ -40,7 +40,7 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
     <View
       pointerEvents="box-none"
       className="absolute inset-x-0 z-30 flex-row items-center justify-around bg-transparent px-4"
-      style={{ bottom: 8, height: 120 + bottom, paddingBottom: bottom }}>
+      style={{ bottom: 16, height: 120 + bottom, paddingBottom: bottom }}>
       {items.map(item => {
         const active = item.tab === activeTab;
         return (

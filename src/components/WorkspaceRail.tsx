@@ -40,7 +40,7 @@ export function WorkspaceRail({
   ));
 
   return (
-    <GlassSurface className="h-12 flex-row border-b border-white/30 dark:border-white/10">
+    <GlassSurface className="h-[62px] flex-row border-b border-white/30 dark:border-white/10">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5">
         <WorkspacePill
           label={t('rail.allSpaces')}
@@ -65,7 +65,7 @@ export function WorkspaceRail({
           />
         ))}
       </ScrollView>
-      <Button accessibilityLabel={t('rail.newWorkspace')} className="h-12 w-12 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
+      <Button accessibilityLabel={t('rail.newWorkspace')} className="h-[62px] w-12 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
         <Plus size={17} color={colors.text} />
       </Button>
     </GlassSurface>
@@ -104,14 +104,14 @@ function WorkspacePill({
   return (
     <View
       className={cn(
-        'h-8 max-w-[190px] flex-row items-center rounded-full',
+        'h-[42px] max-w-[190px] flex-row items-center rounded-full',
         appGlassEnabled && 'border',
         !appGlassEnabled && 'bg-muted',
         !appGlassEnabled && !active && 'border border-border',
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
-      <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0" variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
+      <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0" variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
         <AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={12} />
         {aggregate ? (
           <Layers3 size={15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
@@ -120,7 +120,7 @@ function WorkspacePill({
         )}
         <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', activeTextClass)}>{count}</Text>
       </Button>
-      {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className="h-8 w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
+      {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className="h-[42px] w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
     </View>
   );
 }
