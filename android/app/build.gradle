@@ -114,7 +114,7 @@ android {
         applicationId = "io.github.kaminarios.whip"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 205
+        versionCode = 206
         versionName = "0.3.0"
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
