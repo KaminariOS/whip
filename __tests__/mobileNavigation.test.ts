@@ -28,7 +28,7 @@ test('bottom navigation shows icons without visible labels', () => {
 
   expect(bottomNavigation).toContain('accessibilityLabel={t(item.labelKey)}');
   expect(bottomNavigation).toContain('pointerEvents="box-none"');
-  expect(bottomNavigation).toContain('absolute inset-x-0 bottom-0 z-30 flex-row items-center justify-around bg-transparent');
+  expect(bottomNavigation).toContain('absolute inset-x-0 z-30 flex-row items-center justify-around bg-transparent');
   expect(app).toContain("const NavigationBlurTarget = Platform.OS === 'android' ? View : BlurTargetView;");
   expect(app).toContain('<NavigationBlurTarget ref={navigationBlurTargetRef}');
   expect(app).toContain('blurTarget={navigationBlurTargetRef}');
@@ -55,7 +55,7 @@ test('bottom navigation shows icons without visible labels', () => {
   expect(bottomNavigation).toContain('<HerdrMark size={29} />');
   expect(bottomNavigation).toContain('<Icon as={item.icon} size={29}');
   expect(bottomNavigation).toContain('className="h-16 w-16 rounded-full');
-  expect(bottomNavigation).toContain('style={{ height: 120 + bottom, paddingBottom: bottom }}');
+  expect(bottomNavigation).toContain('style={{ bottom: 8, height: 120 + bottom, paddingBottom: bottom }}');
   expect(bottomNavigation).not.toContain('border-t');
   expect(bottomNavigation).not.toContain('flex-1 rounded-none');
   expect(bottomNavigation).not.toContain('<Text');
