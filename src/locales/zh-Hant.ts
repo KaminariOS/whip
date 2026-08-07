@@ -89,7 +89,7 @@ export const zhHant: Record<string, string> = {
   'connection.title': '遠端 Herdr 連線',
   'connection.intro': 'Herdr 會保留在私人主機上。此裝置透過 SSH 連線，並只開啟所選窗格的終端機。',
   'connection.hostIdentity': '主機識別',
-  'connection.displayName': '顯示名稱',
+  'connection.displayName': '顯示名稱（選填）',
   'connection.sshDestination': 'SSH 目的地',
   'connection.hostOrIp': 'SSH 主機或 IP',
   'connection.port': '連接埠',

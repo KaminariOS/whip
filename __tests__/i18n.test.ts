@@ -16,7 +16,9 @@ describe('localization resources', () => {
 
   it('describes hosts as general SSH destinations', () => {
     expect(en['hosts.emptyCopy']).toBe('Add an SSH destination to manage its Herdr session.');
+    expect(en['connection.displayName']).toBe('Display name (optional)');
     expect(en['connection.hostOrIp']).toBe('SSH host or IP');
+    expect(zhHant['connection.displayName']).toBe('顯示名稱（選填）');
     expect(en['app.connectUnreachableError']).not.toMatch(/tailscale/i);
     expect(zhHant['hosts.emptyCopy']).not.toMatch(/tailscale/i);
   });

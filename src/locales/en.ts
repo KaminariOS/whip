@@ -94,7 +94,7 @@ export const en = {
   'connection.title': 'Remote Herdr connection',
   'connection.intro': 'Herdr stays private on the host. This device connects over SSH and opens only the selected pane terminal.',
   'connection.hostIdentity': 'Host identity',
-  'connection.displayName': 'Display name',
+  'connection.displayName': 'Display name (optional)',
   'connection.sshDestination': 'SSH destination',
   'connection.hostOrIp': 'SSH host or IP',
   'connection.port': 'Port',
