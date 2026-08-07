@@ -30,7 +30,24 @@ describe('session tab labels', () => {
     );
   });
 
-  it('uses resolved theme colors for selected host and space labels', () => {
+  it('uses compiled theme classes for selected host and space labels', () => {
+    const hostRail = readFileSync(
+      resolve(__dirname, '../src/components/LiveSessionRail.tsx'),
+      'utf8',
+    );
+    const workspaceRail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
+      'utf8',
+    );
+
+    for (const rail of [hostRail, workspaceRail]) {
+      expect(rail).toContain("? 'text-primary'");
+      expect(rail).toContain(": 'text-primary-foreground'");
+      expect(rail.match(/activeTextClass\)}/g)).toHaveLength(2);
+    }
+  });
+
+  it('outlines non-focused host and space pills without glass', () => {
     const hostRail = readFileSync(
       resolve(__dirname, '../src/components/LiveSessionRail.tsx'),
       'utf8',
@@ -42,9 +59,28 @@ describe('session tab labels', () => {
 
     for (const rail of [hostRail, workspaceRail]) {
       expect(rail).toContain(
-        'color: appGlassEnabled ? colors.primary : colors.onPrimary',
+        "!appGlassEnabled && !active && 'border border-border'",
       );
-      expect(rail.match(/style=\{activeTextStyle\}/g)).toHaveLength(2);
+    }
+  });
+
+  it('avoids clipping selected foreground content on Android', () => {
+    const hostRail = readFileSync(
+      resolve(__dirname, '../src/components/LiveSessionRail.tsx'),
+      'utf8',
+    );
+    const workspaceRail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
+      'utf8',
+    );
+
+    for (const rail of [hostRail, workspaceRail]) {
+      expect(
+        rail.match(/!appGlassEnabled && active && 'bg-primary'/g),
+      ).toHaveLength(1);
+      expect(rail).not.toContain(
+        'max-w-[190px] flex-row items-center overflow-hidden rounded-full',
+      );
     }
   });
 

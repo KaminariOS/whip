@@ -53,23 +53,26 @@ export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onN
 function HostPill({ session, active, onSelect, onClose }: { session: LiveSessionRailItem; active: boolean; onSelect: () => void; onClose?: () => void }) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
-  const activeTextStyle = active
-    ? { color: appGlassEnabled ? colors.primary : colors.onPrimary }
+  const activeTextClass = active
+    ? appGlassEnabled
+      ? 'text-primary'
+      : 'text-primary-foreground'
     : undefined;
   const { t } = useTranslation();
   return (
     <View
       className={cn(
-        'h-8 max-w-[190px] flex-row items-center overflow-hidden rounded-full',
+        'h-8 max-w-[190px] flex-row items-center rounded-full',
         appGlassEnabled && 'border',
         !appGlassEnabled && 'bg-muted',
+        !appGlassEnabled && !active && 'border border-border',
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
       <Button accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: session.agentStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-8 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0" variant="ghost" onPress={hapticPress(onSelect)}>
         <AnimatedAgentStatusGlyph status={session.agentStatus} color={sessionStatusColor(session, colors)} size={12} />
-        <Text className="max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground" numberOfLines={1} style={activeTextStyle}>{session.label}</Text>
-        {session.terminalCount > 0 ? <Text className="text-[10px] leading-[18px] text-muted-foreground" style={activeTextStyle}>{session.terminalCount}</Text> : null}
+        <Text className={cn('max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', activeTextClass)} numberOfLines={1}>{session.label}</Text>
+        {session.terminalCount > 0 ? <Text className={cn('text-[10px] leading-[18px] text-muted-foreground', activeTextClass)}>{session.terminalCount}</Text> : null}
       </Button>
       {onClose ? <Button accessibilityLabel={t('rail.disconnectHost', { host: session.label })} className="h-8 w-7 rounded-none px-0" variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
     </View>
