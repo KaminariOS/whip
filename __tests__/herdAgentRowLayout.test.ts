@@ -33,7 +33,8 @@ describe('herd agent row layout', () => {
 
     expect(fixedHeader).toBeGreaterThanOrEqual(0);
     expect(scrollingList).toBeGreaterThan(fixedHeader);
-    expect(header).toContain("accessibilityLabel={t('herd.startAgent')}");
+    expect(header).toContain("accessibilityLabel={t('herd.runCommand')}");
+    expect(header).not.toContain("accessibilityLabel={t('herd.startAgent')}");
     expect(header).toContain('<Metric value={queueAgents.length}');
     expect(header).toContain("t('herd.attentionQueue')");
   });

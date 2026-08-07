@@ -1503,18 +1503,6 @@ function AppContent() {
     else selectLiveHost(sessionId, 'terminal');
   };
 
-  const startHerdAgent = async (
-    sessionId: string,
-    workspaceId: string,
-    tabName: string,
-    command: string,
-  ) => {
-    const runtime = runtimes.current.get(sessionId);
-    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
-    const paneId = await runtime.client.startAgent(workspaceId, tabName, command);
-    await openCreatedHerdPane(sessionId, paneId);
-  };
-
   const runHerdCommand = async (
     sessionId: string,
     workspaceId: string,
@@ -1645,7 +1633,6 @@ function AppContent() {
                 onCloseTab={closeHerdTab}
                 onRefresh={refreshHerd}
                 onOpenTerminal={openAgentTerminal}
-                onStartAgent={startHerdAgent}
                 onRunCommand={runHerdCommand}
                 onOpenSpace={openHerdWorkspace}
                 onStartServer={startServer}

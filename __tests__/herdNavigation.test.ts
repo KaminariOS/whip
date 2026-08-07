@@ -24,7 +24,7 @@ describe('terminal to Herd navigation', () => {
     expect(app).toContain('onExit={() => exitTerminalToHerd(activeSession.id)}');
   });
 
-  it('opens any selected space and offers the configured agent command in every selected space', () => {
+  it('opens any selected space without a separate agent action', () => {
     const app = readSource('App.tsx');
     const herd = readSource('src/components/HerdScreen.tsx');
     const settings = readSource('src/components/SettingsScreen.tsx');
@@ -40,20 +40,17 @@ describe('terminal to Herd navigation', () => {
     expect(herd).not.toContain('selectedQueue ? selectedQueue.address');
     expect(herd.indexOf("accessibilityLabel={t('herd.openSpace')}"))
       .toBeLessThan(herd.indexOf('<Metric value={queueAgents.length}'));
-    expect(herd).toContain("accessibilityLabel={t('herd.startAgent')}");
     expect(herd).toContain('className="mb-3 mt-1.5 flex-row justify-end gap-2"');
-    expect(herd).toContain("<Text>{t('herd.agent')}</Text>");
-    expect(herd).toContain('onStartAgent(');
+    expect(herd).not.toContain("<Text>{t('herd.agent')}</Text>");
+    expect(herd).not.toContain('onStartAgent(');
     expect(herd).toContain('tabNameDraft.trim()');
     expect(herd).toContain("placeholder={t('herd.tabNamePlaceholder')}");
-    expect(herd).toContain('agentCommand.trim()');
+    expect(herd).toContain('setCommandDraft(agentCommand.trim())');
     expect(app).toContain('const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {');
     expect(app).toContain("selectLiveHost(sessionId, 'terminal');\n    await runtime.client.focusWorkspace(workspaceId);");
     expect(app).toContain('refreshedSnapshot?.panes.find(item => item.tab_id === tabId && item.focused)');
     expect(app).toContain('terminals => ({ ...terminals, activeTerminalId: null })');
     expect(app).toContain('onOpenSpace={openHerdWorkspace}');
-    expect(app).toContain('const paneId = await runtime.client.startAgent(workspaceId, tabName, command);');
-    expect(app).toContain('await openCreatedHerdPane(sessionId, paneId);');
     expect(app).toContain('agentCommand={agentCommand}');
     expect(settings).toContain("t('settings.agentCommand')");
     expect(settings).toContain('onChangeText={props.onAgentCommandChange}');
@@ -64,6 +61,7 @@ describe('terminal to Herd navigation', () => {
     const herd = readSource('src/components/HerdScreen.tsx');
 
     expect(herd).toContain("accessibilityLabel={t('herd.runCommand')}");
+    expect(herd).toContain('onPress={hapticPress(openCommandRunner)}');
     expect(herd).toContain("<Text>{t('herd.run')}</Text>");
     expect(herd).toContain("<Text>{t('herd.open')}</Text>");
     expect(herd).toContain('onChangeText={setCommandDraft}');

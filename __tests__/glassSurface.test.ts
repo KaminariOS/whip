@@ -30,7 +30,7 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(herd).toContain('<GlassBackdrop />');
   expect(hostRail).toContain('appGlassEnabled ? appGlassControlStyle(active, colors) : undefined');
   expect(workspaceRail).toContain('appGlassEnabled ? appGlassControlStyle(active, colors) : undefined');
-  expect(herd.match(/style=\{appGlassEnabled \? appGlassControlStyle\(false, colors\) : undefined\}/g)).toHaveLength(3);
-  expect(herd).toContain("variant={appGlassEnabled ? 'ghost' : 'default'}");
+  expect(herd.match(/style=\{appGlassEnabled \? appGlassControlStyle\(false, colors\) : undefined\}/g)).toHaveLength(2);
+  expect(herd).not.toContain("variant={appGlassEnabled ? 'ghost' : 'default'}");
   expect(herd.match(/variant=\{appGlassEnabled \? 'ghost' : 'secondary'\}/g)).toHaveLength(2);
 });

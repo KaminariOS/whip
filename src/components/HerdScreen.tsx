@@ -2,7 +2,6 @@ import {
   ChevronRight,
   History,
   Play,
-  Plus,
   Sparkles,
   SquareTerminal,
   X,
@@ -83,7 +82,6 @@ interface Props {
   onCloseTab: (hostId: string, tabId: string) => Promise<void>;
   onRefresh: () => void;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
-  onStartAgent: (hostId: string, workspaceId: string, tabName: string, command: string) => Promise<void>;
   onRunCommand: (hostId: string, workspaceId: string, tabName: string, command: string) => Promise<void>;
   onOpenSpace: (hostId: string, workspaceId: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
@@ -108,7 +106,6 @@ export function HerdScreen({
   onCloseTab,
   onRefresh,
   onOpenTerminal,
-  onStartAgent,
   onRunCommand,
   onOpenSpace,
   onStartServer,
@@ -144,7 +141,6 @@ export function HerdScreen({
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [closingTabKey, setClosingTabKey] = useState<string | null>(null);
   const [commandRunnerOpen, setCommandRunnerOpen] = useState(false);
-  const [launcherMode, setLauncherMode] = useState<'agent' | 'run'>('run');
   const [tabNameDraft, setTabNameDraft] = useState('');
   const [commandDraft, setCommandDraft] = useState('');
   const [commandKeyboardInset, setCommandKeyboardInset] = useState(0);
@@ -264,32 +260,9 @@ export function HerdScreen({
     ));
   };
 
-  const startAgent = async () => {
-    const tabName = tabNameDraft.trim();
-    if (!selectedQueue || !selectedWorkspace || !tabName || !agentCommand.trim()) return;
-    const succeeded = await runWorkspaceAction(() => onStartAgent(
-      selectedQueue.id,
-      selectedWorkspace.workspace_id,
-      tabName,
-      agentCommand.trim(),
-    ));
-    if (!succeeded) return;
-    setTabNameDraft('');
-    setCommandRunnerOpen(false);
-  };
-
-  const openAgentLauncher = () => {
-    setLauncherMode('agent');
-    setTabNameDraft('');
-    setCommandDraft('');
-    setCommandKeyboardInset(0);
-    setCommandRunnerOpen(true);
-  };
-
   const openCommandRunner = () => {
-    setLauncherMode('run');
     setTabNameDraft('');
-    setCommandDraft('');
+    setCommandDraft(agentCommand.trim());
     setCommandKeyboardInset(0);
     setCommandRunnerOpen(true);
   };
@@ -401,18 +374,6 @@ export function HerdScreen({
 
           {selectedQueue?.running && selectedWorkspace ? (
             <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
-              <Button
-                accessibilityLabel={t('herd.startAgent')}
-                className={cn('rounded-full px-4', appGlassEnabled && 'border')}
-                size="sm"
-                variant={appGlassEnabled ? 'ghost' : 'default'}
-                disabled={workspaceBusy || !agentCommand.trim()}
-                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                onPress={hapticPress(openAgentLauncher)}
-              >
-                <Icon as={Plus} size={16} />
-                <Text>{t('herd.agent')}</Text>
-              </Button>
               <Button
                 accessibilityLabel={t('herd.runCommand')}
                 className={cn('rounded-full px-4', appGlassEnabled && 'border')}
@@ -566,16 +527,14 @@ export function HerdScreen({
             style={commandSheetStyle(bottom)}>
             <View className="mb-3 flex-row items-center">
               <View className="size-10 items-center justify-center rounded-full bg-muted">
-                <Icon as={launcherMode === 'agent' ? Plus : Play} size={18} />
+                <Icon as={Play} size={18} />
               </View>
               <View className="min-w-0 flex-1 px-3">
                 <Text className="text-[17px] font-bold">
-                  {t(launcherMode === 'agent' ? 'herd.startAgent' : 'herd.runCommand')}
+                  {t('herd.runCommand')}
                 </Text>
                 <Text className="text-[11px] text-muted-foreground">
-                  {launcherMode === 'agent'
-                    ? t('herd.startAgentCopy', { command: agentCommand.trim() })
-                    : t('herd.runCommandCopy')}
+                  {t('herd.runCommandCopy')}
                 </Text>
               </View>
               <Button
@@ -602,85 +561,65 @@ export function HerdScreen({
                 editable={!workspaceBusy}
                 placeholder={t('herd.tabNamePlaceholder')}
                 placeholderTextColor={colors.textTertiary}
-                returnKeyType={launcherMode === 'agent' ? 'go' : 'next'}
+                returnKeyType="next"
                 value={tabNameDraft}
                 onChangeText={setTabNameDraft}
-                onSubmitEditing={() => {
-                  if (launcherMode === 'agent') startAgent();
-                  else commandInputRef.current?.focus();
-                }}
+                onSubmitEditing={() => commandInputRef.current?.focus()}
               />
-              {launcherMode === 'agent' ? (
+              <View className="flex-row items-center gap-2">
+                <Input
+                  ref={commandInputRef}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  className="h-12 min-w-0 flex-1 font-mono text-[14px]"
+                  editable={!workspaceBusy}
+                  placeholder={t('herd.commandPlaceholder')}
+                  placeholderTextColor={colors.textTertiary}
+                  returnKeyType="go"
+                  value={commandDraft}
+                  onChangeText={setCommandDraft}
+                  onSubmitEditing={() => { runCommand(); }}
+                />
                 <Button
-                  accessibilityLabel={t('herd.startAgent')}
-                  className="h-12 rounded-full"
-                  disabled={workspaceBusy || !tabNameDraft.trim() || !agentCommand.trim()}
-                  onPress={hapticPress(startAgent)}>
-                  <Icon as={Plus} size={18} />
-                  <Text>{t('herd.startAgent')}</Text>
+                  accessibilityLabel={t('herd.runCommand')}
+                  className="size-12 rounded-full px-0"
+                  disabled={workspaceBusy || !tabNameDraft.trim() || !commandDraft.trim()}
+                  onPress={hapticPress(runCommand)}>
+                  <Icon as={Play} size={18} />
                 </Button>
-              ) : (
-                <View className="flex-row items-center gap-2">
-                  <Input
-                    ref={commandInputRef}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    className="h-12 min-w-0 flex-1 font-mono text-[14px]"
-                    editable={!workspaceBusy}
-                    placeholder={t('herd.commandPlaceholder')}
-                    placeholderTextColor={colors.textTertiary}
-                    returnKeyType="go"
-                    value={commandDraft}
-                    onChangeText={setCommandDraft}
-                    onSubmitEditing={() => { runCommand(); }}
-                  />
-                  <Button
-                    accessibilityLabel={t('herd.runCommand')}
-                    className="size-12 rounded-full px-0"
-                    disabled={workspaceBusy || !tabNameDraft.trim() || !commandDraft.trim()}
-                    onPress={hapticPress(runCommand)}>
-                    <Icon as={Play} size={18} />
-                  </Button>
-                </View>
-              )}
+              </View>
             </View>
 
-            {launcherMode === 'run' ? (
-              <>
-                <View className="mb-1 mt-4 flex-row items-center gap-2 px-1">
-                  <Icon as={History} size={15} color={colors.textSecondary} />
-                  <Text className="text-[12px] font-semibold text-muted-foreground">{t('herd.commandHistory')}</Text>
-                </View>
-                {commandHistory.length === 0 ? (
-                  <View className="h-20 items-center justify-center px-6">
-                    <Text className="text-center text-[13px] text-muted-foreground">{t('herd.commandHistoryEmpty')}</Text>
-                  </View>
-                ) : (
-                  <ScrollView
-                    className="max-h-52"
-                    keyboardShouldPersistTaps="always"
-                    showsVerticalScrollIndicator={false}>
-                    {commandHistory.map((entry, index) => (
-                      <Button
-                        key={entry}
-                        accessibilityLabel={t('herd.useCommandHistory', { command: entry })}
-                        className={index > 0 ? 'min-h-11 justify-start rounded-none border-t border-border px-2.5 py-2' : 'min-h-11 justify-start rounded-none px-2.5 py-2'}
-                        disabled={workspaceBusy}
-                        variant="ghost"
-                        onPress={hapticPress(() => setCommandDraft(entry))}>
-                        <Text
-                          className="flex-1 text-left font-mono text-[13px] leading-[18px]"
-                          numberOfLines={2}
-                          style={{ fontFamily: terminalFontFamily }}>
-                          {entry}
-                        </Text>
-                      </Button>
-                    ))}
-                  </ScrollView>
-                )}
-              </>
+            <View className="mb-1 mt-4 flex-row items-center gap-2 px-1">
+              <Icon as={History} size={15} color={colors.textSecondary} />
+              <Text className="text-[12px] font-semibold text-muted-foreground">{t('herd.commandHistory')}</Text>
+            </View>
+            {commandHistory.length === 0 ? (
+              <View className="h-20 items-center justify-center px-6">
+                <Text className="text-center text-[13px] text-muted-foreground">{t('herd.commandHistoryEmpty')}</Text>
+              </View>
             ) : (
-              <View className="h-4" />
+              <ScrollView
+                className="max-h-52"
+                keyboardShouldPersistTaps="always"
+                showsVerticalScrollIndicator={false}>
+                {commandHistory.map((entry, index) => (
+                  <Button
+                    key={entry}
+                    accessibilityLabel={t('herd.useCommandHistory', { command: entry })}
+                    className={index > 0 ? 'min-h-11 justify-start rounded-none border-t border-border px-2.5 py-2' : 'min-h-11 justify-start rounded-none px-2.5 py-2'}
+                    disabled={workspaceBusy}
+                    variant="ghost"
+                    onPress={hapticPress(() => setCommandDraft(entry))}>
+                    <Text
+                      className="flex-1 text-left font-mono text-[13px] leading-[18px]"
+                      numberOfLines={2}
+                      style={{ fontFamily: terminalFontFamily }}>
+                      {entry}
+                    </Text>
+                  </Button>
+                ))}
+              </ScrollView>
             )}
 
           </View>
