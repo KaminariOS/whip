@@ -139,8 +139,7 @@ android {
             signingConfig = signingConfigs.debug
         }
         release {
-            // Local Play bundles use the private upload key. CI preview APKs keep
-            // their existing debug-key identity when no upload key is available.
+            // Release APKs and bundles use the same private upload key.
             signingConfig = hasUploadSigning ? signingConfigs.upload : signingConfigs.debug
             minifyEnabled = enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
@@ -157,9 +156,12 @@ android {
 }
 
 gradle.taskGraph.whenReady { taskGraph ->
-    if (taskGraph.hasTask(':app:bundleRelease') && !hasUploadSigning) {
+    def requiresUploadSigning = [':app:assembleRelease', ':app:bundleRelease'].any {
+        taskGraph.hasTask(it)
+    }
+    if (requiresUploadSigning && !hasUploadSigning) {
         throw new GradleException(
-            'Release app bundles require ~/.config/whip/upload-keystore.properties ' +
+            'Release builds require ~/.config/whip/upload-keystore.properties ' +
                 'or WHIP_UPLOAD_KEYSTORE_PROPERTIES.'
         )
     }
