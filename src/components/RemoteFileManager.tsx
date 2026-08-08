@@ -13,11 +13,13 @@ import {
   Image as ImageIcon,
   Pencil,
   RefreshCw,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Alert, Image, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
+import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -32,6 +34,12 @@ import {
   type RemoteFileSortField,
   type RemotePreviewKind,
 } from '@/src/lib/remoteFiles';
+import {
+  REMOTE_FILE_SWIPE_ACTION_WIDTH,
+  remoteFileSwipeOffset,
+  shouldClaimRemoteFileSwipe,
+  shouldOpenRemoteFileSwipe,
+} from '@/src/lib/remoteFileSwipeActions';
 import type { HerdrClient, RemoteHtmlPreviewHandle } from '@/src/services/HerdrClient';
 import {
   cacheRemoteFile,
@@ -47,6 +55,7 @@ import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { RemoteVideoPreview } from './RemoteVideoPreview';
 import { Button } from './ui/button';
+import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 interface Props {
@@ -81,12 +90,14 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
   const [entries, setEntries] = useState<LsResult[]>([]);
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [deletingPath, setDeletingPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [sortField, setSortField] = useState<RemoteFileSortField>('name');
   const [sortDirection, setSortDirection] = useState<RemoteFileSortDirection>('ascending');
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
   const previewRef = useRef<FilePreview | null>(null);
+  const pathRef = useRef('');
   const requestRef = useRef(0);
   const onPathChangeRef = useRef(onPathChange);
   onPathChangeRef.current = onPathChange;
@@ -113,6 +124,7 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
     try {
       const listing = await client.listRemoteDirectory(requestedPath);
       if (request !== requestRef.current) return;
+      pathRef.current = listing.path;
       setPath(listing.path);
       setEntries(listing.entries);
       onPathChangeRef.current(listing.path);
@@ -289,6 +301,39 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
     }
   };
 
+  const deleteEntry = async (entry: LsResult, directoryPath: string) => {
+    const name = remoteEntryName(entry);
+    const entryPath = joinRemotePath(directoryPath, name);
+    setDeletingPath(entryPath);
+    try {
+      await client.deleteRemoteEntry(entryPath, Boolean(entry.isDirectory));
+      if (pathRef.current === directoryPath) {
+        setEntries(current => current.filter(candidate => remoteEntryName(candidate) !== name));
+      }
+    } catch (reason) {
+      Alert.alert(t('files.deleteFailed', { name }), String(reason));
+    } finally {
+      setDeletingPath(null);
+    }
+  };
+
+  const confirmDeleteEntry = (entry: LsResult) => {
+    const name = remoteEntryName(entry);
+    const directoryPath = path;
+    Alert.alert(
+      t('files.deleteTitle', { name }),
+      t(entry.isDirectory ? 'files.deleteDirectoryCopy' : 'files.deleteFileCopy'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: () => { deleteEntry(entry, directoryPath); },
+        },
+      ],
+    );
+  };
+
   const previewLoading = preview && preview.kind !== 'unsupported' && !preview.cached && !preview.error;
   const canEdit = preview && isTextPreview(preview.kind) && Boolean(preview.cached) && preview.content !== null;
 
@@ -448,32 +493,44 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                   const directory = Boolean(entry.isDirectory);
                   const kind = remotePreviewKind(name, entry.fileSize);
                   return (
-                    <Button
+                    <SwipeableRemoteFileRow
                       key={`${name}-${entry.flags}`}
-                      accessibilityLabel={t(directory ? 'files.openDirectory' : 'files.openFile', { name })}
-                      className="h-auto min-h-[62px] justify-start gap-3 rounded-none border-b border-border px-2 py-2"
-                      variant="ghost"
-                      onPress={hapticPress(() => openEntry(entry))}>
-                      <View className="size-9 items-center justify-center rounded-lg bg-muted">
-                        {directory
-                          ? <Folder size={18} color={colors.primary} />
-                          : kind === 'image'
-                            ? <ImageIcon size={18} color={colors.textSecondary} />
-                            : kind === 'video'
-                              ? <FileVideo size={18} color={colors.textSecondary} />
-                            : kind === 'code' || kind === 'html'
-                              ? <FileCode2 size={18} color={colors.textSecondary} />
-                              : <FileText size={18} color={colors.textSecondary} />}
-                      </View>
-                      <View className="min-w-0 flex-1 items-start">
-                        <Text numberOfLines={1} className="text-left text-[13px] font-semibold text-foreground">{name}</Text>
-                        <Text numberOfLines={1} className="mt-0.5 font-mono text-[8px] text-muted-foreground">
-                          {directory ? t('files.directory') : formatRemoteFileSize(entry.fileSize)}
-                          {formatRemoteModificationDate(entry.modificationDate) ? ` · ${formatRemoteModificationDate(entry.modificationDate)}` : ''}
-                        </Text>
-                      </View>
-                      <ChevronRight size={17} color={colors.textTertiary} />
-                    </Button>
+                      deleting={deletingPath === joinRemotePath(path, name)}
+                      disabled={Boolean(deletingPath)}
+                      name={name}
+                      onDelete={() => confirmDeleteEntry(entry)}>
+                      {({ actionsOpen, closeActions }) => (
+                        <Button
+                          accessibilityLabel={t(directory ? 'files.openDirectory' : 'files.openFile', { name })}
+                          className="h-auto min-h-[62px] justify-start gap-3 rounded-none bg-background px-2 py-2"
+                          disabled={Boolean(deletingPath)}
+                          variant="ghost"
+                          onPress={hapticPress(() => {
+                            if (actionsOpen) closeActions();
+                            else openEntry(entry);
+                          })}>
+                          <View className="size-9 items-center justify-center rounded-lg bg-muted">
+                            {directory
+                              ? <Folder size={18} color={colors.primary} />
+                              : kind === 'image'
+                                ? <ImageIcon size={18} color={colors.textSecondary} />
+                                : kind === 'video'
+                                  ? <FileVideo size={18} color={colors.textSecondary} />
+                                : kind === 'code' || kind === 'html'
+                                  ? <FileCode2 size={18} color={colors.textSecondary} />
+                                  : <FileText size={18} color={colors.textSecondary} />}
+                          </View>
+                          <View className="min-w-0 flex-1 items-start">
+                            <Text numberOfLines={1} className="text-left text-[13px] font-semibold text-foreground">{name}</Text>
+                            <Text numberOfLines={1} className="mt-0.5 font-mono text-[8px] text-muted-foreground">
+                              {directory ? t('files.directory') : formatRemoteFileSize(entry.fileSize)}
+                              {formatRemoteModificationDate(entry.modificationDate) ? ` · ${formatRemoteModificationDate(entry.modificationDate)}` : ''}
+                            </Text>
+                          </View>
+                          <ChevronRight size={17} color={colors.textTertiary} />
+                        </Button>
+                      )}
+                    </SwipeableRemoteFileRow>
                   );
                 })}
               </ScrollView>
@@ -534,6 +591,88 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
         ) : null}
       </View>
     </Modal>
+  );
+}
+
+function SwipeableRemoteFileRow({
+  children,
+  deleting,
+  disabled,
+  name,
+  onDelete,
+}: {
+  children: (controls: { actionsOpen: boolean; closeActions: () => void }) => ReactNode;
+  deleting: boolean;
+  disabled: boolean;
+  name: string;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const translateX = useSharedValue(0);
+  const openRef = useRef(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+  const actionRevealStyle = useAnimatedStyle(() => ({
+    width: Math.max(0, -translateX.value),
+  }));
+
+  const settle = (open: boolean) => {
+    openRef.current = open;
+    setActionsOpen(open);
+    translateX.value = withSpring(open ? -REMOTE_FILE_SWIPE_ACTION_WIDTH : 0, {
+      damping: 24,
+      stiffness: 260,
+      mass: 0.8,
+      overshootClamping: true,
+    });
+  };
+
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => (
+      shouldClaimRemoteFileSwipe(gesture.dx, gesture.dy, openRef.current)
+    ),
+    onPanResponderGrant: () => cancelAnimation(translateX),
+    onPanResponderMove: (_event, gesture) => {
+      translateX.value = remoteFileSwipeOffset(gesture.dx, openRef.current);
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      settle(shouldOpenRemoteFileSwipe(gesture.dx, gesture.vx, openRef.current));
+    },
+    onPanResponderTerminate: () => settle(openRef.current),
+    onPanResponderTerminationRequest: () => false,
+  })).current;
+
+  const runDelete = () => {
+    settle(false);
+    onDelete();
+  };
+
+  return (
+    <View className="relative min-h-[62px] overflow-hidden border-b border-border">
+      <Animated.View
+        accessibilityElementsHidden={!actionsOpen}
+        className="absolute inset-y-0 right-0 overflow-hidden"
+        importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'}
+        style={actionRevealStyle}>
+        <Button
+          accessibilityLabel={t('files.deleteEntry', { name })}
+          className="absolute inset-y-0 right-0 h-full w-[84px] flex-col gap-1 rounded-none"
+          disabled={disabled}
+          size="content"
+          variant="destructive"
+          onPress={hapticPress(runDelete)}>
+          {deleting
+            ? <ActivityIndicator color="white" size="small" />
+            : <Icon as={Trash2} className="text-destructive-foreground" size={19} />}
+          <Text className="text-[11px] font-semibold">{t('common.delete')}</Text>
+        </Button>
+      </Animated.View>
+      <Animated.View style={animatedStyle} {...panResponder.panHandlers}>
+        {children({ actionsOpen, closeActions: () => settle(false) })}
+      </Animated.View>
+    </View>
   );
 }
 

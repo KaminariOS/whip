@@ -301,6 +301,11 @@ export class HerdrClient {
     return this.requireClient().sftpUpload(localFilePath, remoteDirectoryPath);
   }
 
+  deleteRemoteEntry(path: string, isDirectory: boolean): Promise<void> {
+    const client = this.requireClient();
+    return isDirectory ? client.sftpRmdir(path) : client.sftpRm(path);
+  }
+
   async uploadTerminalAttachment(localFilePath: string): Promise<string> {
     const client = this.requireClient();
     const home = await this.remoteHomeDirectory();

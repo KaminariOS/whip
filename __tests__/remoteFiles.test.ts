@@ -129,7 +129,7 @@ test('remembers the last remote directory independently for each terminal', () =
   expect(manager).toContain('onPathChangeRef.current(listing.path);');
 });
 
-test('uses the authenticated SSH client for SFTP listing, downloads, and uploads', () => {
+test('uses the authenticated SSH client for SFTP listing, transfers, and deletion', () => {
   const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
   expect(client).toContain('async listRemoteDirectory(');
   expect(client).toContain('.sftpLs(resolvedPath)');
@@ -137,6 +137,8 @@ test('uses the authenticated SSH client for SFTP listing, downloads, and uploads
   expect(client).toContain('.sftpDownload(path, localDirectoryPath)');
   expect(client).toContain('uploadRemoteFile(');
   expect(client).toContain('.sftpUpload(localFilePath, remoteDirectoryPath)');
+  expect(client).toContain('deleteRemoteEntry(');
+  expect(client).toContain('isDirectory ? client.sftpRmdir(path) : client.sftpRm(path)');
 });
 
 test('supports native Markdown previews and file transfer actions', () => {
