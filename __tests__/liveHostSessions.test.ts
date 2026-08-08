@@ -2,6 +2,7 @@ import {
   applyLiveHostFocus,
   applyLiveHostAgentStatus,
   applyLiveHostLayoutUpdate,
+  applyLiveHostLatency,
   applyLiveHostPaneUpdate,
   applyLiveHostSnapshot,
   aggregateAgentStatus,
@@ -220,6 +221,35 @@ describe('live host session state', () => {
     );
 
     expect(findLiveHostSession(synced, 'live-1')?.sync.latencyMs).toBe(42);
+  });
+
+  test('updates latency independently without changing snapshot sync metadata', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
+    const request = beginLiveHostSync(connected, 'live-1');
+    const synced = applyLiveHostSnapshot(
+      request.state,
+      'live-1',
+      request.generation,
+      snapshot('savior'),
+      '2026-02-02T00:00:00.000Z',
+      42,
+    );
+
+    const updated = applyLiveHostLatency(synced, 'live-1', 18);
+
+    expect(findLiveHostSession(updated, 'live-1')?.sync).toEqual({
+      status: 'synced',
+      generation: request.generation,
+      error: null,
+      lastSyncedAt: '2026-02-02T00:00:00.000Z',
+      latencyMs: 18,
+    });
+  });
+
+  test('ignores latency samples for disconnected hosts', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    expect(applyLiveHostLatency(opened, 'live-1', 18)).toBe(opened);
   });
 
   test('derives workspace, tab, and pane selection from each snapshot', () => {

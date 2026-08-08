@@ -80,6 +80,7 @@ import {
   applyLiveHostAgentStatus,
   applyLiveHostFocus,
   applyLiveHostLayoutUpdate,
+  applyLiveHostLatency,
   applyLiveHostPaneUpdate,
   applyLiveHostSnapshot,
   aggregateAgentStatus,
@@ -170,6 +171,7 @@ const guiFontAssets = {
 
 const LIVE_HOST_HEALTHCHECK_MS = 15_000;
 const LIVE_HOST_RECONCILE_MS = 120_000;
+const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;
 
 interface LiveRuntime {
   client: HerdrClient;
@@ -236,6 +238,7 @@ function AppContent() {
   const locales = useLocales();
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
+  const latencyPingsInFlight = useRef(new Map<string, LiveRuntime>());
   const navigationBlurTargetRef = useRef<View | null>(null);
   const hostsRef = useRef<HostProfile[]>([]);
   const knownHostsRef = useRef<KnownHost[]>([]);
@@ -773,6 +776,28 @@ function AppContent() {
     }
   });
 
+  const measureVisibleHostLatencies = useEffectEvent(() => {
+    if (AppState.currentState !== 'active') return;
+    for (const session of liveSessionsRef.current.sessions) {
+      if (session.status !== 'connected') continue;
+      const runtime = runtimes.current.get(session.id);
+      if (!runtime || latencyPingsInFlight.current.get(session.id) === runtime) continue;
+
+      latencyPingsInFlight.current.set(session.id, runtime);
+      runtime.client.measureLatency()
+        .then(latencyMs => {
+          if (runtimes.current.get(session.id) !== runtime) return;
+          setLiveSessions(current => applyLiveHostLatency(current, session.id, latencyMs));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (latencyPingsInFlight.current.get(session.id) === runtime) {
+            latencyPingsInFlight.current.delete(session.id);
+          }
+        });
+    }
+  });
+
   const authenticateLockedApp = useCallback(async () => {
     if (appAuthenticationInFlightRef.current) return;
     appAuthenticationInFlightRef.current = true;
@@ -909,6 +934,13 @@ function AppContent() {
       clearInterval(reconciliation);
     };
   }, [liveSessions.sessions.length]);
+
+  useEffect(() => {
+    if (navigation.tab !== 'hosts' || appAccessLocked) return;
+    measureVisibleHostLatencies();
+    const interval = setInterval(measureVisibleHostLatencies, VISIBLE_HOST_LATENCY_POLL_MS);
+    return () => clearInterval(interval);
+  }, [appAccessLocked, navigation.tab]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {

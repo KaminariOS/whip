@@ -217,6 +217,25 @@ export function updateLiveHostConnection(
   });
 }
 
+/** Apply a lightweight RTT sample without changing snapshot synchronization state. */
+export function applyLiveHostLatency(
+  state: LiveHostSessionsState,
+  sessionId: string,
+  latencyMs: number,
+): LiveHostSessionsState {
+  if (!Number.isFinite(latencyMs) || latencyMs <= 0) return state;
+  return updateSession(state, sessionId, session => {
+    if (session.status !== 'connected' || session.sync.latencyMs === latencyMs) return session;
+    return {
+      ...session,
+      sync: {
+        ...session.sync,
+        latencyMs,
+      },
+    };
+  });
+}
+
 /** Start a snapshot request and return the generation the async result must carry. */
 export function beginLiveHostSync(
   state: LiveHostSessionsState,

@@ -13,4 +13,16 @@ describe('host latency measurement', () => {
       app.indexOf('runtime.client.snapshot()'),
     );
   });
+
+  it('polls lightweight latency while the Hosts tab is visible', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+
+    expect(app).toContain('const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;');
+    expect(app).toContain("if (navigation.tab !== 'hosts' || appAccessLocked) return;");
+    expect(app).toContain('const interval = setInterval(measureVisibleHostLatencies, VISIBLE_HOST_LATENCY_POLL_MS);');
+    expect(app).toContain('setLiveSessions(current => applyLiveHostLatency(current, session.id, latencyMs));');
+    expect(app).toContain("if (session.status !== 'connected') continue;");
+    expect(app).toContain('latencyPingsInFlight.current.get(session.id) === runtime');
+    expect(app).toContain('clearInterval(interval);');
+  });
 });
