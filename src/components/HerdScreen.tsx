@@ -82,7 +82,7 @@ interface Props {
   onRenameWorkspace: (hostId: string, workspaceId: string, name: string) => Promise<void>;
   onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
   onCloseTab: (hostId: string, tabId: string) => Promise<void>;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
   onRunCommand: (hostId: string, workspaceId: string, tabName: string, command: string) => Promise<void>;
   onOpenSpace: (hostId: string, workspaceId: string) => Promise<void>;
@@ -136,7 +136,7 @@ export function HerdScreen({
   const done = queueAgents.filter(
     item => item.agent.agent_status === 'done',
   ).length;
-  const refreshing = scopedQueues.some(queue => queue.refreshing);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
   const [workspaceEditorMode, setWorkspaceEditorMode] = useState<'create' | 'rename' | null>(null);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
@@ -148,6 +148,16 @@ export function HerdScreen({
   const [commandKeyboardInset, setCommandKeyboardInset] = useState(0);
   const commandComposerRef = useRef<View | null>(null);
   const commandInputRef = useRef<TextInputHandle | null>(null);
+
+  const refreshFromPull = useCallback(async () => {
+    if (pullRefreshing) return;
+    setPullRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setPullRefreshing(false);
+    }
+  }, [onRefresh, pullRefreshing]);
 
   useEffect(() => {
     if (workspaceFilterId && !selectedWorkspaceId && selectedQueue) {
@@ -440,8 +450,8 @@ export function HerdScreen({
         ItemSeparatorComponent={AgentRowSeparator}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
+            refreshing={pullRefreshing}
+            onRefresh={refreshFromPull}
             tintColor={colors.textSecondary}
             colors={[colors.text]}
           />
