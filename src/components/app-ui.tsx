@@ -263,6 +263,7 @@ export function AgentStatusMedallion({
   accessibilityLabel,
   status,
   color,
+  connected = false,
   icon: IconComponent,
   size = 44,
   glyphSize = 24,
@@ -270,10 +271,13 @@ export function AgentStatusMedallion({
   accessibilityLabel: string;
   status: string;
   color: string;
+  connected?: boolean;
   icon?: LucideIcon;
   size?: number;
   glyphSize?: number;
 }) {
+  const reduceMotion = useReducedMotion();
+  const bloomStyle = useConnectedHostBloom(connected, reduceMotion);
   const bloomSize = size + 4;
   const glyph = () => IconComponent
     ? <IconComponent color={color} size={glyphSize} strokeWidth={2.25} />
@@ -284,11 +288,13 @@ export function AgentStatusMedallion({
       accessibilityLabel={accessibilityLabel}
       className="items-center justify-center"
       style={{ width: bloomSize, height: bloomSize }}>
-      <View
-        pointerEvents="none"
-        className="absolute rounded-full"
-        style={agentStatusCircleBloomStyle(color, bloomSize)}
-      />
+      {connected ? (
+        <Animated.View
+          pointerEvents="none"
+          className="absolute rounded-full"
+          style={[agentStatusCircleBloomStyle(color, bloomSize), bloomStyle]}
+        />
+      ) : null}
       <GlassSurface
         className="items-center justify-center rounded-full border"
         intensity={28}
@@ -297,12 +303,14 @@ export function AgentStatusMedallion({
           height: size,
           borderColor: colorWithAlpha(color, '8F'),
         }}>
-        <View
-          pointerEvents="none"
-          className="absolute inset-0 items-center justify-center"
-          style={styles.agentStatusIconBloom}>
-          {glyph()}
-        </View>
+        {connected ? (
+          <Animated.View
+            pointerEvents="none"
+            className="absolute inset-0 items-center justify-center"
+            style={[styles.agentStatusIconBloom, bloomStyle]}>
+            {glyph()}
+          </Animated.View>
+        ) : null}
         {glyph()}
       </GlassSurface>
     </View>
@@ -442,6 +450,27 @@ function useStatusBloom(status: string, reduceMotion: boolean) {
       transform: [{ scale: 0.78 + (progress.value * 0.3) }],
     };
   }, [breathes, reduceMotion]);
+}
+
+function useConnectedHostBloom(connected: boolean, reduceMotion: boolean) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    cancelAnimation(progress);
+    progress.value = 0;
+    if (!connected || reduceMotion) return;
+
+    progress.value = withRepeat(withSequence(
+      withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
+    ), -1);
+    return () => cancelAnimation(progress);
+  }, [connected, progress, reduceMotion]);
+
+  return useAnimatedStyle(() => ({
+    opacity: reduceMotion ? 0.62 : 0.32 + (progress.value * 0.5),
+    transform: [{ scale: reduceMotion ? 1 : 0.9 + (progress.value * 0.16) }],
+  }), [reduceMotion]);
 }
 
 function statusBloomStyle(color: string, size: number) {

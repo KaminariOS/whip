@@ -125,6 +125,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                                 ? t('hosts.agentStatus', { status: t(`status.${runtime.agentStatus}`) })
                                 : t('status.disconnected')}
                               status={runtime?.agentStatus ?? 'unknown'}
+                              connected={connected}
                               color={runtime
                                 ? statusColor(runtime.agentStatus, colors)
                                 : colors.textSecondary}
