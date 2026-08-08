@@ -99,7 +99,7 @@ describe('About screen', () => {
     expect(screen).toContain("export const HERDR_WEBSITE_URL = 'https://herdr.dev/';");
     expect(screen).toContain('Linking.openURL(HERDR_WEBSITE_URL)');
     expect(screen).toContain('<HerdrMark size={44}');
-    expect(appUi).toContain("import Svg, { G, Path, Rect } from 'react-native-svg';");
+    expect(appUi).toContain("import Svg, { Circle, G, Path, Rect } from 'react-native-svg';");
     expect(appUi).not.toContain('herdr-icon.png');
     expect(existsSync(resolve(__dirname, '../assets/herdr-icon.png'))).toBe(false);
     expect(screen).toContain('>herdr.dev</Text>');

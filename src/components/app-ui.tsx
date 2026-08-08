@@ -25,7 +25,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { G, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
@@ -43,6 +43,10 @@ import { Text } from './ui/text';
 
 const ReducedMotionContext = createContext(false);
 const AGENT_SPINNER_INTERVAL_MS = 125;
+const AGENT_SPINNER_VIEW_BOX_SIZE = 24;
+const AGENT_SPINNER_ORBIT_RADIUS = 9.5;
+const AGENT_SPINNER_DOT_RADIUS = 2;
+const AGENT_SPINNER_TRAIL_OPACITIES = [1, 0.72, 0.5, 0.32, 0.16] as const;
 const agentSpinnerListeners = new Set<() => void>();
 let agentSpinnerFrame = 0;
 let agentSpinnerInterval: ReturnType<typeof setInterval> | null = null;
@@ -237,17 +241,46 @@ export function AnimatedAgentStatusGlyph({
   const glyphBoxSize = size + 4;
   return (
     <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
-      <Text
-        className="text-center"
-        style={[
-          styles.statusGlyphText,
-          Platform.OS === 'android' && styles.statusGlyphTextAndroid,
-          { color, fontSize: size, lineHeight: glyphBoxSize },
-        ]}
-      >
-        {agentStatusGlyph(status, frame)}
-      </Text>
+      {spins ? (
+        <CircularAgentSpinner frame={frame} color={color} size={size} />
+      ) : (
+        <Text
+          className="text-center"
+          style={[
+            styles.statusGlyphText,
+            Platform.OS === 'android' && styles.statusGlyphTextAndroid,
+            { color, fontSize: size, lineHeight: glyphBoxSize },
+          ]}
+        >
+          {agentStatusGlyph(status, frame)}
+        </Text>
+      )}
     </Animated.View>
+  );
+}
+
+function CircularAgentSpinner({ frame, color, size }: { frame: number; color: string; size: number }) {
+  const frameCount = AGENT_SPINNER_FRAMES.length;
+  const activeFrame = ((frame % frameCount) + frameCount) % frameCount;
+  const center = AGENT_SPINNER_VIEW_BOX_SIZE / 2;
+
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${AGENT_SPINNER_VIEW_BOX_SIZE} ${AGENT_SPINNER_VIEW_BOX_SIZE}`}>
+      {AGENT_SPINNER_TRAIL_OPACITIES.map((opacity, trailIndex) => {
+        const dotIndex = (activeFrame - trailIndex + frameCount) % frameCount;
+        const angle = (dotIndex / frameCount) * Math.PI * 2 - Math.PI / 2;
+        return (
+          <Circle
+            key={trailIndex}
+            cx={center + Math.cos(angle) * AGENT_SPINNER_ORBIT_RADIUS}
+            cy={center + Math.sin(angle) * AGENT_SPINNER_ORBIT_RADIUS}
+            r={AGENT_SPINNER_DOT_RADIUS}
+            fill={color}
+            opacity={opacity}
+          />
+        );
+      })}
+    </Svg>
   );
 }
 
