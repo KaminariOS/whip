@@ -964,7 +964,7 @@ function AppContent() {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
         restartLiveConnections('app-resume');
-        resumeLiveConnections(true);
+        resumeLiveConnections(false);
       }
     });
     const heartbeat = setInterval(() => {
