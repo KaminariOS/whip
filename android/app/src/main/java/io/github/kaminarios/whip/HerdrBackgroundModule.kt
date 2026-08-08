@@ -112,6 +112,22 @@ class HerdrBackgroundModule(
     }
   }
 
+  @ReactMethod
+  fun dismissPersistentAlert(promise: Promise) {
+    mainHandler.post {
+      try {
+        activeAlertIdentifier?.let { identifier ->
+          notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
+        }
+        cancelVibration()
+        stopPersistentAlert("App returned to the foreground")
+        promise.resolve(null)
+      } catch (error: Throwable) {
+        promise.reject("E_PERSISTENT_ALERT_DISMISS", error)
+      }
+    }
+  }
+
   override fun onSensorChanged(event: SensorEvent) {
     if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
     val x = event.values[0] / SensorManager.GRAVITY_EARTH

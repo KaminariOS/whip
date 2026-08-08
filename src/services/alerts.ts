@@ -5,7 +5,7 @@ import { Platform, Vibration } from 'react-native';
 import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
-import { armPersistentAgentAlert } from './backgroundMonitoring';
+import { armPersistentAgentAlert, dismissPersistentAgentAlert } from './backgroundMonitoring';
 import i18n from '../i18n';
 
 const PERSISTENT_CHANNEL_ID = 'agent-state-v3';
@@ -18,6 +18,8 @@ const ALERT_VIBRATION_PATTERN = [
 const BRIEF_VIBRATION_PATTERN = [0, 200];
 const SPEECH_TIMEOUT_MS = 10_000;
 const DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS = 30_000;
+const activeAgentNotificationIds = new Set<string>();
+let alertDismissalGeneration = 0;
 
 export type AgentAlertDuration = 'brief' | 'persistent';
 
@@ -60,6 +62,7 @@ export async function alertAgent(
   duration: AgentAlertDuration = 'persistent',
   persistentAlertTimeoutMs: number = DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS,
 ): Promise<void> {
+  const dismissalGeneration = alertDismissalGeneration;
   const title = agentNotificationTitle(agent, tabName, {
     needsYou: name => i18n.t('alerts.needsYou', { name }),
     finished: name => i18n.t('alerts.finished', { name }),
@@ -67,6 +70,7 @@ export async function alertAgent(
   const body = agent.title || agent.custom_status || i18n.t('alerts.agentState', { status: agent.agent_status });
 
   if (speak) await speakBeforeAlert(title);
+  if (dismissalGeneration !== alertDismissalGeneration) return;
   if (Platform.OS !== 'android') Vibration.vibrate();
   const persistent = duration === 'persistent';
   const channelId = persistent ? PERSISTENT_CHANNEL_ID : BRIEF_CHANNEL_ID;
@@ -81,6 +85,11 @@ export async function alertAgent(
     },
     trigger: { channelId },
   });
+  if (dismissalGeneration !== alertDismissalGeneration) {
+    await Notifications.dismissNotificationAsync(notificationIdentifier).catch(() => undefined);
+    return;
+  }
+  activeAgentNotificationIds.add(notificationIdentifier);
   if (Platform.OS === 'android' && persistent) {
     armPersistentAgentAlert(
       notificationIdentifier,
@@ -88,6 +97,17 @@ export async function alertAgent(
       persistentAlertTimeoutMs,
     ).catch(() => undefined);
   }
+}
+
+export async function dismissAgentAlerts(): Promise<void> {
+  alertDismissalGeneration += 1;
+  const notificationIds = [...activeAgentNotificationIds];
+  activeAgentNotificationIds.clear();
+  await Speech.stop().catch(() => undefined);
+  await Promise.all(notificationIds.map(identifier => (
+    Notifications.dismissNotificationAsync(identifier).catch(() => undefined)
+  )));
+  await dismissPersistentAgentAlert().catch(() => undefined);
 }
 
 async function speakBeforeAlert(title: string): Promise<void> {

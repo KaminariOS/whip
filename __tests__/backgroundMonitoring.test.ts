@@ -104,6 +104,14 @@ describe('Android background monitoring', () => {
     expect(module).toContain('MAX_ALERT_WINDOW_MS = 60_000L');
   });
 
+  it('dismisses agent alerts when the app returns to the foreground', () => {
+    expect(app).toContain("const returnedToForeground = previousState !== 'active' && state === 'active';");
+    expect(app).toContain('if (returnedToForeground) dismissAgentAlerts().catch(() => undefined);');
+    expect(alerts).toContain('Notifications.dismissNotificationAsync(identifier)');
+    expect(module).toContain('fun dismissPersistentAlert(promise: Promise)');
+    expect(module).toContain('stopPersistentAlert("App returned to the foreground")');
+  });
+
   it('does not close Herdr event monitoring when the activity is backgrounded', () => {
     expect(app).not.toContain("runtime.eventReconnectTimer || AppState.currentState !== 'active'");
     expect(app).not.toContain("if (!runtime || AppState.currentState !== 'active') return;");

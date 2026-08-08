@@ -109,7 +109,7 @@ import {
   initialMobileNavigation,
   selectMobileTab,
 } from './src/mobileNavigation';
-import { alertAgent, prepareAlerts } from './src/services/alerts';
+import { alertAgent, dismissAgentAlerts, prepareAlerts } from './src/services/alerts';
 import { authenticateAppAccess } from './src/services/appAuthentication';
 import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
 import {
@@ -363,6 +363,16 @@ function AppContent() {
       active = false;
       subscription.remove();
     };
+  }, []);
+
+  useEffect(() => {
+    let previousState = AppState.currentState;
+    const subscription = AppState.addEventListener('change', state => {
+      const returnedToForeground = previousState !== 'active' && state === 'active';
+      previousState = state;
+      if (returnedToForeground) dismissAgentAlerts().catch(() => undefined);
+    });
+    return () => subscription.remove();
   }, []);
 
   useEffect(() => {

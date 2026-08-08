@@ -8,6 +8,7 @@ interface HerdrBackgroundNativeModule {
     channelId: string,
     timeoutMs: number,
   ): Promise<void>;
+  dismissPersistentAlert(): Promise<void>;
 }
 
 function nativeModule(): HerdrBackgroundNativeModule | null {
@@ -39,4 +40,10 @@ export async function armPersistentAgentAlert(
   const module = nativeModule();
   if (!module) return;
   await module.armPersistentAlert(notificationIdentifier, channelId, timeoutMs);
+}
+
+export async function dismissPersistentAgentAlert(): Promise<void> {
+  const module = nativeModule();
+  if (!module) return;
+  await module.dismissPersistentAlert();
 }
