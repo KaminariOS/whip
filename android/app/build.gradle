@@ -86,6 +86,7 @@ def uploadKeystorePropertiesFile = uploadKeystorePropertiesPath
     ? file(uploadKeystorePropertiesPath)
     : new File(System.getProperty('user.home'), '.config/whip/upload-keystore.properties')
 def hasUploadSigning = uploadKeystorePropertiesFile.isFile()
+def usePreviewSigning = (findProperty('whip.previewSigning') ?: 'false').toBoolean()
 
 if (hasUploadSigning) {
     uploadKeystorePropertiesFile.withInputStream {
@@ -139,8 +140,11 @@ android {
             signingConfig = signingConfigs.debug
         }
         release {
-            // Release APKs and bundles use the same private upload key.
-            signingConfig = hasUploadSigning ? signingConfigs.upload : signingConfigs.debug
+            // Distribution builds use the private upload key. Local preview APKs
+            // may explicitly retain the established debug-key identity.
+            signingConfig = usePreviewSigning
+                ? signingConfigs.debug
+                : hasUploadSigning ? signingConfigs.upload : signingConfigs.debug
             minifyEnabled = enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -159,10 +163,11 @@ gradle.taskGraph.whenReady { taskGraph ->
     def requiresUploadSigning = [':app:assembleRelease', ':app:bundleRelease'].any {
         taskGraph.hasTask(it)
     }
-    if (requiresUploadSigning && !hasUploadSigning) {
+    if (requiresUploadSigning && !hasUploadSigning && !usePreviewSigning) {
         throw new GradleException(
             'Release builds require ~/.config/whip/upload-keystore.properties ' +
-                'or WHIP_UPLOAD_KEYSTORE_PROPERTIES.'
+                'or WHIP_UPLOAD_KEYSTORE_PROPERTIES. For a local preview APK, ' +
+                'pass -Pwhip.previewSigning=true explicitly.'
         )
     }
 }
