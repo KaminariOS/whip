@@ -1,7 +1,7 @@
 # Whip
 
 <p align="center">
-  <img src="assets/icon.png" alt="Whip app icon" width="128">
+  <img src="assets/whip-cyborg-hand-concept.svg" alt="Whip app icon" width="128">
 </p>
 
 <p align="center">
