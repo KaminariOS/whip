@@ -2,15 +2,34 @@ import {
   EnrichedMarkdownText,
   type MarkdownStyle,
 } from 'react-native-enriched-markdown';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import {
+  markdownImageTargets,
+  resolveRemoteMarkdownPath,
+  rewriteMarkdownImages,
+} from '@/src/lib/markdownRemoteLinks';
+import { parentRemotePath, remoteEntryName, remotePreviewKind } from '@/src/lib/remoteFiles';
+import type { HerdrClient } from '@/src/services/HerdrClient';
+import { cacheRemoteFile, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { useTheme } from '@/src/theme';
 
-export function MarkdownPreview({ content }: { content: string }) {
+interface Props {
+  client: HerdrClient;
+  content: string;
+  remotePath: string;
+  onOpenRemotePath: (path: string) => Promise<void>;
+}
+
+const MAX_REMOTE_MARKDOWN_IMAGES = 24;
+const MAX_REMOTE_MARKDOWN_IMAGE_BYTES = 50 * 1024 * 1024;
+
+export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const [localImages, setLocalImages] = useState<Record<string, string>>({});
   const markdownStyle = useMemo<MarkdownStyle>(() => ({
     paragraph: { color: colors.text, fontSize: 14, lineHeight: 22, marginBottom: 12 },
     h1: { color: colors.text, fontSize: 26, lineHeight: 32, marginBottom: 14 },
@@ -73,7 +92,62 @@ export function MarkdownPreview({ content }: { content: string }) {
     },
   }), [colors]);
 
+  useEffect(() => {
+    let disposed = false;
+    const cachedFiles: CachedRemoteFile[] = [];
+    setLocalImages({});
+    const loadImages = async () => {
+      let remainingBytes = MAX_REMOTE_MARKDOWN_IMAGE_BYTES;
+      const directoryListings = new Map<string, Awaited<ReturnType<HerdrClient['listRemoteDirectory']>>>();
+      const targets = [...new Set(markdownImageTargets(content).map(image => image.target))]
+        .slice(0, MAX_REMOTE_MARKDOWN_IMAGES);
+      for (const target of targets) {
+        const path = resolveRemoteMarkdownPath(remotePath, target);
+        if (!path) continue;
+        try {
+          const directory = parentRemotePath(path);
+          let listing = directoryListings.get(directory);
+          if (!listing) {
+            listing = await client.listRemoteDirectory(directory);
+            directoryListings.set(directory, listing);
+          }
+          const filename = path.slice(path.lastIndexOf('/') + 1);
+          const entry = listing.entries.find(candidate => remoteEntryName(candidate) === filename);
+          if (!entry || entry.isDirectory || remotePreviewKind(filename, entry.fileSize) !== 'image') continue;
+          if (entry.fileSize > remainingBytes) continue;
+          remainingBytes -= entry.fileSize;
+          const cached = await cacheRemoteFile(client, path);
+          if (disposed) {
+            cached.dispose();
+            return;
+          }
+          cachedFiles.push(cached);
+          setLocalImages(current => ({ ...current, [target]: cached.uri }));
+        } catch {
+          // Leave an unavailable image unchanged so the renderer can show its alt text.
+        }
+      }
+    };
+    loadImages();
+    return () => {
+      disposed = true;
+      for (const cached of cachedFiles) cached.dispose();
+    };
+  }, [client, content, remotePath]);
+
+  const renderedContent = useMemo(
+    () => rewriteMarkdownImages(content, target => localImages[target]),
+    [content, localImages],
+  );
+
   const openLink = ({ url }: { url: string }) => {
+    const path = resolveRemoteMarkdownPath(remotePath, url);
+    if (path) {
+      onOpenRemotePath(path).catch(reason => {
+        Alert.alert(t('files.linkFailed'), String(reason));
+      });
+      return;
+    }
     Linking.openURL(url).catch(reason => {
       Alert.alert(t('files.linkFailed'), String(reason));
     });
@@ -84,7 +158,7 @@ export function MarkdownPreview({ content }: { content: string }) {
       <EnrichedMarkdownText
         containerStyle={styles.markdown}
         flavor="github"
-        markdown={content}
+        markdown={renderedContent}
         markdownStyle={markdownStyle}
         onLinkPress={openLink}
         selectable

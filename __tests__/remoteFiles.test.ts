@@ -144,11 +144,14 @@ test('supports native Markdown previews and file transfer actions', () => {
   const markdown = readFileSync(resolve(__dirname, '../src/components/MarkdownPreview.tsx'), 'utf8');
   const transfer = readFileSync(resolve(__dirname, '../src/services/remoteFileTransfer.ts'), 'utf8');
   expect(manager).toContain('<MarkdownPreview');
+  expect(manager).toContain('onOpenRemotePath={openRemotePath}');
   expect(manager).toContain('saveCachedRemoteText(');
   expect(manager).toContain('pickLocalFileForUpload(');
   expect(manager).toContain('copyCachedRemoteFileToPickedDirectory(');
   expect(markdown).toContain('EnrichedMarkdownText');
   expect(markdown).toContain('flavor="github"');
+  expect(markdown).toContain('rewriteMarkdownImages');
+  expect(markdown).toContain('cacheRemoteFile(client, path)');
   expect(transfer).toContain('File.pickFileAsync(');
 });
 

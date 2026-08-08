@@ -138,9 +138,9 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
     previewRef.current = null;
   }, [client]);
 
-  const openEntry = async (entry: LsResult) => {
+  const openEntry = async (entry: LsResult, directoryPath = path) => {
     const name = remoteEntryName(entry);
-    const entryPath = joinRemotePath(path, name);
+    const entryPath = joinRemotePath(directoryPath, name);
     if (entry.isDirectory) {
       await loadDirectory(entryPath);
       return;
@@ -186,6 +186,17 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
         replacePreview({ ...loadingPreview, error: String(reason) });
       }
     }
+  };
+
+  const openRemotePath = async (remotePath: string) => {
+    const request = ++requestRef.current;
+    const directory = parentRemotePath(remotePath);
+    const filename = remotePath.slice(remotePath.lastIndexOf('/') + 1);
+    const listing = await client.listRemoteDirectory(directory);
+    if (request !== requestRef.current) return;
+    const entry = listing.entries.find(candidate => remoteEntryName(candidate) === filename);
+    if (!entry) throw new Error(`Remote file not found: ${remotePath}`);
+    await openEntry(entry, listing.path);
   };
 
   const dismissNow = () => {
@@ -364,7 +375,13 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                 uri={preview.cached.uri}
               />
             ) : preview.kind === 'markdown' ? (
-              <MarkdownPreview content={preview.content || ''} />
+              <MarkdownPreview
+                key={preview.path}
+                client={client}
+                content={preview.content || ''}
+                onOpenRemotePath={openRemotePath}
+                remotePath={preview.path}
+              />
             ) : preview.kind === 'html' && preview.htmlPreview ? (
               <HtmlPreview
                 filename={remoteEntryName(preview.entry)}
