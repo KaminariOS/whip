@@ -35,7 +35,8 @@ describe('herd agent row layout', () => {
     expect(scrollingList).toBeGreaterThan(fixedHeader);
     expect(header).toContain("accessibilityLabel={t('herd.runCommand')}");
     expect(header).not.toContain("accessibilityLabel={t('herd.startAgent')}");
-    expect(header).toContain('<Metric value={queueAgents.length}');
+    expect(header).toContain("<Metric value={queueAgents.length} label={t('herd.agents')} icon={Bot} />");
+    expect(screen).toContain('icon ? <Icon as={icon} className="mt-0.5 text-muted-foreground" size={24} />');
     expect(header).toContain("t('herd.attentionQueue')");
   });
 

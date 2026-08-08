@@ -1,4 +1,4 @@
-import { AlertCircle, Ellipsis, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Bot, Ellipsis, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { PanResponder, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -170,9 +170,15 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                                   ) : null}
                                   {connected ? (
                                     <>
-                                      <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
-                                        {t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
-                                      </Text>
+                                      <View
+                                        accessible
+                                        accessibilityLabel={t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
+                                        className="flex-row items-center gap-1">
+                                        <Icon as={Bot} className="text-muted-foreground" size={20} />
+                                        <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                          {runtime?.agentTotal ?? 0}
+                                        </Text>
+                                      </View>
                                       <View
                                         accessible
                                         accessibilityLabel={runtime?.protocol == null

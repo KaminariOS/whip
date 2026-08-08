@@ -1,10 +1,12 @@
 import {
+  Bot,
   ChevronRight,
   History,
   Play,
   Sparkles,
   SquareTerminal,
   X,
+  type LucideIcon,
 } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -402,7 +404,7 @@ export function HerdScreen({
           ) : null}
 
           <View className="mb-6 flex-row">
-            <Metric value={queueAgents.length} label={t('herd.agents')} />
+            <Metric value={queueAgents.length} label={t('herd.agents')} icon={Bot} />
             <Metric
               value={working}
               label={t('herd.working')}
@@ -880,7 +882,7 @@ function AgentRowSeparator() {
   return <View className="h-2" />;
 }
 
-function Metric({ value, label, status }: { value: number; label: string; status?: string }) {
+function Metric({ value, label, status, icon }: { value: number; label: string; status?: string; icon?: LucideIcon }) {
   const { colors } = useTheme();
-  return <View className="flex-1"><Text className="text-2xl font-semibold leading-[30px]" style={status ? { color: statusColor(status, colors) } : undefined}>{value}</Text><Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground">{label}</Text></View>;
+  return <View accessibilityLabel={icon ? `${label}: ${value}` : undefined} accessible={Boolean(icon)} className="flex-1"><Text className="text-2xl font-semibold leading-[30px]" style={status ? { color: statusColor(status, colors) } : undefined}>{value}</Text>{icon ? <Icon as={icon} className="mt-0.5 text-muted-foreground" size={24} /> : <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground">{label}</Text>}</View>;
 }
