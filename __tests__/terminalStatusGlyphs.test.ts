@@ -25,11 +25,12 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain('const glyphBoxSize = size + 4;');
     expect(appUi).toContain('const AGENT_SPINNER_INTERVAL_MS = 125;');
     expect(appUi).toContain('const agentSpinnerListeners = new Set<() => void>();');
-    expect(appUi).toContain('const frame = useAgentSpinnerFrame(spins && !reduceMotion);');
+    expect(appUi).toContain('const AgentStatusAnimationContext = createContext(true);');
+    expect(appUi).toContain('const animationsEnabled = useContext(AgentStatusAnimationContext);');
+    expect(appUi).toContain('const frame = useAgentSpinnerFrame(animationsEnabled && spins && !reduceMotion);');
     expect(appUi).toContain('const { style } = useStatusMotion(status, false);');
     expect(appUi).toContain('export function AgentStatusMedallion');
     expect(appUi).toContain('agentStatusCircleBloomStyle(color, bloomSize)');
-    expect(appUi).toContain('style={[styles.agentStatusIconBloom, bloomStyle]}');
     expect(appUi).toContain("filter: [{ blur: 5 }]");
     expect(appUi).toContain('<CircularAgentSpinner frame={frame} color={color} size={size} />');
     expect(appUi).toContain('const AGENT_SPINNER_ORBIT_RADIUS = 9.5;');
@@ -43,6 +44,21 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain("Platform.OS === 'android' && styles.statusGlyphTextAndroid");
     expect(appUi).toContain('transform: [{ translateY: -1 }]');
     expect(appUi).not.toContain('textShadowColor');
+  });
+
+  it('pauses hidden Herd status spinners without pausing agent monitoring', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const appUi = readFileSync(
+      resolve(__dirname, '../src/components/app-ui.tsx'),
+      'utf8',
+    );
+
+    expect(app).toContain("<AgentStatusAnimationProvider enabled={navigation.tab === 'herd'}>");
+    expect(appUi).toContain("const [appActive, setAppActive] = useState(AppState.currentState === 'active');");
+    expect(appUi).toContain("AppState.addEventListener('change', state => {");
+    expect(appUi).toContain('value={enabled && appActive}');
+    expect(app).toContain("if (event.event === 'pane.agent_status_changed' && paneId)");
+    expect(app).toContain('startBackgroundMonitoring(hostCount)');
   });
 
   it('only breathes the host medallion bloom while its host is connected', () => {
@@ -60,6 +76,21 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain('{connected ? (');
     expect(appUi).toContain('withTiming(1, { duration: 1400');
     expect(appUi).toContain('withTiming(0, { duration: 1400');
+  });
+
+  it('renders one crisp host glyph inside the outer connected bloom', () => {
+    const appUi = readFileSync(
+      resolve(__dirname, '../src/components/app-ui.tsx'),
+      'utf8',
+    );
+    const medallion = appUi.slice(
+      appUi.indexOf('export function AgentStatusMedallion'),
+      appUi.indexOf('function CircularAgentSpinner'),
+    );
+
+    expect(medallion.match(/\{glyph\(\)\}/g)).toHaveLength(1);
+    expect(medallion).not.toContain('agentStatusIconBloom');
+    expect(medallion).toContain('agentStatusCircleBloomStyle(color, bloomSize)');
   });
 
   it('keeps bloom inside non-idle circular connection indicators', () => {

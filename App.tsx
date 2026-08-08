@@ -32,7 +32,7 @@ import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
-import { ReducedMotionProvider, WhipMark } from './src/components/app-ui';
+import { AgentStatusAnimationProvider, ReducedMotionProvider, WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName, resolveJumpHostChain } from './src/lib/hostProfiles';
 import { hostRuntimeSummary } from './src/lib/hostRuntimeSummary';
@@ -1651,31 +1651,33 @@ function AppContent() {
             importantForAccessibility={navigation.tab === 'herd' ? 'auto' : 'no-hide-descendants'}
             pointerEvents={navigation.tab === 'herd' ? 'auto' : 'none'}
             style={navigation.tab === 'herd' ? styles.tabScreen : styles.hiddenTab}>
-            {liveSessions.sessions.length > 0 ? (
-              <HerdScreen
-                queues={herdQueues}
-                sessions={railSessions}
-                selectedHostId={selectedHerdHostId}
-                workspaceFilterId={selectedHerdWorkspaceId}
-                agentCommand={agentCommand}
-                commandHistory={terminalHistory}
-                onSelectHost={selectHerdHost}
-                onWorkspaceFilterChange={setHerdWorkspaceFilter}
-                onCloseHost={closeLiveHost}
-                onNewHost={() => selectTab('hosts')}
-                onSelectWorkspace={selectHerdWorkspace}
-                onCreateWorkspace={createHerdWorkspace}
-                onRenameWorkspace={renameHerdWorkspace}
-                onCloseWorkspace={closeHerdWorkspace}
-                onCloseTab={closeHerdTab}
-                onRefresh={refreshHerd}
-                onOpenTerminal={openAgentTerminal}
-                onRunCommand={runHerdCommand}
-                onOpenSpace={openHerdWorkspace}
-                onStartServer={startServer}
-                onOpenSshShell={openSshShell}
-              />
-            ) : <ConnectRequiredScreen destination={t('nav.herd')} onPickHost={() => selectTab('hosts')} />}
+            <AgentStatusAnimationProvider enabled={navigation.tab === 'herd'}>
+              {liveSessions.sessions.length > 0 ? (
+                <HerdScreen
+                  queues={herdQueues}
+                  sessions={railSessions}
+                  selectedHostId={selectedHerdHostId}
+                  workspaceFilterId={selectedHerdWorkspaceId}
+                  agentCommand={agentCommand}
+                  commandHistory={terminalHistory}
+                  onSelectHost={selectHerdHost}
+                  onWorkspaceFilterChange={setHerdWorkspaceFilter}
+                  onCloseHost={closeLiveHost}
+                  onNewHost={() => selectTab('hosts')}
+                  onSelectWorkspace={selectHerdWorkspace}
+                  onCreateWorkspace={createHerdWorkspace}
+                  onRenameWorkspace={renameHerdWorkspace}
+                  onCloseWorkspace={closeHerdWorkspace}
+                  onCloseTab={closeHerdTab}
+                  onRefresh={refreshHerd}
+                  onOpenTerminal={openAgentTerminal}
+                  onRunCommand={runHerdCommand}
+                  onOpenSpace={openHerdWorkspace}
+                  onStartServer={startServer}
+                  onOpenSshShell={openSshShell}
+                />
+              ) : <ConnectRequiredScreen destination={t('nav.herd')} onPickHost={() => selectTab('hosts')} />}
+            </AgentStatusAnimationProvider>
           </View>
 
           {!activeSession && navigation.tab === 'terminal' && (

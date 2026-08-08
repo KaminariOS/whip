@@ -10,6 +10,7 @@ import {
 } from 'react';
 import {
   AccessibilityInfo,
+  AppState,
   Image,
   Platform,
   StyleSheet,
@@ -42,6 +43,7 @@ import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 const ReducedMotionContext = createContext(false);
+const AgentStatusAnimationContext = createContext(true);
 const AGENT_SPINNER_INTERVAL_MS = 125;
 const AGENT_SPINNER_VIEW_BOX_SIZE = 24;
 const AGENT_SPINNER_ORBIT_RADIUS = 9.5;
@@ -105,6 +107,29 @@ export function ReducedMotionProvider({ children }: { children: ReactNode }) {
     <ReducedMotionContext.Provider value={reduceMotion}>
       {children}
     </ReducedMotionContext.Provider>
+  );
+}
+
+export function AgentStatusAnimationProvider({
+  children,
+  enabled,
+}: {
+  children: ReactNode;
+  enabled: boolean;
+}) {
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      setAppActive(state === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
+
+  return (
+    <AgentStatusAnimationContext.Provider value={enabled && appActive}>
+      {children}
+    </AgentStatusAnimationContext.Provider>
   );
 }
 
@@ -241,8 +266,9 @@ export function AnimatedAgentStatusGlyph({
   size?: number;
 }) {
   const reduceMotion = useReducedMotion();
+  const animationsEnabled = useContext(AgentStatusAnimationContext);
   const spins = status === 'working' || status === 'running';
-  const frame = useAgentSpinnerFrame(spins && !reduceMotion);
+  const frame = useAgentSpinnerFrame(animationsEnabled && spins && !reduceMotion);
   const { style } = useStatusMotion(status, false);
   const glyphBoxSize = size + 4;
   return (
@@ -309,14 +335,6 @@ export function AgentStatusMedallion({
           height: size,
           borderColor: colorWithAlpha(color, '8F'),
         }}>
-        {connected ? (
-          <Animated.View
-            pointerEvents="none"
-            className="absolute inset-0 items-center justify-center"
-            style={[styles.agentStatusIconBloom, bloomStyle]}>
-            {glyph()}
-          </Animated.View>
-        ) : null}
         {glyph()}
       </GlassSurface>
     </View>
@@ -532,11 +550,6 @@ export function SectionLabel({ children, className }: { children: ReactNode; cla
 }
 
 const styles = StyleSheet.create({
-  agentStatusIconBloom: {
-    opacity: 0.58,
-    filter: [{ blur: 3 }],
-    transform: [{ scale: 1.06 }],
-  },
   herdrMark: {
     overflow: 'hidden',
   },
