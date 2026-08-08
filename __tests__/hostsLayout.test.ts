@@ -42,6 +42,16 @@ describe('host list layout', () => {
     expect(screen).toContain("t('hosts.herdrProtocol', { version: runtime.protocol })");
   });
 
+  it('shows the display name of a configured jump host', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/HostsScreen.tsx'), 'utf8');
+
+    expect(screen).toContain('const hostsById = new Map(hosts.map(host => [host.id, host]));');
+    expect(screen).toContain('const jumpHost = host.jumpHostId ? hostsById.get(host.jumpHostId) : undefined;');
+    expect(screen).toContain('<Icon as={Network} className="text-muted-foreground" size={11} />');
+    expect(screen).toContain("accessibilityLabel={t('hosts.jumpHost', {");
+    expect(screen).toContain("host: jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable')");
+  });
+
   it('uses a distinct server-off icon for disconnected hosts', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/HostsScreen.tsx'), 'utf8');
     const appUi = readFileSync(resolve(__dirname, '../src/components/app-ui.tsx'), 'utf8');

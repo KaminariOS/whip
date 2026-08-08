@@ -80,6 +80,8 @@ export const zhHant: Record<string, string> = {
   'hosts.agentStatus': '代理程式狀態：{{status}}',
   'hosts.herdrProtocol': 'Herdr · P{{version}}',
   'hosts.herdrProtocolNone': 'Herdr · 無',
+  'hosts.jumpHost': '跳板主機：{{host}}',
+  'hosts.jumpHostUnavailable': '無法使用',
   'hosts.sshKey': 'SSH 金鑰',
   'hosts.password': '密碼',
   'hosts.securityCopy': '認證資料由 Android Keystore 保護，並透過加密的 Block Store 復原。',

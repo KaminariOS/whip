@@ -1,4 +1,4 @@
-import { AlertCircle, Ellipsis, LockKeyhole, LogIn, LogOut, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Ellipsis, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { PanResponder, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -45,6 +45,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
   const { t } = useTranslation();
   const { colors } = useTheme();
   const connectedHostIdSet = new Set(connectedHostIds);
+  const hostsById = new Map(hosts.map(host => [host.id, host]));
   const orderedHosts = orderByConnectionAndAgentStatusPriority(
     hosts,
     host => connectedHostIdSet.has(host.id),
@@ -106,6 +107,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                   const state = connecting ? 'working' : active || connected ? 'done' : 'idle';
                   const label = connecting ? t('hosts.opening') : active ? t('hosts.active') : connected ? t('hosts.open') : t('hosts.offline');
                   const displayName = hostDisplayName(host);
+                  const jumpHost = host.jumpHostId ? hostsById.get(host.jumpHostId) : undefined;
                   const latencyMs = latencyMsByHostId[host.id];
                   const runtime = runtimeByHostId[host.id];
                   return (
@@ -152,6 +154,19 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                                   : ''}
                               </Text>
                               <View className="mt-1.5 flex-row flex-wrap items-center gap-x-2.5 gap-y-1">
+                                {host.jumpHostId ? (
+                                  <View
+                                    accessible
+                                    accessibilityLabel={t('hosts.jumpHost', {
+                                      host: jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable'),
+                                    })}
+                                    className="flex-row items-center gap-1">
+                                    <Icon as={Network} className="text-muted-foreground" size={11} />
+                                    <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                      {jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable')}
+                                    </Text>
+                                  </View>
+                                ) : null}
                                 <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
                                   {t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
                                 </Text>

@@ -84,6 +84,8 @@ export const en = {
   'hosts.agentStatus': 'Agent status: {{status}}',
   'hosts.herdrProtocol': 'Herdr · P{{version}}',
   'hosts.herdrProtocolNone': 'Herdr · None',
+  'hosts.jumpHost': 'Jump host: {{host}}',
+  'hosts.jumpHostUnavailable': 'Unavailable',
   'hosts.sshKey': 'SSH key',
   'hosts.password': 'Password',
   'hosts.securityCopy': 'Credentials use Android Keystore with encrypted Block Store recovery.',
