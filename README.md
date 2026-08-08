@@ -23,7 +23,7 @@
 
 Whip gives [Herdr](https://github.com/ogulcancelik/herdr) a touch-friendly Android interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
 
-The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints, **Herd** merges their agents into a scoped attention queue, **Terminal** keeps open pane sessions within reach, and **More** holds security, notification, appearance, and terminal preferences.
+The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints and exposes their live Herdr state, **Herd** merges connected agents into a scoped attention queue, **Terminal** keeps open pane sessions within reach, and **More** holds security, notification, appearance, and terminal preferences.
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
@@ -31,7 +31,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 
 <table>
   <tr>
-    <td align="center"><img src="assets/screenshots/hosts.png" alt="Whip Hosts screen showing saved Herdr servers, connection state, and latency" width="320"></td>
+    <td align="center"><img src="assets/screenshots/hosts.png" alt="Whip Hosts screen showing connected hosts first with agent status, protocol, latency, and a jump-host route" width="320"></td>
     <td align="center"><img src="assets/screenshots/herd.png" alt="Whip Herd screen showing merged host scopes, agent totals, and the attention queue" width="320"></td>
   </tr>
   <tr>
@@ -40,18 +40,18 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   </tr>
   <tr>
     <td align="center"><img src="assets/screenshots/terminal.png" alt="Whip terminal showing open tabs, the web-link browser action, and mobile keys" width="320"></td>
-    <td align="center"><img src="assets/screenshots/chat-composer.png" alt="Whip native chat composer open above Gboard voice input" width="320"></td>
+    <td align="center"><img src="assets/screenshots/chat-composer.png" alt="Whip native chat composer open over a live remote agent terminal" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Work from anywhere</strong><br>Keep remote terminal tabs warm, use mobile controls, and open discovered web links in one tap.</td>
-    <td align="center"><strong>Chat naturally</strong><br>Prompt a remote agent from the native multiline composer, including voice dictation through Gboard.</td>
+    <td align="center"><strong>Work from anywhere</strong><br>Keep remote terminal tabs warm, use mobile controls, and open discovered web links or remote files in one tap.</td>
+    <td align="center"><strong>Chat naturally</strong><br>Prompt a remote agent from the native multiline composer with Android keyboard, suggestion, and voice-input support.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/remote-files.png" alt="Whip Remote files screen browsing the current terminal directory over SFTP" width="320"></td>
-    <td align="center"><img src="assets/screenshots/jump-host-agent-forwarding.png" alt="Whip host editor showing jump-host selection and SSH agent forwarding" width="320"></td>
+    <td align="center"><img src="assets/screenshots/remote-files.png" alt="Whip Remote files screen browsing and sorting the current terminal directory over SFTP" width="320"></td>
+    <td align="center"><img src="assets/screenshots/jump-host-agent-forwarding.png" alt="Whip saved host editor showing an active jump-host route and SSH agent forwarding" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Bring the filesystem with you</strong><br>Browse the terminal's current directory over SFTP and upload, download, edit, or preview remote files.</td>
+    <td align="center"><strong>Bring the filesystem with you</strong><br>Browse, sort, upload, download, edit, delete, or preview the terminal's remote files over SFTP.</td>
     <td align="center"><strong>Reach private hosts safely</strong><br>Build nested jump-host routes and opt into SSH agent forwarding without placing the private key on the server.</td>
   </tr>
   <tr>
@@ -62,7 +62,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   </tr>
 </table>
 
-Screenshots were captured from Whip 0.3.0 on a Pixel 9 Pro.
+Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 
 ## What you can do
 
@@ -70,6 +70,7 @@ Screenshots were captured from Whip 0.3.0 on a Pixel 9 Pro.
 
 - Monitor every open host in one native attention queue, with per-host and per-space scopes.
 - See working, blocked, done, idle, and unknown agents, including their host and space context.
+- Keep connected hosts first and order them by the same agent-status priority as the Herd queue; see each host's agent count, Herdr protocol, measured latency, and jump-host route.
 - Move through Herdr hosts, spaces, tabs, panes, and agents without living in a terminal.
 - Create, focus, rename, split, zoom, inspect, and close space resources, including swipe-to-close Herd tabs.
 - Launch agents and chat through a native multiline composer that works with Android keyboards, including Gboard voice input and suggestions.
@@ -82,10 +83,12 @@ Screenshots were captured from Whip 0.3.0 on a Pixel 9 Pro.
 - Keep multiple terminal surfaces warm while switching or swiping between tabs, with a buffered composer, ANSI colors, modifier keys, touch scrolling, Page Up/Down, selection, live resizing, and configurable appearance.
 - Reuse persistent input history, copy previous commands with a long press, and configure fullscreen behavior, volume-key and double-tap actions, and the number of cached xterm surfaces.
 - Scan terminal scrollback for web links and open local or LAN services in the in-app browser through an on-demand SSH tunnel.
+- Recover open control connections after network changes and app resume without restarting healthy sessions.
 
 ### Move files and attachments
 
-- Browse the active terminal's current directory over SFTP; upload, download, edit, and preview code, text, Markdown, images, and sandboxed HTML.
+- Browse the active terminal's current directory over SFTP, remember a location per terminal, and sort by name, modification time, or size.
+- Upload, download, edit, or swipe-delete remote files; preview code, text, Markdown with remote links and images, raster images, SVG, video, and sandboxed HTML.
 - Upload a photo, file, camera capture, or clipboard image to the host and paste its remote path into the terminal composer.
 
 ### Connect securely
@@ -99,20 +102,22 @@ Screenshots were captured from Whip 0.3.0 on a Pixel 9 Pro.
 ### Make it yours
 
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
-- Set the duration of background agent alerts and customize terminal gestures, controls, history, fonts, and cached sessions.
+- Set the duration of background agent alerts, dismiss active alerts by returning to Whip, and customize terminal gestures, controls, history, fonts, and cached sessions.
 - Use the app in English or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.
 - Choose an app background image and optionally layer experimental translucent glass bars, rows, controls, and navigation over it.
 
-## Install an experimental preview
+## Install Whip
 
-Whip 0.3.0 preview APKs are currently ARM64-only prereleases. Their signing identity may change before Whip reaches a stable release, so Android may require you to uninstall an older preview before installing a newer one.
+The recommended installation is through the [Google Play Early Access program](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Join the [Whip Community](https://groups.google.com/g/whip-community) first if Google Play asks for closed-testing access.
+
+Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/KaminariOS/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
 
 1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
 2. Make the Herdr host reachable over SSH, preferably through a Tailnet you trust. An otherwise private destination can be reached through a saved jump host.
-3. Download the APK from [GitHub Releases](https://github.com/KaminariOS/whip/releases).
+3. Install through Google Play, or download `whip-arm64.apk` and its checksum from the latest GitHub release.
 4. Allow installation from the app that downloaded the APK, then open Whip.
 
-Whip supports Android 7.0 and newer (`minSdk 24`). The current preview distribution targets 64-bit ARM Android devices.
+Whip supports Android 7.0 and newer (`minSdk 24`). The current direct APK distribution targets 64-bit ARM Android devices. Keep using the same distribution source when updating: Google Play may re-sign store builds through Play App Signing, so Android can require an uninstall when switching between Play and GitHub packages.
 
 ## Connect your first host
 
