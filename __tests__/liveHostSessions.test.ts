@@ -14,6 +14,7 @@ import {
   findLiveHostSession,
   getActiveLiveHostSession,
   openLiveHostSession,
+  preferredWorkspacePane,
   selectLiveHost,
   selectLiveHostPane,
   selectLiveHostSession,
@@ -261,6 +262,20 @@ describe('live host session state', () => {
       tabId: 'savior-tab',
       paneId: 'savior-pane',
     });
+  });
+
+  test('resolves the active pane for an agentless workspace', () => {
+    const value = snapshot('shell');
+    value.agents = [];
+    value.tabs[0].agent_status = 'unknown';
+    value.panes[0].agent_status = 'unknown';
+
+    expect(preferredWorkspacePane(value, 'shell-workspace')).toEqual(
+      expect.objectContaining({
+        pane_id: 'shell-pane',
+        terminal_id: 'shell-terminal',
+      }),
+    );
   });
 
   test('follows authoritative focus when a newer snapshot arrives', () => {

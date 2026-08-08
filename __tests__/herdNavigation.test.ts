@@ -50,9 +50,10 @@ describe('terminal to Herd navigation', () => {
     expect(herd).not.toContain('!tabNameDraft.trim() || !commandDraft.trim()');
     expect(herd).toContain('setCommandDraft(agentCommand.trim())');
     expect(app).toContain('const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {');
-    expect(app).toContain("selectLiveHost(sessionId, 'terminal');\n    await runtime.client.focusWorkspace(workspaceId);");
-    expect(app).toContain('refreshedSnapshot?.panes.find(item => item.tab_id === tabId && item.focused)');
-    expect(app).toContain('terminals => ({ ...terminals, activeTerminalId: null })');
+    expect(app).toContain('preferredWorkspacePane(currentSnapshot, workspaceId)');
+    expect(app).toContain('if (currentPane) activatePaneTerminal(sessionId, currentPane);');
+    expect(app).toContain('preferredWorkspacePane(refreshedSnapshot, workspaceId)');
+    expect(app).toContain("throw new Error(t('session.emptyWorkspace'))");
     expect(app).toContain('onOpenSpace={openHerdWorkspace}');
     expect(app).toContain('agentCommand={agentCommand}');
     expect(settings).toContain("t('settings.agentCommand')");

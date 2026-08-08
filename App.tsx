@@ -93,6 +93,7 @@ import {
   findLiveHostSession,
   getActiveLiveHostSession,
   openLiveHostSession,
+  preferredWorkspacePane,
   replaceLiveHostTerminals,
   selectLiveHostSession,
   updateLiveHostConnection,
@@ -1480,24 +1481,21 @@ function AppContent() {
   const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    const currentSnapshot = findLiveHostSession(liveSessionsRef.current, sessionId)?.snapshot;
+    const currentPane = currentSnapshot
+      ? preferredWorkspacePane(currentSnapshot, workspaceId)
+      : undefined;
     setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));
-    selectLiveHost(sessionId, 'terminal');
+    if (currentPane) activatePaneTerminal(sessionId, currentPane);
     await runtime.client.focusWorkspace(workspaceId);
     const refreshedSnapshot = await refreshHostSnapshot(sessionId);
-    const workspace = refreshedSnapshot?.workspaces.find(item => item.workspace_id === workspaceId);
-    const tabId = workspace?.active_tab_id
-      || refreshedSnapshot?.tabs.find(item => item.workspace_id === workspaceId && item.focused)?.tab_id
-      || refreshedSnapshot?.tabs.find(item => item.workspace_id === workspaceId)?.tab_id;
-    const pane = refreshedSnapshot?.panes.find(item => item.tab_id === tabId && item.focused)
-      || refreshedSnapshot?.panes.find(item => item.tab_id === tabId);
+    const pane = refreshedSnapshot
+      ? preferredWorkspacePane(refreshedSnapshot, workspaceId)
+      : currentPane;
     if (pane) {
       openPaneTerminal(sessionId, pane);
     } else {
-      setLiveSessions(current => updateLiveHostTerminals(
-        current,
-        sessionId,
-        terminals => ({ ...terminals, activeTerminalId: null }),
-      ));
+      throw new Error(t('session.emptyWorkspace'));
     }
   };
 

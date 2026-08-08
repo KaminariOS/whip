@@ -461,6 +461,17 @@ export function selectLiveHostWorkspace(
   });
 }
 
+/** Resolve the terminal pane Herdr considers active for a workspace. */
+export function preferredWorkspacePane(
+  snapshot: HerdrSnapshot,
+  workspaceId: string,
+): PaneInfo | undefined {
+  const workspace = snapshot.workspaces.find(item => item.workspace_id === workspaceId);
+  if (!workspace) return undefined;
+  const tab = preferredTab(snapshot, workspace);
+  return tab ? preferredPane(snapshot, tab) : undefined;
+}
+
 export function selectLiveHostTab(
   state: LiveHostSessionsState,
   sessionId: string,
