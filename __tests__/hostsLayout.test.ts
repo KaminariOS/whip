@@ -51,6 +51,13 @@ describe('host list layout', () => {
     expect(appUi).toContain('icon?: LucideIcon;');
   });
 
+  it('labels disconnected hosts as offline without changing the connect action', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/HostsScreen.tsx'), 'utf8');
+
+    expect(screen).toContain(": t('hosts.offline')");
+    expect(screen).toContain("accessibilityLabel={t('hosts.connectTo', { host: displayName })}");
+  });
+
   it('does not show a stale last-connected age while a host is open', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/HostsScreen.tsx'), 'utf8');
 

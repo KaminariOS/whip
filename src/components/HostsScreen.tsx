@@ -97,7 +97,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                   const active = activeHostId === host.id;
                   const connected = connectedHostIds.includes(host.id);
                   const state = connecting ? 'working' : active || connected ? 'done' : 'idle';
-                  const label = connecting ? t('hosts.opening') : active ? t('hosts.active') : connected ? t('hosts.open') : t('common.connect');
+                  const label = connecting ? t('hosts.opening') : active ? t('hosts.active') : connected ? t('hosts.open') : t('hosts.offline');
                   const displayName = hostDisplayName(host);
                   const latencyMs = latencyMsByHostId[host.id];
                   const runtime = runtimeByHostId[host.id];

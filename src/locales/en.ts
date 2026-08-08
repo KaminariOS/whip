@@ -70,6 +70,7 @@ export const en = {
   'hosts.opening': 'Opening',
   'hosts.active': 'Active',
   'hosts.open': 'Open',
+  'hosts.offline': 'Offline',
   'hosts.connectTo': 'Connect to {{host}}',
   'hosts.disconnect': 'Disconnect',
   'hosts.disconnectHost': 'Disconnect {{host}}',

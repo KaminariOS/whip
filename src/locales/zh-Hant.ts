@@ -66,6 +66,7 @@ export const zhHant: Record<string, string> = {
   'hosts.opening': '開啟中',
   'hosts.active': '使用中',
   'hosts.open': '已開啟',
+  'hosts.offline': '離線',
   'hosts.connectTo': '連線至 {{host}}',
   'hosts.disconnect': '中斷連線',
   'hosts.disconnectHost': '中斷與 {{host}} 的連線',
