@@ -1,6 +1,7 @@
 jest.mock('expo-notifications', () => ({
   AndroidImportance: { HIGH: 'high' },
   AndroidNotificationPriority: { MAX: 'max' },
+  dismissNotificationAsync: jest.fn(),
   requestPermissionsAsync: jest.fn(),
   scheduleNotificationAsync: jest.fn(),
   setNotificationChannelAsync: jest.fn(),
@@ -16,6 +17,7 @@ jest.mock('react-native', () => ({
 }));
 jest.mock('../src/services/backgroundMonitoring', () => ({
   armPersistentAgentAlert: jest.fn(),
+  dismissPersistentAgentAlert: jest.fn(),
 }));
 jest.mock('../src/i18n', () => ({
   __esModule: true,
@@ -34,8 +36,8 @@ import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 
 import type { AgentInfo } from '../src/types';
-import { alertAgent } from '../src/services/alerts';
-import { armPersistentAgentAlert } from '../src/services/backgroundMonitoring';
+import { alertAgent, dismissAgentAlerts } from '../src/services/alerts';
+import { armPersistentAgentAlert, dismissPersistentAgentAlert } from '../src/services/backgroundMonitoring';
 
 const agent: AgentInfo = {
   terminal_id: 'terminal-1',
@@ -52,7 +54,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(Speech.stop).mockResolvedValue();
   jest.mocked(Notifications.scheduleNotificationAsync).mockResolvedValue('notification-1');
+  jest.mocked(Notifications.dismissNotificationAsync).mockResolvedValue();
   jest.mocked(armPersistentAgentAlert).mockResolvedValue();
+  jest.mocked(dismissPersistentAgentAlert).mockResolvedValue();
 });
 
 test('delays the noisy notification and persistent alert until speech finishes', async () => {
@@ -132,4 +136,36 @@ test('still posts the alert when speech reports an error', async () => {
   await pending;
 
   expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+});
+
+test('dismisses delivered agent notifications and persistent feedback', async () => {
+  await alertAgent(agent, false, {
+    hostId: 'host-1',
+    paneId: agent.pane_id,
+  });
+
+  await dismissAgentAlerts();
+
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('notification-1');
+  expect(dismissPersistentAgentAlert).toHaveBeenCalledTimes(1);
+  expect(Speech.stop).toHaveBeenCalledTimes(1);
+});
+
+test('dismisses an agent notification that finishes posting during foregrounding', async () => {
+  let finishScheduling: ((identifier: string) => void) | undefined;
+  jest.mocked(Notifications.scheduleNotificationAsync).mockReturnValueOnce(new Promise(resolve => {
+    finishScheduling = resolve;
+  }));
+  const pendingAlert = alertAgent(agent, false, {
+    hostId: 'host-1',
+    paneId: agent.pane_id,
+  });
+  await Promise.resolve();
+
+  await dismissAgentAlerts();
+  finishScheduling?.('late-notification');
+  await pendingAlert;
+
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('late-notification');
+  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
 });
