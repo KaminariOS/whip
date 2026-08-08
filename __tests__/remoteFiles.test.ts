@@ -47,6 +47,18 @@ describe('remote file paths', () => {
       entry('a-dir/', true),
     ]).map(remoteEntryName)).toEqual(['a-dir', 'z-dir', 'file2.ts', 'file10.ts']);
   });
+
+  it('sorts remote entries by size or modification date in either direction', () => {
+    const oldSmall = { ...entry('old-small.txt'), fileSize: 10, modificationDate: '100' };
+    const newLarge = { ...entry('new-large.txt'), fileSize: 200, modificationDate: '300' };
+    const middle = { ...entry('middle.txt'), fileSize: 50, modificationDate: '200' };
+    const directory = { ...entry('folder/', true), fileSize: 999, modificationDate: '50' };
+
+    expect(sortRemoteEntries([oldSmall, directory, newLarge, middle], 'size', 'descending').map(remoteEntryName))
+      .toEqual(['folder', 'new-large.txt', 'middle.txt', 'old-small.txt']);
+    expect(sortRemoteEntries([oldSmall, directory, newLarge, middle], 'modified', 'ascending').map(remoteEntryName))
+      .toEqual(['folder', 'old-small.txt', 'middle.txt', 'new-large.txt']);
+  });
 });
 
 describe('remote file previews', () => {
@@ -96,6 +108,14 @@ test('connects the adaptive terminal file control to the remote file manager', (
   expect(terminal).toContain('onRequestFiles?.()');
   expect(session).toContain('terminalPane?.foreground_cwd');
   expect(session).toContain('<RemoteFileManager');
+});
+
+test('offers name, modification date, size, and direction sorting in the remote file manager', () => {
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  expect(manager).toContain("accessibilityLabel={t('files.sort')}");
+  expect(manager).toContain('sortRemoteEntries(entries, sortField, sortDirection)');
+  expect(manager).toContain("const remoteFileSortFields: RemoteFileSortField[] = ['name', 'modified', 'size'];");
+  expect(manager).toContain("const remoteFileSortDirections: RemoteFileSortDirection[] = ['ascending', 'descending'];");
 });
 
 test('remembers the last remote directory independently for each terminal', () => {

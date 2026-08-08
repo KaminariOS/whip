@@ -1,5 +1,6 @@
 import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
 import {
+  ArrowUpDown,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -15,8 +16,8 @@ import {
   Upload,
   X,
 } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, ScrollView, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -26,6 +27,9 @@ import {
   parentRemotePath,
   remoteEntryName,
   remotePreviewKind,
+  sortRemoteEntries,
+  type RemoteFileSortDirection,
+  type RemoteFileSortField,
   type RemotePreviewKind,
 } from '@/src/lib/remoteFiles';
 import type { HerdrClient, RemoteHtmlPreviewHandle } from '@/src/services/HerdrClient';
@@ -66,6 +70,9 @@ interface FilePreview {
   htmlRevision: number;
 }
 
+const remoteFileSortFields: RemoteFileSortField[] = ['name', 'modified', 'size'];
+const remoteFileSortDirections: RemoteFileSortDirection[] = ['ascending', 'descending'];
+
 export function RemoteFileManager({ visible, client, initialPath, onPathChange, onClose }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -76,10 +83,17 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
+  const [sortField, setSortField] = useState<RemoteFileSortField>('name');
+  const [sortDirection, setSortDirection] = useState<RemoteFileSortDirection>('ascending');
+  const [sortMenuVisible, setSortMenuVisible] = useState(false);
   const previewRef = useRef<FilePreview | null>(null);
   const requestRef = useRef(0);
   const onPathChangeRef = useRef(onPathChange);
   onPathChangeRef.current = onPathChange;
+  const sortedEntries = useMemo(
+    () => sortRemoteEntries(entries, sortField, sortDirection),
+    [entries, sortDirection, sortField],
+  );
 
   const replacePreview = useCallback((next: FilePreview | null) => {
     const previous = previewRef.current;
@@ -176,6 +190,7 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
 
   const dismissNow = () => {
     requestRef.current += 1;
+    setSortMenuVisible(false);
     replacePreview(null);
     onClose();
   };
@@ -269,7 +284,9 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
   return (
     <Modal
       animationType="slide"
-      onRequestClose={() => confirmDiscard(preview ? closePreviewNow : dismissNow)}
+      onRequestClose={() => sortMenuVisible
+        ? setSortMenuVisible(false)
+        : confirmDiscard(preview ? closePreviewNow : dismissNow)}
       statusBarTranslucent
       visible={visible}>
       <View
@@ -383,6 +400,9 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                 <ChevronLeft size={20} color={colors.text} />
               </Button>
               <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground">{path || initialPath}</Text>
+              <Button accessibilityLabel={t('files.sort')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy} variant="ghost" onPress={hapticPress(() => setSortMenuVisible(true))}>
+                <ArrowUpDown size={18} color={colors.text} />
+              </Button>
               <Button accessibilityLabel={t('files.upload')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || !path} variant="ghost" onPress={hapticPress(uploadFile)}>
                 {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Upload size={18} color={colors.text} />}
               </Button>
@@ -406,7 +426,7 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
               </View>
             ) : entries.length ? (
               <ScrollView className="flex-1" contentContainerClassName="px-3 py-1">
-                {entries.map(entry => {
+                {sortedEntries.map(entry => {
                   const name = remoteEntryName(entry);
                   const directory = Boolean(entry.isDirectory);
                   const kind = remotePreviewKind(name, entry.fileSize);
@@ -448,6 +468,53 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
             )}
           </>
         )}
+        {sortMenuVisible ? (
+          <View className="absolute inset-0 z-50 justify-end">
+            <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/55" onPress={() => setSortMenuVisible(false)} />
+            <View className="rounded-t-[22px] border-t border-border bg-card px-4 pt-4" style={{ paddingBottom: Math.max(16, safeAreaInsets.bottom) }}>
+              <View className="mb-3 flex-row items-center">
+                <Text className="min-w-0 flex-1 text-[18px] font-semibold text-foreground">{t('files.sortBy')}</Text>
+                <Button accessibilityLabel={t('common.close')} className="size-10 rounded-full px-0" variant="ghost" onPress={() => setSortMenuVisible(false)}>
+                  <X size={19} color={colors.text} />
+                </Button>
+              </View>
+              <View className="overflow-hidden rounded-lg border border-border">
+                {remoteFileSortFields.map((field, index) => {
+                  const selected = field === sortField;
+                  return (
+                    <Button
+                      key={field}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
+                      variant={selected ? 'secondary' : 'ghost'}
+                      onPress={hapticPress(() => setSortField(field))}>
+                      <Text className="flex-1 text-left text-sm font-medium">{t(`files.sort.${field}`)}</Text>
+                      {selected ? <Check size={18} color={colors.primary} /> : null}
+                    </Button>
+                  );
+                })}
+              </View>
+              <Text className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-[1px] text-muted-foreground">{t('files.sortOrder')}</Text>
+              <View className="flex-row overflow-hidden rounded-lg border border-border">
+                {remoteFileSortDirections.map((direction, index) => {
+                  const selected = direction === sortDirection;
+                  return (
+                    <Button
+                      key={direction}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      className={index === 0 ? 'min-h-12 flex-1 rounded-none px-3' : 'min-h-12 flex-1 rounded-none border-l border-border px-3'}
+                      variant={selected ? 'secondary' : 'ghost'}
+                      onPress={hapticPress(() => setSortDirection(direction))}>
+                      <Text className="text-sm font-medium">{t(`files.sort.${direction}`)}</Text>
+                    </Button>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        ) : null}
       </View>
     </Modal>
   );

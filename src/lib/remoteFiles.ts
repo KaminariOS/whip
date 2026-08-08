@@ -5,6 +5,8 @@ export const MAX_REMOTE_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
 export const MAX_REMOTE_VIDEO_PREVIEW_BYTES = 200 * 1024 * 1024;
 
 export type RemotePreviewKind = 'code' | 'html' | 'image' | 'markdown' | 'text' | 'video' | 'unsupported';
+export type RemoteFileSortField = 'name' | 'modified' | 'size';
+export type RemoteFileSortDirection = 'ascending' | 'descending';
 
 const CODE_EXTENSIONS = new Set([
   'bash', 'c', 'cc', 'cjs', 'cpp', 'css', 'fish', 'go', 'gradle', 'graphql', 'h',
@@ -105,14 +107,33 @@ export function parentRemotePath(path: string): string {
   return separator <= 0 ? '/' : normalized.slice(0, separator);
 }
 
-export function sortRemoteEntries(entries: LsResult[]): LsResult[] {
+export function sortRemoteEntries(
+  entries: LsResult[],
+  field: RemoteFileSortField = 'name',
+  direction: RemoteFileSortDirection = 'ascending',
+): LsResult[] {
   return [...entries].sort((left, right) => {
     const directoryOrder = Number(Boolean(right.isDirectory)) - Number(Boolean(left.isDirectory));
-    return directoryOrder || remoteEntryName(left).localeCompare(remoteEntryName(right), undefined, {
+    if (directoryOrder) return directoryOrder;
+
+    const nameOrder = remoteEntryName(left).localeCompare(remoteEntryName(right), undefined, {
       numeric: true,
       sensitivity: 'base',
     });
+    const fieldOrder = field === 'size'
+      ? left.fileSize - right.fileSize
+      : field === 'modified'
+        ? remoteModificationTime(left.modificationDate) - remoteModificationTime(right.modificationDate)
+        : nameOrder;
+    return fieldOrder * (direction === 'ascending' ? 1 : -1) || nameOrder;
   });
+}
+
+function remoteModificationTime(value: string): number {
+  const numeric = Number(value);
+  if (value.trim() && Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 export function canPreviewRemoteTextFile(filename: string, fileSize: number): boolean {
