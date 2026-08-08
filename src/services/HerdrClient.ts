@@ -97,6 +97,10 @@ interface RemoteHtmlPreviewProcess extends RemoteHtmlServerProcess {
 }
 
 export class HerdrClient {
+  static addNetworkChangeListener(listener: () => void): { remove: () => void } {
+    return SSHClient.addNetworkChangeListener(listener);
+  }
+
   private client: SSHClient | null = null;
   private profile: ConnectionProfile | null = null;
   private jumpProfiles: ConnectionProfile[] = [];
@@ -171,7 +175,7 @@ export class HerdrClient {
     const port = Number(profile.port);
     this.validateSshPort(port);
 
-    const nextClient = await this.connectSsh(profile, port);
+    const nextClient = await this.connectSsh(profile, port, this.jumpProfiles);
     const previousClient = this.client;
     this.client = nextClient;
     this.profile = profile;

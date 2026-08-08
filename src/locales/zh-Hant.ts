@@ -523,6 +523,8 @@ export const zhHant: Record<string, string> = {
   'app.connectUnknownError': '無法連線至 {{host}}。請檢查主機設定後再試一次。',
   'app.loadHostsError': '無法載入已儲存的主機：{{error}}',
   'app.backgroundUnavailable': '無法使用背景監控：{{error}}',
+  'app.networkChangedReconnect': '網路已變更。正在重新連線…',
+  'app.resumeReconnect': '正在恢復連線…',
   'app.restoreHostError': '無法還原 {{host}}：{{error}}',
   'app.restoreLiveHostsError': '無法還原即時主機：{{error}}',
   'app.saveHostError': '無法儲存主機：{{error}}',

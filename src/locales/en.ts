@@ -538,6 +538,8 @@ export const en = {
   'app.connectUnknownError': 'Couldn’t connect to {{host}}. Check the host settings and try again.',
   'app.loadHostsError': 'Could not load saved hosts: {{error}}',
   'app.backgroundUnavailable': 'Background monitoring unavailable: {{error}}',
+  'app.networkChangedReconnect': 'Network changed. Reconnecting…',
+  'app.resumeReconnect': 'Resuming connection…',
   'app.restoreHostError': 'Could not restore {{host}}: {{error}}',
   'app.restoreLiveHostsError': 'Could not restore live hosts: {{error}}',
   'app.saveHostError': 'Could not save host: {{error}}',

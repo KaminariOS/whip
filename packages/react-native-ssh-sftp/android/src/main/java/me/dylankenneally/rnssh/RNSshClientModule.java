@@ -5,6 +5,7 @@ import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.Environment;
 import android.os.SystemClock;
 import android.util.Log;
@@ -52,6 +53,7 @@ import java.net.IDN;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -82,6 +84,7 @@ import java.io.ByteArrayOutputStream;
 public class RNSshClientModule extends ReactContextBaseJavaModule {
   private static final int SSH_CONNECT_TIMEOUT_MS = 10_000;
   private static final int SSH_CHANNEL_CONNECT_TIMEOUT_MS = 5_000;
+  private static final int HERDR_API_RESPONSE_TIMEOUT_MS = 15_000;
   private static final int SSH_SERVER_ALIVE_INTERVAL_MS = 5_000;
   private static final int SSH_SERVER_ALIVE_COUNT_MAX = 3;
   private static final Pattern PING_TIME_PATTERN = Pattern.compile("time[=<]([0-9.]+)\\s*ms");
@@ -333,6 +336,10 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
 
   Map<String, SSHClient> clientPool = new HashMap<>();
   private volatile String knownHosts = "";
+  private final Object networkMonitorLock = new Object();
+  @Nullable private ConnectivityManager monitoredConnectivityManager = null;
+  @Nullable private ConnectivityManager.NetworkCallback networkCallback = null;
+  private String monitoredNetworkSignature = "";
 
   public RNSshClientModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -371,6 +378,95 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     );
   }
 
+  private String currentSshNetworkSignature(ConnectivityManager connectivityManager) {
+    Network selected = getSshNetwork(connectivityManager);
+    List<String> available = new ArrayList<>();
+    for (Network network : connectivityManager.getAllNetworks()) {
+      NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(network);
+      if (
+          capabilities != null
+          && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+      ) {
+        available.add(network.toString());
+      }
+    }
+    Collections.sort(available);
+    return (selected != null ? selected.toString() : "none") + "|" + String.join(",", available);
+  }
+
+  private void emitNetworkChangeIfNeeded() {
+    WritableMap event = null;
+    synchronized (networkMonitorLock) {
+      if (monitoredConnectivityManager == null || networkCallback == null) return;
+      String nextSignature = currentSshNetworkSignature(monitoredConnectivityManager);
+      if (nextSignature.equals(monitoredNetworkSignature)) return;
+      monitoredNetworkSignature = nextSignature;
+      event = Arguments.createMap();
+      event.putString("signature", nextSignature);
+    }
+    sendEvent(reactContext, "SshNetworkChanged", event);
+  }
+
+  @ReactMethod
+  public void startNetworkMonitoring() {
+    synchronized (networkMonitorLock) {
+      if (networkCallback != null) return;
+      ConnectivityManager connectivityManager = (ConnectivityManager)
+          reactContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+      if (connectivityManager == null) return;
+
+      monitoredConnectivityManager = connectivityManager;
+      monitoredNetworkSignature = currentSshNetworkSignature(connectivityManager);
+      networkCallback = new ConnectivityManager.NetworkCallback() {
+        @Override
+        public void onAvailable(Network network) {
+          emitNetworkChangeIfNeeded();
+        }
+
+        @Override
+        public void onLost(Network network) {
+          emitNetworkChangeIfNeeded();
+        }
+
+        @Override
+        public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+          emitNetworkChangeIfNeeded();
+        }
+
+        @Override
+        public void onLinkPropertiesChanged(Network network, LinkProperties linkProperties) {
+          emitNetworkChangeIfNeeded();
+        }
+      };
+      NetworkRequest request = new NetworkRequest.Builder()
+          .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+          .build();
+      try {
+        connectivityManager.registerNetworkCallback(request, networkCallback);
+      } catch (RuntimeException error) {
+        Log.e(LOGTAG, "Unable to monitor SSH network changes: " + error.getMessage());
+        networkCallback = null;
+        monitoredConnectivityManager = null;
+      }
+    }
+  }
+
+  @ReactMethod
+  public void stopNetworkMonitoring() {
+    synchronized (networkMonitorLock) {
+      if (monitoredConnectivityManager != null && networkCallback != null) {
+        try {
+          monitoredConnectivityManager.unregisterNetworkCallback(networkCallback);
+        } catch (RuntimeException error) {
+          Log.w(LOGTAG, "Unable to stop SSH network monitoring: " + error.getMessage());
+        }
+      }
+      networkCallback = null;
+      monitoredConnectivityManager = null;
+      monitoredNetworkSignature = "";
+    }
+  }
+
   @Override
   public String getName() {
     return "RNSSHClient";
@@ -382,6 +478,32 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     reactContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
             .emit(eventName, params);
+  }
+
+  @Nullable
+  private String readLineWithTimeout(
+      BufferedReader reader,
+      Channel channel,
+      int timeoutMs
+  ) throws IOException {
+    long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+    StringBuilder line = new StringBuilder();
+    while (true) {
+      if (reader.ready()) {
+        int value = reader.read();
+        if (value == -1) return line.length() == 0 ? null : line.toString();
+        if (value == '\n') return line.toString();
+        if (value != '\r') line.append((char) value);
+        continue;
+      }
+      if (channel.isClosed() || channel.isEOF()) {
+        return line.length() == 0 ? null : line.toString();
+      }
+      if (SystemClock.elapsedRealtime() >= deadline) {
+        throw new SocketTimeoutException("Timed out waiting for Herdr API response");
+      }
+      SystemClock.sleep(10);
+    }
   }
 
   @ReactMethod
@@ -596,9 +718,12 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           }
         } catch (JSchException error) {
           Log.e(LOGTAG, "Connection failed: " + error.getMessage());
-          callback.invoke(hostKeyError(error, session, host, port));
+          String callbackError = hostKeyError(error, session, host, port);
+          if (session != null) session.disconnect();
+          callback.invoke(callbackError);
         } catch (Exception error) {
           Log.e(LOGTAG, "Connection failed: " + error.getMessage());
+          if (session != null) session.disconnect();
           callback.invoke(error.getMessage());
         }
       }
@@ -1423,7 +1548,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
           output.flush();
 
           BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
-          String response = reader.readLine();
+          String response = readLineWithTimeout(reader, channel, HERDR_API_RESPONSE_TIMEOUT_MS);
           if (response == null) throw new IOException("Herdr API socket closed without a response");
           callback.invoke(null, response);
         } catch (Exception error) {
@@ -2018,5 +2143,11 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void removeListeners(Integer count) {
     // Keep: Required for RN built in Event Emitter Calls.
+  }
+
+  @Override
+  public void invalidate() {
+    stopNetworkMonitoring();
+    super.invalidate();
   }
 }

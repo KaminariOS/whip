@@ -121,6 +121,34 @@ describe('Android SSH terminal protocol stream', () => {
     expect(android).not.toContain('channel.connect();');
   });
 
+  test('bounds Herdr API response reads so a stale network cannot pin refresh forever', () => {
+    const android = readFileSync(
+      resolve(packageRoot, 'android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java'),
+      'utf8',
+    );
+
+    expect(android).toContain('HERDR_API_RESPONSE_TIMEOUT_MS = 15_000');
+    expect(android).toContain('readLineWithTimeout(reader, channel, HERDR_API_RESPONSE_TIMEOUT_MS)');
+    expect(android).toContain('throw new SocketTimeoutException("Timed out waiting for Herdr API response")');
+  });
+
+  test('reports Android network changes to JavaScript reconnect handling', () => {
+    const javascript = readFileSync(resolve(packageRoot, 'lib/sshclient.js'), 'utf8');
+    const declarations = readFileSync(resolve(packageRoot, 'lib/sshclient.d.ts'), 'utf8');
+    const android = readFileSync(
+      resolve(packageRoot, 'android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java'),
+      'utf8',
+    );
+
+    expect(javascript).toContain('static addNetworkChangeListener(handler)');
+    expect(javascript).toContain('RNSSHClient.startNetworkMonitoring()');
+    expect(javascript).toContain('RNSSHClient.stopNetworkMonitoring()');
+    expect(declarations).toContain('static addNetworkChangeListener(handler: () => void)');
+    expect(android).toContain('public void startNetworkMonitoring()');
+    expect(android).toContain('connectivityManager.registerNetworkCallback(request, networkCallback)');
+    expect(android).toContain('sendEvent(reactContext, "SshNetworkChanged", event)');
+  });
+
   test('reports private-key fingerprints and supports encrypted key inspection', () => {
     const javascript = readFileSync(resolve(packageRoot, 'lib/sshclient.js'), 'utf8');
     const declarations = readFileSync(resolve(packageRoot, 'lib/sshclient.d.ts'), 'utf8');
