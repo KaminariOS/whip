@@ -2,6 +2,7 @@ import {
   defaultReconnectPolicy,
   nextReconnect,
   reconnectDelay,
+  shouldRestartReconnect,
 } from '../src/lib/reconnectPolicy';
 
 test('uses bounded exponential delays for the default reconnect sequence', () => {
@@ -25,6 +26,12 @@ test('supports a custom reconnect policy', () => {
   expect(nextReconnect(0, policy)).toEqual({ action: 'retry', attempt: 1, delayMs: 100 });
   expect(nextReconnect(1, policy)).toEqual({ action: 'retry', attempt: 2, delayMs: 250 });
   expect(nextReconnect(2, policy)).toEqual({ action: 'stop', attempts: 2 });
+});
+
+test('restarts exhausted retries on resume and every transport after a network change', () => {
+  expect(shouldRestartReconnect(4, 'app-resume')).toBe(false);
+  expect(shouldRestartReconnect(5, 'app-resume')).toBe(true);
+  expect(shouldRestartReconnect(0, 'network-change')).toBe(true);
 });
 
 test('rejects invalid attempts and policies', () => {

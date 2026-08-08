@@ -97,6 +97,10 @@ export type PasswordOrKey = string | KeyPair;
  * - SSHClient.connectWithPassword()
  */
 export default class SSHClient {
+    /** Observes changes to the Android network used for new SSH sessions. */
+    static addNetworkChangeListener(handler: () => void): {
+        remove: () => void;
+    };
     /**
      * Replaces the process-wide OpenSSH known_hosts repository used by new
      * Android SSH sessions.

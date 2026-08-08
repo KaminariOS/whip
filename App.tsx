@@ -53,7 +53,11 @@ import {
 } from './src/lib/agentStatusEvents';
 import { isHerdrProtocolMismatch } from './src/lib/herdrProtocol';
 import { shouldRefreshLiveHost } from './src/lib/liveHostHeartbeat';
-import { nextReconnect } from './src/lib/reconnectPolicy';
+import {
+  nextReconnect,
+  shouldRestartReconnect,
+  type ReconnectRecoveryTrigger,
+} from './src/lib/reconnectPolicy';
 import {
   incrementTerminalControlUsage,
   type TerminalControlId,
@@ -173,6 +177,8 @@ const guiFontAssets = {
 
 const LIVE_HOST_HEALTHCHECK_MS = 15_000;
 const LIVE_HOST_RECONCILE_MS = 120_000;
+const LIVE_HOST_RECONNECT_COOLDOWN_MS = 30_000;
+const NETWORK_CHANGE_DEBOUNCE_MS = 750;
 const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;
 
 interface LiveRuntime {
@@ -634,6 +640,12 @@ function AppContent() {
         error: String(cause),
         reconnectAttempt: decision.attempts,
       }));
+      runtime.reconnectTimer = setTimeout(() => {
+        runtime.reconnectTimer = null;
+        if (runtimes.current.get(sessionId) !== runtime) return;
+        runtime.reconnectAttempts = 0;
+        scheduleReconnect(sessionId, cause);
+      }, LIVE_HOST_RECONNECT_COOLDOWN_MS);
       return;
     }
 
@@ -775,6 +787,26 @@ function AppContent() {
       )
         continue;
       refreshHost(sessionId).catch(() => undefined);
+    }
+  });
+
+  const restartLiveConnections = useEffectEvent((trigger: ReconnectRecoveryTrigger) => {
+    for (const session of liveSessionsRef.current.sessions) {
+      const runtime = runtimes.current.get(session.id);
+      if (
+        !runtime
+        || !shouldRestartReconnect(runtime.reconnectAttempts, trigger)
+      ) continue;
+
+      clearReconnect(runtime);
+      runtime.reconnectAttempts = 0;
+      runtime.refresh.invalidate();
+      scheduleReconnect(
+        session.id,
+        trigger === 'network-change'
+          ? t('app.networkChangedReconnect')
+          : session.connectionError || t('app.resumeReconnect'),
+      );
     }
   });
 
@@ -921,6 +953,7 @@ function AppContent() {
     if (liveSessions.sessions.length === 0) return;
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
+        restartLiveConnections('app-resume');
         resumeLiveConnections(true);
       }
     });
@@ -936,6 +969,21 @@ function AppContent() {
       clearInterval(reconciliation);
     };
   }, [liveSessions.sessions.length]);
+
+  useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const subscription = HerdrClient.addNetworkChangeListener(() => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        restartLiveConnections('network-change');
+      }, NETWORK_CHANGE_DEBOUNCE_MS);
+    });
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (navigation.tab !== 'hosts' || appAccessLocked) return;

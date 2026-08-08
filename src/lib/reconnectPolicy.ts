@@ -9,6 +9,8 @@ export type ReconnectDecision =
   | { action: 'retry'; attempt: number; delayMs: number }
   | { action: 'stop'; attempts: number };
 
+export type ReconnectRecoveryTrigger = 'app-resume' | 'network-change';
+
 export const defaultReconnectPolicy: Readonly<ReconnectPolicy> = {
   maxAttempts: 5,
   initialDelayMs: 750,
@@ -65,4 +67,17 @@ export function nextReconnect(
   return attempt > policy.maxAttempts
     ? { action: 'stop', attempts: completedAttempts }
     : { action: 'retry', attempt, delayMs: reconnectDelay(attempt, policy) };
+}
+
+/**
+ * A network change always invalidates the transport. App resume only needs to
+ * restart a sequence that already exhausted its bounded foreground retries.
+ */
+export function shouldRestartReconnect(
+  completedAttempts: number,
+  trigger: ReconnectRecoveryTrigger,
+  policy: ReconnectPolicy = defaultReconnectPolicy,
+): boolean {
+  return trigger === 'network-change'
+    || nextReconnect(completedAttempts, policy).action === 'stop';
 }

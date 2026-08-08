@@ -7,6 +7,7 @@ const NATIVE_EVENT_HERDR_EVENT_STREAM = 'HerdrEventStream';
 const NATIVE_EVENT_HERDR_COMMAND_STREAM = 'HerdrCommandStream';
 const NATIVE_EVENT_DOWNLOAD_PROGRESS = 'DownloadProgress';
 const NATIVE_EVENT_UPLOAD_PROGRESS = 'UploadProgress';
+const NATIVE_EVENT_SSH_NETWORK_CHANGED = 'SshNetworkChanged';
 /**
  * Represents the types of PTY (pseudo-terminal) for SSH connections.
  */
@@ -26,6 +27,23 @@ export var PtyType;
  * - SSHClient.connectWithPassword()
  */
 class SSHClient {
+    /**
+     * Observes changes to the Android network set used for new SSH sessions.
+     * The returned subscription must be removed when it is no longer needed.
+     */
+    static addNetworkChangeListener(handler) {
+        if (Platform.OS !== 'android') {
+            return { remove() { } };
+        }
+        const subscription = DeviceEventEmitter.addListener(NATIVE_EVENT_SSH_NETWORK_CHANGED, handler);
+        RNSSHClient.startNetworkMonitoring();
+        return {
+            remove() {
+                subscription.remove();
+                RNSSHClient.stopNetworkMonitoring();
+            },
+        };
+    }
     /**
      * Replaces the process-wide OpenSSH known_hosts repository used by new
      * Android SSH sessions.
