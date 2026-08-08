@@ -54,7 +54,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
   return (
     <View className="flex-1">
       <ScreenHeader
-        title="Herdr"
+        title="Whip"
         subtitle={t('hosts.subtitle')}
         left={<WhipMark size={40} />}
         right={<IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />}
@@ -153,29 +153,35 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                                   ? ` · ${t('hosts.lastConnected', { value: formatLastUsed(host.lastConnectedAt, t) })}`
                                   : ''}
                               </Text>
-                              <View className="mt-1.5 flex-row flex-wrap items-center gap-x-2.5 gap-y-1">
-                                {host.jumpHostId ? (
-                                  <View
-                                    accessible
-                                    accessibilityLabel={t('hosts.jumpHost', {
-                                      host: jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable'),
-                                    })}
-                                    className="flex-row items-center gap-1">
-                                    <Icon as={Network} className="text-muted-foreground" size={11} />
-                                    <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
-                                      {jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable')}
-                                    </Text>
-                                  </View>
-                                ) : null}
-                                <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
-                                  {t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
-                                </Text>
-                                <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
-                                  {runtime?.protocol == null
-                                    ? t('hosts.herdrProtocolNone')
-                                    : t('hosts.herdrProtocol', { version: runtime.protocol })}
-                                </Text>
-                              </View>
+                              {host.jumpHostId || connected ? (
+                                <View className="mt-1.5 flex-row flex-wrap items-center gap-x-2.5 gap-y-1">
+                                  {host.jumpHostId ? (
+                                    <View
+                                      accessible
+                                      accessibilityLabel={t('hosts.jumpHost', {
+                                        host: jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable'),
+                                      })}
+                                      className="flex-row items-center gap-1">
+                                      <Icon as={Network} className="text-muted-foreground" size={11} />
+                                      <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                        {jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable')}
+                                      </Text>
+                                    </View>
+                                  ) : null}
+                                  {connected ? (
+                                    <>
+                                      <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                        {t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
+                                      </Text>
+                                      <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                        {runtime?.protocol == null
+                                          ? t('hosts.herdrProtocolNone')
+                                          : t('hosts.herdrProtocol', { version: runtime.protocol })}
+                                      </Text>
+                                    </>
+                                  ) : null}
+                                </View>
+                              ) : null}
                             </View>
                           </Button>
                           <IconButton icon={Ellipsis} accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => {

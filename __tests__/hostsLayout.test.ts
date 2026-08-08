@@ -68,6 +68,14 @@ describe('host list layout', () => {
     expect(screen).toContain("accessibilityLabel={t('hosts.connectTo', { host: displayName })}");
   });
 
+  it('hides agent and protocol metadata while a host is disconnected', () => {
+    const screen = readFileSync(resolve(__dirname, '../src/components/HostsScreen.tsx'), 'utf8');
+
+    expect(screen).toContain('{connected ? (');
+    expect(screen).toContain("t('hosts.agents', { count: runtime?.agentTotal ?? 0 })");
+    expect(screen).toContain("t('hosts.herdrProtocol', { version: runtime.protocol })");
+  });
+
   it('does not show a stale last-connected age while a host is open', () => {
     const screen = readFileSync(resolve(__dirname, '../src/components/HostsScreen.tsx'), 'utf8');
 
