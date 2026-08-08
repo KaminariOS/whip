@@ -245,6 +245,10 @@ Feedback is especially useful around Android device compatibility, real-world He
 
 Whip's React Native and Expo code is designed to be portable to iOS, but I do not have a Mac or an Apple Developer account to build, test, sign, and publish an iOS release. If you have iOS development experience and access to the required Apple hardware and developer tools, community help with validating the native dependencies, preparing an iOS build, testing it on real devices, and working toward a TestFlight or App Store release would be greatly appreciated. Please start a discussion or open an issue if you would like to help.
 
+## Credits
+
+Whip learned from [Voltius](https://github.com/VoltiusApp/voltius) during the early stages of development. We are grateful to the Voltius maintainers and contributors for sharing their work.
+
 ## License
 
 Whip is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
