@@ -38,6 +38,7 @@
     "expo-notifications": "~57.0.9",
     "expo-speech": "~57.0.1",
     "expo-status-bar": "~57.0.1",
+    "expo-video": "~57.0.2",
     "i18next": "^26.3.6",
     "lucide-react-native": "^1.24.0",
     "nativewind": "4.2.2",

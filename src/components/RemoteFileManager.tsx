@@ -6,6 +6,7 @@ import {
   Download,
   FileCode2,
   FileText,
+  FileVideo,
   Folder,
   FolderOpen,
   Image as ImageIcon,
@@ -40,6 +41,7 @@ import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview } from './CodePreview';
 import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
+import { RemoteVideoPreview } from './RemoteVideoPreview';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -318,6 +320,11 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
               <View className="flex-1 bg-terminal-canvas p-3">
                 <Image accessibilityLabel={remoteEntryName(preview.entry)} className="flex-1" resizeMode="contain" source={{ uri: preview.cached.uri }} />
               </View>
+            ) : preview.kind === 'video' && preview.cached ? (
+              <RemoteVideoPreview
+                filename={remoteEntryName(preview.entry)}
+                uri={preview.cached.uri}
+              />
             ) : preview.kind === 'markdown' ? (
               <MarkdownPreview content={preview.content || ''} />
             ) : preview.kind === 'html' ? (
@@ -393,6 +400,8 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                           ? <Folder size={18} color={colors.primary} />
                           : kind === 'image'
                             ? <ImageIcon size={18} color={colors.textSecondary} />
+                            : kind === 'video'
+                              ? <FileVideo size={18} color={colors.textSecondary} />
                             : kind === 'code' || kind === 'html'
                               ? <FileCode2 size={18} color={colors.textSecondary} />
                               : <FileText size={18} color={colors.textSecondary} />}

@@ -64,6 +64,9 @@ describe('remote file previews', () => {
     expect(remotePreviewKind('config.yaml', 1000)).toBe('code');
     expect(remotePreviewKind('notes.txt', 1000)).toBe('text');
     expect(remotePreviewKind('photo.png', 1000)).toBe('image');
+    expect(remotePreviewKind('recording.mp4', 1000)).toBe('video');
+    expect(remotePreviewKind('screen.webm', 1000)).toBe('video');
+    expect(remotePreviewKind('large.mov', 201 * 1024 * 1024)).toBe('unsupported');
     expect(remotePreviewKind('archive.zip', 1000)).toBe('unsupported');
   });
 
@@ -127,6 +130,18 @@ test('supports native Markdown previews and file transfer actions', () => {
   expect(markdown).toContain('EnrichedMarkdownText');
   expect(markdown).toContain('flavor="github"');
   expect(transfer).toContain('File.pickFileAsync(');
+});
+
+test('plays bounded remote videos from the local preview cache', () => {
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const preview = readFileSync(resolve(__dirname, '../src/components/RemoteVideoPreview.tsx'), 'utf8');
+  expect(manager).toContain("preview.kind === 'video' && preview.cached");
+  expect(manager).toContain('<RemoteVideoPreview');
+  expect(manager).toContain("kind === 'video'");
+  expect(preview).toContain('useVideoPlayer(uri)');
+  expect(preview).toContain('nativeControls');
+  expect(preview).toContain('contentFit="contain"');
+  expect(preview).toContain('fullscreenOptions={{ enable: true }}');
 });
 
 test('renders HTML previews in a locked-down WebView while retaining source editing', () => {

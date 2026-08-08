@@ -2,8 +2,9 @@ import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
 
 export const MAX_REMOTE_TEXT_PREVIEW_BYTES = 512 * 1024;
 export const MAX_REMOTE_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
+export const MAX_REMOTE_VIDEO_PREVIEW_BYTES = 200 * 1024 * 1024;
 
-export type RemotePreviewKind = 'code' | 'html' | 'image' | 'markdown' | 'text' | 'unsupported';
+export type RemotePreviewKind = 'code' | 'html' | 'image' | 'markdown' | 'text' | 'video' | 'unsupported';
 
 const CODE_EXTENSIONS = new Set([
   'bash', 'c', 'cc', 'cjs', 'cpp', 'css', 'fish', 'go', 'gradle', 'graphql', 'h',
@@ -21,6 +22,7 @@ const TEXT_FILENAMES = new Set(['license', 'readme']);
 const HTML_EXTENSIONS = new Set(['htm', 'html']);
 const MARKDOWN_EXTENSIONS = new Set(['markdown', 'md', 'mdx']);
 const IMAGE_EXTENSIONS = new Set(['bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp']);
+const VIDEO_EXTENSIONS = new Set(['3gp', 'm4v', 'mkv', 'mov', 'mp4', 'webm']);
 
 const CODE_LANGUAGE_BY_EXTENSION: Record<string, string> = {
   bash: 'bash',
@@ -124,6 +126,9 @@ export function remotePreviewKind(filename: string, fileSize: number): RemotePre
   const extension = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1) : '';
   if (IMAGE_EXTENSIONS.has(extension)) {
     return fileSize <= MAX_REMOTE_IMAGE_PREVIEW_BYTES ? 'image' : 'unsupported';
+  }
+  if (VIDEO_EXTENSIONS.has(extension)) {
+    return fileSize <= MAX_REMOTE_VIDEO_PREVIEW_BYTES ? 'video' : 'unsupported';
   }
   if (fileSize > MAX_REMOTE_TEXT_PREVIEW_BYTES) return 'unsupported';
   if (HTML_EXTENSIONS.has(extension)) return 'html';

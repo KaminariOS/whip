@@ -19,7 +19,8 @@
         {
           "supportedLocales": ["en", "zh-Hant"]
         }
-      ]
+      ],
+      "expo-video"
     ],
     "ios": {
       "bundleIdentifier": "io.github.kaminarios.whip"
