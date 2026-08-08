@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
 import type { ServerInfo } from '@/src/types';
-import { hapticPress, HerdrMark, WhipMark } from './app-ui';
+import { hapticPress, HerdrMark, WhipSvgMark } from './app-ui';
 import { GlassBackdrop, GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -187,7 +187,7 @@ export function AboutSection({ server }: AboutSectionProps) {
           </View>
 
           <View className="mt-9 items-center">
-            <WhipMark size={82} accessibilityLabel={t('about.appIcon')} />
+            <WhipSvgMark size={82} accessibilityLabel={t('about.appIcon')} />
             <Text className="mt-4 text-[28px] font-semibold leading-9">Whip</Text>
             <Text className="mt-1 text-center text-sm leading-5 text-muted-foreground">{t('about.tagline')}</Text>
             <Text className="mt-1.5 text-center text-xs leading-[17px] text-muted-foreground/70">{t('common.version', { version: whipVersion })}</Text>
