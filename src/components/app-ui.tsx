@@ -35,8 +35,8 @@ import {
   statusMotionKind,
   statusTone,
 } from '@/src/lib/statusMotion';
-import { useTheme } from '@/src/theme';
-import { GlassSurface } from './GlassSurface';
+import { appGlassControlStyle, useTheme } from '@/src/theme';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -183,12 +183,18 @@ export function IconButton({
 
 export function StatusBadge({ status, label, agentStatus = false, showIndicator = true }: { status: string; label?: string; agentStatus?: boolean; showIndicator?: boolean }) {
   const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const tone = statusTone(status);
   const indicatorColor = { success: colors.working, destructive: colors.error, warning: colors.warning, muted: colors.textTertiary }[tone];
   const textClass = { success: 'text-success', destructive: 'text-destructive', warning: 'text-warning', muted: 'text-muted-foreground' }[tone];
   return (
-    <Badge variant="secondary" className="gap-1.5 border-0 px-2.5 py-1">
+    <Badge
+      variant="secondary"
+      className="gap-1.5 px-2.5 py-1"
+      style={appGlassEnabled
+        ? appGlassControlStyle(false, colors)
+        : { borderColor: colors.divider }}>
       {showIndicator && (agentStatus
         ? <AnimatedAgentStatusGlyph status={status} color={indicatorColor} size={12} />
         : <AnimatedStatusIndicator status={status} color={indicatorColor} />)}

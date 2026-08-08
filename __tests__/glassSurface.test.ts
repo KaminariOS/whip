@@ -12,6 +12,7 @@ test('gates app glass across bars and rows behind its experiment and background 
   const herd = readSource('src/components/HerdScreen.tsx');
   const hostRail = readSource('src/components/LiveSessionRail.tsx');
   const workspaceRail = readSource('src/components/WorkspaceRail.tsx');
+  const appUi = readSource('src/components/app-ui.tsx');
 
   expect(app).toContain('enabled={appGlassEnabled && Boolean(appBackgroundImageUri)}');
   expect(glass).toContain('glass?.enabled === true');
@@ -35,4 +36,9 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(herd.match(/style=\{appGlassEnabled \? appGlassControlStyle\(false, colors\) : undefined\}/g)).toHaveLength(2);
   expect(herd).not.toContain("variant={appGlassEnabled ? 'ghost' : 'default'}");
   expect(herd.match(/variant=\{appGlassEnabled \? 'ghost' : 'secondary'\}/g)).toHaveLength(2);
+  expect(hosts).toContain('<StatusBadge status={state} label={label} />');
+  expect(herd).toContain('<StatusBadge');
+  expect(appUi).toContain('const appGlassEnabled = useAppGlassEnabled();');
+  expect(appUi).toContain('? appGlassControlStyle(false, colors)');
+  expect(appUi).toContain(': { borderColor: colors.divider }');
 });
