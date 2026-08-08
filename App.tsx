@@ -923,10 +923,10 @@ function AppContent() {
       }
     });
     const heartbeat = setInterval(() => {
-      resumeLiveConnections(false);
+      if (AppState.currentState === 'active') resumeLiveConnections(false);
     }, LIVE_HOST_HEALTHCHECK_MS);
     const reconciliation = setInterval(() => {
-      resumeLiveConnections(true);
+      if (AppState.currentState === 'active') resumeLiveConnections(true);
     }, LIVE_HOST_RECONCILE_MS);
     return () => {
       subscription.remove();

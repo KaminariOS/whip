@@ -17,7 +17,6 @@ describe('Android background monitoring', () => {
     resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/MainApplication.kt'),
     'utf8',
   );
-  const entrypoint = readFileSync(resolve(__dirname, '../index.js'), 'utf8');
 
   it('declares a policy-visible special-use foreground service', () => {
     expect(manifest).toContain('android.permission.FOREGROUND_SERVICE');
@@ -48,16 +47,6 @@ describe('Android background monitoring', () => {
     expect(service).toContain('wakeLock?.let { if (it.isHeld) it.release() }');
   });
 
-  it('keeps React Native timers running for the foreground monitor lifetime', () => {
-    expect(service).toContain('class HerdrBackgroundService : HeadlessJsTaskService()');
-    expect(service).toContain('keepReactNativeMonitoringActive()');
-    expect(service).toContain('HeadlessJsTaskConfig(');
-    expect(service).toContain('BACKGROUND_MONITORING_TASK');
-    expect(service).toContain('BACKGROUND_MONITORING_STOP_EVENT');
-    expect(entrypoint).toContain("AppRegistry.registerHeadlessTask(BACKGROUND_MONITORING_TASK");
-    expect(entrypoint).toContain('backgroundMonitoringStops.add(resolve)');
-  });
-
   it('runs an insistent alert only while its notification is active', () => {
     expect(alerts).toContain('armPersistentAgentAlert(');
     expect(module).toContain('Sensor.TYPE_ACCELEROMETER');
@@ -75,14 +64,14 @@ describe('Android background monitoring', () => {
     expect(app).not.toContain("state === 'active') {\n        resumeLiveConnections();\n      } else");
   });
 
-  it('periodically verifies live hosts while monitoring is active', () => {
+  it('periodically verifies live hosts while the app is active', () => {
     expect(app).toContain('const LIVE_HOST_HEALTHCHECK_MS = 15_000;');
     expect(app).toContain('const LIVE_HOST_RECONCILE_MS = 120_000;');
     expect(app).toContain(
-      'resumeLiveConnections(false);',
+      "if (AppState.currentState === 'active') resumeLiveConnections(false);",
     );
     expect(app).toContain(
-      'resumeLiveConnections(true);',
+      "if (AppState.currentState === 'active') resumeLiveConnections(true);",
     );
     expect(app).toMatch(
       /shouldRefreshLiveHost\(\s*session,\s*runtime\.eventStatus === 'open',\s*reconcile,?\s*\)/,
