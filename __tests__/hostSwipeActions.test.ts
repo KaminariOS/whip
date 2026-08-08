@@ -34,16 +34,20 @@ describe('host swipe actions', () => {
     expect(shouldOpenHostSwipe(HOST_SWIPE_ACTION_WIDTH, 0, true)).toBe(false);
   });
 
-  it('exposes disconnect and delete actions wired to the app flows', () => {
+  it('switches the connection action between connect and disconnect, alongside delete', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/HostsScreen.tsx'),
       'utf8',
     );
     const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
 
-    expect(screen).toContain("t('hosts.disconnectHost'");
+    expect(screen).toContain("connected ? 'hosts.disconnectHost' : 'hosts.connectTo'");
+    expect(screen).toContain('onConnect={() => onConnect(host)}');
+    expect(screen).toContain('runAction(connected ? onDisconnect : onConnect)');
+    expect(screen).toContain('as={connected ? LogOut : LogIn}');
+    expect(screen).toContain("t(connected ? 'hosts.disconnect' : 'common.connect')");
     expect(screen).toContain("t('hosts.deleteHost'");
-    expect(screen).toContain('disabled={!connected}');
+    expect(screen).not.toContain('disabled={!connected}');
     expect(app).toContain('onDelete={confirmDeleteHost}');
     expect(app).toContain('if (live) closeLiveHost(live.id)');
   });

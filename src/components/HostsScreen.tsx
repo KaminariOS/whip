@@ -1,4 +1,4 @@
-import { AlertCircle, Ellipsis, LockKeyhole, LogOut, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Ellipsis, LockKeyhole, LogIn, LogOut, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { PanResponder, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -106,6 +106,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                       key={host.id}
                       connected={connected}
                       displayName={displayName}
+                      onConnect={() => onConnect(host)}
                       onDelete={() => onDelete(host)}
                       onDisconnect={() => onDisconnect(host)}>
                       {({ closeActions, actionsOpen }) => (
@@ -182,12 +183,14 @@ function SwipeableHostRow({
   children,
   connected,
   displayName,
+  onConnect,
   onDelete,
   onDisconnect,
 }: {
   children: (controls: { actionsOpen: boolean; closeActions: () => void }) => React.ReactNode;
   connected: boolean;
   displayName: string;
+  onConnect: () => void;
   onDelete: () => void;
   onDisconnect: () => void;
 }) {
@@ -242,13 +245,16 @@ function SwipeableHostRow({
         style={actionRevealStyle}>
         <View className="absolute inset-y-0 right-0 flex-row" style={{ width: HOST_SWIPE_ACTION_WIDTH }}>
           <Button
-            accessibilityLabel={t('hosts.disconnectHost', { host: displayName })}
-            className="h-full w-[76px] flex-col gap-1 rounded-l-lg rounded-r-none bg-warning"
-            disabled={!connected}
+            accessibilityLabel={t(connected ? 'hosts.disconnectHost' : 'hosts.connectTo', { host: displayName })}
+            className={connected
+              ? 'h-full w-[76px] flex-col gap-1 rounded-l-lg rounded-r-none bg-warning'
+              : 'h-full w-[76px] flex-col gap-1 rounded-l-lg rounded-r-none bg-primary'}
             size="content"
-            onPress={hapticPress(() => runAction(onDisconnect))}>
-            <Icon as={LogOut} className="text-black" size={19} />
-            <Text className="text-[11px] font-semibold text-black">{t('hosts.disconnect')}</Text>
+            onPress={hapticPress(() => runAction(connected ? onDisconnect : onConnect))}>
+            <Icon as={connected ? LogOut : LogIn} className={connected ? 'text-black' : 'text-primary-foreground'} size={19} />
+            <Text className={connected ? 'text-[11px] font-semibold text-black' : 'text-[11px] font-semibold text-primary-foreground'}>
+              {t(connected ? 'hosts.disconnect' : 'common.connect')}
+            </Text>
           </Button>
           <Button
             accessibilityLabel={t('hosts.deleteHost', { host: displayName })}
