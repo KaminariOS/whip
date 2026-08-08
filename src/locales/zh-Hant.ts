@@ -83,6 +83,7 @@ export const zhHant: Record<string, string> = {
   'hosts.password': '密碼',
   'hosts.securityCopy': '認證資料由 Android Keystore 保護，並透過加密的 Block Store 復原。',
   'hosts.usedBefore': '先前使用過',
+  'hosts.lastConnected': '上次連線於 {{value}}',
   'hosts.justNow': '剛剛',
   'hosts.minutesAgo': '{{count}} 分鐘前',
   'hosts.hoursAgo': '{{count}} 小時前',

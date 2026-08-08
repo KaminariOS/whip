@@ -263,16 +263,21 @@ export function AgentStatusMedallion({
   accessibilityLabel,
   status,
   color,
+  icon: IconComponent,
   size = 44,
   glyphSize = 24,
 }: {
   accessibilityLabel: string;
   status: string;
   color: string;
+  icon?: LucideIcon;
   size?: number;
   glyphSize?: number;
 }) {
   const bloomSize = size + 4;
+  const glyph = () => IconComponent
+    ? <IconComponent color={color} size={glyphSize} strokeWidth={2.25} />
+    : <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />;
   return (
     <View
       accessible
@@ -296,9 +301,9 @@ export function AgentStatusMedallion({
           pointerEvents="none"
           className="absolute inset-0 items-center justify-center"
           style={styles.agentStatusIconBloom}>
-          <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />
+          {glyph()}
         </View>
-        <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />
+        {glyph()}
       </GlassSurface>
     </View>
   );

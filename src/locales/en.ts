@@ -87,6 +87,7 @@ export const en = {
   'hosts.password': 'Password',
   'hosts.securityCopy': 'Credentials use Android Keystore with encrypted Block Store recovery.',
   'hosts.usedBefore': 'Used before',
+  'hosts.lastConnected': 'Last connected {{value}}',
   'hosts.justNow': 'Just now',
   'hosts.minutesAgo': '{{count}}m ago',
   'hosts.hoursAgo': '{{count}}h ago',

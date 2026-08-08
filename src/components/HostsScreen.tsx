@@ -1,4 +1,4 @@
-import { AlertCircle, Ellipsis, LockKeyhole, LogOut, Plus, Server, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Ellipsis, LockKeyhole, LogOut, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { PanResponder, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -121,11 +121,14 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                               else onConnect(host);
                             })}>
                             <AgentStatusMedallion
-                              accessibilityLabel={t('hosts.agentStatus', {
-                                status: t(`status.${runtime?.agentStatus ?? 'unknown'}`),
-                              })}
+                              accessibilityLabel={runtime
+                                ? t('hosts.agentStatus', { status: t(`status.${runtime.agentStatus}`) })
+                                : t('status.disconnected')}
                               status={runtime?.agentStatus ?? 'unknown'}
-                              color={statusColor(runtime?.agentStatus ?? 'unknown', colors)}
+                              color={runtime
+                                ? statusColor(runtime.agentStatus, colors)
+                                : colors.textSecondary}
+                              icon={runtime ? undefined : ServerOff}
                             />
                             <View className="min-w-0 flex-1">
                               <View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{displayName}</Text><StatusBadge status={state} label={label} /></View>
@@ -133,7 +136,12 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                                 <Text className="min-w-0 flex-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== '22' ? `:${host.port}` : ''}</Text>
                                 <Text accessibilityLabel={latencyMs == null ? t('hosts.latencyUnavailable') : t('hosts.latency', { value: latencyMs })} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
                               </View>
-                              <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')}{host.lastConnectedAt ? ` · ${formatLastUsed(host.lastConnectedAt, t)}` : ''}</Text>
+                              <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>
+                                {host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')}
+                                {!connected && host.lastConnectedAt
+                                  ? ` · ${t('hosts.lastConnected', { value: formatLastUsed(host.lastConnectedAt, t) })}`
+                                  : ''}
+                              </Text>
                               <View className="mt-1.5 flex-row flex-wrap items-center gap-x-2.5 gap-y-1">
                                 <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
                                   {t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
