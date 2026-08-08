@@ -20,6 +20,13 @@ import {
 } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
 import {
+  parseRemoteHtmlPreviewStart,
+  remoteHtmlPreviewPageUrl,
+  remoteHtmlPreviewStartCommand,
+  remoteHtmlPreviewStopCommand,
+  type RemoteHtmlServerProcess,
+} from '../lib/remoteHtmlPreview';
+import {
   type TerminalFrame,
 } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
@@ -79,6 +86,16 @@ interface TerminalSize {
   cellHeightPx: number;
 }
 
+export interface RemoteHtmlPreviewHandle {
+  url: string;
+  displayUrl: string;
+  localPort: number;
+}
+
+interface RemoteHtmlPreviewProcess extends RemoteHtmlServerProcess {
+  client: SSHClient;
+}
+
 export class HerdrClient {
   private client: SSHClient | null = null;
   private profile: ConnectionProfile | null = null;
@@ -101,6 +118,8 @@ export class HerdrClient {
   private controlConnect: Promise<void> | null = null;
   private controlReconnect: Promise<void> | null = null;
   private localForwards = new Map<number, SSHClient>();
+  private remoteHtmlPreviews = new Map<number, RemoteHtmlPreviewProcess>();
+  private remoteHtmlPreviewSequence = 0;
 
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
     const port = Number(profile.port);
@@ -209,6 +228,7 @@ export class HerdrClient {
     this.terminalBridgeGenerations.clear();
     this.controlReconnect = null;
     this.localForwards.clear();
+    this.remoteHtmlPreviews.clear();
   }
 
   async openWebTunnel(value: string): Promise<{ url: string; localPort: number } | null> {
@@ -223,7 +243,48 @@ export class HerdrClient {
   async closeWebTunnel(localPort: number): Promise<void> {
     const client = this.localForwards.get(localPort);
     this.localForwards.delete(localPort);
+    const preview = this.remoteHtmlPreviews.get(localPort);
+    this.remoteHtmlPreviews.delete(localPort);
+    if (preview) {
+      await preview.client.execute(remoteHtmlPreviewStopCommand(preview)).catch(() => undefined);
+    }
     if (client) await client.closeLocalForward(localPort);
+  }
+
+  async openRemoteHtmlPreview(remotePath: string): Promise<RemoteHtmlPreviewHandle> {
+    const client = this.requireClient();
+    const normalizedPath = remotePath.replace(/\\/g, '/');
+    const separator = normalizedPath.lastIndexOf('/');
+    const directory = separator > 0 ? normalizedPath.slice(0, separator) : '/';
+    const filename = normalizedPath.slice(separator + 1);
+    if (!filename) throw new Error('The remote HTML preview path has no filename');
+
+    const token = `${Date.now().toString(36)}-${(++this.remoteHtmlPreviewSequence).toString(36)}`;
+    const output = await client.execute(remoteHtmlPreviewStartCommand(directory, token));
+    const process = parseRemoteHtmlPreviewStart(output, token);
+    let localPort: number | null = null;
+    try {
+      localPort = await client.openLocalForward('127.0.0.1', process.port);
+      this.localForwards.set(localPort, client);
+      this.remoteHtmlPreviews.set(localPort, { ...process, client });
+      const displayUrl = remoteHtmlPreviewPageUrl(process.port, filename);
+      return {
+        displayUrl,
+        localPort,
+        url: localTunnelUrl(displayUrl, localPort),
+      };
+    } catch (error) {
+      if (localPort !== null) {
+        this.localForwards.delete(localPort);
+        await client.closeLocalForward(localPort).catch(() => undefined);
+      }
+      await client.execute(remoteHtmlPreviewStopCommand(process)).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  closeRemoteHtmlPreview(preview: RemoteHtmlPreviewHandle): Promise<void> {
+    return this.closeWebTunnel(preview.localPort);
   }
 
   async listRemoteDirectory(path?: string): Promise<{ path: string; entries: LsResult[] }> {

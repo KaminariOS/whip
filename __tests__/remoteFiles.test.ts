@@ -144,15 +144,17 @@ test('plays bounded remote videos from the local preview cache', () => {
   expect(preview).toContain('fullscreenOptions={{ enable: true }}');
 });
 
-test('renders HTML previews in a locked-down WebView while retaining source editing', () => {
+test('tunnels a remote Python HTML server into the in-app WebView while retaining source editing', () => {
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
   const preview = readFileSync(resolve(__dirname, '../src/components/HtmlPreview.tsx'), 'utf8');
   expect(manager).toContain('<HtmlPreview');
   expect(manager).toContain("kind === 'html'");
-  expect(preview).toContain('javaScriptEnabled={false}');
+  expect(manager).toContain('client.openRemoteHtmlPreview(entryPath)');
+  expect(manager).toContain('client.closeRemoteHtmlPreview');
+  expect(preview).toContain('javaScriptEnabled');
   expect(preview).toContain('allowFileAccess={false}');
-  expect(preview).toContain('originWhitelist={[]}');
-  expect(preview).toContain('buildSandboxedHtmlPreview');
+  expect(preview).toContain("originWhitelist={['http://*', 'https://*']}");
+  expect(preview).toContain('source={{ uri: previewUrl }}');
 });
 
 test('uses the requested syntax highlighter and terminal font in previews and editors', () => {

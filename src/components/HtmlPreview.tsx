@@ -1,14 +1,14 @@
 import { StyleSheet } from 'react-native';
 import WebView from 'react-native-webview/lib/WebView.android';
 
-import { buildSandboxedHtmlPreview } from '@/src/lib/htmlPreview';
-
 interface Props {
-  content: string;
   filename: string;
+  revision: number;
+  uri: string;
 }
 
-export function HtmlPreview({ content, filename }: Props) {
+export function HtmlPreview({ filename, revision, uri }: Props) {
+  const previewUrl = `${uri}${uri.includes('?') ? '&' : '?'}__whip_preview=${revision}`;
   return (
     <WebView
       accessibilityLabel={`Preview ${filename}`}
@@ -16,14 +16,14 @@ export function HtmlPreview({ content, filename }: Props) {
       allowFileAccessFromFileURLs={false}
       allowUniversalAccessFromFileURLs={false}
       cacheEnabled={false}
-      domStorageEnabled={false}
+      domStorageEnabled
       javaScriptCanOpenWindowsAutomatically={false}
-      javaScriptEnabled={false}
+      javaScriptEnabled
       mediaPlaybackRequiresUserAction
       nestedScrollEnabled
-      originWhitelist={[]}
+      originWhitelist={['http://*', 'https://*']}
       setSupportMultipleWindows={false}
-      source={{ html: buildSandboxedHtmlPreview(content, filename) }}
+      source={{ uri: previewUrl }}
       style={styles.preview}
       thirdPartyCookiesEnabled={false}
     />

@@ -28,7 +28,7 @@ import {
   remotePreviewKind,
   type RemotePreviewKind,
 } from '@/src/lib/remoteFiles';
-import type { HerdrClient } from '@/src/services/HerdrClient';
+import type { HerdrClient, RemoteHtmlPreviewHandle } from '@/src/services/HerdrClient';
 import {
   cacheRemoteFile,
   copyCachedRemoteFileToPickedDirectory,
@@ -62,6 +62,8 @@ interface FilePreview {
   draft: string;
   editing: boolean;
   error: string | null;
+  htmlPreview: RemoteHtmlPreviewHandle | null;
+  htmlRevision: number;
 }
 
 export function RemoteFileManager({ visible, client, initialPath, onPathChange, onClose }: Props) {
@@ -82,9 +84,12 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
   const replacePreview = useCallback((next: FilePreview | null) => {
     const previous = previewRef.current;
     if (previous?.cached && previous.cached !== next?.cached) previous.cached.dispose();
+    if (previous?.htmlPreview && previous.htmlPreview !== next?.htmlPreview) {
+      client.closeRemoteHtmlPreview(previous.htmlPreview).catch(() => undefined);
+    }
     previewRef.current = next;
     setPreview(next);
-  }, []);
+  }, [client]);
 
   const loadDirectory = useCallback(async (requestedPath: string) => {
     const request = ++requestRef.current;
@@ -113,9 +118,11 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
   }, [initialPath, loadDirectory, replacePreview, visible]);
 
   useEffect(() => () => {
-    previewRef.current?.cached?.dispose();
+    const current = previewRef.current;
+    current?.cached?.dispose();
+    if (current?.htmlPreview) client.closeRemoteHtmlPreview(current.htmlPreview).catch(() => undefined);
     previewRef.current = null;
-  }, []);
+  }, [client]);
 
   const openEntry = async (entry: LsResult) => {
     const name = remoteEntryName(entry);
@@ -136,11 +143,14 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
       draft: '',
       editing: false,
       error: null,
+      htmlPreview: null,
+      htmlRevision: 0,
     };
     replacePreview(loadingPreview);
     if (kind === 'unsupported') return;
 
     let cached: CachedRemoteFile | null = null;
+    let htmlPreview: RemoteHtmlPreviewHandle | null = null;
     try {
       cached = await cacheRemoteFile(client, entryPath);
       const content = isTextPreview(kind) ? await cached.file.text() : null;
@@ -148,9 +158,16 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
         cached.dispose();
         return;
       }
-      replacePreview({ ...loadingPreview, cached, content, draft: content || '' });
+      if (kind === 'html') htmlPreview = await client.openRemoteHtmlPreview(entryPath);
+      if (request !== requestRef.current) {
+        cached.dispose();
+        if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
+        return;
+      }
+      replacePreview({ ...loadingPreview, cached, content, draft: content || '', htmlPreview });
     } catch (reason) {
       cached?.dispose();
+      if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
       if (request === requestRef.current) {
         replacePreview({ ...loadingPreview, error: String(reason) });
       }
@@ -191,7 +208,11 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
     setActionBusy(true);
     try {
       await saveCachedRemoteText(client, current.cached, parentRemotePath(current.path), current.draft);
-      updatePreview({ content: current.draft, editing: false });
+      updatePreview({
+        content: current.draft,
+        editing: false,
+        htmlRevision: current.htmlRevision + 1,
+      });
       Alert.alert(t('files.savedTitle'), t('files.savedCopy', { name: remoteEntryName(current.entry) }));
     } catch (reason) {
       Alert.alert(t('files.saveFailed'), String(reason));
@@ -327,10 +348,11 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
               />
             ) : preview.kind === 'markdown' ? (
               <MarkdownPreview content={preview.content || ''} />
-            ) : preview.kind === 'html' ? (
+            ) : preview.kind === 'html' && preview.htmlPreview ? (
               <HtmlPreview
-                content={preview.content || ''}
                 filename={remoteEntryName(preview.entry)}
+                revision={preview.htmlRevision}
+                uri={preview.htmlPreview.url}
               />
             ) : preview.kind === 'code' ? (
               <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
