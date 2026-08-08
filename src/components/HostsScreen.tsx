@@ -5,6 +5,7 @@ import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
+import { orderByConnectionAndAgentStatusPriority } from '@/src/herdQueue';
 import { hostDisplayName } from '@/src/lib/hostProfiles';
 import type { HostRuntimeSummary } from '@/src/lib/hostRuntimeSummary';
 import {
@@ -43,6 +44,12 @@ interface Props {
 export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const connectedHostIdSet = new Set(connectedHostIds);
+  const orderedHosts = orderByConnectionAndAgentStatusPriority(
+    hosts,
+    host => connectedHostIdSet.has(host.id),
+    host => runtimeByHostId[host.id]?.agentStatus ?? 'unknown',
+  );
   return (
     <View className="flex-1">
       <ScreenHeader
@@ -92,10 +99,10 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
             <>
               <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('hosts.count', { count: hosts.length })}</Text>
               <View className="gap-3">
-                {hosts.map(host => {
+                {orderedHosts.map(host => {
                   const connecting = connectingHostId === host.id;
                   const active = activeHostId === host.id;
-                  const connected = connectedHostIds.includes(host.id);
+                  const connected = connectedHostIdSet.has(host.id);
                   const state = connecting ? 'working' : active || connected ? 'done' : 'idle';
                   const label = connecting ? t('hosts.opening') : active ? t('hosts.active') : connected ? t('hosts.open') : t('hosts.offline');
                   const displayName = hostDisplayName(host);

@@ -1,5 +1,6 @@
 import {
   agentsForHerdFilter,
+  orderByConnectionAndAgentStatusPriority,
   orderByAgentStatusPriority,
   tabAgentStateChangeSequence,
   queuesForHerdFilter,
@@ -66,6 +67,28 @@ test('orders attention statuses before running and idle statuses', () => {
     'unknown',
   ]);
   expect(statuses).toEqual(['idle', 'working', 'done', 'unknown', 'blocked']);
+});
+
+test('orders connected hosts first using Herd agent-status priority', () => {
+  const hosts = [
+    { id: 'offline-done', connected: false, status: 'done' },
+    { id: 'connected-working', connected: true, status: 'working' },
+    { id: 'connected-blocked', connected: true, status: 'blocked' },
+    { id: 'connected-done', connected: true, status: 'done' },
+    { id: 'offline-blocked', connected: false, status: 'blocked' },
+  ] as const;
+
+  expect(orderByConnectionAndAgentStatusPriority(
+    hosts,
+    host => host.connected,
+    host => host.status,
+  ).map(host => host.id)).toEqual([
+    'connected-blocked',
+    'connected-done',
+    'connected-working',
+    'offline-done',
+    'offline-blocked',
+  ]);
 });
 
 test('orders equal statuses by the most recent native state change', () => {

@@ -31,6 +31,19 @@ export function compareAgentStatusPriority(a: AgentStatus, b: AgentStatus): numb
   return AGENT_STATUS_SORT_PRIORITY[a] - AGENT_STATUS_SORT_PRIORITY[b];
 }
 
+export function orderByConnectionAndAgentStatusPriority<T>(
+  items: readonly T[],
+  connectedOf: (item: T) => boolean,
+  statusOf: (item: T) => AgentStatus,
+): T[] {
+  return [...items].sort((a, b) => {
+    const aConnected = connectedOf(a);
+    const bConnected = connectedOf(b);
+    if (aConnected !== bConnected) return aConnected ? -1 : 1;
+    return aConnected ? compareAgentStatusPriority(statusOf(a), statusOf(b)) : 0;
+  });
+}
+
 export function orderByAgentStatusPriority<T>(
   items: readonly T[],
   statusOf: (item: T) => AgentStatus,
