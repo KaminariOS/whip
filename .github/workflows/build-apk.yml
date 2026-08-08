@@ -20,6 +20,7 @@ jobs:
     name: Build release APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: google-play
     env:
       NODE_ENV: production
 
@@ -53,25 +54,58 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci --include=dev
 
-      - name: Build release APK
+      - name: Prepare release signing
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          required=(
+            ANDROID_UPLOAD_KEYSTORE_BASE64
+            ANDROID_UPLOAD_KEYSTORE_PASSWORD
+            ANDROID_UPLOAD_KEY_ALIAS
+            ANDROID_UPLOAD_KEY_PASSWORD
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          mkdir -p .eas-secrets
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" \
+            | base64 --decode > .eas-secrets/upload-keystore.jks
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$GITHUB_WORKSPACE/.eas-secrets/upload-keystore.jks" \
+            "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" \
+            "$ANDROID_UPLOAD_KEY_ALIAS" \
+            "$ANDROID_UPLOAD_KEY_PASSWORD" \
+            > .eas-secrets/upload-keystore.properties
+          chmod 600 .eas-secrets/*
+
+      - name: Build signed release APK
         working-directory: android
+        env:
+          WHIP_UPLOAD_KEYSTORE_PROPERTIES: ${{ github.workspace }}/.eas-secrets/upload-keystore.properties
         run: >-
           ./gradlew app:assembleRelease
           -PreactNativeArchitectures=arm64-v8a
           --no-daemon
 
-      - name: Package experimental APK
+      - name: Package APK
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk whip-experimental-arm64.apk
-          sha256sum whip-experimental-arm64.apk > whip-experimental-arm64.apk.sha256
+          cp android/app/build/outputs/apk/release/app-release.apk whip-arm64.apk
+          sha256sum whip-arm64.apk > whip-arm64.apk.sha256
 
-      - name: Upload experimental APK
+      - name: Upload APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: whip-experimental-arm64-apk
+          name: whip-arm64-apk
           path: |
-            whip-experimental-arm64.apk
-            whip-experimental-arm64.apk.sha256
+            whip-arm64.apk
+            whip-arm64.apk.sha256
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -86,15 +120,18 @@ jobs:
               "$RELEASE_TAG"
               --target "$GITHUB_SHA"
               --generate-notes
-              --latest=false
-              --prerelease
-              --title "Whip $RELEASE_TAG (experimental preview)"
-              --notes "Experimental preview. SSH host identities are verified against Whip's global known-hosts list. This ARM64 APK is preview-signed, and its signing identity may change before a stable release."
+              --latest
+              --title "Whip $RELEASE_TAG"
             )
             gh release create "${release_args[@]}"
+          else
+            gh release edit "$RELEASE_TAG" \
+              --prerelease=false \
+              --latest \
+              --title "Whip $RELEASE_TAG"
           fi
 
           gh release upload "$RELEASE_TAG" \
-            "whip-experimental-arm64.apk#Whip experimental APK (arm64-v8a)" \
-            "whip-experimental-arm64.apk.sha256#SHA-256 checksum" \
+            "whip-arm64.apk#Whip APK (arm64-v8a)" \
+            "whip-arm64.apk.sha256#SHA-256 checksum" \
             --clobber
