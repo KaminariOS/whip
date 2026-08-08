@@ -8,6 +8,14 @@ describe('Android background monitoring', () => {
     resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/HerdrBackgroundService.kt'),
     'utf8',
   );
+  const notificationIcon = readFileSync(
+    resolve(__dirname, '../android/app/src/main/res/drawable/ic_notification_whip.xml'),
+    'utf8',
+  );
+  const notificationIconSource = readFileSync(
+    resolve(__dirname, '../assets/notification-icon.svg'),
+    'utf8',
+  );
   const module = readFileSync(
     resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/HerdrBackgroundModule.kt'),
     'utf8',
@@ -32,6 +40,23 @@ describe('Android background monitoring', () => {
     expect(service).toContain('.setOngoing(true)');
     expect(service).toContain('return START_NOT_STICKY');
     expect(service).toContain('PowerManager.PARTIAL_WAKE_LOCK');
+  });
+
+  it('uses the Whip vector for native and Expo notification icons', () => {
+    expect(service).toContain('.setSmallIcon(R.drawable.ic_notification_whip)');
+    expect(service).not.toContain('android.R.drawable.stat_notify_sync');
+    expect(manifest).toContain('expo.modules.notifications.default_notification_icon');
+    expect(manifest).toContain('com.google.firebase.messaging.default_notification_icon');
+    expect(manifest.match(/@drawable\/ic_notification_whip/g)).toHaveLength(2);
+    expect(notificationIcon).toContain('<vector');
+    expect(notificationIcon).toContain('android:pathData=');
+    expect(notificationIconSource).toContain('<svg');
+    expect(notificationIconSource).toContain('A clenched mechanical hand beneath a curling whip.');
+  });
+
+  it('uses a versioned launcher resource so notification cards refresh their cached app icon', () => {
+    expect(manifest).toContain('android:icon="@mipmap/ic_launcher_whip"');
+    expect(manifest).toContain('android:roundIcon="@mipmap/ic_launcher_whip_round"');
   });
 
   it('registers the native package and follows the notification preference', () => {

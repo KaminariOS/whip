@@ -25,7 +25,7 @@ describe('About screen', () => {
     expect(screen).toContain('className="min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent');
     expect(screen).toContain('<GlassBackdrop />');
     expect(screen).toContain('variant="ghost"');
-    expect(screen.indexOf("t('about.source')")).toBeLessThan(screen.indexOf('<WhipSvgMark'));
+    expect(screen.indexOf("t('about.source')")).toBeLessThan(screen.indexOf('<WhipMark'));
   });
 
   it('shows the current installed Whip version', () => {
@@ -117,8 +117,28 @@ describe('About screen', () => {
       'utf8',
     );
 
-    expect(screen).toContain('<WhipSvgMark size={82}');
+    expect(screen).toContain('<WhipMark size={82}');
     expect(appUi).toContain("import { LocalSvg } from 'react-native-svg/css';");
     expect(appUi).toContain("asset={require('../../assets/whip-cyborg-hand-concept.svg')}");
+  });
+
+  it('keeps the Whip artwork inside a safe area without a circular image mask', () => {
+    const appUi = readFileSync(
+      resolve(__dirname, '../src/components/app-ui.tsx'),
+      'utf8',
+    );
+    const whipMark = appUi.slice(
+      appUi.indexOf('export function WhipMark'),
+      appUi.indexOf('export function HerdrMark'),
+    );
+    const svg = readFileSync(
+      resolve(__dirname, '../assets/whip-cyborg-hand-concept.svg'),
+      'utf8',
+    );
+
+    expect(whipMark).toContain("asset={require('../../assets/whip-cyborg-hand-concept.svg')}");
+    expect(whipMark).not.toContain('borderRadius');
+    expect(svg).toContain('viewBox="-80 -80 1414 1414"');
+    expect(svg).toContain('Preserve the tapered whip silhouette');
   });
 });

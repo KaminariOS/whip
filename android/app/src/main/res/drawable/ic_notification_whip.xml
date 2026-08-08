@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android VectorDrawable equivalent of assets/notification-icon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M10.8,15.8C6,14.5 2.6,10.7 4,7C5.5,3 11.3,1.3 16.6,2.9C21,4.2 23,7.5 21.5,10.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.2" />
+    <!-- Font Awesome Free 7.3.1 hand-fist, CC BY 4.0, Copyright 2026 Fonticons, Inc. -->
+    <group
+        android:scaleX="0.025"
+        android:scaleY="0.025"
+        android:translateX="10.3"
+        android:translateY="10.4">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M160,0c17.7,0 32,14.3 32,32v112h-64V32c0,-17.7 14.3,-32 32,-32zM32,64c0,-17.7 14.3,-32 32,-32s32,14.3 32,32v80H32V64zm192,0c0,-17.7 14.3,-32 32,-32s32,14.3 32,32v96c0,17.7 -14.3,32 -32,32s-32,-14.3 -32,-32V64zm96,64c0,-17.7 14.3,-32 32,-32s32,14.3 32,32v64c0,17.7 -14.3,32 -32,32s-32,-14.3 -32,-32v-64zm-96,88v-0.6c9.4,5.4 20.3,8.6 32,8.6 13.2,0 25.4,-4 35.6,-10.8 8.7,24.9 32.5,42.8 60.4,42.8 11.7,0 22.6,-3.1 32,-8.6v8.6c0,52.3 -25.1,98.8 -64,128v96c0,17.7 -14.3,32 -32,32H128c-17.7,0 -32,-14.3 -32,-32v-78.4c-17.3,-7.9 -33.2,-18.8 -46.9,-32.5l-11.6,-11.6C13.5,333.5 0,300.9 0,267v-27c0,-35.3 28.7,-64 64,-64h88c22.1,0 40,17.9 40,40s-17.9,40 -40,40H96c-8.8,0 -16,7.2 -16,16s7.2,16 16,16h56c39.8,0 72,-32.2 72,-72z" />
+    </group>
+</vector>

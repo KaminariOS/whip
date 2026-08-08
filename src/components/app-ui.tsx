@@ -11,7 +11,6 @@ import {
 import {
   AccessibilityInfo,
   AppState,
-  Image,
   Platform,
   StyleSheet,
   View,
@@ -135,24 +134,6 @@ export function AgentStatusAnimationProvider({
 }
 
 export function WhipMark({
-  size,
-  accessibilityLabel,
-}: {
-  size: number;
-  accessibilityLabel?: string;
-}) {
-  return (
-    <Image
-      accessibilityIgnoresInvertColors
-      accessibilityLabel={accessibilityLabel}
-      accessible={Boolean(accessibilityLabel)}
-      source={require('../../assets/icon.png')}
-      style={{ width: size, height: size, borderRadius: size / 2 }}
-    />
-  );
-}
-
-export function WhipSvgMark({
   size,
   accessibilityLabel,
 }: {

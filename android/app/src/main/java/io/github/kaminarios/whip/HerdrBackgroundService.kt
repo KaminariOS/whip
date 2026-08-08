@@ -85,7 +85,7 @@ class HerdrBackgroundService : Service() {
       Notification.Builder(this).setPriority(Notification.PRIORITY_LOW)
     }
     return builder
-      .setSmallIcon(android.R.drawable.stat_notify_sync)
+      .setSmallIcon(R.drawable.ic_notification_whip)
       .setContentTitle(getString(R.string.herdr_background_title))
       .setContentText(resources.getQuantityString(R.plurals.herdr_background_hosts, hostCount, hostCount))
       .setContentIntent(contentIntent)
