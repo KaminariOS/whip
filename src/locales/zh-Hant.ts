@@ -476,6 +476,8 @@ export const zhHant: Record<string, string> = {
   'files.openFailed': '無法開啟此檔案',
   'files.previewUnavailable': '無法預覽',
   'files.previewUnavailableCopy': '目前無法安全預覽此檔案類型或大小（{{size}}），但仍可下載。',
+  'files.svgPreview': '預覽 {{name}}',
+  'files.svgInvalid': '無法呈現此 SVG',
   'files.edit': '編輯檔案',
   'files.cancelEdit': '取消編輯',
   'files.save': '儲存遠端檔案',

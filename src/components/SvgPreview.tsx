@@ -1,0 +1,56 @@
+import { FileWarning } from 'lucide-react-native';
+import { useMemo } from 'react';
+import { View } from 'react-native';
+import { parse, SvgAst } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
+
+import { sanitizeRemoteSvgAst } from '@/src/lib/svgPreview';
+import { useTheme } from '@/src/theme';
+import { Text } from './ui/text';
+
+interface Props {
+  content: string;
+  filename: string;
+}
+
+const svgViewport = {
+  height: '100%',
+  preserveAspectRatio: 'xMidYMid meet',
+  width: '100%',
+} as const;
+
+export function SvgPreview({ content, filename }: Props) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const parsed = useMemo(() => {
+    try {
+      const ast = parse(content, sanitizeRemoteSvgAst);
+      if (!ast) throw new Error('The SVG document is empty');
+      return { ast, error: null };
+    } catch (reason) {
+      return { ast: null, error: String(reason) };
+    }
+  }, [content]);
+
+  if (parsed.error) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background p-8">
+        <FileWarning color={colors.textSecondary} size={30} />
+        <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">
+          {t('files.svgInvalid')}
+        </Text>
+        <Text className="mt-2 text-center font-mono text-[9px] leading-[14px] text-muted-foreground">
+          {parsed.error}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      accessibilityLabel={t('files.svgPreview', { name: filename })}
+      className="flex-1 bg-white p-4">
+      <SvgAst ast={parsed.ast} override={svgViewport} />
+    </View>
+  );
+}

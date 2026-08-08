@@ -65,6 +65,7 @@ describe('remote file previews', () => {
   it('allows bounded text and code files', () => {
     expect(canPreviewRemoteTextFile('App.tsx', 1000)).toBe(true);
     expect(canPreviewRemoteTextFile('.env.local', 1000)).toBe(true);
+    expect(canPreviewRemoteTextFile('architecture.svg', 1000)).toBe(true);
     expect(canPreviewRemoteTextFile('photo.png', 1000)).toBe(false);
     expect(canPreviewRemoteTextFile('large.md', 600 * 1024)).toBe(false);
     expect(remotePreviewKind('README.md', 1000)).toBe('markdown');
@@ -76,6 +77,8 @@ describe('remote file previews', () => {
     expect(remotePreviewKind('config.yaml', 1000)).toBe('code');
     expect(remotePreviewKind('notes.txt', 1000)).toBe('text');
     expect(remotePreviewKind('photo.png', 1000)).toBe('image');
+    expect(remotePreviewKind('architecture.svg', 1000)).toBe('svg');
+    expect(remotePreviewKind('large.svg', 600 * 1024)).toBe('unsupported');
     expect(remotePreviewKind('recording.mp4', 1000)).toBe('video');
     expect(remotePreviewKind('screen.webm', 1000)).toBe('video');
     expect(remotePreviewKind('large.mov', 201 * 1024 * 1024)).toBe('unsupported');
@@ -90,6 +93,7 @@ describe('remote file previews', () => {
     expect(remoteCodeLanguage('settings.toml')).toBe('toml');
     expect(remoteCodeLanguage('settings.yml')).toBe('yaml');
     expect(remoteCodeLanguage('README.md')).toBe('markdown');
+    expect(remoteCodeLanguage('architecture.svg')).toBe('xml');
     expect(remoteCodeLanguage('unknown.source')).toBe('plaintext');
   });
 
@@ -167,6 +171,18 @@ test('plays bounded remote videos from the local preview cache', () => {
   expect(preview).toContain('nativeControls');
   expect(preview).toContain('contentFit="contain"');
   expect(preview).toContain('fullscreenOptions={{ enable: true }}');
+});
+
+test('renders bounded SVG files natively while retaining source editing', () => {
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const preview = readFileSync(resolve(__dirname, '../src/components/SvgPreview.tsx'), 'utf8');
+
+  expect(manager).toContain("preview.kind === 'svg'");
+  expect(manager).toContain('<SvgPreview');
+  expect(manager).toContain("kind === 'svg'");
+  expect(preview).toContain('parse(content, sanitizeRemoteSvgAst)');
+  expect(preview).toContain('<SvgAst');
+  expect(preview).toContain("preserveAspectRatio: 'xMidYMid meet'");
 });
 
 test('tunnels a remote Python HTML server into the in-app WebView while retaining source editing', () => {

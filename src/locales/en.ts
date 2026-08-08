@@ -490,6 +490,8 @@ export const en = {
   'files.openFailed': 'Could not open this file',
   'files.previewUnavailable': 'Preview unavailable',
   'files.previewUnavailableCopy': 'This file type or size ({{size}}) cannot be safely previewed, but you can still download it.',
+  'files.svgPreview': 'Preview {{name}}',
+  'files.svgInvalid': 'Could not render this SVG',
   'files.edit': 'Edit file',
   'files.cancelEdit': 'Cancel editing',
   'files.save': 'Save remote file',

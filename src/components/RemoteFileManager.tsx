@@ -54,6 +54,7 @@ import { CodeEditor, CodePreview } from './CodePreview';
 import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { RemoteVideoPreview } from './RemoteVideoPreview';
+import { SvgPreview } from './SvgPreview';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -419,6 +420,11 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                 filename={remoteEntryName(preview.entry)}
                 uri={preview.cached.uri}
               />
+            ) : preview.kind === 'svg' ? (
+              <SvgPreview
+                content={preview.content || ''}
+                filename={remoteEntryName(preview.entry)}
+              />
             ) : preview.kind === 'markdown' ? (
               <MarkdownPreview
                 key={preview.path}
@@ -512,7 +518,7 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                           <View className="size-9 items-center justify-center rounded-lg bg-muted">
                             {directory
                               ? <Folder size={18} color={colors.primary} />
-                              : kind === 'image'
+                              : kind === 'image' || kind === 'svg'
                                 ? <ImageIcon size={18} color={colors.textSecondary} />
                                 : kind === 'video'
                                   ? <FileVideo size={18} color={colors.textSecondary} />
@@ -677,7 +683,7 @@ function SwipeableRemoteFileRow({
 }
 
 function isTextPreview(kind: RemotePreviewKind): boolean {
-  return kind === 'code' || kind === 'html' || kind === 'markdown' || kind === 'text';
+  return kind === 'code' || kind === 'html' || kind === 'markdown' || kind === 'svg' || kind === 'text';
 }
 
 function isPickerCancellation(reason: unknown): boolean {
