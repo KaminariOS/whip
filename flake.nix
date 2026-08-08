@@ -24,7 +24,6 @@
     devShells.${system}.default = pkgs.mkShell {
       packages = [
         androidSdk
-        pkgs.ffmpeg
         pkgs.jdk17_headless
         pkgs.nodejs_22
       ];
