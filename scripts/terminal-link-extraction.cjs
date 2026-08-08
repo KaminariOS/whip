@@ -11,7 +11,7 @@ function trimTerminalUrl(candidate) {
   return value;
 }
 
-function extractTerminalLinks(rows, columns) {
+function terminalLinkCandidates(rows, columns) {
   const logicalLines = [];
   let logicalLine = null;
 
@@ -19,11 +19,18 @@ function extractTerminalLinks(rows, columns) {
     const row = rows[index];
     if (!row.isWrapped || !logicalLine) {
       if (logicalLine) logicalLines.push(logicalLine);
-      logicalLine = { text: '', endsAtColumnBoundary: false };
+      logicalLine = { text: '', segments: [], endsAtColumnBoundary: false };
     }
 
     const nextIsWrapped = Boolean(rows[index + 1]?.isWrapped);
-    logicalLine.text += nextIsWrapped ? row.text : row.text.trimEnd();
+    const text = nextIsWrapped ? row.text : row.text.trimEnd();
+    logicalLine.segments.push({
+      row: index,
+      column: 0,
+      start: logicalLine.text.length,
+      end: logicalLine.text.length + text.length,
+    });
+    logicalLine.text += text;
     logicalLine.endsAtColumnBoundary = !nextIsWrapped
       && columns > 0
       && row.text.trimEnd().length >= columns;
@@ -35,9 +42,10 @@ function extractTerminalLinks(rows, columns) {
   // presentation prefix such as "  ┃  " on every continuation row.
   const scanLines = logicalLines.map((line, index) => {
     let text = line.text;
+    const segments = [...line.segments];
     let current = index;
     const urlAtEnd = text.match(/https?:[/]{2}[^\s<>"']+$/i);
-    if (!urlAtEnd) return text;
+    if (!urlAtEnd) return { text, segments };
 
     const prefix = text.slice(0, urlAtEnd.index);
     const repeatsPresentationPrefix = prefix.length > 0
@@ -47,37 +55,88 @@ function extractTerminalLinks(rows, columns) {
     while (current + 1 < logicalLines.length) {
       const next = logicalLines[current + 1];
       let continuation = null;
+      let continuationStart = 0;
       if (repeatsPresentationPrefix) {
         const repeatsPrefix = next.text.startsWith(prefix);
         const preservesContentColumn = next.text.slice(0, prefix.length).trim() === '';
         if (repeatsPrefix || preservesContentColumn) {
+          continuationStart = prefix.length;
           continuation = next.text.slice(prefix.length).match(/^[^\s<>"']+$/)?.[0] || null;
         }
       } else if (logicalLines[current]?.endsAtColumnBoundary) {
         continuation = next.text.match(/^[^\s<>"']+$/)?.[0] || null;
       }
       if (!continuation || /^https?:[/]{2}/i.test(continuation)) break;
+      const appendedAt = text.length;
+      const continuationEnd = continuationStart + continuation.length;
+      for (const segment of next.segments) {
+        const overlapStart = Math.max(segment.start, continuationStart);
+        const overlapEnd = Math.min(segment.end, continuationEnd);
+        if (overlapStart >= overlapEnd) continue;
+        segments.push({
+          row: segment.row,
+          column: segment.column + overlapStart - segment.start,
+          start: appendedAt + overlapStart - continuationStart,
+          end: appendedAt + overlapEnd - continuationStart,
+        });
+      }
       text += continuation;
       current += 1;
     }
-    return text;
+    return { text, segments };
   });
 
-  const links = [];
-  const seen = new Set();
+  const candidates = [];
   for (let index = scanLines.length - 1; index >= 0; index -= 1) {
-    const matches = [...scanLines[index].matchAll(/https?:[/]{2}[^\s<>"']+/gi)];
+    const { text, segments } = scanLines[index];
+    const matches = [...text.matchAll(/https?:[/]{2}[^\s<>"']+/gi)];
     for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex -= 1) {
       const value = trimTerminalUrl(matches[matchIndex][0]);
       try {
         const parsed = new URL(value);
-        if (!['http:', 'https:'].includes(parsed.protocol) || seen.has(parsed.href)) continue;
-        seen.add(parsed.href);
-        links.push(parsed.href);
+        if (!['http:', 'https:'].includes(parsed.protocol)) continue;
+        const start = matches[matchIndex].index || 0;
+        const end = start + value.length;
+        candidates.push({
+          href: parsed.href,
+          cells: segments.flatMap(segment => {
+            const overlapStart = Math.max(segment.start, start);
+            const overlapEnd = Math.min(segment.end, end);
+            return overlapStart < overlapEnd ? [{
+              row: segment.row,
+              start: segment.column + overlapStart - segment.start,
+              end: segment.column + overlapEnd - segment.start,
+            }] : [];
+          }),
+        });
       } catch {}
     }
+  }
+  return candidates;
+}
+
+function extractTerminalLinks(rows, columns) {
+  const links = [];
+  const seen = new Set();
+  for (const candidate of terminalLinkCandidates(rows, columns)) {
+    if (seen.has(candidate.href)) continue;
+    seen.add(candidate.href);
+    links.push(candidate.href);
   }
   return links;
 }
 
-module.exports = { extractTerminalLinks, trimTerminalUrl };
+function terminalLinkAt(rows, columns, row, column) {
+  return terminalLinkCandidates(rows, columns).find(candidate =>
+    candidate.cells.some(range =>
+      range.row === row && column >= range.start && column < range.end
+    )
+  )?.href || null;
+}
+
+module.exports = {
+  extractTerminalLinks,
+  terminalLinkAt,
+  terminalLinkCandidates,
+  trimTerminalUrl,
+};

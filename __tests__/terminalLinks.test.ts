@@ -8,11 +8,18 @@ import { resolve } from 'node:path';
 
 const {
   extractTerminalLinks,
+  terminalLinkAt,
 }: {
   extractTerminalLinks: (
     rows: Array<{ text: string; isWrapped: boolean }>,
     columns: number,
   ) => string[];
+  terminalLinkAt: (
+    rows: Array<{ text: string; isWrapped: boolean }>,
+    columns: number,
+    row: number,
+    column: number,
+  ) => string | null;
 } = require('../scripts/terminal-link-extraction.cjs');
 
 describe('terminal web links', () => {
@@ -71,34 +78,51 @@ describe('terminal web links', () => {
   });
 
   it('extracts a link that xterm soft-wraps onto the next row', () => {
-    expect(extractTerminalLinks([
+    const rows = [
       { text: 'Open https://example.com/a/very/long/', isWrapped: false },
       { text: 'path?with=query', isWrapped: true },
-    ], 40)).toEqual([
+    ];
+
+    expect(extractTerminalLinks(rows, 40)).toEqual([
       'https://example.com/a/very/long/path?with=query',
     ]);
+    expect(terminalLinkAt(rows, 40, 0, 10)).toBe(
+      'https://example.com/a/very/long/path?with=query',
+    );
+    expect(terminalLinkAt(rows, 40, 1, 4)).toBe(
+      'https://example.com/a/very/long/path?with=query',
+    );
   });
 
   it('extracts a link hard-wrapped at the terminal edge', () => {
     const firstRow = 'Open https://example.com/a/very/long/';
-
-    expect(extractTerminalLinks([
+    const rows = [
       { text: firstRow, isWrapped: false },
       { text: 'path?with=query', isWrapped: false },
-    ], firstRow.length)).toEqual([
+    ];
+
+    expect(extractTerminalLinks(rows, firstRow.length)).toEqual([
       'https://example.com/a/very/long/path?with=query',
     ]);
+    expect(terminalLinkAt(rows, firstRow.length, 1, 4)).toBe(
+      'https://example.com/a/very/long/path?with=query',
+    );
   });
 
   it('extracts a link wrapped inside a terminal UI block', () => {
-    expect(extractTerminalLinks([
+    const rows = [
       { text: '  ┃  https://www.reddit.com/r/herdr/comments/         ', isWrapped: false },
       { text: '  ┃  1v28abf/                                         ', isWrapped: false },
       { text: '  ┃  got_tired_of_installing_herdr_plugins_one_by_    ', isWrapped: false },
       { text: '  ┃  one/                                             ', isWrapped: false },
       { text: '  ┃                                                   ', isWrapped: false },
       { text: '  ┃  Build·DeepSeek V4 Flash Free OpenCode  · max     ', isWrapped: false },
-    ], 54)).toContain(
+    ];
+
+    expect(extractTerminalLinks(rows, 54)).toContain(
+      'https://www.reddit.com/r/herdr/comments/1v28abf/got_tired_of_installing_herdr_plugins_one_by_one/',
+    );
+    expect(terminalLinkAt(rows, 54, 2, 12)).toBe(
       'https://www.reddit.com/r/herdr/comments/1v28abf/got_tired_of_installing_herdr_plugins_one_by_one/',
     );
   });

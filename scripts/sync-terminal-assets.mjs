@@ -6,7 +6,12 @@ import androidImeBridge from './android-ime-bridge.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
 
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
-const { extractTerminalLinks, trimTerminalUrl } = terminalLinkExtraction;
+const {
+  extractTerminalLinks,
+  terminalLinkAt,
+  terminalLinkCandidates,
+  trimTerminalUrl,
+} = terminalLinkExtraction;
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = resolve(root, 'android/app/src/main/assets');
@@ -313,8 +318,10 @@ const terminalSessionHtml = `<!doctype html>
       send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
     };
     ${trimTerminalUrl.toString()}
+    ${terminalLinkCandidates.toString()}
     ${extractTerminalLinks.toString()}
-    window.herdrScanLinks = () => {
+    ${terminalLinkAt.toString()}
+    const terminalRows = () => {
       const rows = [];
       for (let row = 0; row < terminal.buffer.active.length; row += 1) {
         const bufferLine = terminal.buffer.active.getLine(row);
@@ -324,7 +331,10 @@ const terminalSessionHtml = `<!doctype html>
           isWrapped: bufferLine.isWrapped,
         });
       }
-      send({ type: 'link-scan-result', links: extractTerminalLinks(rows, terminal.cols) });
+      return rows;
+    };
+    window.herdrScanLinks = () => {
+      send({ type: 'link-scan-result', links: extractTerminalLinks(terminalRows(), terminal.cols) });
     };
     const resize = () => {
       fit.fit();
@@ -402,28 +412,7 @@ const terminalSessionHtml = `<!doctype html>
     const urlAtPoint = (x, y) => {
       const cell = bufferCellAt(x, y);
       if (!cell) return null;
-      const buffer = terminal.buffer.active;
-      let startRow = cell.row;
-      while (startRow > 0 && buffer.getLine(startRow)?.isWrapped) startRow -= 1;
-      let logicalLine = '';
-      let pointOffset = cell.col;
-      for (let row = startRow; row < buffer.length; row += 1) {
-        const line = buffer.getLine(row);
-        if (!line) break;
-        if (row === cell.row) pointOffset = logicalLine.length + cell.col;
-        logicalLine += line.translateToString(false);
-        if (!buffer.getLine(row + 1)?.isWrapped) break;
-      }
-      for (const match of logicalLine.matchAll(/https?:[/]{2}[^\\s<>"']+/gi)) {
-        const value = trimTerminalUrl(match[0]);
-        const start = match.index || 0;
-        if (pointOffset < start || pointOffset >= start + value.length) continue;
-        try {
-          const parsed = new URL(value);
-          if (['http:', 'https:'].includes(parsed.protocol)) return parsed.href;
-        } catch {}
-      }
-      return null;
+      return terminalLinkAt(terminalRows(), terminal.cols, cell.row, cell.col);
     };
     let touch = null;
     let pinch = null;
