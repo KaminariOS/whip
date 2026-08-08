@@ -27,6 +27,8 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(connection).not.toContain('className="flex-1 bg-background">');
   expect(app.match(/<AppBackground uri=\{appBackgroundImageUri\} dimming=\{appBackgroundDimming\} \/>/g)).toHaveLength(2);
   expect(hosts).toContain('<GlassSurface className="min-h-[88px]');
+  expect(hosts).toContain('<AgentStatusMedallion');
+  expect(readSource('src/components/app-ui.tsx')).toContain('<GlassSurface\n        className="items-center justify-center rounded-full border"');
   expect(herd).toContain('<GlassBackdrop />');
   expect(hostRail).toContain('appGlassEnabled ? appGlassControlStyle(active, colors) : undefined');
   expect(workspaceRail).toContain('appGlassEnabled ? appGlassControlStyle(active, colors) : undefined');

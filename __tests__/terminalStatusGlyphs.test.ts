@@ -27,6 +27,10 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain('const agentSpinnerListeners = new Set<() => void>();');
     expect(appUi).toContain('const frame = useAgentSpinnerFrame(spins && !reduceMotion);');
     expect(appUi).toContain('const { style } = useStatusMotion(status, false);');
+    expect(appUi).toContain('export function AgentStatusMedallion');
+    expect(appUi).toContain('agentStatusCircleBloomStyle(color, bloomSize)');
+    expect(appUi).toContain('style={styles.agentStatusIconBloom}');
+    expect(appUi).toContain("filter: [{ blur: 5 }]");
     expect(appUi).toContain('<CircularAgentSpinner frame={frame} color={color} size={size} />');
     expect(appUi).toContain('const AGENT_SPINNER_ORBIT_RADIUS = 9.5;');
     expect(appUi).toContain('const AGENT_SPINNER_TRAIL_OPACITIES = [1, 0.72, 0.5, 0.32, 0.16] as const;');

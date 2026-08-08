@@ -35,6 +35,7 @@ import { SessionScreen } from './src/components/SessionScreen';
 import { ReducedMotionProvider, WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName, resolveJumpHostChain } from './src/lib/hostProfiles';
+import { hostRuntimeSummary } from './src/lib/hostRuntimeSummary';
 import {
   classifyConnectionError,
   connectionErrorContext,
@@ -1622,6 +1623,10 @@ function AppContent() {
               latencyMsByHostId={Object.fromEntries(liveSessions.sessions.map(session => [
                 session.hostId,
                 session.status === 'connected' ? session.sync.latencyMs : null,
+              ]))}
+              runtimeByHostId={Object.fromEntries(liveSessions.sessions.map(session => [
+                session.hostId,
+                hostRuntimeSummary(session.snapshot),
               ]))}
               connectingHostId={connectingHostId}
               error={connectError}

@@ -259,6 +259,51 @@ export function AnimatedAgentStatusGlyph({
   );
 }
 
+export function AgentStatusMedallion({
+  accessibilityLabel,
+  status,
+  color,
+  size = 44,
+  glyphSize = 24,
+}: {
+  accessibilityLabel: string;
+  status: string;
+  color: string;
+  size?: number;
+  glyphSize?: number;
+}) {
+  const bloomSize = size + 4;
+  return (
+    <View
+      accessible
+      accessibilityLabel={accessibilityLabel}
+      className="items-center justify-center"
+      style={{ width: bloomSize, height: bloomSize }}>
+      <View
+        pointerEvents="none"
+        className="absolute rounded-full"
+        style={agentStatusCircleBloomStyle(color, bloomSize)}
+      />
+      <GlassSurface
+        className="items-center justify-center rounded-full border"
+        intensity={28}
+        style={{
+          width: size,
+          height: size,
+          borderColor: colorWithAlpha(color, '8F'),
+        }}>
+        <View
+          pointerEvents="none"
+          className="absolute inset-0 items-center justify-center"
+          style={styles.agentStatusIconBloom}>
+          <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />
+        </View>
+        <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />
+      </GlassSurface>
+    </View>
+  );
+}
+
 function CircularAgentSpinner({ frame, color, size }: { frame: number; color: string; size: number }) {
   const frameCount = AGENT_SPINNER_FRAMES.length;
   const activeFrame = ((frame % frameCount) + frameCount) % frameCount;
@@ -413,6 +458,18 @@ function statusBloomStyle(color: string, size: number) {
   } as const;
 }
 
+function agentStatusCircleBloomStyle(color: string, size: number) {
+  return {
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+    backgroundColor: 'transparent',
+    borderColor: colorWithAlpha(color, 'B8'),
+    borderWidth: 2,
+    filter: [{ blur: 5 }],
+  } as const;
+}
+
 function colorWithAlpha(color: string, alpha: string) {
   return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }
@@ -435,6 +492,11 @@ export function SectionLabel({ children, className }: { children: ReactNode; cla
 }
 
 const styles = StyleSheet.create({
+  agentStatusIconBloom: {
+    opacity: 0.58,
+    filter: [{ blur: 3 }],
+    transform: [{ scale: 1.06 }],
+  },
   herdrMark: {
     overflow: 'hidden',
   },

@@ -28,6 +28,20 @@ describe('host list layout', () => {
     expect(screen).toContain('<GlassSurface className="min-h-[88px]');
   });
 
+  it('shows agent-state counts and the Herdr protocol from existing live snapshots', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+    const screen = readFileSync(resolve(__dirname, '../src/components/HostsScreen.tsx'), 'utf8');
+
+    expect(app).toContain('hostRuntimeSummary(session.snapshot)');
+    expect(app).toContain('runtimeByHostId=');
+    expect(screen).toContain("status={runtime?.agentStatus ?? 'unknown'}");
+    expect(screen).toContain('<AgentStatusMedallion\n                              accessibilityLabel={t(\'hosts.agentStatus\'');
+    expect(screen).not.toContain('<AgentStateCount');
+    expect(screen).not.toContain('displayName.slice(0, 1).toUpperCase()');
+    expect(screen).toContain("t('hosts.herdrProtocolNone')");
+    expect(screen).toContain("t('hosts.herdrProtocol', { version: runtime.protocol })");
+  });
+
   it('presents connection failures as a readable live-region message', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/HostsScreen.tsx'),

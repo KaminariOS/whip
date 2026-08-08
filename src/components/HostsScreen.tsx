@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
 import { hostDisplayName } from '@/src/lib/hostProfiles';
+import type { HostRuntimeSummary } from '@/src/lib/hostRuntimeSummary';
 import {
   HOST_SWIPE_ACTION_WIDTH,
   hostSwipeOffset,
@@ -13,8 +14,9 @@ import {
   shouldOpenHostSwipe,
 } from '@/src/lib/hostSwipeActions';
 import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
+import { statusColor, useTheme } from '@/src/theme';
 import type { HostProfile } from '@/src/types';
-import { hapticPress, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
+import { AgentStatusMedallion, hapticPress, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -27,6 +29,7 @@ interface Props {
   activeHostId?: string | null;
   connectedHostIds?: string[];
   latencyMsByHostId?: Record<string, number | null | undefined>;
+  runtimeByHostId?: Record<string, HostRuntimeSummary | undefined>;
   credentialRecovery: CredentialRecoveryStatus;
   credentialRecoveryBusy: boolean;
   onAdd: () => void;
@@ -37,8 +40,9 @@ interface Props {
   onUnlockCredentials: () => Promise<boolean>;
 }
 
-export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
+export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
   return (
     <View className="flex-1">
       <ScreenHeader
@@ -96,6 +100,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                   const label = connecting ? t('hosts.opening') : active ? t('hosts.active') : connected ? t('hosts.open') : t('common.connect');
                   const displayName = hostDisplayName(host);
                   const latencyMs = latencyMsByHostId[host.id];
+                  const runtime = runtimeByHostId[host.id];
                   return (
                     <SwipeableHostRow
                       key={host.id}
@@ -115,7 +120,13 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                               if (actionsOpen) closeActions();
                               else onConnect(host);
                             })}>
-                            <View className="size-11 items-center justify-center rounded-full bg-accent"><Text className="text-[17px] font-semibold">{displayName.slice(0, 1).toUpperCase()}</Text></View>
+                            <AgentStatusMedallion
+                              accessibilityLabel={t('hosts.agentStatus', {
+                                status: t(`status.${runtime?.agentStatus ?? 'unknown'}`),
+                              })}
+                              status={runtime?.agentStatus ?? 'unknown'}
+                              color={statusColor(runtime?.agentStatus ?? 'unknown', colors)}
+                            />
                             <View className="min-w-0 flex-1">
                               <View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{displayName}</Text><StatusBadge status={state} label={label} /></View>
                               <View className="mt-1 flex-row items-center gap-2">
@@ -123,6 +134,16 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                                 <Text accessibilityLabel={latencyMs == null ? t('hosts.latencyUnavailable') : t('hosts.latency', { value: latencyMs })} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
                               </View>
                               <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>{host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')}{host.lastConnectedAt ? ` · ${formatLastUsed(host.lastConnectedAt, t)}` : ''}</Text>
+                              <View className="mt-1.5 flex-row flex-wrap items-center gap-x-2.5 gap-y-1">
+                                <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                  {t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
+                                </Text>
+                                <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                  {runtime?.protocol == null
+                                    ? t('hosts.herdrProtocolNone')
+                                    : t('hosts.herdrProtocol', { version: runtime.protocol })}
+                                </Text>
+                              </View>
                             </View>
                           </Button>
                           <IconButton icon={Ellipsis} accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => {
