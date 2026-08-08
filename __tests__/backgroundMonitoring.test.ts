@@ -16,6 +16,20 @@ describe('Android background monitoring', () => {
     resolve(__dirname, '../assets/notification-icon.svg'),
     'utf8',
   );
+  const launcherForeground = readFileSync(
+    resolve(
+      __dirname,
+      '../android/app/src/main/res/drawable/ic_launcher_whip_foreground.xml',
+    ),
+    'utf8',
+  );
+  const adaptiveLauncher = readFileSync(
+    resolve(
+      __dirname,
+      '../android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_whip_adaptive.xml',
+    ),
+    'utf8',
+  );
   const module = readFileSync(
     resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/HerdrBackgroundModule.kt'),
     'utf8',
@@ -55,8 +69,15 @@ describe('Android background monitoring', () => {
   });
 
   it('uses a versioned launcher resource so notification cards refresh their cached app icon', () => {
-    expect(manifest).toContain('android:icon="@mipmap/ic_launcher_whip"');
-    expect(manifest).toContain('android:roundIcon="@mipmap/ic_launcher_whip_round"');
+    expect(manifest).toContain('android:icon="@mipmap/ic_launcher_whip_adaptive"');
+    expect(manifest).toContain(
+      'android:roundIcon="@mipmap/ic_launcher_whip_adaptive_round"',
+    );
+    expect(adaptiveLauncher).toContain('<adaptive-icon');
+    expect(adaptiveLauncher).toContain('@drawable/ic_launcher_whip_foreground');
+    expect(launcherForeground).toContain('<vector');
+    expect(launcherForeground).toContain('android:scaleX="0.70"');
+    expect(launcherForeground.match(/<path/g)).toHaveLength(1567);
   });
 
   it('registers the native package and follows the notification preference', () => {
