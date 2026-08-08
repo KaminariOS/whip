@@ -80,6 +80,8 @@ export const zhHant: Record<string, string> = {
   'hosts.agentStatus': '代理程式狀態：{{status}}',
   'hosts.herdrProtocol': 'Herdr · P{{version}}',
   'hosts.herdrProtocolNone': 'Herdr · 無',
+  'hosts.herdrProtocolValue': 'P{{version}}',
+  'hosts.herdrProtocolNoneValue': '無',
   'hosts.jumpHost': '跳板主機：{{host}}',
   'hosts.jumpHostUnavailable': '無法使用',
   'hosts.sshKey': 'SSH 金鑰',

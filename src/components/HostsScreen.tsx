@@ -17,7 +17,7 @@ import {
 import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
 import { statusColor, useTheme } from '@/src/theme';
 import type { HostProfile } from '@/src/types';
-import { AgentStatusMedallion, hapticPress, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
+import { AgentStatusMedallion, hapticPress, HerdrMark, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -173,11 +173,19 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                                       <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
                                         {t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
                                       </Text>
-                                      <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
-                                        {runtime?.protocol == null
+                                      <View
+                                        accessible
+                                        accessibilityLabel={runtime?.protocol == null
                                           ? t('hosts.herdrProtocolNone')
                                           : t('hosts.herdrProtocol', { version: runtime.protocol })}
-                                      </Text>
+                                        className="flex-row items-center gap-1">
+                                        <HerdrMark size={13} />
+                                        <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                          {runtime?.protocol == null
+                                            ? t('hosts.herdrProtocolNoneValue')
+                                            : t('hosts.herdrProtocolValue', { version: runtime.protocol })}
+                                        </Text>
+                                      </View>
                                     </>
                                   ) : null}
                                 </View>

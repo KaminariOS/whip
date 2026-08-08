@@ -38,8 +38,11 @@ describe('host list layout', () => {
     expect(screen).toContain("? t('hosts.agentStatus', { status: t(`status.${runtime.agentStatus}`) })");
     expect(screen).not.toContain('<AgentStateCount');
     expect(screen).not.toContain('displayName.slice(0, 1).toUpperCase()');
+    expect(screen).toContain('<HerdrMark size={13} />');
     expect(screen).toContain("t('hosts.herdrProtocolNone')");
     expect(screen).toContain("t('hosts.herdrProtocol', { version: runtime.protocol })");
+    expect(screen).toContain("t('hosts.herdrProtocolNoneValue')");
+    expect(screen).toContain("t('hosts.herdrProtocolValue', { version: runtime.protocol })");
   });
 
   it('shows the display name of a configured jump host', () => {

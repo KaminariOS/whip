@@ -84,6 +84,8 @@ export const en = {
   'hosts.agentStatus': 'Agent status: {{status}}',
   'hosts.herdrProtocol': 'Herdr · P{{version}}',
   'hosts.herdrProtocolNone': 'Herdr · None',
+  'hosts.herdrProtocolValue': 'P{{version}}',
+  'hosts.herdrProtocolNoneValue': 'None',
   'hosts.jumpHost': 'Jump host: {{host}}',
   'hosts.jumpHostUnavailable': 'Unavailable',
   'hosts.sshKey': 'SSH key',
