@@ -211,6 +211,26 @@ describe('direct Herdr API requests', () => {
     });
   });
 
+  test('lets Herdr choose the generated tab name when the run label is blank', async () => {
+    const native = apiClient(request => request.method === 'tab.create'
+      ? { type: 'tab_created', root_pane: { pane_id: 'pane-default-name' } }
+      : { type: 'ok' });
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await expect(client.runCommand('space-1', '   ', '  npm test  ')).resolves.toBe('pane-default-name');
+
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    expect(requests.map(request => request.method)).toEqual(['tab.create', 'pane.send_input']);
+    expect(requests[0].params).toEqual({ workspace_id: 'space-1', focus: true });
+    expect(requests[1].params).toEqual({
+      pane_id: 'pane-default-name',
+      text: 'npm test',
+      keys: ['Enter'],
+    });
+  });
+
   test('serializes concurrent commands and preserves multiline UTF-8 output', async () => {
     const native = apiClient(request => request.method === 'pane.read'
       ? { type: 'pane_read', read: { text: 'first\n你好' } }

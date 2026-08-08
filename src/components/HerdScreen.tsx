@@ -276,7 +276,7 @@ export function HerdScreen({
   const runCommand = async () => {
     const tabName = tabNameDraft.trim();
     const command = commandDraft.trim();
-    if (!selectedQueue || !selectedWorkspace || !tabName || !command) return;
+    if (!selectedQueue || !selectedWorkspace || !command) return;
     const succeeded = await runWorkspaceAction(() => onRunCommand(
       selectedQueue.id,
       selectedWorkspace.workspace_id,
@@ -583,7 +583,7 @@ export function HerdScreen({
                 <Button
                   accessibilityLabel={t('herd.runCommand')}
                   className="size-12 rounded-full px-0"
-                  disabled={workspaceBusy || !tabNameDraft.trim() || !commandDraft.trim()}
+                  disabled={workspaceBusy || !commandDraft.trim()}
                   onPress={hapticPress(runCommand)}>
                   <Icon as={Play} size={18} />
                 </Button>

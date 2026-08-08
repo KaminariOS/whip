@@ -45,6 +45,9 @@ describe('terminal to Herd navigation', () => {
     expect(herd).not.toContain('onStartAgent(');
     expect(herd).toContain('tabNameDraft.trim()');
     expect(herd).toContain("placeholder={t('herd.tabNamePlaceholder')}");
+    expect(herd).toContain('if (!selectedQueue || !selectedWorkspace || !command) return;');
+    expect(herd).toContain('disabled={workspaceBusy || !commandDraft.trim()}');
+    expect(herd).not.toContain('!tabNameDraft.trim() || !commandDraft.trim()');
     expect(herd).toContain('setCommandDraft(agentCommand.trim())');
     expect(app).toContain('const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {');
     expect(app).toContain("selectLiveHost(sessionId, 'terminal');\n    await runtime.client.focusWorkspace(workspaceId);");

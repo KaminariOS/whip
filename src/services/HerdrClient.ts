@@ -687,16 +687,17 @@ export class HerdrClient {
   }
 
   async startAgent(workspaceId: string, name: string, command: string): Promise<string> {
+    const label = name.trim();
     const created = await this.apiRequest<{
       type: 'tab_created';
       root_pane: { pane_id: string };
     }>('tab.create', {
       workspace_id: workspaceId,
-      label: name.trim() || null,
+      ...(label ? { label } : {}),
       focus: true,
     });
-    if (name.trim()) {
-      await this.apiRequest('pane.rename', { pane_id: created.root_pane.pane_id, label: name.trim() });
+    if (label) {
+      await this.apiRequest('pane.rename', { pane_id: created.root_pane.pane_id, label });
     }
     await this.apiRequest('pane.send_input', {
       pane_id: created.root_pane.pane_id,
