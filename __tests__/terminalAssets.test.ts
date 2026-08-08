@@ -42,7 +42,8 @@ describe('Android terminal assets', () => {
     expect(html).toContain('document.fonts.load');
     expect(html).toContain('terminal.attachCustomKeyEventHandler');
     expect(html).toContain('installAndroidImeBridge(terminal, send, navigator.userAgent)');
-    expect(html).toContain("inputType === 'insertReplacementText'");
+    expect(html).toContain('terminalInputDelta(mirroredValue, next)');
+    expect(html).toContain("inputType !== 'insertReplacementText'");
     expect(html).toContain("send({ type: 'input', data: sequence })");
     expect(html).toContain("send({ type: 'ready' })");
     expect(html).toContain('font-display: block');

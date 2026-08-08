@@ -40,7 +40,7 @@ describe('Android terminal IME bridge', () => {
     expect(terminalInputDelta('你', '你好')).toBe('好');
   });
 
-  test('emits each composing update once and does not resend the final text', () => {
+  test('emits each composing textarea mutation once', () => {
     const target = new FakeEventTarget();
     const textarea = {
       value: '',
@@ -57,8 +57,12 @@ describe('Android terminal IME bridge', () => {
     );
 
     target.emit('compositionstart', inputEvent(textarea));
+    textarea.value = 'analuz';
     target.emit('compositionupdate', inputEvent(textarea, { data: 'analuz', isComposing: true }));
+    target.emit('input', inputEvent(textarea, { data: 'analuz', isComposing: true }));
+    textarea.value = 'analyze';
     target.emit('compositionupdate', inputEvent(textarea, { data: 'analyze', isComposing: true }));
+    target.emit('input', inputEvent(textarea, { data: 'analyze', isComposing: true }));
     target.emit('compositionend', inputEvent(textarea, { data: 'analyze' }));
     target.emit('input', inputEvent(textarea, { data: 'analyze' }));
 
@@ -71,9 +75,9 @@ describe('Android terminal IME bridge', () => {
   test('handles keyCode 229 input without allowing xterm to duplicate it', () => {
     const target = new FakeEventTarget();
     const textarea = {
-      value: 'x',
-      selectionStart: 1,
-      selectionEnd: 1,
+      value: '',
+      selectionStart: 0,
+      selectionEnd: 0,
       setAttribute: jest.fn(),
     };
     const sent: Array<{ type: string; data: string }> = [];
@@ -88,18 +92,68 @@ describe('Android terminal IME bridge', () => {
 
     target.emit('keydown', keydown);
     target.emit('beforeinput', beforeInput);
+    textarea.value = 'x';
+    textarea.selectionStart = 1;
+    textarea.selectionEnd = 1;
+    target.emit('input', inputEvent(textarea, { inputType: 'insertText', data: 'x' }));
 
     expect(keydown.stopPropagation).toHaveBeenCalled();
     expect(beforeInput.stopPropagation).toHaveBeenCalled();
-    expect(beforeInput.preventDefault).toHaveBeenCalled();
+    expect(beforeInput.preventDefault).not.toHaveBeenCalled();
     expect(sent).toEqual([{ type: 'input', data: 'x' }]);
   });
 
-  test('replaces Gboard-selected text instead of appending the suggestion', () => {
+  test.each(['insertReplacementText', 'insertText'])(
+    'replaces Gboard-selected text reported as %s instead of appending',
+    inputType => {
+      const target = new FakeEventTarget();
+      const textarea = {
+        value: '',
+        selectionStart: 0,
+        selectionEnd: 0,
+        setAttribute: jest.fn(),
+      };
+      const sent: Array<{ type: string; data: string }> = [];
+      installAndroidImeBridge(
+        { textarea },
+        (message: { type: string; data: string }) => sent.push(message),
+        'Android',
+        target,
+      );
+      target.emit('keydown', inputEvent(textarea, { keyCode: 229 }));
+      target.emit('beforeinput', inputEvent(textarea, { inputType: 'insertText', data: 'analuz' }));
+      textarea.value = 'analuz';
+      textarea.selectionStart = 6;
+      textarea.selectionEnd = 6;
+      target.emit('input', inputEvent(textarea, { inputType: 'insertText', data: 'analuz' }));
+
+      textarea.selectionStart = 0;
+      textarea.selectionEnd = 6;
+      const replacement = inputEvent(textarea, {
+        inputType,
+        data: 'analyze',
+      });
+
+      target.emit('beforeinput', replacement);
+      textarea.value = 'analyze';
+      textarea.selectionStart = 7;
+      textarea.selectionEnd = 7;
+      target.emit('input', inputEvent(textarea, { inputType, data: 'analyze' }));
+
+      expect(replacement.preventDefault).not.toHaveBeenCalled();
+      expect(sent).toEqual([
+        { type: 'input', data: 'analuz' },
+        { type: 'input', data: '\u007f\u007fyze' },
+      ]);
+    },
+  );
+
+  test('reads the final textarea value after compositionend instead of trusting event data', () => {
+    jest.useFakeTimers();
     const target = new FakeEventTarget();
     const textarea = {
       value: 'analuz',
-      selectionStart: 0,
+      selectionStart: 6,
       selectionEnd: 6,
       setAttribute: jest.fn(),
     };
@@ -110,18 +164,41 @@ describe('Android terminal IME bridge', () => {
       'Android',
       target,
     );
-    const replacement = inputEvent(textarea, {
-      inputType: 'insertReplacementText',
-      data: 'analyze',
-    });
 
-    target.emit('beforeinput', replacement);
+    target.emit('compositionstart', inputEvent(textarea));
+    target.emit('compositionend', inputEvent(textarea, { data: 'stale' }));
+    textarea.value = 'analyze';
+    jest.runOnlyPendingTimers();
 
-    expect(replacement.preventDefault).toHaveBeenCalled();
-    expect(sent).toEqual([{
-      type: 'input',
-      data: '\u007f\u007f\u007f\u007f\u007f\u007fanalyze',
-    }]);
+    expect(sent).toEqual([{ type: 'input', data: '\u007f\u007fyze' }]);
+    jest.useRealTimers();
+  });
+
+  test('emits Enter once even when Chrome applies the prevented textarea mutation', () => {
+    const target = new FakeEventTarget();
+    const textarea = {
+      value: 'status',
+      selectionStart: 6,
+      selectionEnd: 6,
+      setAttribute: jest.fn(),
+    };
+    const sent: Array<{ type: string; data: string }> = [];
+    installAndroidImeBridge(
+      { textarea },
+      (message: { type: string; data: string }) => sent.push(message),
+      'Android',
+      target,
+    );
+    const beforeInput = inputEvent(textarea, { inputType: 'insertLineBreak' });
+
+    target.emit('keydown', inputEvent(textarea, { keyCode: 229 }));
+    target.emit('beforeinput', beforeInput);
+    textarea.value = 'status\n';
+    target.emit('input', inputEvent(textarea, { inputType: 'insertLineBreak', data: '\n' }));
+
+    expect(beforeInput.preventDefault).toHaveBeenCalled();
+    expect(sent).toEqual([{ type: 'input', data: '\r' }]);
+    expect(textarea.value).toBe('');
   });
 
   test('leaves non-Android xterm input untouched', () => {

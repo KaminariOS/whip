@@ -91,53 +91,73 @@
   input.setAttribute('spellcheck', 'false');
 
   let composing = false;
-  let preedit = '';
   let interceptInput = false;
   let suppressInput = false;
-  let clearTimer = null;
+  let mirroredValue = String(input.value || '');
+  let reconcileTimer = null;
 
   const isTerminalInput = event => event.target === input;
   const stopXterm = event => event.stopPropagation();
   const emit = data => {
     if (data) send({ type: 'input', data });
   };
-  const emitPreedit = next => {
-    const value = String(next || '');
-    emit(terminalInputDelta(preedit, value));
-    preedit = value;
+  const reconcileInput = () => {
+    const next = String(input.value || '');
+    emit(terminalInputDelta(mirroredValue, next));
+    mirroredValue = next;
   };
-  const clearInput = () => {
+  const cancelReconcile = () => {
+    if (reconcileTimer) clearTimeout(reconcileTimer);
+    reconcileTimer = null;
+  };
+  const flushReconcile = () => {
+    cancelReconcile();
+    reconcileInput();
+  };
+  const scheduleReconcile = () => {
+    cancelReconcile();
+    reconcileTimer = setTimeout(() => {
+      reconcileTimer = null;
+      reconcileInput();
+    }, 0);
+  };
+  const resetInput = () => {
+    cancelReconcile();
     input.value = '';
+    mirroredValue = '';
     interceptInput = false;
+    suppressInput = false;
+  };
+  const scheduleReset = () => {
+    cancelReconcile();
+    reconcileTimer = setTimeout(() => {
+      reconcileTimer = null;
+      input.value = '';
+      mirroredValue = '';
+      interceptInput = false;
+      suppressInput = false;
+    }, 0);
   };
 
   const onCompositionStart = event => {
     if (!isTerminalInput(event)) return;
     stopXterm(event);
     composing = true;
-    preedit = '';
     interceptInput = true;
-    suppressInput = false;
+    scheduleReconcile();
   };
   const onCompositionUpdate = event => {
     if (!isTerminalInput(event)) return;
     stopXterm(event);
-    emitPreedit(event.data || input.value);
+    scheduleReconcile();
   };
   const onCompositionEnd = event => {
     if (!isTerminalInput(event)) return;
     stopXterm(event);
-    emitPreedit(event.data || preedit || input.value);
     composing = false;
-    preedit = '';
-    interceptInput = false;
-    suppressInput = true;
-    if (clearTimer) clearTimeout(clearTimer);
-    clearTimer = setTimeout(() => {
-      clearInput();
-      suppressInput = false;
-      clearTimer = null;
-    }, 0);
+    // Chromium may mutate the textarea after compositionend, and event.data is
+    // not reliable for every IME. Read the resulting value on the next task.
+    scheduleReconcile();
   };
   const onKeyDown = event => {
     if (!isTerminalInput(event)) return;
@@ -153,40 +173,53 @@
       return;
     }
     const inputType = event.inputType || '';
-    if (!interceptInput && inputType !== 'insertReplacementText') return;
+    const start = typeof input.selectionStart === 'number' ? input.selectionStart : 0;
+    const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
+    const replacesSelection = end > start;
+    if (!interceptInput && inputType !== 'insertReplacementText' && !replacesSelection) return;
 
     stopXterm(event);
-    let data = '';
     if (inputType === 'insertLineBreak' || inputType === 'insertParagraph') {
-      data = '\r';
-    } else if (inputType.startsWith('delete')) {
-      data = inputType.includes('Forward') ? '\u001b[3~' : '\u007f';
-    } else if (inputType === 'insertReplacementText') {
-      const start = input.selectionStart ?? input.value.length;
-      const end = input.selectionEnd ?? start;
-      data = '\u007f'.repeat(Math.max(0, end - start)) + (event.data || '');
-    } else {
-      data = event.data || event.dataTransfer?.getData('text/plain') || '';
+      event.preventDefault();
+      emit('\r');
+      suppressInput = true;
+      scheduleReset();
+      return;
+    }
+    if (inputType === 'deleteContentForward' && start === end) {
+      event.preventDefault();
+      emit('\u001b[3~');
+      return;
     }
 
-    if (!data) return;
-    event.preventDefault();
-    emit(data);
-    suppressInput = true;
-    clearInput();
+    // Let the IME update its editable buffer. On Chrome Android,
+    // preventDefault() on beforeinput is not consistently honored anyway.
+    // The input event normally reconciles synchronously; this timer covers IMEs
+    // that mutate the textarea without delivering a usable input event.
+    interceptInput = true;
+    scheduleReconcile();
   };
   const onInput = event => {
     if (!isTerminalInput(event)) return;
-    if (composing || event.isComposing) {
+    if (suppressInput) {
       stopXterm(event);
+      resetInput();
       return;
     }
-    if (!interceptInput && !suppressInput) return;
+    if (composing || event.isComposing) {
+      stopXterm(event);
+      flushReconcile();
+      return;
+    }
+    if (!interceptInput) return;
 
     stopXterm(event);
-    if (!suppressInput) emit(event.data || input.value);
-    suppressInput = false;
-    clearInput();
+    flushReconcile();
+  };
+  const onBlur = event => {
+    if (!isTerminalInput(event)) return;
+    composing = false;
+    resetInput();
   };
 
   const listeners = [
@@ -196,11 +229,12 @@
     ['keydown', onKeyDown],
     ['beforeinput', onBeforeInput],
     ['input', onInput],
+    ['blur', onBlur],
   ];
   for (const [type, listener] of listeners) eventTarget.addEventListener(type, listener, true);
 
   return () => {
-    if (clearTimer) clearTimeout(clearTimer);
+    cancelReconcile();
     for (const [type, listener] of listeners) eventTarget.removeEventListener(type, listener, true);
   };
 }
