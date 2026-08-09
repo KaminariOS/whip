@@ -1,0 +1,11 @@
+Model Information:
+* title:	Raspberry Pi 3
+* source:	https://sketchfab.com/3d-models/raspberry-pi-3-2d308283fc0f4d27b81f17a2793c5c4d
+* author:	JoSaCo (https://sketchfab.com/josaco)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Raspberry Pi 3" (https://sketchfab.com/3d-models/raspberry-pi-3-2d308283fc0f4d27b81f17a2793c5c4d) by JoSaCo (https://sketchfab.com/josaco) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -1,0 +1,960 @@
+{
+  "accessors": [
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 6786,
+      "max": [
+        0.41946592926979065,
+        0.3878672122955322,
+        0.057800088077783585
+      ],
+      "min": [
+        -0.41946592926979065,
+        -0.439164400100708,
+        -0.08253267407417297
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 81432,
+      "componentType": 5126,
+      "count": 6786,
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 6786,
+      "max": [
+        1.0,
+        1.0
+      ],
+      "min": [
+        0.0,
+        0.0
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "componentType": 5125,
+      "count": 24018,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 162864,
+      "componentType": 5126,
+      "count": 4173,
+      "max": [
+        0.4392903745174408,
+        0.4392903745174408,
+        0.06925089657306671
+      ],
+      "min": [
+        -0.4392903745174408,
+        -0.4392903745174408,
+        -0.0692506730556488
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 212940,
+      "componentType": 5126,
+      "count": 4173,
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 54288,
+      "componentType": 5126,
+      "count": 4173,
+      "max": [
+        0.9932830333709717,
+        1.0
+      ],
+      "min": [
+        0.0,
+        0.0
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 96072,
+      "componentType": 5125,
+      "count": 15252,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 263016,
+      "componentType": 5126,
+      "count": 2118,
+      "max": [
+        0.3360125720500946,
+        -0.3741000294685364,
+        0.040642548352479935
+      ],
+      "min": [
+        -0.3594880998134613,
+        -0.4386812150478363,
+        -0.04912625998258591
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 288432,
+      "componentType": 5126,
+      "count": 2118,
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 87672,
+      "componentType": 5126,
+      "count": 2118,
+      "max": [
+        1.0,
+        1.0
+      ],
+      "min": [
+        0.0,
+        0.0
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 157080,
+      "componentType": 5125,
+      "count": 9090,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 313848,
+      "componentType": 5126,
+      "count": 624,
+      "max": [
+        0.16363845765590668,
+        -0.4089531898498535,
+        -0.010199761018157005
+      ],
+      "min": [
+        -0.1634828895330429,
+        -0.4219195544719696,
+        -0.04937826097011566
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 321336,
+      "componentType": 5126,
+      "count": 624,
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 104616,
+      "componentType": 5126,
+      "count": 624,
+      "max": [
+        1.0,
+        1.0
+      ],
+      "min": [
+        0.0,
+        0.0
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 193440,
+      "componentType": 5125,
+      "count": 936,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 328824,
+      "componentType": 5126,
+      "count": 600,
+      "max": [
+        0.15706951916217804,
+        -0.4107449948787689,
+        -0.010199762880802155
+      ],
+      "min": [
+        -0.15699151158332825,
+        -0.43009352684020996,
+        -0.04937826097011566
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 336024,
+      "componentType": 5126,
+      "count": 600,
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 109608,
+      "componentType": 5126,
+      "count": 600,
+      "max": [
+        1.0,
+        1.0
+      ],
+      "min": [
+        0.0,
+        0.0
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 197184,
+      "componentType": 5125,
+      "count": 900,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 343224,
+      "componentType": 5126,
+      "count": 333,
+      "max": [
+        -0.38181179761886597,
+        -0.3727167248725891,
+        0.036904238164424896
+      ],
+      "min": [
+        -0.411302387714386,
+        -0.4036763906478882,
+        -0.005514275282621384
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 347220,
+      "componentType": 5126,
+      "count": 333,
+      "max": [
+        0.7476974725723267,
+        0.7246013283729553,
+        0.9999592304229736
+      ],
+      "min": [
+        -0.9922102093696594,
+        -0.9971863031387329,
+        -0.9999586939811707
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 114408,
+      "componentType": 5126,
+      "count": 333,
+      "max": [
+        1.084608793258667,
+        1.2061049938201904
+      ],
+      "min": [
+        0.02692049741744995,
+        0.233864426612854
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 200784,
+      "componentType": 5125,
+      "count": 1536,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 351216,
+      "componentType": 5126,
+      "count": 512,
+      "max": [
+        -0.270879864692688,
+        0.4392968714237213,
+        -0.03101998008787632
+      ],
+      "min": [
+        -0.27879172563552856,
+        0.43928030133247375,
+        -0.03893180936574936
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 357360,
+      "componentType": 5126,
+      "count": 512,
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 117072,
+      "componentType": 5126,
+      "count": 512,
+      "max": [
+        0.0,
+        0.0
+      ],
+      "min": [
+        0.0,
+        0.0
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 206928,
+      "componentType": 5125,
+      "count": 1524,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 363504,
+      "componentType": 5126,
+      "count": 208,
+      "max": [
+        0.32828739285469055,
+        -0.39245036244392395,
+        0.019619017839431763
+      ],
+      "min": [
+        -0.09659551084041595,
+        -0.4350741505622864,
+        0.007801227271556854
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 366000,
+      "componentType": 5126,
+      "count": 208,
+      "max": [
+        3.994043993316154e-07,
+        6.694298804177379e-08,
+        1.0
+      ],
+      "min": [
+        -7.988113566170796e-07,
+        -1.3041464796970104e-07,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 121168,
+      "componentType": 5126,
+      "count": 208,
+      "max": [
+        1.0,
+        1.0
+      ],
+      "min": [
+        0.0,
+        0.0
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 213024,
+      "componentType": 5125,
+      "count": 312,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 368496,
+      "componentType": 5126,
+      "count": 1032,
+      "max": [
+        0.09789086133241653,
+        0.1106090396642685,
+        0.06980674713850021
+      ],
+      "min": [
+        -0.09473732113838196,
+        -0.12626005709171295,
+        0.06773408502340317
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 380880,
+      "componentType": 5126,
+      "count": 1032,
+      "max": [
+        0.9999821186065674,
+        0.999622106552124,
+        1.0
+      ],
+      "min": [
+        -0.9999482035636902,
+        -0.9999182820320129,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 122832,
+      "componentType": 5126,
+      "count": 1032,
+      "max": [
+        0.0,
+        0.0
+      ],
+      "min": [
+        0.0,
+        0.0
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 214272,
+      "componentType": 5125,
+      "count": 4764,
+      "type": "SCALAR"
+    }
+  ],
+  "asset": {
+    "extras": {
+      "author": "DatSketch (https://sketchfab.com/DatSketch)",
+      "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+      "source": "https://sketchfab.com/3d-models/apple-mac-mini-m1-79f1f864089d423fb06d220fe2085c71",
+      "title": "Apple Mac Mini M1"
+    },
+    "generator": "Sketchfab-12.65.0",
+    "version": "2.0"
+  },
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 233328,
+      "name": "floatBufferViews",
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 131088,
+      "byteOffset": 233328,
+      "byteStride": 8,
+      "name": "floatBufferViews",
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 393264,
+      "byteOffset": 364416,
+      "byteStride": 12,
+      "name": "floatBufferViews",
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 757680,
+      "uri": "scene.bin"
+    }
+  ],
+  "images": [
+    {
+      "uri": "textures/PowerButton_baseColor.jpeg"
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "MatteBlack",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.0314744365,
+          0.0314744365,
+          0.0314744365,
+          1.0
+        ],
+        "metallicFactor": 0.5246049407,
+        "roughnessFactor": 0.353791596
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "MetalGrey",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.4342506925,
+          0.4342506925,
+          0.4342506925,
+          1.0
+        ],
+        "roughnessFactor": 0.542276964
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "portSilver",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.209968471,
+          0.209968471,
+          0.209968471,
+          1.0
+        ],
+        "roughnessFactor": 0.14098553530000002
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "material",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.0110112305,
+          0.0110112305,
+          0.0110112305,
+          1.0
+        ],
+        "metallicFactor": 0.1962755899,
+        "roughnessFactor": 0.10450449630000003
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "material_4",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.0117506375,
+          0.0117506375,
+          0.0117506375,
+          1.0
+        ],
+        "roughnessFactor": 0.2504286522
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "PowerButton",
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 0
+        },
+        "metallicFactor": 0.4516428628,
+        "roughnessFactor": 0.6456399078
+      }
+    },
+    {
+      "doubleSided": true,
+      "emissiveFactor": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "name": "Light",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.8,
+          0.8,
+          0.8,
+          1.0
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.8211145618
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "portYellow",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.8,
+          0.504446,
+          0.0,
+          1.0
+        ],
+        "roughnessFactor": 0.40243298130000005
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "Logo",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.0247731,
+          0.0247731,
+          0.0247731,
+          1.0
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.0
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "MacMini_MatteBlack_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 1,
+            "POSITION": 0,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "MacMini_MetalGrey_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 5,
+            "POSITION": 4,
+            "TEXCOORD_0": 6
+          },
+          "indices": 7,
+          "material": 1,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "MacMini_portSilver_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 9,
+            "POSITION": 8,
+            "TEXCOORD_0": 10
+          },
+          "indices": 11,
+          "material": 2,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "MacMini_2_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 13,
+            "POSITION": 12,
+            "TEXCOORD_0": 14
+          },
+          "indices": 15,
+          "material": 3,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "MacMini_1_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 17,
+            "POSITION": 16,
+            "TEXCOORD_0": 18
+          },
+          "indices": 19,
+          "material": 4,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "MacMini_PowerButton_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 21,
+            "POSITION": 20,
+            "TEXCOORD_0": 22
+          },
+          "indices": 23,
+          "material": 5,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "MacMini_Light_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 25,
+            "POSITION": 24,
+            "TEXCOORD_0": 26
+          },
+          "indices": 27,
+          "material": 6,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "MacMini_portYellow_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 29,
+            "POSITION": 28,
+            "TEXCOORD_0": 30
+          },
+          "indices": 31,
+          "material": 7,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "MacMini_Logo_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 33,
+            "POSITION": 32,
+            "TEXCOORD_0": 34
+          },
+          "indices": 35,
+          "material": 8,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "children": [
+        1
+      ],
+      "matrix": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        2.220446049250313e-16,
+        -1.0,
+        0.0,
+        0.0,
+        1.0,
+        2.220446049250313e-16,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Sketchfab_model"
+    },
+    {
+      "children": [
+        2
+      ],
+      "matrix": [
+        0.009999999776482582,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.009999999776482582,
+        0.0,
+        0.0,
+        -0.009999999776482582,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "MacMini.fbx"
+    },
+    {
+      "children": [
+        3
+      ],
+      "name": "RootNode"
+    },
+    {
+      "children": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "matrix": [
+        100.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.629206793918314e-05,
+        -99.99999999999868,
+        0.0,
+        0.0,
+        99.99999999999868,
+        -1.629206793918314e-05,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "MacMini"
+    },
+    {
+      "mesh": 0,
+      "name": "MacMini_MatteBlack_0"
+    },
+    {
+      "mesh": 1,
+      "name": "MacMini_MetalGrey_0"
+    },
+    {
+      "mesh": 2,
+      "name": "MacMini_portSilver_0"
+    },
+    {
+      "mesh": 3,
+      "name": "MacMini_2_0"
+    },
+    {
+      "mesh": 4,
+      "name": "MacMini_1_0"
+    },
+    {
+      "mesh": 5,
+      "name": "MacMini_PowerButton_0"
+    },
+    {
+      "mesh": 6,
+      "name": "MacMini_Light_0"
+    },
+    {
+      "mesh": 7,
+      "name": "MacMini_portYellow_0"
+    },
+    {
+      "mesh": 8,
+      "name": "MacMini_Logo_0"
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987,
+      "wrapS": 10497,
+      "wrapT": 10497
+    }
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Sketchfab_Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    }
+  ]
+}

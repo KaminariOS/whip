@@ -1,0 +1,21 @@
+{
+  "name": "whip-launch-remotion",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "preview": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts WhipLaunch ../output/whip-launch-remotion.mp4 --codec=h264 --audio-codec=aac --crf=17 --pixel-format=yuv420p --color-space=bt709 --browser-executable=/home/kosumi/.nix-profile/bin/google-chrome"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.507",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.507"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "typescript": "6.0.3"
+  }
+}

@@ -1,0 +1,11 @@
+Model Information:
+* title:	Google Pixel 9 & Pixel 9 Pro(Low Poly)
+* source:	https://sketchfab.com/3d-models/google-pixel-9-pixel-9-prolow-poly-4533d22cd0d9473ba6a26fa1d20d76da
+* author:	s12311061 (https://sketchfab.com/s12311061)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Google Pixel 9 & Pixel 9 Pro(Low Poly)" (https://sketchfab.com/3d-models/google-pixel-9-pixel-9-prolow-poly-4533d22cd0d9473ba6a26fa1d20d76da) by s12311061 (https://sketchfab.com/s12311061) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

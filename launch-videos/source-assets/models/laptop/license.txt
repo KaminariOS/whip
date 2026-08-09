@@ -1,0 +1,11 @@
+Model Information:
+* title:	Laptop
+* source:	https://sketchfab.com/3d-models/laptop-7d870e900889481395b4a575b9fa8c3e
+* author:	Aullwen (https://sketchfab.com/Aullwen)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Laptop" (https://sketchfab.com/3d-models/laptop-7d870e900889481395b4a575b9fa8c3e) by Aullwen (https://sketchfab.com/Aullwen) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
