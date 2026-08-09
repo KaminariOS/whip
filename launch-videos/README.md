@@ -1,9 +1,7 @@
 # Whip production launch video
 
 The production master is built with HyperFrames, Three.js, real glTF device
-geometry, and a seek-safe GSAP timeline. The earlier Remotion experiment
-remains in `remotion/` for history, but is no longer part of the production
-direction.
+geometry, and a seek-safe GSAP timeline.
 
 The current cut is 35 seconds at 1920×1080 and 30 fps. Seven camera-led shots
 replace the earlier sequence of flat UI cards: a Herdr-first icon relationship
