@@ -1,0 +1,6 @@
+{
+  "$schema": "https://hyperframes.video/schema/hyperframes.json",
+  "name": "whip-launch-hyperframes",
+  "entry": "index.html"
+}
+
