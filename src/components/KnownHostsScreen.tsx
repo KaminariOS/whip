@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { deleteKnownHost } from '@/src/services/knownHosts';
 import type { KnownHost } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader } from './app-ui';
+import { GlassSurface } from './GlassSurface';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
@@ -49,7 +50,7 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1">
       <ScreenHeader
         title={t('knownHosts.title')}
         subtitle={t('knownHosts.count', { count: hosts.length })}
@@ -57,13 +58,13 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
       />
       <ScrollView className="flex-1">
         <View className="p-4 pb-10">
-          <View className="mb-5 flex-row items-start gap-3 rounded-lg bg-muted p-4">
+          <GlassSurface className="mb-5 flex-row items-start gap-3 rounded-lg border border-white/30 p-4 dark:border-white/10">
             <Icon as={ShieldCheck} className="text-primary" size={21} />
             <View className="flex-1">
               <Text className="text-sm font-semibold">{t('knownHosts.verified')}</Text>
               <Text className="mt-1 text-xs leading-[18px] text-muted-foreground">{t('knownHosts.verifiedCopy')}</Text>
             </View>
-          </View>
+          </GlassSurface>
 
           {hosts.length === 0 ? (
             <View className="min-h-[320px] items-center justify-center px-7">
@@ -74,7 +75,7 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
               <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{t('knownHosts.emptyCopy')}</Text>
             </View>
           ) : (
-            <View className="overflow-hidden rounded-lg border border-border bg-card">
+            <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
               {hosts.map((host, index) => (
                 <View
                   key={host.id}
@@ -97,7 +98,7 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
                   />
                 </View>
               ))}
-            </View>
+            </GlassSurface>
           )}
         </View>
       </ScrollView>
