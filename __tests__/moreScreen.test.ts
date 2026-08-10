@@ -37,6 +37,20 @@ test('does not show a Disconnect SSH button', () => {
   expect(settings).not.toContain("t('settings.disconnect')");
 });
 
+test('uses a scalable language selection sheet instead of inline language pills', () => {
+  const settings = readFileSync(
+    resolve(__dirname, '../src/components/SettingsScreen.tsx'),
+    'utf8',
+  );
+
+  expect(settings).toContain('function LanguageSelectionSheet');
+  expect(settings).toContain("{ labelKey: 'settings.japanese', value: 'ja' }");
+  expect(settings).toContain("{ labelKey: 'settings.spanish', value: 'es' }");
+  expect(settings).toContain("{ labelKey: 'settings.simplifiedChinese', value: 'zh-Hans' }");
+  expect(settings).toContain('accessibilityRole="radio"');
+  expect(settings).toContain("selected && 'bg-primary/10'");
+});
+
 test('shows settings explanations in dismissible floating details', () => {
   const settings = readFileSync(
     resolve(__dirname, '../src/components/SettingsScreen.tsx'),

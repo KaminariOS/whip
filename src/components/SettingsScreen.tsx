@@ -15,6 +15,7 @@ import {
   terminalDoubleTapActions,
   type TerminalDoubleTapAction,
 } from '@/src/lib/terminalDoubleTap';
+import { deviceLanguage, type SupportedLanguage } from '@/src/i18n';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import {
   MIN_XTERM_CACHE_CAPACITY,
@@ -428,33 +429,96 @@ const languageOptions: { labelKey: string; value: LanguagePreference }[] = [
   { labelKey: 'settings.automatic', value: 'system' },
   { labelKey: 'settings.english', value: 'en' },
   { labelKey: 'settings.traditionalChinese', value: 'zh-Hant' },
+  { labelKey: 'settings.simplifiedChinese', value: 'zh-Hans' },
+  { labelKey: 'settings.japanese', value: 'ja' },
+  { labelKey: 'settings.spanish', value: 'es' },
 ];
 
 function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange: (value: LanguagePreference) => void }) {
+  const [open, setOpen] = useState(false);
   const { t } = useTranslation();
+  const selectedOption = languageOptions.find(option => option.value === value) || languageOptions[0];
+  const systemOption = languageOptions.find(option => option.value === deviceLanguage()) || languageOptions[1];
+  const selectedLabel = value === 'system'
+    ? t('settings.systemLanguage', { language: t(systemOption.labelKey) })
+    : t(selectedOption.labelKey);
   return (
-    <GlassSurface className="rounded-lg border border-white/30 p-3.5 dark:border-white/10">
-      <DetailsTitle
-        title={t('settings.language')}
-        copy={t('settings.languageCopy')}
+    <>
+      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+        <Button
+          accessibilityState={{ expanded: open }}
+          className="min-h-[72px] justify-start rounded-none px-3.5 py-2.5"
+          size="content"
+          variant="ghost"
+          onPress={hapticPress(() => setOpen(true))}>
+          <View className="min-w-0 flex-1 pr-3">
+            <DetailsTitle title={t('settings.language')} copy={t('settings.languageCopy')} />
+          </View>
+          <Text className="max-w-[150px] text-right text-xs font-semibold text-primary" numberOfLines={2}>{selectedLabel}</Text>
+          <Icon as={ChevronRight} className="text-muted-foreground" size={18} />
+        </Button>
+      </GlassSurface>
+      <LanguageSelectionSheet
+        value={value}
+        visible={open}
+        onClose={() => setOpen(false)}
+        onSelect={next => {
+          onChange(next);
+          setOpen(false);
+        }}
       />
-      <View className="mt-3 flex-row gap-2">
-        {languageOptions.map(option => {
-          const selected = option.value === value;
-          return (
-            <Button
-              key={option.value}
-              className="min-w-0 flex-1 rounded-full px-2"
-              variant={selected ? 'default' : 'outline'}
-              accessibilityRole="radio"
-              accessibilityState={{ selected }}
-              onPress={hapticPress(() => onChange(option.value))}>
-              <Text className="text-center text-xs" numberOfLines={1}>{t(option.labelKey)}</Text>
-            </Button>
-          );
-        })}
+    </>
+  );
+}
+
+function LanguageSelectionSheet({ value, visible, onClose, onSelect }: { value: LanguagePreference; visible: boolean; onClose: () => void; onSelect: (value: LanguagePreference) => void }) {
+  const { bottom } = useSafeAreaInsets();
+  const { t } = useTranslation();
+  const systemLanguage = deviceLanguage() as SupportedLanguage;
+  const systemOption = languageOptions.find(option => option.value === systemLanguage) || languageOptions[1];
+  return (
+    <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
+      <View className="flex-1 justify-end">
+        <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/55" onPress={onClose} />
+        <GlassSurface
+          className="rounded-t-[22px] border-t border-white/30 px-4 pt-4 dark:border-white/10"
+          style={{ paddingBottom: Math.max(16, bottom) }}>
+          <View className="mb-1 flex-row items-center">
+            <Text className="min-w-0 flex-1 text-[18px] font-semibold">{t('settings.language')}</Text>
+            <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={onClose} />
+          </View>
+          <View className="mt-3 overflow-hidden rounded-lg border border-border">
+            {languageOptions.map((option, index) => {
+              const selected = option.value === value;
+              return (
+                <Button
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  className={cn(
+                    'min-h-[52px] justify-start rounded-none px-3.5',
+                    index > 0 && 'border-t border-border',
+                    selected && 'bg-primary/10',
+                  )}
+                  size="content"
+                  variant="ghost"
+                  onPress={hapticPress(() => onSelect(option.value))}>
+                  <View className="min-w-0 flex-1">
+                    <Text className={cn('text-sm font-medium', selected && 'text-primary')}>{t(option.labelKey)}</Text>
+                    {option.value === 'system' ? (
+                      <Text className="mt-0.5 text-[11px] text-muted-foreground">
+                        {t('settings.systemLanguage', { language: t(systemOption.labelKey) })}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
+                </Button>
+              );
+            })}
+          </View>
+        </GlassSurface>
       </View>
-    </GlassSurface>
+    </Modal>
   );
 }
 
