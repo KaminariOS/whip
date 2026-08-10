@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="240"></a><br>
-  Early Access: <a href="https://groups.google.com/g/whip-community">join the Whip Community</a> to become a closed tester.
+  Early Access: <a href="https://groups.google.com/g/whip-community">join the Whip Community</a>, wait a moment for access to propagate, then use the Google Play link above.
 </p>
 
 <p align="center">
@@ -113,7 +113,7 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 
 ## Install Whip
 
-The recommended installation is through the [Google Play Early Access program](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Join the [Whip Community](https://groups.google.com/g/whip-community) first if Google Play asks for closed-testing access.
+The recommended installation is through the [Google Play Early Access program](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Before using the Google Play link, you must join the [Whip Community](https://groups.google.com/g/whip-community) and wait a moment for your membership to propagate. Google requires 12 closed testers to remain enrolled for 14 days before the app can be released publicly.
 
 Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/KaminariOS/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
 
