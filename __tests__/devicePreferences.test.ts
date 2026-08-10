@@ -186,6 +186,15 @@ test('loads a supported language preference and rejects invalid values', async (
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'zh-Hant' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'zh-Hant' });
 
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'zh-Hans' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'zh-Hans' });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'ja' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'ja' });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'es' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'es' });
+
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'fr' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'system' });
 });

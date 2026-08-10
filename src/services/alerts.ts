@@ -127,7 +127,13 @@ async function speakBeforeAlert(title: string): Promise<void> {
     }, SPEECH_TIMEOUT_MS);
     try {
       Speech.speak(title, {
-        language: i18n.resolvedLanguage === 'zh-Hant' ? 'zh-TW' : 'en-US',
+        language: {
+          'zh-Hant': 'zh-TW',
+          'zh-Hans': 'zh-CN',
+          ja: 'ja-JP',
+          es: 'es-ES',
+          en: 'en-US',
+        }[i18n.resolvedLanguage || 'en'] || 'en-US',
         onDone: finish,
         onStopped: finish,
         onError: finish,

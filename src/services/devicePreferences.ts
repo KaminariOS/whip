@@ -50,7 +50,7 @@ export interface TerminalPreferences {
 }
 
 export type AppearancePreference = 'system' | 'light' | 'dark';
-export type LanguagePreference = 'system' | 'en' | 'zh-Hant';
+export type LanguagePreference = 'system' | 'en' | 'zh-Hant' | 'zh-Hans' | 'ja' | 'es';
 
 type StoredTerminalPreferences = Partial<TerminalPreferences> & {
   backgroundOpacity?: unknown;
@@ -267,5 +267,5 @@ function isAppearancePreference(value: unknown): value is AppearancePreference {
 }
 
 function isLanguagePreference(value: unknown): value is LanguagePreference {
-  return value === 'system' || value === 'en' || value === 'zh-Hant';
+  return value === 'system' || value === 'en' || value === 'zh-Hant' || value === 'zh-Hans' || value === 'ja' || value === 'es';
 }
