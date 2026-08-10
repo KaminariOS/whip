@@ -1840,6 +1840,7 @@ function AppContent() {
 
         {unlockedGlobalKeys !== null && (
           <View className="absolute inset-0 z-50 bg-background">
+            <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
             <GlobalKeychainScreen
               initialKeys={unlockedGlobalKeys}
               onChanged={updateGlobalKeys}
@@ -1850,6 +1851,7 @@ function AppContent() {
 
         {knownHostsOpen && (
           <View className="absolute inset-0 z-60 bg-background">
+            <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
             <KnownHostsScreen
               initialHosts={knownHosts}
               onChanged={next => {

@@ -7,9 +7,10 @@ import { useTranslation } from 'react-i18next';
 import { normalizePrivateKey } from '@/src/lib/privateKey';
 import { hostDisplayName, jumpHostCandidates } from '@/src/lib/hostProfiles';
 import { cn } from '@/src/lib/utils';
+import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
-import { GlassSurface } from './GlassSurface';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -43,6 +44,8 @@ const privateKeyFilePicker = NativeModules.PrivateKeyFilePicker as PrivateKeyFil
 
 export function ConnectionScreen({ initialProfile, hosts, connecting, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys }: Props) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const [profile, setProfile] = useState(initialProfile);
   const [keyInspection, setKeyInspection] = useState<KeyInspection>({ state: 'idle' });
   const [keyActionsOpen, setKeyActionsOpen] = useState(false);
@@ -224,14 +227,40 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
           onPress={() => setJumpHostPickerOpen(true)}
         />
 
-        <View className="mb-4 flex-row rounded-full bg-muted p-1">
-          {(['password', 'key'] as const).map(mode => <Button className={cn('h-[38px] flex-1 rounded-full', profile.authMode === mode && 'bg-background')} key={mode} variant="ghost" onPress={hapticPress(() => setAuthMode(mode))}><Text className={cn('text-[13px] font-semibold', profile.authMode !== mode && 'text-muted-foreground')}>{mode === 'password' ? t('hosts.password') : t('connection.privateKey')}</Text></Button>)}
+        <View
+          className={cn('mb-4 flex-row rounded-full p-1', appGlassEnabled ? 'border' : 'bg-muted')}
+          style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}>
+          {(['password', 'key'] as const).map(mode => {
+            const selected = profile.authMode === mode;
+            return (
+              <Button
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                className={cn(
+                  'h-[38px] flex-1 rounded-full',
+                  !appGlassEnabled && selected && 'bg-background',
+                  appGlassEnabled && selected && 'border',
+                )}
+                key={mode}
+                style={appGlassEnabled && selected ? appGlassControlStyle(true, colors) : undefined}
+                variant="ghost"
+                onPress={hapticPress(() => setAuthMode(mode))}>
+                <Text className={cn(
+                  'text-[13px] font-semibold',
+                  !selected && 'text-muted-foreground',
+                  appGlassEnabled && selected && 'text-primary',
+                )}>
+                  {mode === 'password' ? t('hosts.password') : t('connection.privateKey')}
+                </Text>
+              </Button>
+            );
+          })}
         </View>
 
         {profile.authMode === 'password' ? (
           <Field label={t('connection.sshPassword')} value={profile.secret} onChangeText={value => update('secret', value)} secureTextEntry autoCapitalize="none" />
         ) : (
-          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.privateKeyFormat')}</Text><View className="min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border bg-card"><Button accessibilityLabel={profile.secret ? privateKeyAccessibilityLabel : t('connection.addPrivateKey')} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" disabled={generatingKey} size="content" variant="ghost" onPress={hapticPress(() => setKeyActionsOpen(true))}><Icon as={KeyRound} size={18} />{profile.secret ? (keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{t('connection.privateKeyLoaded')}</Text>) : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{generatingKey ? t('connection.generatingKey') : t('connection.addPrivateKey')}</Text>}</Button>{profile.secret ? <Button accessibilityLabel={t('connection.removePrivateKey')} className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button> : null}</View></View>
+          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.privateKeyFormat')}</Text><View className={cn('min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border', !appGlassEnabled && 'bg-card')} style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}><Button accessibilityLabel={profile.secret ? privateKeyAccessibilityLabel : t('connection.addPrivateKey')} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" disabled={generatingKey} size="content" variant="ghost" onPress={hapticPress(() => setKeyActionsOpen(true))}><Icon as={KeyRound} size={18} />{profile.secret ? (keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{t('connection.privateKeyLoaded')}</Text>) : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{generatingKey ? t('connection.generatingKey') : t('connection.addPrivateKey')}</Text>}</Button>{profile.secret ? <Button accessibilityLabel={t('connection.removePrivateKey')} className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button> : null}</View></View>
         )}
         {profile.authMode === 'key' && keyInspection.state !== 'idle' && keyInspection.state !== 'valid' ? (
             <Text
@@ -269,7 +298,25 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
 
         {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
-        <View className="mt-2 flex-row gap-2.5"><Button className="flex-1 rounded-full" variant="secondary" disabled={!canSave || connecting} onPress={hapticPress(() => onSave(profile))}><Text>{t('connection.saveHost')}</Text></Button><Button className="flex-1 rounded-full" disabled={!canConnect || connecting} onPress={hapticPress(() => onConnect(profile))}><Text>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text><Icon as={ArrowRight} className="text-primary-foreground" size={17} /></Button></View>
+        <View className="mt-2 flex-row gap-2.5">
+          <Button
+            className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
+            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+            variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            disabled={!canSave || connecting}
+            onPress={hapticPress(() => onSave(profile))}>
+            <Text>{t('connection.saveHost')}</Text>
+          </Button>
+          <Button
+            className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
+            style={appGlassEnabled ? appGlassControlStyle(true, colors) : undefined}
+            variant={appGlassEnabled ? 'ghost' : 'default'}
+            disabled={!canConnect || connecting}
+            onPress={hapticPress(() => onConnect(profile))}>
+            <Text className={cn(appGlassEnabled && 'text-primary')}>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text>
+            <Icon as={ArrowRight} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} />
+          </Button>
+        </View>
         {onDelete ? <Button className="mt-3.5 rounded-full" variant="destructive" onPress={hapticPress(onDelete)}><Icon as={Trash2} className="text-destructive-foreground" size={17} /><Text>{t('connection.deleteHost')}</Text></Button> : null}
         <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">{t('connection.hostKeyWarning')}</Text>
         </GlassSurface>
@@ -317,12 +364,15 @@ function KeyIdentity({ fingerprint, keyType }: { fingerprint: string; keyType: s
 
 function JumpHostField({ jumpHost, onPress }: { jumpHost?: HostProfile; onPress: () => void }) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   return (
     <View className="mb-3.5">
       <Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.jumpHost')}</Text>
       <Button
         accessibilityLabel={t('connection.chooseJumpHost')}
-        className="h-[52px] justify-start rounded-md border border-border bg-card px-3.5"
+        className={cn('h-[52px] justify-start rounded-md border border-border px-3.5', !appGlassEnabled && 'bg-card')}
+        style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
         variant="ghost"
         onPress={hapticPress(onPress)}>
         <Icon as={Network} size={18} />

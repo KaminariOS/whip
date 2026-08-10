@@ -13,6 +13,8 @@ test('gates app glass across bars and rows behind its experiment and background 
   const hostRail = readSource('src/components/LiveSessionRail.tsx');
   const workspaceRail = readSource('src/components/WorkspaceRail.tsx');
   const appUi = readSource('src/components/app-ui.tsx');
+  const globalKeychain = readSource('src/components/GlobalKeychainScreen.tsx');
+  const knownHosts = readSource('src/components/KnownHostsScreen.tsx');
 
   expect(app).toContain('enabled={appGlassEnabled && Boolean(appBackgroundImageUri)}');
   expect(glass).toContain('glass?.enabled === true');
@@ -24,9 +26,14 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(glass).toContain("'rgba(20,22,34,0.38)' : 'rgba(255,255,255,0.42)'");
   expect(settings.match(/<GlassSurface/g)?.length).toBeGreaterThanOrEqual(8);
   expect(connection).toContain('<GlassSurface className="rounded-lg border border-white/30 p-4 dark:border-white/10">');
+  expect(connection).toContain('const appGlassEnabled = useAppGlassEnabled();');
+  expect(connection).toContain("variant={appGlassEnabled ? 'ghost' : 'secondary'}");
+  expect(connection).toContain("variant={appGlassEnabled ? 'ghost' : 'default'}");
+  expect(connection.match(/appGlassControlStyle\(false, colors\)/g)?.length).toBeGreaterThanOrEqual(4);
+  expect(connection.match(/appGlassControlStyle\(true, colors\)/g)?.length).toBeGreaterThanOrEqual(2);
   expect(connection).toContain('className="flex-1">');
   expect(connection).not.toContain('className="flex-1 bg-background">');
-  expect(app.match(/<AppBackground uri=\{appBackgroundImageUri\} dimming=\{appBackgroundDimming\} \/>/g)).toHaveLength(2);
+  expect(app.match(/<AppBackground uri=\{appBackgroundImageUri\} dimming=\{appBackgroundDimming\} \/>/g)).toHaveLength(4);
   expect(hosts).toContain('<GlassSurface className="min-h-[88px]');
   expect(hosts).toContain('<AgentStatusMedallion');
   expect(readSource('src/components/app-ui.tsx')).toContain('<GlassSurface\n        className="items-center justify-center rounded-full border"');
@@ -41,4 +48,11 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(appUi).toContain('const appGlassEnabled = useAppGlassEnabled();');
   expect(appUi).toContain('? appGlassControlStyle(false, colors)');
   expect(appUi).toContain(': { borderColor: colors.divider }');
+  expect(globalKeychain).toContain('const appGlassEnabled = useAppGlassEnabled();');
+  expect(globalKeychain.match(/<GlassSurface/g)?.length).toBeGreaterThanOrEqual(3);
+  expect(globalKeychain).toContain("variant={appGlassEnabled ? 'ghost' : 'secondary'}");
+  expect(globalKeychain).toContain("variant={appGlassEnabled ? 'ghost' : 'default'}");
+  expect(globalKeychain).not.toContain('className="flex-1 bg-background"');
+  expect(knownHosts.match(/<GlassSurface/g)?.length).toBeGreaterThanOrEqual(2);
+  expect(knownHosts).not.toContain('className="flex-1 bg-background"');
 });
