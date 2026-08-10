@@ -23,7 +23,7 @@ export type CallbackFunction<T> = (error: CBError, response?: T) => void;
  */
 export type EventHandler = (value: any) => void;
 export interface HerdrBridgeEvent {
-    type: 'terminal' | 'closed' | 'graphics' | 'notify' | 'clipboard' | 'title' | 'reload_sound_config' | 'mouse_capture' | 'kitty_keyboard_report_all' | 'prefix_input_source' | 'ignored';
+    type: 'terminal' | 'closed' | 'graphics' | 'notify' | 'clipboard' | 'title' | 'reload_sound_config' | 'mouse_capture' | 'kitty_keyboard_report_all' | 'prefix_input_source' | 'terminal_bell' | 'ignored';
     terminalId?: string;
     seq?: number;
     width?: number;
@@ -35,6 +35,7 @@ export interface HerdrBridgeEvent {
     body?: string;
     flag?: boolean;
     kind?: number;
+    count?: number;
 }
 export interface HerdrCommandStreamEvent {
     data?: string;

@@ -63,12 +63,16 @@ describe('Android SSH terminal protocol stream', () => {
     expect(client).toContain('private terminalBridges = new Set<string>()');
     expect(codec).toContain('ClientMessage::Hello');
     expect(codec).toContain('static final int MIN_PROTOCOL_VERSION = 17');
-    expect(codec).toContain('static final int MAX_PROTOCOL_VERSION = 19');
+    expect(codec).toContain('static final int MAX_PROTOCOL_VERSION = 20');
     expect(codec).toContain('variant == 10 && protocol == 17');
     expect(codec).toContain('variant == 11 && protocol >= 18');
+    expect(codec).toContain('variant == 12 && protocol >= 20');
+    expect(codec).toContain('new Message("terminal_bell")');
     expect(codec).toContain('RenderEncoding::TerminalAnsi');
     expect(codec).toContain('ClientLaunchMode::TerminalAttach');
     expect(renderer).toContain('window.herdrWriteBase64Chunk');
+    expect(client).toContain("event.type === 'terminal_bell'");
+    expect(client).toContain("bytes: '\\u0007'.repeat(count)");
   });
 
   test('keeps one direct-attach bridge per terminal inside the primary SSH session', () => {

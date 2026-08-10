@@ -1191,6 +1191,21 @@ export class HerdrClient {
       }
       return;
     }
+    if (event.type === 'terminal_bell') {
+      const count = Math.max(0, Math.min(0xffff, Math.trunc(event.count || 0)));
+      if (count > 0) {
+        this.terminalConnections.get(terminalId)?.onFrame({
+          type: 'terminal.frame',
+          seq: 0,
+          encoding: 'utf8',
+          width: 0,
+          height: 0,
+          full: false,
+          bytes: '\u0007'.repeat(count),
+        });
+      }
+      return;
+    }
     if (event.type === 'closed') {
       this.terminalBridges.delete(terminalId);
       this.terminalBridgeGenerations.delete(terminalId);

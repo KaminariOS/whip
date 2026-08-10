@@ -1356,6 +1356,7 @@ public class RNSshClientModule extends ReactContextBaseJavaModule {
     if (message.body != null) value.putString("body", message.body);
     value.putBoolean("flag", message.flag);
     value.putInt("kind", message.width);
+    if ("terminal_bell".equals(message.type)) value.putInt("count", message.count);
     sendHerdrBridgeEvent(key, value);
   }
 

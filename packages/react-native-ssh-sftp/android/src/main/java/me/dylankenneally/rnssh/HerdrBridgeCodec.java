@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets;
 
 final class HerdrBridgeCodec {
   static final int MIN_PROTOCOL_VERSION = 17;
-  static final int MAX_PROTOCOL_VERSION = 19;
+  static final int MAX_PROTOCOL_VERSION = 20;
   static final int MAX_FRAME_SIZE = 32 * 1024 * 1024;
 
   static final class Message {
@@ -18,6 +18,7 @@ final class HerdrBridgeCodec {
     byte[] bytes;
     String text;
     String body;
+    int count;
 
     Message(String type) {
       this.type = type;
@@ -151,6 +152,11 @@ final class HerdrBridgeCodec {
     } else if (variant == 11 && protocol >= 18) {
       message = new Message("prefix_input_source");
       message.flag = decoder.bool();
+    } else if (variant == 12 && protocol >= 20) {
+      message = new Message("terminal_bell");
+      long count = decoder.unsigned();
+      if (count > 0xffffL) throw new IOException("invalid Herdr terminal bell count " + count);
+      message.count = (int) count;
     } else {
       message = new Message("ignored");
     }

@@ -28,12 +28,12 @@ const profile: ConnectionProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-function bridgeClient() {
+function bridgeClient(protocol = 17) {
   const requestHerdrApi = jest.fn(async (_socketPath: string, requestLine: string) => {
     const request = JSON.parse(requestLine);
     return JSON.stringify({
       id: request.id,
-      result: { type: 'pong', version: '0.7.4', protocol: 17 },
+      result: { type: 'pong', version: '0.7.4', protocol },
     });
   });
   const native = {
@@ -102,5 +102,27 @@ describe('terminal bridge channels', () => {
 
     expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
+  });
+
+  test('forwards protocol 20 terminal bells into the terminal renderer', async () => {
+    const native = bridgeClient(20);
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const onFrame = jest.fn();
+    await client.connect(profile);
+    await client.openTerminal('term-1', onFrame);
+
+    const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
+    bridgeHandler({ type: 'terminal_bell', count: 3 });
+
+    expect(onFrame).toHaveBeenCalledWith({
+      type: 'terminal.frame',
+      seq: 0,
+      encoding: 'utf8',
+      width: 0,
+      height: 0,
+      full: false,
+      bytes: '\u0007\u0007\u0007',
+    });
   });
 });
