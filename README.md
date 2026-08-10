@@ -118,9 +118,9 @@ The recommended installation is through the [Google Play Early Access program](h
 Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/KaminariOS/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
 
 1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
-2. Make the Herdr host reachable over SSH, preferably through a Tailnet you trust. An otherwise private destination can be reached through a saved jump host.
-3. Install through Google Play, or download `whip-arm64.apk` and its checksum from the latest GitHub release.
-4. Allow installation from the app that downloaded the APK, then open Whip.
+2. Install through Google Play, or download `whip-arm64.apk` from the latest GitHub release.
+3. Allow installation from the app that downloaded the APK, then open Whip.
+4. Make the Herdr host reachable over SSH, preferably through a Tailnet you trust. An otherwise private destination can be reached through a saved jump host.(Normal SSH host without herdr is also supported)
 
 Whip supports Android 7.0 and newer (`minSdk 24`). The current direct APK distribution targets 64-bit ARM Android devices. Keep using the same distribution source when updating: Google Play may re-sign store builds through Play App Signing, so Android can require an uninstall when switching between Play and GitHub packages.
 
