@@ -30,10 +30,10 @@ test('shows uploaded images as removable composer thumbnails', () => {
   const terminal = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
 
   expect(terminal).toContain("accessibilityLabel={t('terminal.attach')}");
-  expect(terminal).toContain('<ImagePlus');
-  expect(terminal).toContain('composeAttachments.map');
+  expect(terminal).toContain('<Paperclip size={18}');
+  expect(terminal).toContain('attachments.map');
   expect(terminal).toContain('source={{ uri: attachment.previewUri }}');
-  expect(terminal).toContain('removeComposeAttachment(attachment.id)');
+  expect(terminal).toContain('onRemove={removeComposeAttachment}');
   expect(terminal).toContain('...attachmentPaths');
 });
 
