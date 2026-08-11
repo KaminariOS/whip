@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, ImagePlus, Keyboard as KeyboardIcon, MessageCircle, Option, Paperclip, Search, Send, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, ImagePlus, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, X, type LucideIcon } from 'lucide-react-native';
 import { AppState, Clipboard, Image, Keyboard, Modal, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -180,7 +180,7 @@ export function TerminalScreen({
 }: Props) {
   const { colors: appColors } = useTheme();
   const { t } = useTranslation();
-  const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
+  const { bottom: bottomSafeAreaInset, top: topSafeAreaInset } = useSafeAreaInsets();
   const session = activeTarget?.session || null;
   const terminalId = session?.terminalId || '';
   const title = session?.title || '';
@@ -203,6 +203,7 @@ export function TerminalScreen({
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ count: 0, index: -1, invalid: false });
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeExpanded, setComposeExpanded] = useState(false);
   const [composeText, setComposeText] = useState('');
   const [composeAttachments, setComposeAttachments] = useState<ComposeAttachment[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -218,6 +219,7 @@ export function TerminalScreen({
     setError(null);
     setSearchOpen(false);
     setComposeOpen(false);
+    setComposeExpanded(false);
     setHistoryOpen(false);
     setCtrl('off');
     setShift('off');
@@ -364,6 +366,7 @@ export function TerminalScreen({
   useEffect(() => {
     if (!visible) {
       if (composeOpen) setComposeOpen(false);
+      setComposeExpanded(false);
       setHistoryOpen(false);
     }
     setTerminalComposerOverlay(terminalId, visible && composeOpen).catch(() => {});
@@ -466,6 +469,7 @@ export function TerminalScreen({
 
   const closeCompose = async () => {
     await closeComposerKeyboard();
+    setComposeExpanded(false);
     setComposeOpen(false);
     await setTerminalComposerOverlay(terminalId, false).catch(reason => setError(String(reason)));
   };
@@ -476,6 +480,17 @@ export function TerminalScreen({
     setTerminalComposerOverlay(terminalId, true).catch(reason => setError(String(reason))).finally(() => {
       setComposeOpen(true);
     });
+  };
+
+  const expandCompose = () => {
+    renderer.current?.blur();
+    setKeyboardEnabled(true);
+    setComposeExpanded(true);
+  };
+
+  const collapseCompose = () => {
+    setComposeExpanded(false);
+    if (keyboardEnabled) setTimeout(() => composeInputRef.current?.focus(), 80);
   };
 
   const submitCompose = () => {
@@ -855,37 +870,31 @@ export function TerminalScreen({
         collapsable={false}
         className="relative z-10"
         style={keyboardInset > 0 ? { transform: [{ translateY: -keyboardInset }] } : undefined}>
-        {composeOpen && (
+        {composeOpen && !composeExpanded && (
           <View className="absolute inset-x-0 bottom-full z-10 border-t border-terminal-divider bg-transparent p-2">
             <View className="flex-row items-end gap-2">
-              <Button
-                accessibilityLabel={t('terminal.attach')}
-                className="size-10 rounded-full bg-terminal-surface px-0"
-                variant="secondary"
-                onPress={onRequestAttachment}>
-                <ImagePlus size={18} color={colors.text} />
-              </Button>
+              <View className="gap-1.5">
+                <Button
+                  accessibilityLabel={t('terminal.attach')}
+                  className="size-10 rounded-full bg-terminal-surface px-0"
+                  variant="secondary"
+                  onPress={onRequestAttachment}>
+                  <ImagePlus size={18} color={colors.text} />
+                </Button>
+                <Button
+                  accessibilityLabel={t('terminal.expandComposer')}
+                  className="size-10 rounded-full bg-terminal-surface px-0"
+                  variant="secondary"
+                  onPress={expandCompose}>
+                  <Maximize2 size={17} color={colors.text} />
+                </Button>
+              </View>
               <View className="min-w-0 flex-1 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas">
-                {composeAttachments.length > 0 && (
-                  <ScrollView
-                    horizontal
-                    keyboardShouldPersistTaps="always"
-                    showsHorizontalScrollIndicator={false}
-                    className="mx-2 mt-2 flex-grow-0"
-                    contentContainerClassName="gap-2">
-                    {composeAttachments.map(attachment => (
-                      <View key={attachment.id} className="relative size-16 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-surface">
-                        <Image className="size-full" resizeMode="cover" source={{ uri: attachment.previewUri }} />
-                        <Button
-                          accessibilityLabel={t('terminal.removeAttachment')}
-                          className="absolute right-0.5 top-0.5 size-6 rounded-full bg-black/75 px-0"
-                          onPress={() => removeComposeAttachment(attachment.id)}>
-                          <X size={13} color="#fff" />
-                        </Button>
-                      </View>
-                    ))}
-                  </ScrollView>
-                )}
+                <ComposeAttachmentsStrip
+                  attachments={composeAttachments}
+                  removeLabel={t('terminal.removeAttachment')}
+                  onRemove={removeComposeAttachment}
+                />
                 <Input
                   ref={composeInputRef}
                   autoFocus={keyboardEnabled}
@@ -928,6 +937,78 @@ export function TerminalScreen({
           {controlOrder.map(renderTerminalControl)}
         </ScrollView>
       </View>
+      {composeOpen && composeExpanded && (
+        <Modal
+          animationType="slide"
+          onRequestClose={collapseCompose}
+          onShow={() => {
+            setTimeout(() => composeInputRef.current?.focus(), 40);
+          }}
+          statusBarTranslucent
+          visible>
+          <View
+            className="flex-1 bg-terminal-canvas"
+            style={{
+              paddingTop: topSafeAreaInset,
+              paddingBottom: Math.max(bottomSafeAreaInset, keyboardInset),
+            }}>
+            <View className="h-14 flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-2">
+              <Button
+                accessibilityLabel={t('terminal.collapseComposer')}
+                className="size-10 rounded-full px-0"
+                variant="ghost"
+                onPress={collapseCompose}>
+                <Minimize2 size={19} color={colors.text} />
+              </Button>
+              <View className="min-w-0 flex-1">
+                <Text className="font-mono text-[13px] font-bold text-terminal-text">
+                  {t('terminal.expandedComposerTitle')}
+                </Text>
+                <Text numberOfLines={1} className="font-mono text-[9px] text-terminal-muted">
+                  {title}
+                </Text>
+              </View>
+              <Button
+                accessibilityLabel={t('terminal.sendBufferedInput')}
+                className="h-10 flex-row gap-2 rounded-full bg-white px-4"
+                onPress={submitCompose}>
+                <Send size={16} color={colors.ink} />
+                <Text className="font-mono text-[11px] font-bold text-terminal-ink">SEND</Text>
+              </Button>
+            </View>
+            <ComposeAttachmentsStrip
+              attachments={composeAttachments}
+              removeLabel={t('terminal.removeAttachment')}
+              onRemove={removeComposeAttachment}
+              expanded
+            />
+            <Input
+              ref={composeInputRef}
+              autoFocus={keyboardEnabled}
+              showSoftInputOnFocus={keyboardEnabled}
+              multiline
+              textAlignVertical="top"
+              value={composeText}
+              onChangeText={setComposeText}
+              placeholder={t('terminal.composePlaceholder')}
+              placeholderTextColor={colors.muted}
+              className="h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] text-terminal-text shadow-none"
+            />
+            <View className="h-14 flex-row items-center border-t border-terminal-divider bg-terminal-panel px-2">
+              <Button
+                accessibilityLabel={t('terminal.attach')}
+                className="size-10 rounded-full px-0"
+                variant="ghost"
+                onPress={onRequestAttachment}>
+                <Paperclip size={19} color={colors.text} />
+              </Button>
+              <Text className="ml-auto px-2 font-mono text-[9px] text-terminal-muted">
+                {t('terminal.composeCharacterCount', { count: composeText.length.toLocaleString() })}
+              </Text>
+            </View>
+          </View>
+        </Modal>
+      )}
       <Modal
         animationType="fade"
         onRequestClose={() => setHistoryOpen(false)}
@@ -997,6 +1078,40 @@ interface ComposeAttachment {
   remotePath: string;
   previewUri: string;
   dispose: () => void;
+}
+
+function ComposeAttachmentsStrip({
+  attachments,
+  expanded = false,
+  removeLabel,
+  onRemove,
+}: {
+  attachments: readonly ComposeAttachment[];
+  expanded?: boolean;
+  removeLabel: string;
+  onRemove: (id: number) => void;
+}) {
+  if (attachments.length === 0) return null;
+  return (
+    <ScrollView
+      horizontal
+      keyboardShouldPersistTaps="always"
+      showsHorizontalScrollIndicator={false}
+      className={cn('flex-grow-0', expanded ? 'border-b border-terminal-divider px-3 py-3' : 'mx-2 mt-2')}
+      contentContainerClassName="gap-2">
+      {attachments.map(attachment => (
+        <View key={attachment.id} className="relative size-16 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-surface">
+          <Image className="size-full" resizeMode="cover" source={{ uri: attachment.previewUri }} />
+          <Button
+            accessibilityLabel={removeLabel}
+            className="absolute right-0.5 top-0.5 size-6 rounded-full bg-black/75 px-0"
+            onPress={() => onRemove(attachment.id)}>
+            <X size={13} color="#fff" />
+          </Button>
+        </View>
+      ))}
+    </ScrollView>
+  );
 }
 
 function TerminalKey({ label, icon, accessibilityLabel, symbolic = false, onPress }: { label: string; icon?: LucideIcon; accessibilityLabel?: string; symbolic?: boolean; onPress: () => void }) {

@@ -69,4 +69,19 @@ describe('terminal input composer', () => {
       '<View className="absolute inset-x-0 bottom-full z-10 border-t border-terminal-divider bg-transparent p-2">',
     );
   });
+
+  it('expands long drafts into a full-screen editor without duplicating draft state', () => {
+    const screen = readSource('src/components/TerminalScreen.tsx');
+
+    expect(screen).toContain('const [composeExpanded, setComposeExpanded] = useState(false)');
+    expect(screen).toContain("accessibilityLabel={t('terminal.expandComposer')}");
+    expect(screen).toContain('<Maximize2 size={17}');
+    expect(screen).toContain('onRequestClose={collapseCompose}');
+    expect(screen).toContain("accessibilityLabel={t('terminal.collapseComposer')}");
+    expect(screen).toContain("{t('terminal.expandedComposerTitle')}");
+    expect(screen).toContain('setKeyboardEnabled(true)');
+    expect(screen).toContain("t('terminal.composeCharacterCount'");
+    expect(screen.match(/value=\{composeText\}/g)).toHaveLength(2);
+    expect(screen.match(/onChangeText=\{setComposeText\}/g)).toHaveLength(2);
+  });
 });
