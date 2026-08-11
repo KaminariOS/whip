@@ -1,0 +1,51 @@
+name: Dependabot auto-merge
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Merge successful Dependabot update
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.pull_requests[0].number
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Merge the tested Dependabot pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          TESTED_HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+        run: |
+          author="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json author --jq '.author.login')"
+          state="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')"
+          head_sha="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')"
+
+          if [[ "$author" != 'app/dependabot' && "$author" != 'dependabot[bot]' ]]; then
+            echo "Skipping PR #$PR_NUMBER from $author"
+            exit 0
+          fi
+          if [[ "$state" != 'OPEN' ]]; then
+            echo "Skipping PR #$PR_NUMBER because it is $state"
+            exit 0
+          fi
+          if [[ "$head_sha" != "$TESTED_HEAD_SHA" ]]; then
+            echo "Skipping PR #$PR_NUMBER because its head changed after CI"
+            exit 0
+          fi
+
+          gh pr merge "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --squash \
+            --delete-branch
