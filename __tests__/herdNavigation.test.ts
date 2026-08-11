@@ -30,7 +30,8 @@ describe('terminal to Herd navigation', () => {
     const settings = readSource('src/components/SettingsScreen.tsx');
 
     expect(herd).toContain('if (!selectedQueue || !selectedWorkspace) return;');
-    expect(herd).toContain('await runWorkspaceAction(() => onOpenSpace(');
+    expect(herd).toContain('onOpenSpace(');
+    expect(herd).not.toContain('runWorkspaceAction(() => onOpenSpace(');
     expect(herd).toContain('{selectedQueue?.running && selectedWorkspace ? (');
     expect(herd).not.toContain('!selectedWorkspace || queueAgents.length > 0');
     expect(herd).not.toContain('{queueAgents.length === 0 ? (');
@@ -51,7 +52,8 @@ describe('terminal to Herd navigation', () => {
     expect(herd).toContain('setCommandDraft(agentCommand.trim())');
     expect(app).toContain('const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {');
     expect(app).toContain('preferredWorkspacePane(currentSnapshot, workspaceId)');
-    expect(app).toContain('if (currentPane) activatePaneTerminal(sessionId, currentPane);');
+    expect(app).toContain('if (currentPane) {\n      openPaneTerminal(sessionId, currentPane);\n      return;');
+    expect(app).toContain("selectLiveHost(sessionId, 'terminal');");
     expect(app).toContain('preferredWorkspacePane(refreshedSnapshot, workspaceId)');
     expect(app).toContain("throw new Error(t('session.emptyWorkspace'))");
     expect(app).toContain('onOpenSpace={openHerdWorkspace}');
@@ -91,15 +93,38 @@ describe('terminal to Herd navigation', () => {
     expect(app).toContain("else selectLiveHost(sessionId, 'terminal');");
   });
 
-  it('applies the selected space locally before waiting for remote focus', () => {
+  it('selects a space locally without remote work', () => {
     const app = readSource('App.tsx');
+    const herd = readSource('src/components/HerdScreen.tsx');
     const session = readSource('src/components/SessionScreen.tsx');
+
+    const selectWorkspace = app.slice(
+      app.indexOf('const selectHerdWorkspace ='),
+      app.indexOf('const openHerdWorkspace ='),
+    );
 
     expect(app).toContain(
       'setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));',
     );
+    expect(selectWorkspace).not.toContain('focusWorkspace');
+    expect(selectWorkspace).not.toContain('refreshHost');
+    expect(herd).toContain('onSelectWorkspace(selectedQueue.id, workspaceId);');
+    expect(herd).not.toContain('runWorkspaceAction(() => onSelectWorkspace(');
     expect(session).toContain(
       "if (!serverTabId) {\n      pendingPaneFocus.current = null;\n      setWorkspaceId(serverWorkspaceId);\n      setTabId('');",
     );
+  });
+
+  it('opens a cached workspace pane before any remote refresh', () => {
+    const app = readSource('App.tsx');
+    const openWorkspace = app.slice(
+      app.indexOf('const openHerdWorkspace ='),
+      app.indexOf('const createHerdWorkspace ='),
+    );
+
+    expect(openWorkspace.indexOf('openPaneTerminal(sessionId, currentPane)'))
+      .toBeLessThan(openWorkspace.indexOf('await runtime.client.focusWorkspace(workspaceId)'));
+    expect(openWorkspace.indexOf("selectLiveHost(sessionId, 'terminal')"))
+      .toBeLessThan(openWorkspace.indexOf('await runtime.client.focusWorkspace(workspaceId)'));
   });
 });

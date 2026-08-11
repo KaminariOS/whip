@@ -1528,12 +1528,8 @@ function AppContent() {
     if (sessionId) setLiveSessions(current => selectLiveHostSession(current, sessionId));
   };
 
-  const selectHerdWorkspace = async (sessionId: string, workspaceId: string) => {
-    const runtime = runtimes.current.get(sessionId);
-    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+  const selectHerdWorkspace = (sessionId: string, workspaceId: string) => {
     setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));
-    await runtime.client.focusWorkspace(workspaceId);
-    await refreshHost(sessionId);
   };
 
   const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {
@@ -1544,14 +1540,21 @@ function AppContent() {
       ? preferredWorkspacePane(currentSnapshot, workspaceId)
       : undefined;
     setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));
-    if (currentPane) activatePaneTerminal(sessionId, currentPane);
+    if (currentPane) {
+      openPaneTerminal(sessionId, currentPane);
+      return;
+    }
+
+    // A stale snapshot should not hold navigation behind an SSH round trip.
+    // Show the selected workspace now, then attach a pane if refresh finds one.
+    selectLiveHost(sessionId, 'terminal');
     await runtime.client.focusWorkspace(workspaceId);
     const refreshedSnapshot = await refreshHostSnapshot(sessionId);
     const pane = refreshedSnapshot
       ? preferredWorkspacePane(refreshedSnapshot, workspaceId)
-      : currentPane;
+      : undefined;
     if (pane) {
-      openPaneTerminal(sessionId, pane);
+      activatePaneTerminal(sessionId, pane);
     } else {
       throw new Error(t('session.emptyWorkspace'));
     }
