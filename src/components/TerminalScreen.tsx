@@ -210,6 +210,7 @@ export function TerminalScreen({
   const [keyboardEnabled, setKeyboardEnabled] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
+  const [terminalSelectionActive, setTerminalSelectionActive] = useState(false);
   const [scrollPosition, setScrollPosition] = useState(activeTarget?.scroll);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
   const scrollThumb = terminalScrollThumb(scrollPosition);
@@ -220,6 +221,7 @@ export function TerminalScreen({
     setSearchOpen(false);
     setComposeOpen(false);
     setComposeExpanded(false);
+    setTerminalSelectionActive(false);
     setHistoryOpen(false);
     setCtrl('off');
     setShift('off');
@@ -803,7 +805,7 @@ export function TerminalScreen({
       <View
         className="relative flex-1"
         style={keyboardInset > 0 && !composeOpen ? { paddingBottom: keyboardInset } : undefined}
-        {...(keyboardEnabled ? terminalPanHandlers : undefined)}
+        {...(!terminalSelectionActive ? terminalPanHandlers : undefined)}
       >
         <TerminalRendererHost
           ref={renderer}
@@ -827,6 +829,9 @@ export function TerminalScreen({
           onLinksScanned={links => onLinksScanned?.(links)}
           onOpenLink={link => onOpenLink?.(link)}
           onPaste={(_target, text) => onHistoryEntry(text)}
+          onSelectionStateChange={(target, active) => {
+            if (target.key === activeTarget?.key) setTerminalSelectionActive(active);
+          }}
           onStatus={onStatus}
           onError={(target, message) => {
             if (target.key === activeTarget?.key) setError(message);

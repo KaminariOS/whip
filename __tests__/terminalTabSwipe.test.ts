@@ -52,4 +52,14 @@ describe('terminal tab swiping', () => {
     expect(screen).not.toContain('tabSwipe?.originTerminalId === terminalSession.terminalId && {');
     expect(screen).not.toContain('tabSwipe?.targetTerminalId === terminalSession.terminalId && {');
   });
+
+  it('allows tab swipes in selection mode without stealing selection-handle drags', () => {
+    const terminal = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
+    const renderer = readFileSync(resolve(__dirname, '../src/components/TerminalRendererHost.tsx'), 'utf8');
+
+    expect(terminal).toContain('{...(!terminalSelectionActive ? terminalPanHandlers : undefined)}');
+    expect(terminal).toContain('onSelectionStateChange={(target, active) =>');
+    expect(renderer).toContain("message.type === 'selection-state'");
+    expect(renderer).toContain('reportSelectionState(entry.target, message.active === true)');
+  });
 });

@@ -82,6 +82,7 @@ interface Props {
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
   onPaste: (target: TerminalRenderTarget, text: string) => void;
+  onSelectionStateChange: (target: TerminalRenderTarget, active: boolean) => void;
   onStatus: (
     target: TerminalRenderTarget,
     status: TerminalSessionStatus,
@@ -107,6 +108,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onLinksScanned,
   onOpenLink,
   onPaste,
+  onSelectionStateChange,
   onStatus,
   onError,
 }, forwardedRef) {
@@ -126,6 +128,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportLinks = useEffectEvent(onLinksScanned);
   const reportOpenLink = useEffectEvent(onOpenLink);
   const reportPaste = useEffectEvent(onPaste);
+  const reportSelectionState = useEffectEvent(onSelectionStateChange);
   const reportStatus = useEffectEvent(onStatus);
   const reportError = useEffectEvent(onError);
 
@@ -489,6 +492,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(value)});`);
         reportPaste(entry.target, value);
       }
+    } else if (
+      entry.target.key === activeKey.current
+      && message.type === 'selection-state'
+    ) {
+      reportSelectionState(entry.target, message.active === true);
     } else if (entry.target.key === activeKey.current && message.type === 'search-result') {
       reportSearch(message.count, message.index, Boolean(message.invalid));
     } else if (entry.target.key === activeKey.current && message.type === 'link-scan-result') {
