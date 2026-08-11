@@ -132,6 +132,10 @@ const terminalSessionHtml = `<!doctype html>
     #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #24283b; border: 1px solid #414868; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
     #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #c0caf5; padding: 8px 10px; font: 700 10px '${fontManifest.text.cssFamily}', monospace; }
     #selection-toolbar button:active { background: #7aa2f7; color: #16161e; }
+    #selection-handles { position: fixed; inset: 0; z-index: 19; pointer-events: none; }
+    .selection-handle { position: fixed; display: none; width: 22px; height: 22px; box-sizing: border-box; border: 2px solid #16161e; border-radius: 50%; background: #7aa2f7; box-shadow: 0 2px 6px #0009; pointer-events: auto; touch-action: none; transform: translate(-50%, 3px); }
+    .selection-handle::before { content: ''; position: absolute; left: 50%; top: -6px; width: 4px; height: 7px; border-radius: 2px 2px 0 0; background: #7aa2f7; transform: translateX(-50%); }
+    .selection-handle.dragging { width: 26px; height: 26px; background: #9ab8ff; }
   </style>
 </head>
 <body>
@@ -140,7 +144,11 @@ const terminalSessionHtml = `<!doctype html>
     <div id="terminal-background-glass"></div>
   </div>
   <div id="terminal"></div>
-  <div id="selection-toolbar"><button id="copy-selection">COPY</button><button id="paste-selection">PASTE</button></div>
+  <div id="selection-handles" aria-hidden="true">
+    <div id="selection-start-handle" class="selection-handle"></div>
+    <div id="selection-end-handle" class="selection-handle"></div>
+  </div>
+  <div id="selection-toolbar"><button id="copy-selection">COPY</button><button id="select-all-selection">SELECT ALL</button><button id="paste-selection">PASTE</button></div>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
   <script>
@@ -272,8 +280,9 @@ const terminalSessionHtml = `<!doctype html>
       hideToolbar();
     };
     let searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
-    window.herdrClearSearch = () => { terminal.clearSelection(); searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 }; };
+    window.herdrClearSearch = () => { clearInteractiveSelection(true); searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 }; };
     window.herdrSearch = (query, caseSensitive, regex, direction) => {
+      clearInteractiveSelection(false);
       const changed = query !== searchState.query || caseSensitive !== searchState.caseSensitive || regex !== searchState.regex;
       if (changed) {
         const matches = [];
@@ -348,6 +357,7 @@ const terminalSessionHtml = `<!doctype html>
         cellWidthPx: rect ? Math.round((rect.width / terminal.cols) * scale) : 0,
         cellHeightPx: rect ? Math.round((rect.height / terminal.rows) * scale) : 0
       });
+      renderSelectionHandles();
     };
     window.herdrFocus = () => {
       if (keyboardEnabled) terminal.focus();
@@ -356,25 +366,28 @@ const terminalSessionHtml = `<!doctype html>
     window.herdrSetKeyboardEnabled = enabled => {
       keyboardEnabled = enabled !== false;
       if (!keyboardEnabled) terminal.blur();
+      else clearInteractiveSelection(true);
     };
     window.herdrFit = resize;
     const toolbar = document.getElementById('selection-toolbar');
     const hideToolbar = () => { toolbar.style.display = 'none'; };
     const showToolbar = (x, y) => {
       toolbar.style.display = 'flex';
-      toolbar.style.left = Math.max(6, Math.min(window.innerWidth - 128, x - 48)) + 'px';
-      toolbar.style.top = Math.max(6, Math.min(window.innerHeight - 52, y - 48)) + 'px';
+      const width = toolbar.offsetWidth || 196;
+      const height = toolbar.offsetHeight || 42;
+      toolbar.style.left = Math.max(6, Math.min(window.innerWidth - width - 6, x - width / 2)) + 'px';
+      toolbar.style.top = Math.max(6, Math.min(window.innerHeight - height - 6, y - height - 8)) + 'px';
     };
     document.getElementById('copy-selection').addEventListener('click', event => {
       event.stopPropagation();
       const text = terminal.getSelection();
       if (text) send({ type: 'clipboard-write', text });
-      hideToolbar();
+      clearInteractiveSelection(true);
     });
     document.getElementById('paste-selection').addEventListener('click', event => {
       event.stopPropagation();
       send({ type: 'clipboard-read' });
-      hideToolbar();
+      clearInteractiveSelection(true);
     });
     const bufferCellAt = (x, y) => {
       const screen = terminal.element?.querySelector('.xterm-screen');
@@ -385,6 +398,110 @@ const terminalSessionHtml = `<!doctype html>
       const row = terminal.buffer.active.viewportY + viewportRow;
       return { col, row };
     };
+    const startHandle = document.getElementById('selection-start-handle');
+    const endHandle = document.getElementById('selection-end-handle');
+    let activeSelection = null;
+    let selectionHandleDrag = null;
+    const cellIndex = point => point.row * terminal.cols + point.col;
+    const normalizedSelection = selection => cellIndex(selection.anchor) <= cellIndex(selection.focus)
+      ? { start: selection.anchor, end: selection.focus }
+      : { start: selection.focus, end: selection.anchor };
+    const hideSelectionHandles = () => {
+      startHandle.style.display = 'none';
+      endHandle.style.display = 'none';
+      startHandle.classList.remove('dragging');
+      endHandle.classList.remove('dragging');
+    };
+    const positionSelectionHandle = (handle, cell, edge) => {
+      const screen = terminal.element?.querySelector('.xterm-screen');
+      const rect = screen?.getBoundingClientRect();
+      if (!rect || !terminal.cols || !terminal.rows) { handle.style.display = 'none'; return; }
+      const viewportRow = cell.row - terminal.buffer.active.viewportY;
+      if (viewportRow < 0 || viewportRow >= terminal.rows) { handle.style.display = 'none'; return; }
+      const cellWidth = rect.width / terminal.cols;
+      const cellHeight = rect.height / terminal.rows;
+      handle.style.left = rect.left + (cell.col + (edge === 'end' ? 1 : 0)) * cellWidth + 'px';
+      handle.style.top = rect.top + (viewportRow + 1) * cellHeight + 'px';
+      handle.style.display = 'block';
+    };
+    const renderSelectionHandles = drag => {
+      if (!activeSelection) { hideSelectionHandles(); return; }
+      const { start, end } = normalizedSelection(activeSelection);
+      if (drag) {
+        positionSelectionHandle(drag.movingHandle, drag.movingEdge === 'start' ? start : end, drag.movingEdge);
+        positionSelectionHandle(drag.fixedHandle, drag.movingEdge === 'start' ? end : start, drag.movingEdge === 'start' ? 'end' : 'start');
+        return;
+      }
+      positionSelectionHandle(startHandle, start, 'start');
+      positionSelectionHandle(endHandle, end, 'end');
+    };
+    const setInteractiveSelection = (anchor, focus, drag) => {
+      activeSelection = { anchor, focus };
+      const { start, end } = normalizedSelection(activeSelection);
+      terminal.select(start.col, start.row, Math.max(1, cellIndex(end) - cellIndex(start) + 1));
+      renderSelectionHandles(drag);
+    };
+    const clearInteractiveSelection = clearTerminalSelection => {
+      activeSelection = null;
+      selectionHandleDrag = null;
+      hideSelectionHandles();
+      hideToolbar();
+      if (clearTerminalSelection) terminal.clearSelection();
+    };
+    document.getElementById('select-all-selection').addEventListener('click', event => {
+      event.stopPropagation();
+      terminal.selectAll();
+      activeSelection = {
+        anchor: { col: 0, row: 0 },
+        focus: {
+          col: Math.max(0, terminal.cols - 1),
+          row: Math.max(0, terminal.buffer.active.length - 1),
+        },
+      };
+      renderSelectionHandles();
+      const rect = toolbar.getBoundingClientRect();
+      showToolbar(rect.left + rect.width / 2, rect.bottom + 8);
+    });
+    const handleCellAt = touchPoint => bufferCellAt(touchPoint.clientX, touchPoint.clientY - 14);
+    const installSelectionHandle = (handle, edge) => {
+      handle.addEventListener('touchstart', event => {
+        if (!activeSelection || event.touches.length !== 1) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const selection = normalizedSelection(activeSelection);
+        selectionHandleDrag = {
+          movingHandle: handle,
+          fixedHandle: handle === startHandle ? endHandle : startHandle,
+          fixed: edge === 'start' ? selection.end : selection.start,
+        };
+        handle.classList.add('dragging');
+        hideToolbar();
+      }, { capture: true, passive: false });
+      handle.addEventListener('touchmove', event => {
+        if (!selectionHandleDrag || event.touches.length !== 1) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const cell = handleCellAt(event.touches[0]);
+        if (!cell) return;
+        const movingEdge = cellIndex(cell) <= cellIndex(selectionHandleDrag.fixed) ? 'start' : 'end';
+        setInteractiveSelection(selectionHandleDrag.fixed, cell, { ...selectionHandleDrag, movingEdge });
+      }, { capture: true, passive: false });
+      const finishHandleDrag = event => {
+        if (!selectionHandleDrag) return;
+        event.preventDefault();
+        event.stopPropagation();
+        handle.classList.remove('dragging');
+        selectionHandleDrag = null;
+        renderSelectionHandles();
+        const point = event.changedTouches?.[0];
+        if (point) showToolbar(point.clientX, point.clientY);
+      };
+      handle.addEventListener('touchend', finishHandleDrag, { capture: true, passive: false });
+      handle.addEventListener('touchcancel', finishHandleDrag, { capture: true, passive: false });
+    };
+    installSelectionHandle(startHandle, 'start');
+    installSelectionHandle(endHandle, 'end');
+    terminal.onScroll(() => renderSelectionHandles());
     const wordRangeAt = (x, y) => {
       const cell = bufferCellAt(x, y);
       if (!cell) return null;
@@ -408,6 +525,8 @@ const terminalSessionHtml = `<!doctype html>
       const start = beforeWord ? cell : selection.start;
       const end = beforeWord ? selection.end : cell;
       terminal.select(start.col, start.row, Math.max(1, indexOf(end) - indexOf(start) + 1));
+      activeSelection = { anchor: start, focus: end };
+      renderSelectionHandles();
     };
     const urlAtPoint = (x, y) => {
       const cell = bufferCellAt(x, y);
@@ -434,7 +553,7 @@ const terminalSessionHtml = `<!doctype html>
         if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
         event.preventDefault();
         event.stopPropagation();
-        hideToolbar();
+        clearInteractiveSelection(true);
         touch = null;
         lastTap = null;
         pinch = {
@@ -446,7 +565,7 @@ const terminalSessionHtml = `<!doctype html>
       }
       if (event.touches.length !== 1) { touch = null; pinch = null; lastTap = null; return; }
       const point = event.touches[0];
-      hideToolbar();
+      clearInteractiveSelection(true);
       touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false, selection: null };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
@@ -462,6 +581,7 @@ const terminalSessionHtml = `<!doctype html>
           touch.longPressed = true;
           lastTap = null;
           touch.selection = selection;
+          setInteractiveSelection(selection.start, selection.end);
           showToolbar(touch.x, touch.y);
         } else {
           send({ type: 'clipboard-read' });
@@ -541,8 +661,7 @@ const terminalSessionHtml = `<!doctype html>
         const link = urlAtPoint(point.clientX, point.clientY);
         if (link) send({ type: 'open-link', link });
         else {
-          terminal.clearSelection();
-          hideToolbar();
+          clearInteractiveSelection(true);
         }
         touch = null;
         return;

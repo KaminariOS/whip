@@ -13,6 +13,26 @@ describe('terminal selection mode', () => {
     expect(assets).toContain('terminal.select(start.col, start.row');
   });
 
+  it('shows and supports dragging both terminal selection endpoint handles', () => {
+    const assets = readSource('scripts/sync-terminal-assets.mjs');
+
+    expect(assets).toContain('id="selection-start-handle"');
+    expect(assets).toContain('id="selection-end-handle"');
+    expect(assets).toContain("installSelectionHandle(startHandle, 'start')");
+    expect(assets).toContain("installSelectionHandle(endHandle, 'end')");
+    expect(assets).toContain("handle.addEventListener('touchmove'");
+    expect(assets).toContain('renderSelectionHandles()');
+  });
+
+  it('can select the entire terminal buffer from the selection toolbar', () => {
+    const assets = readSource('scripts/sync-terminal-assets.mjs');
+
+    expect(assets).toContain('id="select-all-selection"');
+    expect(assets).toContain("document.getElementById('select-all-selection').addEventListener('click'");
+    expect(assets).toContain('terminal.selectAll()');
+    expect(assets).toContain('row: Math.max(0, terminal.buffer.active.length - 1)');
+  });
+
   it('opens a tapped terminal URL through the existing link routing', () => {
     const assets = readSource('scripts/sync-terminal-assets.mjs');
     const renderer = readSource('src/components/TerminalRendererHost.tsx');
