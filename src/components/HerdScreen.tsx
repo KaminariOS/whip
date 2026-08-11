@@ -77,7 +77,7 @@ interface Props {
   onWorkspaceFilterChange: (hostId: string, workspaceId: string | null) => void;
   onCloseHost: (hostId: string) => void;
   onNewHost: () => void;
-  onSelectWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
+  onSelectWorkspace: (hostId: string, workspaceId: string) => void;
   onCreateWorkspace: (hostId: string, name: string, cwd: string) => Promise<void>;
   onRenameWorkspace: (hostId: string, workspaceId: string, name: string) => Promise<void>;
   onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
@@ -214,7 +214,7 @@ export function HerdScreen({
     setCommandRunnerOpen(false);
     if (workspaceId && selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, workspaceId);
-      runWorkspaceAction(() => onSelectWorkspace(selectedQueue.id, workspaceId));
+      onSelectWorkspace(selectedQueue.id, workspaceId);
     } else if (selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, null);
     }
@@ -264,12 +264,12 @@ export function HerdScreen({
     ]);
   };
 
-  const openSpace = async () => {
+  const openSpace = () => {
     if (!selectedQueue || !selectedWorkspace) return;
-    await runWorkspaceAction(() => onOpenSpace(
+    onOpenSpace(
       selectedQueue.id,
       selectedWorkspace.workspace_id,
-    ));
+    ).catch(error => Alert.alert(t('herd.commandFailed'), String(error)));
   };
 
   const openCommandRunner = () => {
