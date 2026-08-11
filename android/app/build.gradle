@@ -115,8 +115,8 @@ android {
         applicationId = "io.github.kaminarios.whip"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 212
-        versionName = "1.0.0"
+        versionCode = 213
+        versionName = "1.0.2"
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
     signingConfigs {
