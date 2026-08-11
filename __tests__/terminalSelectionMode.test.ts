@@ -22,6 +22,8 @@ describe('terminal selection mode', () => {
     expect(assets).toContain("installSelectionHandle(endHandle, 'end')");
     expect(assets).toContain("handle.addEventListener('touchmove'");
     expect(assets).toContain('renderSelectionHandles()');
+    expect(assets).toContain("send({ type: 'selection-state', active: true })");
+    expect(assets).toContain("send({ type: 'selection-state', active: false })");
   });
 
   it('can select the entire terminal buffer from the selection toolbar', () => {

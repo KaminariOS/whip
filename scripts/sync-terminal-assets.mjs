@@ -240,6 +240,7 @@ const terminalSessionHtml = `<!doctype html>
     window.herdrReset = () => {
       pendingFrames.clear();
       terminal.reset();
+      clearInteractiveSelection(false);
     };
     window.herdrConfigure = options => {
       terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
@@ -366,7 +367,7 @@ const terminalSessionHtml = `<!doctype html>
     window.herdrSetKeyboardEnabled = enabled => {
       keyboardEnabled = enabled !== false;
       if (!keyboardEnabled) terminal.blur();
-      else clearInteractiveSelection(true);
+      clearInteractiveSelection(true);
     };
     window.herdrFit = resize;
     const toolbar = document.getElementById('selection-toolbar');
@@ -436,21 +437,26 @@ const terminalSessionHtml = `<!doctype html>
       positionSelectionHandle(endHandle, end, 'end');
     };
     const setInteractiveSelection = (anchor, focus, drag) => {
+      const wasActive = Boolean(activeSelection);
       activeSelection = { anchor, focus };
+      if (!wasActive) send({ type: 'selection-state', active: true });
       const { start, end } = normalizedSelection(activeSelection);
       terminal.select(start.col, start.row, Math.max(1, cellIndex(end) - cellIndex(start) + 1));
       renderSelectionHandles(drag);
     };
     const clearInteractiveSelection = clearTerminalSelection => {
+      const wasActive = Boolean(activeSelection);
       activeSelection = null;
       selectionHandleDrag = null;
       hideSelectionHandles();
       hideToolbar();
       if (clearTerminalSelection) terminal.clearSelection();
+      if (wasActive) send({ type: 'selection-state', active: false });
     };
     document.getElementById('select-all-selection').addEventListener('click', event => {
       event.stopPropagation();
       terminal.selectAll();
+      const wasActive = Boolean(activeSelection);
       activeSelection = {
         anchor: { col: 0, row: 0 },
         focus: {
@@ -458,6 +464,7 @@ const terminalSessionHtml = `<!doctype html>
           row: Math.max(0, terminal.buffer.active.length - 1),
         },
       };
+      if (!wasActive) send({ type: 'selection-state', active: true });
       renderSelectionHandles();
       const rect = toolbar.getBoundingClientRect();
       showToolbar(rect.left + rect.width / 2, rect.bottom + 8);

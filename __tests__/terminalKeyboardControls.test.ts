@@ -73,7 +73,7 @@ describe('terminal keyboard controls', () => {
     expect(screen).toContain('const [keyboardEnabled, setKeyboardEnabled] = useState(false)');
     expect(screen).toContain('renderer.current?.setKeyboardEnabled(keyboardEnabled)');
     expect(screen).toContain('Keyboard.dismiss()');
-    expect(screen).toContain('{...(keyboardEnabled ? terminalPanHandlers : undefined)}');
+    expect(screen).toContain('{...(!terminalSelectionActive ? terminalPanHandlers : undefined)}');
     expect(assets).toContain('let keyboardEnabled = false');
     expect(assets).toContain('window.herdrSetKeyboardEnabled = enabled =>');
     expect(assets).toContain('if (!keyboardEnabled) terminal.blur()');
