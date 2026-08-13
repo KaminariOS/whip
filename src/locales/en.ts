@@ -50,6 +50,17 @@ export const en = {
   'about.shareMessage': 'Download Whip releases: {{url}}',
   'about.shareError': 'Could not share Whip',
 
+  'appLogs.diagnostics': 'Diagnostics',
+  'appLogs.title': 'App logs',
+  'appLogs.copy': 'View and copy logs from this launch.',
+  'appLogs.open': 'Open app logs',
+  'appLogs.entryCount_one': 'Current launch · {{count}} entry',
+  'appLogs.entryCount_other': 'Current launch · {{count}} entries',
+  'appLogs.privacy': 'Logs stay on this device, reset when Whip restarts, and may include hostnames or connection details.',
+  'appLogs.copyAll': 'Copy all',
+  'appLogs.copied': 'Copied',
+  'appLogs.copyConfirmation': 'App logs copied to clipboard.',
+
   'connectRequired.title': 'Connect to continue',
   'connectRequired.copy': 'Choose a saved host before opening {{destination}}.',
   'connectRequired.choose': 'Choose a host',

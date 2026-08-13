@@ -1,3 +1,4 @@
+import './src/installAppLogCapture';
 import './src/logBoxWarnings';
 import { registerRootComponent } from 'expo';
 import { AppRegistry, DeviceEventEmitter } from 'react-native';

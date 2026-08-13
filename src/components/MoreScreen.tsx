@@ -2,6 +2,7 @@ import { ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AboutSection, type AboutSectionProps } from './AboutScreen';
+import { AppLogsSection } from './AppLogsScreen';
 import { SettingsDetailsProvider, SettingsSection, type SettingsSectionProps } from './SettingsScreen';
 import { GlassSurface } from './GlassSurface';
 import { Text } from './ui/text';
@@ -17,6 +18,7 @@ export function MoreScreen(props: Props) {
           <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
         </GlassSurface>
         <AboutSection server={props.server} />
+        <AppLogsSection />
         <SettingsSection
         alertsEnabled={props.alertsEnabled}
         persistentAlertDurationSeconds={props.persistentAlertDurationSeconds}
