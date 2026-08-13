@@ -253,8 +253,9 @@ jobs:
               --predicate 'process == "HerdR" OR eventMessage CONTAINS[c] "WHIP_IOS_SSH_E2E" OR eventMessage CONTAINS[c] "io.github.kaminarios.whip"' \
               >"$RUNNER_TEMP/whip-ios-ssh-diagnostics/simulator.log" 2>&1 || true
           fi
-          if [[ -n "${WHIP_E2E_FIXTURE_DIR:-}" && -f "$WHIP_E2E_FIXTURE_DIR/sshd.log" ]]; then
-            cp "$WHIP_E2E_FIXTURE_DIR/sshd.log" "$RUNNER_TEMP/whip-ios-ssh-diagnostics/sshd.log"
+          fixture_path="${WHIP_E2E_FIXTURE_DIR:-$RUNNER_TEMP/whip-ios-ssh-fixture}"
+          if [[ -f "$fixture_path/sshd.log" ]]; then
+            cp "$fixture_path/sshd.log" "$RUNNER_TEMP/whip-ios-ssh-diagnostics/sshd.log"
           fi
           if [[ -f "$RUNNER_TEMP/whip-ios-ssh-e2e-result.json" ]]; then
             cp "$RUNNER_TEMP/whip-ios-ssh-e2e-result.json" "$RUNNER_TEMP/whip-ios-ssh-diagnostics/result.json"

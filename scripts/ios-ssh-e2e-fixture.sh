@@ -18,9 +18,6 @@ stop_fixture() {
   if [[ -n "${WHIP_E2E_SSHD_PID:-}" ]]; then
     sudo kill "$WHIP_E2E_SSHD_PID" >/dev/null 2>&1 || true
   fi
-  if [[ -n "${WHIP_E2E_USER:-}" ]] && dscl . -read "/Users/$WHIP_E2E_USER" >/dev/null 2>&1; then
-    sudo dscl . -delete "/Users/$WHIP_E2E_USER" >/dev/null
-  fi
 }
 
 if [[ "$action" == "stop" ]]; then
@@ -35,32 +32,28 @@ fi
 github_env="${3:-}"
 mkdir -p "$fixture_dir"
 chmod 0755 "$fixture_dir"
-username="whipe2e${RANDOM}"
+username="$(id -un)"
 password="whip-${RANDOM}-${RANDOM}"
-uid="$(dscl . -list /Users UniqueID | awk '$2 < 60000 && $2 > maximum { maximum = $2 } END { print maximum + 1 }')"
 port="$(ruby -rsocket -e 'server = TCPServer.new("127.0.0.1", 0); puts server.local_address.ip_port; server.close')"
-home_dir="$fixture_dir/home"
+
+if [[ -n "$github_env" ]]; then
+  {
+    echo "WHIP_E2E_FIXTURE_DIR=$fixture_dir"
+    echo "WHIP_E2E_SSH_PORT=$port"
+  } >>"$github_env"
+fi
 
 ssh-keygen -q -t ed25519 -N '' -C whip-ios-e2e-client -f "$fixture_dir/client_key"
 ssh-keygen -q -t ed25519 -N '' -C whip-ios-e2e-host -f "$fixture_dir/host_key"
 ssh-keygen -q -t ed25519 -N '' -C whip-ios-e2e-changed -f "$fixture_dir/changed_host_key"
 cp "$fixture_dir/client_key.pub" "$fixture_dir/authorized_keys"
 
-sudo dscl . -create "/Users/$username"
 cat >"$metadata" <<EOF
 WHIP_E2E_SSHD_PID=
 WHIP_E2E_USER=$username
 EOF
 trap stop_fixture ERR
-sudo dscl . -create "/Users/$username" UserShell /bin/zsh
-sudo dscl . -create "/Users/$username" RealName "Whip iOS E2E"
-sudo dscl . -create "/Users/$username" UniqueID "$uid"
-sudo dscl . -create "/Users/$username" PrimaryGroupID 20
-sudo dscl . -create "/Users/$username" NFSHomeDirectory "$home_dir"
 sudo dscl . -passwd "/Users/$username" "$password"
-mkdir -p "$home_dir"
-chmod 0700 "$home_dir"
-sudo chown -R "$uid:20" "$home_dir"
 
 cat >"$fixture_dir/sshd_config" <<EOF
 Port $port
@@ -125,10 +118,4 @@ ruby -rjson -e '
 ' "$port" "$username" "$password" "$fixture_dir/client_key" \
   "$known_host_line" "$changed_host_line" "$fixture_dir/whip-ios-ssh-e2e-config.json"
 
-if [[ -n "$github_env" ]]; then
-  {
-    echo "WHIP_E2E_FIXTURE_DIR=$fixture_dir"
-    echo "WHIP_E2E_SSH_PORT=$port"
-  } >>"$github_env"
-fi
 echo "OpenSSH fixture ready on 127.0.0.1:$port for $username"
