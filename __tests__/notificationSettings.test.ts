@@ -39,6 +39,10 @@ it('targets the notification settings screen across supported Android versions',
     resolve(__dirname, '../src/components/SettingsScreen.tsx'),
     'utf8',
   );
+  const settingsService = readFileSync(
+    resolve(__dirname, '../src/services/notificationSettings.ts'),
+    'utf8',
+  );
 
   expect(module).toContain('Settings.ACTION_APP_NOTIFICATION_SETTINGS');
   expect(module).toContain('Settings.EXTRA_APP_PACKAGE');
@@ -46,6 +50,7 @@ it('targets the notification settings screen across supported Android versions',
   expect(module).toContain('EXTRA_APP_UID');
   expect(module).toContain('Settings.ACTION_APPLICATION_DETAILS_SETTINGS');
   expect(nativePackage).toContain('HerdrSystemSettingsModule(reactContext)');
+  expect(settingsService).toContain('Linking.openSettings()');
   expect(settingsScreen).toContain("t('settings.changeNotificationSettings')");
   expect(settingsScreen).toContain("t('settings.backgroundAlertDurationCopy')");
   expect(settingsScreen).toContain('onPress={changeNotificationSettings}');

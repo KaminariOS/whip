@@ -20,12 +20,19 @@
           "supportedLocales": ["en", "zh-Hant"]
         }
       ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Whip to use Face ID to protect SSH keys and app access."
+        }
+      ],
       "expo-video"
     ],
     "ios": {
       "bundleIdentifier": "io.github.kaminarios.whip",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "Allow Whip to use Face ID to protect SSH keys and app access.",
         "NSLocalNetworkUsageDescription": "Whip connects to SSH servers on your local network."
       }
     },

@@ -160,8 +160,8 @@ describe('terminal renderer lifecycle', () => {
     const app = readSource('App.tsx');
     const bottomNavigation = readSource('src/components/BottomNavigation.tsx');
 
-    expect(app).toMatch(/fullscreenTerminalVisible\s*=\s*activeTerminalVisible\s*&&\s*terminalPreferences\.fullscreen/);
-    expect(app).toMatch(/fullscreenVisible\s*=\s*immersiveTerminal\s*\?\s*fullscreenTerminalVisible\s*:\s*fullscreenApp/);
+    expect(app).toMatch(/fullscreenTerminalVisible\s*=\s*Platform\.OS\s*===\s*'android'\s*&&\s*activeTerminalVisible\s*&&\s*terminalPreferences\.fullscreen/);
+    expect(app).toMatch(/fullscreenVisible\s*=\s*Platform\.OS\s*===\s*'android'\s*&&\s*\(immersiveTerminal\s*\?\s*fullscreenTerminalVisible\s*:\s*fullscreenApp\)/);
     expect(app).toContain('hidden={fullscreenVisible}');
     expect(app).toContain("edges={fullscreenVisible ? ['left', 'right'] : ['top', 'left', 'right']}");
     expect(app).toContain("style={immersiveTerminal ? styles.hiddenTab : styles.tabScreen}");
