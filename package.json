@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
     "android": "node scripts/sync-terminal-assets.mjs && expo run:android",
+    "bundle:ios": "expo export:embed --platform ios --dev false --entry-file index.js --bundle-output build/ios/main.jsbundle --assets-dest build/ios",
     "generate:android-icon": "node scripts/generate-android-launcher-vector.mjs",
     "start": "node scripts/sync-terminal-assets.mjs && expo start --dev-client",
     "lint": "eslint .",

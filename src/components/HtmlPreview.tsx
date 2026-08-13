@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import WebView from 'react-native-webview/lib/WebView.android';
+import WebView from 'react-native-webview';
 
 interface Props {
   filename: string;
