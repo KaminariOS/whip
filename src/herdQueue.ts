@@ -86,6 +86,7 @@ export function resolveHerdHostFilter(
   queues: HerdHostQueue[],
   requestedHostId: string | null,
 ): string | null {
+  if (queues.length === 1) return queues[0].id;
   return requestedHostId && queues.some(queue => queue.id === requestedHostId)
     ? requestedHostId
     : null;
@@ -103,6 +104,7 @@ export function resolveHerdWorkspaceFilter(
   queue: HerdHostQueue | undefined,
   requestedWorkspaceId: string | null,
 ): string | null {
+  if (queue?.workspaces.length === 1) return queue.workspaces[0].workspace_id;
   return requestedWorkspaceId && queue?.workspaces.some(
     workspace => workspace.workspace_id === requestedWorkspaceId,
   )

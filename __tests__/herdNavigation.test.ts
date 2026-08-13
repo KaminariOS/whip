@@ -4,6 +4,20 @@ import { resolve } from 'node:path';
 const readSource = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
 
 describe('terminal to Herd navigation', () => {
+  it('hides redundant rails and automatically scopes single choices', () => {
+    const herd = readSource('src/components/HerdScreen.tsx');
+    const workspaceRail = readSource('src/components/WorkspaceRail.tsx');
+
+    expect(herd).toContain('const resolvedHostId = resolveHerdHostFilter(queues, selectedHostId);');
+    expect(herd).toContain('{sessions.length > 1 ? (');
+    expect(herd).toContain('activeHostId={resolvedHostId}');
+    expect(herd).toContain('onSelectHost(resolvedHostId);');
+    expect(herd).toContain('onWorkspaceFilterChange(selectedQueue.id, selectedWorkspaceId);');
+    expect(herd).toContain('onSelectWorkspace(selectedQueue.id, selectedWorkspaceId);');
+    expect(workspaceRail).toContain('{workspaces.length > 1 ? (');
+    expect(workspaceRail).toContain("label={t('rail.allSpaces')}");
+  });
+
   it('keeps the Herd space filter outside its conditionally mounted screen', () => {
     const app = readSource('App.tsx');
     const herd = readSource('src/components/HerdScreen.tsx');

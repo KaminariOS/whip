@@ -65,7 +65,7 @@ describe('session tab labels', () => {
 
     expect(rail).toContain("import { Layers3, Plus, X } from 'lucide-react-native'");
     expect(rail).toContain('<Layers3 size={15}');
-    expect(rail).toContain('aggregate\n          busy={busy}');
+    expect(rail).toMatch(/aggregate\s+busy=\{busy\}/);
   });
 
   it('outlines non-focused host and space pills without glass', () => {
