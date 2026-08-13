@@ -10,6 +10,7 @@ test('shows settings and about content directly in More', () => {
   expect(screen).toContain('<SettingsSection');
   expect(screen).toContain('<AboutSection');
   expect(screen.indexOf('<AboutSection')).toBeLessThan(screen.indexOf('<SettingsSection'));
+  expect(screen.indexOf('<SettingsSection')).toBeLessThan(screen.indexOf('<AppLogsSection'));
   expect(screen).not.toContain('onOpenSettings');
   expect(screen).not.toContain('onOpenAbout');
   expect(screen).not.toContain('connectedHost');
