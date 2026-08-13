@@ -14,7 +14,7 @@ import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring
 import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import WebView from 'react-native-webview/lib/WebView.android';
+import WebView from 'react-native-webview';
 
 import { orderByAgentStatusPriority, tabAgentStateChangeSequence } from '@/src/herdQueue';
 import { cn } from '@/src/lib/utils';

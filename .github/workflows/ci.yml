@@ -155,6 +155,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
 
+      - name: Bundle production JavaScript for iOS
+        run: npm run bundle:ios
+
       - name: Set up Ruby and CocoaPods
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
@@ -177,15 +180,44 @@ jobs:
 
       - name: Compile unsigned simulator app
         working-directory: ios
-        run: >-
-          xcodebuild
-          -workspace HerdR.xcworkspace
-          -scheme HerdR
-          -configuration Debug
-          -sdk iphonesimulator
-          -destination 'generic/platform=iOS Simulator'
-          CODE_SIGNING_ALLOWED=NO
-          build
+        run: |
+          set -o pipefail
+          device_id="$(xcrun simctl list devices available --json | ruby -rjson -e '
+            devices = JSON.parse(STDIN.read).fetch("devices").values.flatten
+            device = devices.find { |candidate| candidate.fetch("name", "").start_with?("iPhone") }
+            abort "No available iPhone simulator was found" unless device
+            puts device.fetch("udid")
+          ')"
+          xcrun simctl boot "$device_id" 2>/dev/null || true
+          xcrun simctl bootstatus "$device_id" -b
+          xcodebuild \
+            -workspace HerdR.xcworkspace \
+            -scheme HerdR \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$device_id" \
+            -derivedDataPath "$RUNNER_TEMP/WhipDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          echo "DEVICE_ID=$device_id" >> "$GITHUB_ENV"
+
+      - name: Install and launch simulator app
+        run: |
+          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphonesimulator/HerdR.app"
+          test -d "$app_path"
+          xcrun simctl install "$DEVICE_ID" "$app_path"
+          launch_output="$(xcrun simctl launch --terminate-running-process "$DEVICE_ID" io.github.kaminarios.whip)"
+          echo "$launch_output"
+          app_pid="${launch_output##*: }"
+          sleep 10
+          if ! kill -0 "$app_pid"; then
+            echo 'Whip was not running after launch' >&2
+            xcrun simctl spawn "$DEVICE_ID" log show \
+              --last 2m \
+              --style compact \
+              --predicate 'process == "HerdR" OR eventMessage CONTAINS[c] "io.github.kaminarios.whip"'
+            exit 1
+          fi
 
       - name: Validate distributable Rust XCFramework
         run: >-
