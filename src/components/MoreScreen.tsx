@@ -18,7 +18,6 @@ export function MoreScreen(props: Props) {
           <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
         </GlassSurface>
         <AboutSection server={props.server} />
-        <AppLogsSection />
         <SettingsSection
         alertsEnabled={props.alertsEnabled}
         persistentAlertDurationSeconds={props.persistentAlertDurationSeconds}
@@ -57,6 +56,7 @@ export function MoreScreen(props: Props) {
         onDeleteTerminalHistory={props.onDeleteTerminalHistory}
         onTerminalPreferencesChange={props.onTerminalPreferencesChange}
         />
+        <AppLogsSection />
       </ScrollView>
     </SettingsDetailsProvider>
   );
