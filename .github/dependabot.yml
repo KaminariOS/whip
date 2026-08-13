@@ -10,6 +10,11 @@ updates:
       npm-dependencies:
         patterns:
           - '*'
+    ignore:
+      # React Native 0.86 only accepts ESLint 8 or 9.
+      - dependency-name: eslint
+        versions:
+          - '>= 10.0.0'
 
   - package-ecosystem: gradle
     directory: /android
