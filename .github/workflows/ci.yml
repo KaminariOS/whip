@@ -86,6 +86,9 @@ jobs:
       - name: Test
         run: npm test -- --runInBand
 
+      - name: Bundle production JavaScript for iOS
+        run: npm run bundle:ios
+
   android:
     name: Android checks
     runs-on: ubuntu-latest
@@ -131,9 +134,9 @@ jobs:
           --no-daemon
 
   ios:
-    name: iOS simulator compile
+    name: iOS simulator smoke test
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 30
     env:
       NODE_ENV: production
 
@@ -155,24 +158,22 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
 
-      - name: Bundle production JavaScript for iOS
-        run: npm run bundle:ios
-
       - name: Set up Ruby and CocoaPods
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
 
-      - name: Install pinned Rust toolchain and iOS targets
+      - name: Install pinned Rust toolchain and simulator target
         run: |
           rustup toolchain install 1.97.1 --profile minimal
-          rustup target add --toolchain 1.97.1 aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+          rustup target add --toolchain 1.97.1 aarch64-apple-ios-sim
 
       - name: Cache Rust iOS builds
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: packages/react-native-ssh-sftp/rust
+          key: ios-simulator
 
       - name: Install CocoaPods
         working-directory: ios
@@ -193,17 +194,21 @@ jobs:
           xcodebuild \
             -workspace HerdR.xcworkspace \
             -scheme HerdR \
-            -configuration Release \
+            -configuration Debug \
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$device_id" \
             -derivedDataPath "$RUNNER_TEMP/WhipDerivedData" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
+            FORCE_BUNDLING=1 \
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) WHIP_EMBEDDED_BUNDLE" \
             build
           echo "DEVICE_ID=$device_id" >> "$GITHUB_ENV"
 
       - name: Install and launch simulator app
         run: |
-          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphonesimulator/HerdR.app"
+          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Debug-iphonesimulator/HerdR.app"
           test -d "$app_path"
           xcrun simctl install "$DEVICE_ID" "$app_path"
           launch_output="$(xcrun simctl launch --terminate-running-process "$DEVICE_ID" io.github.kaminarios.whip)"
@@ -218,6 +223,26 @@ jobs:
               --predicate 'process == "HerdR" OR eventMessage CONTAINS[c] "io.github.kaminarios.whip"'
             exit 1
           fi
+
+  ios-xcframework:
+    name: iOS Rust XCFramework
+    runs-on: macos-26
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install pinned Rust toolchain and iOS targets
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup target add --toolchain 1.97.1 aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      - name: Cache Rust iOS builds
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: packages/react-native-ssh-sftp/rust
+          key: ios-xcframework
 
       - name: Validate distributable Rust XCFramework
         run: >-
