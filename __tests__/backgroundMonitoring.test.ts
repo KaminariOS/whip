@@ -96,6 +96,9 @@ describe('Android background monitoring', () => {
   it('runs an insistent alert only while its notification is active', () => {
     expect(alerts).toContain('armPersistentAgentAlert(');
     expect(module).toContain('Sensor.TYPE_ACCELEROMETER');
+    expect(module).toContain('findPrivateListeningDevice(audioManager)');
+    expect(module).toContain('AudioAttributes.USAGE_MEDIA');
+    expect(module).toContain('setPreferredDevice(device)');
     expect(module).toContain('AudioAttributes.USAGE_ALARM');
     expect(module).toContain('isLooping = true');
     expect(module).toContain('notificationManager.activeNotifications.any { it.tag == identifier }');
