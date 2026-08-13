@@ -104,12 +104,12 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                   const connecting = connectingHostId === host.id;
                   const active = activeHostId === host.id;
                   const connected = connectedHostIdSet.has(host.id);
-                  const state = connecting ? 'working' : active || connected ? 'done' : 'idle';
-                  const label = connecting ? t('hosts.opening') : active ? t('hosts.active') : connected ? t('hosts.open') : t('hosts.offline');
+                  const state = connecting ? 'working' : connected ? 'done' : 'idle';
+                  const label = connecting ? t('hosts.opening') : active && connected ? t('hosts.active') : connected ? t('hosts.open') : t('hosts.offline');
                   const displayName = hostDisplayName(host);
                   const jumpHost = host.jumpHostId ? hostsById.get(host.jumpHostId) : undefined;
                   const latencyMs = latencyMsByHostId[host.id];
-                  const runtime = runtimeByHostId[host.id];
+                  const runtime = connected ? runtimeByHostId[host.id] : undefined;
                   return (
                     <SwipeableHostRow
                       key={host.id}

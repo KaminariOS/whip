@@ -67,8 +67,13 @@ describe('host list layout', () => {
   });
 
   it('labels disconnected hosts as offline without changing the connect action', () => {
+    const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
     const screen = readFileSync(resolve(__dirname, '../src/components/HostsScreen.tsx'), 'utf8');
 
+    expect(app).toContain(".filter(session => session.status === 'connected')");
+    expect(screen).toContain("const state = connecting ? 'working' : connected ? 'done' : 'idle';");
+    expect(screen).toContain("active && connected ? t('hosts.active')");
+    expect(screen).toContain('const runtime = connected ? runtimeByHostId[host.id] : undefined;');
     expect(screen).toContain(": t('hosts.offline')");
     expect(screen).toContain("accessibilityLabel={t('hosts.connectTo', { host: displayName })}");
   });
