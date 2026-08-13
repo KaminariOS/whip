@@ -7,6 +7,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -163,8 +164,14 @@ class HerdrBackgroundModule(
       return
     }
     val audioManager = context.getSystemService(AudioManager::class.java)
-    if (audioManager.getStreamVolume(AudioManager.STREAM_ALARM) == 0) {
-      Log.i(TAG, "Alarm volume is zero; persistent sound not started")
+    val privateListeningDevice = findPrivateListeningDevice(audioManager)
+    val streamType = if (privateListeningDevice != null) {
+      AudioManager.STREAM_MUSIC
+    } else {
+      AudioManager.STREAM_ALARM
+    }
+    if (audioManager.getStreamVolume(streamType) == 0) {
+      Log.i(TAG, "Agent alert volume is zero; persistent sound not started")
       return
     }
     try {
@@ -172,20 +179,55 @@ class HerdrBackgroundModule(
         setDataSource(context, sound)
         setAudioAttributes(
           AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setUsage(
+              if (privateListeningDevice != null) {
+                AudioAttributes.USAGE_MEDIA
+              } else {
+                AudioAttributes.USAGE_ALARM
+              },
+            )
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build(),
         )
+        privateListeningDevice?.let { device ->
+          if (!setPreferredDevice(device)) {
+            Log.w(TAG, "Could not select the connected private audio device")
+          }
+        }
         isLooping = true
         prepare()
         start()
       }
-      Log.i(TAG, "Persistent agent alert sound started")
+      Log.i(
+        TAG,
+        if (privateListeningDevice != null) {
+          "Persistent agent alert sound started on private audio device"
+        } else {
+          "Persistent agent alert sound started on alarm route"
+        },
+      )
     } catch (error: Throwable) {
       Log.w(TAG, "Could not start persistent agent alert sound", error)
       releaseMediaPlayer()
     }
   }
+
+  private fun findPrivateListeningDevice(audioManager: AudioManager): AudioDeviceInfo? =
+    audioManager
+      .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+      .firstOrNull { device ->
+        when (device.type) {
+          AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+          AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+          AudioDeviceInfo.TYPE_WIRED_HEADSET,
+          AudioDeviceInfo.TYPE_HEARING_AID -> true
+          else ->
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+              device.type == AudioDeviceInfo.TYPE_USB_HEADSET) ||
+              (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                device.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+        }
+      }
 
   private fun stopPersistentAlert(reason: String? = null) {
     mainHandler.removeCallbacks(startSoundRunnable)
