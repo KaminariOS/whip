@@ -189,9 +189,11 @@ class HerdrBackgroundModule(
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build(),
         )
-        privateListeningDevice?.let { device ->
-          if (!setPreferredDevice(device)) {
-            Log.w(TAG, "Could not select the connected private audio device")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+          privateListeningDevice?.let { device ->
+            if (!setPreferredDevice(device)) {
+              Log.w(TAG, "Could not select the connected private audio device")
+            }
           }
         }
         isLooping = true

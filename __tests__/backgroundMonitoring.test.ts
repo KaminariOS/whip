@@ -98,6 +98,7 @@ describe('Android background monitoring', () => {
     expect(module).toContain('Sensor.TYPE_ACCELEROMETER');
     expect(module).toContain('findPrivateListeningDevice(audioManager)');
     expect(module).toContain('AudioAttributes.USAGE_MEDIA');
+    expect(module).toContain('Build.VERSION.SDK_INT >= Build.VERSION_CODES.P');
     expect(module).toContain('setPreferredDevice(device)');
     expect(module).toContain('AudioAttributes.USAGE_ALARM');
     expect(module).toContain('isLooping = true');
