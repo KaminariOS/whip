@@ -1678,7 +1678,9 @@ function AppContent() {
             <HostsScreen
               hosts={hosts}
               activeHostId={activeSession?.hostId || null}
-              connectedHostIds={liveSessions.sessions.map(session => session.hostId)}
+              connectedHostIds={liveSessions.sessions
+                .filter(session => session.status === 'connected')
+                .map(session => session.hostId)}
               latencyMsByHostId={Object.fromEntries(liveSessions.sessions.map(session => [
                 session.hostId,
                 session.status === 'connected' ? session.sync.latencyMs : null,
