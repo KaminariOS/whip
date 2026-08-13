@@ -10,7 +10,8 @@
     "start": "node scripts/sync-terminal-assets.mjs && expo start --dev-client",
     "lint": "eslint .",
     "test": "jest",
-    "postinstall": "patch-package && node scripts/sync-terminal-assets.mjs"
+    "postinstall": "patch-package && node scripts/sync-terminal-assets.mjs",
+    "eas-build-pre-install": "bash scripts/prepare-eas-ios.sh"
   },
   "dependencies": {
     "@dylankenneally/react-native-ssh-sftp": "file:packages/react-native-ssh-sftp",

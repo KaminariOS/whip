@@ -17,9 +17,8 @@ A full set of [documentation is available on Mintlify](https://dylankenneally-re
 Below is a quick installation and usage guide to get up and running. The [full documentation](https://dylankenneally-react-native-ssh-sftp-96.mintlify.app) is recommended in addition to the below.
 
 > [!NOTE]
-> This project-owned fork supports strict Android host-key verification through
-> `SSHClient.setKnownHosts()`. The iOS implementation still does not verify host
-> keys.
+> This project-owned fork supports strict host-key verification through
+> `SSHClient.setKnownHosts()` on Android and on the Rust-based iOS backend.
 
 ## Installation
 
@@ -29,20 +28,18 @@ npm install @dylankenneally/react-native-ssh-sftp
 
 ### iOS
 
-Update your `Podfile` to use the [aanah0's fork](https://github.com/aanah0/NMSSH) of [NMSSH](https://github.com/NMSSH/NMSSH). Note that we use the forked version to give us a required later version of libssh. Your `Podfile` is located in your React Native project at `./ios/Podfile`.
+This project-owned fork builds its iOS SSH transport from Rust and does not
+require NMSSH or OpenSSL. The current Expo SDK requires iOS 16.4 or newer. Run
+the repository-pinned CocoaPods bundle from your `./ios` directory on macOS.
 
-```ruby
-target '[your project's name]' do
-  pod 'NMSSH', :git => 'https://github.com/aanah0/NMSSH.git' # <-- add this line
-  # ... rest of your target details ...
-end
-```
-
-And then run `pod install` in your `./ios` directory.
+The iOS backend currently supports Ed25519 private-key authentication and
+password authentication. RSA private keys remain supported by Android, but are
+intentionally disabled on iOS until the unpatched RUSTSEC-2023-0071 timing issue
+in Russh's RSA dependency has a safe upgrade path.
 
 ```bash
 cd ios
-pod install
+bundle exec pod install
 cd -
 ```
 
@@ -57,10 +54,6 @@ cd -
 > }
 > ```
 
-#### Having OpenSSL issues on iOS?
-
-If you are using [Flipper](https://fbflipper.com/) to debug your app, it will already have a copy of OpenSSL included. This can cause issues with the version of OpenSSL that NMSSH uses. You can disable flipper by removing/commenting out the `flipper_configuration => flipper_config,` line in your `Podfile`.
-
 ### Android
 
 No additional steps are needed for Android.
@@ -72,10 +65,6 @@ This project has been updated to use React Native v84 (the latest at the time of
 ## Usage
 
 All functions that run asynchronously where we have to wait for a result returns Promises that can reject if an error occurred.
-
-> [!NOTE]
-> On iOS, this package currently doesn't support the simulator, you will need to have your app running on a physical device. If you  would like to know more about this, see [this issue](https://github.com/dylankenneally/react-native-ssh-sftp/issues/20). I'd welcome a PR to resolve this.
->
 
 ### Create a client using password authentication
 
@@ -252,7 +241,7 @@ You can find a very simple example app for the usage of this library [here](http
 
 This package wraps the following libraries, which provide the actual SSH/SFTP functionality:
 
-- [NMSSH](https://github.com/aanah0/NMSSH) for iOS
+- [Russh](https://github.com/Eugeny/russh) for iOS
 - [JSch](http://www.jcraft.com/jsch/) for Android ([from Matthias Wiedemann fork](https://github.com/mwiede/jsch))
 
 This package is a fork of Emmanuel Natividad's [react-native-ssh-sftp](https://github.com/enatividad/react-native-ssh-sftp) package. The fork chain from there is as follows:

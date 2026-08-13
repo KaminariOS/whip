@@ -9,14 +9,17 @@ import {
 import {
   AppState,
   Clipboard,
+  Image,
+  Platform,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import WebView from 'react-native-webview/lib/WebView.android';
+import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
+import { IOS_TERMINAL_HTML_TEMPLATE } from '../generated/iosTerminalHtml';
 import type { TerminalFrame } from '../lib/terminalBridge';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import {
@@ -29,7 +32,19 @@ import type { TerminalSessionStatus } from '../terminalSessions';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
-const TERMINAL_SOURCE = { uri: 'file:///android_asset/herdr-terminal.html' } as const;
+const iosAssetUri = (asset: number) => Image.resolveAssetSource(asset).uri;
+const IOS_TERMINAL_HTML = Platform.OS === 'ios'
+  ? IOS_TERMINAL_HTML_TEMPLATE
+      .replaceAll('__HERDR_TEXT_REGULAR__', iosAssetUri(require('../../assets/terminal-fonts/JetBrainsMono-Regular.ttf')))
+      .replaceAll('__HERDR_TEXT_BOLD__', iosAssetUri(require('../../assets/terminal-fonts/JetBrainsMono-Bold.ttf')))
+      .replaceAll('__HERDR_SYMBOLS__', iosAssetUri(require('../../assets/terminal-fonts/SymbolsNerdFontMono-Regular.ttf')))
+      .replaceAll('__HERDR_CJK__', iosAssetUri(require('../../assets/terminal-fonts/ArphicUKaiHK.ttf')))
+  : '';
+const TERMINAL_SOURCE = Platform.select({
+  android: { uri: 'file:///android_asset/herdr-terminal.html' },
+  ios: { html: IOS_TERMINAL_HTML, baseUrl: 'about:blank' },
+  default: { html: IOS_TERMINAL_HTML, baseUrl: 'about:blank' },
+});
 
 interface WebViewHandle {
   injectJavaScript: (script: string) => void;
@@ -518,7 +533,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         webView.current = value as WebViewHandle | null;
       }}
       source={TERMINAL_SOURCE}
-      originWhitelist={['file://*', 'about:blank']}
+      originWhitelist={['file://*', 'about:blank', 'data:*']}
       allowFileAccess
       javaScriptEnabled
       textZoom={100}
