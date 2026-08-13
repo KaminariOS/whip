@@ -175,6 +175,12 @@ test('selects one host queue and falls back to all when that host closes', () =>
   expect(queuesForHerdFilter(queues, 'closed-host')).toEqual(queues);
 });
 
+test('automatically selects the only connected host', () => {
+  expect(resolveHerdHostFilter([queues[0]], null)).toBe('host-1');
+  expect(resolveHerdHostFilter([queues[0]], 'closed-host')).toBe('host-1');
+  expect(queuesForHerdFilter([queues[0]], null)).toEqual([queues[0]]);
+});
+
 test('filters one selected host to one space', () => {
   const host = queue('host-1', 'Studio', 'Build');
   host.workspaces.push({
@@ -209,7 +215,20 @@ test('only applies a space filter within a selected host', () => {
 });
 
 test('falls back to all spaces when the selected space closes', () => {
-  expect(resolveHerdWorkspaceFilter(queues[0], 'workspace-1')).toBe('workspace-1');
-  expect(resolveHerdWorkspaceFilter(queues[0], 'closed-workspace')).toBeNull();
-  expect(agentsForHerdFilter([queues[0]], 'host-1', 'closed-workspace')).toHaveLength(1);
+  const host = queue('host-1', 'Studio', 'Build');
+  host.workspaces.push({
+    ...host.workspaces[0],
+    workspace_id: 'workspace-2',
+    number: 2,
+    label: 'Review space',
+  });
+
+  expect(resolveHerdWorkspaceFilter(host, 'workspace-1')).toBe('workspace-1');
+  expect(resolveHerdWorkspaceFilter(host, 'closed-workspace')).toBeNull();
+  expect(agentsForHerdFilter([host], 'host-1', 'closed-workspace')).toHaveLength(1);
+});
+
+test('automatically selects the only space', () => {
+  expect(resolveHerdWorkspaceFilter(queues[0], null)).toBe('workspace-1');
+  expect(resolveHerdWorkspaceFilter(queues[0], 'closed-workspace')).toBe('workspace-1');
 });

@@ -41,6 +41,7 @@ import {
   agentsForHerdFilter,
   orderByAgentStatusPriority,
   queuesForHerdFilter,
+  resolveHerdHostFilter,
   resolveHerdWorkspaceFilter,
   type HerdHostQueue,
   type HerdQueueAgent,
@@ -117,8 +118,9 @@ export function HerdScreen({
   const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const { bottom } = useSafeAreaInsets();
+  const resolvedHostId = resolveHerdHostFilter(queues, selectedHostId);
   const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
-  const selectedQueue = selectedHostId ? scopedQueues[0] : undefined;
+  const selectedQueue = resolvedHostId ? scopedQueues[0] : undefined;
   const selectedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, workspaceFilterId);
   const selectedWorkspace = selectedQueue?.workspaces.find(
     workspace => workspace.workspace_id === selectedWorkspaceId,
@@ -164,6 +166,27 @@ export function HerdScreen({
       onWorkspaceFilterChange(selectedQueue.id, null);
     }
   }, [onWorkspaceFilterChange, selectedQueue, selectedWorkspaceId, workspaceFilterId]);
+
+  useEffect(() => {
+    if (queues.length !== 1 || !resolvedHostId || selectedHostId === resolvedHostId) return;
+    onSelectHost(resolvedHostId);
+  }, [onSelectHost, queues.length, resolvedHostId, selectedHostId]);
+
+  useEffect(() => {
+    if (
+      selectedQueue?.workspaces.length !== 1
+      || !selectedWorkspaceId
+      || workspaceFilterId === selectedWorkspaceId
+    ) return;
+    onWorkspaceFilterChange(selectedQueue.id, selectedWorkspaceId);
+    onSelectWorkspace(selectedQueue.id, selectedWorkspaceId);
+  }, [
+    onSelectWorkspace,
+    onWorkspaceFilterChange,
+    selectedQueue,
+    selectedWorkspaceId,
+    workspaceFilterId,
+  ]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
@@ -339,19 +362,21 @@ export function HerdScreen({
     ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
       <AgentRow
         item={item}
-        showHost={selectedHostId === null}
+        showHost={resolvedHostId === null}
         showSpace={selectedWorkspaceId === null}
         onOpenTerminal={onOpenTerminal}
         closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
         onCloseTab={closeTab}
       />
     ),
-    [closeTab, closingTabKey, onOpenTerminal, selectedHostId, selectedWorkspaceId],
+    [closeTab, closingTabKey, onOpenTerminal, resolvedHostId, selectedWorkspaceId],
   );
 
   return (
     <View className="flex-1">
-      <LiveSessionRail sessions={sessions} activeHostId={selectedHostId} onSelect={selectHost} onClose={onCloseHost} onNew={onNewHost} />
+      {sessions.length > 1 ? (
+        <LiveSessionRail sessions={sessions} activeHostId={resolvedHostId} onSelect={selectHost} onClose={onCloseHost} onNew={onNewHost} />
+      ) : null}
       {selectedQueue ? (
         <WorkspaceRail
           workspaces={selectedQueue.workspaces}

@@ -42,15 +42,17 @@ export function WorkspaceRail({
   return (
     <GlassSurface className="h-[62px] flex-row border-b border-white/30 dark:border-white/10">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5">
-        <WorkspacePill
-          label={t('rail.allSpaces')}
-          status={allStatus}
-          count={totalTabs}
-          active={selectedWorkspaceId === null}
-          aggregate
-          busy={busy}
-          onPress={() => onSelect(null)}
-        />
+        {workspaces.length > 1 ? (
+          <WorkspacePill
+            label={t('rail.allSpaces')}
+            status={allStatus}
+            count={totalTabs}
+            active={selectedWorkspaceId === null}
+            aggregate
+            busy={busy}
+            onPress={() => onSelect(null)}
+          />
+        ) : null}
         {orderedWorkspaces.map(workspace => (
           <WorkspacePill
             key={workspace.workspace_id}
