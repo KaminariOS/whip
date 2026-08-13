@@ -59,8 +59,8 @@ sudo dscl . -create "/Users/$username" PrimaryGroupID 20
 sudo dscl . -create "/Users/$username" NFSHomeDirectory "$home_dir"
 sudo dscl . -passwd "/Users/$username" "$password"
 mkdir -p "$home_dir"
-sudo chown -R "$uid:20" "$home_dir"
 chmod 0700 "$home_dir"
+sudo chown -R "$uid:20" "$home_dir"
 
 cat >"$fixture_dir/sshd_config" <<EOF
 Port $port
