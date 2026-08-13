@@ -1,0 +1,240 @@
+diff --git a/node_modules/expo-speech/android/src/main/java/expo/modules/speech/SpeechModule.kt b/node_modules/expo-speech/android/src/main/java/expo/modules/speech/SpeechModule.kt
+index 9ca869c..3679749 100644
+--- a/node_modules/expo-speech/android/src/main/java/expo/modules/speech/SpeechModule.kt
++++ b/node_modules/expo-speech/android/src/main/java/expo/modules/speech/SpeechModule.kt
+@@ -37,7 +37,7 @@ class SpeechModule : Module() {
+     }
+ 
+     OnActivityDestroys {
+-      textToSpeech.shutdown()
++      resetTextToSpeech()
+     }
+ 
+     AsyncFunction<Boolean>("isSpeaking") {
+@@ -56,7 +56,9 @@ class SpeechModule : Module() {
+     }
+ 
+     AsyncFunction<Unit>("stop") {
+-      textToSpeech.stop()
++      if (textToSpeech.stop() == TextToSpeech.ERROR) {
++        resetTextToSpeech()
++      }
+     }
+ 
+     AsyncFunction("speak") { id: String, text: String, options: SpeechOptions ->
+@@ -67,7 +69,9 @@ class SpeechModule : Module() {
+       if (isTextToSpeechReady) {
+         speakOut(id, text, options)
+       } else {
+-        delayedUtterances.add(Utterance(id, text, options))
++        synchronized(this@SpeechModule) {
++          delayedUtterances.add(Utterance(id, text, options))
++        }
+ 
+         // init TTS, speaking will be available only after onInit
+         textToSpeech
+@@ -99,13 +103,14 @@ class SpeechModule : Module() {
+     }
+   }
+ 
+-  private fun speakOut(id: String, text: String, options: SpeechOptions) {
+-    options.pitch?.let(textToSpeech::setPitch)
+-    options.rate?.let(textToSpeech::setSpeechRate)
++  private fun speakOut(id: String, text: String, options: SpeechOptions, retryOnFailure: Boolean = true) {
++    val tts = textToSpeech
++    options.pitch?.let(tts::setPitch)
++    options.rate?.let(tts::setSpeechRate)
+ 
+-    textToSpeech.language = options.language?.let {
++    tts.language = options.language?.let {
+       val locale = Locale(it)
+-      val languageAvailable = textToSpeech.isLanguageAvailable(locale)
++      val languageAvailable = tts.isLanguageAvailable(locale)
+ 
+       return@let if (
+         languageAvailable != TextToSpeech.LANG_MISSING_DATA &&
+@@ -118,9 +123,9 @@ class SpeechModule : Module() {
+     } ?: Locale.getDefault()
+ 
+     options.voice?.let { voiceName ->
+-      textToSpeech.voices
++      tts.voices
+         .firstOrNull { it.name == voiceName }
+-        ?.let(textToSpeech::setVoice)
++        ?.let(tts::setVoice)
+     }
+ 
+     val params = Bundle().apply {
+@@ -130,12 +135,26 @@ class SpeechModule : Module() {
+       }
+     }
+ 
+-    textToSpeech.speak(
++    val result = tts.speak(
+       text,
+       TextToSpeech.QUEUE_ADD,
+       params,
+       id
+     )
++    if (result == TextToSpeech.ERROR) {
++      if (retryOnFailure) {
++        synchronized(this) {
++          resetTextToSpeechLocked()
++          delayedUtterances.add(Utterance(id, text, options, retryOnFailure = false))
++
++          // Start binding a fresh client. The utterance is replayed after onInit succeeds.
++          textToSpeech
++        }
++      } else {
++        resetTextToSpeech()
++        sendEvent(speakingErrorEvent, idToMap(id))
++      }
++    }
+   }
+ 
+   // TextToSpeech object related code
+@@ -143,50 +162,99 @@ class SpeechModule : Module() {
+   private val isTextToSpeechReady
+     get() = _ttsReady
+ 
+-  private val textToSpeech: TextToSpeech by lazy {
++  private val textToSpeech: TextToSpeech
++    get() = synchronized(this) {
++      _textToSpeech ?: createTextToSpeechLocked()
++    }
++
++  private fun createTextToSpeechLocked(): TextToSpeech {
++    val generation = ++_ttsGeneration
+     val newTtsInstance = TextToSpeech(appContext.reactContext) { status: Int ->
+-      if (status == TextToSpeech.SUCCESS) {
+-        // synchronize because in some cases this runs on another thread and _textToSpeech is null
+-        synchronized(this@SpeechModule) {
+-          _ttsReady = true
+-          _textToSpeech!!.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
++      val queuedUtterances = mutableListOf<Utterance>()
++      val queuedGetVoices = mutableListOf<Promise>()
++      var initialized = false
++
++      synchronized(this@SpeechModule) {
++        // Ignore callbacks from a client that was shut down while it was binding.
++        if (generation == _ttsGeneration && _textToSpeech != null) {
++          initialized = status == TextToSpeech.SUCCESS
++          if (initialized) {
++            _ttsReady = true
++            _textToSpeech!!.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
++
++              override fun onStart(utteranceId: String) {
++                sendEvent(speakingStartedEvent, idToMap(utteranceId))
++              }
+ 
+-            override fun onStart(utteranceId: String) {
+-              sendEvent(speakingStartedEvent, idToMap(utteranceId))
+-            }
++              override fun onRangeStart(utteranceId: String, start: Int, end: Int, frame: Int) {
++                val map = Bundle().apply {
++                  putString("id", utteranceId)
++                  putInt("charIndex", start)
++                  putInt("charLength", end - start)
++                }
++                sendEvent(speakingWillSayNextStringEvent, map)
++              }
+ 
+-            override fun onRangeStart(utteranceId: String, start: Int, end: Int, frame: Int) {
+-              val map = Bundle().apply {
+-                putString("id", utteranceId)
+-                putInt("charIndex", start)
+-                putInt("charLength", end - start)
++              override fun onDone(utteranceId: String) {
++                sendEvent(speakingDoneEvent, idToMap(utteranceId))
+               }
+-              sendEvent(speakingWillSayNextStringEvent, map)
+-            }
+ 
+-            override fun onDone(utteranceId: String) {
+-              sendEvent(speakingDoneEvent, idToMap(utteranceId))
+-            }
++              override fun onStop(utteranceId: String, interrupted: Boolean) {
++                sendEvent(speakingStoppedEvent, idToMap(utteranceId))
++              }
+ 
+-            override fun onStop(utteranceId: String, interrupted: Boolean) {
+-              sendEvent(speakingStoppedEvent, idToMap(utteranceId))
+-            }
++              override fun onError(utteranceId: String) {
++                sendEvent(speakingErrorEvent, idToMap(utteranceId))
++              }
++            })
+ 
+-            override fun onError(utteranceId: String) {
+-              sendEvent(speakingErrorEvent, idToMap(utteranceId))
++            while (delayedUtterances.isNotEmpty()) {
++              queuedUtterances.add(delayedUtterances.remove())
+             }
+-          })
+-          for ((id, text, options) in delayedUtterances) {
+-            speakOut(id, text, options)
+-          }
+-          for (promise in delayedGetVoices) {
+-            promise.resolve(getVoices())
++            while (delayedGetVoices.isNotEmpty()) {
++              queuedGetVoices.add(delayedGetVoices.remove())
++            }
++          } else {
++            while (delayedUtterances.isNotEmpty()) {
++              queuedUtterances.add(delayedUtterances.remove())
++            }
++            while (delayedGetVoices.isNotEmpty()) {
++              queuedGetVoices.add(delayedGetVoices.remove())
++            }
++            resetTextToSpeechLocked()
+           }
+         }
+       }
++
++      if (initialized) {
++        for ((id, text, options, retryOnFailure) in queuedUtterances) {
++          speakOut(id, text, options, retryOnFailure)
++        }
++        for (promise in queuedGetVoices) {
++          promise.resolve(getVoices())
++        }
++      } else {
++        for ((id) in queuedUtterances) {
++          sendEvent(speakingErrorEvent, idToMap(id))
++        }
++        for (promise in queuedGetVoices) {
++          promise.reject(SpeechUnableToGetVoicesException())
++        }
++      }
+     }
+     _textToSpeech = newTtsInstance
+-    newTtsInstance
++    return newTtsInstance
++  }
++
++  private fun resetTextToSpeech() = synchronized(this) {
++    resetTextToSpeechLocked()
++  }
++
++  private fun resetTextToSpeechLocked() {
++    _ttsGeneration += 1
++    _ttsReady = false
++    _textToSpeech?.shutdown()
++    _textToSpeech = null
+   }
+ 
+   // Helpers
+@@ -197,10 +265,12 @@ class SpeechModule : Module() {
+   private data class Utterance(
+     val id: String,
+     val text: String,
+-    val options: SpeechOptions
++    val options: SpeechOptions,
++    val retryOnFailure: Boolean = true
+   )
+ 
+   // do not refer to these - they're only needed when initializing `textToSpeech`
+   private var _textToSpeech: TextToSpeech? = null
+   private var _ttsReady = false
++  private var _ttsGeneration = 0
+ }
