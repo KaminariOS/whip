@@ -49,6 +49,7 @@ import {
   agentFromStatusEvent,
   tabNameForAgent,
   agentStatusFromEvent,
+  previousVisibleAgentStatus,
   shouldNotifyAgentTransition,
 } from './src/lib/agentStatusEvents';
 import { isHerdrProtocolMismatch } from './src/lib/herdrProtocol';
@@ -593,7 +594,11 @@ function AppContent() {
           const session = findLiveHostSession(liveSessionsRef.current, sessionId);
           const currentAgent = session?.snapshot.agents.find(agent => agent.pane_id === paneId);
           const agent = currentAgent ? agentFromStatusEvent(currentAgent, event.data) : null;
-          const previous = runtime.previousStatuses?.get(paneId);
+          const previous = previousVisibleAgentStatus(
+            session?.snapshot,
+            paneId,
+            runtime.previousStatuses?.get(paneId),
+          );
           const useBriefAlert = agent
             ? activeTabUsesBriefAlerts(
               agent,
@@ -708,9 +713,14 @@ function AppContent() {
         if (runtimes.current.get(sessionId) !== runtime) return;
         const { snapshot, latencyMs } = measurement;
         const statuses = new Map(snapshot.agents.map(agent => [agent.pane_id, agent.agent_status]));
+        const visibleSnapshot = findLiveHostSession(liveSessionsRef.current, sessionId)?.snapshot;
         if (alertsEnabledRef.current && runtime.previousStatuses) {
           for (const agent of snapshot.agents) {
-            const previous = runtime.previousStatuses.get(agent.pane_id);
+            const previous = previousVisibleAgentStatus(
+              visibleSnapshot,
+              agent.pane_id,
+              runtime.previousStatuses.get(agent.pane_id),
+            );
             const useBriefAlert = activeTabUsesBriefAlerts(
               agent,
               snapshot.tabs,
