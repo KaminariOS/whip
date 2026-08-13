@@ -26,6 +26,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 jest.mock('react-native-keychain', () => ({
+  ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WhenUnlockedThisDeviceOnly' },
   setGenericPassword: jest.fn(() => Promise.resolve(true)),
 }));
 
@@ -114,7 +115,10 @@ test('unlocks, decrypts, and reimports restored credentials into Keychain', asyn
   expect(Keychain.setGenericPassword).toHaveBeenCalledWith(
     host.username,
     JSON.stringify({ secret: 'PRIVATE KEY', passphrase: 'key phrase' }),
-    { service: 'io.github.kaminarios.whip.ssh.host.host-1' },
+    {
+      accessible: 'WhenUnlockedThisDeviceOnly',
+      service: 'io.github.kaminarios.whip.ssh.host.host-1',
+    },
   );
 });
 

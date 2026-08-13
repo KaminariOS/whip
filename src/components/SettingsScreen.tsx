@@ -202,7 +202,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         <Text className="mb-3 mt-4 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
         <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
           <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
-          <ValueRow
+          {Platform.OS === 'android' ? <ValueRow
             title={t('settings.backgroundAlertDuration')}
             copy={t('settings.backgroundAlertDurationCopy')}
             value={t('settings.seconds', { count: props.persistentAlertDurationSeconds })}
@@ -216,7 +216,7 @@ export function SettingsSection(props: SettingsSectionProps) {
               props.persistentAlertDurationSeconds + PERSISTENT_ALERT_DURATION_STEP_SECONDS,
             ))}
             divided
-          />
+          /> : null}
           <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
           <ActionRow
             title={t('settings.changeNotificationSettings')}
@@ -242,21 +242,21 @@ export function SettingsSection(props: SettingsSectionProps) {
             onPress={props.onManageKnownHosts}
             divided
           />
-          <SettingRow title={t('settings.biometricForKeys')} copy={t('settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
-          <SettingRow title={t('settings.biometricOnResume')} copy={t('settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
+          <SettingRow title={t('settings.biometricForKeys')} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
+          <SettingRow title={t('settings.biometricOnResume')} copy={t(Platform.OS === 'ios' ? 'settings.biometricOnResumeCopyIos' : 'settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
         </GlassSurface>
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>
         <View className="gap-3">
           <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
-          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+          {Platform.OS === 'android' ? <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <SettingRow
               title={t('settings.fullscreenApp')}
               copy={t('settings.fullscreenAppCopy')}
               value={props.fullscreenApp}
               onChange={props.onFullscreenAppChange}
             />
-          </GlassSurface>
+          </GlassSurface> : null}
           <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <AppBackgroundRow
               busy={appBackgroundBusy}
@@ -307,7 +307,7 @@ export function SettingsSection(props: SettingsSectionProps) {
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.terminal')}</Text>
         <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-          <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
+          {Platform.OS === 'android' ? <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} /> : null}
           <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
           <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
           <SettingRow title={t('settings.useModifierKeyIcons')} copy={t('settings.useModifierKeyIconsCopy')} value={props.terminalPreferences.useModifierKeyIcons} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, useModifierKeyIcons: value })} divided />
@@ -319,20 +319,20 @@ export function SettingsSection(props: SettingsSectionProps) {
             onPress={() => setHistoryManagerOpen(true)}
             divided
           />
-          <ChoiceRow
+          {Platform.OS === 'android' ? <ChoiceRow
             title={t('settings.volumeUpKey')}
             copy={t('settings.volumeKeyCopy')}
             value={t(volumeKeyActionLabelKey('up', props.terminalPreferences.volumeUpAction))}
             onPress={() => setVolumeKeyEditor('up')}
             divided
-          />
-          <ChoiceRow
+          /> : null}
+          {Platform.OS === 'android' ? <ChoiceRow
             title={t('settings.volumeDownKey')}
             copy={t('settings.volumeKeyCopy')}
             value={t(volumeKeyActionLabelKey('down', props.terminalPreferences.volumeDownAction))}
             onPress={() => setVolumeKeyEditor('down')}
             divided
-          />
+          /> : null}
           <DoubleTapActionMenu
             expanded={doubleTapExpanded}
             value={props.terminalPreferences.doubleTapAction}
@@ -367,7 +367,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           />
         </GlassSurface>
 
-        <VolumeKeyActionSheet
+        {Platform.OS === 'android' ? <VolumeKeyActionSheet
           keyName={volumeKeyEditor}
           value={volumeKeyEditor === 'down'
             ? props.terminalPreferences.volumeDownAction
@@ -379,7 +379,7 @@ export function SettingsSection(props: SettingsSectionProps) {
               : { ...props.terminalPreferences, volumeUpAction: action });
             setVolumeKeyEditor(null);
           }}
-        />
+        /> : null}
         <TerminalHistoryManager
           entries={props.terminalHistory}
           visible={historyManagerOpen}

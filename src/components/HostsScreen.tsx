@@ -1,6 +1,6 @@
 import { AlertCircle, Bot, Ellipsis, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { PanResponder, ScrollView, View } from 'react-native';
+import { PanResponder, Platform, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -72,7 +72,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
         </View>
       ) : null}
 
-      {credentialRecovery.state === 'locked' ? (
+      {Platform.OS === 'android' && credentialRecovery.state === 'locked' ? (
         <GlassSurface className="mx-4 mt-4 flex-row items-center gap-3 rounded-lg border border-white/30 p-3.5 dark:border-white/10">
           <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={LockKeyhole} className="text-primary" size={19} /></View>
           <View className="min-w-0 flex-1"><Text className="text-sm font-semibold">{t('hosts.recoveryLocked')}</Text><Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('hosts.recoveryCopy', { count: credentialRecovery.count })}</Text></View>
@@ -80,7 +80,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
         </GlassSurface>
       ) : null}
 
-      {credentialRecovery.state === 'unavailable' ? (
+      {Platform.OS === 'android' && credentialRecovery.state === 'unavailable' ? (
         <View className="mx-4 mt-4 flex-row items-start gap-2 rounded-md bg-destructive/10 p-3">
           <Icon as={AlertCircle} className="text-destructive" size={18} />
           <Text className="flex-1 text-[13px] leading-[18px] text-destructive">{t('hosts.recoveryUnavailable')}</Text>
@@ -215,7 +215,9 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
 
       <GlassSurface className="min-h-11 flex-row items-center gap-2 border-t border-white/30 px-[18px] dark:border-white/10">
         <Icon as={LockKeyhole} className="text-muted-foreground" size={14} />
-        <Text className="flex-1 text-[11px] leading-[15px] text-muted-foreground">{t('hosts.securityCopy')}</Text>
+        <Text className="flex-1 text-[11px] leading-[15px] text-muted-foreground">
+          {t(Platform.OS === 'ios' ? 'hosts.securityCopyIos' : 'hosts.securityCopy')}
+        </Text>
       </GlassSurface>
     </View>
   );

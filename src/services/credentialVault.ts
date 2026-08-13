@@ -142,6 +142,7 @@ export async function recoverCredentialForHost(
 
 async function writeKeychainCredential(host: HostProfile, credential: StoredCredential): Promise<void> {
   await Keychain.setGenericPassword(host.username, JSON.stringify(credential), {
+    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     service: hostCredentialService(host.id),
   });
 }

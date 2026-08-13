@@ -113,7 +113,10 @@ async function writeCredential(profile: ConnectionProfile): Promise<void> {
   await Keychain.setGenericPassword(profile.username, JSON.stringify({
     secret: profile.secret,
     passphrase: profile.passphrase,
-  }), { service: hostCredentialService(profile.id) });
+  }), {
+    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    service: hostCredentialService(profile.id),
+  });
   await backupCredential(profile.id, {
     secret: profile.secret,
     passphrase: profile.passphrase,
