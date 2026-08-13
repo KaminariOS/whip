@@ -1,11 +1,19 @@
 {
   "name": "@dylankenneally/react-native-ssh-sftp",
   "version": "1.11.0-herdr.1",
-  "description": "Herdr-owned fork with raw PTY streaming, terminal resizing, and current Android SSH crypto",
+  "description": "Whip SSH transport with Android JSch and an iOS Rust backend",
   "main": "lib/sshclient.js",
   "types": "lib/sshclient.d.ts",
   "private": true,
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/kaminarios/whip",
+  "author": {
+    "name": "Whip contributors"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kaminarios/whip.git"
+  },
   "peerDependencies": {
     "react-native": "*"
   }

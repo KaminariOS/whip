@@ -1,5 +1,11 @@
 import { Platform, NativeModules, NativeEventEmitter, DeviceEventEmitter } from 'react-native';
-const { RNSSHClient } = NativeModules;
+const { RNSSHClient: legacySSHClient, RNSSHRustClient } = NativeModules;
+// Android stays on the mature JSch implementation. iOS is Rust-only so a
+// packaging failure cannot silently downgrade host verification to NMSSH.
+const RNSSHClient = Platform.OS === 'ios' ? RNSSHRustClient : legacySSHClient;
+if (!RNSSHClient) {
+    throw new Error(`Native SSH backend is unavailable on ${Platform.OS}`);
+}
 const RNSSHClientEmitter = new NativeEventEmitter(RNSSHClient);
 const NATIVE_EVENT_SHELL = 'Shell';
 const NATIVE_EVENT_HERDR_BRIDGE = 'HerdrBridge';
@@ -46,12 +52,9 @@ class SSHClient {
     }
     /**
      * Replaces the process-wide OpenSSH known_hosts repository used by new
-     * Android SSH sessions.
+     * SSH sessions on every native backend.
      */
     static setKnownHosts(knownHosts) {
-        if (Platform.OS !== 'android') {
-            throw new Error('SSH known hosts are currently Android-only');
-        }
         RNSSHClient.setKnownHosts(knownHosts);
     }
     /**
@@ -299,10 +302,6 @@ class SSHClient {
      * @param callback - The callback function to be called after the connection attempt.
      */
     connect(passwordOrKey, callback, jumpClient) {
-        if (jumpClient && Platform.OS !== 'android') {
-            callback(new Error('SSH jump hosts are currently Android-only'));
-            return;
-        }
         if (Platform.OS === 'android') {
             if (typeof passwordOrKey === 'string') {
                 if (jumpClient) {
@@ -322,8 +321,15 @@ class SSHClient {
             }
             return;
         }
-        // iOS...
-        RNSSHClient.connectToHost(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
+        if (jumpClient) {
+            const method = typeof passwordOrKey === 'string'
+                ? RNSSHClient.connectToHostByPasswordViaJump
+                : RNSSHClient.connectToHostByKeyViaJump;
+            method(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, (error) => { callback(error); });
+        }
+        else {
+            RNSSHClient.connectToHost(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
+        }
     }
     /**
      * Enables or disables SSH agent forwarding for subsequently opened shell
@@ -333,9 +339,6 @@ class SSHClient {
      * connection; private key material is never copied to the remote host.
      */
     setAgentForwarding(enabled) {
-        if (Platform.OS !== 'android') {
-            throw new Error('SSH agent forwarding is currently Android-only');
-        }
         RNSSHClient.setAgentForwarding(this._key, enabled);
     }
     /**
@@ -462,9 +465,6 @@ class SSHClient {
         this._activeStream.shell = false;
     }
     prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
-        if (Platform.OS !== 'android') {
-            return Promise.reject(new Error('Herdr remote-client-bridge is currently Android-only'));
-        }
         return new Promise((resolve, reject) => {
             RNSSHClient.prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, this._key, error => {
                 if (callback) callback(error);
@@ -474,9 +474,6 @@ class SSHClient {
         });
     }
     startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, handler, callback) {
-        if (Platform.OS !== 'android') {
-            return Promise.reject(new Error('Herdr remote-client-bridge is currently Android-only'));
-        }
         if (this._herdrBridgeHandlers.has(terminalId)) {
             this._herdrBridgeHandlers.set(terminalId, handler);
             return Promise.resolve();
@@ -527,23 +524,16 @@ class SSHClient {
         RNSSHClient.closeAllHerdrBridges(this._key);
     }
     openLocalForward(remoteHost, remotePort) {
-        if (Platform.OS !== 'android') {
-            return Promise.reject(new Error('SSH local forwarding is currently Android-only'));
-        }
         return new Promise((resolve, reject) => {
             RNSSHClient.openLocalForward(remoteHost, remotePort, this._key, (error, localPort) => error ? reject(error) : resolve(localPort));
         });
     }
     closeLocalForward(localPort) {
-        if (Platform.OS !== 'android') return Promise.resolve();
         return new Promise((resolve, reject) => {
             RNSSHClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
         });
     }
     startHerdrEventStream(socketPath, handler, callback) {
-        if (Platform.OS !== 'android') {
-            return Promise.reject(new Error('Herdr event streams are currently Android-only'));
-        }
         if (this._activeStream.herdrEventStream) {
             this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
             return Promise.resolve();
@@ -575,33 +565,21 @@ class SSHClient {
         this._activeStream.herdrEventStream = false;
     }
     requestHerdrApi(socketPath, request) {
-        if (Platform.OS !== 'android') {
-            return Promise.reject(new Error('Direct Herdr API requests are currently Android-only'));
-        }
         return new Promise((resolve, reject) => {
             RNSSHClient.requestHerdrApi(socketPath, request, this._key, (error, response) => error ? reject(error) : resolve(response));
         });
     }
     measureHostLatency() {
-        if (Platform.OS !== 'android') {
-            return Promise.reject(new Error('Host latency measurement is currently Android-only'));
-        }
         return new Promise((resolve, reject) => {
             RNSSHClient.measureHostLatency(this._key, (error, latencyMs) => error ? reject(error) : resolve(latencyMs));
         });
     }
     getRemoteHome() {
-        if (Platform.OS !== 'android') {
-            return Promise.reject(new Error('Remote home discovery is currently Android-only'));
-        }
         return new Promise((resolve, reject) => {
             RNSSHClient.getRemoteHome(this._key, (error, home) => error ? reject(error) : resolve(home));
         });
     }
     startHerdrCommandStream(command, handler, callback) {
-        if (Platform.OS !== 'android') {
-            return Promise.reject(new Error('Herdr command streams are currently Android-only'));
-        }
         if (this._activeStream.herdrCommandStream) {
             this.on(NATIVE_EVENT_HERDR_COMMAND_STREAM, handler);
             return Promise.resolve();
@@ -782,8 +760,6 @@ class SSHClient {
     }
     /**
      * Changes the permissions of a file or directory on the remote server using SFTP.
-     *
-     * Only available on Android.
      * @param path - The path of the file or directory.
      * @param permissions - The new permissions to set.
      * @param callback - An optional callback function to handle the result or error.

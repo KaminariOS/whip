@@ -104,7 +104,7 @@ export default class SSHClient {
     };
     /**
      * Replaces the process-wide OpenSSH known_hosts repository used by new
-     * Android SSH sessions.
+     * SSH sessions.
      */
     static setKnownHosts(knownHosts: string): void;
     /**
@@ -275,7 +275,7 @@ export default class SSHClient {
     herdrBridgeScroll(terminalId: string, direction: 'up' | 'down', lines: number): Promise<void>;
     closeHerdrBridge(terminalId: string): void;
     closeAllHerdrBridges(): void;
-    /** Opens a loopback listener that forwards through this SSH session. Android-only. */
+    /** Opens a loopback listener that forwards through this SSH session. */
     openLocalForward(remoteHost: string, remotePort: number): Promise<number>;
     /** Closes a loopback listener previously returned by openLocalForward. */
     closeLocalForward(localPort: number): Promise<void>;
@@ -341,8 +341,6 @@ export default class SSHClient {
     sftpRmdir(path: string, callback?: CallbackFunction<void>): Promise<void>;
     /**
      * Changes the permissions of a file or directory on the remote server using SFTP.
-     *
-     * Only available on Android.
      * @param path - The path of the file or directory.
      * @param permissions - The new permissions to set.
      * @param callback - An optional callback function to handle the result or error.

@@ -5,6 +5,7 @@ import { Script } from 'node:vm';
 const assets = resolve(__dirname, '../android/app/src/main/assets');
 const sourceFonts = resolve(__dirname, '../assets/terminal-fonts');
 const terminalRenderer = resolve(__dirname, '../src/components/TerminalRendererHost.tsx');
+const iosTerminalSource = resolve(__dirname, '../src/generated/iosTerminalHtml.ts');
 
 function readTerminalMarkup(html: string): string {
   const encoded = html.match(
@@ -138,14 +139,20 @@ describe('Android terminal assets', () => {
     );
   });
 
-  it('loads the packaged terminal document without copying it into the Metro bundle', () => {
+  it('keeps the packaged Android document and selects an inline iOS document', () => {
     const renderer = readFileSync(terminalRenderer, 'utf8');
+    const iosSource = readFileSync(iosTerminalSource, 'utf8');
 
-    expect(renderer).toContain(
-      "const TERMINAL_SOURCE = { uri: 'file:///android_asset/herdr-terminal.html' } as const;",
-    );
+    expect(renderer).toContain("android: { uri: 'file:///android_asset/herdr-terminal.html' }");
+    expect(renderer).toContain("ios: { html: IOS_TERMINAL_HTML, baseUrl: 'about:blank' }");
     expect(renderer).toContain('source={TERMINAL_SOURCE}');
-    expect(renderer).not.toContain("from '../generated/terminalHtml'");
+    expect(renderer).toContain("import WebView from 'react-native-webview'");
+    expect(renderer).not.toContain('WebView.android');
+    expect(iosSource).toContain('IOS_TERMINAL_HTML_TEMPLATE');
+    expect(iosSource).toContain('__HERDR_TEXT_REGULAR__');
+    expect(iosSource).toContain('window.ReactNativeWebView.postMessage');
+    expect(iosSource).not.toContain('file:///android_asset/');
+    expect(iosSource).not.toMatch(/data:font[^;]*;base64/);
   });
 
   it('keeps Android text scaling from corrupting xterm character measurements', () => {

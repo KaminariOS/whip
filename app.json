@@ -23,7 +23,11 @@
       "expo-video"
     ],
     "ios": {
-      "bundleIdentifier": "io.github.kaminarios.whip"
+      "bundleIdentifier": "io.github.kaminarios.whip",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "Whip connects to SSH servers on your local network."
+      }
     },
     "android": {
       "allowBackup": true,
