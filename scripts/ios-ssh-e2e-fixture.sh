@@ -19,10 +19,12 @@ stop_fixture() {
     sudo kill "$WHIP_E2E_SSHD_PID" >/dev/null 2>&1 || true
   fi
   if [[ "${WHIP_E2E_USER:-}" == whipe2e* ]] && dscl . -read "/Users/$WHIP_E2E_USER" >/dev/null 2>&1; then
-    sudo dscl . -delete "/Users/$WHIP_E2E_USER" >/dev/null
+    echo "Removing macOS SSH fixture account $WHIP_E2E_USER"
+    sudo sysadminctl -deleteUser "$WHIP_E2E_USER" >/dev/null 2>&1 || \
+      sudo dscl . -delete "/Users/$WHIP_E2E_USER" >/dev/null 2>&1 || true
   fi
   if [[ "${WHIP_E2E_HOME:-}" == /Users/whipe2e* ]]; then
-    sudo rm -rf -- "$WHIP_E2E_HOME"
+    sudo rm -rf -- "$WHIP_E2E_HOME" || true
   fi
 }
 
@@ -40,8 +42,6 @@ mkdir -p "$fixture_dir"
 chmod 0755 "$fixture_dir"
 username="whipe2e$(uuidgen | tr -d '-' | cut -c1-12)"
 password="whip-${RANDOM}-${RANDOM}"
-uid="$(dscl . -list /Users UniqueID | awk '$2 < 60000 && $2 > maximum { maximum = $2 } END { print maximum + 1 }')"
-generated_uid="$(uuidgen)"
 port="$(ruby -rsocket -e 'server = TCPServer.new("127.0.0.1", 0); puts server.local_address.ip_port; server.close')"
 home_dir="/Users/$username"
 
@@ -64,19 +64,25 @@ WHIP_E2E_HOME=$home_dir
 EOF
 trap stop_fixture ERR
 
-sudo dscl . -create "/Users/$username"
-sudo dscl . -create "/Users/$username" UserShell /bin/zsh
-sudo dscl . -create "/Users/$username" RealName "Whip iOS E2E"
-sudo dscl . -create "/Users/$username" UniqueID "$uid"
-sudo dscl . -create "/Users/$username" PrimaryGroupID 20
-sudo dscl . -create "/Users/$username" NFSHomeDirectory "$home_dir"
-sudo dscl . -create "/Users/$username" GeneratedUID "$generated_uid"
-# Prevent macOS from trying to grant this ephemeral CI account a secure token.
-sudo dscl . -append "/Users/$username" AuthenticationAuthority ";DisabledTags;SecureToken"
-sudo dscl . -passwd "/Users/$username" "$password"
+echo "Creating macOS SSH fixture account $username"
+sudo sysadminctl -addUser "$username" \
+  -fullName "Whip iOS E2E" \
+  -shell /bin/zsh \
+  -home "$home_dir" \
+  -password "$password" \
+  -admin
+if ! dscl . -read "/Users/$username" UniqueID NFSHomeDirectory >/dev/null 2>&1; then
+  echo "error: sysadminctl did not create the macOS SSH fixture account" >&2
+  exit 1
+fi
+if ! dscl . -authonly "$username" "$password" >/dev/null 2>&1; then
+  echo "error: macOS rejected the SSH fixture account password" >&2
+  exit 1
+fi
 sudo mkdir -p "$home_dir"
 sudo chmod 0700 "$home_dir"
-sudo chown "$uid:20" "$home_dir"
+sudo chown "$username:staff" "$home_dir"
+echo "macOS SSH fixture account ready: $username"
 
 cat >"$fixture_dir/sshd_config" <<EOF
 Port $port
