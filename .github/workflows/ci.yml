@@ -194,7 +194,7 @@ jobs:
           xcodebuild \
             -workspace HerdR.xcworkspace \
             -scheme HerdR \
-            -configuration Debug \
+            -configuration Release \
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$device_id" \
             -derivedDataPath "$RUNNER_TEMP/WhipDerivedData" \
@@ -211,8 +211,9 @@ jobs:
 
       - name: Install and run simulator SSH feature matrix
         run: |
-          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Debug-iphonesimulator/HerdR.app"
+          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphonesimulator/HerdR.app"
           test -d "$app_path"
+          test -f "$app_path/main.jsbundle"
           xcrun simctl install "$DEVICE_ID" "$app_path"
           data_path="$(xcrun simctl get_app_container "$DEVICE_ID" io.github.kaminarios.whip data)"
           cp \
@@ -260,7 +261,7 @@ jobs:
           if [[ -f "$RUNNER_TEMP/whip-ios-ssh-e2e-result.json" ]]; then
             cp "$RUNNER_TEMP/whip-ios-ssh-e2e-result.json" "$RUNNER_TEMP/whip-ios-ssh-diagnostics/result.json"
           fi
-          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Debug-iphonesimulator/HerdR.app"
+          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphonesimulator/HerdR.app"
           if [[ -d "$app_path" ]]; then
             ditto -c -k --sequesterRsrc --keepParent \
               "$app_path" \
