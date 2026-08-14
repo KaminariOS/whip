@@ -36,9 +36,12 @@ describe('iOS simulator SSH end-to-end matrix', () => {
     expect(fixture).toContain('/usr/sbin/sshd -D');
     expect(fixture).toContain('PasswordAuthentication yes');
     expect(fixture).toContain('username="whipe2e$(uuidgen');
-    expect(fixture).toContain('GeneratedUID "$generated_uid"');
-    expect(fixture).toContain('AuthenticationAuthority ";DisabledTags;SecureToken"');
-    expect(fixture).toContain('dscl . -delete');
+    expect(fixture).toContain('sysadminctl -addUser "$username"');
+    expect(fixture).toContain('-password "$password"');
+    expect(fixture).toContain('-admin');
+    expect(fixture).toContain('dscl . -authonly "$username" "$password"');
+    expect(fixture).toContain('sysadminctl -deleteUser "$WHIP_E2E_USER"');
+    expect(fixture).not.toContain('dscl . -create');
     expect(fixture).not.toContain('username="$(id -un)"');
     expect(workflow).toContain('${WHIP_E2E_FIXTURE_DIR:-$RUNNER_TEMP/whip-ios-ssh-fixture}');
     expect(workflow).toContain('Install and run simulator SSH feature matrix');
