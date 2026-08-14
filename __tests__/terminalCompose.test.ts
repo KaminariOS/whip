@@ -62,12 +62,20 @@ describe('terminal input composer', () => {
     );
   });
 
-  it('floats a transparent composer over the terminal without taking layout space', () => {
+  it('portals the composer above the terminal and prevents touch fallthrough', () => {
     const screen = readSource('src/components/TerminalScreen.tsx');
-
-    expect(screen).toContain(
-      '<View className="absolute inset-x-0 bottom-full z-10 border-t border-terminal-divider bg-transparent p-2">',
+    const composer = screen.slice(
+      screen.indexOf('{composeOpen && !composeExpanded && ('),
+      screen.indexOf('<ScrollView', screen.indexOf('{composeOpen && !composeExpanded && (')),
     );
+
+    expect(screen).toContain("import { Portal } from '@rn-primitives/portal'");
+    expect(composer).toContain('<Portal name={`terminal-composer-${terminalId}`}>');
+    expect(composer).toContain('<View pointerEvents="box-none" style={StyleSheet.absoluteFill}>');
+    expect(composer).toContain('className="absolute inset-x-0 border-t');
+    expect(composer).toContain('bottom: TERMINAL_CONTROL_BAR_HEIGHT + bottomSafeAreaInset');
+    expect(composer).not.toContain('bottom-full');
+    expect(screen).toContain("pointerEvents={composeOpen ? 'none' : 'auto'}");
   });
 
   it('expands long drafts into a full-screen editor without duplicating draft state', () => {
