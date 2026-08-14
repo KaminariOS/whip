@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { Portal } from '@rn-primitives/portal';
 import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, X, type LucideIcon } from 'lucide-react-native';
 import { AppState, Clipboard, Image, Keyboard, Modal, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
@@ -114,6 +115,7 @@ const TERMINAL_ICON_CONTROL_CLASS = 'h-9 w-11 items-center justify-center rounde
 const TERMINAL_TEXT_CONTROL_CLASS = 'h-9 min-w-11 items-center justify-center rounded-sm border border-border bg-card/70 px-2.5 py-0 active:bg-card/80';
 const TERMINAL_ICON_BOX_CLASS = 'size-5 items-center justify-center';
 const TERMINAL_ICON_SIZE = 18;
+const TERMINAL_CONTROL_BAR_HEIGHT = 50;
 const TERMINAL_CONTROL_LABEL_STYLE = {
   includeFontPadding: false,
   textAlignVertical: 'center',
@@ -803,6 +805,7 @@ export function TerminalScreen({
         </View>
       )}
       <View
+        pointerEvents={composeOpen ? 'none' : 'auto'}
         className="relative flex-1"
         style={keyboardInset > 0 && !composeOpen ? { paddingBottom: keyboardInset } : undefined}
         {...(!terminalSelectionActive ? terminalPanHandlers : undefined)}
@@ -870,68 +873,77 @@ export function TerminalScreen({
           </View>
         </View>
       )}
+      {composeOpen && !composeExpanded && (
+        <Portal name={`terminal-composer-${terminalId}`}>
+          <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+            <View
+              className="absolute inset-x-0 border-t border-terminal-divider bg-transparent p-2"
+              style={{
+                bottom: TERMINAL_CONTROL_BAR_HEIGHT + bottomSafeAreaInset,
+                transform: keyboardInset > 0 ? [{ translateY: -keyboardInset }] : undefined,
+              }}>
+              <View className="flex-row items-end gap-2">
+                <View className="gap-1.5">
+                  <Button
+                    accessibilityLabel={t('terminal.attach')}
+                    className="size-10 rounded-full bg-terminal-surface px-0"
+                    variant="secondary"
+                    onPress={onRequestAttachment}>
+                    <Paperclip size={18} color={colors.text} />
+                  </Button>
+                  <Button
+                    accessibilityLabel={t('terminal.expandComposer')}
+                    className="size-10 rounded-full bg-terminal-surface px-0"
+                    variant="secondary"
+                    onPress={expandCompose}>
+                    <Maximize2 size={17} color={colors.text} />
+                  </Button>
+                </View>
+                <View className="min-w-0 flex-1 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas">
+                  <ComposeAttachmentsStrip
+                    attachments={composeAttachments}
+                    removeLabel={t('terminal.removeAttachment')}
+                    onRemove={removeComposeAttachment}
+                  />
+                  <Input
+                    ref={composeInputRef}
+                    autoFocus={keyboardEnabled}
+                    showSoftInputOnFocus={keyboardEnabled}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                    value={composeText}
+                    onChangeText={setComposeText}
+                    placeholder={t('terminal.composePlaceholder')}
+                    placeholderTextColor={colors.muted}
+                    className="h-[76px] rounded-none border-0 bg-transparent px-3 py-2 font-mono text-[12px] leading-[17px] text-terminal-text"
+                  />
+                </View>
+                <View className="gap-1.5">
+                  <Button
+                    accessibilityLabel={t('terminal.sendBufferedInput')}
+                    className="size-10 rounded-full bg-white px-0"
+                    onPress={submitCompose}>
+                    <Send size={17} color={colors.ink} />
+                  </Button>
+                  <Button
+                    accessibilityLabel={t('terminal.closeCompose')}
+                    className="size-10 rounded-full bg-terminal-surface px-0"
+                    variant="secondary"
+                    onPress={closeCompose}>
+                    <X size={17} color={colors.text} />
+                  </Button>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Portal>
+      )}
       <View
         ref={controlsRef}
         collapsable={false}
         className="relative z-10"
         style={keyboardInset > 0 ? { transform: [{ translateY: -keyboardInset }] } : undefined}>
-        {composeOpen && !composeExpanded && (
-          <View className="absolute inset-x-0 bottom-full z-10 border-t border-terminal-divider bg-transparent p-2">
-            <View className="flex-row items-end gap-2">
-              <View className="gap-1.5">
-                <Button
-                  accessibilityLabel={t('terminal.attach')}
-                  className="size-10 rounded-full bg-terminal-surface px-0"
-                  variant="secondary"
-                  onPress={onRequestAttachment}>
-                  <Paperclip size={18} color={colors.text} />
-                </Button>
-                <Button
-                  accessibilityLabel={t('terminal.expandComposer')}
-                  className="size-10 rounded-full bg-terminal-surface px-0"
-                  variant="secondary"
-                  onPress={expandCompose}>
-                  <Maximize2 size={17} color={colors.text} />
-                </Button>
-              </View>
-              <View className="min-w-0 flex-1 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas">
-                <ComposeAttachmentsStrip
-                  attachments={composeAttachments}
-                  removeLabel={t('terminal.removeAttachment')}
-                  onRemove={removeComposeAttachment}
-                />
-                <Input
-                  ref={composeInputRef}
-                  autoFocus={keyboardEnabled}
-                  showSoftInputOnFocus={keyboardEnabled}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                  value={composeText}
-                  onChangeText={setComposeText}
-                  placeholder={t('terminal.composePlaceholder')}
-                  placeholderTextColor={colors.muted}
-                  className="h-[76px] rounded-none border-0 bg-transparent px-3 py-2 font-mono text-[12px] leading-[17px] text-terminal-text"
-                />
-              </View>
-              <View className="gap-1.5">
-                <Button
-                  accessibilityLabel={t('terminal.sendBufferedInput')}
-                  className="size-10 rounded-full bg-white px-0"
-                  onPress={submitCompose}>
-                  <Send size={17} color={colors.ink} />
-                </Button>
-                <Button
-                  accessibilityLabel={t('terminal.closeCompose')}
-                  className="size-10 rounded-full bg-terminal-surface px-0"
-                  variant="secondary"
-                  onPress={closeCompose}>
-                  <X size={17} color={colors.text} />
-                </Button>
-              </View>
-            </View>
-          </View>
-        )}
         <ScrollView
           horizontal
           keyboardShouldPersistTaps="always"
