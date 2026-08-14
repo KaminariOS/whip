@@ -18,6 +18,12 @@ stop_fixture() {
   if [[ -n "${WHIP_E2E_SSHD_PID:-}" ]]; then
     sudo kill "$WHIP_E2E_SSHD_PID" >/dev/null 2>&1 || true
   fi
+  if [[ "${WHIP_E2E_USER:-}" == whipe2e* ]] && dscl . -read "/Users/$WHIP_E2E_USER" >/dev/null 2>&1; then
+    sudo dscl . -delete "/Users/$WHIP_E2E_USER" >/dev/null
+  fi
+  if [[ "${WHIP_E2E_HOME:-}" == /Users/whipe2e* ]]; then
+    sudo rm -rf -- "$WHIP_E2E_HOME"
+  fi
 }
 
 if [[ "$action" == "stop" ]]; then
@@ -32,9 +38,12 @@ fi
 github_env="${3:-}"
 mkdir -p "$fixture_dir"
 chmod 0755 "$fixture_dir"
-username="$(id -un)"
+username="whipe2e$(uuidgen | tr -d '-' | cut -c1-12)"
 password="whip-${RANDOM}-${RANDOM}"
+uid="$(dscl . -list /Users UniqueID | awk '$2 < 60000 && $2 > maximum { maximum = $2 } END { print maximum + 1 }')"
+generated_uid="$(uuidgen)"
 port="$(ruby -rsocket -e 'server = TCPServer.new("127.0.0.1", 0); puts server.local_address.ip_port; server.close')"
+home_dir="/Users/$username"
 
 if [[ -n "$github_env" ]]; then
   {
@@ -51,9 +60,23 @@ cp "$fixture_dir/client_key.pub" "$fixture_dir/authorized_keys"
 cat >"$metadata" <<EOF
 WHIP_E2E_SSHD_PID=
 WHIP_E2E_USER=$username
+WHIP_E2E_HOME=$home_dir
 EOF
 trap stop_fixture ERR
+
+sudo dscl . -create "/Users/$username"
+sudo dscl . -create "/Users/$username" UserShell /bin/zsh
+sudo dscl . -create "/Users/$username" RealName "Whip iOS E2E"
+sudo dscl . -create "/Users/$username" UniqueID "$uid"
+sudo dscl . -create "/Users/$username" PrimaryGroupID 20
+sudo dscl . -create "/Users/$username" NFSHomeDirectory "$home_dir"
+sudo dscl . -create "/Users/$username" GeneratedUID "$generated_uid"
+# Prevent macOS from trying to grant this ephemeral CI account a secure token.
+sudo dscl . -append "/Users/$username" AuthenticationAuthority ";DisabledTags;SecureToken"
 sudo dscl . -passwd "/Users/$username" "$password"
+sudo mkdir -p "$home_dir"
+sudo chmod 0700 "$home_dir"
+sudo chown "$uid:20" "$home_dir"
 
 cat >"$fixture_dir/sshd_config" <<EOF
 Port $port
@@ -80,6 +103,7 @@ sshd_pid=$!
 cat >"$metadata" <<EOF
 WHIP_E2E_SSHD_PID=$sshd_pid
 WHIP_E2E_USER=$username
+WHIP_E2E_HOME=$home_dir
 EOF
 
 known_host_line=''
