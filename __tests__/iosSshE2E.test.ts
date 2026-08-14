@@ -45,6 +45,11 @@ describe('iOS simulator SSH end-to-end matrix', () => {
     expect(fixture).not.toContain('username="$(id -un)"');
     expect(workflow).toContain('${WHIP_E2E_FIXTURE_DIR:-$RUNNER_TEMP/whip-ios-ssh-fixture}');
     expect(workflow).toContain('Install and run simulator SSH feature matrix');
+    expect(workflow).toContain('-configuration Release');
+    expect(workflow).toContain('Release-iphonesimulator/HerdR.app');
+    expect(workflow).toContain('test -f "$app_path/main.jsbundle"');
+    expect(workflow).not.toContain('-configuration Debug');
+    expect(workflow).not.toContain('Debug-iphonesimulator/HerdR.app');
     expect(workflow).toContain('whip-ios-ssh-e2e-result.json');
     expect(workflow).toContain('name: whip-ios-simulator-app');
     expect(workflow).toContain('name: whip-ios-ssh-diagnostics');
