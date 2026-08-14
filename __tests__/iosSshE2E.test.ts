@@ -33,6 +33,7 @@ describe('iOS simulator SSH end-to-end matrix', () => {
   it('runs a real macOS OpenSSH fixture and always retains diagnostics and the unsigned app', () => {
     const workflow = read('.github/workflows/ci.yml');
     const fixture = read('scripts/ios-ssh-e2e-fixture.sh');
+    const appDelegate = read('ios/HerdR/AppDelegate.swift');
     expect(fixture).toContain('/usr/sbin/sshd -D');
     expect(fixture).toContain('PasswordAuthentication yes');
     expect(fixture).toContain('username="whipe2e$(uuidgen');
@@ -43,6 +44,12 @@ describe('iOS simulator SSH end-to-end matrix', () => {
     expect(fixture).toContain('sysadminctl -deleteUser "$WHIP_E2E_USER"');
     expect(fixture).not.toContain('dscl . -create');
     expect(fixture).not.toContain('username="$(id -un)"');
+    expect(appDelegate).toContain('import Expo');
+    expect(appDelegate).toContain('class AppDelegate: ExpoAppDelegate');
+    expect(appDelegate).toContain('ExpoReactNativeFactory(delegate: delegate)');
+    expect(appDelegate).toContain('class ReactNativeDelegate: ExpoReactNativeFactoryDelegate');
+    expect(appDelegate).toContain('return super.application(');
+    expect(appDelegate).not.toContain('let factory = RCTReactNativeFactory(delegate: delegate)');
     expect(workflow).toContain('${WHIP_E2E_FIXTURE_DIR:-$RUNNER_TEMP/whip-ios-ssh-fixture}');
     expect(workflow).toContain('Install and run simulator SSH feature matrix');
     expect(workflow).toContain('-configuration Release');
