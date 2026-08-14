@@ -24,7 +24,7 @@ class AppDelegate: ExpoAppDelegate {
     window = UIWindow(frame: UIScreen.main.bounds)
 
     factory.startReactNative(
-      withModuleName: "HerdR",
+      withModuleName: "main",
       in: window,
       launchOptions: launchOptions
     )

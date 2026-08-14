@@ -11,6 +11,15 @@ describe('iOS simulator SSH end-to-end matrix', () => {
     expect(entry).toContain('IosSshE2EScreen');
   });
 
+  it('launches the same app key that Expo registerRootComponent registers', () => {
+    const entry = read('index.js');
+    const appDelegate = read('ios/HerdR/AppDelegate.swift');
+    expect(entry).toContain("import { registerRootComponent } from 'expo'");
+    expect(entry).toContain('registerRootComponent(RootComponent)');
+    expect(appDelegate).toContain('withModuleName: "main"');
+    expect(appDelegate).not.toContain('withModuleName: "HerdR"');
+  });
+
   it('covers trust, both authentication modes, shell, SFTP, jump, forwarding, and agent forwarding', () => {
     const runner = read('src/services/iosSshE2E.ts');
     for (const expectation of [
