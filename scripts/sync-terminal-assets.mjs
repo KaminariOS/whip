@@ -8,6 +8,9 @@ import terminalLinkExtraction from './terminal-link-extraction.cjs';
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const {
   extractTerminalLinks,
+  mergeTerminalLinks,
+  osc8LinkAt,
+  osc8LinkFromData,
   terminalLinkAt,
   terminalLinkCandidates,
   trimTerminalUrl,
@@ -166,10 +169,12 @@ const terminalSessionHtml = `<!doctype html>
         ]).then(() => document.fonts.ready)
       : Promise.resolve();
     const initializeTerminal = () => {
+      const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');
       const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
       allowTransparency: true,
+      linkHandler: { activate: (_event, link) => send({ type: 'open-link', link }) },
       fontFamily: terminalFontFamily,
       fontSize: 8,
       fontWeight: '400',
@@ -190,7 +195,6 @@ const terminalSessionHtml = `<!doctype html>
     const fit = new FitAddon.FitAddon();
     terminal.loadAddon(fit);
     terminal.open(document.getElementById('terminal'));
-    const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');
     let lastTap = null;
     let doubleTapAction = 'tab';
     let keyboardEnabled = false;
@@ -222,6 +226,61 @@ const terminalSessionHtml = `<!doctype html>
       try { send({ type: 'clipboard-write', text: decodeURIComponent(escape(atob(payload))) }); } catch {}
       return true;
     });
+    ${osc8LinkFromData.toString()}
+    const osc8Links = new Set();
+    let osc8LinkSequence = 0;
+    let openOsc8Link = null;
+    const finishOsc8Link = () => {
+      if (!openOsc8Link) return;
+      const link = openOsc8Link;
+      openOsc8Link = null;
+      const endMarker = terminal.registerMarker();
+      if (!endMarker) return;
+      link.endMarker = endMarker;
+      link.endColumn = terminal.buffer.active.cursorX;
+      endMarker.onDispose(() => osc8Links.delete(link));
+    };
+    const clearOsc8Links = () => {
+      openOsc8Link = null;
+      for (const link of osc8Links) {
+        link.marker.dispose();
+        link.endMarker?.dispose();
+      }
+      osc8Links.clear();
+      osc8LinkSequence = 0;
+    };
+    terminal.parser.registerOscHandler(8, data => {
+      const separator = data.indexOf(';');
+      if (separator < 0) return false;
+      const params = data.slice(0, separator).trim();
+      const target = data.slice(separator + 1);
+      if (!target) {
+        if (!params) finishOsc8Link();
+        return false;
+      }
+      finishOsc8Link();
+      const href = osc8LinkFromData(data);
+      if (href) {
+        const marker = terminal.registerMarker();
+        if (marker) {
+          const link = {
+            href,
+            marker,
+            endMarker: null,
+            startColumn: terminal.buffer.active.cursorX,
+            endColumn: null,
+            sequence: ++osc8LinkSequence,
+          };
+          osc8Links.add(link);
+          openOsc8Link = link;
+          marker.onDispose(() => {
+            osc8Links.delete(link);
+            if (openOsc8Link === link) openOsc8Link = null;
+          });
+        }
+      }
+      return false;
+    });
     window.herdrWrite = data => terminal.write(data);
     window.herdrWriteBase64 = data => {
       const binary = atob(data);
@@ -241,6 +300,7 @@ const terminalSessionHtml = `<!doctype html>
     };
     window.herdrReset = () => {
       pendingFrames.clear();
+      clearOsc8Links();
       terminal.reset();
       clearInteractiveSelection(false);
     };
@@ -332,6 +392,8 @@ const terminalSessionHtml = `<!doctype html>
     ${trimTerminalUrl.toString()}
     ${terminalLinkCandidates.toString()}
     ${extractTerminalLinks.toString()}
+    ${mergeTerminalLinks.toString()}
+    ${osc8LinkAt.toString()}
     ${terminalLinkAt.toString()}
     const terminalRows = () => {
       const rows = [];
@@ -346,7 +408,10 @@ const terminalSessionHtml = `<!doctype html>
       return rows;
     };
     window.herdrScanLinks = () => {
-      send({ type: 'link-scan-result', links: extractTerminalLinks(terminalRows(), terminal.cols) });
+      send({
+        type: 'link-scan-result',
+        links: mergeTerminalLinks(terminalRows(), terminal.cols, osc8Links),
+      });
     };
     const resize = () => {
       fit.fit();
@@ -540,7 +605,8 @@ const terminalSessionHtml = `<!doctype html>
     const urlAtPoint = (x, y) => {
       const cell = bufferCellAt(x, y);
       if (!cell) return null;
-      return terminalLinkAt(terminalRows(), terminal.cols, cell.row, cell.col);
+      return osc8LinkAt(osc8Links, cell.row, cell.col)
+        || terminalLinkAt(terminalRows(), terminal.cols, cell.row, cell.col);
     };
     let touch = null;
     let pinch = null;

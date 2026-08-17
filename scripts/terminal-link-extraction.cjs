@@ -11,6 +11,19 @@ function trimTerminalUrl(candidate) {
   return value;
 }
 
+function osc8LinkFromData(data) {
+  const separator = data.indexOf(';');
+  if (separator < 0) return null;
+  const value = data.slice(separator + 1);
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function terminalLinkCandidates(rows, columns) {
   const logicalLines = [];
   let logicalLine = null;
@@ -127,6 +140,42 @@ function extractTerminalLinks(rows, columns) {
   return links;
 }
 
+function mergeTerminalLinks(rows, columns, osc8Links) {
+  const candidates = terminalLinkCandidates(rows, columns).map((candidate, index) => ({
+    href: candidate.href,
+    row: candidate.cells.reduce((latest, cell) => Math.max(latest, cell.row), -1),
+    sequence: -index,
+  }));
+  for (const link of osc8Links) {
+    if (link.marker.line < 0) continue;
+    const endRow = link.endMarker?.line ?? link.marker.line;
+    candidates.push({ href: link.href, row: Math.max(link.marker.line, endRow), sequence: link.sequence });
+  }
+  candidates.sort((left, right) => right.row - left.row || right.sequence - left.sequence);
+
+  const links = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (seen.has(candidate.href)) continue;
+    seen.add(candidate.href);
+    links.push(candidate.href);
+  }
+  return links;
+}
+
+function osc8LinkAt(osc8Links, row, column) {
+  let match = null;
+  for (const link of osc8Links) {
+    const startRow = link.marker.line;
+    const endRow = link.endMarker?.line ?? -1;
+    if (startRow < 0 || endRow < startRow || link.endColumn === null) continue;
+    const afterStart = row > startRow || (row === startRow && column >= link.startColumn);
+    const beforeEnd = row < endRow || (row === endRow && column < link.endColumn);
+    if (afterStart && beforeEnd && (!match || link.sequence > match.sequence)) match = link;
+  }
+  return match?.href || null;
+}
+
 function terminalLinkAt(rows, columns, row, column) {
   return terminalLinkCandidates(rows, columns).find(candidate =>
     candidate.cells.some(range =>
@@ -137,6 +186,9 @@ function terminalLinkAt(rows, columns, row, column) {
 
 module.exports = {
   extractTerminalLinks,
+  mergeTerminalLinks,
+  osc8LinkAt,
+  osc8LinkFromData,
   terminalLinkAt,
   terminalLinkCandidates,
   trimTerminalUrl,

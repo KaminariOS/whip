@@ -8,12 +8,38 @@ import { resolve } from 'node:path';
 
 const {
   extractTerminalLinks,
+  mergeTerminalLinks,
+  osc8LinkAt,
+  osc8LinkFromData,
   terminalLinkAt,
 }: {
   extractTerminalLinks: (
     rows: Array<{ text: string; isWrapped: boolean }>,
     columns: number,
   ) => string[];
+  mergeTerminalLinks: (
+    rows: Array<{ text: string; isWrapped: boolean }>,
+    columns: number,
+    osc8Links: Array<{
+      href: string;
+      marker: { line: number };
+      endMarker?: { line: number } | null;
+      sequence: number;
+    }>,
+  ) => string[];
+  osc8LinkAt: (
+    osc8Links: Array<{
+      href: string;
+      marker: { line: number };
+      endMarker: { line: number } | null;
+      startColumn: number;
+      endColumn: number | null;
+      sequence: number;
+    }>,
+    row: number,
+    column: number,
+  ) => string | null;
+  osc8LinkFromData: (data: string) => string | null;
   terminalLinkAt: (
     rows: Array<{ text: string; isWrapped: boolean }>,
     columns: number,
@@ -23,6 +49,53 @@ const {
 } = require('../scripts/terminal-link-extraction.cjs');
 
 describe('terminal web links', () => {
+  it('accepts HTTP(S) OSC-8 targets and ignores close or unsafe sequences', () => {
+    expect(osc8LinkFromData(';https://example.com/issues/1?tab=one')).toBe(
+      'https://example.com/issues/1?tab=one',
+    );
+    expect(osc8LinkFromData('id=issue;http://example.com/1')).toBe(
+      'http://example.com/1',
+    );
+    expect(osc8LinkFromData(';')).toBeNull();
+    expect(osc8LinkFromData(';javascript:alert(1)')).toBeNull();
+    expect(osc8LinkFromData('missing-separator')).toBeNull();
+  });
+
+  it('merges semantic OSC-8 targets with extracted links in buffer order', () => {
+    const rows = [
+      { text: 'Old https://example.com/old', isWrapped: false },
+      { text: 'Issue 42', isWrapped: false },
+      { text: 'New https://example.com/new', isWrapped: false },
+    ];
+
+    expect(mergeTerminalLinks(rows, 80, [
+      { href: 'https://example.com/issues/42', marker: { line: 1 }, sequence: 1 },
+      { href: 'https://example.com/new', marker: { line: 2 }, sequence: 2 },
+      { href: 'https://example.com/expired', marker: { line: -1 }, sequence: 3 },
+    ])).toEqual([
+      'https://example.com/new',
+      'https://example.com/issues/42',
+      'https://example.com/old',
+    ]);
+  });
+
+  it('resolves an OSC-8 target across its exact wrapped cell range', () => {
+    const links = [{
+      href: 'https://example.com/semantic-target',
+      marker: { line: 4 },
+      endMarker: { line: 6 },
+      startColumn: 20,
+      endColumn: 8,
+      sequence: 1,
+    }];
+
+    expect(osc8LinkAt(links, 4, 19)).toBeNull();
+    expect(osc8LinkAt(links, 4, 20)).toBe('https://example.com/semantic-target');
+    expect(osc8LinkAt(links, 5, 0)).toBe('https://example.com/semantic-target');
+    expect(osc8LinkAt(links, 6, 7)).toBe('https://example.com/semantic-target');
+    expect(osc8LinkAt(links, 6, 8)).toBeNull();
+  });
+
   it.each([
     'localhost',
     'api.localhost',
