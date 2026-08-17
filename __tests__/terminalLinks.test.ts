@@ -109,6 +109,21 @@ describe('terminal web links', () => {
     );
   });
 
+  it('extracts a hard-wrapped link when prose follows its continuation', () => {
+    const firstRow = 'The draft is at https://github.com/windsornguyen/carg';
+    const rows = [
+      { text: firstRow, isWrapped: false },
+      { text: 'o/pull/1) and implementation has started', isWrapped: false },
+    ];
+
+    expect(extractTerminalLinks(rows, firstRow.length)).toEqual([
+      'https://github.com/windsornguyen/cargo/pull/1',
+    ]);
+    expect(terminalLinkAt(rows, firstRow.length, 1, 3)).toBe(
+      'https://github.com/windsornguyen/cargo/pull/1',
+    );
+  });
+
   it('extracts a link wrapped inside a terminal UI block', () => {
     const rows = [
       { text: '  ┃  https://www.reddit.com/r/herdr/comments/         ', isWrapped: false },
