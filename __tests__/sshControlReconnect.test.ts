@@ -42,6 +42,47 @@ function nativeClient(options: { output?: string; startError?: unknown } = {}) {
   } as unknown as SSHClient;
 }
 
+function streamingNativeClient() {
+  let eventHandler: ((data: string) => void) | null = null;
+  const client = {
+    requestHerdrApi: jest.fn(async (_socketPath: string, requestLine: string) => {
+      const request = JSON.parse(requestLine);
+      const result = request.method === 'session.snapshot'
+        ? {
+          type: 'session_snapshot',
+          snapshot: {
+            version: '0.8.0',
+            protocol: 20,
+            focused_workspace_id: null,
+            focused_tab_id: null,
+            focused_pane_id: null,
+            workspaces: [],
+            tabs: [],
+            panes: [],
+            layouts: [],
+            agents: [],
+          },
+        }
+        : request.method === 'ping'
+          ? { type: 'pong', version: '0.8.0', protocol: 20 }
+          : { type: 'ok' };
+      return JSON.stringify({ id: request.id, result });
+    }),
+    getRemoteHome: jest.fn(async () => '/home/herdr'),
+    startHerdrEventStream: jest.fn(async (_socketPath: string, handler: (data: string) => void) => {
+      eventHandler = handler;
+    }),
+    writeHerdrEventStream: jest.fn(async () => undefined),
+    closeHerdrEventStream: jest.fn(),
+    off: jest.fn(),
+    disconnect: jest.fn(),
+  } as unknown as SSHClient;
+  return {
+    client,
+    emitEventData: (data: string) => eventHandler?.(data),
+  };
+}
+
 describe('SSH control reconnects', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
@@ -76,6 +117,36 @@ describe('SSH control reconnects', () => {
       expect.stringContaining('"method":"workspace.focus"'),
     );
     expect(stale.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  test('restores the event subscription when replacing the control connection', async () => {
+    const stale = streamingNativeClient();
+    const fresh = streamingNativeClient();
+    connectWithPassword.mockResolvedValueOnce(stale.client).mockResolvedValueOnce(fresh.client);
+    const client = new HerdrClient();
+    const onEvent = jest.fn();
+    const onClosed = jest.fn();
+
+    await client.connect(profile);
+    await client.initialSnapshot();
+    await client.openEventStream(['pane-2', 'pane-1'], onEvent, onClosed);
+    await client.reconnectControl();
+
+    expect(stale.client.closeHerdrEventStream).toHaveBeenCalled();
+    expect(stale.client.disconnect).toHaveBeenCalledTimes(1);
+    expect(fresh.client.startHerdrEventStream).toHaveBeenCalledTimes(1);
+    expect(fresh.client.writeHerdrEventStream).toHaveBeenCalledWith(
+      expect.stringContaining('"method":"events.subscribe"'),
+    );
+
+    stale.emitEventData('{"herdr_android_bridge_closed":true}\n');
+    expect(onClosed).not.toHaveBeenCalled();
+
+    fresh.emitEventData('{"event":"pane.agent_status_changed","data":{"pane_id":"pane-1"}}\n');
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'pane.agent_status_changed',
+      data: { pane_id: 'pane-1' },
+    }));
   });
 
   test('does not replay a mutating command when its channel fails', async () => {

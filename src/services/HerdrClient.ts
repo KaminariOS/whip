@@ -79,6 +79,12 @@ interface SshShellConnection extends TerminalConnection {
   sequence: number;
 }
 
+interface EventSubscription {
+  paneIds: string[];
+  onEvent: ApiEventHandler;
+  onClosed?: TerminalClosedHandler;
+}
+
 interface TerminalSize {
   columns: number;
   rows: number;
@@ -113,6 +119,7 @@ export class HerdrClient {
   private terminalBridgeGenerations = new Map<string, number>();
   private terminalBridgeSequence = 0;
   private eventClient: SSHClient | null = null;
+  private eventSubscription: EventSubscription | null = null;
   private eventGeneration = 0;
   private apiServer: ServerInfo | null = null;
   private resolvedApiSocketPath: string | null = null;
@@ -177,10 +184,11 @@ export class HerdrClient {
 
     const nextClient = await this.connectSsh(profile, port, this.jumpProfiles);
     const previousClient = this.client;
+    const retainedEventSubscription = this.eventSubscription;
+    this.closeEventTransport();
     this.client = nextClient;
     this.profile = profile;
     this.apiServer = null;
-    this.eventClient = null;
     this.resolvedApiSocketPath = profile.herdrSocketPath?.trim()
       ? null
       : cachedApiSocketPath(profile);
@@ -206,6 +214,18 @@ export class HerdrClient {
         this.terminalConnections.get(terminalId)?.onClosed?.(
           `Terminal reattach failed: ${String(error)}`,
         );
+      }
+    }
+
+    if (retainedEventSubscription && this.eventSubscription === retainedEventSubscription) {
+      try {
+        await this.startEventSubscription(retainedEventSubscription);
+      } catch (error) {
+        if (this.eventSubscription === retainedEventSubscription) {
+          this.eventSubscription = null;
+          this.closeEventTransport();
+          retainedEventSubscription.onClosed?.(String(error));
+        }
       }
     }
   }
@@ -613,6 +633,20 @@ export class HerdrClient {
     onClosed?: TerminalClosedHandler,
   ): Promise<void> {
     this.closeEventStream();
+    const subscription = { paneIds: [...paneIds], onEvent, onClosed };
+    this.eventSubscription = subscription;
+    try {
+      await this.startEventSubscription(subscription);
+    } catch (error) {
+      if (this.eventSubscription === subscription) {
+        this.eventSubscription = null;
+        this.closeEventTransport();
+      }
+      throw error;
+    }
+  }
+
+  private async startEventSubscription(subscription: EventSubscription): Promise<void> {
     const server = await this.requireBridgeServer();
     this.apiServer = server;
     if (!server.running || !server.socket) throw new Error('Herdr API socket is not available');
@@ -624,8 +658,9 @@ export class HerdrClient {
     const decoder = new HerdrApiBridgeDecoder();
     const close = (reason?: string) => {
       if (generation !== this.eventGeneration) return;
-      this.closeEventStream();
-      onClosed?.(reason);
+      if (this.eventSubscription === subscription) this.eventSubscription = null;
+      this.closeEventTransport();
+      subscription.onClosed?.(reason);
     };
     const onData = (data: string) => {
       for (const message of decoder.push(data)) {
@@ -634,7 +669,7 @@ export class HerdrClient {
         if (error) {
           close(error);
         } else if (event) {
-          onEvent(event);
+          subscription.onEvent(event);
         } else if ((message as { herdr_android_bridge_closed?: boolean }).herdr_android_bridge_closed) {
           close('Herdr event bridge closed');
         }
@@ -642,12 +677,12 @@ export class HerdrClient {
     };
     try {
       await client.startHerdrEventStream(server.socket, onData);
-      if (generation !== this.eventGeneration) {
+      if (generation !== this.eventGeneration || this.eventSubscription !== subscription) {
         client.closeHerdrEventStream();
-        return;
+        throw new Error('Herdr event stream closed during startup');
       }
       this.eventClient = client;
-      await client.writeHerdrEventStream(apiRequestLine(eventsSubscribeRequest(paneIds)));
+      await client.writeHerdrEventStream(apiRequestLine(eventsSubscribeRequest(subscription.paneIds)));
     } catch (error) {
       if (this.eventClient === client) this.eventClient = null;
       client.closeHerdrEventStream();
@@ -656,6 +691,11 @@ export class HerdrClient {
   }
 
   closeEventStream(): void {
+    this.eventSubscription = null;
+    this.closeEventTransport();
+  }
+
+  private closeEventTransport(): void {
     this.eventGeneration += 1;
     const client = this.eventClient;
     this.eventClient = null;
