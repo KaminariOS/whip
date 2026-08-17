@@ -61,10 +61,10 @@ function terminalLinkCandidates(rows, columns) {
         const preservesContentColumn = next.text.slice(0, prefix.length).trim() === '';
         if (repeatsPrefix || preservesContentColumn) {
           continuationStart = prefix.length;
-          continuation = next.text.slice(prefix.length).match(/^[^\s<>"']+$/)?.[0] || null;
+          continuation = next.text.slice(prefix.length).match(/^[^\s<>"']+/)?.[0] || null;
         }
       } else if (logicalLines[current]?.endsAtColumnBoundary) {
-        continuation = next.text.match(/^[^\s<>"']+$/)?.[0] || null;
+        continuation = next.text.match(/^[^\s<>"']+/)?.[0] || null;
       }
       if (!continuation || /^https?:[/]{2}/i.test(continuation)) break;
       const appendedAt = text.length;
@@ -82,6 +82,7 @@ function terminalLinkCandidates(rows, columns) {
       }
       text += continuation;
       current += 1;
+      if (continuationEnd < next.text.length) break;
     }
     return { text, segments };
   });
