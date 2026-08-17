@@ -11,7 +11,7 @@ describe('terminal input composer', () => {
     expect(screen).toContain('<MessageCircle size={TERMINAL_ICON_SIZE}');
     expect(screen).toContain('const [composeText, setComposeText] = useState');
     expect(screen).toContain('multiline');
-    expect(screen).toContain('onChangeText={setComposeText}');
+    expect(screen).toContain('onInteraction?.(activeTargetRef.current)');
     expect(screen).not.toContain('disabled={!composeText.trim() && composeAttachments.length === 0}');
   });
 
@@ -90,6 +90,6 @@ describe('terminal input composer', () => {
     expect(screen).toContain('setKeyboardEnabled(true)');
     expect(screen).toContain("t('terminal.composeCharacterCount'");
     expect(screen.match(/value=\{composeText\}/g)).toHaveLength(2);
-    expect(screen.match(/onChangeText=\{setComposeText\}/g)).toHaveLength(2);
+    expect(screen.match(/onChangeText=\{value => \{/g)).toHaveLength(2);
   });
 });

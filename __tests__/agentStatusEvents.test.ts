@@ -1,5 +1,5 @@
 import {
-  activeTabUsesBriefAlerts,
+  foregroundUsesBriefAlerts,
   agentFromStatusEvent,
   agentNotificationTitle,
   agentStatusFromEvent,
@@ -62,33 +62,11 @@ describe('agent status events', () => {
     expect(previousVisibleAgentStatus(visibleSnapshot, agent.pane_id, 'done')).toBe('working');
   });
 
-  test('uses brief notifications for the active focused tab', () => {
+  test('uses brief notifications whenever the app is in the foreground', () => {
     expect(shouldNotifyAgentTransition('working', 'blocked')).toBe(true);
     expect(shouldNotifyAgentTransition('working', 'done')).toBe(true);
-    const tabs = [{
-      tab_id: 'tab-1',
-      workspace_id: 'workspace-1',
-      number: 1,
-      label: 'Gold research',
-      focused: true,
-      pane_count: 1,
-      agent_status: 'working' as const,
-    }];
-    expect(activeTabUsesBriefAlerts(agent, tabs, true, true)).toBe(true);
-    expect(activeTabUsesBriefAlerts(agent, tabs, false, true)).toBe(false);
-  });
-
-  test('keeps the persistent alert for a focused tab on a background host', () => {
-    const tabs = [{
-      tab_id: 'tab-1',
-      workspace_id: 'workspace-1',
-      number: 1,
-      label: 'Gold research',
-      focused: true,
-      pane_count: 1,
-      agent_status: 'working' as const,
-    }];
-    expect(activeTabUsesBriefAlerts(agent, tabs, true, false)).toBe(false);
+    expect(foregroundUsesBriefAlerts(true)).toBe(true);
+    expect(foregroundUsesBriefAlerts(false)).toBe(false);
   });
 
   test('merges presentation metadata from a status event', () => {

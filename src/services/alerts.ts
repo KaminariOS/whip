@@ -18,8 +18,17 @@ const ALERT_VIBRATION_PATTERN = [
 const BRIEF_VIBRATION_PATTERN = [0, 200];
 const SPEECH_TIMEOUT_MS = 10_000;
 const DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS = 30_000;
-const activeAgentNotificationIds = new Set<string>();
+type ActiveAgentNotification = {
+  targetKey: string;
+  persistent: boolean;
+};
+
+const activeAgentNotifications = new Map<string, ActiveAgentNotification>();
+const pendingAgentAlertCounts = new Map<string, number>();
+const tabDismissalGenerations = new Map<string, number>();
 let alertDismissalGeneration = 0;
+let persistentAgentNotificationId: string | null = null;
+let speakingAgentAlertTargetKey: string | null = null;
 
 export type AgentAlertDuration = 'brief' | 'persistent';
 
@@ -63,51 +72,106 @@ export async function alertAgent(
   persistentAlertTimeoutMs: number = DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS,
 ): Promise<void> {
   const dismissalGeneration = alertDismissalGeneration;
+  const targetKey = agentAlertTargetKey(target.hostId, agent.tab_id);
+  const tabDismissalGeneration = tabDismissalGenerations.get(targetKey) ?? 0;
+  const wasDismissed = () => (
+    dismissalGeneration !== alertDismissalGeneration
+    || tabDismissalGeneration !== (tabDismissalGenerations.get(targetKey) ?? 0)
+  );
   const title = agentNotificationTitle(agent, tabName, {
     needsYou: name => i18n.t('alerts.needsYou', { name }),
     finished: name => i18n.t('alerts.finished', { name }),
   });
   const body = agent.title || agent.custom_status || i18n.t('alerts.agentState', { status: agent.agent_status });
 
-  if (speak) await speakBeforeAlert(title);
-  if (dismissalGeneration !== alertDismissalGeneration) return;
-  if (Platform.OS !== 'android') Vibration.vibrate();
-  const persistent = duration === 'persistent';
-  const channelId = persistent ? PERSISTENT_CHANNEL_ID : BRIEF_CHANNEL_ID;
-  const notificationIdentifier = await Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      sound: 'default',
-      vibrate: persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
-      priority: Notifications.AndroidNotificationPriority.MAX,
-      data: target,
-    },
-    trigger: { channelId },
-  });
-  if (dismissalGeneration !== alertDismissalGeneration) {
-    await Notifications.dismissNotificationAsync(notificationIdentifier).catch(() => undefined);
-    return;
-  }
-  activeAgentNotificationIds.add(notificationIdentifier);
-  if (Platform.OS === 'android' && persistent) {
-    armPersistentAgentAlert(
-      notificationIdentifier,
-      PERSISTENT_CHANNEL_ID,
-      persistentAlertTimeoutMs,
-    ).catch(() => undefined);
+  pendingAgentAlertCounts.set(targetKey, (pendingAgentAlertCounts.get(targetKey) ?? 0) + 1);
+  try {
+    if (speak) {
+      speakingAgentAlertTargetKey = targetKey;
+      try {
+        await speakBeforeAlert(title);
+      } finally {
+        if (speakingAgentAlertTargetKey === targetKey) speakingAgentAlertTargetKey = null;
+      }
+    }
+    if (wasDismissed()) return;
+    if (Platform.OS !== 'android') Vibration.vibrate();
+    const persistent = duration === 'persistent';
+    const channelId = persistent ? PERSISTENT_CHANNEL_ID : BRIEF_CHANNEL_ID;
+    const notificationIdentifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: 'default',
+        vibrate: persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        data: target,
+      },
+      trigger: { channelId },
+    });
+    if (wasDismissed()) {
+      await Notifications.dismissNotificationAsync(notificationIdentifier).catch(() => undefined);
+      return;
+    }
+    activeAgentNotifications.set(notificationIdentifier, { targetKey, persistent });
+    if (Platform.OS === 'android' && persistent) {
+      persistentAgentNotificationId = notificationIdentifier;
+      armPersistentAgentAlert(
+        notificationIdentifier,
+        PERSISTENT_CHANNEL_ID,
+        persistentAlertTimeoutMs,
+      ).catch(() => {
+        if (persistentAgentNotificationId === notificationIdentifier) {
+          persistentAgentNotificationId = null;
+        }
+      });
+    }
+  } finally {
+    const remaining = (pendingAgentAlertCounts.get(targetKey) ?? 1) - 1;
+    if (remaining > 0) pendingAgentAlertCounts.set(targetKey, remaining);
+    else pendingAgentAlertCounts.delete(targetKey);
   }
 }
 
 export async function dismissAgentAlerts(): Promise<void> {
   alertDismissalGeneration += 1;
-  const notificationIds = [...activeAgentNotificationIds];
-  activeAgentNotificationIds.clear();
+  const notificationIds = [...activeAgentNotifications.keys()];
+  activeAgentNotifications.clear();
+  persistentAgentNotificationId = null;
+  speakingAgentAlertTargetKey = null;
   await Speech.stop().catch(() => undefined);
   await Promise.all(notificationIds.map(identifier => (
     Notifications.dismissNotificationAsync(identifier).catch(() => undefined)
   )));
   await dismissPersistentAgentAlert().catch(() => undefined);
+}
+
+export async function dismissAgentAlertsForTab(hostId: string, tabId: string): Promise<void> {
+  const targetKey = agentAlertTargetKey(hostId, tabId);
+  const notificationIds = [...activeAgentNotifications]
+    .filter(([, alert]) => alert.targetKey === targetKey)
+    .map(([identifier]) => identifier);
+  const pending = pendingAgentAlertCounts.has(targetKey);
+  if (!pending && notificationIds.length === 0) return;
+
+  tabDismissalGenerations.set(targetKey, (tabDismissalGenerations.get(targetKey) ?? 0) + 1);
+  for (const identifier of notificationIds) activeAgentNotifications.delete(identifier);
+
+  if (speakingAgentAlertTargetKey === targetKey) {
+    speakingAgentAlertTargetKey = null;
+    await Speech.stop().catch(() => undefined);
+  }
+  await Promise.all(notificationIds.map(identifier => (
+    Notifications.dismissNotificationAsync(identifier).catch(() => undefined)
+  )));
+  if (persistentAgentNotificationId && notificationIds.includes(persistentAgentNotificationId)) {
+    persistentAgentNotificationId = null;
+    await dismissPersistentAgentAlert().catch(() => undefined);
+  }
+}
+
+function agentAlertTargetKey(hostId: string, tabId: string): string {
+  return JSON.stringify([hostId, tabId]);
 }
 
 async function speakBeforeAlert(title: string): Promise<void> {

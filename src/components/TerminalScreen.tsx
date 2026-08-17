@@ -58,6 +58,7 @@ interface Props {
   onRequestFiles?: () => void;
   onOpenLink?: (link: string) => void;
   onLinksScanned?: (links: string[]) => void;
+  onInteraction?: (target: TerminalRenderTarget) => void;
   onClose: () => void;
   onStatus: (
     target: TerminalRenderTarget,
@@ -177,6 +178,7 @@ export function TerminalScreen({
   onRequestFiles,
   onOpenLink,
   onLinksScanned,
+  onInteraction,
   onClose,
   onStatus,
 }: Props) {
@@ -243,6 +245,7 @@ export function TerminalScreen({
     refocusTerminal = true,
   ): Promise<boolean> => {
     if (!target) return false;
+    onInteraction?.(target);
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     try {
       await target.client.writeToTerminal(target.session.terminalId, data);
@@ -498,6 +501,7 @@ export function TerminalScreen({
   };
 
   const submitCompose = () => {
+    if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
     const attachmentPaths = composeAttachmentsRef.current.map(attachment => attachment.remotePath);
     const submitted = [composeText.trimEnd(), ...attachmentPaths].filter(Boolean).join(' ');
     if (!submitted) {
@@ -913,7 +917,10 @@ export function TerminalScreen({
                     numberOfLines={3}
                     textAlignVertical="top"
                     value={composeText}
-                    onChangeText={setComposeText}
+                    onChangeText={value => {
+                      if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
+                      setComposeText(value);
+                    }}
                     placeholder={t('terminal.composePlaceholder')}
                     placeholderTextColor={colors.muted}
                     className="h-[76px] rounded-none border-0 bg-transparent px-3 py-2 font-mono text-[12px] leading-[17px] text-terminal-text"
@@ -1006,7 +1013,10 @@ export function TerminalScreen({
               multiline
               textAlignVertical="top"
               value={composeText}
-              onChangeText={setComposeText}
+              onChangeText={value => {
+                if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
+                setComposeText(value);
+              }}
               placeholder={t('terminal.composePlaceholder')}
               placeholderTextColor={colors.muted}
               className="h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] text-terminal-text shadow-none"

@@ -45,7 +45,7 @@ import { resolveColorScheme } from './src/lib/appearance';
 import { biometricResumeAction } from './src/lib/appAccess';
 import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from './src/lib/biometricSecurity';
 import {
-  activeTabUsesBriefAlerts,
+  foregroundUsesBriefAlerts,
   agentFromStatusEvent,
   tabNameForAgent,
   agentStatusFromEvent,
@@ -110,7 +110,7 @@ import {
   initialMobileNavigation,
   selectMobileTab,
 } from './src/mobileNavigation';
-import { alertAgent, dismissAgentAlerts, prepareAlerts } from './src/services/alerts';
+import { alertAgent, dismissAgentAlerts, dismissAgentAlertsForTab, prepareAlerts } from './src/services/alerts';
 import { authenticateAppAccess } from './src/services/appAuthentication';
 import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
 import {
@@ -600,12 +600,7 @@ function AppContent() {
             runtime.previousStatuses?.get(paneId),
           );
           const useBriefAlert = agent
-            ? activeTabUsesBriefAlerts(
-              agent,
-              session?.snapshot.tabs ?? [],
-              AppState.currentState === 'active',
-              liveSessionsRef.current.activeSessionId === sessionId,
-            )
+            ? foregroundUsesBriefAlerts(AppState.currentState === 'active')
             : false;
           if (
             agentStatus
@@ -721,12 +716,7 @@ function AppContent() {
               agent.pane_id,
               runtime.previousStatuses.get(agent.pane_id),
             );
-            const useBriefAlert = activeTabUsesBriefAlerts(
-              agent,
-              snapshot.tabs,
-              AppState.currentState === 'active',
-              liveSessionsRef.current.activeSessionId === sessionId,
-            );
+            const useBriefAlert = foregroundUsesBriefAlerts(AppState.currentState === 'active');
             if (shouldNotifyAgentTransition(previous, agent.agent_status)) {
               alertAgent(agent, ttsEnabledRef.current, {
                 hostId: sessionId,
@@ -1814,6 +1804,9 @@ function AppContent() {
             onTerminalControlUse={recordTerminalControlUse}
             onTerminalHistoryEntry={recordTerminalHistoryEntry}
             onTerminalOpenLinksInAppChange={updateTerminalOpenLinksInApp}
+            onInteraction={(sessionId, tabId) => {
+              dismissAgentAlertsForTab(sessionId, tabId).catch(() => undefined);
+            }}
             onExit={() => exitTerminalToHerd(activeSession.id)}
             onRefresh={refreshHost}
             onOpenPane={(sessionId, pane) => {
@@ -1945,6 +1938,7 @@ function LiveSessionView({
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
+  onInteraction,
   onExit,
   onRefresh,
   onOpenPane,
@@ -1962,6 +1956,7 @@ function LiveSessionView({
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
+  onInteraction: (sessionId: string, tabId: string) => void;
   onExit: () => void;
   onRefresh: (sessionId: string) => Promise<void>;
   onOpenPane: (sessionId: string, pane: PaneInfo) => void;
@@ -1994,6 +1989,7 @@ function LiveSessionView({
       onTerminalControlUse={onTerminalControlUse}
       onTerminalHistoryEntry={onTerminalHistoryEntry}
       onTerminalOpenLinksInAppChange={onTerminalOpenLinksInAppChange}
+      onInteraction={tabId => onInteraction(sessionId, tabId)}
       onExit={onExit}
     />
   );

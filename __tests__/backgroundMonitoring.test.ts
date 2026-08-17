@@ -116,6 +116,12 @@ describe('Android background monitoring', () => {
     expect(module).toContain('stopPersistentAlert("App returned to the foreground")');
   });
 
+  it('dismisses a foreground alert when its tab receives user input', () => {
+    expect(app).toContain('dismissAgentAlertsForTab(sessionId, tabId)');
+    expect(alerts).toContain('export async function dismissAgentAlertsForTab');
+    expect(alerts).toContain('tabDismissalGenerations.set(targetKey');
+  });
+
   it('does not close Herdr event monitoring when the activity is backgrounded', () => {
     expect(app).not.toContain("runtime.eventReconnectTimer || AppState.currentState !== 'active'");
     expect(app).not.toContain("if (!runtime || AppState.currentState !== 'active') return;");
