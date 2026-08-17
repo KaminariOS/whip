@@ -42,6 +42,11 @@ describe('Android terminal assets', () => {
     expect(html).toContain('Math.max(8, Math.min(24');
     expect(html).toContain('document.fonts.load');
     expect(html).toContain('terminal.attachCustomKeyEventHandler');
+    expect(html).toContain("linkHandler: { activate: (_event, link) => send({ type: 'open-link', link }) }");
+    expect(html).toContain('terminal.parser.registerOscHandler(8, data => {');
+    expect(html).toContain('const marker = terminal.registerMarker();');
+    expect(html).toContain('links: mergeTerminalLinks(terminalRows(), terminal.cols, osc8Links)');
+    expect(html).toContain('return osc8LinkAt(osc8Links, cell.row, cell.col)');
     expect(html).toContain('installAndroidImeBridge(terminal, send, navigator.userAgent)');
     expect(html).toContain('terminalInputDelta(mirroredValue, next)');
     expect(html).toContain("inputType !== 'insertReplacementText'");
