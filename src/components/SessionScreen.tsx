@@ -70,6 +70,7 @@ interface Props {
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
+  onInteraction: (tabId: string) => void;
   onExit: () => void;
 }
 
@@ -111,6 +112,7 @@ export function SessionScreen({
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
+  onInteraction,
   onExit,
 }: Props) {
   const { colors } = useTheme();
@@ -198,6 +200,13 @@ export function SessionScreen({
       translateX: tabSwipeTranslateX.value + (tabSwipe ? tabSwipe.direction * terminalWidth : 0),
     }],
   }), [tabSwipe, terminalWidth]);
+
+  const registerInteraction = (target: TerminalRenderTarget | null = activeTarget) => {
+    if (!target || target.session.kind === 'ssh') return;
+    const pane = snapshot.panes.find(item => item.pane_id === target.session.paneId);
+    const interactionTabId = pane?.tab_id || selectedTab?.tab_id;
+    if (interactionTabId) onInteraction(interactionTabId);
+  };
 
   const closeActiveTunnel = async () => {
     const localPort = tunnelPortRef.current;
@@ -680,6 +689,7 @@ export function SessionScreen({
 
       <View
         className="relative flex-1 overflow-hidden bg-transparent"
+        onTouchStart={() => registerInteraction()}
         onLayout={event => {
           terminalWidthRef.current = event.nativeEvent.layout.width;
           setTerminalWidth(event.nativeEvent.layout.width);
@@ -724,6 +734,7 @@ export function SessionScreen({
             }}
             onControlUse={onTerminalControlUse}
             onHistoryEntry={onTerminalHistoryEntry}
+            onInteraction={registerInteraction}
             onClose={() => {
               if (activeTerminalSession) onCloseTerminal(activeTerminalSession.terminalId);
             }}

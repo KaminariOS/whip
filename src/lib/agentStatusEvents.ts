@@ -39,15 +39,8 @@ export function previousVisibleAgentStatus(
     ?? fallback;
 }
 
-export function activeTabUsesBriefAlerts(
-  agent: Pick<AgentInfo, 'tab_id'>,
-  tabs: TabInfo[],
-  appHasFocus: boolean,
-  hostIsActive: boolean,
-): boolean {
-  return appHasFocus
-    && hostIsActive
-    && tabs.some(tab => tab.tab_id === agent.tab_id && tab.focused);
+export function foregroundUsesBriefAlerts(appHasFocus: boolean): boolean {
+  return appHasFocus;
 }
 
 export function tabNameForAgent(

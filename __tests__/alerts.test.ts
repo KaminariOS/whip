@@ -36,7 +36,7 @@ import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 
 import type { AgentInfo } from '../src/types';
-import { alertAgent, dismissAgentAlerts } from '../src/services/alerts';
+import { alertAgent, dismissAgentAlerts, dismissAgentAlertsForTab } from '../src/services/alerts';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from '../src/services/backgroundMonitoring';
 
 const agent: AgentInfo = {
@@ -168,4 +168,50 @@ test('dismisses an agent notification that finishes posting during foregrounding
 
   expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('late-notification');
   expect(armPersistentAgentAlert).not.toHaveBeenCalled();
+});
+
+test('dismisses only notifications for the tab being interacted with', async () => {
+  await dismissAgentAlerts();
+  jest.clearAllMocks();
+  jest.mocked(Notifications.scheduleNotificationAsync)
+    .mockResolvedValueOnce('tab-1-notification')
+    .mockResolvedValueOnce('tab-2-notification');
+
+  await alertAgent(agent, false, { hostId: 'host-1', paneId: agent.pane_id }, 'work', 'brief');
+  await alertAgent(
+    { ...agent, tab_id: 'tab-2', pane_id: 'pane-2' },
+    false,
+    { hostId: 'host-1', paneId: 'pane-2' },
+    'review',
+    'brief',
+  );
+  jest.mocked(Notifications.dismissNotificationAsync).mockClear();
+
+  await dismissAgentAlertsForTab('host-1', 'tab-1');
+
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('tab-1-notification');
+  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalledWith('tab-2-notification');
+  await dismissAgentAlerts();
+});
+
+test('cancels a matching tab alert that finishes scheduling during interaction', async () => {
+  await dismissAgentAlerts();
+  jest.clearAllMocks();
+  let finishScheduling: ((identifier: string) => void) | undefined;
+  jest.mocked(Notifications.scheduleNotificationAsync).mockReturnValueOnce(new Promise(resolve => {
+    finishScheduling = resolve;
+  }));
+  const pendingAlert = alertAgent(
+    agent,
+    false,
+    { hostId: 'host-1', paneId: agent.pane_id },
+    'work',
+    'brief',
+  );
+
+  await dismissAgentAlertsForTab('host-1', agent.tab_id);
+  finishScheduling?.('late-tab-notification');
+  await pendingAlert;
+
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('late-tab-notification');
 });
