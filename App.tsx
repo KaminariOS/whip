@@ -1771,6 +1771,24 @@ function AppContent() {
               server={activeSession?.snapshot.server || null}
               onAlertsChange={setAlertsEnabled}
               onPersistentAlertDurationChange={setPersistentAlertDurationSeconds}
+              onTestPersistentAlert={() => {
+                alertAgent({
+                  terminal_id: 'whip-alert-test',
+                  agent: 'Whip',
+                  agent_status: 'done',
+                  workspace_id: 'whip-alert-test',
+                  tab_id: 'whip-alert-test',
+                  pane_id: 'whip-alert-test',
+                  focused: false,
+                  revision: 0,
+                }, false, {
+                  hostId: 'whip-alert-test',
+                  paneId: 'whip-alert-test',
+                }, t('settings.testPersistentAlertTab'), 'persistent',
+                persistentAlertDurationSecondsRef.current * 1_000).catch(error => {
+                  setConnectError(String(error));
+                });
+              }}
               onTtsChange={setTtsEnabled}
               onBiometricForKeysChange={value => { updateBiometricForKeys(value).catch(() => undefined); }}
               onBiometricOnResumeChange={value => { updateBiometricOnResume(value).catch(() => undefined); }}

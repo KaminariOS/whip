@@ -38,6 +38,19 @@ test('does not show a Disconnect SSH button', () => {
   expect(settings).not.toContain("t('settings.disconnect')");
 });
 
+test('offers the genuine persistent agent alert as a notification test', () => {
+  const settings = readFileSync(
+    resolve(__dirname, '../src/components/SettingsScreen.tsx'),
+    'utf8',
+  );
+  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+
+  expect(settings).toContain("t('settings.testPersistentAlert')");
+  expect(settings).toContain('onPress={props.onTestPersistentAlert}');
+  expect(app).toContain("}, t('settings.testPersistentAlertTab'), 'persistent',");
+  expect(app).toContain('persistentAlertDurationSecondsRef.current * 1_000');
+});
+
 test('uses a scalable language selection sheet instead of inline language pills', () => {
   const settings = readFileSync(
     resolve(__dirname, '../src/components/SettingsScreen.tsx'),

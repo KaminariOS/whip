@@ -113,6 +113,7 @@ export interface SettingsSectionProps {
   terminalHistory: readonly string[];
   onAlertsChange: (value: boolean) => void;
   onPersistentAlertDurationChange: (value: number) => void;
+  onTestPersistentAlert: () => void;
   onTtsChange: (value: boolean) => void;
   onBiometricForKeysChange: (value: boolean) => void;
   onBiometricOnResumeChange: (value: boolean) => void;
@@ -215,6 +216,13 @@ export function SettingsSection(props: SettingsSectionProps) {
               MAX_PERSISTENT_ALERT_DURATION_SECONDS,
               props.persistentAlertDurationSeconds + PERSISTENT_ALERT_DURATION_STEP_SECONDS,
             ))}
+            divided
+          /> : null}
+          {Platform.OS === 'android' ? <ActionRow
+            title={t('settings.testPersistentAlert')}
+            copy={t('settings.testPersistentAlertCopy')}
+            icon={BellRing}
+            onPress={props.onTestPersistentAlert}
             divided
           /> : null}
           <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
