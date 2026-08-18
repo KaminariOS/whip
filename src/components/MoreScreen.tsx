@@ -39,6 +39,7 @@ export function MoreScreen(props: Props) {
         terminalPreferences={props.terminalPreferences}
         onAlertsChange={props.onAlertsChange}
         onPersistentAlertDurationChange={props.onPersistentAlertDurationChange}
+        onTestPersistentAlert={props.onTestPersistentAlert}
         onTtsChange={props.onTtsChange}
         onBiometricForKeysChange={props.onBiometricForKeysChange}
         onBiometricOnResumeChange={props.onBiometricOnResumeChange}
