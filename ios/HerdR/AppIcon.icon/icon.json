@@ -1,0 +1,34 @@
+{
+  "fill" : {
+    "solid" : "srgb:0.00000,0.00000,0.00000,0.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "whip-cyborg-hand-concept.svg",
+          "name" : "Whip",
+          "position" : {
+            "scale" : 0.86,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}
