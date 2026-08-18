@@ -60,6 +60,7 @@ static LIFECYCLE_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 const CONTROL_QUEUE_CAPACITY: usize = 256;
 const EXECUTE_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
+const REMOTE_HOME_COMMAND: &str = r#"printf %s "$HOME""#;
 
 #[derive(Debug, thiserror::Error)]
 enum TransportError {
@@ -1425,7 +1426,7 @@ async fn dispatch(request: Request) -> Result<Value, TransportError> {
         "measureHostLatency" => latency(&request.params).await,
         "getRemoteHome" => {
             let mut params = request.params.clone();
-            params["command"] = json!("printf %s \\\"$HOME\\\"");
+            params["command"] = json!(REMOTE_HOME_COMMAND);
             let value = execute(&params).await?;
             Ok(json!(value["stdout"].as_str().unwrap_or_default()))
         }
@@ -1724,6 +1725,11 @@ mod tests {
                 .unwrap()
                 .contains("missing string parameter 'key'")
         );
+    }
+
+    #[test]
+    fn remote_home_command_expands_without_literal_quotes() {
+        assert_eq!(REMOTE_HOME_COMMAND, "printf %s \"$HOME\"");
     }
 
     #[test]
