@@ -1,134 +1,39 @@
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import androidImeBridge from './android-ime-bridge.cjs';
-import terminalLinkExtraction from './terminal-link-extraction.cjs';
-
-const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
-const {
-  extractTerminalLinks,
-  mergeTerminalLinks,
-  osc8LinkAt,
-  osc8LinkFromData,
-  terminalLinkAt,
-  terminalLinkCandidates,
-  trimTerminalUrl,
-} = terminalLinkExtraction;
-
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const assets = resolve(root, 'android/app/src/main/assets');
-const iosAssets = resolve(root, 'ios/HerdR/TerminalAssets');
-const terminalFonts = resolve(root, 'assets/terminal-fonts');
-const fontManifest = JSON.parse(
-  await readFile(resolve(terminalFonts, 'manifest.json'), 'utf8'),
-);
-const jetBrainsMonoRegular = resolve(
-  terminalFonts,
-  fontManifest.text.regularFile,
-);
-const jetBrainsMonoBold = resolve(terminalFonts, fontManifest.text.boldFile);
-const jetBrainsMonoLicense = resolve(
-  terminalFonts,
-  fontManifest.text.licenseFile,
-);
-const cjkRegular = resolve(terminalFonts, fontManifest.cjk.regularFile);
-const cjkLicense = resolve(terminalFonts, fontManifest.cjk.licenseFile);
-const nerdSymbolsRegular = resolve(
-  terminalFonts,
-  fontManifest.symbols.regularFile,
-);
-const nerdSymbolsLicense = resolve(
-  terminalFonts,
-  fontManifest.symbols.licenseFile,
-);
-const terminalFontFamily = [
-  fontManifest.text.cssFamily,
-  fontManifest.emoji.cssFamily,
-  fontManifest.symbols.cssFamily,
-  fontManifest.cjk.cssFamily,
-  fontManifest.fallback.cssFamily,
-].map(family => family === 'monospace' ? family : `"${family}"`).join(', ');
-await mkdir(assets, { recursive: true });
-await mkdir(iosAssets, { recursive: true });
-const copyTerminalAsset = (source, bundledName) => Promise.all([
-  copyFile(source, resolve(assets, bundledName)),
-  copyFile(source, resolve(iosAssets, bundledName)),
-]);
-await Promise.all([
-  copyTerminalAsset(
-    resolve(root, 'node_modules/@xterm/xterm/lib/xterm.js'),
-    'xterm.js',
-  ),
-  copyTerminalAsset(
-    resolve(root, 'node_modules/@xterm/xterm/css/xterm.css'),
-    'xterm.css',
-  ),
-  copyTerminalAsset(
-    resolve(root, 'node_modules/@xterm/addon-fit/lib/addon-fit.js'),
-    'addon-fit.js',
-  ),
-  copyTerminalAsset(
-    jetBrainsMonoRegular,
-    fontManifest.text.bundledRegularFile,
-  ),
-  copyTerminalAsset(
-    jetBrainsMonoBold,
-    fontManifest.text.bundledBoldFile,
-  ),
-  copyTerminalAsset(
-    jetBrainsMonoLicense,
-    fontManifest.text.bundledLicenseFile,
-  ),
-  copyTerminalAsset(cjkRegular, fontManifest.cjk.bundledRegularFile),
-  copyTerminalAsset(cjkLicense, fontManifest.cjk.bundledLicenseFile),
-  copyTerminalAsset(
-    nerdSymbolsRegular,
-    fontManifest.symbols.bundledRegularFile,
-  ),
-  copyTerminalAsset(
-    nerdSymbolsLicense,
-    fontManifest.symbols.bundledLicenseFile,
-  ),
-]);
-
-const terminalSessionHtml = `<!doctype html>
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <base href="file:///android_asset/">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <link rel="stylesheet" href="xterm.css">
   <style>
-    @font-face {
-      font-family: '${fontManifest.text.cssFamily}';
-      src: url('${fontManifest.text.bundledRegularFile}') format('truetype');
+        @font-face {
+      font-family: 'Herdr Terminal Mono';
+      src: url('jetbrains-mono-regular.ttf') format('truetype');
       font-style: normal;
       font-weight: 400;
       font-display: block;
     }
     @font-face {
-      font-family: '${fontManifest.text.cssFamily}';
-      src: url('${fontManifest.text.bundledBoldFile}') format('truetype');
+      font-family: 'Herdr Terminal Mono';
+      src: url('jetbrains-mono-bold.ttf') format('truetype');
       font-style: normal;
       font-weight: 700;
       font-display: block;
     }
     @font-face {
-      font-family: '${fontManifest.symbols.cssFamily}';
-      src: url('${fontManifest.symbols.bundledRegularFile}') format('truetype');
+      font-family: 'Herdr Terminal Symbols';
+      src: url('symbols-nerd-font-mono-regular.ttf') format('truetype');
       font-style: normal;
       font-weight: 400;
       font-display: block;
     }
     @font-face {
-      font-family: '${fontManifest.cjk.cssFamily}';
-      src: url('${fontManifest.cjk.bundledRegularFile}') format('truetype');
+      font-family: 'Herdr Terminal CJK';
+      src: url('arphic-ukai-hk.ttf') format('truetype');
       font-style: normal;
       font-weight: 400;
       font-display: block;
     }
-    html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+    html, body, #terminals, .terminal-session, .terminal-session #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
     html { -webkit-text-size-adjust: none; text-size-adjust: none; }
     #terminal-background-layer { position: fixed; inset: 0; z-index: 2; display: none; mix-blend-mode: screen; pointer-events: none; }
     #terminal-background-image { width: 100%; height: 100%; object-fit: cover; }
@@ -139,41 +44,215 @@ const terminalSessionHtml = `<!doctype html>
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     .xterm .scrollbar { display: none !important; }
     #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #24283b; border: 1px solid #414868; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
-    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #c0caf5; padding: 8px 10px; font: 700 10px '${fontManifest.text.cssFamily}', monospace; }
+    #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #c0caf5; padding: 8px 10px; font: 700 10px 'Herdr Terminal Mono', monospace; }
     #selection-toolbar button:active { background: #7aa2f7; color: #16161e; }
     #selection-handles { position: fixed; inset: 0; z-index: 19; pointer-events: none; }
     .selection-handle { position: fixed; display: none; width: 22px; height: 22px; box-sizing: border-box; border: 2px solid #16161e; border-radius: 50%; background: #7aa2f7; box-shadow: 0 2px 6px #0009; pointer-events: auto; touch-action: none; transform: translate(-50%, 3px); }
     .selection-handle::before { content: ''; position: absolute; left: 50%; top: -6px; width: 4px; height: 7px; border-radius: 2px 2px 0 0; background: #7aa2f7; transform: translateX(-50%); }
     .selection-handle.dragging { width: 26px; height: 26px; background: #9ab8ff; }
+    #terminals { position: relative; width: 100%; height: 100%; }
+    .terminal-session {
+      position: absolute;
+      inset: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateX(0);
+    }
+    .terminal-session.presented {
+      visibility: visible;
+      pointer-events: auto;
+    }
   </style>
 </head>
 <body>
-  <div id="terminal-background-layer">
-    <img id="terminal-background-image" alt="" />
-    <div id="terminal-background-glass"></div>
-  </div>
-  <div id="terminal"></div>
-  <div id="selection-handles" aria-hidden="true">
-    <div id="selection-start-handle" class="selection-handle"></div>
-    <div id="selection-end-handle" class="selection-handle"></div>
-  </div>
-  <div id="selection-toolbar"><button id="copy-selection">COPY</button><button id="select-all-selection">SELECT ALL</button><button id="paste-selection">PASTE</button></div>
+  <div id="terminals"></div>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
   <script>
-    ${terminalInputDelta.toString()}
-    ${installAndroidImeBridge.toString()}
-    const terminalFontFamily = '${terminalFontFamily}';
+    const terminalMarkup = "  \u003cdiv id=\"terminal-background-layer\">\n    \u003cimg id=\"terminal-background-image\" alt=\"\" />\n    \u003cdiv id=\"terminal-background-glass\">\u003c/div>\n  \u003c/div>\n  \u003cdiv id=\"terminal\">\u003c/div>\n  \u003cdiv id=\"selection-handles\" aria-hidden=\"true\">\n    \u003cdiv id=\"selection-start-handle\" class=\"selection-handle\">\u003c/div>\n    \u003cdiv id=\"selection-end-handle\" class=\"selection-handle\">\u003c/div>\n  \u003c/div>\n  \u003cdiv id=\"selection-toolbar\">\u003cbutton id=\"copy-selection\">COPY\u003c/button>\u003cbutton id=\"select-all-selection\">SELECT ALL\u003c/button>\u003cbutton id=\"paste-selection\">PASTE\u003c/button>\u003c/div>";
+    const createTerminalSession = (root, report) => {
+      let disposed = false;
+      const api = {
+        herdrDispose: () => { disposed = true; },
+      };
+          function terminalInputDelta(previous, next) {
+  const before = Array.from(previous);
+  const after = Array.from(next);
+  let common = 0;
+  while (common < before.length && common < after.length && before[common] === after[common]) {
+    common += 1;
+  }
+  return '\u007f'.repeat(before.length - common) + after.slice(common).join('');
+}
+    function installAndroidImeBridge(terminal, send, userAgent, eventTarget = window) {
+  const input = terminal.textarea;
+  if (!input || !/Android/i.test(userAgent)) return () => {};
+
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('autocorrect', 'off');
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('spellcheck', 'false');
+
+  let composing = false;
+  let interceptInput = false;
+  let suppressInput = false;
+  let mirroredValue = String(input.value || '');
+  let reconcileTimer = null;
+
+  const isTerminalInput = event => event.target === input;
+  const stopXterm = event => event.stopPropagation();
+  const emit = data => {
+    if (data) send({ type: 'input', data });
+  };
+  const reconcileInput = () => {
+    const next = String(input.value || '');
+    emit(terminalInputDelta(mirroredValue, next));
+    mirroredValue = next;
+  };
+  const cancelReconcile = () => {
+    if (reconcileTimer) clearTimeout(reconcileTimer);
+    reconcileTimer = null;
+  };
+  const flushReconcile = () => {
+    cancelReconcile();
+    reconcileInput();
+  };
+  const scheduleReconcile = () => {
+    cancelReconcile();
+    reconcileTimer = setTimeout(() => {
+      reconcileTimer = null;
+      reconcileInput();
+    }, 0);
+  };
+  const resetInput = () => {
+    cancelReconcile();
+    input.value = '';
+    mirroredValue = '';
+    interceptInput = false;
+    suppressInput = false;
+  };
+  const scheduleReset = () => {
+    cancelReconcile();
+    reconcileTimer = setTimeout(() => {
+      reconcileTimer = null;
+      input.value = '';
+      mirroredValue = '';
+      interceptInput = false;
+      suppressInput = false;
+    }, 0);
+  };
+
+  const onCompositionStart = event => {
+    if (!isTerminalInput(event)) return;
+    stopXterm(event);
+    composing = true;
+    interceptInput = true;
+    scheduleReconcile();
+  };
+  const onCompositionUpdate = event => {
+    if (!isTerminalInput(event)) return;
+    stopXterm(event);
+    scheduleReconcile();
+  };
+  const onCompositionEnd = event => {
+    if (!isTerminalInput(event)) return;
+    stopXterm(event);
+    composing = false;
+    // Chromium may mutate the textarea after compositionend, and event.data is
+    // not reliable for every IME. Read the resulting value on the next task.
+    scheduleReconcile();
+  };
+  const onKeyDown = event => {
+    if (!isTerminalInput(event)) return;
+    if (composing || event.isComposing || event.keyCode === 229) {
+      interceptInput = true;
+      stopXterm(event);
+    }
+  };
+  const onBeforeInput = event => {
+    if (!isTerminalInput(event)) return;
+    if (composing || event.isComposing) {
+      stopXterm(event);
+      return;
+    }
+    const inputType = event.inputType || '';
+    const start = typeof input.selectionStart === 'number' ? input.selectionStart : 0;
+    const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
+    const replacesSelection = end > start;
+    if (!interceptInput && inputType !== 'insertReplacementText' && !replacesSelection) return;
+
+    stopXterm(event);
+    if (inputType === 'insertLineBreak' || inputType === 'insertParagraph') {
+      event.preventDefault();
+      emit('\r');
+      suppressInput = true;
+      scheduleReset();
+      return;
+    }
+    if (inputType === 'deleteContentForward' && start === end) {
+      event.preventDefault();
+      emit('\u001b[3~');
+      return;
+    }
+
+    // Let the IME update its editable buffer. On Chrome Android,
+    // preventDefault() on beforeinput is not consistently honored anyway.
+    // The input event normally reconciles synchronously; this timer covers IMEs
+    // that mutate the textarea without delivering a usable input event.
+    interceptInput = true;
+    scheduleReconcile();
+  };
+  const onInput = event => {
+    if (!isTerminalInput(event)) return;
+    if (suppressInput) {
+      stopXterm(event);
+      resetInput();
+      return;
+    }
+    if (composing || event.isComposing) {
+      stopXterm(event);
+      flushReconcile();
+      return;
+    }
+    if (!interceptInput) return;
+
+    stopXterm(event);
+    flushReconcile();
+  };
+  const onBlur = event => {
+    if (!isTerminalInput(event)) return;
+    composing = false;
+    resetInput();
+  };
+
+  const listeners = [
+    ['compositionstart', onCompositionStart],
+    ['compositionupdate', onCompositionUpdate],
+    ['compositionend', onCompositionEnd],
+    ['keydown', onKeyDown],
+    ['beforeinput', onBeforeInput],
+    ['input', onInput],
+    ['blur', onBlur],
+  ];
+  for (const [type, listener] of listeners) eventTarget.addEventListener(type, listener, true);
+
+  return () => {
+    cancelReconcile();
+    for (const [type, listener] of listeners) eventTarget.removeEventListener(type, listener, true);
+  };
+}
+    const terminalFontFamily = '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", "Herdr Terminal CJK", monospace';
     const fontReady = document.fonts?.load
       ? Promise.all([
-          document.fonts.load('400 8px "${fontManifest.text.cssFamily}"'),
-          document.fonts.load('700 8px "${fontManifest.text.cssFamily}"'),
-          document.fonts.load('400 8px "${fontManifest.symbols.cssFamily}"', '\\uf120'),
-          document.fonts.load('400 8px "${fontManifest.cjk.cssFamily}"', '\\u4e2d'),
+          document.fonts.load('400 8px "Herdr Terminal Mono"'),
+          document.fonts.load('700 8px "Herdr Terminal Mono"'),
+          document.fonts.load('400 8px "Herdr Terminal Symbols"', '\uf120'),
+          document.fonts.load('400 8px "Herdr Terminal CJK"', '\u4e2d'),
         ]).then(() => document.fonts.ready)
       : Promise.resolve();
     const initializeTerminal = () => {
-      const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');
+      if (disposed) return;
+      const send = value => report(value);
       const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
@@ -198,7 +277,7 @@ const terminalSessionHtml = `<!doctype html>
     });
     const fit = new FitAddon.FitAddon();
     terminal.loadAddon(fit);
-    terminal.open(document.getElementById('terminal'));
+    terminal.open(root.querySelector('#terminal'));
     let lastTap = null;
     let doubleTapAction = 'tab';
     let keyboardEnabled = false;
@@ -230,7 +309,18 @@ const terminalSessionHtml = `<!doctype html>
       try { send({ type: 'clipboard-write', text: decodeURIComponent(escape(atob(payload))) }); } catch {}
       return true;
     });
-    ${osc8LinkFromData.toString()}
+    function osc8LinkFromData(data) {
+  const separator = data.indexOf(';');
+  if (separator < 0) return null;
+  const value = data.slice(separator + 1);
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
     const osc8Links = new Set();
     let osc8LinkSequence = 0;
     let openOsc8Link = null;
@@ -285,30 +375,30 @@ const terminalSessionHtml = `<!doctype html>
       }
       return false;
     });
-    window.herdrWrite = data => terminal.write(data);
-    window.herdrWriteBase64 = data => {
+    api.herdrWrite = data => terminal.write(data);
+    api.herdrWriteBase64 = data => {
       const binary = atob(data);
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       terminal.write(bytes);
     };
     const pendingFrames = new Map();
-    window.herdrWriteBase64Chunk = (sequence, data, final) => {
+    api.herdrWriteBase64Chunk = (sequence, data, final) => {
       const encoded = (pendingFrames.get(sequence) || '') + data;
       if (!final) {
         pendingFrames.set(sequence, encoded);
         return;
       }
       pendingFrames.delete(sequence);
-      window.herdrWriteBase64(encoded);
+      api.herdrWriteBase64(encoded);
     };
-    window.herdrReset = () => {
+    api.herdrReset = () => {
       pendingFrames.clear();
       clearOsc8Links();
       terminal.reset();
       clearInteractiveSelection(false);
     };
-    window.herdrConfigure = options => {
+    api.herdrConfigure = options => {
       terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
@@ -317,28 +407,28 @@ const terminalSessionHtml = `<!doctype html>
       if (doubleTapAction === 'none') lastTap = null;
       const backgroundUri = options.backgroundImageUri || '';
       const dimming = Math.max(0, Math.min(100, Number(options.backgroundDimming) || 0)) / 100;
-      const backgroundLayer = document.getElementById('terminal-background-layer');
-      const backgroundImage = document.getElementById('terminal-background-image');
-      const backgroundGlass = document.getElementById('terminal-background-glass');
+      const backgroundLayer = root.querySelector('#terminal-background-layer');
+      const backgroundImage = root.querySelector('#terminal-background-image');
+      const backgroundGlass = root.querySelector('#terminal-background-glass');
       backgroundLayer.style.display = backgroundUri ? 'block' : 'none';
       backgroundImage.src = backgroundUri;
       backgroundGlass.style.backgroundColor = 'rgba(0,0,0,' + dimming + ')';
       setTimeout(resize, 0);
     };
-    window.herdrChangeFontSize = delta => {
+    api.herdrChangeFontSize = delta => {
       const fontSize = Math.max(8, Math.min(24, Math.round(terminal.options.fontSize + Number(delta))));
       if (fontSize === terminal.options.fontSize) return;
       terminal.options.fontSize = fontSize;
       resize();
       send({ type: 'font-size-change', fontSize });
     };
-    window.herdrScroll = (direction, lines) => {
+    api.herdrScroll = (direction, lines) => {
       const count = Math.max(1, Math.round(Number(lines) || 1));
       if (localScrollback) terminal.scrollLines(direction === 'up' ? -count : count);
       else send({ type: 'scroll', direction, lines: count });
     };
-    window.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
-    window.herdrSubmit = data => {
+    api.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
+    api.herdrSubmit = data => {
       bufferedInput = '';
       terminal.paste(data);
       const value = bufferedInput;
@@ -347,8 +437,8 @@ const terminalSessionHtml = `<!doctype html>
       hideToolbar();
     };
     let searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
-    window.herdrClearSearch = () => { clearInteractiveSelection(true); searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 }; };
-    window.herdrSearch = (query, caseSensitive, regex, direction) => {
+    api.herdrClearSearch = () => { clearInteractiveSelection(true); searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 }; };
+    api.herdrSearch = (query, caseSensitive, regex, direction) => {
       clearInteractiveSelection(false);
       const changed = query !== searchState.query || caseSensitive !== searchState.caseSensitive || regex !== searchState.regex;
       if (changed) {
@@ -393,12 +483,173 @@ const terminalSessionHtml = `<!doctype html>
       }
       send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
     };
-    ${trimTerminalUrl.toString()}
-    ${terminalLinkCandidates.toString()}
-    ${extractTerminalLinks.toString()}
-    ${mergeTerminalLinks.toString()}
-    ${osc8LinkAt.toString()}
-    ${terminalLinkAt.toString()}
+    function trimTerminalUrl(candidate) {
+  let value = candidate.replace(/[.,;:!?]+$/, '');
+  for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+    const opens = value.split(open).length - 1;
+    let closes = value.split(close).length - 1;
+    while (value.endsWith(close) && closes > opens) {
+      value = value.slice(0, -1);
+      closes -= 1;
+    }
+  }
+  return value;
+}
+    function terminalLinkCandidates(rows, columns) {
+  const logicalLines = [];
+  let logicalLine = null;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!row.isWrapped || !logicalLine) {
+      if (logicalLine) logicalLines.push(logicalLine);
+      logicalLine = { text: '', segments: [], endsAtColumnBoundary: false };
+    }
+
+    const nextIsWrapped = Boolean(rows[index + 1]?.isWrapped);
+    const text = nextIsWrapped ? row.text : row.text.trimEnd();
+    logicalLine.segments.push({
+      row: index,
+      column: 0,
+      start: logicalLine.text.length,
+      end: logicalLine.text.length + text.length,
+    });
+    logicalLine.text += text;
+    logicalLine.endsAtColumnBoundary = !nextIsWrapped
+      && columns > 0
+      && row.text.trimEnd().length >= columns;
+  }
+  if (logicalLine) logicalLines.push(logicalLine);
+
+  // Some programs hard-wrap output by writing a newline at the terminal edge.
+  // Terminal UIs can also wrap a URL inside a decorated block, repeating a
+  // presentation prefix such as "  ┃  " on every continuation row.
+  const scanLines = logicalLines.map((line, index) => {
+    let text = line.text;
+    const segments = [...line.segments];
+    let current = index;
+    const urlAtEnd = text.match(/https?:[/]{2}[^\s<>"']+$/i);
+    if (!urlAtEnd) return { text, segments };
+
+    const prefix = text.slice(0, urlAtEnd.index);
+    const repeatsPresentationPrefix = prefix.length > 0
+      && !/[A-Za-z0-9]/.test(prefix)
+      && prefix + urlAtEnd[0] === text;
+
+    while (current + 1 < logicalLines.length) {
+      const next = logicalLines[current + 1];
+      let continuation = null;
+      let continuationStart = 0;
+      if (repeatsPresentationPrefix) {
+        const repeatsPrefix = next.text.startsWith(prefix);
+        const preservesContentColumn = next.text.slice(0, prefix.length).trim() === '';
+        if (repeatsPrefix || preservesContentColumn) {
+          continuationStart = prefix.length;
+          continuation = next.text.slice(prefix.length).match(/^[^\s<>"']+/)?.[0] || null;
+        }
+      } else if (logicalLines[current]?.endsAtColumnBoundary) {
+        continuation = next.text.match(/^[^\s<>"']+/)?.[0] || null;
+      }
+      if (!continuation || /^https?:[/]{2}/i.test(continuation)) break;
+      const appendedAt = text.length;
+      const continuationEnd = continuationStart + continuation.length;
+      for (const segment of next.segments) {
+        const overlapStart = Math.max(segment.start, continuationStart);
+        const overlapEnd = Math.min(segment.end, continuationEnd);
+        if (overlapStart >= overlapEnd) continue;
+        segments.push({
+          row: segment.row,
+          column: segment.column + overlapStart - segment.start,
+          start: appendedAt + overlapStart - continuationStart,
+          end: appendedAt + overlapEnd - continuationStart,
+        });
+      }
+      text += continuation;
+      current += 1;
+      if (continuationEnd < next.text.length) break;
+    }
+    return { text, segments };
+  });
+
+  const candidates = [];
+  for (let index = scanLines.length - 1; index >= 0; index -= 1) {
+    const { text, segments } = scanLines[index];
+    const matches = [...text.matchAll(/https?:[/]{2}[^\s<>"']+/gi)];
+    for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex -= 1) {
+      const value = trimTerminalUrl(matches[matchIndex][0]);
+      try {
+        const parsed = new URL(value);
+        if (!['http:', 'https:'].includes(parsed.protocol)) continue;
+        const start = matches[matchIndex].index || 0;
+        const end = start + value.length;
+        candidates.push({
+          href: parsed.href,
+          cells: segments.flatMap(segment => {
+            const overlapStart = Math.max(segment.start, start);
+            const overlapEnd = Math.min(segment.end, end);
+            return overlapStart < overlapEnd ? [{
+              row: segment.row,
+              start: segment.column + overlapStart - segment.start,
+              end: segment.column + overlapEnd - segment.start,
+            }] : [];
+          }),
+        });
+      } catch {}
+    }
+  }
+  return candidates;
+}
+    function extractTerminalLinks(rows, columns) {
+  const links = [];
+  const seen = new Set();
+  for (const candidate of terminalLinkCandidates(rows, columns)) {
+    if (seen.has(candidate.href)) continue;
+    seen.add(candidate.href);
+    links.push(candidate.href);
+  }
+  return links;
+}
+    function mergeTerminalLinks(rows, columns, osc8Links) {
+  const candidates = terminalLinkCandidates(rows, columns).map((candidate, index) => ({
+    href: candidate.href,
+    row: candidate.cells.reduce((latest, cell) => Math.max(latest, cell.row), -1),
+    sequence: -index,
+  }));
+  for (const link of osc8Links) {
+    if (link.marker.line < 0) continue;
+    const endRow = link.endMarker?.line ?? link.marker.line;
+    candidates.push({ href: link.href, row: Math.max(link.marker.line, endRow), sequence: link.sequence });
+  }
+  candidates.sort((left, right) => right.row - left.row || right.sequence - left.sequence);
+
+  const links = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (seen.has(candidate.href)) continue;
+    seen.add(candidate.href);
+    links.push(candidate.href);
+  }
+  return links;
+}
+    function osc8LinkAt(osc8Links, row, column) {
+  let match = null;
+  for (const link of osc8Links) {
+    const startRow = link.marker.line;
+    const endRow = link.endMarker?.line ?? -1;
+    if (startRow < 0 || endRow < startRow || link.endColumn === null) continue;
+    const afterStart = row > startRow || (row === startRow && column >= link.startColumn);
+    const beforeEnd = row < endRow || (row === endRow && column < link.endColumn);
+    if (afterStart && beforeEnd && (!match || link.sequence > match.sequence)) match = link;
+  }
+  return match?.href || null;
+}
+    function terminalLinkAt(rows, columns, row, column) {
+  return terminalLinkCandidates(rows, columns).find(candidate =>
+    candidate.cells.some(range =>
+      range.row === row && column >= range.start && column < range.end
+    )
+  )?.href || null;
+}
     const terminalRows = () => {
       const rows = [];
       for (let row = 0; row < terminal.buffer.active.length; row += 1) {
@@ -411,7 +662,7 @@ const terminalSessionHtml = `<!doctype html>
       }
       return rows;
     };
-    window.herdrScanLinks = () => {
+    api.herdrScanLinks = () => {
       send({
         type: 'link-scan-result',
         links: mergeTerminalLinks(terminalRows(), terminal.cols, osc8Links),
@@ -431,17 +682,17 @@ const terminalSessionHtml = `<!doctype html>
       });
       renderSelectionHandles();
     };
-    window.herdrFocus = () => {
+    api.herdrFocus = () => {
       if (keyboardEnabled) terminal.focus();
     };
-    window.herdrBlur = () => terminal.blur();
-    window.herdrSetKeyboardEnabled = enabled => {
+    api.herdrBlur = () => terminal.blur();
+    api.herdrSetKeyboardEnabled = enabled => {
       keyboardEnabled = enabled !== false;
       if (!keyboardEnabled) terminal.blur();
       clearInteractiveSelection(true);
     };
-    window.herdrFit = resize;
-    const toolbar = document.getElementById('selection-toolbar');
+    api.herdrFit = resize;
+    const toolbar = root.querySelector('#selection-toolbar');
     const hideToolbar = () => { toolbar.style.display = 'none'; };
     const showToolbar = (x, y) => {
       toolbar.style.display = 'flex';
@@ -450,13 +701,13 @@ const terminalSessionHtml = `<!doctype html>
       toolbar.style.left = Math.max(6, Math.min(window.innerWidth - width - 6, x - width / 2)) + 'px';
       toolbar.style.top = Math.max(6, Math.min(window.innerHeight - height - 6, y - height - 8)) + 'px';
     };
-    document.getElementById('copy-selection').addEventListener('click', event => {
+    root.querySelector('#copy-selection').addEventListener('click', event => {
       event.stopPropagation();
       const text = terminal.getSelection();
       if (text) send({ type: 'clipboard-write', text });
       clearInteractiveSelection(true);
     });
-    document.getElementById('paste-selection').addEventListener('click', event => {
+    root.querySelector('#paste-selection').addEventListener('click', event => {
       event.stopPropagation();
       send({ type: 'clipboard-read' });
       clearInteractiveSelection(true);
@@ -470,8 +721,8 @@ const terminalSessionHtml = `<!doctype html>
       const row = terminal.buffer.active.viewportY + viewportRow;
       return { col, row };
     };
-    const startHandle = document.getElementById('selection-start-handle');
-    const endHandle = document.getElementById('selection-end-handle');
+    const startHandle = root.querySelector('#selection-start-handle');
+    const endHandle = root.querySelector('#selection-end-handle');
     let activeSelection = null;
     let selectionHandleDrag = null;
     const cellIndex = point => point.row * terminal.cols + point.col;
@@ -524,7 +775,7 @@ const terminalSessionHtml = `<!doctype html>
       if (clearTerminalSelection) terminal.clearSelection();
       if (wasActive) send({ type: 'selection-state', active: false });
     };
-    document.getElementById('select-all-selection').addEventListener('click', event => {
+    root.querySelector('#select-all-selection').addEventListener('click', event => {
       event.stopPropagation();
       terminal.selectAll();
       const wasActive = Boolean(activeSelection);
@@ -585,7 +836,7 @@ const terminalSessionHtml = `<!doctype html>
       if (!cell) return null;
       const { col, row } = cell;
       const line = terminal.buffer.active.getLine(row)?.translateToString(true) || '';
-      if (!line[col] || /\\s/.test(line[col])) return null;
+      if (!line[col] || /\s/.test(line[col])) return null;
       const wordChar = character => character && /[A-Za-z0-9_./:@~+-]/.test(character);
       let start = col;
       let end = col + 1;
@@ -621,7 +872,7 @@ const terminalSessionHtml = `<!doctype html>
       touches[1].clientX - touches[0].clientX,
       touches[1].clientY - touches[0].clientY,
     );
-    document.getElementById('terminal').addEventListener('touchstart', event => {
+    root.querySelector('#terminal').addEventListener('touchstart', event => {
       if (event.target.closest?.('#selection-toolbar')) return;
       if (!keyboardEnabled) {
         event.preventDefault();
@@ -667,7 +918,7 @@ const terminalSessionHtml = `<!doctype html>
         }
       }, 420);
     }, { capture: true, passive: false });
-    document.getElementById('terminal').addEventListener('touchmove', event => {
+    root.querySelector('#terminal').addEventListener('touchmove', event => {
       if (pinch && event.touches.length === 2) {
         event.preventDefault();
         event.stopPropagation();
@@ -713,7 +964,7 @@ const terminalSessionHtml = `<!doctype html>
         else send({ type: 'scroll', direction: lines > 0 ? 'up' : 'down', lines: Math.abs(lines) });
       }
     }, { capture: true, passive: false });
-    document.getElementById('terminal').addEventListener('touchend', event => {
+    root.querySelector('#terminal').addEventListener('touchend', event => {
       if (pinch) {
         event.preventDefault();
         event.stopPropagation();
@@ -752,7 +1003,7 @@ const terminalSessionHtml = `<!doctype html>
           event.preventDefault();
           event.stopImmediatePropagation();
           if (doubleTapAction === 'paste') send({ type: 'clipboard-read' });
-          else send({ type: 'input', data: doubleTapAction === 'escape' ? '\\u001b' : '\\t' });
+          else send({ type: 'input', data: doubleTapAction === 'escape' ? '\u001b' : '\t' });
           lastTap = null;
         } else {
           lastTap = doubleTapAction === 'none' ? null : now;
@@ -760,7 +1011,7 @@ const terminalSessionHtml = `<!doctype html>
       }
       touch = null;
     }, { capture: true, passive: false });
-    document.getElementById('terminal').addEventListener('touchcancel', () => {
+    root.querySelector('#terminal').addEventListener('touchcancel', () => {
       if (longPressTimer) clearTimeout(longPressTimer);
       longPressTimer = null;
       touch = null;
@@ -770,6 +1021,13 @@ const terminalSessionHtml = `<!doctype html>
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('scroll', resize);
+    api.herdrDispose = () => {
+      disposed = true;
+      window.removeEventListener('resize', resize);
+      window.visualViewport?.removeEventListener('resize', resize);
+      window.visualViewport?.removeEventListener('scroll', resize);
+      terminal.dispose();
+    };
     let readySent = false;
     const announceReady = () => {
       resize();
@@ -784,81 +1042,6 @@ const terminalSessionHtml = `<!doctype html>
       fontReady.catch(() => undefined),
       new Promise(resolve => setTimeout(resolve, 1500)),
     ]).then(initializeTerminal);
-  </script>
-</body>
-</html>`;
-
-const terminalSessionStyle = terminalSessionHtml
-  .match(/<style>\n([\s\S]*?)\n  <\/style>/)?.[1]
-  ?.replace(
-    'html, body, #terminal {',
-    'html, body, #terminals, .terminal-session, .terminal-session #terminal {',
-  );
-const terminalSessionMarkup = terminalSessionHtml
-  .match(/<body>\n([\s\S]*?)\n  <script src="xterm.js">/)?.[1];
-const terminalSessionScript = terminalSessionHtml
-  .match(/  <script>\n([\s\S]*?)\n  <\/script>\n<\/body>/)?.[1]
-  ?.replace(
-    'const initializeTerminal = () => {',
-    'const initializeTerminal = () => {\n      if (disposed) return;',
-  )
-  .replace(
-    "const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');",
-    'const send = value => report(value);',
-  )
-  .replaceAll("document.getElementById('", "root.querySelector('#")
-  .replaceAll('window.herdr', 'api.herdr')
-  .replace(
-    "window.visualViewport?.addEventListener('scroll', resize);",
-    `window.visualViewport?.addEventListener('scroll', resize);
-    api.herdrDispose = () => {
-      disposed = true;
-      window.removeEventListener('resize', resize);
-      window.visualViewport?.removeEventListener('resize', resize);
-      window.visualViewport?.removeEventListener('scroll', resize);
-      terminal.dispose();
-    };`,
-  );
-
-if (!terminalSessionStyle || !terminalSessionMarkup || !terminalSessionScript) {
-  throw new Error('Failed to extract the multiplexed terminal document');
-}
-
-const terminalHtml = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <base href="file:///android_asset/">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-  <link rel="stylesheet" href="xterm.css">
-  <style>
-    ${terminalSessionStyle}
-    #terminals { position: relative; width: 100%; height: 100%; }
-    .terminal-session {
-      position: absolute;
-      inset: 0;
-      visibility: hidden;
-      pointer-events: none;
-      transform: translateX(0);
-    }
-    .terminal-session.presented {
-      visibility: visible;
-      pointer-events: auto;
-    }
-  </style>
-</head>
-<body>
-  <div id="terminals"></div>
-  <script src="xterm.js"></script>
-  <script src="addon-fit.js"></script>
-  <script>
-    const terminalMarkup = ${JSON.stringify(terminalSessionMarkup).replaceAll('<', '\\u003c')};
-    const createTerminalSession = (root, report) => {
-      let disposed = false;
-      const api = {
-        herdrDispose: () => { disposed = true; },
-      };
-      ${terminalSessionScript}
       return api;
     };
 
@@ -957,13 +1140,4 @@ const terminalHtml = `<!doctype html>
     send({ type: 'ready' });
   </script>
 </body>
-</html>`;
-
-await writeFile(resolve(assets, 'herdr-terminal.html'), terminalHtml, 'utf8');
-const iosTerminalHtml = terminalHtml
-  .replace('  <base href="file:///android_asset/">\n', '');
-await writeFile(
-  resolve(iosAssets, 'index.html'),
-  iosTerminalHtml,
-  'utf8',
-);
+</html>

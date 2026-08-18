@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { TextDecoder } from 'node:util';
 import { Script } from 'node:vm';
 
 const assets = resolve(__dirname, '../android/app/src/main/assets');
+const iosAssets = resolve(__dirname, '../ios/HerdR/TerminalAssets');
+const iosProject = resolve(__dirname, '../ios/HerdR.xcodeproj/project.pbxproj');
 const sourceFonts = resolve(__dirname, '../assets/terminal-fonts');
 const terminalRenderer = resolve(__dirname, '../src/components/TerminalRendererHost.tsx');
-const iosTerminalSource = resolve(__dirname, '../src/generated/iosTerminalHtml.ts');
 
 function readTerminalMarkup(html: string): string {
   const encoded = html.match(
@@ -105,37 +105,19 @@ describe('Android terminal assets', () => {
     expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
   });
 
-  it('loads both iOS terminal bundles in one document scope', () => {
-    const generatedSource = readFileSync(iosTerminalSource, 'utf8');
-    const encodedHtml = generatedSource.match(
-      /IOS_TERMINAL_HTML_TEMPLATE = (.*);\n$/s,
-    )?.[1];
-    if (!encodedHtml) throw new Error('Generated iOS terminal HTML is missing');
-    const html = JSON.parse(encodedHtml) as string;
-    const bundleScripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
-      .map(match => match[1])
-      .filter(script => script.includes('__herdrBundleSources'));
-    const context: Record<string, unknown> = {
-      atob: (encoded: string) => Buffer.from(encoded, 'base64').toString('binary'),
-      Function: function (_module: string, _exports: string, source: string) {
-        return (module: { exports: Record<string, unknown> }) => {
-          module.exports = source.length > 100_000
-            ? { Terminal: function Terminal() {} }
-            : { FitAddon: function FitAddon() {} };
-        };
-      },
-      TextDecoder,
-      Uint8Array,
-    };
-    context.window = context;
-    context.globalThis = context;
+  it('packages the same terminal document as local files on iOS', () => {
+    const androidHtml = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
+    const iosHtml = readFileSync(resolve(iosAssets, 'index.html'), 'utf8');
 
-    for (const script of bundleScripts) {
-      new Script(script).runInNewContext(context);
-    }
-
-    expect(typeof context.Terminal).toBe('function');
-    expect(typeof (context.FitAddon as { FitAddon?: unknown })?.FitAddon).toBe('function');
+    expect(iosHtml).toBe(
+      androidHtml.replace('  <base href="file:///android_asset/">\n', ''),
+    );
+    expect(iosHtml).toContain('<link rel="stylesheet" href="xterm.css">');
+    expect(iosHtml).toContain('<script src="xterm.js"></script>');
+    expect(iosHtml).toContain('<script src="addon-fit.js"></script>');
+    expect(iosHtml).not.toContain('file:///android_asset/');
+    expect(iosHtml).not.toContain('new Function(');
+    expect(Buffer.byteLength(iosHtml)).toBeLessThan(100_000);
   });
 
   it('packages the standalone Arphic UKai HK TrueType face', () => {
@@ -178,48 +160,44 @@ describe('Android terminal assets', () => {
     );
   });
 
-  it('keeps the packaged Android document and selects an inline iOS document', () => {
+  it('selects the packaged terminal document for each native platform', () => {
     const renderer = readFileSync(terminalRenderer, 'utf8');
-    const iosSource = readFileSync(iosTerminalSource, 'utf8');
+    const project = readFileSync(iosProject, 'utf8');
 
     expect(renderer).toContain("android: { uri: 'file:///android_asset/herdr-terminal.html' }");
-    expect(renderer).toContain("ios: { html: IOS_TERMINAL_HTML, baseUrl: 'about:blank' }");
+    expect(renderer).toContain('NativeModules.TerminalAssets');
+    expect(renderer).toContain("ios: { uri: IOS_TERMINAL_ASSETS?.indexURL || 'about:blank' }");
+    expect(renderer).toContain('allowingReadAccessToURL={Platform.OS === \'ios\'');
     expect(renderer).toContain('source={TERMINAL_SOURCE}');
     expect(renderer).toContain("import WebView from 'react-native-webview'");
     expect(renderer).not.toContain('WebView.android');
-    expect(iosSource).toContain('IOS_TERMINAL_HTML_TEMPLATE');
-    expect(iosSource).toContain('__HERDR_TEXT_REGULAR__');
-    expect(iosSource).toContain('window.ReactNativeWebView.postMessage');
-    expect(iosSource.match(/new Function\('module', 'exports',/g)).toHaveLength(2);
-    expect(iosSource).toContain('new TextDecoder().decode(bundleBytes)');
-    expect(iosSource).not.toContain('file:///android_asset/');
-    expect(iosSource).not.toMatch(/data:font[^;]*;base64/);
+    expect(renderer).not.toContain('IOS_TERMINAL_HTML_TEMPLATE');
+    expect(project).toContain('TerminalAssets in Resources');
+    expect(project).toContain('lastKnownFileType = folder; name = TerminalAssets;');
+  });
+
+  it('compiles the generated Expo modules provider into the iOS app', () => {
+    const project = readFileSync(iosProject, 'utf8');
+
+    expect(project).toContain('ExpoModulesProvider.swift in Sources');
+    expect(project).toContain('[Expo] Configure project');
+    expect(project).toContain('expo-configure-project.sh');
   });
 
   it.each([
-    ['xterm.js', '@xterm/xterm/lib/xterm.js'],
-    ['addon-fit.js', '@xterm/addon-fit/lib/addon-fit.js'],
-  ])('embeds %s without changing its source bytes', (bundle, modulePath) => {
-    const generatedSource = readFileSync(iosTerminalSource, 'utf8');
-    const encodedHtml = generatedSource.match(
-      /IOS_TERMINAL_HTML_TEMPLATE = (.*);\n$/s,
-    )?.[1];
-    if (!encodedHtml) throw new Error('Generated iOS terminal HTML is missing');
-    const html = JSON.parse(encodedHtml) as string;
-    const escapedBundle = bundle.replace('.', '\\.');
-    const chunks = [
-      ...html.matchAll(
-        new RegExp(
-          `__herdrBundleSources\\["${escapedBundle}"\\]\\.push\\("([A-Za-z0-9+/=]+)"\\)`,
-          'g',
-        ),
+    'xterm.js',
+    'xterm.css',
+    'addon-fit.js',
+    'jetbrains-mono-regular.ttf',
+    'jetbrains-mono-bold.ttf',
+    'symbols-nerd-font-mono-regular.ttf',
+    'arphic-ukai-hk.ttf',
+  ])('packages the same %s bytes for Android and iOS', file => {
+    expect(
+      readFileSync(resolve(iosAssets, file)).equals(
+        readFileSync(resolve(assets, file)),
       ),
-    ];
-
-    expect(chunks.length).toBeGreaterThan(0);
-    expect(Buffer.from(chunks.map(match => match[1]).join(''), 'base64')).toEqual(
-      readFileSync(resolve(__dirname, `../node_modules/${modulePath}`)),
-    );
+    ).toBe(true);
   });
 
   it('keeps Android text scaling from corrupting xterm character measurements', () => {
