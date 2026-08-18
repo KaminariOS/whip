@@ -6,6 +6,11 @@ import { useTranslation } from 'react-i18next';
 
 import { normalizePrivateKey } from '@/src/lib/privateKey';
 import { hostDisplayName, jumpHostCandidates } from '@/src/lib/hostProfiles';
+import {
+  credentialDraftsForProfile,
+  switchCredentialAuthMode,
+  updateActiveCredential,
+} from '@/src/lib/connectionCredentialDrafts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
@@ -47,6 +52,9 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const [profile, setProfile] = useState(initialProfile);
+  const [credentialDrafts, setCredentialDrafts] = useState(() => (
+    credentialDraftsForProfile(initialProfile)
+  ));
   const [keyInspection, setKeyInspection] = useState<KeyInspection>({ state: 'idle' });
   const [keyActionsOpen, setKeyActionsOpen] = useState(false);
   const [globalKeys, setGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
@@ -55,6 +63,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
 
   useEffect(() => {
     setProfile(initialProfile);
+    setCredentialDrafts(credentialDraftsForProfile(initialProfile));
     setKeyActionsOpen(false);
     setJumpHostPickerOpen(false);
   }, [initialProfile]);
@@ -107,15 +116,15 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     ? t('connection.keyA11y', { fingerprint: keyInspection.fingerprint, keyType: keyInspection.keyType })
     : t('connection.loadedKeyA11y');
   const removePrivateKey = () => {
-    setProfile(current => ({ ...current, secret: '', passphrase: '' }));
+    const next = updateActiveCredential(profile, credentialDrafts, '', '');
+    setProfile(next.profile);
+    setCredentialDrafts(next.drafts);
     setKeyActionsOpen(false);
   };
   const setAuthMode = (authMode: ConnectionProfile['authMode']) => {
-    setProfile(current => ({
-      ...current,
-      authMode,
-      forwardAgent: authMode === 'key' && Boolean(current.forwardAgent),
-    }));
+    const next = switchCredentialAuthMode(profile, credentialDrafts, authMode);
+    setProfile(next.profile);
+    setCredentialDrafts(next.drafts);
   };
   const applyPrivateKey = (value: string) => {
     const privateKey = normalizePrivateKey(value);
@@ -123,7 +132,9 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
       Alert.alert(t('connection.noPrivateKeyTitle'), t('connection.noPrivateKeyCopy'));
       return;
     }
-    setProfile(current => ({ ...current, secret: privateKey }));
+    const next = updateActiveCredential(profile, credentialDrafts, privateKey);
+    setProfile(next.profile);
+    setCredentialDrafts(next.drafts);
     setKeyActionsOpen(false);
   };
   const pastePrivateKey = async () => {
@@ -176,7 +187,9 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     }
   };
   const selectGlobalKey = (key: GlobalSshKeyMaterial) => {
-    setProfile(current => ({ ...current, secret: key.secret, passphrase: key.passphrase }));
+    const next = updateActiveCredential(profile, credentialDrafts, key.secret, key.passphrase);
+    setProfile(next.profile);
+    setCredentialDrafts(next.drafts);
     setGlobalKeys(null);
   };
   const copied = (label: string) => {
@@ -258,7 +271,11 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         </View>
 
         {profile.authMode === 'password' ? (
-          <Field label={t('connection.sshPassword')} value={profile.secret} onChangeText={value => update('secret', value)} secureTextEntry autoCapitalize="none" />
+          <Field label={t('connection.sshPassword')} value={profile.secret} onChangeText={value => {
+            const next = updateActiveCredential(profile, credentialDrafts, value);
+            setProfile(next.profile);
+            setCredentialDrafts(next.drafts);
+          }} secureTextEntry autoCapitalize="none" />
         ) : (
           <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.privateKeyFormat')}</Text><View className={cn('min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border', !appGlassEnabled && 'bg-card')} style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}><Button accessibilityLabel={profile.secret ? privateKeyAccessibilityLabel : t('connection.addPrivateKey')} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" disabled={generatingKey} size="content" variant="ghost" onPress={hapticPress(() => setKeyActionsOpen(true))}><Icon as={KeyRound} size={18} />{profile.secret ? (keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{t('connection.privateKeyLoaded')}</Text>) : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{generatingKey ? t('connection.generatingKey') : t('connection.addPrivateKey')}</Text>}</Button>{profile.secret ? <Button accessibilityLabel={t('connection.removePrivateKey')} className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button> : null}</View></View>
         )}
@@ -275,7 +292,11 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
               {keyInspection.state === 'invalid' && keyInspection.message}
             </Text>
         ) : null}
-        {profile.authMode === 'key' ? <Field label={t('connection.keyPassphrase')} value={profile.passphrase} onChangeText={value => update('passphrase', value)} secureTextEntry /> : null}
+        {profile.authMode === 'key' ? <Field label={t('connection.keyPassphrase')} value={profile.passphrase} onChangeText={value => {
+          const next = updateActiveCredential(profile, credentialDrafts, profile.secret, value);
+          setProfile(next.profile);
+          setCredentialDrafts(next.drafts);
+        }} secureTextEntry /> : null}
 
         <View className="mb-3.5 mt-0.5 min-h-[82px] flex-row items-center gap-4 border-y border-border">
           <View className="flex-1">
