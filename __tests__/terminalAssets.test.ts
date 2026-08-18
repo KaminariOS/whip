@@ -166,6 +166,15 @@ describe('Android terminal assets', () => {
     expect(renderer).toContain('textZoom={100}');
   });
 
+  it('gives the multiplexed terminal host a viewport for absolute sessions', () => {
+    const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
+
+    expect(html).toContain(
+      '#terminals { position: relative; width: 100%; height: 100%; }',
+    );
+    expect(html).toContain('.terminal-session {\n      position: absolute;\n      inset: 0;');
+  });
+
   it('resets an activated terminal without automatically focusing its keyboard', () => {
     const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
     const activateScript = html.match(
