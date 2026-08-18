@@ -966,12 +966,56 @@ const [xtermJavaScript, xtermStyles, fitAddonJavaScript] = await Promise.all([
   readFile(resolve(root, 'node_modules/@xterm/xterm/css/xterm.css'), 'utf8'),
   readFile(resolve(root, 'node_modules/@xterm/addon-fit/lib/addon-fit.js'), 'utf8'),
 ]);
-const inlineScript = source => source.replaceAll('</script', '<\\/script');
+// Feed each UMD package through an explicit CommonJS scope and publish its
+// exports. WKWebView can expose module-like globals that make the package choose
+// its CommonJS branch without creating the `window.Terminal` global we consume.
+const INLINE_SCRIPT_CHUNK_SIZE = 16_384;
+const inlineBundle = (name, source, globalName = null) => {
+  const nameLiteral = JSON.stringify(name);
+  const globalNameLiteral = JSON.stringify(globalName);
+  // Script elements have special parsing rules: JavaScript escaping alone does
+  // not guarantee that arbitrary source text survives HTML parsing. Base64 is
+  // restricted to characters that are inert inside a script element.
+  const encodedSource = Buffer.from(source, 'utf8').toString('base64');
+  const chunks = [];
+  for (
+    let offset = 0;
+    offset < encodedSource.length;
+    offset += INLINE_SCRIPT_CHUNK_SIZE
+  ) {
+    chunks.push(encodedSource.slice(offset, offset + INLINE_SCRIPT_CHUNK_SIZE));
+  }
+  const chunkTags = chunks.map(chunk => `<script>
+    window.__herdrBundleSources[${nameLiteral}].push(${JSON.stringify(chunk)});
+  </script>`).join('\n');
+  return `<script>
+    window.__herdrBundleSources ||= {};
+    window.__herdrBundleSources[${nameLiteral}] = [];
+  </script>
+  ${chunkTags}
+  <script>
+    const bundleModule = { exports: {} };
+    const encodedBundleSource = window.__herdrBundleSources[${nameLiteral}].join('');
+    const binaryBundleSource = atob(encodedBundleSource);
+    const bundleBytes = Uint8Array.from(binaryBundleSource, character => character.charCodeAt(0));
+    const bundleSource = new TextDecoder().decode(bundleBytes);
+    delete window.__herdrBundleSources[${nameLiteral}];
+    new Function('module', 'exports', bundleSource)(bundleModule, bundleModule.exports);
+    if (${globalNameLiteral}) window[${globalNameLiteral}] = bundleModule.exports;
+    else Object.assign(window, bundleModule.exports);
+  </script>`;
+};
 const iosTerminalHtml = terminalHtml
   .replace('  <base href="file:///android_asset/">\n', '')
   .replace('  <link rel="stylesheet" href="xterm.css">', `  <style>${xtermStyles}</style>`)
-  .replace('  <script src="xterm.js"></script>', `  <script>${inlineScript(xtermJavaScript)}</script>`)
-  .replace('  <script src="addon-fit.js"></script>', `  <script>${inlineScript(fitAddonJavaScript)}</script>`)
+  .replace(
+    '  <script src="xterm.js"></script>',
+    inlineBundle('xterm.js', xtermJavaScript),
+  )
+  .replace(
+    '  <script src="addon-fit.js"></script>',
+    inlineBundle('addon-fit.js', fitAddonJavaScript, 'FitAddon'),
+  )
   .replaceAll(fontManifest.text.bundledRegularFile, '__HERDR_TEXT_REGULAR__')
   .replaceAll(fontManifest.text.bundledBoldFile, '__HERDR_TEXT_BOLD__')
   .replaceAll(fontManifest.symbols.bundledRegularFile, '__HERDR_SYMBOLS__')
