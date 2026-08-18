@@ -54,6 +54,28 @@ describe('app logs', () => {
     expect(entries[499].message).toBe('entry-504');
   });
 
+  it('defers and coalesces subscriber updates', async () => {
+    const logs =
+      require('../src/services/appLogs') as typeof import('../src/services/appLogs');
+    logs.installAppLogCapture();
+    const listener = jest.fn(() =>
+      console.warn('warning emitted while rendering a subscriber'),
+    );
+    const unsubscribe = logs.subscribeToAppLogs(listener);
+
+    console.warn('render warning');
+    console.error('render error');
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(logs.getAppLogEntries().at(-1)?.message).toBe('render error');
+
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(logs.getAppLogEntries().at(-1)?.message).toBe('render error');
+
+    unsubscribe();
+  });
+
   it('starts capture before loading the app and exposes copy-all in More', () => {
     const entry = readFileSync(resolve(__dirname, '../index.js'), 'utf8');
     const more = readFileSync(
@@ -69,6 +91,9 @@ describe('app logs', () => {
       entry.indexOf("import App from './App';"),
     );
     expect(more).toContain('<AppLogsSection />');
+    expect(screen).toContain(
+      '<AppLogsModal visible onClose={() => setVisible(false)} />',
+    );
     expect(screen).toContain('Clipboard.setString(formatAppLogs(entries))');
     expect(screen).toContain("t('appLogs.privacy')");
   });
