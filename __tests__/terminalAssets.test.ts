@@ -156,8 +156,36 @@ describe('Android terminal assets', () => {
     expect(iosSource).toContain('IOS_TERMINAL_HTML_TEMPLATE');
     expect(iosSource).toContain('__HERDR_TEXT_REGULAR__');
     expect(iosSource).toContain('window.ReactNativeWebView.postMessage');
+    expect(iosSource.match(/new Function\('module', 'exports',/g)).toHaveLength(2);
+    expect(iosSource).toContain('new TextDecoder().decode(bundleBytes)');
     expect(iosSource).not.toContain('file:///android_asset/');
     expect(iosSource).not.toMatch(/data:font[^;]*;base64/);
+  });
+
+  it.each([
+    ['xterm.js', '@xterm/xterm/lib/xterm.js'],
+    ['addon-fit.js', '@xterm/addon-fit/lib/addon-fit.js'],
+  ])('embeds %s without changing its source bytes', (bundle, modulePath) => {
+    const generatedSource = readFileSync(iosTerminalSource, 'utf8');
+    const encodedHtml = generatedSource.match(
+      /IOS_TERMINAL_HTML_TEMPLATE = (.*);\n$/s,
+    )?.[1];
+    if (!encodedHtml) throw new Error('Generated iOS terminal HTML is missing');
+    const html = JSON.parse(encodedHtml) as string;
+    const escapedBundle = bundle.replace('.', '\\.');
+    const chunks = [
+      ...html.matchAll(
+        new RegExp(
+          `__herdrBundleSources\\["${escapedBundle}"\\]\\.push\\("([A-Za-z0-9+/=]+)"\\)`,
+          'g',
+        ),
+      ),
+    ];
+
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(Buffer.from(chunks.map(match => match[1]).join(''), 'base64')).toEqual(
+      readFileSync(resolve(__dirname, `../node_modules/${modulePath}`)),
+    );
   });
 
   it('keeps Android text scaling from corrupting xterm character measurements', () => {
