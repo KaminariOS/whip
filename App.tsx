@@ -1629,10 +1629,10 @@ function AppContent() {
   const activeTerminalVisible =
     immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
   const fullscreenTerminalVisible =
-    Platform.OS === 'android' && activeTerminalVisible && terminalPreferences.fullscreen;
-  const fullscreenVisible = Platform.OS === 'android' && (immersiveTerminal
+    activeTerminalVisible && terminalPreferences.fullscreen;
+  const fullscreenVisible = immersiveTerminal
     ? fullscreenTerminalVisible
-    : fullscreenApp);
+    : fullscreenApp;
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
     hostId: session.id,
     label: hostDisplayName(session.host),

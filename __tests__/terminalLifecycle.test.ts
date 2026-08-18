@@ -159,11 +159,15 @@ describe('terminal renderer lifecycle', () => {
   it('uses the full display while an active terminal is visible', () => {
     const app = readSource('App.tsx');
     const bottomNavigation = readSource('src/components/BottomNavigation.tsx');
+    const settings = readSource('src/components/SettingsScreen.tsx');
 
-    expect(app).toMatch(/fullscreenTerminalVisible\s*=\s*Platform\.OS\s*===\s*'android'\s*&&\s*activeTerminalVisible\s*&&\s*terminalPreferences\.fullscreen/);
-    expect(app).toMatch(/fullscreenVisible\s*=\s*Platform\.OS\s*===\s*'android'\s*&&\s*\(immersiveTerminal\s*\?\s*fullscreenTerminalVisible\s*:\s*fullscreenApp\)/);
+    expect(app).toMatch(/fullscreenTerminalVisible\s*=\s*activeTerminalVisible\s*&&\s*terminalPreferences\.fullscreen/);
+    expect(app).toMatch(/fullscreenVisible\s*=\s*immersiveTerminal\s*\?\s*fullscreenTerminalVisible\s*:\s*fullscreenApp/);
     expect(app).toContain('hidden={fullscreenVisible}');
     expect(app).toContain("edges={fullscreenVisible ? ['left', 'right'] : ['top', 'left', 'right']}");
+    expect(settings).toContain("title={t('settings.fullscreenApp')}");
+    expect(settings).toContain("title={t('settings.fullscreenTerminal')}");
+    expect(settings).not.toMatch(/Platform\.OS\s*===\s*'android'[\s\S]{0,200}settings\.fullscreen/);
     expect(app).toContain("style={immersiveTerminal ? styles.hiddenTab : styles.tabScreen}");
     expect(app).toContain("importantForAccessibility={immersiveTerminal ? 'no-hide-descendants' : 'auto'}");
     expect(bottomNavigation).toContain('style={{ bottom: 16, height: 120 + bottom, paddingBottom: bottom }}');
