@@ -12,8 +12,6 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		A1C026000000000000000002 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A1C026000000000000000001 /* AppIcon.icon */; };
-		A1C026000000000000000003 /* TerminalAssets in Resources */ = {isa = PBXBuildFile; fileRef = A1C026000000000000000004 /* TerminalAssets */; };
-		A1C026000000000000000005 /* TerminalAssetsModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A1C026000000000000000006 /* TerminalAssetsModule.m */; };
 		B65F0F8E5CB59A8B9FBAD4E8 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		E4A76D2F5E57CDED3455AC00 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4085658634700C3C2D010E /* ExpoModulesProvider.swift */; };
 /* End PBXBuildFile section */
@@ -30,8 +28,6 @@
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = HerdR/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = HerdR/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A1C026000000000000000001 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = AppIcon.icon; path = HerdR/AppIcon.icon; sourceTree = "<group>"; };
-		A1C026000000000000000004 /* TerminalAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalAssets; path = HerdR/TerminalAssets; sourceTree = "<group>"; };
-		A1C026000000000000000006 /* TerminalAssetsModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = TerminalAssetsModule.m; path = HerdR/TerminalAssetsModule.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -51,8 +47,6 @@
 			isa = PBXGroup;
 			children = (
 				A1C026000000000000000001 /* AppIcon.icon */,
-				A1C026000000000000000004 /* TerminalAssets */,
-				A1C026000000000000000006 /* TerminalAssetsModule.m */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -188,7 +182,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1C026000000000000000002 /* AppIcon.icon in Resources */,
-				A1C026000000000000000003 /* TerminalAssets in Resources */,
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				B65F0F8E5CB59A8B9FBAD4E8 /* PrivacyInfo.xcprivacy in Resources */,
@@ -300,7 +293,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1C026000000000000000005 /* TerminalAssetsModule.m in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				E4A76D2F5E57CDED3455AC00 /* ExpoModulesProvider.swift in Sources */,
 			);

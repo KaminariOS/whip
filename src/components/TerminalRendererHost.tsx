@@ -9,7 +9,6 @@ import {
 import {
   AppState,
   Clipboard,
-  NativeModules,
   Platform,
   type StyleProp,
   type ViewStyle,
@@ -26,17 +25,12 @@ import {
   touchTerminalRendererEntry,
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
+import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
-const IOS_TERMINAL_ASSETS = Platform.OS === 'ios'
-  ? NativeModules.TerminalAssets as {
-      directoryURL?: string;
-      indexURL?: string;
-    } | undefined
-  : undefined;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const TERMINAL_SOURCE = Platform.select({
   android: { uri: 'file:///android_asset/herdr-terminal.html' },

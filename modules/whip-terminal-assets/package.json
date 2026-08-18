@@ -1,0 +1,6 @@
+{
+  "name": "whip-terminal-assets",
+  "version": "1.0.0",
+  "description": "Whip's packaged iOS terminal runtime",
+  "license": "AGPL-3.0-or-later"
+}

@@ -1,6 +1,6 @@
 android/app/src/main/assets/
 android/app/build/
-ios/HerdR/TerminalAssets/
+modules/whip-terminal-assets/ios/TerminalAssets/
 dist/
 launch-videos/
 packages/react-native-ssh-sftp/lib/

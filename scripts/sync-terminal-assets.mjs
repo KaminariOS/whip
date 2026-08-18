@@ -18,7 +18,10 @@ const {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = resolve(root, 'android/app/src/main/assets');
-const iosAssets = resolve(root, 'ios/HerdR/TerminalAssets');
+const iosAssets = resolve(
+  root,
+  'modules/whip-terminal-assets/ios/TerminalAssets',
+);
 const terminalFonts = resolve(root, 'assets/terminal-fonts');
 const fontManifest = JSON.parse(
   await readFile(resolve(terminalFonts, 'manifest.json'), 'utf8'),
