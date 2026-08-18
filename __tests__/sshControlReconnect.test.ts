@@ -91,6 +91,7 @@ describe('SSH control reconnects', () => {
   test.each([
     'channel not open',
     'channel is not opened.',
+    'Failed to open channel (ConnectFailed)',
     new Error('session is down'),
     new Error('socket is not established'),
   ])('classifies unavailable transport errors: %s', error => {

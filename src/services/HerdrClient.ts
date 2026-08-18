@@ -66,7 +66,7 @@ export function clearHerdrSocketPathCache(): void {
 
 export function isUnavailableSshChannel(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /channel (?:is )?not open(?:ed)?|session is down|socket is not established/i.test(message);
+  return /channel (?:is )?not open(?:ed)?|failed to open channel \(connectfailed\)|session is down|socket is not established/i.test(message);
 }
 
 interface TerminalConnection {
