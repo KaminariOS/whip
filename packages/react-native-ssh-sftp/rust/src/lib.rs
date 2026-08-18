@@ -420,10 +420,7 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
     let authenticated = match credential.get("type").and_then(Value::as_str) {
         Some("password") => {
             let password = required_string(credential, "password")?;
-            handle
-                .authenticate_password(&username, password)
-                .await?
-                .success()
+            authenticate_password(&mut handle, &username, &password).await?
         }
         Some("key") => {
             let private_key = required_string(credential, "privateKey")?;
@@ -463,6 +460,65 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
         }),
     );
     Ok(Value::Null)
+}
+
+async fn authenticate_password(
+    handle: &mut client::Handle<WhipHandler>,
+    username: &str,
+    password: &str,
+) -> Result<bool, TransportError> {
+    if handle
+        .authenticate_password(username, password)
+        .await?
+        .success()
+    {
+        return Ok(true);
+    }
+
+    // macOS and other PAM-backed SSH servers commonly present a password
+    // through keyboard-interactive authentication. OpenSSH clients fall back
+    // automatically, so mirror that behavior without answering unknown MFA
+    // or challenge prompts.
+    let mut response = handle
+        .authenticate_keyboard_interactive_start(username, None)
+        .await?;
+    for _ in 0..3 {
+        match response {
+            client::KeyboardInteractiveAuthResponse::Success => return Ok(true),
+            client::KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
+            client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
+                let Some(responses) =
+                    keyboard_interactive_password_responses(&prompts, username, password)
+                else {
+                    return Ok(false);
+                };
+                response = handle
+                    .authenticate_keyboard_interactive_respond(responses)
+                    .await?;
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn keyboard_interactive_password_responses(
+    prompts: &[client::Prompt],
+    username: &str,
+    password: &str,
+) -> Option<Vec<String>> {
+    prompts
+        .iter()
+        .map(|prompt| {
+            let label = prompt.prompt.to_ascii_lowercase();
+            if prompt.echo && (label.contains("user") || label.contains("login")) {
+                Some(username.to_owned())
+            } else if !prompt.echo && (label.contains("password") || prompts.len() == 1) {
+                Some(password.to_owned())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 async fn request_agent_forwarding(
@@ -1667,6 +1723,36 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("missing string parameter 'key'")
+        );
+    }
+
+    #[test]
+    fn answers_standard_keyboard_interactive_password_prompts() {
+        let prompts = [client::Prompt {
+            prompt: "Password:".to_owned(),
+            echo: false,
+        }];
+        assert_eq!(
+            keyboard_interactive_password_responses(&prompts, "a1", "secret"),
+            Some(vec!["secret".to_owned()]),
+        );
+    }
+
+    #[test]
+    fn refuses_unknown_keyboard_interactive_challenges() {
+        let prompts = [
+            client::Prompt {
+                prompt: "Password:".to_owned(),
+                echo: false,
+            },
+            client::Prompt {
+                prompt: "Verification code:".to_owned(),
+                echo: false,
+            },
+        ];
+        assert_eq!(
+            keyboard_interactive_password_responses(&prompts, "a1", "secret"),
+            None,
         );
     }
 
