@@ -86,6 +86,48 @@ test('stores a confirmed host globally and uses OpenSSH nonstandard-port syntax'
   );
 });
 
+test('normalizes the full OpenSSH public key returned by the iOS verifier', async () => {
+  const next = await trustKnownHost([], {
+    host: 'Mini',
+    port: 22,
+    keyType: 'ssh-ed25519',
+    publicKey: 'ssh-ed25519 AAAAIosKey mini',
+    fingerprint: 'SHA256:ios',
+  });
+
+  expect(next[0].publicKey).toBe('AAAAIosKey');
+  expect(serializeKnownHosts(next)).toBe('mini ssh-ed25519 AAAAIosKey');
+  expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith(
+    'mini ssh-ed25519 AAAAIosKey',
+  );
+});
+
+test('repairs a previously stored full OpenSSH public key when it is trusted again', async () => {
+  const legacyHost: KnownHost = {
+    ...knownHost,
+    host: 'mini',
+    publicKey: 'ssh-ed25519 AAAAIosKey mini',
+  };
+
+  const next = await trustKnownHost([legacyHost], {
+    host: 'mini',
+    port: 22,
+    keyType: 'ssh-ed25519',
+    publicKey: 'ssh-ed25519 AAAAIosKey mini',
+    fingerprint: legacyHost.fingerprint,
+  });
+
+  expect(next).toHaveLength(1);
+  expect(next[0].publicKey).toBe('AAAAIosKey');
+  expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+    KNOWN_HOSTS_STORAGE_KEY,
+    expect.stringContaining('AAAAIosKey'),
+  );
+  expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith(
+    'mini ssh-ed25519 AAAAIosKey',
+  );
+});
+
 test('parses an unknown-key challenge returned by the native handshake', () => {
   expect(parseUnknownHostKey(
     'E_HOST_KEY_UNKNOWN:{"host":"Savior","port":22,"keyType":"ssh-ed25519","publicKey":"AAAA","fingerprint":"SHA256:key"}',

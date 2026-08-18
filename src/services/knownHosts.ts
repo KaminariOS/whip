@@ -30,25 +30,34 @@ export async function trustKnownHost(
   challenge: UnknownHostKeyChallenge,
 ): Promise<KnownHost[]> {
   const normalizedHost = normalizeHost(challenge.host);
-  const duplicate = hosts.some(entry => (
+  const normalizedPublicKey = normalizePublicKey(challenge.keyType, challenge.publicKey);
+  const normalizedHosts = hosts.map(entry => {
+    const publicKey = normalizePublicKey(entry.keyType, entry.publicKey);
+    return publicKey === entry.publicKey ? entry : { ...entry, publicKey };
+  });
+  const duplicate = normalizedHosts.some(entry => (
     normalizeHost(entry.host) === normalizedHost
     && entry.port === challenge.port
     && entry.keyType === challenge.keyType
-    && entry.publicKey === challenge.publicKey
+    && entry.publicKey === normalizedPublicKey
   ));
   if (duplicate) {
-    configureNativeKnownHosts(hosts);
-    return hosts;
+    if (normalizedHosts.some((entry, index) => entry !== hosts[index])) {
+      await replaceKnownHosts(normalizedHosts);
+    } else {
+      configureNativeKnownHosts(normalizedHosts);
+    }
+    return normalizedHosts;
   }
 
   const next = [
-    ...hosts,
+    ...normalizedHosts,
     {
       id: createSecureId('known-host'),
       host: normalizedHost,
       port: challenge.port,
       keyType: challenge.keyType,
-      publicKey: challenge.publicKey,
+      publicKey: normalizedPublicKey,
       fingerprint: challenge.fingerprint,
       createdAt: new Date().toISOString(),
     },
@@ -122,7 +131,9 @@ function parseHostKeyPayload(
 
 export function serializeKnownHosts(hosts: KnownHost[]): string {
   return hosts
-    .map(entry => `${knownHostAlias(entry.host, entry.port)} ${entry.keyType} ${entry.publicKey}`)
+    .map(entry => (
+      `${knownHostAlias(entry.host, entry.port)} ${entry.keyType} ${normalizePublicKey(entry.keyType, entry.publicKey)}`
+    ))
     .join('\n');
 }
 
@@ -174,6 +185,11 @@ function knownHostAlias(host: string, port: number): string {
 
 function normalizeHost(host: string): string {
   return host.trim().toLowerCase();
+}
+
+function normalizePublicKey(keyType: string, publicKey: string): string {
+  const fields = publicKey.trim().split(/\s+/);
+  return fields[0] === keyType && fields.length > 1 ? fields[1] : fields[0];
 }
 
 function compareKnownHosts(left: KnownHost, right: KnownHost): number {
