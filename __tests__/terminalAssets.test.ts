@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { TextDecoder } from 'node:util';
 import { Script } from 'node:vm';
 
 const assets = resolve(__dirname, '../android/app/src/main/assets');
@@ -102,6 +103,39 @@ describe('Android terminal assets', () => {
 
     expect(font.length).toBeGreaterThan(100_000);
     expect([...font.subarray(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]);
+  });
+
+  it('loads both iOS terminal bundles in one document scope', () => {
+    const generatedSource = readFileSync(iosTerminalSource, 'utf8');
+    const encodedHtml = generatedSource.match(
+      /IOS_TERMINAL_HTML_TEMPLATE = (.*);\n$/s,
+    )?.[1];
+    if (!encodedHtml) throw new Error('Generated iOS terminal HTML is missing');
+    const html = JSON.parse(encodedHtml) as string;
+    const bundleScripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+      .map(match => match[1])
+      .filter(script => script.includes('__herdrBundleSources'));
+    const context: Record<string, unknown> = {
+      atob: (encoded: string) => Buffer.from(encoded, 'base64').toString('binary'),
+      Function: function (_module: string, _exports: string, source: string) {
+        return (module: { exports: Record<string, unknown> }) => {
+          module.exports = source.length > 100_000
+            ? { Terminal: function Terminal() {} }
+            : { FitAddon: function FitAddon() {} };
+        };
+      },
+      TextDecoder,
+      Uint8Array,
+    };
+    context.window = context;
+    context.globalThis = context;
+
+    for (const script of bundleScripts) {
+      new Script(script).runInNewContext(context);
+    }
+
+    expect(typeof context.Terminal).toBe('function');
+    expect(typeof (context.FitAddon as { FitAddon?: unknown })?.FitAddon).toBe('function');
   });
 
   it('packages the standalone Arphic UKai HK TrueType face', () => {

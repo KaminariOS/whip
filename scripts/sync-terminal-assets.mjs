@@ -994,6 +994,7 @@ const inlineBundle = (name, source, globalName = null) => {
   </script>
   ${chunkTags}
   <script>
+  (() => {
     const bundleModule = { exports: {} };
     const encodedBundleSource = window.__herdrBundleSources[${nameLiteral}].join('');
     const binaryBundleSource = atob(encodedBundleSource);
@@ -1003,6 +1004,7 @@ const inlineBundle = (name, source, globalName = null) => {
     new Function('module', 'exports', bundleSource)(bundleModule, bundleModule.exports);
     if (${globalNameLiteral}) window[${globalNameLiteral}] = bundleModule.exports;
     else Object.assign(window, bundleModule.exports);
+  })();
   </script>`;
 };
 const iosTerminalHtml = terminalHtml
