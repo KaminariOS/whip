@@ -257,14 +257,14 @@ export function SettingsSection(props: SettingsSectionProps) {
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>
         <View className="gap-3">
           <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
-          {Platform.OS === 'android' ? <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <SettingRow
               title={t('settings.fullscreenApp')}
               copy={t('settings.fullscreenAppCopy')}
               value={props.fullscreenApp}
               onChange={props.onFullscreenAppChange}
             />
-          </GlassSurface> : null}
+          </GlassSurface>
           <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <AppBackgroundRow
               busy={appBackgroundBusy}
@@ -315,7 +315,7 @@ export function SettingsSection(props: SettingsSectionProps) {
 
         <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.terminal')}</Text>
         <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-          {Platform.OS === 'android' ? <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} /> : null}
+          <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
           <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
           <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
           <SettingRow title={t('settings.useModifierKeyIcons')} copy={t('settings.useModifierKeyIconsCopy')} value={props.terminalPreferences.useModifierKeyIcons} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, useModifierKeyIcons: value })} divided />
