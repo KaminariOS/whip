@@ -16,6 +16,8 @@ let snapshot: readonly AppLogEntry[] = [];
 let entryCharacters = 0;
 let nextId = 1;
 let installed = false;
+let notificationScheduled = false;
+let notifyingListeners = false;
 
 const consoleMethods: readonly AppLogLevel[] = [
   'debug',
@@ -33,7 +35,7 @@ export function installAppLogCapture(): void {
     const original = console[level].bind(console);
     console[level] = (...args: unknown[]) => {
       try {
-        appendAppLog(level, args);
+        if (!notifyingListeners) appendAppLog(level, args);
       } finally {
         original(...args);
       }
@@ -90,7 +92,22 @@ function appendAppLog(level: AppLogLevel, args: readonly unknown[]): void {
   }
 
   snapshot = entries.slice();
-  for (const listener of listeners) listener();
+  scheduleListenerNotification();
+}
+
+function scheduleListenerNotification(): void {
+  if (listeners.size === 0 || notificationScheduled) return;
+  notificationScheduled = true;
+
+  void Promise.resolve().then(() => {
+    notificationScheduled = false;
+    notifyingListeners = true;
+    try {
+      for (const listener of listeners) listener();
+    } finally {
+      notifyingListeners = false;
+    }
+  });
 }
 
 function formatLogArgument(value: unknown): string {

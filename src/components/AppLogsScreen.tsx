@@ -54,7 +54,9 @@ export function AppLogsSection() {
         </View>
         <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
       </Button>
-      <AppLogsModal visible={visible} onClose={() => setVisible(false)} />
+      {visible ? (
+        <AppLogsModal visible onClose={() => setVisible(false)} />
+      ) : null}
     </View>
   );
 }
