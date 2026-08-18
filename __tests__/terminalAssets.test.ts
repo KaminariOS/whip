@@ -3,10 +3,12 @@ import { resolve } from 'node:path';
 import { Script } from 'node:vm';
 
 const assets = resolve(__dirname, '../android/app/src/main/assets');
-const iosAssets = resolve(__dirname, '../ios/HerdR/TerminalAssets');
+const iosModule = resolve(__dirname, '../modules/whip-terminal-assets');
+const iosAssets = resolve(iosModule, 'ios/TerminalAssets');
 const iosProject = resolve(__dirname, '../ios/HerdR.xcodeproj/project.pbxproj');
 const sourceFonts = resolve(__dirname, '../assets/terminal-fonts');
 const terminalRenderer = resolve(__dirname, '../src/components/TerminalRendererHost.tsx');
+const terminalAssetService = resolve(__dirname, '../src/services/terminalAssets.ios.ts');
 
 function readTerminalMarkup(html: string): string {
   const encoded = html.match(
@@ -162,18 +164,45 @@ describe('Android terminal assets', () => {
 
   it('selects the packaged terminal document for each native platform', () => {
     const renderer = readFileSync(terminalRenderer, 'utf8');
-    const project = readFileSync(iosProject, 'utf8');
+    const service = readFileSync(terminalAssetService, 'utf8');
 
     expect(renderer).toContain("android: { uri: 'file:///android_asset/herdr-terminal.html' }");
-    expect(renderer).toContain('NativeModules.TerminalAssets');
+    expect(renderer).toContain("from '../services/terminalAssets'");
     expect(renderer).toContain("ios: { uri: IOS_TERMINAL_ASSETS?.indexURL || 'about:blank' }");
     expect(renderer).toContain('allowingReadAccessToURL={Platform.OS === \'ios\'');
     expect(renderer).toContain('source={TERMINAL_SOURCE}');
     expect(renderer).toContain("import WebView from 'react-native-webview'");
     expect(renderer).not.toContain('WebView.android');
     expect(renderer).not.toContain('IOS_TERMINAL_HTML_TEMPLATE');
-    expect(project).toContain('TerminalAssets in Resources');
-    expect(project).toContain('lastKnownFileType = folder; name = TerminalAssets;');
+    expect(service).toContain("requireNativeModule<TerminalAssetLocation>(");
+    expect(service).toContain("'TerminalAssets'");
+  });
+
+  it('auto-links the iOS bridge and assets as a local Expo module', () => {
+    const config = JSON.parse(
+      readFileSync(resolve(iosModule, 'expo-module.config.json'), 'utf8'),
+    );
+    const podspec = readFileSync(
+      resolve(iosModule, 'ios/WhipTerminalAssets.podspec'),
+      'utf8',
+    );
+    const nativeModule = readFileSync(
+      resolve(iosModule, 'ios/TerminalAssetsModule.swift'),
+      'utf8',
+    );
+    const project = readFileSync(iosProject, 'utf8');
+
+    expect(config).toEqual({
+      platforms: ['apple'],
+      apple: { modules: ['TerminalAssetsModule'] },
+    });
+    expect(podspec).toContain("s.dependency 'ExpoModulesCore'");
+    expect(podspec).toContain("'WhipTerminalAssets' => ['TerminalAssets/**/*']");
+    expect(nativeModule).toContain('public final class TerminalAssetsModule: Module');
+    expect(nativeModule).toContain('Name("TerminalAssets")');
+    expect(nativeModule).toContain('Constant("indexURL")');
+    expect(project).not.toContain('TerminalAssets in Resources');
+    expect(project).not.toContain('TerminalAssetsModule.m in Sources');
   });
 
   it('compiles the generated Expo modules provider into the iOS app', () => {
