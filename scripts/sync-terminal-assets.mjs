@@ -829,7 +829,7 @@ const terminalHtml = `<!doctype html>
   <link rel="stylesheet" href="xterm.css">
   <style>
     ${terminalSessionStyle}
-    #terminals { position: relative; }
+    #terminals { position: relative; width: 100%; height: 100%; }
     .terminal-session {
       position: absolute;
       inset: 0;
