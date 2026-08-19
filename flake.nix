@@ -2,13 +2,20 @@
   description = "Whip Expo Android development environment";
 
   # Match the host flake so the Android shell reuses its cached JDK/SDK closure.
-  inputs.nixpkgs.url = "tarball+https://releases.nixos.org/nixos/unstable/nixos-26.11pre1034379.18b9261cb329/nixexprs.tar.xz";
+  inputs = {
+    nixpkgs.url = "tarball+https://releases.nixos.org/nixos/unstable/nixos-26.11pre1034379.18b9261cb329/nixexprs.tar.xz";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
-  outputs = {nixpkgs, ...}: let
+  outputs = {nixpkgs, rust-overlay, ...}: let
     androidSystem = "x86_64-linux";
     darwinSystem = "aarch64-darwin";
     androidPkgs = import nixpkgs {
       system = androidSystem;
+      overlays = [ (import rust-overlay) ];
       config.allowUnfree = true;
       config.android_sdk.accept_license = true;
     };
@@ -25,12 +32,17 @@
       ndkVersions = ["27.1.12297006"];
     };
     androidSdk = androidComposition.androidsdk;
+    androidNdkTools = "${androidSdk}/libexec/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin";
+    androidRustToolchain = androidPkgs.rust-bin.stable."1.97.1".default.override {
+      targets = ["aarch64-linux-android"];
+    };
   in {
     devShells.${androidSystem}.default = androidPkgs.mkShell {
       packages = [
         androidSdk
         androidPkgs.jdk17_headless
         androidPkgs.nodejs_22
+        androidRustToolchain
       ];
 
       ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
@@ -38,6 +50,10 @@
       ANDROID_NDK_ROOT = "${androidSdk}/libexec/android-sdk/ndk-bundle";
       JAVA_HOME = androidPkgs.jdk17_headless.home;
       GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/36.0.0/aapt2";
+      CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "${androidNdkTools}/aarch64-linux-android24-clang";
+      CC_aarch64_linux_android = "${androidNdkTools}/aarch64-linux-android24-clang";
+      AR_aarch64_linux_android = "${androidNdkTools}/llvm-ar";
+      CFLAGS_aarch64_linux_android = "--target=aarch64-none-linux-android24";
     };
 
     devShells.${darwinSystem}.default = darwinPkgs.mkShell {
