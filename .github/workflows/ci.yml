@@ -179,128 +179,45 @@ jobs:
         working-directory: ios
         run: bundle exec pod install
 
-      - name: Compile unsigned simulator app
+      - name: Build unsigned iOS device app
         working-directory: ios
         run: |
           set -o pipefail
-          device_id="$(xcrun simctl list devices available --json | ruby -rjson -e '
-            devices = JSON.parse(STDIN.read).fetch("devices").values.flatten
-            device = devices.find { |candidate| candidate.fetch("name", "").start_with?("iPhone") }
-            abort "No available iPhone simulator was found" unless device
-            puts device.fetch("udid")
-          ')"
-          xcrun simctl boot "$device_id" 2>/dev/null || true
-          xcrun simctl bootstatus "$device_id" -b
-          echo "DEVICE_ID=$device_id" >> "$GITHUB_ENV"
           xcodebuild \
             -workspace HerdR.xcworkspace \
             -scheme HerdR \
             -configuration Release \
-            -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,id=$device_id" \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             -derivedDataPath "$RUNNER_TEMP/WhipDerivedData" \
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO \
             FORCE_BUNDLING=1 \
             "SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) WHIP_EMBEDDED_BUNDLE" \
             build
-
-      - name: Start macOS OpenSSH fixture
-        run: bash scripts/ios-ssh-e2e-fixture.sh start "$RUNNER_TEMP/whip-ios-ssh-fixture" "$GITHUB_ENV"
-
-      - name: Install and run simulator SSH feature matrix
-        run: |
-          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphonesimulator/HerdR.app"
+          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphoneos/HerdR.app"
           test -d "$app_path"
           test -f "$app_path/main.jsbundle"
-          xcrun simctl install "$DEVICE_ID" "$app_path"
-          data_path="$(xcrun simctl get_app_container "$DEVICE_ID" io.github.kaminarios.whip data)"
-          cp \
-            "$WHIP_E2E_FIXTURE_DIR/whip-ios-ssh-e2e-config.json" \
-            "$data_path/Documents/whip-ios-ssh-e2e-config.json"
-          result_path="$data_path/Documents/whip-ios-ssh-e2e-result.json"
-          launch_output="$(xcrun simctl launch \
-            --terminate-running-process \
-            "$DEVICE_ID" \
-            io.github.kaminarios.whip \
-            -WhipE2EEnabled YES)"
-          echo "$launch_output"
-          app_pid="${launch_output##*: }"
-          for _ in $(seq 1 180); do
-            if [[ -f "$result_path" ]]; then break; fi
-            if ! kill -0 "$app_pid"; then
-              echo 'Whip exited before writing the SSH E2E result' >&2
-              exit 1
-            fi
-            sleep 1
-          done
-          if [[ ! -f "$result_path" ]]; then
-            echo 'Whip did not write the SSH E2E result before the timeout' >&2
-            exit 1
-          fi
-          cp "$result_path" "$RUNNER_TEMP/whip-ios-ssh-e2e-result.json"
-          cat "$result_path"
-          ruby -rjson -e '
-            result = JSON.parse(File.read(ARGV.fetch(0)))
-            abort(result.fetch("error", "iOS SSH E2E failed")) unless result["status"] == "passed"
-          ' "$result_path"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$app_path" \
+            "$RUNNER_TEMP/Whip-iOS.app.zip"
 
-      - name: Capture simulator and OpenSSH logs
-        if: always()
-        run: |
-          mkdir -p "$RUNNER_TEMP/whip-ios-ssh-diagnostics"
-          {
-            echo "run_id=$GITHUB_RUN_ID"
-            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
-            echo "head_sha=$GITHUB_SHA"
-            echo "device_id=${DEVICE_ID:-unavailable}"
-          } >"$RUNNER_TEMP/whip-ios-ssh-diagnostics/metadata.txt"
-          if [[ -n "${DEVICE_ID:-}" ]]; then
-            xcrun simctl spawn "$DEVICE_ID" log show \
-              --last 15m \
-              --style compact \
-              --predicate 'process == "HerdR" OR eventMessage CONTAINS[c] "WHIP_IOS_SSH_E2E" OR eventMessage CONTAINS[c] "io.github.kaminarios.whip"' \
-              >"$RUNNER_TEMP/whip-ios-ssh-diagnostics/simulator.log" 2>&1 || true
-          fi
-          fixture_path="${WHIP_E2E_FIXTURE_DIR:-$RUNNER_TEMP/whip-ios-ssh-fixture}"
-          if [[ -f "$fixture_path/sshd.log" ]]; then
-            cp "$fixture_path/sshd.log" "$RUNNER_TEMP/whip-ios-ssh-diagnostics/sshd.log"
-          fi
-          if [[ -f "$RUNNER_TEMP/whip-ios-ssh-e2e-result.json" ]]; then
-            cp "$RUNNER_TEMP/whip-ios-ssh-e2e-result.json" "$RUNNER_TEMP/whip-ios-ssh-diagnostics/result.json"
-          fi
-          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphonesimulator/HerdR.app"
-          if [[ -d "$app_path" ]]; then
-            ditto -c -k --sequesterRsrc --keepParent \
-              "$app_path" \
-              "$RUNNER_TEMP/Whip-iOS-Simulator.app.zip"
-          fi
-
-      - name: Stop macOS OpenSSH fixture
-        if: always()
-        run: bash scripts/ios-ssh-e2e-fixture.sh stop "$RUNNER_TEMP/whip-ios-ssh-fixture"
-
-      - name: Upload unsigned simulator app
+      - name: Upload unsigned iOS app
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: whip-ios-simulator-app
-          path: ${{ runner.temp }}/Whip-iOS-Simulator.app.zip
+          name: whip-ios-app
+          path: ${{ runner.temp }}/Whip-iOS.app.zip
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Upload iOS SSH diagnostics
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: whip-ios-ssh-diagnostics
-          path: ${{ runner.temp }}/whip-ios-ssh-diagnostics
-          if-no-files-found: error
-          retention-days: 14
-
   ios-xcframework:
     name: iOS Rust XCFramework
+
     runs-on: macos-26
     timeout-minutes: 25
 

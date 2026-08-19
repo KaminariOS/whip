@@ -21,6 +21,7 @@
     };
     darwinPkgs = import nixpkgs {
       system = darwinSystem;
+      overlays = [ (import rust-overlay) ];
       config.allowUnfree = true;
     };
 
@@ -35,6 +36,9 @@
     androidNdkTools = "${androidSdk}/libexec/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin";
     androidRustToolchain = androidPkgs.rust-bin.stable."1.97.1".default.override {
       targets = ["aarch64-linux-android"];
+    };
+    darwinRustToolchain = darwinPkgs.rust-bin.stable."1.97.1".default.override {
+      targets = ["aarch64-apple-ios"];
     };
   in {
     devShells.${androidSystem}.default = androidPkgs.mkShell {
@@ -64,6 +68,7 @@
         bundler
         cocoapods
         fastlane
+        darwinRustToolchain
       ];
 
       DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer";
