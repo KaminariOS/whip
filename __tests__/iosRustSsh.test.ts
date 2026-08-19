@@ -1,29 +1,69 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const packageRoot = resolve(__dirname, '../packages/react-native-ssh-sftp');
-const read = (path: string) => readFileSync(resolve(packageRoot, path), 'utf8');
-const readProject = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
+const projectRoot = resolve(__dirname, '..');
+const legacyRoot = resolve(projectRoot, 'packages/react-native-ssh-sftp');
+const uniffiRoot = resolve(projectRoot, 'packages/react-native-whip-ssh');
+const readProject = (path: string) => readFileSync(resolve(projectRoot, path), 'utf8');
+const readLegacy = (path: string) => readFileSync(resolve(legacyRoot, path), 'utf8');
+const readUniffi = (path: string) => readFileSync(resolve(uniffiRoot, path), 'utf8');
 
-describe('iOS Rust SSH integration', () => {
-  it('builds only the Rust bridge and cannot fall back to NMSSH', () => {
-    const podspec = read('RNSSHClient.podspec');
-    const javascript = read('lib/sshclient.js');
+describe('iOS UniFFI SSH integration', () => {
+  it('pins matching published UniFFI React Native packages', () => {
+    const rootPackage = JSON.parse(readProject('package.json'));
+    const modulePackage = JSON.parse(readUniffi('package.json'));
 
-    expect(podspec).toContain("s.source_files     = 'ios/RNSSHRustClient.{h,m}'");
-    expect(podspec).not.toContain("s.dependency 'NMSSH'");
-    expect(podspec).toContain('Build Rust SSH transport');
-    expect(javascript).toContain(
-      "const RNSSHClient = Platform.OS === 'ios' ? RNSSHRustClient : legacySSHClient;",
+    expect(rootPackage.dependencies['uniffi-bindgen-react-native']).toBe('0.31.0-3');
+    expect(rootPackage.dependencies['@ubjs/core']).toBe('0.31.0-3');
+    expect(rootPackage.dependencies['react-native-whip-ssh']).toBe(
+      'file:packages/react-native-whip-ssh',
     );
+    expect(modulePackage.dependencies).toMatchObject({
+      '@ubjs/core': '0.31.0-3',
+      'uniffi-bindgen-react-native': '0.31.0-3',
+    });
   });
 
-  it('enables Expo module autolinking in the native iOS project', () => {
-    const podfile = readProject('ios/Podfile');
+  it('uses the UniFFI package only on iOS and keeps the legacy module on Android', () => {
+    const rootConfig = readProject('react-native.config.js');
+    const moduleConfig = readUniffi('react-native.config.js');
+    const javascript = readLegacy('lib/sshclient.js');
 
-    expect(podfile).toContain("'scripts/autolinking'");
-    expect(podfile).toContain('use_expo_modules!');
-    expect(podfile).toContain("platform :ios, '16.4'");
+    expect(rootConfig).toContain("'@dylankenneally/react-native-ssh-sftp'");
+    expect(rootConfig).toContain('ios: null');
+    expect(moduleConfig).toContain('android: null');
+    expect(javascript).toContain("require('react-native-whip-ssh').default");
+    expect(javascript).toContain("Platform.OS === 'ios' ? RNSSHClient : DeviceEventEmitter");
+    expect(javascript).toContain(': legacySSHClient;');
+  });
+
+  it('generates a TurboModule, bindings, podspec, and ARM64 XCFramework', () => {
+    const config = readUniffi('ubrn.config.yaml');
+    const podspec = readUniffi('WhipSsh.podspec');
+    const entrypoint = readUniffi('src/generated-entry.tsx');
+
+    expect(config).toContain('aarch64-apple-ios');
+    expect(config).not.toContain('aarch64-apple-ios-sim');
+    expect(config).not.toContain('x86_64-apple-ios');
+    expect(config).toContain('spec: WhipSshSpec');
+    expect(podspec).toContain('s.vendored_frameworks = "build/WhipSsh.xcframework"');
+    expect(entrypoint).toContain('installer.installRustCrate()');
+  });
+
+  it('exports generic synchronous, asynchronous, event, and shutdown entry points from Rust', () => {
+    const rust = readLegacy('rust/src/lib.rs');
+    const generated = readUniffi('src/generated/whip_ssh.ts');
+
+    expect(rust).toContain('uniffi::setup_scaffolding!();');
+    expect(rust).toContain('#[uniffi::export(with_foreign)]');
+    expect(rust).toContain('pub trait WhipSshEventSink');
+    expect(rust).toContain('pub fn call(request_json: String) -> String');
+    expect(rust).toContain('pub async fn call_async(request_json: String) -> String');
+    expect(rust).toContain('runtime.spawn(process_json_for_lifecycle');
+    expect(rust).toContain('pub fn shutdown()');
+    expect(generated).toContain('export function call(requestJson: string): string');
+    expect(generated).toContain('export async function callAsync(');
+    expect(generated).toContain('export function setEventSink(');
   });
 
   it.each([
@@ -65,58 +105,41 @@ describe('iOS Rust SSH integration', () => {
     'closeLocalForward',
     'requestHerdrApi',
     'startHerdrEventStream',
+    'writeHerdrEventStream',
+    'closeHerdrEventStream',
     'startHerdrCommandStream',
     'writeHerdrCommandStream',
     'closeHerdrCommandStream',
-  ])('exports the %s native operation', operation => {
-    const bridge = read('ios/RNSSHRustClient.m');
-    expect(
-      bridge.includes(`RCT_EXPORT_METHOD(${operation}`)
-      || bridge.includes(`SIMPLE_SFTP_METHOD(${operation},`),
-    ).toBe(true);
+  ])('adapts the existing %s JavaScript contract', operation => {
+    expect(readUniffi('src/index.ts')).toContain(`${operation}(`);
   });
 
-  it('does not retain Android-only guards for shared SSH features', () => {
-    const javascript = read('lib/sshclient.js');
+  it('builds only current ARM architectures in EAS and supports explicit local generation', () => {
+    const prepare = readProject('scripts/prepare-eas-ios.sh');
+    const build = readProject('scripts/build-ios-uniffi.sh');
 
-    expect(javascript).not.toContain('SSH agent forwarding is not available in the iOS Rust backend');
-    expect(javascript).not.toContain('Herdr remote-client-bridge is currently Android-only');
+    expect(prepare).toContain('rustup target add aarch64-apple-ios');
+    expect(prepare).not.toContain('aarch64-apple-ios-sim');
+    expect(prepare).not.toContain('x86_64-apple-ios');
+    expect(build).toContain('WHIP_BUILD_IOS_UNIFFI');
+    expect(build).toContain('"$(uname -s)" != "Darwin"');
+    expect(build).toContain('IPHONEOS_DEPLOYMENT_TARGET');
+    expect(build).toContain('ubrn build ios');
+    expect(build).toContain('--and-generate');
+    expect(build).toContain('--no-sim');
   });
 
-  it('cross-compiles the active simulator or device architectures', () => {
-    const buildScript = read('rust/build-ios.sh');
-    const xcframeworkScript = read('rust/build-xcframework.sh');
+  it('cleans up the Rust event sink and process-wide transport during hot reload', () => {
+    const adapter = readUniffi('src/index.ts');
+    const rust = readLegacy('rust/src/lib.rs');
 
-    expect(buildScript).toContain('aarch64-apple-ios');
-    expect(buildScript).toContain('aarch64-apple-ios-sim');
-    expect(buildScript).toContain('x86_64-apple-ios');
-    expect(buildScript).toContain('xcrun lipo -create');
-    expect(buildScript).not.toContain('rustup target add "$target"');
-    expect(xcframeworkScript).toContain('xcodebuild -create-xcframework');
-  });
-
-  it('does not block the React Native method queue for network operations', () => {
-    const bridge = read('ios/RNSSHRustClient.m');
-    const header = read('rust/include/whip_ssh.h');
-
-    expect(header).toContain('whip_ssh_call_async');
-    expect(bridge).toContain('callOperationAsync:@"execute"');
-    expect(bridge).toContain('finishAsync:@"sftpUpload"');
-    expect(bridge).toContain('callOperation:@"sftpCancelUpload"');
-    expect(bridge).toContain('dispatch_sync(dispatch_get_main_queue(), emit)');
-  });
-
-  it('shuts down process-wide Rust state when React Native invalidates the module', () => {
-    const bridge = read('ios/RNSSHRustClient.m');
-    const rust = read('rust/src/lib.rs');
-
-    expect(bridge).toContain('- (void)invalidate');
-    expect(bridge).toContain('whip_ssh_shutdown();');
+    expect(adapter).toContain('clearEventSink();');
+    expect(adapter).toContain('shutdownRust();');
     expect(rust).toContain('async fn shutdown_all()');
   });
 
-  it('bounds queues/output and stages SFTP transfers before rename', () => {
-    const rust = read('rust/src/lib.rs');
+  it('retains transport safety bounds and staged SFTP transfers', () => {
+    const rust = readLegacy('rust/src/lib.rs');
 
     expect(rust).toContain('CONTROL_QUEUE_CAPACITY');
     expect(rust).toContain('EXECUTE_OUTPUT_LIMIT');

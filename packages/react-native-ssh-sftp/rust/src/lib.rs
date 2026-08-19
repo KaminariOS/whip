@@ -1,11 +1,13 @@
 //! Whip's platform-neutral SSH transport.
 //!
-//! The public boundary is deliberately a small JSON C ABI. React Native owns
+//! The public boundary is deliberately a small JSON API exposed through UniFFI
+//! and, during the iOS transition, the original C ABI. React Native owns
 //! JavaScript callbacks and lifecycle, while this crate owns the Tokio runtime,
 //! SSH sessions, host-key verification, and byte streams.
 
 mod herdr_codec;
 mod known_hosts;
+uniffi::setup_scaffolding!();
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
@@ -48,6 +50,7 @@ static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 static SESSIONS: OnceLock<Sessions> = OnceLock::new();
 static KNOWN_HOSTS: OnceLock<RwLock<KnownHosts>> = OnceLock::new();
 static EVENT_CALLBACK: OnceLock<RwLock<Option<EventCallback>>> = OnceLock::new();
+static UNIFFI_EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn WhipSshEventSink>>>> = OnceLock::new();
 static SHELLS: OnceLock<Shells> = OnceLock::new();
 static SFTP_SESSIONS: OnceLock<SftpSessions> = OnceLock::new();
 static STREAMS: OnceLock<Streams> = OnceLock::new();
@@ -117,6 +120,11 @@ impl Response {
             error: Some(error.to_string()),
         }
     }
+}
+
+#[uniffi::export(with_foreign)]
+pub trait WhipSshEventSink: Send + Sync {
+    fn emit(&self, event_json: String);
 }
 
 struct Session {
@@ -250,6 +258,9 @@ fn shells() -> &'static Shells {
 fn event_callback() -> &'static RwLock<Option<EventCallback>> {
     EVENT_CALLBACK.get_or_init(|| RwLock::new(None))
 }
+fn uniffi_event_sink() -> &'static RwLock<Option<Arc<dyn WhipSshEventSink>>> {
+    UNIFFI_EVENT_SINK.get_or_init(|| RwLock::new(None))
+}
 fn sftp_sessions() -> &'static SftpSessions {
     SFTP_SESSIONS.get_or_init(|| RwLock::new(HashMap::new()))
 }
@@ -272,15 +283,19 @@ fn prepared_bridges() -> &'static PreparedBridges {
 }
 
 fn emit_event(value: Value) {
-    let Some(callback) = *event_callback().read() else {
-        return;
-    };
     let Ok(json) = serde_json::to_string(&value) else {
         return;
     };
-    let Ok(json) = CString::new(json) else { return };
-    // The Objective-C callback copies the string before returning.
-    unsafe { callback(json.as_ptr()) };
+    if let Some(sink) = uniffi_event_sink().read().clone() {
+        sink.emit(json.clone());
+    }
+    if let Some(callback) = *event_callback().read() {
+        let Ok(json) = CString::new(json) else {
+            return;
+        };
+        // The Objective-C callback copies the string before returning.
+        unsafe { callback(json.as_ptr()) };
+    }
 }
 
 fn required_string(params: &Value, name: &str) -> Result<String, TransportError> {
@@ -1585,6 +1600,62 @@ fn process_json(input: &str) -> String {
     }
 }
 
+async fn process_json_for_lifecycle(input: Option<String>, lifecycle_epoch: u64) -> String {
+    let request_key = input.as_deref().and_then(|input| {
+        serde_json::from_str::<Request>(input)
+            .ok()
+            .and_then(|request| request.params.get("key")?.as_str().map(str::to_owned))
+    });
+    let mut response = match input {
+        Some(input) => process_json_async(&input).await,
+        None => r#"{"ok":false,"error":"request pointer was null"}"#.to_owned(),
+    };
+    if LIFECYCLE_EPOCH.load(Ordering::Acquire) != lifecycle_epoch {
+        if let Some(key) = request_key {
+            disconnect_key(key).await;
+        }
+        response = r#"{"ok":false,"error":"Rust SSH bridge was invalidated"}"#.to_owned();
+    }
+    response
+}
+
+#[uniffi::export]
+pub fn call(request_json: String) -> String {
+    process_json(&request_json)
+}
+
+#[uniffi::export]
+pub async fn call_async(request_json: String) -> String {
+    let lifecycle_epoch = LIFECYCLE_EPOCH.load(Ordering::Acquire);
+    let task = match runtime() {
+        Ok(runtime) => runtime.spawn(process_json_for_lifecycle(
+            Some(request_json),
+            lifecycle_epoch,
+        )),
+        Err(error) => {
+            return serialize_response(&Response::failure(format!(
+                "failed to initialize SSH runtime: {error}"
+            )));
+        }
+    };
+    match task.await {
+        Ok(response) => response,
+        Err(error) => serialize_response(&Response::failure(format!(
+            "SSH runtime task failed: {error}"
+        ))),
+    }
+}
+
+#[uniffi::export]
+pub fn set_event_sink(sink: Arc<dyn WhipSshEventSink>) {
+    *uniffi_event_sink().write() = Some(sink);
+}
+
+#[uniffi::export]
+pub fn clear_event_sink() {
+    *uniffi_event_sink().write() = None;
+}
+
 /// Executes one transport operation. The caller owns the returned UTF-8 string
 /// and must release it with [`whip_ssh_string_free`].
 ///
@@ -1638,21 +1709,7 @@ pub unsafe extern "C" fn whip_ssh_call_async(
         }
     };
     runtime.spawn(async move {
-        let request_key = input.as_deref().and_then(|input| {
-            serde_json::from_str::<Request>(input)
-                .ok()
-                .and_then(|request| request.params.get("key")?.as_str().map(str::to_owned))
-        });
-        let mut response = match input {
-            Some(input) => process_json_async(&input).await,
-            None => r#"{"ok":false,"error":"request pointer was null"}"#.to_owned(),
-        };
-        if LIFECYCLE_EPOCH.load(Ordering::Acquire) != lifecycle_epoch {
-            if let Some(key) = request_key {
-                disconnect_key(key).await;
-            }
-            response = r#"{"ok":false,"error":"Rust SSH bridge was invalidated"}"#.to_owned();
-        }
+        let response = process_json_for_lifecycle(input, lifecycle_epoch).await;
         if let Ok(response) = CString::new(response) {
             // The Objective-C callback copies the string before returning.
             unsafe { callback(request_id, response.as_ptr()) };
@@ -1679,14 +1736,24 @@ pub extern "C" fn whip_ssh_set_event_callback(callback: Option<EventCallback>) {
     *event_callback().write() = callback;
 }
 
-/// Stops all process-wide sessions and child tasks during React Native bridge
-/// invalidation. Cleanup is asynchronous so invalidation never blocks JS.
-#[unsafe(no_mangle)]
-pub extern "C" fn whip_ssh_shutdown() {
+fn shutdown_transport() {
+    *uniffi_event_sink().write() = None;
     LIFECYCLE_EPOCH.fetch_add(1, Ordering::AcqRel);
     if let Ok(runtime) = runtime() {
         runtime.spawn(shutdown_all());
     }
+}
+
+#[uniffi::export]
+pub fn shutdown() {
+    shutdown_transport();
+}
+
+/// Stops all process-wide sessions and child tasks during React Native bridge
+/// invalidation. Cleanup is asynchronous so invalidation never blocks JS.
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_ssh_shutdown() {
+    shutdown_transport();
 }
 
 #[cfg(test)]

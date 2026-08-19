@@ -1,0 +1,35 @@
+{
+  "name": "react-native-whip-ssh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UniFFI TurboModule for Whip's Rust SSH transport",
+  "main": "src/index.ts",
+  "react-native": "src/index.ts",
+  "types": "src/index.ts",
+  "homepage": "https://github.com/kaminarios/whip",
+  "license": "AGPL-3.0-or-later",
+  "author": {
+    "name": "Whip contributors"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kaminarios/whip.git"
+  },
+  "dependencies": {
+    "@ubjs/core": "0.31.0-3",
+    "uniffi-bindgen-react-native": "0.31.0-3"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "codegenConfig": {
+    "name": "WhipSshSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "outputDir": {
+      "ios": "ios/generated",
+      "android": "android/generated"
+    }
+  }
+}

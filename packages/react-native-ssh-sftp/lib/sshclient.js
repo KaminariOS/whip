@@ -1,12 +1,14 @@
-import { Platform, NativeModules, NativeEventEmitter, DeviceEventEmitter } from 'react-native';
-const { RNSSHClient: legacySSHClient, RNSSHRustClient } = NativeModules;
+import { Platform, NativeModules, DeviceEventEmitter } from 'react-native';
+const { RNSSHClient: legacySSHClient } = NativeModules;
 // Android stays on the mature JSch implementation. iOS is Rust-only so a
 // packaging failure cannot silently downgrade host verification to NMSSH.
-const RNSSHClient = Platform.OS === 'ios' ? RNSSHRustClient : legacySSHClient;
+const RNSSHClient = Platform.OS === 'ios'
+    ? require('react-native-whip-ssh').default
+    : legacySSHClient;
 if (!RNSSHClient) {
     throw new Error(`Native SSH backend is unavailable on ${Platform.OS}`);
 }
-const RNSSHClientEmitter = new NativeEventEmitter(RNSSHClient);
+const RNSSHClientEmitter = Platform.OS === 'ios' ? RNSSHClient : DeviceEventEmitter;
 const NATIVE_EVENT_SHELL = 'Shell';
 const NATIVE_EVENT_HERDR_BRIDGE = 'HerdrBridge';
 const NATIVE_EVENT_HERDR_EVENT_STREAM = 'HerdrEventStream';
