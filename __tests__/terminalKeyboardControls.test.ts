@@ -90,7 +90,7 @@ describe('terminal keyboard controls', () => {
       screen.indexOf("AppState.addEventListener('change', dismissFocusedInput)"),
     );
     expect(keyboardModeEffect).toContain(
-      '}, [activeTarget?.key, keyboardEnabled, ready]);',
+      '}, [activeTarget?.key, composeExpanded, composeOpen, keyboardEnabled, ready]);',
     );
   });
 

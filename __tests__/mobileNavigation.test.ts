@@ -43,7 +43,9 @@ test('bottom navigation shows icons without visible labels', () => {
   expect(bottomNavigation).toContain('blurMethod="dimezisBlurViewSdk31Plus"');
   expect(bottomNavigation).toContain('intensity={active ? 34 : 26}');
   expect(bottomNavigation).toContain("tint={isDark ? 'systemUltraThinMaterialDark' : 'default'}");
-  expect(bottomNavigation).toContain('style={[styles.glassSurface, floatingGlassEdgeStyle(active, colors)]}');
+  expect(bottomNavigation).toContain(
+    "style={[styles.glassSurface, Platform.OS === 'ios' ? styles.glassSurfaceWithoutEdge : floatingGlassEdgeStyle(active, colors)]}",
+  );
   expect(bottomNavigation).toContain('opacity: 0.62');
   expect(bottomNavigation).toContain('floatingGlassFallbackStyle(isDark)');
   expect(bottomNavigation).toContain("backgroundColor: isDark ? 'rgba(20,22,34,0.38)' : 'rgba(255,255,255,0.42)'");

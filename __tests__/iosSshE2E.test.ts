@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 const read = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
 
-describe('iOS simulator SSH end-to-end matrix', () => {
+describe('iOS SSH integration wiring', () => {
   it('boots the dedicated runner only when the iOS launch argument enables it', () => {
     const entry = read('index.js');
     expect(entry).toContain("Settings.get('WhipE2EEnabled')");
@@ -39,20 +39,9 @@ describe('iOS simulator SSH end-to-end matrix', () => {
     }
   });
 
-  it('runs a real macOS OpenSSH fixture and always retains diagnostics and the unsigned app', () => {
+  it('builds and uploads the unsigned iOS device app', () => {
     const workflow = read('.github/workflows/ci.yml');
-    const fixture = read('scripts/ios-ssh-e2e-fixture.sh');
     const appDelegate = read('ios/HerdR/AppDelegate.swift');
-    expect(fixture).toContain('/usr/sbin/sshd -D');
-    expect(fixture).toContain('PasswordAuthentication yes');
-    expect(fixture).toContain('username="whipe2e$(uuidgen');
-    expect(fixture).toContain('sysadminctl -addUser "$username"');
-    expect(fixture).toContain('-password "$password"');
-    expect(fixture).toContain('-admin');
-    expect(fixture).toContain('dscl . -authonly "$username" "$password"');
-    expect(fixture).toContain('sysadminctl -deleteUser "$WHIP_E2E_USER"');
-    expect(fixture).not.toContain('dscl . -create');
-    expect(fixture).not.toContain('username="$(id -un)"');
     expect(appDelegate).toContain('internal import Expo');
     expect(appDelegate).not.toMatch(/^import Expo$/m);
     expect(appDelegate).toContain('class AppDelegate: ExpoAppDelegate');
@@ -63,21 +52,16 @@ describe('iOS simulator SSH end-to-end matrix', () => {
     expect(appDelegate).toContain('bridge.bundleURL ?? bundleURL()');
     expect(appDelegate).toContain('forBundleRoot: ".expo/.virtual-metro-entry"');
     expect(appDelegate).not.toContain('let factory = RCTReactNativeFactory(delegate: delegate)');
-    expect(workflow).toContain('${WHIP_E2E_FIXTURE_DIR:-$RUNNER_TEMP/whip-ios-ssh-fixture}');
-    expect(workflow).toContain('Install and run simulator SSH feature matrix');
+    expect(workflow).toContain('name: iOS unsigned device build');
+    expect(workflow).toContain('Build unsigned iOS device app');
     expect(workflow).toContain('-configuration Release');
-    expect(workflow).toContain('Release-iphonesimulator/HerdR.app');
+    expect(workflow).toContain('-sdk iphoneos');
+    expect(workflow).toContain('-destination "generic/platform=iOS"');
+    expect(workflow).toContain('CODE_SIGNING_ALLOWED=NO');
+    expect(workflow).toContain('Release-iphoneos/HerdR.app');
     expect(workflow).toContain('test -f "$app_path/main.jsbundle"');
-    expect(workflow).toContain('whip-ios-ssh-diagnostics/metadata.txt');
-    expect(workflow).toContain('Whip did not write the SSH E2E result before the timeout');
     expect(workflow).toContain('if-no-files-found: warn');
-    expect(workflow.indexOf('echo "DEVICE_ID=$device_id" >> "$GITHUB_ENV"'))
-      .toBeLessThan(workflow.indexOf('xcodebuild \\'));
-    expect(workflow).not.toContain('-configuration Debug');
-    expect(workflow).not.toContain('Debug-iphonesimulator/HerdR.app');
-    expect(workflow).toContain('whip-ios-ssh-e2e-result.json');
-    expect(workflow).toContain('name: whip-ios-simulator-app');
-    expect(workflow).toContain('name: whip-ios-ssh-diagnostics');
+    expect(workflow).toContain('name: whip-ios-app');
     expect(workflow).toContain('if: always()');
   });
 });
