@@ -134,7 +134,7 @@ jobs:
           --no-daemon
 
   ios:
-    name: iOS simulator smoke test
+    name: iOS unsigned device build
     runs-on: macos-26
     timeout-minutes: 30
     env:
