@@ -1,10 +1,10 @@
-# Whip iOS Rust SSH transport
+# Whip Rust SSH transport
 
-This crate is the new iOS transport behind the existing `SSHClient` JavaScript
-API. Android intentionally remains on the current JSch implementation until the
-Rust implementation reaches feature parity and has been exercised on devices.
+This crate is the Rust/Russh transport behind the existing `SSHClient`
+JavaScript API on iOS and Android. Both platforms use the UniFFI React Native
+module; the legacy Android JSch module is no longer autolinked.
 
-## Current iOS backend
+## Current mobile backend
 
 Implemented:
 
@@ -22,10 +22,10 @@ Implemented:
 - Herdr direct stream-local API requests, event streams, and command streams
 - retained Herdr terminal bridges using the protocol 17–20 binary framing
 
-The iOS backend intentionally rejects RSA private keys for now. Russh's current
+The mobile backend intentionally rejects RSA private keys for now. Russh's current
 RSA path depends on a crate affected by RUSTSEC-2023-0071 with no patched
 release. Ed25519 keys are supported and tested; this restriction does not alter
-Android's existing key support.
+the legacy Android key support.
 
 Agent forwarding exposes only the identity used for key authentication and
 rejects remote agent mutation requests. Password-authenticated sessions do not

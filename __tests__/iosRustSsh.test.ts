@@ -8,7 +8,7 @@ const readProject = (path: string) => readFileSync(resolve(projectRoot, path), '
 const readLegacy = (path: string) => readFileSync(resolve(legacyRoot, path), 'utf8');
 const readUniffi = (path: string) => readFileSync(resolve(uniffiRoot, path), 'utf8');
 
-describe('iOS UniFFI SSH integration', () => {
+describe('UniFFI SSH integration', () => {
   it('pins matching published UniFFI React Native packages', () => {
     const rootPackage = JSON.parse(readProject('package.json'));
     const modulePackage = JSON.parse(readUniffi('package.json'));
@@ -24,17 +24,19 @@ describe('iOS UniFFI SSH integration', () => {
     });
   });
 
-  it('uses the UniFFI package only on iOS and keeps the legacy module on Android', () => {
+  it('uses the UniFFI package on both mobile platforms and disables legacy native linking', () => {
     const rootConfig = readProject('react-native.config.js');
     const moduleConfig = readUniffi('react-native.config.js');
     const javascript = readLegacy('lib/sshclient.js');
 
     expect(rootConfig).toContain("'@dylankenneally/react-native-ssh-sftp'");
     expect(rootConfig).toContain('ios: null');
-    expect(moduleConfig).toContain('android: null');
+    expect(rootConfig).toContain('android: null');
+    expect(moduleConfig).toContain("sourceDir: './android'");
     expect(javascript).toContain("require('react-native-whip-ssh').default");
-    expect(javascript).toContain("Platform.OS === 'ios' ? RNSSHClient : DeviceEventEmitter");
-    expect(javascript).toContain(': legacySSHClient;');
+    expect(javascript).not.toContain("require('react-native')");
+    expect(javascript).not.toContain('Platform.OS');
+    expect(javascript).not.toContain('legacySSHClient');
   });
 
   it('generates a TurboModule, bindings, podspec, and ARM64 XCFramework', () => {
