@@ -58,7 +58,7 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
                 blurTarget={blurTarget}
                 intensity={active ? 34 : 26}
                 tint={isDark ? 'systemUltraThinMaterialDark' : 'default'}
-                style={[styles.glassSurface, floatingGlassEdgeStyle(active, colors)]}
+                style={[styles.glassSurface, Platform.OS === 'ios' ? styles.glassSurfaceWithoutEdge : floatingGlassEdgeStyle(active, colors)]}
               />
             ) : (
               <View
@@ -109,7 +109,15 @@ function floatingBloomStyle(active: boolean, colors: ThemeColors) {
     backgroundColor: 'transparent',
     borderColor: colorWithAlpha(edgeColor, active ? 'B8' : '73'),
     borderWidth: active ? 2 : 1,
-    filter: [{ blur: active ? 6 : 4 }],
+    ...(Platform.OS === 'ios'
+      ? {
+          // iOS does not render the React Native filter blur on this View.
+          shadowColor: edgeColor,
+          shadowOpacity: active ? 0.72 : 0.32,
+          shadowRadius: active ? 10 : 6,
+          shadowOffset: { width: 0, height: 0 },
+        }
+      : { filter: [{ blur: active ? 6 : 4 }] }),
   } as const;
 }
 
@@ -126,5 +134,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 32,
     borderWidth: 1,
+  },
+  // The iOS material surface already has a crisp edge; the separate bloom
+  // ring supplies the navigation button outline.
+  glassSurfaceWithoutEdge: {
+    borderColor: 'transparent',
   },
 });
