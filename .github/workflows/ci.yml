@@ -144,6 +144,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
       - name: Report Apple toolchain versions
         run: |
           xcodebuild -version
@@ -156,24 +162,13 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci --include=dev
+        run: nix develop .#default -c npm ci --include=dev
 
       - name: Set up Ruby and CocoaPods
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
-
-      - name: Install pinned Rust toolchain and simulator target
-        run: |
-          rustup toolchain install 1.97.1 --profile minimal
-          rustup target add --toolchain 1.97.1 aarch64-apple-ios-sim
-
-      - name: Cache Rust iOS builds
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: packages/react-native-ssh-sftp/rust
-          key: ios-simulator
 
       - name: Install CocoaPods
         working-directory: ios
