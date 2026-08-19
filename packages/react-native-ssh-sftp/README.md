@@ -29,9 +29,9 @@ npm install @dylankenneally/react-native-ssh-sftp
 
 ### iOS and Android
 
-This project-owned fork builds its mobile SSH transport from Rust/Russh and does
-not use the legacy JSch or NMSSH transports. iOS requires the repository-pinned
-CocoaPods bundle from your `./ios` directory on macOS.
+This project-owned fork builds its mobile SSH transport from Rust/Russh. iOS
+requires the repository-pinned CocoaPods bundle from your `./ios` directory on
+macOS.
 
 The iOS backend currently supports Ed25519 private-key authentication and
 password authentication. RSA private keys remain supported by Android, but are
@@ -241,8 +241,7 @@ You can find a very simple example app for the usage of this library [here](http
 
 This package wraps the following libraries, which provide the actual SSH/SFTP functionality:
 
-- [Russh](https://github.com/Eugeny/russh) for iOS
-- [JSch](http://www.jcraft.com/jsch/) for Android ([from Matthias Wiedemann fork](https://github.com/mwiede/jsch))
+- [Russh](https://github.com/Eugeny/russh) for Android and iOS
 
 This package is a fork of Emmanuel Natividad's [react-native-ssh-sftp](https://github.com/enatividad/react-native-ssh-sftp) package. The fork chain from there is as follows:
 

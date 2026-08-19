@@ -33,7 +33,7 @@ class SSHClient {
      * The returned subscription must be removed when it is no longer needed.
      */
     static addNetworkChangeListener(handler) {
-        // Russh opens a fresh socket for each connection and has no JSch-style
+        // Russh opens a fresh socket for each connection and has no
         // process-wide network monitor. Keep this compatibility hook inert.
         void handler;
         return { remove() { } };

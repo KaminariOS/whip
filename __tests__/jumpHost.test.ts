@@ -1,6 +1,4 @@
 import SSHClient from '@dylankenneally/react-native-ssh-sftp';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
@@ -141,40 +139,4 @@ describe('SSH jump hosts', () => {
     expect(target.setAgentForwarding).toHaveBeenCalledWith(true);
   });
 
-  it('requests agent forwarding on every native shell and exec channel', () => {
-    const android = readFileSync(
-      resolve(
-        __dirname,
-        '../packages/react-native-ssh-sftp/android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java',
-      ),
-      'utf8',
-    );
-
-    expect(android).toContain('volatile boolean _forwardAgent = false');
-    expect(android.match(/setAgentForwarding\(client\._forwardAgent\)/g)).toHaveLength(3);
-  });
-
-  it('uses strict OpenSSH hostname resolution semantics on the jump server', () => {
-    const android = readFileSync(
-      resolve(
-        __dirname,
-        '../packages/react-native-ssh-sftp/android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java',
-      ),
-      'utf8',
-    );
-    const proxy = android.slice(
-      android.indexOf('private static class JumpHostProxy'),
-      android.indexOf('private final ReactApplicationContext reactContext'),
-    );
-    const connect = android.slice(
-      android.indexOf('private void connectToHost('),
-      android.indexOf('public void execute('),
-    );
-
-    expect(connect).toContain('String connectionHost = jumpKey != null');
-    expect(connect).toContain('? host');
-    expect(proxy).toContain('jumpSession.getStreamForwarder(host, port)');
-    expect(proxy).not.toContain('resolver.resolve(host)');
-    expect(proxy).not.toContain('targetAddress');
-  });
 });

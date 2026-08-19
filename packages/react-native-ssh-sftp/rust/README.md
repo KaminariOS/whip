@@ -2,7 +2,7 @@
 
 This crate is the Rust/Russh transport behind the existing `SSHClient`
 JavaScript API on iOS and Android. Both platforms use the UniFFI React Native
-module; the legacy Android JSch module is no longer autolinked.
+module; the Rust/Russh implementation is the only native SSH transport.
 
 ## Current mobile backend
 
