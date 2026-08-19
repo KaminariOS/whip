@@ -87,7 +87,8 @@ export async function saveConnectionProfile(
   return { hosts: nextHosts, host };
 }
 
-export async function markHostConnected(hosts: HostProfile[], id: string): Promise<HostProfile[]> {
+/** Records when the host connection ended; the Hosts screen presents this as last connected. */
+export async function markHostDisconnected(hosts: HostProfile[], id: string): Promise<HostProfile[]> {
   const now = new Date().toISOString();
   const next = sortHosts(hosts.map(host => (
     host.id === id ? { ...host, lastConnectedAt: now, updatedAt: now } : host

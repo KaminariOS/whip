@@ -50,5 +50,8 @@ describe('host swipe actions', () => {
     expect(screen).not.toContain('disabled={!connected}');
     expect(app).toContain('onDelete={confirmDeleteHost}');
     expect(app).toContain('if (live) closeLiveHost(live.id)');
+    expect(app).toContain('markHostDisconnected(hostsRef.current, hostId)');
+    expect(app).toContain("if (session?.status === 'connected') recordHostDisconnect(sessionId);");
+    expect(app).not.toContain('markHostConnected(saved.hosts, nextProfile.id)');
   });
 });
