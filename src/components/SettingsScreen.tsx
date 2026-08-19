@@ -218,7 +218,7 @@ export function SettingsSection(props: SettingsSectionProps) {
             ))}
             divided
           /> : null}
-          {Platform.OS === 'android' ? <ActionRow
+          {Platform.OS !== 'web' ? <ActionRow
             title={t('settings.testPersistentAlert')}
             copy={t('settings.testPersistentAlertCopy')}
             icon={BellRing}
