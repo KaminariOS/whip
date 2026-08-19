@@ -1,0 +1,21 @@
+---
+rust:
+  directory: ../react-native-ssh-sftp/rust
+  manifestPath: Cargo.toml
+bindings:
+  cpp: cpp/generated
+  ts: src/generated
+ios:
+  directory: ios
+  targets:
+    - aarch64-apple-ios
+  frameworkName: build/WhipSsh
+  codegenOutputDir: ios/generated
+turboModule:
+  cpp: cpp
+  ts: src
+  spec: WhipSshSpec
+  entrypoint: src/generated-entry.tsx
+noOverwrite:
+  - src/index.ts
+  - react-native.config.js

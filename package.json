@@ -11,11 +11,13 @@
     "start": "node scripts/sync-terminal-assets.mjs && expo start --dev-client",
     "lint": "eslint .",
     "test": "jest",
-    "postinstall": "patch-package && node scripts/sync-terminal-assets.mjs",
+    "postinstall": "patch-package && node scripts/sync-terminal-assets.mjs && bash scripts/build-ios-uniffi.sh",
+    "generate:ios-uniffi": "WHIP_BUILD_IOS_UNIFFI=1 bash scripts/build-ios-uniffi.sh",
     "eas-build-pre-install": "bash scripts/prepare-eas-ios.sh"
   },
   "dependencies": {
     "@dylankenneally/react-native-ssh-sftp": "file:packages/react-native-ssh-sftp",
+    "@ubjs/core": "0.31.0-3",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native/new-app-screen": "0.86.2",
     "@rn-primitives/portal": "^1.5.2",
@@ -57,10 +59,12 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "react-native-webview": "13.16.1",
+    "react-native-whip-ssh": "file:packages/react-native-whip-ssh",
     "react-native-worklets": "0.10.1",
     "react-syntax-highlighter": "^15.6.6",
     "tailwind-merge": "^3.6.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "uniffi-bindgen-react-native": "0.31.0-3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
