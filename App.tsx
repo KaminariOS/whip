@@ -127,7 +127,7 @@ import {
   loadConnectionProfile,
   loadHostProfiles,
   loadJumpHostConnectionProfiles,
-  markHostConnected,
+  markHostDisconnected,
   saveConnectionProfile,
 } from './src/services/hostProfiles';
 import {
@@ -204,7 +204,6 @@ interface SnapshotMeasurement {
 interface ConnectOptions {
   persistProfile?: boolean;
   navigate?: boolean;
-  markUsed?: boolean;
   trackConnecting?: boolean;
   activateSession?: boolean;
   biometricVerified?: boolean;
@@ -537,6 +536,12 @@ function AppContent() {
     }, decision.delayMs);
   };
 
+  const recordHostDisconnect = (hostId: string) => {
+    markHostDisconnected(hostsRef.current, hostId)
+      .then(setHosts)
+      .catch(() => undefined);
+  };
+
   async function ensureEventStream(
     sessionId: string,
     snapshot: HerdrSnapshot,
@@ -634,6 +639,8 @@ function AppContent() {
   const scheduleReconnect = (sessionId: string, cause: unknown) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) return;
+    const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+    if (session?.status === 'connected') recordHostDisconnect(sessionId);
     if (isHerdrProtocolMismatch(cause)) {
       clearReconnect(runtime);
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
@@ -1030,9 +1037,12 @@ function AppContent() {
 
   const selectTab = (tab: AppTab) => setNavigation(current => selectMobileTab(current, tab));
 
-  const closeLiveHost = useCallback((sessionId: string) => {
+  const closeLiveHost = useCallback((sessionId: string, recordDisconnect = true) => {
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-    if (session) savePersistedTerminals(session.hostId, session.terminals).catch(() => undefined);
+    if (session) {
+      savePersistedTerminals(session.hostId, session.terminals).catch(() => undefined);
+      if (recordDisconnect) recordHostDisconnect(session.hostId);
+    }
     const runtime = runtimes.current.get(sessionId);
     if (runtime) {
       clearReconnect(runtime);
@@ -1066,7 +1076,6 @@ function AppContent() {
     const {
       persistProfile = true,
       navigate = true,
-      markUsed = true,
       trackConnecting = true,
       activateSession = true,
       biometricVerified = false,
@@ -1160,8 +1169,8 @@ function AppContent() {
       }
 
       // The initial snapshot is sufficient to render the destination. Open the
-      // event stream and persist recency after navigation so neither another
-      // SSH channel nor local storage delays the visible connection.
+      // event stream after navigation so neither another SSH channel nor local
+      // storage delays the visible connection.
       const connectedRuntime = runtime;
       ensureEventStream(sessionId, initial)
         .then(() => {
@@ -1172,11 +1181,6 @@ function AppContent() {
           connectedRuntime.eventStatus = 'closed';
           scheduleEventReconnect(sessionId, error);
         });
-      if (markUsed) {
-        markHostConnected(saved.hosts, nextProfile.id)
-          .then(setHosts)
-          .catch(() => undefined);
-      }
       return true;
     } catch (error) {
       setConnectError(t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
@@ -1234,7 +1238,6 @@ function AppContent() {
         await connect(profile, {
           persistProfile: false,
           navigate: false,
-          markUsed: false,
           trackConnecting: false,
           activateSession: hostId === persisted.activeHostId,
           biometricVerified: protectedKey,
@@ -1374,7 +1377,7 @@ function AppContent() {
         style: 'destructive',
         onPress: () => {
           const live = liveSessionsRef.current.sessions.find(session => session.hostId === target.id);
-          if (live) closeLiveHost(live.id);
+          if (live) closeLiveHost(live.id, false);
           deleteHostProfile(hosts, target.id)
             .then(async next => {
               setHosts(next);

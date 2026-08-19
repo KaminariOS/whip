@@ -25,16 +25,14 @@ describe('initial host connection failures', () => {
     expect(app).toContain('await connect(nextProfile, { persistProfile: false });');
   });
 
-  test('navigates after the snapshot without waiting for event or recency persistence', () => {
+  test('navigates after the snapshot without waiting for the event stream', () => {
     const publishSession = app.indexOf('liveSessionOpened = true;');
     const navigate = app.indexOf('if (navigate) {', publishSession);
     const openEvents = app.indexOf('ensureEventStream(sessionId, initial)', navigate);
-    const markUsed = app.indexOf('markHostConnected(saved.hosts, nextProfile.id)', navigate);
 
     expect(navigate).toBeGreaterThan(publishSession);
     expect(openEvents).toBeGreaterThan(navigate);
-    expect(markUsed).toBeGreaterThan(navigate);
     expect(app).not.toContain('await ensureEventStream(sessionId, initial)');
-    expect(app).not.toContain('await markHostConnected(saved.hosts, nextProfile.id)');
+    expect(app).not.toContain('markHostConnected(saved.hosts, nextProfile.id)');
   });
 });
