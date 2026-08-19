@@ -28,6 +28,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -53,6 +59,17 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: npm ci --include=dev
+
+      - name: Build Android Rust static library
+        run: |
+          nix develop .#default -c cargo build \
+            --locked \
+            --manifest-path packages/react-native-ssh-sftp/rust/Cargo.toml \
+            --target aarch64-linux-android \
+            --release
+          cp \
+            packages/react-native-ssh-sftp/rust/target/aarch64-linux-android/release/libwhip_ssh.a \
+            packages/react-native-whip-ssh/android/src/main/jniLibs/arm64-v8a/libwhip_ssh.a
 
       - name: Prepare release signing
         env:
