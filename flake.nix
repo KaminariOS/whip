@@ -5,14 +5,19 @@
   inputs.nixpkgs.url = "tarball+https://releases.nixos.org/nixos/unstable/nixos-26.11pre1034379.18b9261cb329/nixexprs.tar.xz";
 
   outputs = {nixpkgs, ...}: let
-    system = "x86_64-linux";
-    pkgs = import nixpkgs {
-      inherit system;
+    androidSystem = "x86_64-linux";
+    darwinSystem = "aarch64-darwin";
+    androidPkgs = import nixpkgs {
+      system = androidSystem;
       config.allowUnfree = true;
       config.android_sdk.accept_license = true;
     };
+    darwinPkgs = import nixpkgs {
+      system = darwinSystem;
+      config.allowUnfree = true;
+    };
 
-    androidComposition = pkgs.androidenv.composeAndroidPackages {
+    androidComposition = androidPkgs.androidenv.composeAndroidPackages {
       platformVersions = ["36"];
       buildToolsVersions = ["35.0.0" "36.0.0"];
       cmakeVersions = ["3.22.1"];
@@ -21,18 +26,31 @@
     };
     androidSdk = androidComposition.androidsdk;
   in {
-    devShells.${system}.default = pkgs.mkShell {
+    devShells.${androidSystem}.default = androidPkgs.mkShell {
       packages = [
         androidSdk
-        pkgs.jdk17_headless
-        pkgs.nodejs_22
+        androidPkgs.jdk17_headless
+        androidPkgs.nodejs_22
       ];
 
       ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
       ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
       ANDROID_NDK_ROOT = "${androidSdk}/libexec/android-sdk/ndk-bundle";
-      JAVA_HOME = pkgs.jdk17_headless.home;
+      JAVA_HOME = androidPkgs.jdk17_headless.home;
       GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/36.0.0/aapt2";
+    };
+
+    devShells.${darwinSystem}.default = darwinPkgs.mkShell {
+      packages = with darwinPkgs; [
+        nodejs_22
+        watchman
+        ruby_3_4
+        bundler
+        cocoapods
+        fastlane
+      ];
+
+      DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer";
     };
   };
 }
