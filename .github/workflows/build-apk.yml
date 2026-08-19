@@ -152,3 +152,80 @@ jobs:
             "whip-arm64.apk#Whip APK (arm64-v8a)" \
             "whip-arm64.apk.sha256#SHA-256 checksum" \
             --clobber
+
+  build-ios:
+    name: Build unsigned iOS app
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      NODE_ENV: production
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Ruby and CocoaPods
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - name: Install JavaScript dependencies and build iOS Rust framework
+        run: nix develop .#default -c npm ci --include=dev
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: bundle exec pod install
+
+      - name: Build unsigned iOS device app
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -workspace HerdR.xcworkspace \
+            -scheme HerdR \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/WhipDerivedData" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO \
+            FORCE_BUNDLING=1 \
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) WHIP_EMBEDDED_BUNDLE" \
+            build
+          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphoneos/HerdR.app"
+          test -d "$app_path"
+          test -f "$app_path/main.jsbundle"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$app_path" \
+            whip-ios.app.zip
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: whip-ios-app
+          path: whip-ios.app.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload iOS app to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release upload "$RELEASE_TAG" "whip-ios.app.zip#Whip unsigned iOS app" --clobber
