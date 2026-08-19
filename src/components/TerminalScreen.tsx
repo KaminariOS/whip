@@ -311,20 +311,25 @@ export function TerminalScreen({
       wasVisible.current = false;
       return;
     }
+    const enteredVisibility = !wasVisible.current;
     wasVisible.current = true;
-    renderer.current?.blur();
-    Keyboard.dismiss();
+    if (enteredVisibility && !composeOpen) {
+      renderer.current?.blur();
+      Keyboard.dismiss();
+    }
     const timer = setTimeout(() => {
       renderer.current?.fit();
     }, 40);
     return () => clearTimeout(timer);
-  }, [ready, visible]);
+  }, [composeOpen, ready, visible]);
 
   useEffect(() => {
     if (!ready) return;
     renderer.current?.setKeyboardEnabled(keyboardEnabled);
-    if (!keyboardEnabled) Keyboard.dismiss();
-  }, [activeTarget?.key, keyboardEnabled, ready]);
+    if (!keyboardEnabled) {
+      Keyboard.dismiss();
+    }
+  }, [activeTarget?.key, composeExpanded, composeOpen, keyboardEnabled, ready]);
 
   useEffect(() => {
     const dismissFocusedInput = () => {
@@ -418,6 +423,14 @@ export function TerminalScreen({
   }, [composeOpen, keyboardInset, ready]);
 
   useEffect(() => {
+    if (!composeOpen || composeExpanded || !keyboardEnabled) return;
+    const timer = setTimeout(() => {
+      composeInputRef.current?.focus();
+    }, Platform.OS === 'ios' ? 100 : 40);
+    return () => clearTimeout(timer);
+  }, [composeExpanded, composeOpen, keyboardEnabled]);
+
+  useEffect(() => {
     if (!ready) return;
     if (!searchOpen) {
       renderer.current?.clearSearch();
@@ -484,6 +497,7 @@ export function TerminalScreen({
   const openCompose = () => {
     setSearchOpen(false);
     setHistoryOpen(false);
+    setKeyboardEnabled(true);
     setTerminalComposerOverlay(terminalId, true).catch(reason => setError(String(reason))).finally(() => {
       setComposeOpen(true);
     });
@@ -883,8 +897,7 @@ export function TerminalScreen({
             <View
               className="absolute inset-x-0 border-t border-terminal-divider bg-transparent p-2"
               style={{
-                bottom: TERMINAL_CONTROL_BAR_HEIGHT + bottomSafeAreaInset,
-                transform: keyboardInset > 0 ? [{ translateY: -keyboardInset }] : undefined,
+                bottom: TERMINAL_CONTROL_BAR_HEIGHT + bottomSafeAreaInset + keyboardInset,
               }}>
               <View className="flex-row items-end gap-2">
                 <View className="gap-1.5">
