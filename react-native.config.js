@@ -3,6 +3,7 @@ module.exports = {
     '@dylankenneally/react-native-ssh-sftp': {
       platforms: {
         ios: null,
+        android: null,
       },
     },
   },

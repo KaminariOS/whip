@@ -18,7 +18,8 @@ Below is a quick installation and usage guide to get up and running. The [full d
 
 > [!NOTE]
 > This project-owned fork supports strict host-key verification through
-> `SSHClient.setKnownHosts()` on Android and on the Rust-based iOS backend.
+> `SSHClient.setKnownHosts()` on both Android and iOS. Both platforms use the
+> Rust/Russh backend exposed through the UniFFI React Native module.
 
 ## Installation
 
@@ -26,11 +27,11 @@ Below is a quick installation and usage guide to get up and running. The [full d
 npm install @dylankenneally/react-native-ssh-sftp
 ```
 
-### iOS
+### iOS and Android
 
-This project-owned fork builds its iOS SSH transport from Rust and does not
-require NMSSH or OpenSSL. The current Expo SDK requires iOS 16.4 or newer. Run
-the repository-pinned CocoaPods bundle from your `./ios` directory on macOS.
+This project-owned fork builds its mobile SSH transport from Rust/Russh and does
+not use the legacy JSch or NMSSH transports. iOS requires the repository-pinned
+CocoaPods bundle from your `./ios` directory on macOS.
 
 The iOS backend currently supports Ed25519 private-key authentication and
 password authentication. RSA private keys remain supported by Android, but are
@@ -54,9 +55,8 @@ cd -
 > }
 > ```
 
-### Android
-
-No additional steps are needed for Android.
+Android uses the checked-in arm64 UniFFI native library and needs no additional
+manual linking.
 
 ### Linking
 

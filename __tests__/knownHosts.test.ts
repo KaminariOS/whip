@@ -150,23 +150,19 @@ test('forgetting a host immediately replaces the native repository', async () =>
   expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith('');
 });
 
-test('enforces the repository during the native SSH handshake', () => {
-  const android = readFileSync(
-    resolve(
-      __dirname,
-      '../packages/react-native-ssh-sftp/android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java',
-    ),
+test('uses the Rust UniFFI Android native module with strict host-key support', () => {
+  const androidCmake = readFileSync(
+    resolve(__dirname, '../packages/react-native-whip-ssh/android/CMakeLists.txt'),
     'utf8',
   );
-  const connect = android.slice(
-    android.indexOf('private void connectToHost('),
-    android.indexOf('public void execute('),
+  const knownHostsRust = readFileSync(
+    resolve(__dirname, '../packages/react-native-ssh-sftp/rust/src/known_hosts.rs'),
+    'utf8',
   );
 
-  expect(connect).toContain('jsch.setKnownHosts(');
-  expect(connect).toContain('session.setHostKeyAlias(hostKeyAlias(host, port))');
-  expect(connect).toContain('properties.setProperty("StrictHostKeyChecking", "yes")');
-  expect(connect).not.toContain('properties.setProperty("StrictHostKeyChecking", "no")');
-  expect(connect).toContain('"E_HOST_KEY_UNKNOWN:"');
-  expect(connect).toContain('"E_HOST_KEY_CHANGED:"');
+  expect(androidCmake).toContain('libwhip_ssh.a');
+  expect(androidCmake).toContain('WhipSshSpec-generated.cpp');
+  expect(androidCmake).not.toContain('jsch');
+  expect(knownHostsRust).toContain('E_HOST_KEY_UNKNOWN:');
+  expect(knownHostsRust).toContain('E_HOST_KEY_CHANGED:');
 });

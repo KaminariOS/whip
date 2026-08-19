@@ -406,7 +406,6 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
     let credential = params
         .get("credential")
         .ok_or_else(|| TransportError::InvalidRequest("missing credential parameter".to_owned()))?;
-
     let config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(30)),
         keepalive_interval: Some(Duration::from_secs(15)),
@@ -459,7 +458,6 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
             ));
         }
     };
-
     if !authenticated {
         return Err(TransportError::AuthenticationFailed);
     }

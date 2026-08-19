@@ -1,21 +1,14 @@
-import { Platform, NativeModules, DeviceEventEmitter } from 'react-native';
-const { RNSSHClient: legacySSHClient } = NativeModules;
-// Android stays on the mature JSch implementation. iOS is Rust-only so a
-// packaging failure cannot silently downgrade host verification to NMSSH.
-const RNSSHClient = Platform.OS === 'ios'
-    ? require('react-native-whip-ssh').default
-    : legacySSHClient;
+const RNSSHClient = require('react-native-whip-ssh').default;
 if (!RNSSHClient) {
-    throw new Error(`Native SSH backend is unavailable on ${Platform.OS}`);
+    throw new Error('Native SSH backend is unavailable');
 }
-const RNSSHClientEmitter = Platform.OS === 'ios' ? RNSSHClient : DeviceEventEmitter;
+const RNSSHClientEmitter = RNSSHClient;
 const NATIVE_EVENT_SHELL = 'Shell';
 const NATIVE_EVENT_HERDR_BRIDGE = 'HerdrBridge';
 const NATIVE_EVENT_HERDR_EVENT_STREAM = 'HerdrEventStream';
 const NATIVE_EVENT_HERDR_COMMAND_STREAM = 'HerdrCommandStream';
 const NATIVE_EVENT_DOWNLOAD_PROGRESS = 'DownloadProgress';
 const NATIVE_EVENT_UPLOAD_PROGRESS = 'UploadProgress';
-const NATIVE_EVENT_SSH_NETWORK_CHANGED = 'SshNetworkChanged';
 /**
  * Represents the types of PTY (pseudo-terminal) for SSH connections.
  */
@@ -40,17 +33,10 @@ class SSHClient {
      * The returned subscription must be removed when it is no longer needed.
      */
     static addNetworkChangeListener(handler) {
-        if (Platform.OS !== 'android') {
-            return { remove() { } };
-        }
-        const subscription = DeviceEventEmitter.addListener(NATIVE_EVENT_SSH_NETWORK_CHANGED, handler);
-        RNSSHClient.startNetworkMonitoring();
-        return {
-            remove() {
-                subscription.remove();
-                RNSSHClient.stopNetworkMonitoring();
-            },
-        };
+        // Russh opens a fresh socket for each connection and has no JSch-style
+        // process-wide network monitor. Keep this compatibility hook inert.
+        void handler;
+        return { remove() { } };
     }
     /**
      * Replaces the process-wide OpenSSH known_hosts repository used by new
@@ -283,8 +269,7 @@ class SSHClient {
      * @param eventName - The name of the event to listen for.
      */
     registerNativeListener(eventName) {
-        const listenerInterface = Platform.OS === 'ios' ? RNSSHClientEmitter : DeviceEventEmitter;
-        this._listeners[eventName] = listenerInterface.addListener(eventName, this.handleEvent.bind(this));
+        this._listeners[eventName] = RNSSHClientEmitter.addListener(eventName, this.handleEvent.bind(this));
     }
     /**
      * Unregisters a native listener for the specified event name.
@@ -304,33 +289,14 @@ class SSHClient {
      * @param callback - The callback function to be called after the connection attempt.
      */
     connect(passwordOrKey, callback, jumpClient) {
-        if (Platform.OS === 'android') {
-            if (typeof passwordOrKey === 'string') {
-                if (jumpClient) {
-                    RNSSHClient.connectToHostByPasswordViaJump(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, (error) => { callback(error); });
-                }
-                else {
-                    RNSSHClient.connectToHostByPassword(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
-                }
-            }
-            else {
-                if (jumpClient) {
-                    RNSSHClient.connectToHostByKeyViaJump(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, (error) => { callback(error); });
-                }
-                else {
-                    RNSSHClient.connectToHostByKey(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
-                }
-            }
-            return;
-        }
         if (jumpClient) {
             const method = typeof passwordOrKey === 'string'
                 ? RNSSHClient.connectToHostByPasswordViaJump
                 : RNSSHClient.connectToHostByKeyViaJump;
-            method(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, (error) => { callback(error); });
+            method(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, callback);
         }
         else {
-            RNSSHClient.connectToHost(this.host, this.port, this.username, passwordOrKey, this._key, (error) => { callback(error); });
+            RNSSHClient.connectToHost(this.host, this.port, this.username, passwordOrKey, this._key, callback);
         }
     }
     /**
@@ -395,9 +361,6 @@ class SSHClient {
      * with an unusable partial initial snapshot when the bridge is busy.
      */
     startLineShell(ptyType, callback) {
-        if (Platform.OS !== 'android') {
-            return this.startShell(ptyType, callback);
-        }
         if (this._activeStream.shell) {
             return Promise.resolve('');
         }
