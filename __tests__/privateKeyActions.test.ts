@@ -13,10 +13,6 @@ const nativePackage = readFileSync(
   resolve(__dirname, '../android/app/src/main/java/io/github/kaminarios/whip/HerdrBackgroundPackage.kt'),
   'utf8',
 );
-const sshModule = readFileSync(
-  resolve(__dirname, '../packages/react-native-ssh-sftp/android/src/main/java/me/dylankenneally/rnssh/RNSshClientModule.java'),
-  'utf8',
-);
 
 test('uses key action sheets instead of exposing the private key in a text area', () => {
   expect(connectionScreen).toContain("t('connection.copyPrivate')");
@@ -40,14 +36,4 @@ test('registers a bounded Android document picker for private key files', () => 
   expect(nativePackage).toContain('PrivateKeyFilePickerModule(reactContext)');
   expect(filePicker).toContain('Intent.ACTION_OPEN_DOCUMENT');
   expect(filePicker).toContain('MAX_KEY_BYTES = 1024 * 1024');
-});
-
-test('derives a public key from the loaded private key', () => {
-  expect(sshModule).toContain('kpair.writePublicKey(publicKeyOut, "herdr")');
-  expect(sshModule).toContain('result.putString("publicKey"');
-});
-
-test('serializes generated Ed25519 keys in the supported OpenSSH format', () => {
-  expect(sshModule).toContain('if (keyType == KeyPair.ED25519 || keyType == KeyPair.ED448)');
-  expect(sshModule).toContain('kpair.writeOpenSSHv1PrivateKey(privateKeyOut, passphraseBytes)');
 });

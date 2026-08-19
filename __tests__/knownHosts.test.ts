@@ -162,7 +162,6 @@ test('uses the Rust UniFFI Android native module with strict host-key support', 
 
   expect(androidCmake).toContain('libwhip_ssh.a');
   expect(androidCmake).toContain('WhipSshSpec-generated.cpp');
-  expect(androidCmake).not.toContain('jsch');
   expect(knownHostsRust).toContain('E_HOST_KEY_UNKNOWN:');
   expect(knownHostsRust).toContain('E_HOST_KEY_CHANGED:');
 });

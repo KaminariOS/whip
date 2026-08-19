@@ -1,7 +1,7 @@
 {
   "name": "@dylankenneally/react-native-ssh-sftp",
   "version": "1.11.0-herdr.1",
-  "description": "Whip SSH transport with Android JSch and an iOS Rust backend",
+  "description": "Whip SSH transport backed by Rust/Russh on mobile",
   "main": "lib/sshclient.js",
   "types": "lib/sshclient.d.ts",
   "private": true,
