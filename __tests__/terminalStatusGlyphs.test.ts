@@ -17,10 +17,10 @@ describe('terminal hierarchy status glyphs', () => {
     );
 
     expect(workspaceRail).toContain(
-      '<AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={12} />',
+      '<AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={isIpad ? 16 : 12} />',
     );
     expect(screen).toContain(
-      '<AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status, colors)} size={12} />',
+      '<AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status, colors)} size={isIpad ? 16 : 12} />',
     );
     expect(appUi).toContain('const glyphBoxSize = size + 4;');
     expect(appUi).toContain('const AGENT_SPINNER_INTERVAL_MS = 125;');

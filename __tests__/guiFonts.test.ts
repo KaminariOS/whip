@@ -12,7 +12,8 @@ describe('GUI font family', () => {
     expect(guiFontFamilyForClasses(className)).toBe(expected);
   });
 
-  it('leaves deliberate monospace text unchanged', () => {
-    expect(guiFontFamilyForClasses('font-mono font-black')).toBeUndefined();
+  it('maps deliberate monospace text to the bundled JetBrains Mono face', () => {
+    expect(guiFontFamilyForClasses('font-mono font-black')).toBe(guiFontFamilies.mono);
+    expect(guiFontFamilies.mono).toBe('HerdrTerminalMono');
   });
 });

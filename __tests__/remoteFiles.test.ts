@@ -357,6 +357,24 @@ test('uses proportional UI typography for remote file context and metadata', () 
   expect(terminal).toContain(
     'className="bg-terminal-error/15 px-2 py-1 text-[8px] text-terminal-error"',
   );
+  expect(terminal).toContain(
+    'className="flex-1 text-[9px] tracking-[1px] text-terminal-muted"',
+  );
+  expect(terminal).toContain(
+    'className="text-[8px] text-terminal-error"',
+  );
+});
+
+test('uses proportional typography for empty states and preview errors', () => {
+  const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  const mermaid = readFileSync(resolve(__dirname, '../src/components/MermaidPreview.tsx'), 'utf8');
+  const svg = readFileSync(resolve(__dirname, '../src/components/SvgPreview.tsx'), 'utf8');
+
+  expect(session).toContain('className="font-black text-terminal-text"');
+  expect(session).toContain('className="text-[8px] uppercase tracking-[1px] text-muted-foreground"');
+  expect(session).toContain('className="mt-2 text-center text-[9px] text-muted-foreground"');
+  expect(mermaid).toContain('className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground"');
+  expect(svg).toContain('className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground"');
 });
 
 test('offers a persistent collapsible Git status tree and native virtualized diffs', () => {

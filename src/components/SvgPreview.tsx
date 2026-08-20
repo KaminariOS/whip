@@ -39,7 +39,7 @@ export function SvgPreview({ content, filename }: Props) {
         <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">
           {t('files.svgInvalid')}
         </Text>
-        <Text className="mt-2 text-center font-mono text-[9px] leading-[14px] text-muted-foreground">
+        <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">
           {parsed.error}
         </Text>
       </View>

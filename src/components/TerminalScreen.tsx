@@ -792,10 +792,10 @@ export function TerminalScreen({
       {!compact && (
         <View className="h-[30px] flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-3">
           <View className="size-1.5 rounded-full bg-white" />
-          <Text numberOfLines={1} className="flex-1 font-mono text-[9px] tracking-[1px] text-terminal-muted">
+          <Text numberOfLines={1} className="flex-1 text-[9px] tracking-[1px] text-terminal-muted">
             {t('terminal.agentTitle', { title, terminalId })}
           </Text>
-          {error && <Text className="font-mono text-[8px] text-terminal-error">{t('terminal.attachFailed')}</Text>}
+          {error && <Text className="text-[8px] text-terminal-error">{t('terminal.attachFailed')}</Text>}
         </View>
       )}
       {compact && error && <Text className="bg-terminal-error/15 px-2 py-1 text-[8px] text-terminal-error">{t('terminal.attachFailed')} · {String(error)}</Text>}
