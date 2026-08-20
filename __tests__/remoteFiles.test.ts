@@ -202,14 +202,16 @@ test('streams remote videos from the token-protected SFTP file server', () => {
   expect(preview).toContain('fullscreenOptions={{ enable: true }}');
 });
 
-test('opens streamed remote PDFs in an Android Custom Tab', () => {
+test('opens streamed remote PDFs in an Android Custom Tab and returns to the directory', () => {
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
   const packageJson = readFileSync(resolve(__dirname, '../package.json'), 'utf8');
   const appJson = readFileSync(resolve(__dirname, '../app.json'), 'utf8');
   expect(manager).toContain("kind === 'pdf'");
   expect(manager).toContain("preview.kind === 'pdf' && preview.sftpFileServer");
   expect(manager).toContain("import * as WebBrowser from 'expo-web-browser'");
-  expect(manager).toContain('WebBrowser.openBrowserAsync(sftpFileServer.url)');
+  expect(manager).toContain('WebBrowser.openBrowserAsync(url)');
+  expect(manager).toContain("AppState.addEventListener('change'");
+  expect(manager).toContain('finishPdfBrowser(request)');
   expect(manager).toContain("t('files.openPdf')");
   expect(packageJson).toContain('"expo-web-browser": "~57.0.2"');
   expect(appJson).toContain('"expo-web-browser"');

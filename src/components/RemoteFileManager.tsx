@@ -2,7 +2,7 @@ import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
 import * as WebBrowser from 'expo-web-browser';
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -87,6 +87,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
   const pathRef = useRef('');
   const requestRef = useRef(0);
   const gitRequestRef = useRef(0);
+  const pdfBrowserRequestRef = useRef<number | null>(null);
+  const pdfBrowserLeftAppRef = useRef(false);
   const onPathChangeRef = useRef(onPathChange);
   onPathChangeRef.current = onPathChange;
   const visibleEntries = useMemo(() => (showHiddenFiles ? entries : entries.filter(entry => !isRemoteHiddenPath(remoteEntryName(entry)))), [entries, showHiddenFiles]);
@@ -189,6 +191,46 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
     },
     [client],
   );
+
+  const finishPdfBrowser = useCallback(
+    (request: number) => {
+      if (pdfBrowserRequestRef.current !== request) return;
+      pdfBrowserRequestRef.current = null;
+      pdfBrowserLeftAppRef.current = false;
+      if (request !== requestRef.current || previewRef.current?.kind !== 'pdf') return;
+      requestRef.current += 1;
+      replacePreview(null);
+    },
+    [replacePreview],
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      const request = pdfBrowserRequestRef.current;
+      if (request === null) return;
+      if (state !== 'active') {
+        pdfBrowserLeftAppRef.current = true;
+      } else if (pdfBrowserLeftAppRef.current) {
+        finishPdfBrowser(request);
+      }
+    });
+    return () => subscription.remove();
+  }, [finishPdfBrowser]);
+
+  const openPdfBrowser = async (url: string, request: number) => {
+    pdfBrowserRequestRef.current = request;
+    pdfBrowserLeftAppRef.current = false;
+    try {
+      const result = await WebBrowser.openBrowserAsync(url);
+      if (result.type !== WebBrowser.WebBrowserResultType.OPENED) finishPdfBrowser(request);
+    } catch (reason) {
+      if (pdfBrowserRequestRef.current === request) {
+        pdfBrowserRequestRef.current = null;
+        pdfBrowserLeftAppRef.current = false;
+      }
+      throw reason;
+    }
+  };
 
   const refreshGitChanges = async (repository = gitRepository) => {
     if (!repository) return;
@@ -342,7 +384,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
         htmlPreview,
         sftpFileServer,
       });
-      if (kind === 'pdf' && sftpFileServer) await WebBrowser.openBrowserAsync(sftpFileServer.url);
+      if (kind === 'pdf' && sftpFileServer) await openPdfBrowser(sftpFileServer.url, request);
     } catch (reason) {
       cached?.dispose();
       if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
@@ -607,7 +649,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
                   className="mt-5 rounded-full"
                   variant="secondary"
                   onPress={hapticPress(() => {
-                    WebBrowser.openBrowserAsync(preview.sftpFileServer!.url).catch(reason => {
+                    openPdfBrowser(preview.sftpFileServer!.url, requestRef.current).catch(reason => {
                       Alert.alert(t('files.openFailed'), String(reason));
                     });
                   })}
