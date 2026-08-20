@@ -46,6 +46,12 @@ async function pickImageWithExpo(): Promise<NativePickedImage | null> {
   const result = await ImagePicker.launchImageLibraryAsync({
     allowsEditing: false,
     mediaTypes: ['images'],
+    // Expo's `.current` fast path waits on NSItemProvider.loadFileRepresentation.
+    // On physical iOS 26 devices that callback can fail to arrive after the user
+    // confirms a selection, leaving the JS promise pending forever. Requesting a
+    // compatible representation uses the data-loading path instead.
+    preferredAssetRepresentationMode:
+      ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
     quality: 1,
   });
   if (result.canceled) return null;

@@ -865,7 +865,7 @@ const AgentRow = memo(
               style={contentStyle}
               {...panResponder.panHandlers}
             >
-              <GlassBackdrop />
+              <GlassBackdrop shapeClassName="rounded-xl" />
               <Button
                 accessibilityActions={[
                   {

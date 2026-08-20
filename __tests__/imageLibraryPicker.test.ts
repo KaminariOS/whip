@@ -2,6 +2,9 @@ const mockLaunchImageLibraryAsync = jest.fn();
 const mockDelete = jest.fn();
 
 jest.mock('expo-image-picker', () => ({
+  UIImagePickerPreferredAssetRepresentationMode: {
+    Compatible: 'compatible',
+  },
   launchImageLibraryAsync: (...args: unknown[]) =>
     mockLaunchImageLibraryAsync(...args),
 }));
@@ -41,6 +44,7 @@ test('uses the Expo image library picker on iOS', async () => {
   expect(mockLaunchImageLibraryAsync).toHaveBeenCalledWith({
     allowsEditing: false,
     mediaTypes: ['images'],
+    preferredAssetRepresentationMode: 'compatible',
     quality: 1,
   });
   expect(picked).toMatchObject({

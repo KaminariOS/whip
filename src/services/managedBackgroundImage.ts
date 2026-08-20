@@ -1,4 +1,5 @@
 import { Directory, File, Paths } from 'expo-file-system';
+import { Platform } from 'react-native';
 
 import { pickImageFromLibrary } from './imageLibraryPicker';
 
@@ -46,8 +47,16 @@ export function createManagedBackgroundImageStore(
 
   return {
     select: async currentUri => {
+      logBackgroundStage(directoryName, 'select:start');
       const picked = await pickImageFromLibrary();
-      if (!picked) return undefined;
+      if (!picked) {
+        logBackgroundStage(directoryName, 'picker:canceled');
+        return undefined;
+      }
+      logBackgroundStage(directoryName, 'picker:confirmed', {
+        mimeType: picked.mimeType || null,
+        name: picked.name || null,
+      });
 
       try {
         const source = new File(picked.uri);
@@ -57,11 +66,18 @@ export function createManagedBackgroundImageStore(
           directory,
           `${filePrefix}${Date.now()}${imageExtension(picked.name, picked.mimeType)}`,
         );
-        await source.copy(destination);
+        logBackgroundStage(directoryName, 'copy:start', { sourceExists: source.exists });
+        if (Platform.OS === 'ios') source.copySync(destination);
+        else await source.copy(destination);
+        logBackgroundStage(directoryName, 'copy:complete', { destinationExists: destination.exists });
+        logBackgroundStage(directoryName, 'remove-previous:start');
         await remove(currentUri);
+        logBackgroundStage(directoryName, 'remove-previous:complete');
         return destination.uri;
       } finally {
+        logBackgroundStage(directoryName, 'picker-dispose:start');
         picked.dispose();
+        logBackgroundStage(directoryName, 'picker-dispose:complete');
       }
     },
     migrate: async uri => {
@@ -85,6 +101,22 @@ export function createManagedBackgroundImageStore(
     },
     remove,
   };
+}
+
+function logBackgroundStage(
+  store: string,
+  stage: string,
+  details: Record<string, unknown> = {},
+): void {
+  const entry = `${JSON.stringify({ at: new Date().toISOString(), store, stage, ...details })}\n`;
+  try {
+    const log = new File(Paths.cache, 'herdr-background-debug.log');
+    if (!log.exists) log.create({ intermediates: true });
+    log.write(entry, { append: true });
+  } catch {
+    // Diagnostics must never block image replacement.
+  }
+  console.info('[BackgroundImage]', entry.trim());
 }
 
 function imageExtension(fileName?: string | null, mimeType?: string): string {
