@@ -103,6 +103,7 @@ function WorkspacePill({
 }) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
+  const isIpad = Platform.OS === 'ios' && Platform.isPad;
   const activeTextClass = active
     ? appGlassEnabled
       ? 'text-primary'
@@ -113,22 +114,23 @@ function WorkspacePill({
     <View
       className={cn(
         'h-[42px] max-w-[190px] flex-row items-center rounded-full',
+        isIpad && 'max-w-[240px]',
         appGlassEnabled && 'border',
         !appGlassEnabled && 'bg-muted',
         !appGlassEnabled && !active && 'border border-border',
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
-      <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0" variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
-        <AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={12} />
+      <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0', isIpad && 'gap-2 px-3')} variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
+        <AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={isIpad ? 16 : 12} />
         {aggregate ? (
-          <Layers3 size={15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
+          <Layers3 size={isIpad ? 19 : 15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
         ) : (
-          <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', activeTextClass)}>{label}</Text>
+          <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'max-w-[140px] text-[14px] leading-5', activeTextClass)}>{label}</Text>
         )}
-        <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', activeTextClass)}>{count}</Text>
+        <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', isIpad && 'text-[11px] leading-5', activeTextClass)}>{count}</Text>
       </Button>
-      {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className="h-[42px] w-7 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
+      {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className={cn('h-[42px] w-7 rounded-none px-0', isIpad && 'w-8')} disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={isIpad ? 18 : 14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
     </View>
   );
 }

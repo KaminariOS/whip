@@ -30,6 +30,18 @@ describe('session tab labels', () => {
     );
   });
 
+  it('scales space labels and icons for iPad without changing Android sizing', () => {
+    const rail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
+      'utf8',
+    );
+
+    expect(rail).toContain("const isIpad = Platform.OS === 'ios' && Platform.isPad;");
+    expect(rail).toContain("isIpad && 'max-w-[140px] text-[14px] leading-5'");
+    expect(rail).toContain('size={isIpad ? 16 : 12}');
+    expect(rail).toContain('size={isIpad ? 19 : 15}');
+  });
+
   it('uses compiled theme classes for selected host and space labels', () => {
     const hostRail = readFileSync(
       resolve(__dirname, '../src/components/LiveSessionRail.tsx'),
@@ -64,7 +76,7 @@ describe('session tab labels', () => {
     );
 
     expect(rail).toContain("import { Layers3, Plus, X } from 'lucide-react-native'");
-    expect(rail).toContain('<Layers3 size={15}');
+    expect(rail).toContain('<Layers3 size={isIpad ? 19 : 15}');
     expect(rail).toMatch(/aggregate\s+busy=\{busy\}/);
   });
 
@@ -162,6 +174,18 @@ describe('session tab labels', () => {
     expect(screen).toContain(
       'max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px]',
     );
+  });
+
+  it('scales tab labels and icons for iPad without changing Android sizing', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/SessionScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain("const isIpad = Platform.OS === 'ios' && Platform.isPad;");
+    expect(screen).toContain("isIpad && 'max-w-[140px] text-[14px] leading-5'");
+    expect(screen).toContain('size={isIpad ? 16 : 12}');
+    expect(screen).toContain('size={isIpad ? 18 : 14}');
   });
 
   it('renders an immediate close control on every tab', () => {
