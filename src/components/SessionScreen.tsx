@@ -784,12 +784,12 @@ export function SessionScreen({
                 previewPlaceholderStyle,
               ]}
               className="items-center justify-center bg-terminal-canvas p-[30px]">
-              <Text className="font-mono text-[10px] font-black text-terminal-text">{tabSwipe.targetLabel}</Text>
+              <Text className="text-[10px] font-black text-terminal-text">{tabSwipe.targetLabel}</Text>
             </Animated.View>
           )}
         {!activeTarget && !snapshot.server.running && (
           <View className="flex-1 items-center justify-center p-[30px]">
-            <Text className="font-mono font-black text-terminal-text">{t('session.serverUnavailable')}</Text>
+            <Text className="font-black text-terminal-text">{t('session.serverUnavailable')}</Text>
             <Text className="mt-2 text-center text-terminal-muted">{t('session.serverUnavailableCopy')}</Text>
             <Button className="mt-5 rounded-full px-5" variant="secondary" onPress={hapticPress(onExit)}>
               <Text>{t('session.backToHerd')}</Text>
@@ -798,13 +798,13 @@ export function SessionScreen({
         )}
         {!activeTarget && snapshot.server.running && !selectedTab && (
           <View className="flex-1 items-center justify-center p-[30px]">
-            <Text className="font-mono font-black text-terminal-text">{workspace ? t('session.emptyWorkspace') : t('session.noWorkspaces')}</Text>
+            <Text className="font-black text-terminal-text">{workspace ? t('session.emptyWorkspace') : t('session.noWorkspaces')}</Text>
             <Text className="mt-2 text-center text-terminal-muted">{workspace ? t('session.createTab') : t('session.createWorkspace')}</Text>
           </View>
         )}
         {!activeTarget && snapshot.server.running && selectedTab && panes.length === 0 && (
           <View className="flex-1 items-center justify-center p-[30px]">
-            <Text className="font-mono font-black text-terminal-text">{t('session.emptyTab')}</Text>
+            <Text className="font-black text-terminal-text">{t('session.emptyTab')}</Text>
             <Text className="mt-2 text-center text-terminal-muted">{t('session.emptyTabCopy')}</Text>
           </View>
         )}
@@ -874,7 +874,7 @@ export function SessionScreen({
                 <View className="h-14 flex-row items-center border-b border-border px-4">
                   <View className="min-w-0 flex-1">
                     <Text className="text-[17px] font-bold text-foreground">{t('terminal.linksTitle')}</Text>
-                    <Text className="font-mono text-[8px] uppercase tracking-[1px] text-muted-foreground">{t('terminal.linksLatestFirst')}</Text>
+                    <Text className="text-[8px] uppercase tracking-[1px] text-muted-foreground">{t('terminal.linksLatestFirst')}</Text>
                   </View>
                   <Button accessibilityLabel={t('terminal.closeLinks')} className="size-11 rounded-full px-0" variant="ghost" onPress={dismissLinks}>
                     <X size={19} color={colors.text} />
@@ -899,7 +899,7 @@ export function SessionScreen({
                 ) : linksError ? (
                   <View className="flex-1 items-center justify-center p-8">
                     <Text className="text-center text-[13px] font-semibold text-destructive">{t('terminal.linkOpenFailed')}</Text>
-                    <Text className="mt-2 text-center font-mono text-[9px] text-muted-foreground">{linksError}</Text>
+                    <Text className="mt-2 text-center text-[9px] text-muted-foreground">{linksError}</Text>
                   </View>
                 ) : terminalLinks.length ? (
                   <ScrollView className="flex-1" contentContainerClassName="px-4 py-2">
