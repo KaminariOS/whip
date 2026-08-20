@@ -69,7 +69,9 @@ describe('About screen', () => {
     expect(screen).toContain("terminalFonts.cjk.displayName");
     expect(screen).toContain("terminalFonts.symbols.displayName");
     expect(screen).toContain("terminalFonts.emoji.displayName");
-    expect(screen).toContain("terminalFonts.fallback.displayName");
+    expect(screen).toContain('ios: terminalFonts.fallback.ios');
+    expect(screen).toContain('default: terminalFonts.fallback.android');
+    expect(screen).toContain('value={fallbackFont.displayName}');
   });
 
   it('opens and shares the GitHub releases page', () => {

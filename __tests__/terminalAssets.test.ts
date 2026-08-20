@@ -113,8 +113,12 @@ describe('Android terminal assets', () => {
     const iosHtml = readFileSync(resolve(iosAssets, 'index.html'), 'utf8');
 
     expect(iosHtml).toBe(
-      androidHtml.replace('  <base href="file:///android_asset/">\n', ''),
+      androidHtml
+        .replace('  <base href="file:///android_asset/">\n', '')
+        .replace(', monospace\';', ', ui-monospace\';'),
     );
+    expect(androidHtml).toContain(', monospace\';');
+    expect(iosHtml).toContain(', ui-monospace\';');
     expect(iosHtml).toContain('<link rel="stylesheet" href="xterm.css">');
     expect(iosHtml).toContain('<script src="xterm.js"></script>');
     expect(iosHtml).toContain('<script src="addon-fit.js"></script>');

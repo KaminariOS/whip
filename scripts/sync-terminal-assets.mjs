@@ -45,13 +45,15 @@ const nerdSymbolsLicense = resolve(
   terminalFonts,
   fontManifest.symbols.licenseFile,
 );
-const terminalFontFamily = [
+const terminalFontFamily = fallback => [
   fontManifest.text.cssFamily,
   fontManifest.emoji.cssFamily,
   fontManifest.symbols.cssFamily,
   fontManifest.cjk.cssFamily,
-  fontManifest.fallback.cssFamily,
-].map(family => family === 'monospace' ? family : `"${family}"`).join(', ');
+  fallback.cssFamily,
+].map(family => family.endsWith('monospace') ? family : `"${family}"`).join(', ');
+const androidTerminalFontFamily = terminalFontFamily(fontManifest.fallback.android);
+const iosTerminalFontFamily = terminalFontFamily(fontManifest.fallback.ios);
 await mkdir(assets, { recursive: true });
 await mkdir(iosAssets, { recursive: true });
 const copyTerminalAsset = (source, bundledName) => Promise.all([
@@ -212,7 +214,7 @@ const terminalSessionHtml = `<!doctype html>
   <script>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
-    const terminalFontFamily = '${terminalFontFamily}';
+    const terminalFontFamily = '${androidTerminalFontFamily}';
     const fontReady = document.fonts?.load
       ? Promise.all([
           document.fonts.load('400 8px "${fontManifest.text.cssFamily}"'),
@@ -1035,7 +1037,11 @@ const terminalHtml = `<!doctype html>
 
 await writeFile(resolve(assets, 'herdr-terminal.html'), terminalHtml, 'utf8');
 const iosTerminalHtml = terminalHtml
-  .replace('  <base href="file:///android_asset/">\n', '');
+  .replace('  <base href="file:///android_asset/">\n', '')
+  .replace(
+    `const terminalFontFamily = '${androidTerminalFontFamily}';`,
+    `const terminalFontFamily = '${iosTerminalFontFamily}';`,
+  );
 await writeFile(
   resolve(iosAssets, 'index.html'),
   iosTerminalHtml,

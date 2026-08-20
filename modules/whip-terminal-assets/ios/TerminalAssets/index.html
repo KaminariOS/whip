@@ -241,7 +241,7 @@
     for (const [type, listener] of listeners) eventTarget.removeEventListener(type, listener, true);
   };
 }
-    const terminalFontFamily = '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", "Herdr Terminal CJK", monospace';
+    const terminalFontFamily = '"Herdr Terminal Mono", "Noto Color Emoji", "Herdr Terminal Symbols", "Herdr Terminal CJK", ui-monospace';
     const fontReady = document.fonts?.load
       ? Promise.all([
           document.fonts.load('400 8px "Herdr Terminal Mono"'),

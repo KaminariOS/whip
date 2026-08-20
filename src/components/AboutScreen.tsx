@@ -2,7 +2,7 @@ import { ChevronDown, ChevronUp, Code2, ExternalLink, Share2 } from 'lucide-reac
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Share, View } from 'react-native';
+import { Alert, Linking, Platform, Share, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -36,6 +36,10 @@ export function AboutSection({ server }: AboutSectionProps) {
   const [contentMounted, setContentMounted] = useState(false);
   const [contentMeasured, setContentMeasured] = useState(false);
   const { t } = useTranslation();
+  const fallbackFont = Platform.select({
+    ios: terminalFonts.fallback.ios,
+    default: terminalFonts.fallback.android,
+  });
   const contentHeight = useSharedValue(0);
   const progress = useSharedValue(0);
 
@@ -220,7 +224,7 @@ export function AboutSection({ server }: AboutSectionProps) {
             <AboutRow label={t('about.terminalCjkFont')} value={terminalFonts.cjk.displayName} divided />
             <AboutRow label={t('about.terminalSymbolFont')} value={terminalFonts.symbols.displayName} divided />
             <AboutRow label={t('about.terminalEmojiFont')} value={terminalFonts.emoji.displayName} divided />
-            <AboutRow label={t('about.terminalFallbackFont')} value={terminalFonts.fallback.displayName} divided />
+            <AboutRow label={t('about.terminalFallbackFont')} value={fallbackFont.displayName} divided />
           </GlassSurface>
 
           </View>

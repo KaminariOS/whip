@@ -30,7 +30,13 @@
     "cssFamily": "Noto Color Emoji"
   },
   "fallback": {
-    "displayName": "Android monospace",
-    "cssFamily": "monospace"
+    "android": {
+      "displayName": "Android monospace",
+      "cssFamily": "monospace"
+    },
+    "ios": {
+      "displayName": "iOS system monospace",
+      "cssFamily": "ui-monospace"
+    }
   }
 }
