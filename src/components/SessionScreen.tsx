@@ -40,7 +40,6 @@ import { sessionTabGlassStyle, sessionTabStatusColor, statusColor, useTheme } fr
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSheet';
-import { RemoteFileManager } from './RemoteFileManager';
 import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -69,8 +68,7 @@ interface Props {
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
-  openFilesRequest: { id: number; terminalId: string } | null;
-  onOpenFilesRequestHandled: (requestId: number) => void;
+  onOpenFiles: (terminalId: string) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
@@ -113,8 +111,7 @@ export function SessionScreen({
   terminalPreferences,
   terminalControlUsage,
   terminalHistory,
-  openFilesRequest,
-  onOpenFilesRequestHandled,
+  onOpenFiles,
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
@@ -142,8 +139,6 @@ export function SessionScreen({
   const [browserDisplayUrl, setBrowserDisplayUrl] = useState('');
   const [browserCanGoBack, setBrowserCanGoBack] = useState(false);
   const [browserLoading, setBrowserLoading] = useState(false);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [fileManagerPath, setFileManagerPath] = useState('~');
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [attachmentTerminalId, setAttachmentTerminalId] = useState<string | null>(null);
   const [pasteRequest, setPasteRequest] = useState<{
@@ -157,8 +152,6 @@ export function SessionScreen({
   const browserWebView = useRef<BrowserWebViewHandle | null>(null);
   const tunnelPortRef = useRef<number | null>(null);
   const browserRequestRef = useRef(0);
-  const remoteFilePathsRef = useRef(new Map<string, string>());
-  const fileManagerTerminalKeyRef = useRef<string | null>(null);
   const tabSwipeTranslateX = useSharedValue(0);
   const tabSwipeRef = useRef<TerminalTabSwipe | null>(null);
   const pendingPaneFocus = useRef<string | null>(null);
@@ -301,7 +294,6 @@ export function SessionScreen({
     setBrowserUrl(null);
     setBrowserCanGoBack(false);
     setBrowserLoading(false);
-    setFilesOpen(false);
     setAttachmentsOpen(false);
     setPasteRequest(null);
   }, [hostSessionId]);
@@ -577,39 +569,9 @@ export function SessionScreen({
     setEditorMode(null);
   };
 
-  const openFileManager = (terminalId = activeTerminalSession?.terminalId) => {
-    if (!terminalId) return;
-    const terminalPane = snapshot.panes.find(
-      pane => pane.terminal_id === terminalId,
-    );
-    const terminalWorkspace = snapshot.workspaces.find(
-      item => item.workspace_id === terminalPane?.workspace_id,
-    );
-    const terminalKey = `${hostSessionId}:${terminalId}`;
-    fileManagerTerminalKeyRef.current = terminalKey;
-    setFileManagerPath(
-      remoteFilePathsRef.current.get(terminalKey)
-      || terminalPane?.foreground_cwd
-      || terminalPane?.cwd
-      || terminalWorkspace?.worktree?.checkout_path
-      || '~',
-    );
-    setFilesOpen(true);
+  const openFileManager = () => {
+    if (activeTerminalSession) onOpenFiles(activeTerminalSession.terminalId);
   };
-
-  const openRequestedFileManager = useEffectEvent((terminalId: string) => {
-    openFileManager(terminalId);
-  });
-
-  useEffect(() => {
-    if (!visible || !openFilesRequest) return;
-    const terminalExists = terminalState.sessions.some(
-      session => session.terminalId === openFilesRequest.terminalId,
-    );
-    if (!terminalExists) return;
-    openRequestedFileManager(openFilesRequest.terminalId);
-    onOpenFilesRequestHandled(openFilesRequest.id);
-  }, [openFilesRequest, onOpenFilesRequestHandled, terminalState.sessions, visible]);
 
   const openAttachments = () => {
     if (!activeTerminalSession || activeTerminalSession.status !== 'connected') return;
@@ -845,17 +807,6 @@ export function SessionScreen({
             <Text className="mt-2 text-center text-terminal-muted">{t('session.emptyTabCopy')}</Text>
           </View>
         )}
-        <RemoteFileManager
-          client={client}
-          hostId={hostSessionId}
-          initialPath={fileManagerPath}
-          visible={filesOpen}
-          onPathChange={path => {
-            const terminalKey = fileManagerTerminalKeyRef.current;
-            if (terminalKey) remoteFilePathsRef.current.set(terminalKey, path);
-          }}
-          onClose={() => setFilesOpen(false)}
-        />
         <AttachmentPasteSheet
           client={client}
           visible={attachmentsOpen}

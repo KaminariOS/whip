@@ -132,13 +132,15 @@ describe('remote file previews', () => {
 });
 
 test('connects the adaptive terminal file control to the remote file manager', () => {
+  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
   const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
   const terminal = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
   expect(terminal).toContain("accessibilityLabel={t('terminal.openFiles')}");
   expect(terminal).toContain('<FolderOpen');
   expect(terminal).toContain('onRequestFiles?.()');
-  expect(session).toContain('terminalPane?.foreground_cwd');
-  expect(session).toContain('<RemoteFileManager');
+  expect(session).toContain('onOpenFiles(activeTerminalSession.terminalId)');
+  expect(app).toContain('pane.foreground_cwd');
+  expect(app).toContain('<RemoteFileManager');
 });
 
 test('offers persistent hidden-file visibility and compact reversible sorting', () => {
@@ -154,27 +156,35 @@ test('offers persistent hidden-file visibility and compact reversible sorting', 
 });
 
 test('remembers the last remote directory independently for each terminal', () => {
+  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
   const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
 
-  expect(session).toContain('const remoteFilePathsRef = useRef(new Map<string, string>());');
-  expect(session).toContain('const terminalKey = `${hostSessionId}:${terminalId}`;');
-  expect(session).toContain('remoteFilePathsRef.current.get(terminalKey)');
-  expect(session).toContain('remoteFilePathsRef.current.set(terminalKey, path)');
+  expect(app).toContain('const remoteFilePathsRef = useRef(new Map<string, string>());');
+  expect(app).toContain('const pathKey = `${sessionId}:${terminalId}`;');
+  expect(app).toContain('remoteFilePathsRef.current.get(pathKey)');
+  expect(app).toContain('remoteFilePathsRef.current.set(remoteFilesRequest.pathKey, path)');
+  expect(session).toContain('onRequestFiles={openFileManager}');
+  expect(session).toContain('onOpenFiles(activeTerminalSession.terminalId)');
   expect(manager).toContain('onPathChangeRef.current(listing.path);');
 });
 
 test('opens an agent tab remote directory on long press', () => {
   const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
   const herd = readFileSync(resolve(__dirname, '../src/components/HerdScreen.tsx'), 'utf8');
-  const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  const openAgentFiles = app.slice(
+    app.indexOf('const openAgentFiles ='),
+    app.indexOf('const selectHerdHost ='),
+  );
 
   expect(herd).toContain('onLongPress={hapticPress(() => onOpenFiles(item.hostId, agent))}');
   expect(herd).toContain("name: 'open-files'");
   expect(app).toContain('onOpenFiles={openAgentFiles}');
-  expect(app).toContain('terminalId: pane.terminal_id');
-  expect(session).toContain('openRequestedFileManager(openFilesRequest.terminalId);');
-  expect(session).toContain('remoteFilePathsRef.current.get(terminalKey)');
+  expect(openAgentFiles).toContain('openRemoteFiles(sessionId, pane.terminal_id);');
+  expect(openAgentFiles).not.toContain('openPaneTerminal(');
+  expect(app).toContain('<RemoteFileManager');
+  expect(app).toContain('client={remoteFilesRuntime.client}');
+  expect(app).toContain('initialPath={remoteFilesRequest.initialPath}');
 });
 
 test('uses the authenticated SSH client for SFTP listing, transfers, and deletion', () => {
@@ -268,7 +278,8 @@ test('renders standalone Mermaid files with the bundled isolated WebView runtime
   expect(preview).toContain('allowUniversalAccessFromFileURLs={false}');
   expect(runtime).toContain("securityLevel: 'strict'");
   expect(runtime).toContain('maxEdges: MAX_EDGES');
-  expect(runtime).toContain("flowchart: { htmlLabels: false }");
+  expect(runtime).toContain('htmlLabels: true');
+  expect(runtime).toContain("flowchart: { htmlLabels: true }");
   expect(runtime).toContain('const result = await mermaid.render(id, source)');
   expect(markdown).not.toContain('MermaidPreview');
 });
@@ -325,13 +336,13 @@ test('uses the requested syntax highlighter and terminal font in previews and ed
 });
 
 test('offers a persistent collapsible Git status tree and native virtualized diffs', () => {
-  const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
   const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
   const diff = readFileSync(resolve(__dirname, '../src/components/RemoteGitDiffPreview.tsx'), 'utf8');
   const preferences = readFileSync(resolve(__dirname, '../src/services/remoteGitPreferences.ts'), 'utf8');
 
-  expect(session).toContain('hostId={hostSessionId}');
+  expect(app).toContain('hostId={remoteFilesRequest.hostSessionId}');
   expect(manager).toContain('accessibilityRole="switch"');
   expect(manager).toContain('loadRemoteGitMode(hostId, repository.root)');
   expect(manager).toContain('buildRemoteGitTreeRows(visibleGitStatus, gitCollapsedPaths)');

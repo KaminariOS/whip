@@ -186,9 +186,12 @@ describe('Android terminal assets', () => {
 
     expect(html).toContain('Content-Security-Policy');
     expect(html).toContain("default-src 'none'");
+    expect(html).toContain('img-src data: https:');
+    expect(html).not.toContain('img-src data: http:');
     expect(html).toContain('<script src="mermaid.min.js"></script>');
     expect(html).toContain('<script src="mermaid-preview.js"></script>');
     expect(runtime).toContain("securityLevel: 'strict'");
+    expect(runtime).toContain('htmlLabels: true');
     expect(runtime).toContain('mermaid.render(id, source)');
     expect(renderer).toContain("android: { uri: 'file:///android_asset/mermaid-preview.html' }");
     expect(renderer).toContain("ios: { uri: IOS_TERMINAL_ASSETS?.mermaidURL || 'about:blank' }");

@@ -48,8 +48,8 @@
         suppressErrorRendering: true,
         maxEdges: MAX_EDGES,
         maxTextSize: MAX_SOURCE_CHARACTERS,
-        htmlLabels: false,
-        flowchart: { htmlLabels: false },
+        htmlLabels: true,
+        flowchart: { htmlLabels: true },
         theme: appearance === 'light' ? 'default' : 'dark',
       });
       const id = `whip-mermaid-${++renderSequence}`;
