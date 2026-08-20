@@ -40,6 +40,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install Nix
+        if: matrix.language == 'java-kotlin'
+        uses: cachix/install-nix-action@13d8d58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
       - name: Set up Node.js
         if: matrix.language == 'java-kotlin'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -76,6 +83,12 @@ jobs:
       - name: Install dependencies
         if: matrix.language == 'java-kotlin'
         run: npm ci
+
+      - name: Build Android Rust static library
+        if: matrix.language == 'java-kotlin'
+        run: >-
+          nix develop .#default -c bash
+          packages/react-native-ssh-sftp/rust/build-android.sh
 
       - name: Build Java and Kotlin
         if: matrix.language == 'java-kotlin'

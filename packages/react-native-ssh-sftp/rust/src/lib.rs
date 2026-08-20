@@ -126,6 +126,7 @@ impl Response {
 #[uniffi::export(with_foreign)]
 pub trait WhipSshEventSink: Send + Sync {
     fn emit(&self, event_json: String);
+    #[allow(clippy::too_many_arguments)]
     fn terminal_frame(
         &self,
         key: String,
