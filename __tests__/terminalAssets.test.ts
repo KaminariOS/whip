@@ -244,6 +244,14 @@ describe('Android terminal assets', () => {
     expect(html).toContain('.terminal-session {\n      position: absolute;\n      inset: 0;');
   });
 
+  it('coalesces terminal input before crossing the WebView bridge', () => {
+    const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
+
+    expect(html).toContain("if (value.type === 'input' && typeof value.data === 'string')");
+    expect(html).toContain('entry.pendingInput += value.data;');
+    expect(html).toContain('setTimeout(() => flushInput(entry), 4)');
+  });
+
   it('resets an activated terminal without automatically focusing its keyboard', () => {
     const html = readFileSync(resolve(assets, 'herdr-terminal.html'), 'utf8');
     const activateScript = html.match(

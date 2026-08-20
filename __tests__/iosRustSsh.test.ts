@@ -63,9 +63,31 @@ describe('UniFFI SSH integration', () => {
     expect(rust).toContain('pub async fn call_async(request_json: String) -> String');
     expect(rust).toContain('runtime.spawn(process_json_for_lifecycle');
     expect(rust).toContain('pub fn shutdown()');
+    expect(rust).toContain('fn terminal_frame(');
+    expect(rust).toContain('pub fn herdr_bridge_input_fast(');
+    expect(rust).toContain('pub fn herdr_bridge_resize_fast(');
+    expect(rust).toContain('pub fn herdr_bridge_scroll_fast(');
+    expect(rust).toContain('pub fn write_shell_input(');
     expect(generated).toContain('export function call(requestJson: string): string');
     expect(generated).toContain('export async function callAsync(');
     expect(generated).toContain('export function setEventSink(');
+    expect(generated).toContain('terminalFrame(');
+    expect(generated).toContain('bytes: ArrayBuffer');
+    expect(generated).toContain('export function herdrBridgeInputFast(');
+  });
+
+  it('keeps terminal traffic off the generic JSON dispatcher', () => {
+    const adapter = readUniffi('src/index.ts');
+    const rust = readLegacy('rust/src/lib.rs');
+    const sshClient = readLegacy('lib/sshclient.js');
+
+    expect(adapter).toContain('writeShellInput(key, data)');
+    expect(adapter).toContain('herdrBridgeInputFast(key, terminalId, text)');
+    expect(adapter).toContain('herdrBridgeResizeFast(');
+    expect(adapter).toContain('herdrBridgeScrollFast(key, terminalId, up, lines)');
+    expect(adapter).toContain("dispatchEvent('HerdrBridge'");
+    expect(rust).toContain('sink.terminal_frame(');
+    expect(sshClient).not.toContain('JSON.parse(p.replace(');
   });
 
   it.each([
