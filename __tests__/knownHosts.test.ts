@@ -165,3 +165,18 @@ test('uses the Rust UniFFI Android native module with strict host-key support', 
   expect(knownHostsRust).toContain('E_HOST_KEY_UNKNOWN:');
   expect(knownHostsRust).toContain('E_HOST_KEY_CHANGED:');
 });
+
+test('presents unknown host keys in the themed trust sheet', () => {
+  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+  const trustSheet = readFileSync(
+    resolve(__dirname, '../src/components/TrustHostSheet.tsx'),
+    'utf8',
+  );
+
+  expect(app).toContain('<TrustHostSheet');
+  expect(app).toContain('setUnknownHostChallenge(challenge)');
+  expect(trustSheet).toContain('<GlassSurface');
+  expect(trustSheet).toContain('onRequestClose={onCancel}');
+  expect(trustSheet).toContain('<Text selectable');
+  expect(trustSheet).toContain("t('knownHosts.fingerprintLabel')");
+});

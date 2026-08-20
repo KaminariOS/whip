@@ -32,6 +32,7 @@ import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { SessionScreen } from './src/components/SessionScreen';
+import { TrustHostSheet } from './src/components/TrustHostSheet';
 import { AgentStatusAnimationProvider, ReducedMotionProvider, WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName, resolveJumpHostChain } from './src/lib/hostProfiles';
@@ -262,6 +263,7 @@ function AppContent() {
   const preferencesLoadedRef = useRef(false);
   const appAuthenticationInFlightRef = useRef(false);
   const securitySettingChangeInFlightRef = useRef(false);
+  const unknownHostResolutionRef = useRef<((trusted: boolean) => void) | null>(null);
   const [notificationResponse, setNotificationResponse] = useState<Notifications.NotificationResponse | null>(null);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
@@ -269,6 +271,7 @@ function AppContent() {
   const [unlockedGlobalKeys, setUnlockedGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
   const [knownHostsOpen, setKnownHostsOpen] = useState(false);
+  const [unknownHostChallenge, setUnknownHostChallenge] = useState<UnknownHostKeyChallenge | null>(null);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [knownHostsLoaded, setKnownHostsLoaded] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
@@ -902,24 +905,18 @@ function AppContent() {
 
   const confirmUnknownHost = useCallback((challenge: UnknownHostKeyChallenge): Promise<boolean> => (
     new Promise(resolve => {
-      const displayHost = challenge.port === 22
-        ? challenge.host
-        : `[${challenge.host}]:${challenge.port}`;
-      Alert.alert(
-        t('knownHosts.trustTitle'),
-        t('knownHosts.trustCopy', {
-          host: displayHost,
-          keyType: challenge.keyType,
-          fingerprint: challenge.fingerprint,
-        }),
-        [
-          { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
-          { text: t('knownHosts.trust'), onPress: () => resolve(true) },
-        ],
-        { cancelable: true, onDismiss: () => resolve(false) },
-      );
+      unknownHostResolutionRef.current?.(false);
+      unknownHostResolutionRef.current = resolve;
+      setUnknownHostChallenge(challenge);
     })
-  ), [t]);
+  ), []);
+
+  const resolveUnknownHost = useCallback((trusted: boolean) => {
+    const resolve = unknownHostResolutionRef.current;
+    unknownHostResolutionRef.current = null;
+    setUnknownHostChallenge(null);
+    resolve?.(trusted);
+  }, []);
 
   useEffect(() => {
     let previousState = AppState.currentState;
@@ -1902,6 +1899,11 @@ function AppContent() {
           onOpenTerminal={pane => activeSession && openPaneTerminal(activeSession.id, pane)}
         />
       )}
+      <TrustHostSheet
+        challenge={unknownHostChallenge}
+        onCancel={() => resolveUnknownHost(false)}
+        onTrust={() => resolveUnknownHost(true)}
+      />
       <AppAccessLock
         authenticating={appAccessAuthenticating}
         visible={appAccessLocked}
