@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronLeft, Globe2, Plus, X } from 'lucide-react-native';
+import { ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -40,6 +40,7 @@ import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSheet';
 import { RemoteFileManager } from './RemoteFileManager';
+import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
@@ -166,6 +167,14 @@ export function SessionScreen({
     item => tabAgentStateChangeSequence(item, snapshot.agents),
   );
   const selectedTab = tabs.find(item => item.tab_id === tabId) || tabs.find(item => item.focused) || tabs[0];
+  const editorTitle = editorMode === 'rename-tab'
+    ? t('session.renameTab')
+    : editorMode === 'rename-pane'
+      ? t('session.renamePane')
+      : t('session.newTab');
+  const editorContext = editorMode === 'rename-pane'
+    ? selectedTab?.label || selectedTab?.tab_id
+    : workspace?.label || workspace?.workspace_id;
   const panes = snapshot.panes.filter(item => item.tab_id === selectedTab?.tab_id);
   const serverWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const serverTab = snapshot.tabs.find(item => (
@@ -652,14 +661,33 @@ export function SessionScreen({
           ) : null}
         </View>
 
-        {editorMode && (
-          <View className="flex-row items-center gap-1.5 border-b border-border bg-card p-[7px]">
-            <Text className="font-mono text-[8px] text-foreground">{editorMode.startsWith('rename') ? t('herd.rename') : t('herd.new')} {editorMode === 'rename-pane' ? t('session.pane') : t('session.tab')}</Text>
-            <Input autoFocus selectTextOnFocus={editorMode.startsWith('rename')} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={name} onChangeText={setName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
-            <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(closeEditor)}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
-            <Button className="h-[34px] rounded-none px-2" onPress={hapticPress(create)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
-          </View>
-        )}
+        <ResourceEditorSheet
+          busy={busy}
+          context={editorContext}
+          icon={SquareTerminal}
+          onClose={closeEditor}
+          onSave={create}
+          title={editorTitle}
+          visible={editorMode !== null}>
+          <ResourceEditorField
+            label={editorMode === 'rename-pane' ? t('pane.label') : t('herd.tabName')}>
+            <Input
+              accessibilityLabel={editorMode === 'rename-pane' ? t('pane.label') : t('herd.tabName')}
+              autoFocus
+              autoCorrect={false}
+              editable={!busy}
+              returnKeyType="done"
+              selectTextOnFocus={editorMode?.startsWith('rename')}
+              value={name}
+              onChangeText={setName}
+              onSubmitEditing={() => { create(); }}
+              placeholder={editorMode === 'tab'
+                ? t('herd.tabNamePlaceholder')
+                : t('herd.labelOptional')}
+              placeholderTextColor={colors.textTertiary}
+            />
+          </ResourceEditorField>
+        </ResourceEditorSheet>
 
         {selectedTab && panes.length > 1 && (
           <View className="h-[37px] flex-row border-b border-border bg-transparent">

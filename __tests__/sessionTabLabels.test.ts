@@ -182,7 +182,8 @@ describe('session tab labels', () => {
 
     expect(screen).toContain('onLongPress={hapticPress(() => openRenameTab(item))}');
     expect(screen).toContain('if (item.tab_id !== selectedTab?.tab_id) chooseTab(item);');
-    expect(screen).toContain("autoFocus selectTextOnFocus={editorMode.startsWith('rename')}");
+    expect(screen).toContain('autoFocus');
+    expect(screen).toContain("selectTextOnFocus={editorMode?.startsWith('rename')}");
   });
 
   it('uses direct, vertically centered controls for every pane', () => {
