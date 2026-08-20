@@ -25,6 +25,13 @@
     "production": {}
   },
   "submit": {
+    "internal-draft": {
+      "android": {
+        "serviceAccountKeyPath": ".eas-secrets/google-play-service-account.json",
+        "track": "internal",
+        "releaseStatus": "draft"
+      }
+    },
     "internal": {
       "android": {
         "serviceAccountKeyPath": ".eas-secrets/google-play-service-account.json",

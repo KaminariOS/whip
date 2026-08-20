@@ -6,9 +6,10 @@ on:
       submit_profile:
         description: Google Play destination
         required: true
-        default: production-draft
+        default: internal-draft
         type: choice
         options:
+          - internal-draft
           - production-draft
           - internal
 
