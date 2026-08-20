@@ -11,7 +11,15 @@ fi
 
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 module_dir="$root_dir/packages/react-native-whip-ssh"
-export PATH="$root_dir/node_modules/.bin:$HOME/.cargo/bin:$PATH"
+build_path="$PATH"
+if [[ -n "${IN_NIX_SHELL:-}" && "$(uname -s)" == "Darwin" ]]; then
+  build_path="/usr/bin:/bin:/usr/sbin:/sbin:$build_path"
+  export DEVELOPER_DIR="${WHIP_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+  unset SDKROOT
+elif [[ -z "${IN_NIX_SHELL:-}" ]]; then
+  build_path="$HOME/.cargo/bin:$build_path"
+fi
+export PATH="$root_dir/node_modules/.bin:$build_path"
 export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-16.4}"
 
 if ! command -v ubrn >/dev/null 2>&1; then
