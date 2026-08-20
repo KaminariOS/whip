@@ -524,7 +524,15 @@ function agentStatusCircleBloomStyle(color: string, size: number) {
     backgroundColor: 'transparent',
     borderColor: colorWithAlpha(color, 'B8'),
     borderWidth: 2,
-    filter: [{ blur: 5 }],
+    ...(Platform.OS === 'ios'
+      ? {
+          // iOS does not render the React Native filter blur on this View.
+          shadowColor: color,
+          shadowOpacity: 0.72,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 0 },
+        }
+      : { filter: [{ blur: 5 }] }),
   } as const;
 }
 
