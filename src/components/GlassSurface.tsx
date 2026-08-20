@@ -21,11 +21,16 @@ cssInterop(LiquidGlassView, { className: 'style' });
 
 export function GlassProvider({ blurTarget, enabled, children }: GlassContextValue & { children: ReactNode }) {
   useEffect(() => {
-    console.info('[LiquidGlass] capability', {
+    const capability = {
       isLiquidGlassSupported,
       legacyGlassEnabled: enabled,
       platform: Platform.OS,
-    });
+    };
+    const nativeLoggingHook = (globalThis as typeof globalThis & {
+      nativeLoggingHook?: (message: string, level: number) => void;
+    }).nativeLoggingHook;
+    nativeLoggingHook?.(`[LiquidGlass] runtime ${JSON.stringify(capability)}`, 1);
+    console.info('[LiquidGlass] capability', capability);
   }, [enabled]);
 
   return <GlassContext.Provider value={{ blurTarget, enabled }}>{children}</GlassContext.Provider>;
@@ -41,7 +46,7 @@ export function GlassBackdrop({ intensity = 36 }: { intensity?: number }) {
   const enabled = glass?.enabled === true;
   // Native Liquid Glass is the primary surface on supported Apple devices.
   // The app glass preference only controls the legacy blur fallback.
-  const renderLiquidGlass = isLiquidGlassSupported;
+  const renderLiquidGlass = enabled && isLiquidGlassSupported;
   const renderNativeBlur = Platform.OS !== 'android';
   if (!enabled && !renderLiquidGlass) {
     return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface }]} />;
@@ -49,7 +54,7 @@ export function GlassBackdrop({ intensity = 36 }: { intensity?: number }) {
   return renderLiquidGlass ? (
     <LiquidGlassView
       colorScheme={isDark ? 'dark' : 'light'}
-      effect="regular"
+      effect="clear"
       pointerEvents="none"
       style={StyleSheet.absoluteFill}
     />
@@ -86,12 +91,14 @@ export function GlassSurface({
 }: React.ComponentProps<typeof View> & { intensity?: number }) {
   const glass = useContext(GlassContext);
   const { colors, isDark } = useTheme();
-  if (isLiquidGlassSupported) {
+  const enabled = glass?.enabled === true;
+  if (enabled && isLiquidGlassSupported) {
     return (
       <LiquidGlassView
         className={cn('relative overflow-hidden', className)}
         colorScheme={isDark ? 'dark' : 'light'}
-        effect="regular"
+        effect="clear"
+        interactive
         style={style}
         {...props}>
         {children}
