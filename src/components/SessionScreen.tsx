@@ -6,6 +6,7 @@ import {
   Linking,
   Modal,
   PanResponder,
+  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -607,8 +608,13 @@ export function SessionScreen({
       <TerminalBackground preferences={terminalPreferences} />
       <View className="absolute inset-x-0 top-0 z-30">
         <View className="h-[55px] flex-row border-b border-border bg-transparent">
-          <Button accessibilityLabel={t('session.backToHerd')} className="h-[55px] w-[42px] rounded-none px-0" variant="ghost" onPress={hapticPress(onExit)}>
-            <ChevronLeft size={21} color={colors.text} />
+          <Button
+            accessibilityLabel={t('session.backToHerd')}
+            className={cn('h-[55px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-[42px]')}
+            size="content"
+            variant="ghost"
+            onPress={hapticPress(onExit)}>
+            <ChevronLeft size={Platform.OS === 'ios' ? 23 : 21} color={colors.text} />
           </Button>
           {workspace ? (
           <>
@@ -635,14 +641,23 @@ export function SessionScreen({
                 );
               })}
             </ScrollView>
-            <Button accessibilityLabel={t('session.newTab')} className="h-[55px] w-11 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(() => setEditorMode('tab'))}><Plus size={16} color={colors.text} /></Button>
+            <Button
+              accessibilityLabel={t('session.newTab')}
+              className={cn('h-[55px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-11')}
+              disabled={busy}
+              size="content"
+              variant="ghost"
+              onPress={hapticPress(() => setEditorMode('tab'))}>
+              <Plus size={Platform.OS === 'ios' ? 23 : 16} color={colors.text} />
+            </Button>
             <Button
               accessibilityLabel={t('terminal.scanLinks')}
-              className="h-[55px] w-11 rounded-none px-0"
+              className={cn('h-[55px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-11')}
               disabled={!activeTerminalSession || activeTerminalSession.status !== 'connected'}
+              size="content"
               variant="ghost"
               onPress={hapticPress(scanTerminalLinks)}>
-              <Globe2 size={18} color={colors.text} />
+              <Globe2 size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />
             </Button>
           </>
         ) : activeTerminalSession?.kind === 'ssh' ? (

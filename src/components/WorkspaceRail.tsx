@@ -1,5 +1,5 @@
 import { Layers3, Plus, X } from 'lucide-react-native';
-import { ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { compareAgentStatusPriority } from '@/src/herdQueue';
@@ -67,8 +67,14 @@ export function WorkspaceRail({
           />
         ))}
       </ScrollView>
-      <Button accessibilityLabel={t('rail.newWorkspace')} className="h-[62px] w-12 rounded-none px-0" disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
-        <Plus size={17} color={colors.text} />
+      <Button
+        accessibilityLabel={t('rail.newWorkspace')}
+        className={cn('h-[62px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-12')}
+        disabled={busy}
+        size="content"
+        variant="ghost"
+        onPress={hapticPress(onNew)}>
+        <Plus size={Platform.OS === 'ios' ? 23 : 17} color={colors.text} />
       </Button>
     </GlassSurface>
   );

@@ -159,6 +159,7 @@ describe('terminal renderer lifecycle', () => {
   it('uses the full display while an active terminal is visible', () => {
     const app = readSource('App.tsx');
     const bottomNavigation = readSource('src/components/BottomNavigation.tsx');
+    const session = readSource('src/components/SessionScreen.tsx');
     const settings = readSource('src/components/SettingsScreen.tsx');
 
     expect(app).toMatch(/fullscreenTerminalVisible\s*=\s*activeTerminalVisible\s*&&\s*terminalPreferences\.fullscreen/);
@@ -171,5 +172,10 @@ describe('terminal renderer lifecycle', () => {
     expect(app).toContain("style={immersiveTerminal ? styles.hiddenTab : styles.tabScreen}");
     expect(app).toContain("importantForAccessibility={immersiveTerminal ? 'no-hide-descendants' : 'auto'}");
     expect(bottomNavigation).toContain('style={{ bottom: 16, height: 120 + bottom, paddingBottom: bottom }}');
+    expect(session).toContain("Platform.OS === 'ios' ? 'w-14' : 'w-11'");
+    expect(session).toContain("<Plus size={Platform.OS === 'ios' ? 23 : 16}");
+    expect(session).toContain("<Globe2 size={Platform.OS === 'ios' ? 23 : 18}");
+    expect(session).toContain("<ChevronLeft size={Platform.OS === 'ios' ? 23 : 21}");
+    expect(session.match(/size="content"/g)).toHaveLength(3);
   });
 });

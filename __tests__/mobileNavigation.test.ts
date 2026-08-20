@@ -57,6 +57,9 @@ test('bottom navigation shows icons without visible labels', () => {
   expect(bottomNavigation).toContain('<HerdrMark size={29} />');
   expect(bottomNavigation).toContain('<Icon as={item.icon} size={29}');
   expect(bottomNavigation).toContain('className="h-16 w-16 rounded-full');
+  expect(bottomNavigation).toContain('size="content"');
+  expect(bottomNavigation).toContain('variant="link"');
+  expect(bottomNavigation).not.toContain('active:bg-white/10');
   expect(bottomNavigation).toContain('style={{ bottom: 16, height: 120 + bottom, paddingBottom: bottom }}');
   expect(bottomNavigation).not.toContain('border-t');
   expect(bottomNavigation).not.toContain('flex-1 rounded-none');

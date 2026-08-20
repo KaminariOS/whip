@@ -16,6 +16,9 @@ describe('terminal to Herd navigation', () => {
     expect(herd).toContain('onSelectWorkspace(selectedQueue.id, selectedWorkspaceId);');
     expect(workspaceRail).toContain('{workspaces.length > 1 ? (');
     expect(workspaceRail).toContain("label={t('rail.allSpaces')}");
+    expect(workspaceRail).toContain("Platform.OS === 'ios' ? 'w-14' : 'w-12'");
+    expect(workspaceRail).toContain("<Plus size={Platform.OS === 'ios' ? 23 : 17}");
+    expect(workspaceRail).toContain('size="content"');
   });
 
   it('keeps the Herd space filter outside its conditionally mounted screen', () => {

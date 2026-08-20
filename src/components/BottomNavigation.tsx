@@ -74,8 +74,9 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
               accessibilityLabel={t(item.labelKey)}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
-              className="h-16 w-16 rounded-full bg-transparent p-0 active:bg-white/10 dark:bg-transparent dark:active:bg-white/10"
-              variant="ghost"
+              className="h-16 w-16 rounded-full bg-transparent p-0 dark:bg-transparent"
+              size="content"
+              variant="link"
               onPress={hapticPress(() => onSelect(item.tab))}>
               <View className={active ? 'items-center justify-center opacity-100' : 'items-center justify-center opacity-60'}>
                 {'herdrMark' in item
