@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -55,6 +55,7 @@ import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { RemoteVideoPreview } from './RemoteVideoPreview';
 import { SvgPreview } from './SvgPreview';
+import { ZoomableImagePreview } from './ZoomableImagePreview';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -413,7 +414,10 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
               </View>
             ) : preview.kind === 'image' && preview.cached ? (
               <View className="flex-1 bg-terminal-canvas p-3">
-                <Image accessibilityLabel={remoteEntryName(preview.entry)} className="flex-1" resizeMode="contain" source={{ uri: preview.cached.uri }} />
+                <ZoomableImagePreview
+                  accessibilityLabel={remoteEntryName(preview.entry)}
+                  uri={preview.cached.uri}
+                />
               </View>
             ) : preview.kind === 'video' && preview.cached ? (
               <RemoteVideoPreview

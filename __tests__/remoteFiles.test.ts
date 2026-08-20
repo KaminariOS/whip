@@ -173,6 +173,18 @@ test('plays bounded remote videos from the local preview cache', () => {
   expect(preview).toContain('fullscreenOptions={{ enable: true }}');
 });
 
+test('opens cached images in the zoomable image preview', () => {
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const preview = readFileSync(resolve(__dirname, '../src/components/ZoomableImagePreview.tsx'), 'utf8');
+
+  expect(manager).toContain('<ZoomableImagePreview');
+  expect(manager).toContain('uri={preview.cached.uri}');
+  expect(preview).toContain('touchDistance(touches)');
+  expect(preview).toContain('touchCentroid(touches)');
+  expect(preview).toContain('DOUBLE_TAP_IMAGE_ZOOM');
+  expect(preview).toContain("gestureModeRef.current = 'pan'");
+});
+
 test('renders bounded SVG files natively while retaining source editing', () => {
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
   const preview = readFileSync(resolve(__dirname, '../src/components/SvgPreview.tsx'), 'utf8');
