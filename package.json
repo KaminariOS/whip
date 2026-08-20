@@ -16,6 +16,7 @@
     "eas-build-pre-install": "bash scripts/prepare-eas-ios.sh"
   },
   "dependencies": {
+    "@callstack/liquid-glass": "0.8.1",
     "@dylankenneally/react-native-ssh-sftp": "file:packages/react-native-ssh-sftp",
     "@ubjs/core": "0.31.0-3",
     "@react-native-async-storage/async-storage": "^2.2.0",

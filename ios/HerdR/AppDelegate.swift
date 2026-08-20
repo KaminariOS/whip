@@ -14,6 +14,18 @@ class AppDelegate: ExpoAppDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    let requiresDesignCompatibility =
+      (Bundle.main.object(forInfoDictionaryKey: "UIDesignRequiresCompatibility") as? Bool) ?? false
+    let glassEffectClass = NSClassFromString("UIGlassEffect")
+    let isGlassEffectAPIAvailable =
+      glassEffectClass?.responds(to: NSSelectorFromString("effectWithStyle:")) ?? false
+    NSLog(
+      "[LiquidGlass] native capability supported=%@ apiAvailable=%@ designCompatibility=%@",
+      String(!requiresDesignCompatibility && isGlassEffectAPIAvailable),
+      String(isGlassEffectAPIAvailable),
+      String(requiresDesignCompatibility)
+    )
+
     let delegate = ReactNativeDelegate()
     let factory = ExpoReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()

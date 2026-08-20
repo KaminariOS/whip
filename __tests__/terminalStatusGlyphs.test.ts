@@ -30,12 +30,10 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain('const frame = useAgentSpinnerFrame(animationsEnabled && spins && !reduceMotion);');
     expect(appUi).toContain('const { style } = useStatusMotion(status, false);');
     expect(appUi).toContain('export function AgentStatusMedallion');
+    expect(appUi).toContain('const bloomSize = size + 4;');
     expect(appUi).toContain('agentStatusCircleBloomStyle(color, bloomSize)');
-    expect(appUi).toContain("Platform.OS === 'ios'");
-    expect(appUi).toContain('shadowColor: color');
-    expect(appUi).toContain('shadowOpacity: 0.72');
-    expect(appUi).toContain('shadowRadius: 8');
-    expect(appUi).toContain("filter: [{ blur: 5 }]");
+    expect(appUi).toContain('return statusBloomStyle(color, size);');
+    expect(appUi).toContain('boxShadow: [');
     expect(appUi).toContain('<CircularAgentSpinner frame={frame} color={color} size={size} />');
     expect(appUi).toContain('const AGENT_SPINNER_ORBIT_RADIUS = 9.5;');
     expect(appUi).toContain('const AGENT_SPINNER_TRAIL_OPACITIES = [1, 0.72, 0.5, 0.32, 0.16] as const;');
@@ -159,7 +157,7 @@ describe('terminal hierarchy status glyphs', () => {
   it('uses one status glyph per Herd attention row', () => {
     const herd = readFileSync(resolve(__dirname, '../src/components/HerdScreen.tsx'), 'utf8');
 
-    expect(herd).toMatch(/<AnimatedAgentStatusGlyph\s+status={agent\.agent_status}\s+color={tone}\s*\/>/);
+    expect(herd).toMatch(/<AgentStatusMedallion[\s\S]*?connected[\s\S]*?status={agent\.agent_status}/);
     expect(herd).toMatch(/<StatusBadge\s+showIndicator={false}\s+status={agent\.agent_status}\s+label={stateLabel}\s*\/>/);
   });
 });

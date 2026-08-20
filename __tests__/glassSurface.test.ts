@@ -6,6 +6,7 @@ const readSource = (path: string) => readFileSync(resolve(__dirname, `../${path}
 test('gates app glass across bars and rows behind its experiment and background image', () => {
   const app = readSource('App.tsx');
   const glass = readSource('src/components/GlassSurface.tsx');
+  const appDelegate = readSource('ios/HerdR/AppDelegate.swift');
   const settings = readSource('src/components/SettingsScreen.tsx');
   const connection = readSource('src/components/ConnectionScreen.tsx');
   const hosts = readSource('src/components/HostsScreen.tsx');
@@ -19,11 +20,28 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(app).toContain('enabled={appGlassEnabled && Boolean(appBackgroundImageUri)}');
   expect(glass).toContain('glass?.enabled === true');
   expect(glass).toContain('useContext(GlassContext)?.enabled === true');
+  expect(glass).toContain("from '@callstack/liquid-glass'");
+  expect(glass).toContain('const renderLiquidGlass = isLiquidGlassSupported;');
+  expect(glass).toContain('if (!enabled && !renderLiquidGlass)');
+  expect(glass).toContain('renderLiquidGlass ? (');
+  expect(glass).toContain('<LiquidGlassView');
+  expect(glass).toContain('effect="regular"');
+  expect(glass).toContain("colorScheme={isDark ? 'dark' : 'light'}");
+  expect(glass).toContain('if (isLiquidGlassSupported)');
+  expect(glass).toContain("className={cn('relative overflow-hidden', className)}");
+  expect(glass).toContain('style={style}');
+  expect(glass).toContain("console.info('[LiquidGlass] capability'");
+  expect(glass).toContain('isLiquidGlassSupported,');
+  expect(glass).toContain('legacyGlassEnabled: enabled,');
+  expect(glass).toContain("cssInterop(LiquidGlassView, { className: 'style' });");
+  expect(appDelegate).toContain('[LiquidGlass] native capability supported=%@');
+  expect(appDelegate).toContain('NSClassFromString("UIGlassEffect")');
   expect(glass).toContain('backgroundColor: colors.surface');
   expect(glass).toContain('blurMethod="dimezisBlurViewSdk31Plus"');
   expect(glass).toContain("Platform.OS !== 'android'");
-  expect(glass).toContain('blurTarget={glass.blurTarget}');
-  expect(glass).toContain("'rgba(20,22,34,0.38)' : 'rgba(255,255,255,0.42)'");
+  expect(glass).toContain('blurTarget={glass?.blurTarget}');
+  expect(glass).toContain("'rgba(20,22,34,0.38)'");
+  expect(glass).toContain("'rgba(255,255,255,0.42)'");
   expect(settings.match(/<GlassSurface/g)?.length).toBeGreaterThanOrEqual(8);
   expect(connection).toContain('<GlassSurface className="rounded-lg border border-white/30 p-4 dark:border-white/10">');
   expect(connection).toContain('const appGlassEnabled = useAppGlassEnabled();');
