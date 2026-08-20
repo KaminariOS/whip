@@ -1,10 +1,17 @@
 import { Check, ChevronRight, Copy, FileText, X } from 'lucide-react-native';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { Clipboard, Modal, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import {
+  formatAppLogTime,
   formatAppLogs,
   getAppLogEntries,
   subscribeToAppLogs,
@@ -23,6 +30,17 @@ const levelTextClasses: Record<AppLogLevel, string> = {
   warn: 'text-terminal-warning',
   error: 'text-terminal-error',
 };
+
+type AppLogLevelFilter = 'all' | AppLogLevel;
+
+const levelFilters: readonly AppLogLevelFilter[] = [
+  'all',
+  'debug',
+  'info',
+  'log',
+  'warn',
+  'error',
+];
 
 export function AppLogsSection() {
   const [visible, setVisible] = useState(false);
@@ -74,10 +92,18 @@ function AppLogsModal({
     getAppLogEntries,
   );
   const [copied, setCopied] = useState(false);
+  const [levelFilter, setLevelFilter] = useState<AppLogLevelFilter>('all');
   const scrollRef = useRef<ScrollView>(null);
   const scrollToLatest = useRef(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useTranslation();
+  const filteredEntries = useMemo(
+    () =>
+      levelFilter === 'all'
+        ? entries
+        : entries.filter(entry => entry.level === levelFilter),
+    [entries, levelFilter],
+  );
 
   useEffect(() => {
     if (visible) scrollToLatest.current = true;
@@ -92,7 +118,7 @@ function AppLogsModal({
   );
 
   const copyLogs = () => {
-    Clipboard.setString(formatAppLogs(entries));
+    Clipboard.setString(formatAppLogs(filteredEntries));
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 2_000);
@@ -118,12 +144,23 @@ function AppLogsModal({
                 {t('appLogs.title')}
               </Text>
               <Text className="text-xs leading-[17px] text-muted-foreground">
-                {t('appLogs.entryCount', { count: entries.length })}
+                {levelFilter === 'all'
+                  ? t('appLogs.entryCount', { count: entries.length })
+                  : t('appLogs.filteredEntryCount', {
+                      count: filteredEntries.length,
+                      total: entries.length,
+                    })}
               </Text>
             </View>
             <Button
               accessibilityLabel={
-                copied ? t('appLogs.copied') : t('appLogs.copyAll')
+                copied
+                  ? t('appLogs.copied')
+                  : t(
+                      levelFilter === 'all'
+                        ? 'appLogs.copyAll'
+                        : 'appLogs.copyFiltered',
+                    )
               }
               className="rounded-full px-3"
               size="sm"
@@ -131,7 +168,15 @@ function AppLogsModal({
               onPress={hapticPress(copyLogs)}
             >
               <Icon as={copied ? Check : Copy} size={16} />
-              <Text>{copied ? t('appLogs.copied') : t('appLogs.copyAll')}</Text>
+              <Text>
+                {copied
+                  ? t('appLogs.copied')
+                  : t(
+                      levelFilter === 'all'
+                        ? 'appLogs.copyAll'
+                        : 'appLogs.copyFiltered',
+                    )}
+              </Text>
             </Button>
           </View>
         </GlassSurface>
@@ -147,6 +192,38 @@ function AppLogsModal({
               {t('appLogs.privacy')}
             </Text>
           </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            className="-mx-4 mb-3 max-h-9"
+            contentContainerClassName="gap-2 px-4"
+          >
+            {levelFilters.map(level => {
+              const selected = level === levelFilter;
+              return (
+                <Button
+                  key={level}
+                  accessibilityLabel={t('appLogs.filterByLevel', {
+                    level: t(`appLogs.level.${level}`),
+                  })}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  className="rounded-full px-3"
+                  size="sm"
+                  variant={selected ? 'default' : 'outline'}
+                  onPress={hapticPress(() => {
+                    scrollToLatest.current = true;
+                    setCopied(false);
+                    setLevelFilter(level);
+                  })}
+                >
+                  <Text className="text-xs font-semibold">
+                    {t(`appLogs.level.${level}`)}
+                  </Text>
+                </Button>
+              );
+            })}
+          </ScrollView>
           <View className="flex-1 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas">
             <ScrollView
               ref={scrollRef}
@@ -158,13 +235,20 @@ function AppLogsModal({
                 scrollRef.current?.scrollToEnd({ animated: false });
               }}
             >
-              {entries.map(entry => (
+              {filteredEntries.length === 0 ? (
+                <View className="flex-1 items-center justify-center px-6 py-12">
+                  <Text className="text-center text-sm text-terminal-subtle">
+                    {t('appLogs.noEntriesForLevel')}
+                  </Text>
+                </View>
+              ) : null}
+              {filteredEntries.map(entry => (
                 <View key={entry.id} className="mb-2 flex-row items-start">
                   <Text
                     selectable
                     className="w-[88px] font-mono text-[10px] leading-[15px] text-terminal-subtle"
                   >
-                    {entry.timestamp.slice(11, 23)}
+                    {formatAppLogTime(entry.timestamp)}
                   </Text>
                   <Text
                     selectable
