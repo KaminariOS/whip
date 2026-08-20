@@ -125,6 +125,21 @@ describe('UniFFI SSH integration', () => {
     expect(prepare).not.toContain('x86_64-apple-ios');
     expect(build).toContain('WHIP_BUILD_IOS_UNIFFI');
     expect(build).toContain('"$(uname -s)" != "Darwin"');
+    expect(build).toContain(
+      '[[ -n "${IN_NIX_SHELL:-}" && "$(uname -s)" == "Darwin" ]]',
+    );
+    expect(build).toContain(
+      'build_path="/usr/bin:/bin:/usr/sbin:/sbin:$build_path"',
+    );
+    expect(build).toContain(
+      'DEVELOPER_DIR="${WHIP_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"',
+    );
+    expect(build).toContain('unset SDKROOT');
+    expect(build).toContain('elif [[ -z "${IN_NIX_SHELL:-}" ]]');
+    expect(build).toContain('export PATH="$root_dir/node_modules/.bin:$build_path"');
+    expect(build).not.toContain(
+      'export PATH="$root_dir/node_modules/.bin:$HOME/.cargo/bin:$PATH"',
+    );
     expect(build).toContain('IPHONEOS_DEPLOYMENT_TARGET');
     expect(build).toContain('ubrn build ios');
     expect(build).toContain('--and-generate');
