@@ -93,7 +93,7 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 ### Move files and attachments
 
 - Browse the active terminal's current directory over SFTP, remember a location per terminal, and sort by name, modification time, or size.
-- Upload, download, edit, or swipe-delete remote files; preview code, text, Markdown with remote links and images, raster images, SVG, video, and sandboxed HTML.
+- Upload, download, edit, or swipe-delete remote files; preview code, text, Markdown with remote links and images, raster images, SVG, streamed PDF and video, and sandboxed HTML.
 - Upload a photo, file, camera capture, or clipboard image to the host and paste its remote path into the terminal composer.
 
 ### Connect securely

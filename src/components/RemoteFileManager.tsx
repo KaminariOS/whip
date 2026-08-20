@@ -1,68 +1,37 @@
 import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
-import {
-  ArrowUpDown,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  FileCode2,
-  FileText,
-  FileVideo,
-  Folder,
-  FolderOpen,
-  Image as ImageIcon,
-  Pencil,
-  RefreshCw,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
-import {
-  formatRemoteFileSize,
-  joinRemotePath,
-  parentRemotePath,
-  remoteEntryName,
-  remotePreviewKind,
-  sortRemoteEntries,
-  type RemoteFileSortDirection,
-  type RemoteFileSortField,
-  type RemotePreviewKind,
-} from '@/src/lib/remoteFiles';
-import {
-  REMOTE_FILE_SWIPE_ACTION_WIDTH,
-  remoteFileSwipeOffset,
-  shouldClaimRemoteFileSwipe,
-  shouldOpenRemoteFileSwipe,
-} from '@/src/lib/remoteFileSwipeActions';
-import type { HerdrClient, RemoteHtmlPreviewHandle } from '@/src/services/HerdrClient';
-import {
-  cacheRemoteFile,
-  copyCachedRemoteFileToPickedDirectory,
-  pickLocalFileForUpload,
-  saveCachedRemoteText,
-  type CachedRemoteFile,
-} from '@/src/services/remoteFileTransfer';
-import { useTheme } from '@/src/theme';
+import { formatRemoteFileSize, isRemoteHiddenPath, joinRemotePath, nextRemoteFileSort, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortDirection, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
+import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '@/src/lib/remoteFileSwipeActions';
+import { absoluteRemoteGitPath, buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
+import type { HerdrClient, RemoteHtmlPreviewHandle, RemoteSftpFileServerHandle } from '@/src/services/HerdrClient';
+import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
+import { defaultRemoteFilePreferences, loadRemoteFilePreferences, saveRemoteFilePreferences } from '@/src/services/remoteFilePreferences';
+import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
+import { useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview } from './CodePreview';
 import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
+import { RemoteGitDiffPreview } from './RemoteGitDiffPreview';
 import { RemoteVideoPreview } from './RemoteVideoPreview';
 import { SvgPreview } from './SvgPreview';
 import { ZoomableImagePreview } from './ZoomableImagePreview';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
+import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 
 interface Props {
   visible: boolean;
   client: HerdrClient;
+  hostId: string;
   initialPath: string;
   onPathChange: (path: string) => void;
   onClose: () => void;
@@ -78,13 +47,22 @@ interface FilePreview {
   editing: boolean;
   error: string | null;
   htmlPreview: RemoteHtmlPreviewHandle | null;
+  sftpFileServer: RemoteSftpFileServerHandle | null;
   htmlRevision: number;
+  gitDiff: RemoteGitDiff | null;
+  gitStatus: RemoteGitStatusEntry | null;
 }
 
 const remoteFileSortFields: RemoteFileSortField[] = ['name', 'modified', 'size'];
-const remoteFileSortDirections: RemoteFileSortDirection[] = ['ascending', 'descending'];
+const remoteGitListContentStyle = {
+  paddingHorizontal: 12,
+  paddingVertical: 4,
+} as const;
+const remoteGitTreeIndentStyles = Array.from({ length: 16 }, (_, depth) => ({
+  paddingLeft: 8 + depth * 16,
+}));
 
-export function RemoteFileManager({ visible, client, initialPath, onPathChange, onClose }: Props) {
+export function RemoteFileManager({ visible, client, hostId, initialPath, onPathChange, onClose }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
@@ -95,62 +73,215 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
-  const [sortField, setSortField] = useState<RemoteFileSortField>('name');
-  const [sortDirection, setSortDirection] = useState<RemoteFileSortDirection>('ascending');
+  const [showHiddenFiles, setShowHiddenFiles] = useState(defaultRemoteFilePreferences.showHiddenFiles);
+  const [sortField, setSortField] = useState<RemoteFileSortField>(defaultRemoteFilePreferences.sortField);
+  const [sortDirection, setSortDirection] = useState<RemoteFileSortDirection>(defaultRemoteFilePreferences.sortDirection);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
+  const [gitRepository, setGitRepository] = useState<RemoteGitRepository | null>(null);
+  const [gitMode, setGitMode] = useState(false);
+  const [gitStatus, setGitStatus] = useState<RemoteGitStatusEntry[]>([]);
+  const [gitCollapsedPaths, setGitCollapsedPaths] = useState<Set<string>>(new Set());
+  const [gitBusy, setGitBusy] = useState(false);
+  const [gitError, setGitError] = useState<string | null>(null);
   const previewRef = useRef<FilePreview | null>(null);
   const pathRef = useRef('');
   const requestRef = useRef(0);
+  const gitRequestRef = useRef(0);
   const onPathChangeRef = useRef(onPathChange);
   onPathChangeRef.current = onPathChange;
-  const sortedEntries = useMemo(
-    () => sortRemoteEntries(entries, sortField, sortDirection),
-    [entries, sortDirection, sortField],
+  const visibleEntries = useMemo(() => (showHiddenFiles ? entries : entries.filter(entry => !isRemoteHiddenPath(remoteEntryName(entry)))), [entries, showHiddenFiles]);
+  const sortedEntries = useMemo(() => sortRemoteEntries(visibleEntries, sortField, sortDirection), [sortDirection, sortField, visibleEntries]);
+  const visibleGitStatus = useMemo(() => (showHiddenFiles ? gitStatus : gitStatus.filter(status => !isRemoteHiddenPath(status.path))), [gitStatus, showHiddenFiles]);
+  const gitTreeRows = useMemo(() => buildRemoteGitTreeRows(visibleGitStatus, gitCollapsedPaths), [gitCollapsedPaths, visibleGitStatus]);
+
+  useEffect(() => {
+    let active = true;
+    loadRemoteFilePreferences().then(preferences => {
+      if (!active) return;
+      setShowHiddenFiles(preferences.showHiddenFiles);
+      setSortField(preferences.sortField);
+      setSortDirection(preferences.sortDirection);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const replacePreview = useCallback(
+    (next: FilePreview | null) => {
+      const previous = previewRef.current;
+      if (previous?.cached && previous.cached !== next?.cached) previous.cached.dispose();
+      if (previous?.htmlPreview && previous.htmlPreview !== next?.htmlPreview) {
+        client.closeRemoteHtmlPreview(previous.htmlPreview).catch(() => undefined);
+      }
+      if (previous?.sftpFileServer && previous.sftpFileServer !== next?.sftpFileServer) {
+        client.closeRemoteSftpFileServer(previous.sftpFileServer).catch(() => undefined);
+      }
+      previewRef.current = next;
+      setPreview(next);
+    },
+    [client],
   );
 
-  const replacePreview = useCallback((next: FilePreview | null) => {
-    const previous = previewRef.current;
-    if (previous?.cached && previous.cached !== next?.cached) previous.cached.dispose();
-    if (previous?.htmlPreview && previous.htmlPreview !== next?.htmlPreview) {
-      client.closeRemoteHtmlPreview(previous.htmlPreview).catch(() => undefined);
-    }
-    previewRef.current = next;
-    setPreview(next);
-  }, [client]);
-
-  const loadDirectory = useCallback(async (requestedPath: string) => {
-    const request = ++requestRef.current;
-    setBusy(true);
-    setError(null);
-    replacePreview(null);
-    try {
-      const listing = await client.listRemoteDirectory(requestedPath);
-      if (request !== requestRef.current) return;
-      pathRef.current = listing.path;
-      setPath(listing.path);
-      setEntries(listing.entries);
-      onPathChangeRef.current(listing.path);
-    } catch (reason) {
-      if (request === requestRef.current) setError(String(reason));
-    } finally {
-      if (request === requestRef.current) setBusy(false);
-    }
-  }, [client, replacePreview]);
+  const loadDirectory = useCallback(
+    async (requestedPath: string) => {
+      const request = ++requestRef.current;
+      gitRequestRef.current += 1;
+      setBusy(true);
+      setError(null);
+      setGitBusy(false);
+      setGitError(null);
+      setGitRepository(null);
+      setGitMode(false);
+      setGitStatus([]);
+      setGitCollapsedPaths(new Set());
+      replacePreview(null);
+      try {
+        const listing = await client.listRemoteDirectory(requestedPath);
+        if (request !== requestRef.current) return;
+        let repository: RemoteGitRepository | null = null;
+        let persistedGitMode = false;
+        let changes: RemoteGitStatusEntry[] = [];
+        let collapsedPaths: string[] = [];
+        try {
+          repository = await client.discoverRemoteGitRepository(listing.path);
+          if (repository) {
+            [persistedGitMode, collapsedPaths] = await Promise.all([loadRemoteGitMode(hostId, repository.root), loadRemoteGitCollapsedPaths(hostId, repository.root)]);
+            if (persistedGitMode) changes = await client.listRemoteGitChanges(repository.root);
+          }
+        } catch (reason) {
+          if (persistedGitMode) setGitError(String(reason));
+        }
+        if (request !== requestRef.current) return;
+        pathRef.current = listing.path;
+        setPath(listing.path);
+        setEntries(listing.entries);
+        setGitRepository(repository);
+        setGitMode(Boolean(repository && persistedGitMode));
+        setGitStatus(changes);
+        setGitCollapsedPaths(new Set(collapsedPaths));
+        onPathChangeRef.current(listing.path);
+      } catch (reason) {
+        if (request === requestRef.current) setError(String(reason));
+      } finally {
+        if (request === requestRef.current) setBusy(false);
+      }
+    },
+    [client, hostId, replacePreview],
+  );
 
   useEffect(() => {
     if (visible) loadDirectory(initialPath);
     else {
       requestRef.current += 1;
+      gitRequestRef.current += 1;
       replacePreview(null);
     }
   }, [initialPath, loadDirectory, replacePreview, visible]);
 
-  useEffect(() => () => {
-    const current = previewRef.current;
-    current?.cached?.dispose();
-    if (current?.htmlPreview) client.closeRemoteHtmlPreview(current.htmlPreview).catch(() => undefined);
-    previewRef.current = null;
-  }, [client]);
+  useEffect(
+    () => () => {
+      const current = previewRef.current;
+      current?.cached?.dispose();
+      if (current?.htmlPreview) client.closeRemoteHtmlPreview(current.htmlPreview).catch(() => undefined);
+      if (current?.sftpFileServer) client.closeRemoteSftpFileServer(current.sftpFileServer).catch(() => undefined);
+      previewRef.current = null;
+    },
+    [client],
+  );
+
+  const refreshGitChanges = async (repository = gitRepository) => {
+    if (!repository) return;
+    const request = ++gitRequestRef.current;
+    setGitBusy(true);
+    setGitError(null);
+    try {
+      const changes = await client.listRemoteGitChanges(repository.root);
+      if (request === gitRequestRef.current) setGitStatus(changes);
+    } catch (reason) {
+      if (request === gitRequestRef.current) setGitError(String(reason));
+    } finally {
+      if (request === gitRequestRef.current) setGitBusy(false);
+    }
+  };
+
+  const toggleGitMode = async () => {
+    if (!gitRepository || gitBusy) return;
+    const next = !gitMode;
+    const request = ++gitRequestRef.current;
+    setGitBusy(true);
+    setGitError(null);
+    try {
+      await saveRemoteGitMode(hostId, gitRepository.root, next);
+      if (request !== gitRequestRef.current) return;
+      setGitMode(next);
+      if (next) {
+        const changes = await client.listRemoteGitChanges(gitRepository.root);
+        if (request === gitRequestRef.current) setGitStatus(changes);
+      } else {
+        setGitStatus([]);
+      }
+    } catch (reason) {
+      if (request === gitRequestRef.current) setGitError(String(reason));
+    } finally {
+      if (request === gitRequestRef.current) setGitBusy(false);
+    }
+  };
+
+  const toggleGitDirectory = (directoryPath: string) => {
+    if (!gitRepository) return;
+    const repository = gitRepository;
+    setGitCollapsedPaths(current => {
+      const next = new Set(current);
+      if (next.has(directoryPath)) next.delete(directoryPath);
+      else next.add(directoryPath);
+      saveRemoteGitCollapsedPaths(hostId, repository.root, [...next]).catch(() => undefined);
+      return next;
+    });
+  };
+
+  const updateShowHiddenFiles = (show: boolean) => {
+    setShowHiddenFiles(show);
+    saveRemoteFilePreferences({ showHiddenFiles: show, sortField, sortDirection }).catch(() => undefined);
+  };
+
+  const selectSortField = (field: RemoteFileSortField) => {
+    const next = nextRemoteFileSort(sortField, sortDirection, field);
+    setSortField(next.field);
+    setSortDirection(next.direction);
+    saveRemoteFilePreferences({ showHiddenFiles, sortField: next.field, sortDirection: next.direction }).catch(() => undefined);
+  };
+
+  const openGitChange = async (status: RemoteGitStatusEntry) => {
+    if (!gitRepository) return;
+    const request = ++requestRef.current;
+    const entryPath = absoluteRemoteGitPath(gitRepository.root, status.path);
+    const entry = remoteGitStatusEntry(status);
+    const loadingPreview: FilePreview = {
+      entry,
+      path: entryPath,
+      kind: remotePreviewKind(remoteEntryName(entry), entry.fileSize),
+      cached: null,
+      content: null,
+      draft: '',
+      editing: false,
+      error: null,
+      htmlPreview: null,
+      sftpFileServer: null,
+      htmlRevision: 0,
+      gitDiff: null,
+      gitStatus: status,
+    };
+    replacePreview(loadingPreview);
+    try {
+      const gitDiff = await client.loadRemoteGitDiff(gitRepository, status);
+      if (request === requestRef.current) replacePreview({ ...loadingPreview, gitDiff });
+    } catch (reason) {
+      if (request === requestRef.current) {
+        replacePreview({ ...loadingPreview, error: String(reason) });
+      }
+    }
+  };
 
   const openEntry = async (entry: LsResult, directoryPath = path) => {
     const name = remoteEntryName(entry);
@@ -172,30 +303,50 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
       editing: false,
       error: null,
       htmlPreview: null,
+      sftpFileServer: null,
       htmlRevision: 0,
+      gitDiff: null,
+      gitStatus: null,
     };
     replacePreview(loadingPreview);
     if (kind === 'unsupported') return;
 
     let cached: CachedRemoteFile | null = null;
     let htmlPreview: RemoteHtmlPreviewHandle | null = null;
+    let sftpFileServer: RemoteSftpFileServerHandle | null = null;
     try {
-      cached = await cacheRemoteFile(client, entryPath);
-      const content = isTextPreview(kind) ? await cached.file.text() : null;
+      let content: string | null = null;
+      if (isSftpStreamPreview(kind)) {
+        sftpFileServer = await client.openRemoteSftpFileServer(entryPath);
+      } else {
+        cached = await cacheRemoteFile(client, entryPath);
+        content = isTextPreview(kind) ? await cached.file.text() : null;
+      }
       if (request !== requestRef.current) {
-        cached.dispose();
+        cached?.dispose();
+        if (sftpFileServer) await client.closeRemoteSftpFileServer(sftpFileServer).catch(() => undefined);
         return;
       }
       if (kind === 'html') htmlPreview = await client.openRemoteHtmlPreview(entryPath);
       if (request !== requestRef.current) {
-        cached.dispose();
+        cached?.dispose();
         if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
+        if (sftpFileServer) await client.closeRemoteSftpFileServer(sftpFileServer).catch(() => undefined);
         return;
       }
-      replacePreview({ ...loadingPreview, cached, content, draft: content || '', htmlPreview });
+      replacePreview({
+        ...loadingPreview,
+        cached,
+        content,
+        draft: content || '',
+        htmlPreview,
+        sftpFileServer,
+      });
+      if (kind === 'pdf' && sftpFileServer) await WebBrowser.openBrowserAsync(sftpFileServer.url);
     } catch (reason) {
       cached?.dispose();
       if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
+      if (sftpFileServer) await client.closeRemoteSftpFileServer(sftpFileServer).catch(() => undefined);
       if (request === requestRef.current) {
         replacePreview({ ...loadingPreview, error: String(reason) });
       }
@@ -215,6 +366,7 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
 
   const dismissNow = () => {
     requestRef.current += 1;
+    gitRequestRef.current += 1;
     setSortMenuVisible(false);
     replacePreview(null);
     onClose();
@@ -273,10 +425,13 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
         temporary = true;
       }
       const destination = await copyCachedRemoteFileToPickedDirectory(cached);
-      Alert.alert(t('files.downloadedTitle'), t('files.downloadedCopy', {
-        name: remoteEntryName(current.entry),
-        destination,
-      }));
+      Alert.alert(
+        t('files.downloadedTitle'),
+        t('files.downloadedCopy', {
+          name: remoteEntryName(current.entry),
+          destination,
+        }),
+      );
     } catch (reason) {
       if (!isPickerCancellation(reason)) Alert.alert(t('files.downloadFailed'), String(reason));
     } finally {
@@ -322,34 +477,30 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
   const confirmDeleteEntry = (entry: LsResult) => {
     const name = remoteEntryName(entry);
     const directoryPath = path;
-    Alert.alert(
-      t('files.deleteTitle', { name }),
-      t(entry.isDirectory ? 'files.deleteDirectoryCopy' : 'files.deleteFileCopy'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: () => { deleteEntry(entry, directoryPath); },
+    Alert.alert(t('files.deleteTitle', { name }), t(entry.isDirectory ? 'files.deleteDirectoryCopy' : 'files.deleteFileCopy'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () => {
+          deleteEntry(entry, directoryPath);
         },
-      ],
-    );
+      },
+    ]);
   };
 
-  const previewLoading = preview && preview.kind !== 'unsupported' && !preview.cached && !preview.error;
-  const canEdit = preview && isTextPreview(preview.kind) && Boolean(preview.cached) && preview.content !== null;
+  const previewLoading = preview && !preview.error && (preview.gitStatus ? !preview.gitDiff : preview.kind !== 'unsupported' && (isSftpStreamPreview(preview.kind) ? !preview.sftpFileServer : !preview.cached));
+  const canEdit = preview && !preview.gitStatus && isTextPreview(preview.kind) && Boolean(preview.cached) && preview.content !== null;
 
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={() => sortMenuVisible
-        ? setSortMenuVisible(false)
-        : confirmDiscard(preview ? closePreviewNow : dismissNow)}
-      statusBarTranslucent
-      visible={visible}>
+    <Modal animationType="slide" onRequestClose={() => (sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
       <View
         className="flex-1 bg-background"
-        style={{ paddingTop: safeAreaInsets.top, paddingBottom: safeAreaInsets.bottom }}>
+        style={{
+          paddingTop: safeAreaInsets.top,
+          paddingBottom: safeAreaInsets.bottom,
+        }}
+      >
         {preview ? (
           <>
             <View className="h-14 flex-row items-center border-b border-border bg-background">
@@ -357,24 +508,40 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                 <ChevronLeft size={21} color={colors.text} />
               </Button>
               <View className="min-w-0 flex-1 px-1">
-                <Text numberOfLines={1} className="text-[14px] font-bold text-foreground">{remoteEntryName(preview.entry)}</Text>
-                <Text numberOfLines={1} className="font-mono text-[8px] text-muted-foreground">{preview.path}</Text>
+                <Text numberOfLines={1} className="text-[14px] font-bold text-foreground">
+                  {remoteEntryName(preview.entry)}
+                </Text>
+                <Text numberOfLines={1} className="font-mono text-[8px] text-muted-foreground">
+                  {preview.path}
+                </Text>
               </View>
-              {canEdit && (preview.editing ? (
-                <>
-                  <Button accessibilityLabel={t('files.cancelEdit')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={() => updatePreview({ editing: false, draft: preview.content || '' })}>
-                    <X size={18} color={colors.textSecondary} />
+              {canEdit &&
+                (preview.editing ? (
+                  <>
+                    <Button
+                      accessibilityLabel={t('files.cancelEdit')}
+                      className="h-14 w-11 rounded-none px-0"
+                      disabled={actionBusy}
+                      variant="ghost"
+                      onPress={() =>
+                        updatePreview({
+                          editing: false,
+                          draft: preview.content || '',
+                        })
+                      }
+                    >
+                      <X size={18} color={colors.textSecondary} />
+                    </Button>
+                    <Button accessibilityLabel={t('files.save')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(savePreview)}>
+                      {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Check size={19} color={colors.primary} />}
+                    </Button>
+                  </>
+                ) : (
+                  <Button accessibilityLabel={t('files.edit')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(() => updatePreview({ editing: true }))}>
+                    <Pencil size={17} color={colors.text} />
                   </Button>
-                  <Button accessibilityLabel={t('files.save')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(savePreview)}>
-                    {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Check size={19} color={colors.primary} />}
-                  </Button>
-                </>
-              ) : (
-                <Button accessibilityLabel={t('files.edit')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(() => updatePreview({ editing: true }))}>
-                  <Pencil size={17} color={colors.text} />
-                </Button>
-              ))}
-              {!preview.editing && (
+                ))}
+              {!preview.editing && !preview.gitStatus && (
                 <Button accessibilityLabel={t('files.download')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(downloadPreview)}>
                   {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Download size={18} color={colors.text} />}
                 </Button>
@@ -384,25 +551,12 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
               </Button>
             </View>
             {preview.editing ? (
-              <CodeEditor
-                editable={!actionBusy}
-                filename={remoteEntryName(preview.entry)}
-                onChangeText={draft => updatePreview({ draft })}
-                value={preview.draft}
-              />
-            ) : preview.kind === 'unsupported' ? (
-              <View className="flex-1 items-center justify-center p-8">
-                <FileText size={30} color={colors.textSecondary} />
-                <Text className="mt-4 text-center text-[15px] font-semibold">{t('files.previewUnavailable')}</Text>
-                <Text className="mt-2 text-center text-[12px] leading-[18px] text-muted-foreground">
-                  {t('files.previewUnavailableCopy', { size: formatRemoteFileSize(preview.entry.fileSize) })}
-                </Text>
-              </View>
+              <CodeEditor editable={!actionBusy} filename={remoteEntryName(preview.entry)} onChangeText={draft => updatePreview({ draft })} value={preview.draft} />
             ) : preview.error ? (
               <View className="flex-1 items-center justify-center p-8">
                 <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.openFailed')}</Text>
                 <Text className="mt-2 text-center font-mono text-[9px] leading-[14px] text-muted-foreground">{preview.error}</Text>
-                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => openEntry(preview.entry))}>
+                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry)))}>
                   <RefreshCw size={16} color={colors.text} />
                   <Text>{t('files.retry')}</Text>
                 </Button>
@@ -412,43 +566,70 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                 <ActivityIndicator color={colors.primary} />
                 <Text className="text-[12px] text-muted-foreground">{t('files.opening')}</Text>
               </View>
+            ) : preview.gitStatus && preview.gitDiff ? (
+              <RemoteGitDiffPreview
+                diff={preview.gitDiff}
+                filename={preview.gitStatus.path}
+                onOpenFile={
+                  isRemoteGitEntryDeleted(preview.gitStatus)
+                    ? null
+                    : () => {
+                        openRemotePath(preview.path).catch(reason => {
+                          if (previewRef.current === preview) {
+                            updatePreview({ error: String(reason) });
+                          }
+                        });
+                      }
+                }
+              />
+            ) : preview.kind === 'unsupported' ? (
+              <View className="flex-1 items-center justify-center p-8">
+                <FileText size={30} color={colors.textSecondary} />
+                <Text className="mt-4 text-center text-[15px] font-semibold">{t('files.previewUnavailable')}</Text>
+                <Text className="mt-2 text-center text-[12px] leading-[18px] text-muted-foreground">
+                  {t('files.previewUnavailableCopy', {
+                    size: formatRemoteFileSize(preview.entry.fileSize),
+                  })}
+                </Text>
+              </View>
             ) : preview.kind === 'image' && preview.cached ? (
               <View className="flex-1 bg-terminal-canvas p-3">
-                <ZoomableImagePreview
-                  accessibilityLabel={remoteEntryName(preview.entry)}
-                  uri={preview.cached.uri}
-                />
+                <ZoomableImagePreview accessibilityLabel={remoteEntryName(preview.entry)} uri={preview.cached.uri} />
               </View>
-            ) : preview.kind === 'video' && preview.cached ? (
-              <RemoteVideoPreview
-                filename={remoteEntryName(preview.entry)}
-                uri={preview.cached.uri}
-              />
+            ) : preview.kind === 'video' && preview.sftpFileServer ? (
+              <RemoteVideoPreview filename={remoteEntryName(preview.entry)} uri={preview.sftpFileServer.url} />
+            ) : preview.kind === 'pdf' && preview.sftpFileServer ? (
+              <View className="flex-1 items-center justify-center p-8">
+                <FileText size={34} color={colors.textSecondary} />
+                <Text className="mt-4 text-center text-[16px] font-semibold">{t('files.pdfBrowserTitle')}</Text>
+                <Text className="mt-2 max-w-[320px] text-center text-[12px] leading-[18px] text-muted-foreground">{t('files.pdfBrowserCopy')}</Text>
+                <Button
+                  className="mt-5 rounded-full"
+                  variant="secondary"
+                  onPress={hapticPress(() => {
+                    WebBrowser.openBrowserAsync(preview.sftpFileServer!.url).catch(reason => {
+                      Alert.alert(t('files.openFailed'), String(reason));
+                    });
+                  })}
+                >
+                  <ExternalLink size={16} color={colors.text} />
+                  <Text>{t('files.openPdf')}</Text>
+                </Button>
+              </View>
             ) : preview.kind === 'svg' ? (
-              <SvgPreview
-                content={preview.content || ''}
-                filename={remoteEntryName(preview.entry)}
-              />
+              <SvgPreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
             ) : preview.kind === 'markdown' ? (
-              <MarkdownPreview
-                key={preview.path}
-                client={client}
-                content={preview.content || ''}
-                onOpenRemotePath={openRemotePath}
-                remotePath={preview.path}
-              />
+              <MarkdownPreview key={preview.path} client={client} content={preview.content || ''} onOpenRemotePath={openRemotePath} remotePath={preview.path} />
             ) : preview.kind === 'html' && preview.htmlPreview ? (
-              <HtmlPreview
-                filename={remoteEntryName(preview.entry)}
-                revision={preview.htmlRevision}
-                uri={preview.htmlPreview.url}
-              />
+              <HtmlPreview filename={remoteEntryName(preview.entry)} revision={preview.htmlRevision} uri={preview.htmlPreview.url} />
             ) : preview.kind === 'code' ? (
               <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
             ) : (
               <ScrollView className="flex-1 bg-terminal-canvas" contentContainerClassName="p-4">
                 <ScrollView horizontal>
-                  <Text selectable className="font-mono text-[11px] leading-[17px] text-terminal-text">{preview.content || ' '}</Text>
+                  <Text selectable className="font-mono text-[11px] leading-[17px] text-terminal-text">
+                    {preview.content || ' '}
+                  </Text>
                 </ScrollView>
               </ScrollView>
             )}
@@ -461,7 +642,7 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
               </View>
               <View className="min-w-0 flex-1">
                 <Text className="text-[17px] font-bold text-foreground">{t('files.title')}</Text>
-                <Text className="font-mono text-[8px] uppercase tracking-[1px] text-muted-foreground">{t('files.remote')}</Text>
+                <Text className="font-mono text-[8px] uppercase tracking-[1px] text-muted-foreground">{t(gitMode ? 'files.gitRemote' : 'files.remote')}</Text>
               </View>
               <Button accessibilityLabel={t('files.close')} className="size-11 rounded-full px-0" variant="ghost" onPress={dismissNow}>
                 <X size={19} color={colors.text} />
@@ -471,14 +652,21 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
               <Button accessibilityLabel={t('files.parentDirectory')} className="h-12 w-12 rounded-none px-0" disabled={!path || path === '/' || busy || actionBusy} variant="ghost" onPress={hapticPress(() => loadDirectory(parentRemotePath(path)))}>
                 <ChevronLeft size={20} color={colors.text} />
               </Button>
-              <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground">{path || initialPath}</Text>
-              <Button accessibilityLabel={t('files.sort')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy} variant="ghost" onPress={hapticPress(() => setSortMenuVisible(true))}>
-                <ArrowUpDown size={18} color={colors.text} />
+              <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground">
+                {gitMode ? gitRepository?.root : path || initialPath}
+              </Text>
+              {gitRepository ? (
+                <Button accessibilityLabel={t('files.gitMode')} accessibilityRole="switch" accessibilityState={{ checked: gitMode }} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || gitBusy} variant={gitMode ? 'secondary' : 'ghost'} onPress={hapticPress(toggleGitMode)}>
+                  {gitBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <GitCompareArrows size={18} color={gitMode ? colors.primary : colors.text} />}
+                </Button>
+              ) : null}
+              <Button accessibilityLabel={t('files.options')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy} variant="ghost" onPress={hapticPress(() => setSortMenuVisible(true))}>
+                <SlidersHorizontal size={18} color={colors.text} />
               </Button>
               <Button accessibilityLabel={t('files.upload')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || !path} variant="ghost" onPress={hapticPress(uploadFile)}>
                 {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Upload size={18} color={colors.text} />}
               </Button>
-              <Button accessibilityLabel={t('files.refresh')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy} variant="ghost" onPress={hapticPress(() => loadDirectory(path || initialPath))}>
+              <Button accessibilityLabel={t('files.refresh')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || gitBusy} variant="ghost" onPress={hapticPress(() => (gitMode ? refreshGitChanges() : loadDirectory(path || initialPath)))}>
                 <RefreshCw size={18} color={colors.text} />
               </Button>
             </View>
@@ -496,19 +684,112 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                   <Text>{t('files.retry')}</Text>
                 </Button>
               </View>
-            ) : entries.length ? (
+            ) : gitMode && gitBusy ? (
+              <View className="flex-1 items-center justify-center gap-3 p-8">
+                <ActivityIndicator color={colors.primary} />
+                <Text className="text-[12px] text-muted-foreground">{t('files.gitLoading')}</Text>
+              </View>
+            ) : gitMode && gitError ? (
+              <View className="flex-1 items-center justify-center p-8">
+                <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.gitFailed')}</Text>
+                <Text className="mt-2 text-center font-mono text-[9px] leading-[14px] text-muted-foreground">{gitError}</Text>
+                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => refreshGitChanges())}>
+                  <RefreshCw size={16} color={colors.text} />
+                  <Text>{t('files.retry')}</Text>
+                </Button>
+              </View>
+            ) : gitMode && gitTreeRows.length ? (
+              <FlatList
+                contentContainerStyle={remoteGitListContentStyle}
+                data={gitTreeRows}
+                initialNumToRender={30}
+                keyExtractor={row => row.key}
+                maxToRenderPerBatch={40}
+                renderItem={({ item: row }) => {
+                  const indentStyle = remoteGitTreeIndentStyles[Math.min(row.depth, remoteGitTreeIndentStyles.length - 1)];
+                  if (row.kind === 'directory') {
+                    const expanded = !gitCollapsedPaths.has(row.path);
+                    return (
+                      <Button
+                        accessibilityLabel={t(expanded ? 'files.gitCollapseFolder' : 'files.gitExpandFolder', { path: row.path })}
+                        accessibilityState={{ expanded }}
+                        className="h-auto min-h-[52px] justify-start gap-2 rounded-none border-b border-border bg-background py-2 pr-2"
+                        style={indentStyle}
+                        variant="ghost"
+                        onPress={hapticPress(() => toggleGitDirectory(row.path))}
+                      >
+                        {expanded ? <ChevronDown size={17} color={colors.textSecondary} /> : <ChevronRight size={17} color={colors.textSecondary} />}
+                        {expanded ? <FolderOpen size={18} color={colors.primary} /> : <Folder size={18} color={colors.primary} />}
+                        <Text numberOfLines={1} className="min-w-0 flex-1 text-left font-mono text-[11px] font-semibold text-foreground">
+                          {row.name}
+                        </Text>
+                        <View className="min-w-7 items-center rounded-full bg-muted px-2 py-1">
+                          <Text className="font-mono text-[8px] font-bold text-muted-foreground">{row.changeCount}</Text>
+                        </View>
+                      </Button>
+                    );
+                  }
+                  const status = row.status;
+                  const label = remoteGitStatusLabel(status);
+                  const tone = remoteGitStatusColor(status, colors);
+                  return (
+                    <Button
+                      accessibilityLabel={t('files.gitOpenChange', {
+                        path: status.path,
+                      })}
+                      className="h-auto min-h-[58px] justify-start gap-3 rounded-none border-b border-border bg-background py-2 pr-2"
+                      style={indentStyle}
+                      variant="ghost"
+                      onPress={hapticPress(() => openGitChange(status))}
+                    >
+                      <View className="size-9 items-center justify-center rounded-lg bg-muted">
+                        <FileCode2 size={18} color={tone} />
+                      </View>
+                      <View className="min-w-0 flex-1 items-start">
+                        <Text numberOfLines={1} className="text-left font-mono text-[11px] font-semibold text-foreground">
+                          {row.name}
+                        </Text>
+                        <Text numberOfLines={1} className="mt-0.5 font-mono text-[8px] text-muted-foreground">
+                          {status.originalPath
+                            ? t('files.gitRenamedFrom', {
+                                path: status.originalPath,
+                              })
+                            : status.path}
+                        </Text>
+                      </View>
+                      <View className="min-w-8 items-center rounded-full px-2 py-1" style={{ backgroundColor: colorWithAlpha(tone, '20') }}>
+                        <Text className="font-mono text-[9px] font-black" style={{ color: tone }}>
+                          {label}
+                        </Text>
+                      </View>
+                      <ChevronRight size={17} color={colors.textTertiary} />
+                    </Button>
+                  );
+                }}
+                windowSize={10}
+              />
+            ) : gitMode && gitStatus.length && !showHiddenFiles ? (
+              <View className="flex-1 items-center justify-center p-8">
+                <FolderOpen size={30} color={colors.textSecondary} />
+                <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">{t('files.hiddenOnly')}</Text>
+                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => updateShowHiddenFiles(true))}>
+                  <Text>{t('files.showHiddenAction')}</Text>
+                </Button>
+              </View>
+            ) : gitMode ? (
+              <View className="flex-1 items-center justify-center p-8">
+                <GitCompareArrows size={30} color={colors.working} />
+                <Text className="mt-4 text-[15px] font-semibold text-foreground">{t('files.gitClean')}</Text>
+                <Text className="mt-2 text-center text-[12px] leading-[18px] text-muted-foreground">{t('files.gitCleanCopy')}</Text>
+              </View>
+            ) : sortedEntries.length ? (
               <ScrollView className="flex-1" contentContainerClassName="px-3 py-1">
                 {sortedEntries.map(entry => {
                   const name = remoteEntryName(entry);
                   const directory = Boolean(entry.isDirectory);
                   const kind = remotePreviewKind(name, entry.fileSize);
                   return (
-                    <SwipeableRemoteFileRow
-                      key={`${name}-${entry.flags}`}
-                      deleting={deletingPath === joinRemotePath(path, name)}
-                      disabled={Boolean(deletingPath)}
-                      name={name}
-                      onDelete={() => confirmDeleteEntry(entry)}>
+                    <SwipeableRemoteFileRow key={`${name}-${entry.flags}`} deleting={deletingPath === joinRemotePath(path, name)} disabled={Boolean(deletingPath)} name={name} onDelete={() => confirmDeleteEntry(entry)}>
                       {({ actionsOpen, closeActions }) => (
                         <Button
                           accessibilityLabel={t(directory ? 'files.openDirectory' : 'files.openFile', { name })}
@@ -518,20 +799,25 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                           onPress={hapticPress(() => {
                             if (actionsOpen) closeActions();
                             else openEntry(entry);
-                          })}>
+                          })}
+                        >
                           <View className="size-9 items-center justify-center rounded-lg bg-muted">
-                            {directory
-                              ? <Folder size={18} color={colors.primary} />
-                              : kind === 'image' || kind === 'svg'
-                                ? <ImageIcon size={18} color={colors.textSecondary} />
-                                : kind === 'video'
-                                  ? <FileVideo size={18} color={colors.textSecondary} />
-                                : kind === 'code' || kind === 'html'
-                                  ? <FileCode2 size={18} color={colors.textSecondary} />
-                                  : <FileText size={18} color={colors.textSecondary} />}
+                            {directory ? (
+                              <Folder size={18} color={colors.primary} />
+                            ) : kind === 'image' || kind === 'svg' ? (
+                              <ImageIcon size={18} color={colors.textSecondary} />
+                            ) : kind === 'video' ? (
+                              <FileVideo size={18} color={colors.textSecondary} />
+                            ) : kind === 'code' || kind === 'html' ? (
+                              <FileCode2 size={18} color={colors.textSecondary} />
+                            ) : (
+                              <FileText size={18} color={colors.textSecondary} />
+                            )}
                           </View>
                           <View className="min-w-0 flex-1 items-start">
-                            <Text numberOfLines={1} className="text-left text-[13px] font-semibold text-foreground">{name}</Text>
+                            <Text numberOfLines={1} className="text-left text-[13px] font-semibold text-foreground">
+                              {name}
+                            </Text>
                             <Text numberOfLines={1} className="mt-0.5 font-mono text-[8px] text-muted-foreground">
                               {directory ? t('files.directory') : formatRemoteFileSize(entry.fileSize)}
                               {formatRemoteModificationDate(entry.modificationDate) ? ` · ${formatRemoteModificationDate(entry.modificationDate)}` : ''}
@@ -544,6 +830,14 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
                   );
                 })}
               </ScrollView>
+            ) : entries.length && !showHiddenFiles ? (
+              <View className="flex-1 items-center justify-center p-8">
+                <FolderOpen size={30} color={colors.textSecondary} />
+                <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">{t('files.hiddenOnly')}</Text>
+                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => updateShowHiddenFiles(true))}>
+                  <Text>{t('files.showHiddenAction')}</Text>
+                </Button>
+              </View>
             ) : (
               <View className="flex-1 items-center justify-center p-8">
                 <FolderOpen size={30} color={colors.textSecondary} />
@@ -557,45 +851,49 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
             <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/55" onPress={() => setSortMenuVisible(false)} />
             <View className="rounded-t-[22px] border-t border-border bg-card px-4 pt-4" style={{ paddingBottom: Math.max(16, safeAreaInsets.bottom) }}>
               <View className="mb-3 flex-row items-center">
-                <Text className="min-w-0 flex-1 text-[18px] font-semibold text-foreground">{t('files.sortBy')}</Text>
+                <Text className="min-w-0 flex-1 text-[18px] font-semibold text-foreground">{t('files.optionsTitle')}</Text>
                 <Button accessibilityLabel={t('common.close')} className="size-10 rounded-full px-0" variant="ghost" onPress={() => setSortMenuVisible(false)}>
                   <X size={19} color={colors.text} />
                 </Button>
               </View>
-              <View className="overflow-hidden rounded-lg border border-border">
-                {remoteFileSortFields.map((field, index) => {
-                  const selected = field === sortField;
-                  return (
-                    <Button
-                      key={field}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected }}
-                      className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
-                      variant={selected ? 'secondary' : 'ghost'}
-                      onPress={hapticPress(() => setSortField(field))}>
-                      <Text className="flex-1 text-left text-sm font-medium">{t(`files.sort.${field}`)}</Text>
-                      {selected ? <Check size={18} color={colors.primary} /> : null}
-                    </Button>
-                  );
-                })}
+              <View className="min-h-[68px] flex-row items-center rounded-lg border border-border bg-background px-3.5 py-3">
+                <View className="min-w-0 flex-1 pr-4">
+                  <Text className="text-[14px] font-semibold text-foreground">{t('files.showHidden')}</Text>
+                  <Text className="mt-0.5 text-[10px] leading-[14px] text-muted-foreground">{t('files.showHiddenCopy')}</Text>
+                </View>
+                <Switch accessibilityLabel={t('files.showHidden')} checked={showHiddenFiles} onCheckedChange={updateShowHiddenFiles} />
               </View>
-              <Text className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-[1px] text-muted-foreground">{t('files.sortOrder')}</Text>
-              <View className="flex-row overflow-hidden rounded-lg border border-border">
-                {remoteFileSortDirections.map((direction, index) => {
-                  const selected = direction === sortDirection;
-                  return (
-                    <Button
-                      key={direction}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected }}
-                      className={index === 0 ? 'min-h-12 flex-1 rounded-none px-3' : 'min-h-12 flex-1 rounded-none border-l border-border px-3'}
-                      variant={selected ? 'secondary' : 'ghost'}
-                      onPress={hapticPress(() => setSortDirection(direction))}>
-                      <Text className="text-sm font-medium">{t(`files.sort.${direction}`)}</Text>
-                    </Button>
-                  );
-                })}
-              </View>
+              {!gitMode ? (
+                <>
+                  <Text className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-[1px] text-muted-foreground">{t('files.sortBy')}</Text>
+                  <View className="overflow-hidden rounded-lg border border-border">
+                    {remoteFileSortFields.map((field, index) => {
+                      const selected = field === sortField;
+                      return (
+                        <Button
+                          key={field}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          className={index === 0 ? 'min-h-[58px] justify-start rounded-none px-3.5' : 'min-h-[58px] justify-start rounded-none border-t border-border px-3.5'}
+                          variant={selected ? 'secondary' : 'ghost'}
+                          onPress={hapticPress(() => selectSortField(field))}
+                        >
+                          <Text className="min-w-0 flex-1 text-left text-sm font-medium">{t(`files.sort.${field}`)}</Text>
+                          {selected ? (
+                            <View className="items-end">
+                              <View className="flex-row items-center gap-1.5">
+                                <Text className="text-[11px] font-semibold text-primary">{t(`files.sort.${sortDirection}`)}</Text>
+                                {sortDirection === 'ascending' ? <ArrowUp size={16} color={colors.primary} /> : <ArrowDown size={16} color={colors.primary} />}
+                              </View>
+                              <Text className="mt-0.5 text-[8px] text-muted-foreground">{t('files.sortTapAgain')}</Text>
+                            </View>
+                          ) : null}
+                        </Button>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : null}
             </View>
           </View>
         ) : null}
@@ -604,19 +902,7 @@ export function RemoteFileManager({ visible, client, initialPath, onPathChange, 
   );
 }
 
-function SwipeableRemoteFileRow({
-  children,
-  deleting,
-  disabled,
-  name,
-  onDelete,
-}: {
-  children: (controls: { actionsOpen: boolean; closeActions: () => void }) => ReactNode;
-  deleting: boolean;
-  disabled: boolean;
-  name: string;
-  onDelete: () => void;
-}) {
+function SwipeableRemoteFileRow({ children, deleting, disabled, name, onDelete }: { children: (controls: { actionsOpen: boolean; closeActions: () => void }) => ReactNode; deleting: boolean; disabled: boolean; name: string; onDelete: () => void }) {
   const { t } = useTranslation();
   const translateX = useSharedValue(0);
   const openRef = useRef(false);
@@ -639,20 +925,20 @@ function SwipeableRemoteFileRow({
     });
   };
 
-  const panResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponderCapture: (_event, gesture) => (
-      shouldClaimRemoteFileSwipe(gesture.dx, gesture.dy, openRef.current)
-    ),
-    onPanResponderGrant: () => cancelAnimation(translateX),
-    onPanResponderMove: (_event, gesture) => {
-      translateX.value = remoteFileSwipeOffset(gesture.dx, openRef.current);
-    },
-    onPanResponderRelease: (_event, gesture) => {
-      settle(shouldOpenRemoteFileSwipe(gesture.dx, gesture.vx, openRef.current));
-    },
-    onPanResponderTerminate: () => settle(openRef.current),
-    onPanResponderTerminationRequest: () => false,
-  })).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (_event, gesture) => shouldClaimRemoteFileSwipe(gesture.dx, gesture.dy, openRef.current),
+      onPanResponderGrant: () => cancelAnimation(translateX),
+      onPanResponderMove: (_event, gesture) => {
+        translateX.value = remoteFileSwipeOffset(gesture.dx, openRef.current);
+      },
+      onPanResponderRelease: (_event, gesture) => {
+        settle(shouldOpenRemoteFileSwipe(gesture.dx, gesture.vx, openRef.current));
+      },
+      onPanResponderTerminate: () => settle(openRef.current),
+      onPanResponderTerminationRequest: () => false,
+    }),
+  ).current;
 
   const runDelete = () => {
     settle(false);
@@ -661,21 +947,9 @@ function SwipeableRemoteFileRow({
 
   return (
     <View className="relative min-h-[62px] overflow-hidden border-b border-border">
-      <Animated.View
-        accessibilityElementsHidden={!actionsOpen}
-        className="absolute inset-y-0 right-0 overflow-hidden"
-        importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'}
-        style={actionRevealStyle}>
-        <Button
-          accessibilityLabel={t('files.deleteEntry', { name })}
-          className="absolute inset-y-0 right-0 h-full w-[84px] flex-col gap-1 rounded-none"
-          disabled={disabled}
-          size="content"
-          variant="destructive"
-          onPress={hapticPress(runDelete)}>
-          {deleting
-            ? <ActivityIndicator color="white" size="small" />
-            : <Icon as={Trash2} className="text-destructive-foreground" size={19} />}
+      <Animated.View accessibilityElementsHidden={!actionsOpen} className="absolute inset-y-0 right-0 overflow-hidden" importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'} style={actionRevealStyle}>
+        <Button accessibilityLabel={t('files.deleteEntry', { name })} className="absolute inset-y-0 right-0 h-full w-[84px] flex-col gap-1 rounded-none" disabled={disabled} size="content" variant="destructive" onPress={hapticPress(runDelete)}>
+          {deleting ? <ActivityIndicator color="white" size="small" /> : <Icon as={Trash2} className="text-destructive-foreground" size={19} />}
           <Text className="text-[11px] font-semibold">{t('common.delete')}</Text>
         </Button>
       </Animated.View>
@@ -688,6 +962,36 @@ function SwipeableRemoteFileRow({
 
 function isTextPreview(kind: RemotePreviewKind): boolean {
   return kind === 'code' || kind === 'html' || kind === 'markdown' || kind === 'svg' || kind === 'text';
+}
+
+function isSftpStreamPreview(kind: RemotePreviewKind): boolean {
+  return kind === 'pdf' || kind === 'video';
+}
+
+function remoteGitStatusEntry(status: RemoteGitStatusEntry): LsResult {
+  return {
+    filename: status.path.split('/').pop() || status.path,
+    isDirectory: false,
+    modificationDate: '',
+    lastAccess: '',
+    fileSize: 0,
+    ownerUserID: 0,
+    ownerGroupID: 0,
+    flags: 0,
+  };
+}
+
+function remoteGitStatusColor(status: RemoteGitStatusEntry, colors: ThemeColors): string {
+  const label = remoteGitStatusLabel(status);
+  if (label.includes('D')) return colors.error;
+  if (label === '??') return colors.warning;
+  if (label.includes('A')) return colors.working;
+  if (label.includes('R') || label.includes('C')) return colors.primary;
+  return colors.warning;
+}
+
+function colorWithAlpha(color: string, alpha: string): string {
+  return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }
 
 function isPickerCancellation(reason: unknown): boolean {

@@ -1,17 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import {
-  canPreviewRemoteTextFile,
-  formatRemoteFileSize,
-  joinRemotePath,
-  normalizeRemotePath,
-  parentRemotePath,
-  remoteCodeLanguage,
-  remoteEntryName,
-  remotePreviewKind,
-  sortRemoteEntries,
-} from '../src/lib/remoteFiles';
+import { canPreviewRemoteTextFile, formatRemoteFileSize, isRemoteHiddenPath, joinRemotePath, nextRemoteFileSort, normalizeRemotePath, parentRemotePath, remoteCodeLanguage, remoteEntryName, remotePreviewKind, sortRemoteEntries } from '../src/lib/remoteFiles';
 
 const entry = (filename: string, isDirectory = false) => ({
   filename,
@@ -40,24 +30,54 @@ describe('remote file paths', () => {
   });
 
   it('sorts directories first and filenames naturally', () => {
-    expect(sortRemoteEntries([
-      entry('file10.ts'),
-      entry('z-dir/', true),
-      entry('file2.ts'),
-      entry('a-dir/', true),
-    ]).map(remoteEntryName)).toEqual(['a-dir', 'z-dir', 'file2.ts', 'file10.ts']);
+    expect(sortRemoteEntries([entry('file10.ts'), entry('z-dir/', true), entry('file2.ts'), entry('a-dir/', true)]).map(remoteEntryName)).toEqual(['a-dir', 'z-dir', 'file2.ts', 'file10.ts']);
   });
 
   it('sorts remote entries by size or modification date in either direction', () => {
-    const oldSmall = { ...entry('old-small.txt'), fileSize: 10, modificationDate: '100' };
-    const newLarge = { ...entry('new-large.txt'), fileSize: 200, modificationDate: '300' };
-    const middle = { ...entry('middle.txt'), fileSize: 50, modificationDate: '200' };
-    const directory = { ...entry('folder/', true), fileSize: 999, modificationDate: '50' };
+    const oldSmall = {
+      ...entry('old-small.txt'),
+      fileSize: 10,
+      modificationDate: '100',
+    };
+    const newLarge = {
+      ...entry('new-large.txt'),
+      fileSize: 200,
+      modificationDate: '300',
+    };
+    const middle = {
+      ...entry('middle.txt'),
+      fileSize: 50,
+      modificationDate: '200',
+    };
+    const directory = {
+      ...entry('folder/', true),
+      fileSize: 999,
+      modificationDate: '50',
+    };
 
-    expect(sortRemoteEntries([oldSmall, directory, newLarge, middle], 'size', 'descending').map(remoteEntryName))
-      .toEqual(['folder', 'new-large.txt', 'middle.txt', 'old-small.txt']);
-    expect(sortRemoteEntries([oldSmall, directory, newLarge, middle], 'modified', 'ascending').map(remoteEntryName))
-      .toEqual(['folder', 'old-small.txt', 'middle.txt', 'new-large.txt']);
+    expect(sortRemoteEntries([oldSmall, directory, newLarge, middle], 'size', 'descending').map(remoteEntryName)).toEqual(['folder', 'new-large.txt', 'middle.txt', 'old-small.txt']);
+    expect(sortRemoteEntries([oldSmall, directory, newLarge, middle], 'modified', 'ascending').map(remoteEntryName)).toEqual(['folder', 'old-small.txt', 'middle.txt', 'new-large.txt']);
+  });
+
+  it('identifies hidden files and hidden path segments', () => {
+    expect(isRemoteHiddenPath('.env')).toBe(true);
+    expect(isRemoteHiddenPath('src/.generated/schema.ts')).toBe(true);
+    expect(isRemoteHiddenPath('src/App.tsx')).toBe(false);
+  });
+
+  it('uses natural defaults and reverses a selected sort field', () => {
+    expect(nextRemoteFileSort('name', 'ascending', 'modified')).toEqual({
+      field: 'modified',
+      direction: 'descending',
+    });
+    expect(nextRemoteFileSort('modified', 'descending', 'modified')).toEqual({
+      field: 'modified',
+      direction: 'ascending',
+    });
+    expect(nextRemoteFileSort('size', 'descending', 'name')).toEqual({
+      field: 'name',
+      direction: 'ascending',
+    });
   });
 });
 
@@ -81,7 +101,8 @@ describe('remote file previews', () => {
     expect(remotePreviewKind('large.svg', 600 * 1024)).toBe('unsupported');
     expect(remotePreviewKind('recording.mp4', 1000)).toBe('video');
     expect(remotePreviewKind('screen.webm', 1000)).toBe('video');
-    expect(remotePreviewKind('large.mov', 201 * 1024 * 1024)).toBe('unsupported');
+    expect(remotePreviewKind('large.mov', 20 * 1024 * 1024 * 1024)).toBe('video');
+    expect(remotePreviewKind('report.pdf', 1000)).toBe('pdf');
     expect(remotePreviewKind('archive.zip', 1000)).toBe('unsupported');
   });
 
@@ -114,12 +135,16 @@ test('connects the adaptive terminal file control to the remote file manager', (
   expect(session).toContain('<RemoteFileManager');
 });
 
-test('offers name, modification date, size, and direction sorting in the remote file manager', () => {
+test('offers persistent hidden-file visibility and compact reversible sorting', () => {
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
-  expect(manager).toContain("accessibilityLabel={t('files.sort')}");
-  expect(manager).toContain('sortRemoteEntries(entries, sortField, sortDirection)');
-  expect(manager).toContain("const remoteFileSortFields: RemoteFileSortField[] = ['name', 'modified', 'size'];");
-  expect(manager).toContain("const remoteFileSortDirections: RemoteFileSortDirection[] = ['ascending', 'descending'];");
+  const preferences = readFileSync(resolve(__dirname, '../src/services/remoteFilePreferences.ts'), 'utf8');
+  expect(manager).toContain("accessibilityLabel={t('files.options')}");
+  expect(manager).toContain('sortRemoteEntries(visibleEntries, sortField, sortDirection)');
+  expect(manager).toContain('isRemoteHiddenPath(status.path)');
+  expect(manager).toContain('checked={showHiddenFiles}');
+  expect(manager).toContain('nextRemoteFileSort(sortField, sortDirection, field)');
+  expect(manager).toMatch(/const remoteFileSortFields: RemoteFileSortField\[\] =\s*\[\s*'name',\s*'modified',\s*'size',?\s*\];/);
+  expect(preferences).toContain('whip.remote-files.preferences.v1');
 });
 
 test('remembers the last remote directory independently for each terminal', () => {
@@ -161,16 +186,33 @@ test('supports native Markdown previews and file transfer actions', () => {
   expect(transfer).toContain('File.pickFileAsync(');
 });
 
-test('plays bounded remote videos from the local preview cache', () => {
+test('streams remote videos from the token-protected SFTP file server', () => {
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
   const preview = readFileSync(resolve(__dirname, '../src/components/RemoteVideoPreview.tsx'), 'utf8');
-  expect(manager).toContain("preview.kind === 'video' && preview.cached");
+  const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
+  expect(manager).toContain("preview.kind === 'video' && preview.sftpFileServer");
   expect(manager).toContain('<RemoteVideoPreview');
   expect(manager).toContain("kind === 'video'");
+  expect(manager).toContain('client.openRemoteSftpFileServer(entryPath)');
+  expect(manager).toContain('.closeRemoteSftpFileServer(');
+  expect(client).toContain('client.startSftpFileServer(remotePath)');
   expect(preview).toContain('useVideoPlayer(uri)');
   expect(preview).toContain('nativeControls');
   expect(preview).toContain('contentFit="contain"');
   expect(preview).toContain('fullscreenOptions={{ enable: true }}');
+});
+
+test('opens streamed remote PDFs in an Android Custom Tab', () => {
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const packageJson = readFileSync(resolve(__dirname, '../package.json'), 'utf8');
+  const appJson = readFileSync(resolve(__dirname, '../app.json'), 'utf8');
+  expect(manager).toContain("kind === 'pdf'");
+  expect(manager).toContain("preview.kind === 'pdf' && preview.sftpFileServer");
+  expect(manager).toContain("import * as WebBrowser from 'expo-web-browser'");
+  expect(manager).toContain('WebBrowser.openBrowserAsync(sftpFileServer.url)');
+  expect(manager).toContain("t('files.openPdf')");
+  expect(packageJson).toContain('"expo-web-browser": "~57.0.2"');
+  expect(appJson).toContain('"expo-web-browser"');
 });
 
 test('opens cached images in the zoomable image preview', () => {
@@ -222,4 +264,26 @@ test('uses the requested syntax highlighter and terminal font in previews and ed
   expect(preview).toContain('fontFamily: terminalFontFamily');
   expect(manager).toContain('<CodeEditor');
   expect(app).toContain("require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf')");
+});
+
+test('offers a persistent collapsible Git status tree and native virtualized diffs', () => {
+  const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const client = readFileSync(resolve(__dirname, '../src/services/HerdrClient.ts'), 'utf8');
+  const diff = readFileSync(resolve(__dirname, '../src/components/RemoteGitDiffPreview.tsx'), 'utf8');
+  const preferences = readFileSync(resolve(__dirname, '../src/services/remoteGitPreferences.ts'), 'utf8');
+
+  expect(session).toContain('hostId={hostSessionId}');
+  expect(manager).toContain('accessibilityRole="switch"');
+  expect(manager).toContain('loadRemoteGitMode(hostId, repository.root)');
+  expect(manager).toContain('buildRemoteGitTreeRows(visibleGitStatus, gitCollapsedPaths)');
+  expect(manager).toContain('accessibilityState={{ expanded }}');
+  expect(manager).toContain('saveRemoteGitCollapsedPaths(hostId, repository.root');
+  expect(manager).toContain('<RemoteGitDiffPreview');
+  expect(client).toContain('async discoverRemoteGitRepository(');
+  expect(client).toContain('async listRemoteGitChanges(');
+  expect(client).toContain('async loadRemoteGitDiff(');
+  expect(diff).toContain('<FlatList');
+  expect(diff).toContain("removeClippedSubviews={Platform.OS === 'android'}");
+  expect(preferences).toContain('whip.remote-git-mode.v1');
 });

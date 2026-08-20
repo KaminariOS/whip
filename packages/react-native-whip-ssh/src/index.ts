@@ -273,6 +273,14 @@ const nativeClient = {
     finish(invokeAsync('sftpDownload', { localPath, remotePath, key }), callback);
   },
 
+  startSftpFileServer(remotePath: string, key: string, callback: Callback) {
+    finish(invokeAsync('startSftpFileServer', { remotePath, key }), callback);
+  },
+
+  closeSftpFileServer(localPort: number, key: string, callback: Callback) {
+    finishSync('closeSftpFileServer', { localPort, key }, callback);
+  },
+
   sftpCancelUpload(key: string) {
     fireSync('sftpCancelUpload', { key });
   },

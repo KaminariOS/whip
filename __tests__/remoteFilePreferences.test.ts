@@ -1,0 +1,83 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import {
+  REMOTE_FILE_PREFERENCES_KEY,
+  defaultRemoteFilePreferences,
+  loadRemoteFilePreferences,
+  saveRemoteFilePreferences,
+} from '../src/services/remoteFilePreferences';
+
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(),
+    setItem: jest.fn(),
+  },
+}));
+
+const getItem = AsyncStorage.getItem as jest.MockedFunction<
+  typeof AsyncStorage.getItem
+>;
+const setItem = AsyncStorage.setItem as jest.MockedFunction<
+  typeof AsyncStorage.setItem
+>;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+it('hides dotfiles by default when no preference has been saved', async () => {
+  getItem.mockResolvedValue(null);
+
+  await expect(loadRemoteFilePreferences()).resolves.toEqual({
+    showHiddenFiles: false,
+    sortField: 'name',
+    sortDirection: 'ascending',
+  });
+});
+
+it('loads persisted hidden-file and sorting preferences', async () => {
+  getItem.mockResolvedValue(
+    JSON.stringify({
+      showHiddenFiles: false,
+      sortField: 'modified',
+      sortDirection: 'descending',
+    }),
+  );
+
+  await expect(loadRemoteFilePreferences()).resolves.toEqual({
+    showHiddenFiles: false,
+    sortField: 'modified',
+    sortDirection: 'descending',
+  });
+  expect(getItem).toHaveBeenCalledWith(REMOTE_FILE_PREFERENCES_KEY);
+});
+
+it('falls back safely for missing or invalid fields', async () => {
+  getItem.mockResolvedValue(
+    JSON.stringify({
+      showHiddenFiles: 'yes',
+      sortField: 'extension',
+      sortDirection: 'sideways',
+    }),
+  );
+
+  await expect(loadRemoteFilePreferences()).resolves.toEqual(
+    defaultRemoteFilePreferences,
+  );
+});
+
+it('persists the complete preference object', async () => {
+  const preferences = {
+    showHiddenFiles: false,
+    sortField: 'size' as const,
+    sortDirection: 'descending' as const,
+  };
+
+  await saveRemoteFilePreferences(preferences);
+
+  expect(setItem).toHaveBeenCalledWith(
+    REMOTE_FILE_PREFERENCES_KEY,
+    JSON.stringify(preferences),
+  );
+});

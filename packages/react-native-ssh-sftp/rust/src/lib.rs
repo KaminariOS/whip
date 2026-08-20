@@ -12,6 +12,7 @@ uniffi::setup_scaffolding!();
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
+use std::io::SeekFrom;
 use std::panic::AssertUnwindSafe;
 use std::sync::{
     Arc, OnceLock,
@@ -20,7 +21,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use futures::{FutureExt, channel::mpsc as futures_mpsc};
+use futures::{FutureExt, channel::mpsc as futures_mpsc, future::try_join_all};
 use parking_lot::RwLock;
 use russh::client;
 use russh::keys::{PrivateKeyWithHashAlg, PublicKey};
@@ -31,7 +32,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, watch};
 use tokio::{
     fs,
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader},
 };
 
 use crate::known_hosts::{HostKeyDecision, KnownHosts};
@@ -43,6 +44,7 @@ type Shells = RwLock<HashMap<String, mpsc::Sender<ShellCommand>>>;
 type SftpSessions = RwLock<HashMap<String, Arc<SftpSession>>>;
 type Streams = RwLock<HashMap<String, mpsc::Sender<StreamCommand>>>;
 type Forwards = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
+type SftpFileServers = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
 type Transfers = RwLock<HashMap<(String, &'static str), Arc<AtomicBool>>>;
 type Bridges = RwLock<HashMap<(String, String), BridgeHandle>>;
 type PreparedBridges = RwLock<HashMap<String, BridgeHandle>>;
@@ -56,6 +58,7 @@ static SHELLS: OnceLock<Shells> = OnceLock::new();
 static SFTP_SESSIONS: OnceLock<SftpSessions> = OnceLock::new();
 static STREAMS: OnceLock<Streams> = OnceLock::new();
 static FORWARDS: OnceLock<Forwards> = OnceLock::new();
+static SFTP_FILE_SERVERS: OnceLock<SftpFileServers> = OnceLock::new();
 static TRANSFERS: OnceLock<Transfers> = OnceLock::new();
 static BRIDGES: OnceLock<Bridges> = OnceLock::new();
 static PREPARED_BRIDGES: OnceLock<PreparedBridges> = OnceLock::new();
@@ -64,6 +67,10 @@ static LIFECYCLE_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 const CONTROL_QUEUE_CAPACITY: usize = 256;
 const EXECUTE_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
+const SFTP_HTTP_HEADER_LIMIT: usize = 16 * 1024;
+const SFTP_HTTP_PIPELINE_DEPTH: usize = 8;
+const SFTP_HTTP_READ_SIZE: u64 = 256 * 1024;
+const SFTP_HTTP_SERVER_LIFETIME: Duration = Duration::from_secs(60 * 60);
 const REMOTE_HOME_COMMAND: &str = r#"printf %s "$HOME""#;
 
 #[derive(Debug, thiserror::Error)]
@@ -281,6 +288,9 @@ fn streams() -> &'static Streams {
 }
 fn forwards() -> &'static Forwards {
     FORWARDS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+fn sftp_file_servers() -> &'static SftpFileServers {
+    SFTP_FILE_SERVERS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 fn transfers() -> &'static Transfers {
     TRANSFERS.get_or_init(|| RwLock::new(HashMap::new()))
@@ -997,6 +1007,306 @@ async fn open_local_forward(params: &Value) -> Result<Value, TransportError> {
     Ok(json!(local_port))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct SftpHttpRequest {
+    head: bool,
+    path: String,
+    range: Option<String>,
+}
+
+fn parse_sftp_http_request(bytes: &[u8]) -> Result<SftpHttpRequest, TransportError> {
+    let text = std::str::from_utf8(bytes).map_err(|_| {
+        TransportError::InvalidRequest("file preview request was not valid HTTP".to_owned())
+    })?;
+    let mut lines = text.split("\r\n");
+    let request_line = lines.next().unwrap_or_default();
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or_default();
+    let path = parts.next().unwrap_or_default();
+    let version = parts.next().unwrap_or_default();
+    if parts.next().is_some()
+        || !matches!(method, "GET" | "HEAD")
+        || !version.starts_with("HTTP/1.")
+        || !path.starts_with('/')
+    {
+        return Err(TransportError::InvalidRequest(
+            "file preview request was not a supported HTTP GET or HEAD".to_owned(),
+        ));
+    }
+    let range = lines.find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("range")
+            .then(|| value.trim().to_owned())
+    });
+    Ok(SftpHttpRequest {
+        head: method == "HEAD",
+        path: path.to_owned(),
+        range,
+    })
+}
+
+fn parse_sftp_http_range(value: Option<&str>, size: u64) -> Result<(u64, u64, bool), ()> {
+    let Some(value) = value else {
+        return Ok((0, size.saturating_sub(1), false));
+    };
+    let range = value.strip_prefix("bytes=").ok_or(())?;
+    if size == 0 || range.contains(',') {
+        return Err(());
+    }
+    let (start, end) = range.split_once('-').ok_or(())?;
+    let (start, end) = if start.is_empty() {
+        let suffix = end.parse::<u64>().map_err(|_| ())?;
+        if suffix == 0 {
+            return Err(());
+        }
+        (size.saturating_sub(suffix), size - 1)
+    } else {
+        let start = start.parse::<u64>().map_err(|_| ())?;
+        let end = if end.is_empty() {
+            size - 1
+        } else {
+            end.parse::<u64>().map_err(|_| ())?.min(size - 1)
+        };
+        (start, end)
+    };
+    if start >= size || end < start {
+        return Err(());
+    }
+    Ok((start, end, true))
+}
+
+fn sftp_http_content_type(remote_path: &str) -> &'static str {
+    let extension = remote_path
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "3gp" => "video/3gpp",
+        "aac" => "audio/aac",
+        "avi" => "video/x-msvideo",
+        "flac" => "audio/flac",
+        "m4a" => "audio/mp4",
+        "m4v" => "video/mp4",
+        "mkv" => "video/x-matroska",
+        "mov" => "video/quicktime",
+        "mp3" => "audio/mpeg",
+        "mp4" => "video/mp4",
+        "oga" | "ogg" => "audio/ogg",
+        "opus" => "audio/ogg",
+        "pdf" => "application/pdf",
+        "wav" => "audio/wav",
+        "webm" => "video/webm",
+        _ => "application/octet-stream",
+    }
+}
+
+async fn write_sftp_http_error(
+    stream: &mut tokio::net::TcpStream,
+    status: &str,
+    extra_headers: &str,
+) -> Result<(), TransportError> {
+    let body = format!("{status}\n");
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n{extra_headers}\r\n{body}",
+        body.len(),
+    );
+    stream.write_all(response.as_bytes()).await?;
+    Ok(())
+}
+
+async fn stream_sftp_http_range(
+    stream: &mut tokio::net::TcpStream,
+    sftp: Arc<SftpSession>,
+    remote_path: &str,
+    start: u64,
+    end: u64,
+) -> Result<(), TransportError> {
+    let total_chunks = (end - start + SFTP_HTTP_READ_SIZE) / SFTP_HTTP_READ_SIZE;
+    let parallelism = usize::try_from(total_chunks)
+        .unwrap_or(SFTP_HTTP_PIPELINE_DEPTH)
+        .clamp(1, SFTP_HTTP_PIPELINE_DEPTH);
+    let opens = (0..parallelism).map(|_| sftp.open(remote_path.to_owned()));
+    let mut files = try_join_all(opens).await?;
+    let mut offset = start;
+    while offset <= end {
+        let specs = (0..parallelism)
+            .scan(offset, |next, _| {
+                if *next > end {
+                    return None;
+                }
+                let length = (end - *next + 1).min(SFTP_HTTP_READ_SIZE);
+                let spec = (*next, length);
+                *next += length;
+                Some(spec)
+            })
+            .collect::<Vec<_>>();
+        let reads =
+            files
+                .iter_mut()
+                .zip(specs.iter())
+                .map(|(file, (position, length))| async move {
+                    file.seek(SeekFrom::Start(*position)).await?;
+                    let mut bytes = vec![0u8; *length as usize];
+                    file.read_exact(&mut bytes).await?;
+                    Ok::<Vec<u8>, std::io::Error>(bytes)
+                });
+        let chunks = try_join_all(reads).await?;
+        for chunk in chunks {
+            stream.write_all(&chunk).await?;
+        }
+        offset += specs.iter().map(|(_, length)| length).sum::<u64>();
+    }
+    for file in &mut files {
+        let _ = file.shutdown().await;
+    }
+    Ok(())
+}
+
+async fn serve_sftp_http_connection(
+    mut stream: tokio::net::TcpStream,
+    sftp: Arc<SftpSession>,
+    remote_path: String,
+    token: String,
+    size: u64,
+) -> Result<(), TransportError> {
+    let mut request_bytes = Vec::with_capacity(1024);
+    loop {
+        let mut bytes = [0u8; 1024];
+        let count = tokio::time::timeout(Duration::from_secs(10), stream.read(&mut bytes))
+            .await
+            .map_err(|_| {
+                TransportError::InvalidRequest("timed out reading file preview request".to_owned())
+            })??;
+        if count == 0 {
+            return Ok(());
+        }
+        request_bytes.extend_from_slice(&bytes[..count]);
+        if request_bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+        if request_bytes.len() > SFTP_HTTP_HEADER_LIMIT {
+            write_sftp_http_error(&mut stream, "431 Request Header Fields Too Large", "").await?;
+            return Ok(());
+        }
+    }
+
+    let request = match parse_sftp_http_request(&request_bytes) {
+        Ok(request) => request,
+        Err(_) => {
+            write_sftp_http_error(&mut stream, "400 Bad Request", "").await?;
+            return Ok(());
+        }
+    };
+    if !request.path.starts_with(&format!("/{token}/")) {
+        write_sftp_http_error(&mut stream, "404 Not Found", "").await?;
+        return Ok(());
+    }
+    let (start, end, partial) = match parse_sftp_http_range(request.range.as_deref(), size) {
+        Ok(range) => range,
+        Err(()) => {
+            write_sftp_http_error(
+                &mut stream,
+                "416 Range Not Satisfiable",
+                &format!("Content-Range: bytes */{size}\r\n"),
+            )
+            .await?;
+            return Ok(());
+        }
+    };
+    let content_length = if size == 0 { 0 } else { end - start + 1 };
+    let range_header = if partial {
+        format!("Content-Range: bytes {start}-{end}/{size}\r\n")
+    } else {
+        String::new()
+    };
+    let status = if partial {
+        "206 Partial Content"
+    } else {
+        "200 OK"
+    };
+    let headers = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {content_length}\r\nAccept-Ranges: bytes\r\n{range_header}Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
+        sftp_http_content_type(&remote_path),
+    );
+    stream.write_all(headers.as_bytes()).await?;
+    if !request.head && content_length > 0 {
+        stream_sftp_http_range(&mut stream, sftp, &remote_path, start, end).await?;
+    }
+    Ok(())
+}
+
+async fn start_sftp_file_server(params: &Value) -> Result<Value, TransportError> {
+    let key = required_string(params, "key")?;
+    let remote_path = required_string(params, "remotePath")?;
+    let session = session_for(params)?;
+    let channel = session.handle.channel_open_session().await?;
+    channel.request_subsystem(true, "sftp").await?;
+    let sftp = Arc::new(SftpSession::new(channel.into_stream()).await?);
+    let metadata = sftp.metadata(remote_path.clone()).await?;
+    if metadata.is_dir() {
+        return Err(TransportError::InvalidRequest(
+            "cannot stream a remote directory".to_owned(),
+        ));
+    }
+    let size = metadata.size.unwrap_or_default();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
+    let local_port = listener.local_addr()?.port();
+    let mut token_bytes = [0u8; 16];
+    russh::keys::ssh_key::getrandom::fill(&mut token_bytes).map_err(|error| {
+        TransportError::InvalidRequest(format!("could not secure file preview: {error}"))
+    })?;
+    let token = token_bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let (cancel_tx, mut cancel_rx) = watch::channel(false);
+    sftp_file_servers()
+        .write()
+        .insert((key.clone(), local_port), cancel_tx.clone());
+    let returned_token = token.clone();
+    tokio::spawn(async move {
+        let lifetime = tokio::time::sleep(SFTP_HTTP_SERVER_LIFETIME);
+        tokio::pin!(lifetime);
+        loop {
+            tokio::select! {
+                changed = cancel_rx.changed() => {
+                    if changed.is_err() || *cancel_rx.borrow() { break; }
+                },
+                _ = &mut lifetime => break,
+                accepted = listener.accept() => {
+                    let Ok((stream, _)) = accepted else { break };
+                    let mut connection_cancel = cancel_rx.clone();
+                    let connection_sftp = sftp.clone();
+                    let connection_path = remote_path.clone();
+                    let connection_token = token.clone();
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = connection_cancel.changed() => {},
+                            _ = serve_sftp_http_connection(
+                                stream,
+                                connection_sftp,
+                                connection_path,
+                                connection_token,
+                                size,
+                            ) => {},
+                        }
+                    });
+                }
+            }
+        }
+        let _ = sftp.close().await;
+        let map_key = (key, local_port);
+        let should_remove = sftp_file_servers()
+            .read()
+            .get(&map_key)
+            .is_some_and(|current| current.same_channel(&cancel_tx));
+        if should_remove {
+            sftp_file_servers().write().remove(&map_key);
+        }
+    });
+    Ok(json!({ "localPort": local_port, "token": returned_token }))
+}
+
 async fn start_stream(params: &Value, command_stream: bool) -> Result<Value, TransportError> {
     let key = required_string(params, "key")?;
     let stream_key = format!(
@@ -1422,6 +1732,16 @@ async fn disconnect_key(key: String) {
     if let Some(sender) = shells().write().remove(&key) {
         let _ = sender.try_send(ShellCommand::Close);
     }
+    let file_server_ports = sftp_file_servers()
+        .read()
+        .keys()
+        .filter_map(|(owner, port)| (owner == &key).then_some(*port))
+        .collect::<Vec<_>>();
+    for port in file_server_ports {
+        if let Some(cancel) = sftp_file_servers().write().remove(&(key.clone(), port)) {
+            let _ = cancel.send(true);
+        }
+    }
     let removed_sftp = { sftp_sessions().write().remove(&key) };
     if let Some(sftp) = removed_sftp {
         let _ = sftp.close().await;
@@ -1535,6 +1855,15 @@ async fn dispatch(request: Request) -> Result<Value, TransportError> {
         "sftpChmod" => sftp_mutation(&request.params, "chmod").await,
         "sftpUpload" => sftp_transfer(&request.params, true).await,
         "sftpDownload" => sftp_transfer(&request.params, false).await,
+        "startSftpFileServer" => start_sftp_file_server(&request.params).await,
+        "closeSftpFileServer" => {
+            let key = required_string(&request.params, "key")?;
+            let port = required_u16(&request.params, "localPort")?;
+            if let Some(cancel) = sftp_file_servers().write().remove(&(key, port)) {
+                let _ = cancel.send(true);
+            }
+            Ok(Value::Null)
+        }
         "sftpCancelUpload" | "sftpCancelDownload" => {
             let key = required_string(&request.params, "key")?;
             let direction = if request.operation.ends_with("Upload") {
@@ -1929,6 +2258,48 @@ mod tests {
     }
 
     #[test]
+    fn parses_file_preview_get_head_and_single_ranges() {
+        assert_eq!(
+            parse_sftp_http_request(
+                b"GET /secret/video.mp4 HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=10-19\r\n\r\n",
+            )
+            .unwrap(),
+            SftpHttpRequest {
+                head: false,
+                path: "/secret/video.mp4".to_owned(),
+                range: Some("bytes=10-19".to_owned()),
+            },
+        );
+        assert!(parse_sftp_http_request(b"POST /secret/video.mp4 HTTP/1.1\r\n\r\n").is_err());
+        assert_eq!(parse_sftp_http_range(None, 100), Ok((0, 99, false)));
+        assert_eq!(
+            parse_sftp_http_range(Some("bytes=10-19"), 100),
+            Ok((10, 19, true)),
+        );
+        assert_eq!(
+            parse_sftp_http_range(Some("bytes=90-"), 100),
+            Ok((90, 99, true)),
+        );
+        assert_eq!(
+            parse_sftp_http_range(Some("bytes=-10"), 100),
+            Ok((90, 99, true)),
+        );
+        assert!(parse_sftp_http_range(Some("bytes=100-"), 100).is_err());
+        assert!(parse_sftp_http_range(Some("bytes=0-1,4-5"), 100).is_err());
+    }
+
+    #[test]
+    fn assigns_inline_media_content_types() {
+        assert_eq!(sftp_http_content_type("/tmp/report.PDF"), "application/pdf");
+        assert_eq!(sftp_http_content_type("/tmp/movie.mp4"), "video/mp4");
+        assert_eq!(sftp_http_content_type("/tmp/audio.flac"), "audio/flac");
+        assert_eq!(
+            sftp_http_content_type("/tmp/archive.bin"),
+            "application/octet-stream",
+        );
+    }
+
+    #[test]
     fn typed_terminal_fast_paths_report_missing_sessions_without_json() {
         assert_eq!(
             write_shell_input("missing-shell".to_owned(), "x".to_owned()).as_deref(),
@@ -2161,6 +2532,40 @@ mod tests {
                 fs::read(downloaded.as_str().unwrap()).await.unwrap(),
                 b"sftp-live-replacement"
             );
+
+            let file_server = live_call(
+                "startSftpFileServer",
+                json!({
+                    "key": "live-main",
+                    "remotePath": "/workspace/remote/renamed.txt",
+                }),
+            )
+            .await;
+            let file_server_port = file_server["localPort"].as_u64().unwrap() as u16;
+            let file_server_token = file_server["token"].as_str().unwrap();
+            let mut preview = tokio::net::TcpStream::connect(("127.0.0.1", file_server_port))
+                .await
+                .unwrap();
+            preview
+                .write_all(
+                    format!(
+                        "GET /{file_server_token}/renamed.txt HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=10-20\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut preview_response = Vec::new();
+            preview.read_to_end(&mut preview_response).await.unwrap();
+            let preview_response = String::from_utf8(preview_response).unwrap();
+            assert!(preview_response.starts_with("HTTP/1.1 206 Partial Content\r\n"));
+            assert!(preview_response.contains("Content-Range: bytes 10-20/21\r\n"));
+            assert!(preview_response.ends_with("replacement"));
+            live_call(
+                "closeSftpFileServer",
+                json!({"key": "live-main", "localPort": file_server_port}),
+            )
+            .await;
 
             let cancel_payload = client_dir.join("cancel.bin");
             fs::write(&cancel_payload, vec![7u8; 16 * 1024 * 1024])

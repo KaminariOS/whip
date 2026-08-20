@@ -829,6 +829,7 @@ export function SessionScreen({
         )}
         <RemoteFileManager
           client={client}
+          hostId={hostSessionId}
           initialPath={fileManagerPath}
           visible={filesOpen}
           onPathChange={path => {

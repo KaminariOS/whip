@@ -498,6 +498,16 @@ class SSHClient {
             RNSSHClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
         });
     }
+    startSftpFileServer(remotePath) {
+        return new Promise((resolve, reject) => {
+            RNSSHClient.startSftpFileServer(remotePath, this._key, (error, server) => error ? reject(error) : resolve(server));
+        });
+    }
+    closeSftpFileServer(localPort) {
+        return new Promise((resolve, reject) => {
+            RNSSHClient.closeSftpFileServer(localPort, this._key, error => error ? reject(error) : resolve());
+        });
+    }
     startHerdrEventStream(socketPath, handler, callback) {
         if (this._activeStream.herdrEventStream) {
             this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);

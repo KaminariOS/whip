@@ -26,7 +26,8 @@
           "faceIDPermission": "Allow Whip to use Face ID to protect SSH keys and app access."
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-web-browser"
     ],
     "ios": {
       "bundleIdentifier": "io.github.kaminarios.whip",

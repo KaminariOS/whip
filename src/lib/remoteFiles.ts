@@ -2,27 +2,25 @@ import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
 
 export const MAX_REMOTE_TEXT_PREVIEW_BYTES = 512 * 1024;
 export const MAX_REMOTE_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
-export const MAX_REMOTE_VIDEO_PREVIEW_BYTES = 200 * 1024 * 1024;
 
-export type RemotePreviewKind = 'code' | 'html' | 'image' | 'markdown' | 'svg' | 'text' | 'video' | 'unsupported';
+export type RemotePreviewKind = 'code' | 'html' | 'image' | 'markdown' | 'pdf' | 'svg' | 'text' | 'video' | 'unsupported';
 export type RemoteFileSortField = 'name' | 'modified' | 'size';
 export type RemoteFileSortDirection = 'ascending' | 'descending';
 
-const CODE_EXTENSIONS = new Set([
-  'bash', 'c', 'cc', 'cjs', 'cpp', 'css', 'fish', 'go', 'gradle', 'graphql', 'h',
-  'hpp', 'java', 'js', 'json', 'jsx', 'kt', 'kts', 'lua', 'mjs', 'nix',
-  'proto', 'py', 'rb', 'rs', 'scss', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx',
-  'xml', 'yaml', 'yml', 'zsh',
-]);
+export interface RemoteFileSort {
+  field: RemoteFileSortField;
+  direction: RemoteFileSortDirection;
+}
 
-const TEXT_EXTENSIONS = new Set([
-  'cfg', 'conf', 'csv', 'env', 'ini', 'lock', 'log', 'properties', 'txt',
-]);
+const CODE_EXTENSIONS = new Set(['bash', 'c', 'cc', 'cjs', 'cpp', 'css', 'fish', 'go', 'gradle', 'graphql', 'h', 'hpp', 'java', 'js', 'json', 'jsx', 'kt', 'kts', 'lua', 'mjs', 'nix', 'proto', 'py', 'rb', 'rs', 'scss', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx', 'xml', 'yaml', 'yml', 'zsh']);
+
+const TEXT_EXTENSIONS = new Set(['cfg', 'conf', 'csv', 'env', 'ini', 'lock', 'log', 'properties', 'txt']);
 
 const CODE_FILENAMES = new Set(['containerfile', 'dockerfile', 'gemfile', 'justfile', 'makefile']);
 const TEXT_FILENAMES = new Set(['license', 'readme']);
 const HTML_EXTENSIONS = new Set(['htm', 'html']);
 const MARKDOWN_EXTENSIONS = new Set(['markdown', 'md', 'mdx']);
+const PDF_EXTENSIONS = new Set(['pdf']);
 const IMAGE_EXTENSIONS = new Set(['bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp']);
 const SVG_EXTENSIONS = new Set(['svg']);
 const VIDEO_EXTENSIONS = new Set(['3gp', 'm4v', 'mkv', 'mov', 'mp4', 'webm']);
@@ -82,13 +80,7 @@ export function remoteEntryName(entry: Pick<LsResult, 'filename'>): string {
 
 export function normalizeRemotePath(path: string | undefined, home: string): string {
   const trimmed = path?.trim() || home;
-  const expanded = trimmed === '~'
-    ? home
-    : trimmed.startsWith('~/')
-      ? `${home}/${trimmed.slice(2)}`
-      : trimmed.startsWith('/')
-        ? trimmed
-        : `${home}/${trimmed}`;
+  const expanded = trimmed === '~' ? home : trimmed.startsWith('~/') ? `${home}/${trimmed.slice(2)}` : trimmed.startsWith('/') ? trimmed : `${home}/${trimmed}`;
   const segments: string[] = [];
   for (const segment of expanded.split('/')) {
     if (!segment || segment === '.') continue;
@@ -109,11 +101,27 @@ export function parentRemotePath(path: string): string {
   return separator <= 0 ? '/' : normalized.slice(0, separator);
 }
 
-export function sortRemoteEntries(
-  entries: LsResult[],
-  field: RemoteFileSortField = 'name',
-  direction: RemoteFileSortDirection = 'ascending',
-): LsResult[] {
+export function isRemoteHiddenPath(path: string): boolean {
+  return path
+    .replace(/\/+$/, '')
+    .split('/')
+    .some(segment => segment !== '.' && segment !== '..' && segment.startsWith('.'));
+}
+
+export function nextRemoteFileSort(currentField: RemoteFileSortField, currentDirection: RemoteFileSortDirection, selectedField: RemoteFileSortField): RemoteFileSort {
+  if (selectedField === currentField) {
+    return {
+      field: currentField,
+      direction: currentDirection === 'ascending' ? 'descending' : 'ascending',
+    };
+  }
+  return {
+    field: selectedField,
+    direction: selectedField === 'name' ? 'ascending' : 'descending',
+  };
+}
+
+export function sortRemoteEntries(entries: LsResult[], field: RemoteFileSortField = 'name', direction: RemoteFileSortDirection = 'ascending'): LsResult[] {
   return [...entries].sort((left, right) => {
     const directoryOrder = Number(Boolean(right.isDirectory)) - Number(Boolean(left.isDirectory));
     if (directoryOrder) return directoryOrder;
@@ -122,11 +130,7 @@ export function sortRemoteEntries(
       numeric: true,
       sensitivity: 'base',
     });
-    const fieldOrder = field === 'size'
-      ? left.fileSize - right.fileSize
-      : field === 'modified'
-        ? remoteModificationTime(left.modificationDate) - remoteModificationTime(right.modificationDate)
-        : nameOrder;
+    const fieldOrder = field === 'size' ? left.fileSize - right.fileSize : field === 'modified' ? remoteModificationTime(left.modificationDate) - remoteModificationTime(right.modificationDate) : nameOrder;
     return fieldOrder * (direction === 'ascending' ? 1 : -1) || nameOrder;
   });
 }
@@ -151,8 +155,9 @@ export function remotePreviewKind(filename: string, fileSize: number): RemotePre
     return fileSize <= MAX_REMOTE_IMAGE_PREVIEW_BYTES ? 'image' : 'unsupported';
   }
   if (VIDEO_EXTENSIONS.has(extension)) {
-    return fileSize <= MAX_REMOTE_VIDEO_PREVIEW_BYTES ? 'video' : 'unsupported';
+    return 'video';
   }
+  if (PDF_EXTENSIONS.has(extension)) return 'pdf';
   if (fileSize > MAX_REMOTE_TEXT_PREVIEW_BYTES) return 'unsupported';
   if (SVG_EXTENSIONS.has(extension)) return 'svg';
   if (HTML_EXTENSIONS.has(extension)) return 'html';

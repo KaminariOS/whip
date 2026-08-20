@@ -279,6 +279,10 @@ export default class SSHClient {
     openLocalForward(remoteHost: string, remotePort: number): Promise<number>;
     /** Closes a loopback listener previously returned by openLocalForward. */
     closeLocalForward(localPort: number): Promise<void>;
+    /** Starts a token-protected loopback HTTP server backed by ranged SFTP reads. */
+    startSftpFileServer(remotePath: string): Promise<{ localPort: number; token: string }>;
+    /** Closes a loopback SFTP file server previously returned by startSftpFileServer. */
+    closeSftpFileServer(localPort: number): Promise<void>;
     startHerdrEventStream(socketPath: string, handler: (data: string) => void, callback?: CallbackFunction<void>): Promise<void>;
     writeHerdrEventStream(value: string): Promise<void>;
     closeHerdrEventStream(): void;
