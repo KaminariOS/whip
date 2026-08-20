@@ -2,6 +2,7 @@ import {
   Bot,
   ChevronRight,
   History,
+  Layers3,
   Play,
   Sparkles,
   SquareTerminal,
@@ -57,8 +58,9 @@ import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
-import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { GlassBackdrop, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
+import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -150,6 +152,7 @@ export function HerdScreen({
   const [commandKeyboardInset, setCommandKeyboardInset] = useState(0);
   const commandComposerRef = useRef<View | null>(null);
   const commandInputRef = useRef<TextInputHandle | null>(null);
+  const workspaceCwdInputRef = useRef<TextInputHandle | null>(null);
 
   const refreshFromPull = useCallback(async () => {
     if (pullRefreshing) return;
@@ -389,17 +392,49 @@ export function HerdScreen({
         />
       ) : null}
 
-      {workspaceEditorMode && selectedQueue ? (
-        <GlassSurface className="flex-row items-center gap-1.5 border-b border-white/30 p-[7px] dark:border-white/10">
-          <Text className="font-mono text-[8px] text-foreground">{workspaceEditorMode === 'rename' ? t('herd.rename') : t('herd.new')} {t('herd.space')}</Text>
-          <Input autoFocus selectTextOnFocus={workspaceEditorMode === 'rename'} className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceName} onChangeText={setWorkspaceName} placeholder={t('herd.labelOptional')} placeholderTextColor={colors.textTertiary} />
-          {workspaceEditorMode === 'create' ? (
-            <Input className="h-[34px] min-w-[110px] flex-1 rounded-none px-2 font-mono text-[10px]" value={workspaceCwd} onChangeText={setWorkspaceCwd} placeholder={t('herd.workingDirectoryOptional')} placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
-          ) : null}
-          <Button className="h-[34px] rounded-none px-2" variant="ghost" onPress={hapticPress(() => setWorkspaceEditorMode(null))}><Text className="font-mono text-[8px] text-muted-foreground">{t('common.cancel')}</Text></Button>
-          <Button className="h-[34px] rounded-none px-2" disabled={workspaceBusy} onPress={hapticPress(saveWorkspace)}><Text className="font-mono text-[8px] font-black">{t('common.save')}</Text></Button>
-        </GlassSurface>
-      ) : null}
+      <ResourceEditorSheet
+        busy={workspaceBusy}
+        context={selectedQueue?.label}
+        icon={Layers3}
+        onClose={() => setWorkspaceEditorMode(null)}
+        onSave={saveWorkspace}
+        title={workspaceEditorMode === 'rename' ? t('herd.renameSpace') : t('rail.newWorkspace')}
+        visible={workspaceEditorMode !== null && Boolean(selectedQueue)}>
+        <ResourceEditorField label={t('herd.labelOptional')}>
+          <Input
+            accessibilityLabel={t('herd.labelOptional')}
+            autoFocus
+            autoCorrect={false}
+            editable={!workspaceBusy}
+            returnKeyType={workspaceEditorMode === 'create' ? 'next' : 'done'}
+            selectTextOnFocus={workspaceEditorMode === 'rename'}
+            value={workspaceName}
+            onChangeText={setWorkspaceName}
+            onSubmitEditing={workspaceEditorMode === 'create'
+              ? () => workspaceCwdInputRef.current?.focus()
+              : () => { saveWorkspace(); }}
+            placeholder={t('herd.labelOptional')}
+            placeholderTextColor={colors.textTertiary}
+          />
+        </ResourceEditorField>
+        {workspaceEditorMode === 'create' ? (
+          <ResourceEditorField label={t('herd.workingDirectoryOptional')}>
+            <Input
+              ref={workspaceCwdInputRef}
+              accessibilityLabel={t('herd.workingDirectoryOptional')}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!workspaceBusy}
+              returnKeyType="done"
+              value={workspaceCwd}
+              onChangeText={setWorkspaceCwd}
+              onSubmitEditing={() => { saveWorkspace(); }}
+              placeholder="~"
+              placeholderTextColor={colors.textTertiary}
+            />
+          </ResourceEditorField>
+        ) : null}
+      </ResourceEditorSheet>
 
       {selectedQueue?.running !== false ? (
         <View className="px-4">

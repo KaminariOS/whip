@@ -134,7 +134,8 @@ describe('terminal hierarchy status glyphs', () => {
     expect(workspaceRail).toContain("accessibilityLabel={t('rail.closeWorkspace', { workspace: label })}");
     expect(workspaceRail).toContain('onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}');
     expect(workspaceRail).not.toContain('workspaceActions');
-    expect(herd).toContain('autoFocus selectTextOnFocus');
+    expect(herd).toContain('autoFocus');
+    expect(herd).toContain("selectTextOnFocus={workspaceEditorMode === 'rename'}");
     expect(screen).not.toContain('snapshot.workspaces.map');
     expect(screen).toContain("accessibilityLabel={t('session.backToHerd')}");
   });
