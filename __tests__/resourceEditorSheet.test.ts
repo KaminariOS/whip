@@ -9,7 +9,9 @@ describe('resource editor sheets', () => {
     const herd = readSource('src/components/HerdScreen.tsx');
     const session = readSource('src/components/SessionScreen.tsx');
 
-    expect(sheet).toContain('rounded-t-[28px]');
+    expect(sheet).toContain('className="flex-1 justify-center px-4"');
+    expect(sheet).toContain("behavior={Platform.OS === 'ios' ? 'padding' : 'height'}");
+    expect(sheet).toContain('rounded-[28px]');
     expect(sheet).toContain('text-[19px] font-bold');
     expect(sheet).toContain('h-12 flex-1 rounded-full');
     expect(sheet).toContain('<KeyboardAvoidingView');

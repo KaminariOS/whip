@@ -8,7 +8,6 @@ import {
   Pressable,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { useTheme } from '@/src/theme';
@@ -38,7 +37,6 @@ export function ResourceEditorSheet({
   title,
   visible,
 }: Props) {
-  const { bottom } = useSafeAreaInsets();
   const { colors } = useTheme();
   const { t } = useTranslation();
 
@@ -52,8 +50,8 @@ export function ResourceEditorSheet({
       transparent
       visible={visible}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        className="flex-1 justify-end">
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1 justify-center px-4">
         <Pressable
           accessibilityLabel={t('common.cancel')}
           className="absolute inset-0 bg-black/55"
@@ -62,8 +60,7 @@ export function ResourceEditorSheet({
         />
         <GlassSurface
           accessibilityViewIsModal
-          className="rounded-t-[28px] border-t border-white/30 px-4 pt-5 dark:border-white/10"
-          style={{ paddingBottom: Math.max(16, bottom) }}>
+          className="w-full self-center rounded-[28px] border border-white/30 px-4 py-5 dark:border-white/10">
           <View className="flex-row items-center px-1">
             <View className="size-11 items-center justify-center rounded-full bg-primary/15">
               <EditorIcon color={colors.primary} size={22} />
