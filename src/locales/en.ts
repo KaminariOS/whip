@@ -211,7 +211,11 @@ export const en = {
   'knownHosts.deleteError': 'Could not remove known host',
   'knownHosts.remove': 'Forget {{host}}',
   'knownHosts.trustTitle': 'Trust this SSH host?',
-  'knownHosts.trustCopy': 'The authenticity of {{host}} cannot be established.\n\n{{keyType}} key fingerprint:\n{{fingerprint}}\n\nVerify this fingerprint before continuing.',
+  'knownHosts.trustCopy': 'The authenticity of {{host}} cannot be established.',
+  'knownHosts.hostLabel': 'SSH host',
+  'knownHosts.keyTypeLabel': 'Key type',
+  'knownHosts.fingerprintLabel': 'Fingerprint',
+  'knownHosts.verifyCopy': 'Compare this fingerprint with the host through a trusted channel before continuing.',
   'knownHosts.trust': 'Trust host',
   'knownHosts.notTrusted': 'The SSH host key was not trusted.',
 
