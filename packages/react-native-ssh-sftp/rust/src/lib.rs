@@ -2143,7 +2143,10 @@ mod tests {
             )
             .await;
             assert!(entries.as_array().unwrap().iter().any(|entry| {
-                entry.as_str().unwrap_or_default().contains("renamed.txt")
+                entry["filename"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("renamed.txt")
             }));
             let downloaded = live_call(
                 "sftpDownload",
