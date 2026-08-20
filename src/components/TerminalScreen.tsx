@@ -798,7 +798,7 @@ export function TerminalScreen({
           {error && <Text className="font-mono text-[8px] text-terminal-error">{t('terminal.attachFailed')}</Text>}
         </View>
       )}
-      {compact && error && <Text className="bg-terminal-error/15 px-2 py-1 font-mono text-[8px] text-terminal-error">{t('terminal.attachFailed')} · {String(error)}</Text>}
+      {compact && error && <Text className="bg-terminal-error/15 px-2 py-1 text-[8px] text-terminal-error">{t('terminal.attachFailed')} · {String(error)}</Text>}
       {searchOpen && (
         <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
           <Input

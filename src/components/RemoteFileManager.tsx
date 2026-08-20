@@ -606,7 +606,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
             ) : preview.error ? (
               <View className="flex-1 items-center justify-center p-8">
                 <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.openFailed')}</Text>
-                <Text className="mt-2 text-center font-mono text-[9px] leading-[14px] text-muted-foreground">{preview.error}</Text>
+                <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">{preview.error}</Text>
                 <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry)))}>
                   <RefreshCw size={16} color={colors.text} />
                   <Text>{t('files.retry')}</Text>
@@ -691,7 +691,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
               </View>
               <View className="min-w-0 flex-1">
                 <Text className="text-[17px] font-bold text-foreground">{t('files.title')}</Text>
-                <Text className="font-mono text-[8px] uppercase tracking-[1px] text-muted-foreground">{t(gitMode ? 'files.gitRemote' : 'files.remote')}</Text>
+                <Text className="text-[8px] uppercase tracking-[1px] text-muted-foreground">{t(gitMode ? 'files.gitRemote' : 'files.remote')}</Text>
               </View>
               <Button accessibilityLabel={t('files.close')} className="size-11 rounded-full px-0" variant="ghost" onPress={dismissNow}>
                 <X size={19} color={colors.text} />
@@ -701,7 +701,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
               <Button accessibilityLabel={t('files.parentDirectory')} className="h-12 w-12 rounded-none px-0" disabled={!path || path === '/' || busy || actionBusy} variant="ghost" onPress={hapticPress(() => loadDirectory(parentRemotePath(path)))}>
                 <ChevronLeft size={20} color={colors.text} />
               </Button>
-              <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground">
+              <Text numberOfLines={1} className="min-w-0 flex-1 text-[10px] text-foreground">
                 {gitMode ? gitRepository?.root : path || initialPath}
               </Text>
               {gitRepository ? (
@@ -727,7 +727,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
             ) : error ? (
               <View className="flex-1 items-center justify-center p-8">
                 <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.listFailed')}</Text>
-                <Text className="mt-2 text-center font-mono text-[9px] leading-[14px] text-muted-foreground">{error}</Text>
+                <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">{error}</Text>
                 <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => loadDirectory(path || initialPath))}>
                   <RefreshCw size={16} color={colors.text} />
                   <Text>{t('files.retry')}</Text>
@@ -741,7 +741,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
             ) : gitMode && gitError ? (
               <View className="flex-1 items-center justify-center p-8">
                 <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.gitFailed')}</Text>
-                <Text className="mt-2 text-center font-mono text-[9px] leading-[14px] text-muted-foreground">{gitError}</Text>
+                <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">{gitError}</Text>
                 <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => refreshGitChanges())}>
                   <RefreshCw size={16} color={colors.text} />
                   <Text>{t('files.retry')}</Text>
@@ -869,7 +869,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
                             <Text numberOfLines={1} className="text-left text-[13px] font-semibold text-foreground">
                               {name}
                             </Text>
-                            <Text numberOfLines={1} className="mt-0.5 font-mono text-[8px] text-muted-foreground">
+                            <Text numberOfLines={1} className="mt-0.5 text-[8px] text-muted-foreground">
                               {directory ? t('files.directory') : formatRemoteFileSize(entry.fileSize)}
                               {formatRemoteModificationDate(entry.modificationDate) ? ` · ${formatRemoteModificationDate(entry.modificationDate)}` : ''}
                             </Text>

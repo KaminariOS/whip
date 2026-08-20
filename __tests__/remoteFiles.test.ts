@@ -335,6 +335,30 @@ test('uses the requested syntax highlighter and terminal font in previews and ed
   expect(app).toContain("require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf')");
 });
 
+test('uses proportional UI typography for remote file context and metadata', () => {
+  const manager = readFileSync(
+    resolve(__dirname, '../src/components/RemoteFileManager.tsx'),
+    'utf8',
+  );
+  const terminal = readFileSync(
+    resolve(__dirname, '../src/components/TerminalScreen.tsx'),
+    'utf8',
+  );
+
+  expect(manager).toContain(
+    'className="text-[8px] uppercase tracking-[1px] text-muted-foreground"',
+  );
+  expect(manager).toContain(
+    'className="min-w-0 flex-1 text-[10px] text-foreground"',
+  );
+  expect(manager).toContain(
+    'className="mt-0.5 text-[8px] text-muted-foreground"',
+  );
+  expect(terminal).toContain(
+    'className="bg-terminal-error/15 px-2 py-1 text-[8px] text-terminal-error"',
+  );
+});
+
 test('offers a persistent collapsible Git status tree and native virtualized diffs', () => {
   const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
