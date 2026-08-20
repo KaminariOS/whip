@@ -56,7 +56,7 @@ import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
-import { AnimatedAgentStatusGlyph, hapticPress, StatusBadge } from './app-ui';
+import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
 import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import { Button } from './ui/button';
@@ -851,15 +851,14 @@ const AgentRow = memo(
                 }}
                 onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}
               >
-                <View
-                  className="size-10 items-center justify-center rounded-full"
-                  style={{ backgroundColor: `${tone}1F` }}
-                >
-                  <AnimatedAgentStatusGlyph
-                    status={agent.agent_status}
-                    color={tone}
-                  />
-                </View>
+                <AgentStatusMedallion
+                  accessibilityLabel={`${primaryLabel}: ${stateLabel}`}
+                  color={tone}
+                  connected
+                  glyphSize={18}
+                  size={40}
+                  status={agent.agent_status}
+                />
                 <View className="min-w-0 flex-1">
                   <View className="flex-row items-center gap-2">
                     <Text
