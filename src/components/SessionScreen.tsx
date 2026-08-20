@@ -610,12 +610,12 @@ export function SessionScreen({
                     key={item.tab_id}
                     className={cn('h-[39px] max-w-[170px] flex-row items-center overflow-hidden rounded-full border', isIpad && 'h-[45px] max-w-[230px]')}
                     style={sessionTabGlassStyle(active, colors)}>
-                    <Button accessibilityLabel={t('session.openTab', { tab: label })} className={cn('h-[39px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1', isIpad && 'h-[45px] px-3')} variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={hapticPress(() => openRenameTab(item))}>
+                    <Button accessibilityLabel={t('session.openTab', { tab: label })} className={cn('h-[39px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'h-[45px] px-3')} variant="ghost" onPress={hapticPress(() => chooseTab(item))} onLongPress={hapticPress(() => openRenameTab(item))}>
                       <AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status, colors)} size={isIpad ? 16 : 12} />
                       <Text numberOfLines={1} className={cn('max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'max-w-[140px] text-[14px] leading-5', active && 'text-primary-foreground')}>{label}</Text>
                       {item.pane_count > 1 && <Text className={cn('font-mono text-[8px] text-muted-foreground', isIpad && 'text-[11px]', active && 'text-primary-foreground')}>{item.pane_count}</Text>}
                     </Button>
-                    <Button accessibilityLabel={t('session.closeTab', { tab: label })} className={cn('h-[39px] w-7 rounded-none px-0', isIpad && 'h-[45px] w-8')} variant="ghost" onPress={hapticPress(() => closeTab(item))}>
+                    <Button accessibilityLabel={t('session.closeTab', { tab: label })} className={cn('h-[39px] w-7 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'h-[45px] w-8')} variant="ghost" onPress={hapticPress(() => closeTab(item))}>
                       <X size={isIpad ? 18 : 14} color={active ? colors.onPrimary : colors.textSecondary} />
                     </Button>
                   </View>

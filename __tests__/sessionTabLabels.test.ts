@@ -162,6 +162,21 @@ describe('session tab labels', () => {
     expect(screen).not.toContain("rounded-full bg-muted', active && 'bg-primary'");
   });
 
+  it('uses opacity instead of a rectangular pressed background for space and tab pills', () => {
+    const workspaceRail = readFileSync(
+      resolve(__dirname, '../src/components/WorkspaceRail.tsx'),
+      'utf8',
+    );
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/SessionScreen.tsx'),
+      'utf8',
+    );
+
+    for (const source of [workspaceRail, screen]) {
+      expect(source.match(/active:bg-transparent active:opacity-70 dark:active:bg-transparent/g)).toHaveLength(2);
+    }
+  });
+
   it('leaves enough vertical space for Android font descenders', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/SessionScreen.tsx'),
