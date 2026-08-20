@@ -4,8 +4,7 @@ import {
 } from '@callstack/liquid-glass';
 import { BlurView } from 'expo-blur';
 import { createContext, useContext, useEffect, type ReactNode, type RefObject } from 'react';
-import { cssInterop } from 'nativewind';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
 import { useTheme } from '@/src/theme';
@@ -16,8 +15,6 @@ interface GlassContextValue {
 }
 
 const GlassContext = createContext<GlassContextValue | null>(null);
-
-cssInterop(LiquidGlassView, { className: 'style' });
 
 export function GlassProvider({ blurTarget, enabled, children }: GlassContextValue & { children: ReactNode }) {
   useEffect(() => {
@@ -40,7 +37,13 @@ export function useAppGlassEnabled(): boolean {
   return useContext(GlassContext)?.enabled === true;
 }
 
-export function GlassBackdrop({ intensity = 36 }: { intensity?: number }) {
+export function GlassBackdrop({
+  intensity = 36,
+  shapeClassName,
+}: {
+  intensity?: number;
+  shapeClassName?: string;
+}) {
   const glass = useContext(GlassContext);
   const { colors, isDark } = useTheme();
   const enabled = glass?.enabled === true;
@@ -56,7 +59,7 @@ export function GlassBackdrop({ intensity = 36 }: { intensity?: number }) {
       colorScheme={isDark ? 'dark' : 'light'}
       effect="clear"
       pointerEvents="none"
-      style={StyleSheet.absoluteFill}
+      style={[StyleSheet.absoluteFill, liquidGlassShapeStyle(shapeClassName)]}
     />
   ) : (
     <>
@@ -90,28 +93,39 @@ export function GlassSurface({
   ...props
 }: React.ComponentProps<typeof View> & { intensity?: number }) {
   const glass = useContext(GlassContext);
-  const { colors, isDark } = useTheme();
-  const enabled = glass?.enabled === true;
-  if (enabled && isLiquidGlassSupported) {
-    return (
-      <LiquidGlassView
-        className={cn('relative overflow-hidden', className)}
-        colorScheme={isDark ? 'dark' : 'light'}
-        effect="clear"
-        interactive
-        style={style}
-        {...props}>
-        {children}
-      </LiquidGlassView>
-    );
-  }
+  const { colors } = useTheme();
   return (
     <View
       className={cn('relative overflow-hidden', className)}
       style={[glass?.enabled === true ? undefined : { borderColor: colors.divider }, style]}
       {...props}>
-      <GlassBackdrop intensity={intensity} />
+      <GlassBackdrop intensity={intensity} shapeClassName={className} />
       {children}
     </View>
   );
 }
+
+function liquidGlassShapeStyle(className?: string): ViewStyle | undefined {
+  if (!className) return undefined;
+  if (className.includes('rounded-full')) return styles.roundedFull;
+
+  const topRadius = className.match(/rounded-t-\[(\d+)px\]/)?.[1];
+  if (topRadius) {
+    const radius = Number(topRadius);
+    return { borderTopLeftRadius: radius, borderTopRightRadius: radius };
+  }
+
+  const arbitraryRadius = className.match(/rounded-\[(\d+)px\]/)?.[1];
+  if (arbitraryRadius) return { borderRadius: Number(arbitraryRadius) };
+  if (className.includes('rounded-xl')) return styles.roundedXl;
+  if (className.includes('rounded-lg')) return styles.roundedLg;
+  if (className.includes('rounded-md')) return styles.roundedMd;
+  return undefined;
+}
+
+const styles = StyleSheet.create({
+  roundedFull: { borderRadius: 9999 },
+  roundedLg: { borderRadius: 8 },
+  roundedMd: { borderRadius: 6 },
+  roundedXl: { borderRadius: 12 },
+});

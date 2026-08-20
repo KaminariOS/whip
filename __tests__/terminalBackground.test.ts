@@ -2,6 +2,7 @@ const mockExistingFiles = new Set<string>();
 const mockCopies: Array<{ source: string; destination: string; overwrite?: boolean }> = [];
 const mockDeletedFiles: string[] = [];
 const mockCreatedDirectories: string[] = [];
+const mockWrittenFiles: Array<{ uri: string; content: string; append?: boolean }> = [];
 const mockPickImageFromLibrary = jest.fn();
 const mockDisposePickedImage = jest.fn();
 
@@ -43,6 +44,19 @@ jest.mock('expo-file-system', () => {
       mockExistingFiles.add(destination.uri);
     }
 
+    copySync(destination: File, options?: { overwrite?: boolean }) {
+      mockCopies.push({ source: this.uri, destination: destination.uri, overwrite: options?.overwrite });
+      mockExistingFiles.add(destination.uri);
+    }
+
+    create() {
+      mockExistingFiles.add(this.uri);
+    }
+
+    write(content: string, options?: { append?: boolean }) {
+      mockWrittenFiles.push({ uri: this.uri, content, append: options?.append });
+    }
+
     delete() {
       mockDeletedFiles.push(this.uri);
       mockExistingFiles.delete(this.uri);
@@ -52,7 +66,10 @@ jest.mock('expo-file-system', () => {
   return {
     Directory,
     File,
-    Paths: { document: new Directory('file:///data/user/0/io.github.kaminarios.whip/files/') },
+    Paths: {
+      cache: new Directory('file:///data/user/0/io.github.kaminarios.whip/cache/'),
+      document: new Directory('file:///data/user/0/io.github.kaminarios.whip/files/'),
+    },
   };
 });
 
@@ -75,6 +92,7 @@ beforeEach(() => {
   mockCopies.length = 0;
   mockDeletedFiles.length = 0;
   mockCreatedDirectories.length = 0;
+  mockWrittenFiles.length = 0;
   mockPickImageFromLibrary.mockReset();
   mockDisposePickedImage.mockReset();
 });
