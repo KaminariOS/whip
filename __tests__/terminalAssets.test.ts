@@ -9,6 +9,7 @@ const iosProject = resolve(__dirname, '../ios/HerdR.xcodeproj/project.pbxproj');
 const sourceFonts = resolve(__dirname, '../assets/terminal-fonts');
 const terminalRenderer = resolve(__dirname, '../src/components/TerminalRendererHost.tsx');
 const terminalAssetService = resolve(__dirname, '../src/services/terminalAssets.ios.ts');
+const mermaidPreview = resolve(__dirname, '../src/components/MermaidPreview.tsx');
 
 function readTerminalMarkup(html: string): string {
   const encoded = html.match(
@@ -178,6 +179,21 @@ describe('Android terminal assets', () => {
     expect(service).toContain("'TerminalAssets'");
   });
 
+  it('packages an offline Mermaid renderer with a restricted preview document', () => {
+    const html = readFileSync(resolve(assets, 'mermaid-preview.html'), 'utf8');
+    const runtime = readFileSync(resolve(assets, 'mermaid-preview.js'), 'utf8');
+    const renderer = readFileSync(mermaidPreview, 'utf8');
+
+    expect(html).toContain('Content-Security-Policy');
+    expect(html).toContain("default-src 'none'");
+    expect(html).toContain('<script src="mermaid.min.js"></script>');
+    expect(html).toContain('<script src="mermaid-preview.js"></script>');
+    expect(runtime).toContain("securityLevel: 'strict'");
+    expect(runtime).toContain('mermaid.render(id, source)');
+    expect(renderer).toContain("android: { uri: 'file:///android_asset/mermaid-preview.html' }");
+    expect(renderer).toContain("ios: { uri: IOS_TERMINAL_ASSETS?.mermaidURL || 'about:blank' }");
+  });
+
   it('auto-links the iOS bridge and assets as a local Expo module', () => {
     const config = JSON.parse(
       readFileSync(resolve(iosModule, 'expo-module.config.json'), 'utf8'),
@@ -201,6 +217,7 @@ describe('Android terminal assets', () => {
     expect(nativeModule).toContain('public final class TerminalAssetsModule: Module');
     expect(nativeModule).toContain('Name("TerminalAssets")');
     expect(nativeModule).toContain('Constant("indexURL")');
+    expect(nativeModule).toContain('Constant("mermaidURL")');
     expect(project).not.toContain('TerminalAssets in Resources');
     expect(project).not.toContain('TerminalAssetsModule.m in Sources');
   });
@@ -217,6 +234,9 @@ describe('Android terminal assets', () => {
     'xterm.js',
     'xterm.css',
     'addon-fit.js',
+    'mermaid.min.js',
+    'mermaid-LICENSE.txt',
+    'mermaid-preview.js',
     'jetbrains-mono-regular.ttf',
     'jetbrains-mono-bold.ttf',
     'symbols-nerd-font-mono-regular.ttf',

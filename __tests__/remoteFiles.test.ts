@@ -86,6 +86,7 @@ describe('remote file previews', () => {
     expect(canPreviewRemoteTextFile('App.tsx', 1000)).toBe(true);
     expect(canPreviewRemoteTextFile('.env.local', 1000)).toBe(true);
     expect(canPreviewRemoteTextFile('architecture.svg', 1000)).toBe(true);
+    expect(canPreviewRemoteTextFile('architecture.mmd', 1000)).toBe(true);
     expect(canPreviewRemoteTextFile('photo.png', 1000)).toBe(false);
     expect(canPreviewRemoteTextFile('large.md', 600 * 1024)).toBe(false);
     expect(remotePreviewKind('README.md', 1000)).toBe('markdown');
@@ -98,10 +99,15 @@ describe('remote file previews', () => {
     expect(remotePreviewKind('notes.txt', 1000)).toBe('text');
     expect(remotePreviewKind('photo.png', 1000)).toBe('image');
     expect(remotePreviewKind('architecture.svg', 1000)).toBe('svg');
+    expect(remotePreviewKind('architecture.mmd', 1000)).toBe('mermaid');
+    expect(remotePreviewKind('sequence.mermaid', 1000)).toBe('mermaid');
+    expect(remotePreviewKind('large.mmd', 100_001)).toBe('unsupported');
     expect(remotePreviewKind('large.svg', 600 * 1024)).toBe('unsupported');
     expect(remotePreviewKind('recording.mp4', 1000)).toBe('video');
     expect(remotePreviewKind('screen.webm', 1000)).toBe('video');
     expect(remotePreviewKind('large.mov', 20 * 1024 * 1024 * 1024)).toBe('video');
+    expect(remotePreviewKind('podcast.mp3', 1000)).toBe('audio');
+    expect(remotePreviewKind('voice.opus', 1000)).toBe('audio');
     expect(remotePreviewKind('report.pdf', 1000)).toBe('pdf');
     expect(remotePreviewKind('archive.zip', 1000)).toBe('unsupported');
   });
@@ -152,10 +158,23 @@ test('remembers the last remote directory independently for each terminal', () =
   const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
 
   expect(session).toContain('const remoteFilePathsRef = useRef(new Map<string, string>());');
-  expect(session).toContain('const terminalKey = `${hostSessionId}:${activeTerminalSession.terminalId}`;');
+  expect(session).toContain('const terminalKey = `${hostSessionId}:${terminalId}`;');
   expect(session).toContain('remoteFilePathsRef.current.get(terminalKey)');
   expect(session).toContain('remoteFilePathsRef.current.set(terminalKey, path)');
   expect(manager).toContain('onPathChangeRef.current(listing.path);');
+});
+
+test('opens an agent tab remote directory on long press', () => {
+  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+  const herd = readFileSync(resolve(__dirname, '../src/components/HerdScreen.tsx'), 'utf8');
+  const session = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
+
+  expect(herd).toContain('onLongPress={hapticPress(() => onOpenFiles(item.hostId, agent))}');
+  expect(herd).toContain("name: 'open-files'");
+  expect(app).toContain('onOpenFiles={openAgentFiles}');
+  expect(app).toContain('terminalId: pane.terminal_id');
+  expect(session).toContain('openRequestedFileManager(openFilesRequest.terminalId);');
+  expect(session).toContain('remoteFilePathsRef.current.get(terminalKey)');
 });
 
 test('uses the authenticated SSH client for SFTP listing, transfers, and deletion', () => {
@@ -196,10 +215,29 @@ test('streams remote videos from the token-protected SFTP file server', () => {
   expect(manager).toContain('client.openRemoteSftpFileServer(entryPath)');
   expect(manager).toContain('.closeRemoteSftpFileServer(');
   expect(client).toContain('client.startSftpFileServer(remotePath)');
-  expect(preview).toContain('useVideoPlayer(uri)');
+  expect(preview).toContain('useVideoPlayer(uri,');
   expect(preview).toContain('nativeControls');
   expect(preview).toContain('contentFit="contain"');
   expect(preview).toContain('fullscreenOptions={{ enable: true }}');
+});
+
+test('streams remote audio with resumable native controls', () => {
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const preview = readFileSync(resolve(__dirname, '../src/components/RemoteAudioPreview.tsx'), 'utf8');
+  expect(manager).toContain("preview.kind === 'audio' && preview.sftpFileServer");
+  expect(manager).toContain('<RemoteAudioPreview');
+  expect(preview).toContain('useAudioPlayer(');
+  expect(preview).toContain('loadRemoteContentProgress(');
+  expect(preview).toContain('saveRemoteContentProgress(');
+});
+
+test('restores progress for remote text and Markdown previews', () => {
+  const code = readFileSync(resolve(__dirname, '../src/components/CodePreview.tsx'), 'utf8');
+  const markdown = readFileSync(resolve(__dirname, '../src/components/MarkdownPreview.tsx'), 'utf8');
+  const text = readFileSync(resolve(__dirname, '../src/components/RemoteTextPreview.tsx'), 'utf8');
+  expect(code).toContain('useRemoteScrollProgress(progressIdentity)');
+  expect(markdown).toContain('useRemoteScrollProgress(progressIdentity)');
+  expect(text).toContain('useRemoteScrollProgress(progressIdentity)');
 });
 
 test('opens streamed remote PDFs in an Android Custom Tab and returns to the directory', () => {
@@ -215,6 +253,24 @@ test('opens streamed remote PDFs in an Android Custom Tab and returns to the dir
   expect(manager).toContain("t('files.openPdf')");
   expect(packageJson).toContain('"expo-web-browser": "~57.0.2"');
   expect(appJson).toContain('"expo-web-browser"');
+});
+
+test('renders standalone Mermaid files with the bundled isolated WebView runtime', () => {
+  const manager = readFileSync(resolve(__dirname, '../src/components/RemoteFileManager.tsx'), 'utf8');
+  const preview = readFileSync(resolve(__dirname, '../src/components/MermaidPreview.tsx'), 'utf8');
+  const runtime = readFileSync(resolve(__dirname, '../scripts/mermaid-preview-runtime.js'), 'utf8');
+  const markdown = readFileSync(resolve(__dirname, '../src/components/MarkdownPreview.tsx'), 'utf8');
+
+  expect(manager).toContain("preview.kind === 'mermaid'");
+  expect(manager).toContain('<MermaidPreview');
+  expect(preview).toContain("file:///android_asset/mermaid-preview.html");
+  expect(preview).toContain('window.herdrRenderMermaid(');
+  expect(preview).toContain('allowUniversalAccessFromFileURLs={false}');
+  expect(runtime).toContain("securityLevel: 'strict'");
+  expect(runtime).toContain('maxEdges: MAX_EDGES');
+  expect(runtime).toContain("flowchart: { htmlLabels: false }");
+  expect(runtime).toContain('const result = await mermaid.render(id, source)');
+  expect(markdown).not.toContain('MermaidPreview');
 });
 
 test('opens cached images in the zoomable image preview', () => {

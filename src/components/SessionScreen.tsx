@@ -69,6 +69,8 @@ interface Props {
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
+  openFilesRequest: { id: number; terminalId: string } | null;
+  onOpenFilesRequestHandled: (requestId: number) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
@@ -111,6 +113,8 @@ export function SessionScreen({
   terminalPreferences,
   terminalControlUsage,
   terminalHistory,
+  openFilesRequest,
+  onOpenFilesRequestHandled,
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
@@ -573,15 +577,15 @@ export function SessionScreen({
     setEditorMode(null);
   };
 
-  const openFileManager = () => {
-    if (!activeTerminalSession) return;
+  const openFileManager = (terminalId = activeTerminalSession?.terminalId) => {
+    if (!terminalId) return;
     const terminalPane = snapshot.panes.find(
-      pane => pane.terminal_id === activeTerminalSession.terminalId,
+      pane => pane.terminal_id === terminalId,
     );
     const terminalWorkspace = snapshot.workspaces.find(
       item => item.workspace_id === terminalPane?.workspace_id,
     );
-    const terminalKey = `${hostSessionId}:${activeTerminalSession.terminalId}`;
+    const terminalKey = `${hostSessionId}:${terminalId}`;
     fileManagerTerminalKeyRef.current = terminalKey;
     setFileManagerPath(
       remoteFilePathsRef.current.get(terminalKey)
@@ -592,6 +596,20 @@ export function SessionScreen({
     );
     setFilesOpen(true);
   };
+
+  const openRequestedFileManager = useEffectEvent((terminalId: string) => {
+    openFileManager(terminalId);
+  });
+
+  useEffect(() => {
+    if (!visible || !openFilesRequest) return;
+    const terminalExists = terminalState.sessions.some(
+      session => session.terminalId === openFilesRequest.terminalId,
+    );
+    if (!terminalExists) return;
+    openRequestedFileManager(openFilesRequest.terminalId);
+    onOpenFilesRequestHandled(openFilesRequest.id);
+  }, [openFilesRequest, onOpenFilesRequestHandled, terminalState.sessions, visible]);
 
   const openAttachments = () => {
     if (!activeTerminalSession || activeTerminalSession.status !== 'connected') return;

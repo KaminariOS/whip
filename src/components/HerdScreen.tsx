@@ -87,6 +87,7 @@ interface Props {
   onCloseTab: (hostId: string, tabId: string) => Promise<void>;
   onRefresh: () => Promise<void>;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
+  onOpenFiles: (hostId: string, agent: AgentInfo) => void;
   onRunCommand: (hostId: string, workspaceId: string, tabName: string, command: string) => Promise<void>;
   onOpenSpace: (hostId: string, workspaceId: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
@@ -111,6 +112,7 @@ export function HerdScreen({
   onCloseTab,
   onRefresh,
   onOpenTerminal,
+  onOpenFiles,
   onRunCommand,
   onOpenSpace,
   onStartServer,
@@ -368,11 +370,12 @@ export function HerdScreen({
         showHost={resolvedHostId === null}
         showSpace={selectedWorkspaceId === null}
         onOpenTerminal={onOpenTerminal}
+        onOpenFiles={onOpenFiles}
         closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
         onCloseTab={closeTab}
       />
     ),
-    [closeTab, closingTabKey, onOpenTerminal, resolvedHostId, selectedWorkspaceId],
+    [closeTab, closingTabKey, onOpenFiles, onOpenTerminal, resolvedHostId, selectedWorkspaceId],
   );
 
   return (
@@ -721,6 +724,7 @@ const AgentRow = memo(
     closing,
     onCloseTab,
     onOpenTerminal,
+    onOpenFiles,
   }: {
     item: HerdQueueAgent;
     showHost: boolean;
@@ -728,6 +732,7 @@ const AgentRow = memo(
     closing: boolean;
     onCloseTab: (item: HerdQueueAgent) => Promise<boolean>;
     onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
+    onOpenFiles: (hostId: string, agent: AgentInfo) => void;
   }) {
     const { colors } = useTheme();
     const { t } = useTranslation();
@@ -869,6 +874,10 @@ const AgentRow = memo(
               <Button
                 accessibilityActions={[
                   {
+                    name: 'open-files',
+                    label: t('terminal.openFiles'),
+                  },
+                  {
                     name: 'close-tab',
                     label: t('session.closeTab', { tab: item.tabLabel }),
                   },
@@ -881,10 +890,14 @@ const AgentRow = memo(
                 disabled={closing}
                 variant="ghost"
                 onAccessibilityAction={event => {
-                  if (event.nativeEvent.actionName === 'close-tab')
+                  if (event.nativeEvent.actionName === 'open-files') {
+                    onOpenFiles(item.hostId, agent);
+                  } else if (event.nativeEvent.actionName === 'close-tab') {
                     commitClose();
+                  }
                 }}
                 onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}
+                onLongPress={hapticPress(() => onOpenFiles(item.hostId, agent))}
               >
                 <AgentStatusMedallion
                   accessibilityLabel={`${primaryLabel}: ${stateLabel}`}

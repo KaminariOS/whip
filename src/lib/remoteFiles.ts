@@ -2,8 +2,9 @@ import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
 
 export const MAX_REMOTE_TEXT_PREVIEW_BYTES = 512 * 1024;
 export const MAX_REMOTE_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
+export const MAX_REMOTE_MERMAID_PREVIEW_BYTES = 100_000;
 
-export type RemotePreviewKind = 'code' | 'html' | 'image' | 'markdown' | 'pdf' | 'svg' | 'text' | 'video' | 'unsupported';
+export type RemotePreviewKind = 'audio' | 'code' | 'html' | 'image' | 'markdown' | 'mermaid' | 'pdf' | 'svg' | 'text' | 'video' | 'unsupported';
 export type RemoteFileSortField = 'name' | 'modified' | 'size';
 export type RemoteFileSortDirection = 'ascending' | 'descending';
 
@@ -20,9 +21,11 @@ const CODE_FILENAMES = new Set(['containerfile', 'dockerfile', 'gemfile', 'justf
 const TEXT_FILENAMES = new Set(['license', 'readme']);
 const HTML_EXTENSIONS = new Set(['htm', 'html']);
 const MARKDOWN_EXTENSIONS = new Set(['markdown', 'md', 'mdx']);
+const MERMAID_EXTENSIONS = new Set(['mermaid', 'mmd']);
 const PDF_EXTENSIONS = new Set(['pdf']);
 const IMAGE_EXTENSIONS = new Set(['bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp']);
 const SVG_EXTENSIONS = new Set(['svg']);
+const AUDIO_EXTENSIONS = new Set(['aac', 'flac', 'm4a', 'mp3', 'oga', 'ogg', 'opus', 'wav', 'weba']);
 const VIDEO_EXTENSIONS = new Set(['3gp', 'm4v', 'mkv', 'mov', 'mp4', 'webm']);
 
 const CODE_LANGUAGE_BY_EXTENSION: Record<string, string> = {
@@ -143,7 +146,7 @@ function remoteModificationTime(value: string): number {
 }
 
 export function canPreviewRemoteTextFile(filename: string, fileSize: number): boolean {
-  return ['code', 'html', 'markdown', 'svg', 'text'].includes(remotePreviewKind(filename, fileSize));
+  return ['code', 'html', 'markdown', 'mermaid', 'svg', 'text'].includes(remotePreviewKind(filename, fileSize));
 }
 
 export function remotePreviewKind(filename: string, fileSize: number): RemotePreviewKind {
@@ -157,7 +160,13 @@ export function remotePreviewKind(filename: string, fileSize: number): RemotePre
   if (VIDEO_EXTENSIONS.has(extension)) {
     return 'video';
   }
+  if (AUDIO_EXTENSIONS.has(extension)) {
+    return 'audio';
+  }
   if (PDF_EXTENSIONS.has(extension)) return 'pdf';
+  if (MERMAID_EXTENSIONS.has(extension)) {
+    return fileSize <= MAX_REMOTE_MERMAID_PREVIEW_BYTES ? 'mermaid' : 'unsupported';
+  }
   if (fileSize > MAX_REMOTE_TEXT_PREVIEW_BYTES) return 'unsupported';
   if (SVG_EXTENSIONS.has(extension)) return 'svg';
   if (HTML_EXTENSIONS.has(extension)) return 'html';

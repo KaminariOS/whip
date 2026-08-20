@@ -1,6 +1,6 @@
 import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
 import * as WebBrowser from 'expo-web-browser';
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, AppState, FlatList, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -19,7 +19,10 @@ import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview } from './CodePreview';
 import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
+import { MermaidPreview } from './MermaidPreview';
 import { RemoteGitDiffPreview } from './RemoteGitDiffPreview';
+import { RemoteAudioPreview } from './RemoteAudioPreview';
+import { RemoteTextPreview } from './RemoteTextPreview';
 import { RemoteVideoPreview } from './RemoteVideoPreview';
 import { SvgPreview } from './SvgPreview';
 import { ZoomableImagePreview } from './ZoomableImagePreview';
@@ -533,6 +536,12 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
 
   const previewLoading = preview && !preview.error && (preview.gitStatus ? !preview.gitDiff : preview.kind !== 'unsupported' && (isSftpStreamPreview(preview.kind) ? !preview.sftpFileServer : !preview.cached));
   const canEdit = preview && !preview.gitStatus && isTextPreview(preview.kind) && Boolean(preview.cached) && preview.content !== null;
+  const previewProgressIdentity = preview ? {
+    hostId,
+    remotePath: preview.path,
+    fileSize: preview.entry.fileSize,
+    modificationDate: preview.entry.modificationDate,
+  } : null;
 
   return (
     <Modal animationType="slide" onRequestClose={() => (sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
@@ -593,7 +602,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
               </Button>
             </View>
             {preview.editing ? (
-              <CodeEditor editable={!actionBusy} filename={remoteEntryName(preview.entry)} onChangeText={draft => updatePreview({ draft })} value={preview.draft} />
+              <CodeEditor editable={!actionBusy} filename={remoteEntryName(preview.entry)} onChangeText={draft => updatePreview({ draft })} progressIdentity={previewProgressIdentity!} value={preview.draft} />
             ) : preview.error ? (
               <View className="flex-1 items-center justify-center p-8">
                 <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.openFailed')}</Text>
@@ -639,7 +648,9 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
                 <ZoomableImagePreview accessibilityLabel={remoteEntryName(preview.entry)} uri={preview.cached.uri} />
               </View>
             ) : preview.kind === 'video' && preview.sftpFileServer ? (
-              <RemoteVideoPreview filename={remoteEntryName(preview.entry)} uri={preview.sftpFileServer.url} />
+              <RemoteVideoPreview filename={remoteEntryName(preview.entry)} progressIdentity={previewProgressIdentity!} uri={preview.sftpFileServer.url} />
+            ) : preview.kind === 'audio' && preview.sftpFileServer ? (
+              <RemoteAudioPreview filename={remoteEntryName(preview.entry)} progressIdentity={previewProgressIdentity!} uri={preview.sftpFileServer.url} />
             ) : preview.kind === 'pdf' && preview.sftpFileServer ? (
               <View className="flex-1 items-center justify-center p-8">
                 <FileText size={34} color={colors.textSecondary} />
@@ -661,19 +672,15 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
             ) : preview.kind === 'svg' ? (
               <SvgPreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
             ) : preview.kind === 'markdown' ? (
-              <MarkdownPreview key={preview.path} client={client} content={preview.content || ''} onOpenRemotePath={openRemotePath} remotePath={preview.path} />
+              <MarkdownPreview key={preview.path} client={client} content={preview.content || ''} onOpenRemotePath={openRemotePath} progressIdentity={previewProgressIdentity!} remotePath={preview.path} />
+            ) : preview.kind === 'mermaid' ? (
+              <MermaidPreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
             ) : preview.kind === 'html' && preview.htmlPreview ? (
               <HtmlPreview filename={remoteEntryName(preview.entry)} revision={preview.htmlRevision} uri={preview.htmlPreview.url} />
             ) : preview.kind === 'code' ? (
-              <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
+              <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} progressIdentity={previewProgressIdentity!} />
             ) : (
-              <ScrollView className="flex-1 bg-terminal-canvas" contentContainerClassName="p-4">
-                <ScrollView horizontal>
-                  <Text selectable className="font-mono text-[11px] leading-[17px] text-terminal-text">
-                    {preview.content || ' '}
-                  </Text>
-                </ScrollView>
-              </ScrollView>
+              <RemoteTextPreview content={preview.content || ''} progressIdentity={previewProgressIdentity!} />
             )}
           </>
         ) : (
@@ -850,7 +857,9 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
                               <ImageIcon size={18} color={colors.textSecondary} />
                             ) : kind === 'video' ? (
                               <FileVideo size={18} color={colors.textSecondary} />
-                            ) : kind === 'code' || kind === 'html' ? (
+                            ) : kind === 'audio' ? (
+                              <FileMusic size={18} color={colors.textSecondary} />
+                            ) : kind === 'code' || kind === 'html' || kind === 'mermaid' ? (
                               <FileCode2 size={18} color={colors.textSecondary} />
                             ) : (
                               <FileText size={18} color={colors.textSecondary} />
@@ -1003,11 +1012,11 @@ function SwipeableRemoteFileRow({ children, deleting, disabled, name, onDelete }
 }
 
 function isTextPreview(kind: RemotePreviewKind): boolean {
-  return kind === 'code' || kind === 'html' || kind === 'markdown' || kind === 'svg' || kind === 'text';
+  return kind === 'code' || kind === 'html' || kind === 'markdown' || kind === 'mermaid' || kind === 'svg' || kind === 'text';
 }
 
 function isSftpStreamPreview(kind: RemotePreviewKind): boolean {
-  return kind === 'pdf' || kind === 'video';
+  return kind === 'audio' || kind === 'pdf' || kind === 'video';
 }
 
 function remoteGitStatusEntry(status: RemoteGitStatusEntry): LsResult {

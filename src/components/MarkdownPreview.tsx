@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
 import {
   markdownImageTargets,
   resolveRemoteMarkdownPath,
@@ -13,6 +14,7 @@ import {
 } from '@/src/lib/markdownRemoteLinks';
 import { parentRemotePath, remoteEntryName, remotePreviewKind } from '@/src/lib/remoteFiles';
 import type { HerdrClient } from '@/src/services/HerdrClient';
+import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { cacheRemoteFile, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { useTheme } from '@/src/theme';
 
@@ -21,15 +23,17 @@ interface Props {
   content: string;
   remotePath: string;
   onOpenRemotePath: (path: string) => Promise<void>;
+  progressIdentity: RemoteContentIdentity;
 }
 
 const MAX_REMOTE_MARKDOWN_IMAGES = 24;
 const MAX_REMOTE_MARKDOWN_IMAGE_BYTES = 50 * 1024 * 1024;
 
-export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath }: Props) {
+export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath, progressIdentity }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const [localImages, setLocalImages] = useState<Record<string, string>>({});
+  const scrollProgress = useRemoteScrollProgress(progressIdentity);
   const markdownStyle = useMemo<MarkdownStyle>(() => ({
     paragraph: { color: colors.text, fontSize: 14, lineHeight: 22, marginBottom: 12 },
     h1: { color: colors.text, fontSize: 26, lineHeight: 32, marginBottom: 14 },
@@ -154,7 +158,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath 
   };
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerStyle={styles.scrollContent}>
+    <ScrollView {...scrollProgress} className="flex-1 bg-background" contentContainerStyle={styles.scrollContent}>
       <EnrichedMarkdownText
         containerStyle={styles.markdown}
         flavor="github"

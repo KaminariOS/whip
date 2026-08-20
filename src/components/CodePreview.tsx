@@ -14,8 +14,10 @@ import {
   View,
 } from 'react-native';
 
+import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
 import { remoteCodeLanguage } from '@/src/lib/remoteFiles';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
+import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { useTheme } from '@/src/theme';
 
 const CODE_FONT_SIZE = 12;
@@ -27,12 +29,14 @@ const MIN_GUTTER_WIDTH = 46;
 interface PreviewProps {
   content: string;
   filename: string;
+  progressIdentity: RemoteContentIdentity;
 }
 
 interface EditorProps {
   editable: boolean;
   filename: string;
   onChangeText: (value: string) => void;
+  progressIdentity: RemoteContentIdentity;
   value: string;
 }
 
@@ -41,7 +45,7 @@ function HighlightedCode({
   filename,
   contentHeight,
   contentWidth,
-}: PreviewProps & { contentHeight?: number; contentWidth?: number }) {
+}: Omit<PreviewProps, 'progressIdentity'> & { contentHeight?: number; contentWidth?: number }) {
   const { isDark } = useTheme();
   return (
     <CodeHighlighter
@@ -66,9 +70,11 @@ function HighlightedCode({
   );
 }
 
-export function CodePreview({ content, filename }: PreviewProps) {
+export function CodePreview({ content, filename, progressIdentity }: PreviewProps) {
+  const scrollProgress = useRemoteScrollProgress(progressIdentity);
   return (
     <ScrollView
+      {...scrollProgress}
       className="flex-1 bg-background"
       contentContainerStyle={styles.verticalContent}>
       <HighlightedCode content={content} filename={filename} />
@@ -76,8 +82,9 @@ export function CodePreview({ content, filename }: PreviewProps) {
   );
 }
 
-export function CodeEditor({ editable, filename, onChangeText, value }: EditorProps) {
+export function CodeEditor({ editable, filename, onChangeText, progressIdentity, value }: EditorProps) {
   const { colors } = useTheme();
+  const scrollProgress = useRemoteScrollProgress(progressIdentity);
   const highlightedValue = useDeferredValue(value);
   const gutterScrollRef = useRef<ScrollView>(null);
   const [viewport, setViewport] = useState({ height: 0, width: 0 });
@@ -116,13 +123,9 @@ export function CodeEditor({ editable, filename, onChangeText, value }: EditorPr
       row: lines.length - 1,
     };
   }, [selectionEnd, value]);
-  const syncGutterScroll = ({
-    nativeEvent,
-  }: NativeSyntheticEvent<NativeScrollEvent>) => {
-    gutterScrollRef.current?.scrollTo({
-      animated: false,
-      y: nativeEvent.contentOffset.y,
-    });
+  const syncGutterScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    gutterScrollRef.current?.scrollTo({ animated: false, y: event.nativeEvent.contentOffset.y });
+    scrollProgress.onScroll(event);
   };
 
   return (
@@ -169,11 +172,11 @@ export function CodeEditor({ editable, filename, onChangeText, value }: EditorPr
             style={styles.codeScroller}
             contentContainerStyle={{ width: metrics.codeWidth }}>
             <ScrollView
+              {...scrollProgress}
               nestedScrollEnabled
               keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="always"
               onScroll={syncGutterScroll}
-              scrollEventThrottle={16}
               style={{ height: viewport.height, width: metrics.codeWidth }}
               contentContainerStyle={{
                 minHeight: metrics.contentHeight,

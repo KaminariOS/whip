@@ -202,6 +202,12 @@ interface SnapshotMeasurement {
   latencyMs: number | null;
 }
 
+interface RemoteFilesRequest {
+  id: number;
+  hostSessionId: string;
+  terminalId: string;
+}
+
 interface ConnectOptions {
   persistProfile?: boolean;
   navigate?: boolean;
@@ -258,6 +264,7 @@ function AppContent() {
   const persistentAlertDurationSecondsRef = useRef(defaultDevicePreferences.persistentAlertDurationSeconds);
   const ttsEnabledRef = useRef(false);
   const handledNotificationIdRef = useRef<string | null>(null);
+  const remoteFilesRequestIdRef = useRef(0);
   const biometricOnResumeRef = useRef(defaultDevicePreferences.biometricOnResume);
   const biometricForKeysRef = useRef(defaultDevicePreferences.biometricForKeys);
   const preferencesLoadedRef = useRef(false);
@@ -305,6 +312,7 @@ function AppContent() {
   const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
   const [terminalControlUsage, setTerminalControlUsage] = useState<TerminalControlUsage>(defaultDevicePreferences.terminalControlUsage);
   const [terminalHistory, setTerminalHistory] = useState<string[]>([]);
+  const [remoteFilesRequest, setRemoteFilesRequest] = useState<RemoteFilesRequest | null>(null);
   const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
   const [credentialRecoveryBusy, setCredentialRecoveryBusy] = useState(false);
   const applyAppearance = useEffectEvent((value: AppearancePreference) => {
@@ -334,6 +342,10 @@ function AppContent() {
 
   const deleteTerminalHistoryEntries = useCallback((entries: readonly string[]) => {
     setTerminalHistory(current => removeTerminalHistoryEntries(current, entries));
+  }, []);
+
+  const handleRemoteFilesRequest = useCallback((requestId: number) => {
+    setRemoteFilesRequest(current => current?.id === requestId ? null : current);
   }, []);
 
   liveSessionsRef.current = liveSessions;
@@ -1523,6 +1535,18 @@ function AppContent() {
     openPaneTerminal(sessionId, pane, true);
   };
 
+  const openAgentFiles = (sessionId: string, agent: AgentInfo) => {
+    const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+    const pane = session?.snapshot.panes.find(item => item.pane_id === agent.pane_id);
+    if (!pane) return;
+    setRemoteFilesRequest({
+      id: ++remoteFilesRequestIdRef.current,
+      hostSessionId: sessionId,
+      terminalId: pane.terminal_id,
+    });
+    openPaneTerminal(sessionId, pane, true);
+  };
+
   const selectHerdHost = (sessionId: string | null) => {
     setHerdHostFilterId(sessionId);
     if (sessionId) setLiveSessions(current => selectLiveHostSession(current, sessionId));
@@ -1732,6 +1756,7 @@ function AppContent() {
                   onCloseTab={closeHerdTab}
                   onRefresh={refreshHerd}
                   onOpenTerminal={openAgentTerminal}
+                  onOpenFiles={openAgentFiles}
                   onRunCommand={runHerdCommand}
                   onOpenSpace={openHerdWorkspace}
                   onStartServer={startServer}
@@ -1819,6 +1844,10 @@ function AppContent() {
             terminalPreferences={terminalPreferences}
             terminalControlUsage={terminalControlUsage}
             terminalHistory={terminalHistory}
+            openFilesRequest={remoteFilesRequest?.hostSessionId === activeSession.id
+              ? remoteFilesRequest
+              : null}
+            onOpenFilesRequestHandled={handleRemoteFilesRequest}
             onTerminalControlUse={recordTerminalControlUse}
             onTerminalHistoryEntry={recordTerminalHistoryEntry}
             onTerminalOpenLinksInAppChange={updateTerminalOpenLinksInApp}
@@ -1958,6 +1987,8 @@ function LiveSessionView({
   terminalPreferences,
   terminalControlUsage,
   terminalHistory,
+  openFilesRequest,
+  onOpenFilesRequestHandled,
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
@@ -1976,6 +2007,8 @@ function LiveSessionView({
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
+  openFilesRequest: RemoteFilesRequest | null;
+  onOpenFilesRequestHandled: (requestId: number) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
@@ -2009,6 +2042,8 @@ function LiveSessionView({
       terminalPreferences={terminalPreferences}
       terminalControlUsage={terminalControlUsage}
       terminalHistory={terminalHistory}
+      openFilesRequest={openFilesRequest}
+      onOpenFilesRequestHandled={onOpenFilesRequestHandled}
       onTerminalControlUse={onTerminalControlUse}
       onTerminalHistoryEntry={onTerminalHistoryEntry}
       onTerminalOpenLinksInAppChange={onTerminalOpenLinksInAppChange}

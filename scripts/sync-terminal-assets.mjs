@@ -72,6 +72,18 @@ await Promise.all([
     'addon-fit.js',
   ),
   copyTerminalAsset(
+    resolve(root, 'node_modules/mermaid/dist/mermaid.min.js'),
+    'mermaid.min.js',
+  ),
+  copyTerminalAsset(
+    resolve(root, 'node_modules/mermaid/LICENSE'),
+    'mermaid-LICENSE.txt',
+  ),
+  copyTerminalAsset(
+    resolve(root, 'scripts/mermaid-preview-runtime.js'),
+    'mermaid-preview.js',
+  ),
+  copyTerminalAsset(
     jetBrainsMonoRegular,
     fontManifest.text.bundledRegularFile,
   ),
@@ -94,6 +106,40 @@ await Promise.all([
     fontManifest.symbols.bundledLicenseFile,
   ),
 ]);
+
+const mermaidPreviewHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base href="file:///android_asset/">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:">
+  <style>
+    :root { color-scheme: dark; }
+    :root[data-appearance='light'] { color-scheme: light; }
+    html, body { width: 100%; min-height: 100%; margin: 0; background: transparent; }
+    body { box-sizing: border-box; overflow: auto; padding: 16px; }
+    #diagram { display: flex; min-width: 100%; min-height: calc(100vh - 32px); align-items: center; justify-content: center; }
+    #diagram svg { display: block; width: auto; max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <main id="diagram" aria-live="polite"></main>
+  <script src="mermaid.min.js"></script>
+  <script src="mermaid-preview.js"></script>
+</body>
+</html>`;
+
+await writeFile(
+  resolve(assets, 'mermaid-preview.html'),
+  mermaidPreviewHtml,
+  'utf8',
+);
+await writeFile(
+  resolve(iosAssets, 'mermaid-preview.html'),
+  mermaidPreviewHtml.replace('  <base href="file:///android_asset/">\n', ''),
+  'utf8',
+);
 
 const terminalSessionHtml = `<!doctype html>
 <html>

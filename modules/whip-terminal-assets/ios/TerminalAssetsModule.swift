@@ -37,5 +37,9 @@ public final class TerminalAssetsModule: Module {
     Constant("indexURL") {
       resourceBundle?.url(forResource: "index", withExtension: "html")?.absoluteString ?? ""
     }
+
+    Constant("mermaidURL") {
+      resourceBundle?.url(forResource: "mermaid-preview", withExtension: "html")?.absoluteString ?? ""
+    }
   }
 }
