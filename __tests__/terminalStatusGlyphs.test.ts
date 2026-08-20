@@ -31,6 +31,10 @@ describe('terminal hierarchy status glyphs', () => {
     expect(appUi).toContain('const { style } = useStatusMotion(status, false);');
     expect(appUi).toContain('export function AgentStatusMedallion');
     expect(appUi).toContain('agentStatusCircleBloomStyle(color, bloomSize)');
+    expect(appUi).toContain("Platform.OS === 'ios'");
+    expect(appUi).toContain('shadowColor: color');
+    expect(appUi).toContain('shadowOpacity: 0.72');
+    expect(appUi).toContain('shadowRadius: 8');
     expect(appUi).toContain("filter: [{ blur: 5 }]");
     expect(appUi).toContain('<CircularAgentSpinner frame={frame} color={color} size={size} />');
     expect(appUi).toContain('const AGENT_SPINNER_ORBIT_RADIUS = 9.5;');
