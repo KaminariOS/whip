@@ -26,6 +26,15 @@ const consoleMethods: readonly AppLogLevel[] = [
   'warn',
   'error',
 ];
+const appLogTimeOptions: Intl.DateTimeFormatOptions = {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+};
+const appLogTimeFormatter = new Intl.DateTimeFormat(
+  undefined,
+  appLogTimeOptions,
+);
 
 export function installAppLogCapture(): void {
   if (installed) return;
@@ -60,6 +69,22 @@ export function formatAppLogs(
         }`,
     )
     .join('\n');
+}
+
+export function formatAppLogTime(
+  timestamp: string,
+  locale?: string,
+  timeZone?: string,
+): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+
+  if (!locale && !timeZone) return appLogTimeFormatter.format(date);
+
+  return new Intl.DateTimeFormat(locale, {
+    ...appLogTimeOptions,
+    ...(timeZone ? { timeZone } : {}),
+  }).format(date);
 }
 
 export function subscribeToAppLogs(listener: () => void): () => void {

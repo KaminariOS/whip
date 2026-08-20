@@ -76,6 +76,18 @@ describe('app logs', () => {
     unsubscribe();
   });
 
+  it('formats timestamps as localized clock time without milliseconds', () => {
+    const logs =
+      require('../src/services/appLogs') as typeof import('../src/services/appLogs');
+
+    expect(
+      logs.formatAppLogTime('2026-08-20T13:05:09.427Z', 'en-US', 'UTC'),
+    ).toBe('01:05:09 PM');
+    expect(logs.formatAppLogTime('not-a-date', 'en-US', 'UTC')).toBe(
+      'not-a-date',
+    );
+  });
+
   it('starts capture before loading the app and exposes copy-all in More', () => {
     const entry = readFileSync(resolve(__dirname, '../index.js'), 'utf8');
     const more = readFileSync(
@@ -94,7 +106,11 @@ describe('app logs', () => {
     expect(screen).toContain(
       '<AppLogsModal visible onClose={() => setVisible(false)} />',
     );
-    expect(screen).toContain('Clipboard.setString(formatAppLogs(entries))');
+    expect(screen).toContain(
+      'Clipboard.setString(formatAppLogs(filteredEntries))',
+    );
+    expect(screen).toContain('accessibilityRole="radio"');
+    expect(screen).toContain('formatAppLogTime(entry.timestamp)');
     expect(screen).toContain("t('appLogs.privacy')");
   });
 });
