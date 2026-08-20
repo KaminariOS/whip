@@ -19,6 +19,7 @@ import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import type { TerminalFrame } from '../lib/terminalBridge';
+import { arrayBufferToBase64 } from '../lib/base64';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import {
   terminalRendererEvictionKeys,
@@ -193,18 +194,29 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (reset) entry.resetOnNextFrame = false;
     const resetScript = reset ? `window.herdrReset(${key}); ` : '';
     if (frame.encoding === 'utf8') {
+      if (typeof frame.bytes !== 'string') return;
       inject(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)});`);
       return;
     }
-    if (typeof frame.final === 'boolean') {
+    if (typeof frame.bytes === 'string' && typeof frame.final === 'boolean') {
       inject(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final});`);
       return;
     }
-    for (let offset = 0; offset < frame.bytes.length; offset += FRAME_CHUNK_SIZE) {
-      const chunk = frame.bytes.slice(offset, offset + FRAME_CHUNK_SIZE);
-      const final = offset + FRAME_CHUNK_SIZE >= frame.bytes.length;
-      inject(`${offset === 0 ? resetScript : ''}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(chunk)}, ${final});`);
+    const encoded = typeof frame.bytes === 'string'
+      ? frame.bytes
+      : arrayBufferToBase64(frame.bytes);
+    const writes: string[] = [];
+    if (encoded.length === 0) {
+      writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true);`);
+    } else {
+      for (let offset = 0; offset < encoded.length; offset += FRAME_CHUNK_SIZE) {
+        const chunk = encoded.slice(offset, offset + FRAME_CHUNK_SIZE);
+        const final = offset + FRAME_CHUNK_SIZE >= encoded.length;
+        writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(chunk)}, ${final});`);
+      }
     }
+    // A frame can require multiple chunks, but it crosses into the WebView once.
+    inject(`${resetScript}${writes.join('')}`);
   }, [inject]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {

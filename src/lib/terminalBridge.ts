@@ -1,12 +1,12 @@
 export interface TerminalFrame {
   type: 'terminal.frame';
   seq: number;
-  /** Herdr bridge frames are base64 ANSI bytes; SSH shell frames are decoded UTF-8 text. */
+  /** Herdr frames are raw ANSI bytes; compatibility frames may still be base64 strings. */
   encoding: 'ansi' | 'utf8';
   width: number;
   height: number;
   full: boolean;
-  bytes: string;
+  bytes: string | ArrayBuffer;
   /** Present when a large base64 frame is already split into bridge-safe chunks. */
   final?: boolean;
 }

@@ -628,10 +628,7 @@ class SSHClient {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
             RNSSHClient.sftpLs(path, this._key, (error, _response) => {
-                const response = _response ? _response.map(p => {
-                    // eslint-disable-next-line no-control-regex -- Control characters are removed from the response, because they can make JSON.parse fail
-                    return JSON.parse(p.replace(/[\u0000-\u001F]/g, ''));
-                }) : undefined;
+                const response = _response || undefined;
                 if (callback) {
                     callback(error, response);
                 }

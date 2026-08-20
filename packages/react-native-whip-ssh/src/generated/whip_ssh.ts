@@ -18,8 +18,13 @@ import {
   type UniffiObjectFactory,
   type UniffiReferenceHolder,
   type UniffiRustCallStatus,
+  FfiConverterArrayBuffer,
+  FfiConverterBool,
   FfiConverterObject,
   FfiConverterObjectWithCallbacks,
+  FfiConverterOptional,
+  FfiConverterUInt32,
+  FfiConverterUInt64,
   RustBuffer,
   UniffiAbstractObject,
   UniffiInternalError,
@@ -116,6 +121,124 @@ export function clearEventSink(): void {
   );
 }
 
+export function herdrBridgeInputFast(
+  key: string,
+  terminalId: string,
+  text: string,
+): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_input_fast(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function herdrBridgeResizeFast(
+  key: string,
+  terminalId: string,
+  columns: number,
+  rows: number,
+  cellWidthPx: number,
+  cellHeightPx: number,
+): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_resize_fast(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(
+            cellWidthPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt32.lower(
+            cellHeightPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function herdrBridgeScrollFast(
+  key: string,
+  terminalId: string,
+  up: boolean,
+  lines: number,
+): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_scroll_fast(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(up, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(lines, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function resizeShellFast(
+  key: string,
+  columns: number,
+  rows: number,
+): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_resize_shell_fast(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function setEventSink(sink: WhipSshEventSink): void {
   uniffiCaller.rustCall(
     /*caller:*/ callStatus => {
@@ -137,6 +260,27 @@ export function shutdown(): void {
       nativeModule().ubrn_uniffi_whip_ssh_fn_func_shutdown(callStatus);
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function writeShellInput(key: string, data: string): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_shell_input(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(data, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
   );
 }
 
@@ -204,6 +348,15 @@ const FfiConverterString = uniffiCreateFfiConverterString(stringConverter);
 
 export interface WhipSshEventSink {
   emit(eventJson: string): void;
+  terminalFrame(
+    key: string,
+    terminalId: string,
+    sequence: bigint,
+    width: number,
+    height: number,
+    full: boolean,
+    bytes: ArrayBuffer,
+  ): void;
 }
 
 export class WhipSshEventSinkImpl
@@ -227,6 +380,33 @@ export class WhipSshEventSinkImpl
         nativeModule().ubrn_uniffi_whip_ssh_fn_method_whipssheventsink_emit(
           uniffiTypeWhipSshEventSinkImplObjectFactory.clonePointer(this),
           FfiConverterString.lower(eventJson, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  terminalFrame(
+    key: string,
+    terminalId: string,
+    sequence: bigint,
+    width: number,
+    height: number,
+    full: boolean,
+    bytes: ArrayBuffer,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_whipssheventsink_terminal_frame(
+          uniffiTypeWhipSshEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(sequence, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(width, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(height, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(full, nativeModule().rustbuffer_alloc),
+          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
           callStatus,
         );
       },
@@ -346,6 +526,42 @@ const uniffiCallbackInterfaceWhipSshEventSink: {
       );
       return uniffiResult;
     },
+    terminal_frame: (
+      uniffiHandle: bigint,
+      key: Uint8Array,
+      terminalId: Uint8Array,
+      sequence: bigint,
+      width: number,
+      height: number,
+      full: number,
+      bytes: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback = FfiConverterTypeWhipSshEventSink.lift(uniffiHandle);
+        return jsCallback.terminalFrame(
+          FfiConverterString.lift(key),
+          FfiConverterString.lift(terminalId),
+          FfiConverterUInt64.lift(sequence),
+          FfiConverterUInt32.lift(width),
+          FfiConverterUInt32.lift(height),
+          FfiConverterBool.lift(full),
+          FfiConverterArrayBuffer.lift(bytes),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
     uniffi_free: (uniffiHandle: UniffiHandle): void => {
       // this will throw a stale handle error if the handle isn't found.
       FfiConverterTypeWhipSshEventSink.drop(uniffiHandle);
@@ -360,6 +576,9 @@ const uniffiCallbackInterfaceWhipSshEventSink: {
     );
   },
 };
+
+// FfiConverter for string | undefined
+const FfiConverterOptionalString = new FfiConverterOptional(FfiConverterString);
 
 /**
  * This should be called before anything else.
@@ -404,6 +623,38 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_input_fast() !==
+    50023
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_herdr_bridge_input_fast',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_resize_fast() !==
+    28787
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_herdr_bridge_resize_fast',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_scroll_fast() !==
+    42087
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_herdr_bridge_scroll_fast',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast() !==
+    58826
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_resize_shell_fast',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_event_sink() !== 41709
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
@@ -416,11 +667,27 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_write_shell_input() !==
+    17130
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_write_shell_input',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit() !==
     9609
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_whipssheventsink_emit',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_terminal_frame() !==
+    12684
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_whipssheventsink_terminal_frame',
     );
   }
 

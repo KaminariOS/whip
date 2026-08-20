@@ -1216,7 +1216,7 @@ export class HerdrClient {
         typeof event.seq === 'number'
         && typeof event.width === 'number'
         && typeof event.height === 'number'
-        && typeof event.bytes === 'string'
+        && (typeof event.bytes === 'string' || event.bytes instanceof ArrayBuffer)
       ) {
         this.terminalConnections.get(terminalId)?.onFrame({
           type: 'terminal.frame',

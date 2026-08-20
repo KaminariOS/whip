@@ -29,7 +29,7 @@ export interface HerdrBridgeEvent {
     width?: number;
     height?: number;
     full?: boolean;
-    bytes?: string;
+    bytes?: string | ArrayBuffer;
     final?: boolean;
     text?: string;
     body?: string;

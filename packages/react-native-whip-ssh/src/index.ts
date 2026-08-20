@@ -2,9 +2,14 @@ import {
   call,
   callAsync,
   clearEventSink,
+  herdrBridgeInputFast,
+  herdrBridgeResizeFast,
+  herdrBridgeScrollFast,
+  resizeShellFast,
   setEventSink,
   shutdown as shutdownRust,
   type WhipSshEventSink,
+  writeShellInput,
 } from './generated-entry';
 
 export * from './generated-entry';
@@ -20,6 +25,10 @@ type RustResponse = {
 };
 
 const listeners = new Map<string, Set<Listener>>();
+
+function dispatchEvent(name: string, event: Record<string, unknown>): void {
+  for (const listener of listeners.get(name) || []) listener(event);
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -102,12 +111,44 @@ const eventSink: WhipSshEventSink = {
     try {
       const event = JSON.parse(eventJson) as Record<string, unknown>;
       const name = typeof event.name === 'string' ? event.name : 'Shell';
-      for (const listener of listeners.get(name) || []) listener(event);
+      dispatchEvent(name, event);
     } catch {
       // Ignore malformed or application-handler events at the FFI boundary.
     }
   },
+  terminalFrame(
+    key: string,
+    terminalId: string,
+    sequence: bigint,
+    width: number,
+    height: number,
+    full: boolean,
+    bytes: ArrayBuffer,
+  ): void {
+    dispatchEvent('HerdrBridge', {
+      name: 'HerdrBridge',
+      key,
+      value: {
+        type: 'terminal',
+        terminalId,
+        seq: Number(sequence),
+        width,
+        height,
+        full,
+        bytes,
+      },
+    });
+  },
 };
+
+function finishFast(invoke: () => string | undefined, callback: Callback): void {
+  try {
+    const error = invoke();
+    callback(error || undefined);
+  } catch (error) {
+    callback(errorMessage(error));
+  }
+}
 
 setEventSink(eventSink);
 
@@ -169,11 +210,15 @@ const nativeClient = {
   },
 
   writeToShell(data: string, key: string, callback: Callback) {
-    finishSync('writeToShell', { key, data }, callback);
+    finishFast(() => writeShellInput(key, data), callback);
   },
 
   resizeShell(columns: number, rows: number, key: string) {
-    fireSync('resizeShell', { key, columns, rows });
+    try {
+      resizeShellFast(key, columns, rows);
+    } catch {
+      // Matches the legacy void native method, which cannot report failures.
+    }
   },
 
   closeShell(key: string) {
@@ -249,15 +294,25 @@ const nativeClient = {
   },
 
   herdrBridgeInput(terminalId: string, text: string, key: string, callback: Callback) {
-    finishSync('herdrBridgeInput', { terminalId, text, key }, callback);
+    finishFast(() => herdrBridgeInputFast(key, terminalId, text), callback);
   },
 
   herdrBridgeResize(columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, terminalId: string, key: string, callback: Callback) {
-    finishSync('herdrBridgeResize', { columns, rows, cellWidthPx, cellHeightPx, terminalId, key }, callback);
+    finishFast(
+      () => herdrBridgeResizeFast(
+        key,
+        terminalId,
+        columns,
+        rows,
+        cellWidthPx,
+        cellHeightPx,
+      ),
+      callback,
+    );
   },
 
   herdrBridgeScroll(up: boolean, lines: number, terminalId: string, key: string, callback: Callback) {
-    finishSync('herdrBridgeScroll', { up, lines, terminalId, key }, callback);
+    finishFast(() => herdrBridgeScrollFast(key, terminalId, up, lines), callback);
   },
 
   closeHerdrBridge(terminalId: string, key: string) {

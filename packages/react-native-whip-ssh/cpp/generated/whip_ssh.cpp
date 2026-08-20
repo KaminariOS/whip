@@ -98,10 +98,16 @@ typedef void (*UniffiForeignFutureCompleteVoid)(
 typedef void (*UniffiCallbackInterfaceWhipSshEventSinkMethod0)(
     uint64_t uniffi_handle, RustBuffer event_json, void *uniffi_out_return,
     RustCallStatus *rust_call_status);
+typedef void (*UniffiCallbackInterfaceWhipSshEventSinkMethod1)(
+    uint64_t uniffi_handle, RustBuffer key, RustBuffer terminal_id,
+    uint64_t sequence, uint32_t width, uint32_t height, int8_t full,
+    RustBuffer bytes, void *uniffi_out_return,
+    RustCallStatus *rust_call_status);
 typedef struct UniffiVTableCallbackInterfaceWhipSshEventSink {
   UniffiCallbackInterfaceFree uniffi_free;
   UniffiCallbackInterfaceClone uniffi_clone;
   UniffiCallbackInterfaceWhipSshEventSinkMethod0 emit;
+  UniffiCallbackInterfaceWhipSshEventSinkMethod1 terminal_frame;
 } UniffiVTableCallbackInterfaceWhipSshEventSink;
 /*handle*/ uint64_t uniffi_whip_ssh_fn_clone_whipssheventsink(
     /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
@@ -112,13 +118,34 @@ void uniffi_whip_ssh_fn_init_callback_vtable_whipssheventsink(
 void uniffi_whip_ssh_fn_method_whipssheventsink_emit(
     /*handle*/ uint64_t ptr, RustBuffer event_json,
     RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_whipssheventsink_terminal_frame(
+    /*handle*/ uint64_t ptr, RustBuffer key, RustBuffer terminal_id,
+    uint64_t sequence, uint32_t width, uint32_t height, int8_t full,
+    RustBuffer bytes, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_func_call(RustBuffer request_json,
                                         RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_func_call_async(RustBuffer request_json);
 void uniffi_whip_ssh_fn_func_clear_event_sink(RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_func_herdr_bridge_input_fast(
+    RustBuffer key, RustBuffer terminal_id, RustBuffer text,
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_func_herdr_bridge_resize_fast(
+    RustBuffer key, RustBuffer terminal_id, uint32_t columns, uint32_t rows,
+    uint32_t cell_width_px, uint32_t cell_height_px,
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_func_herdr_bridge_scroll_fast(
+    RustBuffer key, RustBuffer terminal_id, int8_t up, uint32_t lines,
+    RustCallStatus *uniffi_out_err);
+RustBuffer
+uniffi_whip_ssh_fn_func_resize_shell_fast(RustBuffer key, uint32_t columns,
+                                          uint32_t rows,
+                                          RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_func_set_event_sink(
     /*handle*/ uint64_t sink, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_func_shutdown(RustCallStatus *uniffi_out_err);
+RustBuffer
+uniffi_whip_ssh_fn_func_write_shell_input(RustBuffer key, RustBuffer data,
+                                          RustCallStatus *uniffi_out_err);
 RustBuffer ffi_whip_ssh_rustbuffer_alloc(uint64_t size,
                                          RustCallStatus *uniffi_out_err);
 RustBuffer ffi_whip_ssh_rustbuffer_from_bytes(ForeignBytes bytes,
@@ -238,9 +265,15 @@ void ffi_whip_ssh_rust_future_complete_void(
 uint16_t uniffi_whip_ssh_checksum_func_call();
 uint16_t uniffi_whip_ssh_checksum_func_call_async();
 uint16_t uniffi_whip_ssh_checksum_func_clear_event_sink();
+uint16_t uniffi_whip_ssh_checksum_func_herdr_bridge_input_fast();
+uint16_t uniffi_whip_ssh_checksum_func_herdr_bridge_resize_fast();
+uint16_t uniffi_whip_ssh_checksum_func_herdr_bridge_scroll_fast();
+uint16_t uniffi_whip_ssh_checksum_func_resize_shell_fast();
 uint16_t uniffi_whip_ssh_checksum_func_set_event_sink();
 uint16_t uniffi_whip_ssh_checksum_func_shutdown();
+uint16_t uniffi_whip_ssh_checksum_func_write_shell_input();
 uint16_t uniffi_whip_ssh_checksum_method_whipssheventsink_emit();
+uint16_t uniffi_whip_ssh_checksum_method_whipssheventsink_terminal_frame();
 uint32_t ffi_whip_ssh_uniffi_contract_version();
 }
 
@@ -1887,6 +1920,167 @@ static void cleanup() {
 }
 } // namespace
   // uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod0::vtablecallbackinterfacewhipssheventsink
+  // Implementation of CallbackInterfaceWhipSshEventSinkMethod1 for vtable field
+  // terminal_frame in VTableCallbackInterfaceWhipSshEventSink
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod1::vtablecallbackinterfacewhipssheventsink::UniffiCallbackInterfaceWhipSshEventSinkMethod1
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod1::
+    vtablecallbackinterfacewhipssheventsink {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, RustBuffer, RustBuffer, uint64_t, uint32_t,
+                          uint32_t, int8_t, RustBuffer, void *,
+                          RustCallStatus *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void body(jsi::Runtime &rt,
+                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+                 std::shared_ptr<jsi::Value> callbackValue,
+                 uint64_t rs_uniffiHandle, RustBuffer rs_key,
+                 RustBuffer rs_terminalId, uint64_t rs_sequence,
+                 uint32_t rs_width, uint32_t rs_height, int8_t rs_full,
+                 RustBuffer rs_bytes, void *rs_uniffiOutReturn,
+                 RustCallStatus *uniffi_call_status) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_key =
+      uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, rs_key);
+  auto js_terminalId = uniffi::whip_ssh::Bridging<RustBuffer>::toJs(
+      rt, callInvoker, rs_terminalId);
+  auto js_sequence =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_sequence);
+  auto js_width =
+      uniffi_jsi::Bridging<uint32_t>::toJs(rt, callInvoker, rs_width);
+  auto js_height =
+      uniffi_jsi::Bridging<uint32_t>::toJs(rt, callInvoker, rs_height);
+  auto js_full = uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, rs_full);
+  auto js_bytes =
+      uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, rs_bytes);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult =
+        cb.call(rt, js_uniffiHandle, js_key, js_terminalId, js_sequence,
+                js_width, js_height, js_full, js_bytes);
+
+    // Now copy the result back from JS into the RustCallStatus object.
+    uniffi::whip_ssh::Bridging<RustCallStatus>::copyFromJs(
+        rt, callInvoker, uniffiResult, uniffi_call_status);
+
+    if (uniffi_call_status->code != UNIFFI_CALL_STATUS_OK) {
+      // The JS callback finished abnormally, so we cannot retrieve the return
+      // value.
+      return;
+    }
+
+  } catch (const jsi::JSError &error) {
+    std::cout
+        << "Error in callback UniffiCallbackInterfaceWhipSshEventSinkMethod1: "
+        << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(uint64_t rs_uniffiHandle, RustBuffer rs_key,
+                     RustBuffer rs_terminalId, uint64_t rs_sequence,
+                     uint32_t rs_width, uint32_t rs_height, int8_t rs_full,
+                     RustBuffer rs_bytes, void *rs_uniffiOutReturn,
+                     RustCallStatus *uniffi_call_status) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_key, rs_terminalId, rs_sequence, rs_width,
+           rs_height, rs_full, rs_bytes, rs_uniffiOutReturn,
+           uniffi_call_status);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceWhipSshEventSinkMethod1
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod1::vtablecallbackinterfacewhipssheventsink
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, RustBuffer rs_key,
+                 RustBuffer rs_terminalId, uint64_t rs_sequence,
+                 uint32_t rs_width, uint32_t rs_height, int8_t rs_full,
+                 RustBuffer rs_bytes, void *rs_uniffiOutReturn,
+                 RustCallStatus *uniffi_call_status) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_key, rs_terminalId,
+         rs_sequence, rs_width, rs_height, rs_full, rs_bytes,
+         rs_uniffiOutReturn, uniffi_call_status](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_key,
+               rs_terminalId, rs_sequence, rs_width, rs_height, rs_full,
+               rs_bytes, rs_uniffiOutReturn, uniffi_call_status);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod1::vtablecallbackinterfacewhipssheventsink
 namespace uniffi::whip_ssh {
 using namespace facebook;
 using CallInvoker = uniffi_runtime::UniffiCallInvoker;
@@ -1919,6 +2113,10 @@ template <> struct Bridging<UniffiVTableCallbackInterfaceWhipSshEventSink> {
         uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod0::
             vtablecallbackinterfacewhipssheventsink::makeCallbackFunction(
                 rt, callInvoker, jsObject.getProperty(rt, "emit"));
+    rsObject.terminal_frame =
+        uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod1::
+            vtablecallbackinterfacewhipssheventsink::makeCallbackFunction(
+                rt, callInvoker, jsObject.getProperty(rt, "terminal_frame"));
 
     return rsObject;
   }
@@ -2041,6 +2239,19 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_method_whipssheventsink_emit(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_whipssheventsink_terminal_frame"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_whipssheventsink_terminal_frame"),
+          8,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_whipssheventsink_terminal_frame(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_func_call"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -2072,6 +2283,50 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_func_clear_event_sink(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_input_fast"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_input_fast"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_herdr_bridge_input_fast(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_resize_fast"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_resize_fast"),
+          6,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_herdr_bridge_resize_fast(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_scroll_fast"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_herdr_bridge_scroll_fast"),
+          4,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_herdr_bridge_scroll_fast(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_resize_shell_fast"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_resize_shell_fast"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_resize_shell_fast(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_func_set_event_sink"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -2093,6 +2348,17 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_func_shutdown(rt, thisVal, args,
                                                               count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_write_shell_input"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_write_shell_input"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_write_shell_input(
+                rt, thisVal, args, count);
           });
   props["ubrn_ffi_whip_ssh_rust_future_poll_u8"] =
       jsi::Function::createFromHostFunction(
@@ -2655,6 +2921,55 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_checksum_func_clear_event_sink(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_input_fast"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_input_fast"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_herdr_bridge_input_fast(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_resize_fast"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_resize_fast"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_herdr_bridge_resize_fast(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_scroll_fast"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_func_herdr_bridge_scroll_fast"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_herdr_bridge_scroll_fast(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_checksum_func_resize_shell_fast(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_checksum_func_set_event_sink"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -2677,6 +2992,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_checksum_func_shutdown(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_func_write_shell_input"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_write_shell_input"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_checksum_func_write_shell_input(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -2689,6 +3015,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_whipssheventsink_emit(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_terminal_"
+        "frame"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "whipssheventsink_terminal_frame"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_whipssheventsink_terminal_frame(
+                rt, thisVal, args, count);
+      });
   props["ubrn_ffi_whip_ssh_uniffi_contract_version"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -2839,6 +3177,8 @@ NativeWhipSsh::~NativeWhipSsh() {
       vtablecallbackinterfacewhipssheventsink::cleanup();
   uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod0::
       vtablecallbackinterfacewhipssheventsink::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod1::
+      vtablecallbackinterfacewhipssheventsink::cleanup();
 }
 
 // Utility functions for serialization/deserialization of strings.
@@ -2943,6 +3283,28 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_whipssheventsink_emit(
 
   return jsi::Value::undefined();
 }
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_whipssheventsink_terminal_frame(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_whipssheventsink_terminal_frame(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[3]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[4]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[5]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[6]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[7]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_call(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -2976,6 +3338,70 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_clear_event_sink(
 
   return jsi::Value::undefined();
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_herdr_bridge_input_fast(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_herdr_bridge_input_fast(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_herdr_bridge_resize_fast(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_herdr_bridge_resize_fast(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[2]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[3]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[4]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[5]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_herdr_bridge_scroll_fast(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_herdr_bridge_scroll_fast(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[2]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[3]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_resize_shell_fast(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_resize_shell_fast(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[1]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[2]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_set_event_sink(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -3000,6 +3426,20 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_shutdown(
       rt, callInvoker, status, args[count - 1]);
 
   return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_write_shell_input(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_write_shell_input(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
 jsi::Value NativeWhipSsh::cpp_ffi_whip_ssh_rust_future_poll_u8(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -3562,6 +4002,37 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_clear_event_sink(
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_herdr_bridge_input_fast(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_herdr_bridge_input_fast();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_herdr_bridge_resize_fast(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_herdr_bridge_resize_fast();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_herdr_bridge_scroll_fast(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_herdr_bridge_scroll_fast();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_resize_shell_fast(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_resize_shell_fast();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_set_event_sink(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -3576,11 +4047,27 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_shutdown(
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_write_shell_input(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_write_shell_input();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_whipssheventsink_emit(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_whipssheventsink_emit();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_whipssheventsink_terminal_frame(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_whipssheventsink_terminal_frame();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

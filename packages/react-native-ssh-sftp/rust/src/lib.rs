@@ -1,9 +1,10 @@
 //! Whip's platform-neutral SSH transport.
 //!
-//! The public boundary is deliberately a small JSON API exposed through UniFFI
-//! and, during the iOS transition, the original C ABI. React Native owns
-//! JavaScript callbacks and lifecycle, while this crate owns the Tokio runtime,
-//! SSH sessions, host-key verification, and byte streams.
+//! The public boundary keeps a small JSON API for control-plane operations and
+//! uses typed UniFFI calls for latency-sensitive terminal traffic. The original
+//! C ABI remains available for compatibility with transitional native clients.
+//! React Native owns JavaScript callbacks and lifecycle, while this crate owns
+//! the Tokio runtime, SSH sessions, host-key verification, and byte streams.
 
 mod herdr_codec;
 mod known_hosts;
@@ -125,6 +126,16 @@ impl Response {
 #[uniffi::export(with_foreign)]
 pub trait WhipSshEventSink: Send + Sync {
     fn emit(&self, event_json: String);
+    fn terminal_frame(
+        &self,
+        key: String,
+        terminal_id: String,
+        sequence: u64,
+        width: u32,
+        height: u32,
+        full: bool,
+        bytes: Vec<u8>,
+    );
 }
 
 struct Session {
@@ -286,16 +297,25 @@ fn emit_event(value: Value) {
     let Ok(json) = serde_json::to_string(&value) else {
         return;
     };
-    if let Some(sink) = uniffi_event_sink().read().clone() {
-        sink.emit(json.clone());
+    let sink = uniffi_event_sink().read().clone();
+    let callback = *event_callback().read();
+    match (sink, callback) {
+        (Some(sink), None) => sink.emit(json),
+        (None, Some(callback)) => emit_legacy_json(callback, json),
+        (Some(sink), Some(callback)) => {
+            sink.emit(json.clone());
+            emit_legacy_json(callback, json);
+        }
+        (None, None) => {}
     }
-    if let Some(callback) = *event_callback().read() {
-        let Ok(json) = CString::new(json) else {
-            return;
-        };
-        // The Objective-C callback copies the string before returning.
-        unsafe { callback(json.as_ptr()) };
-    }
+}
+
+fn emit_legacy_json(callback: EventCallback, json: String) {
+    let Ok(json) = CString::new(json) else {
+        return;
+    };
+    // The Objective-C callback copies the string before returning.
+    unsafe { callback(json.as_ptr()) };
 }
 
 fn required_string(params: &Value, name: &str) -> Result<String, TransportError> {
@@ -675,15 +695,20 @@ async fn start_shell(params: &Value) -> Result<Value, TransportError> {
 
 fn shell_command(params: &Value, command: ShellCommand) -> Result<Value, TransportError> {
     let key = required_string(params, "key")?;
+    shell_command_for_key(&key, command)?;
+    Ok(Value::Null)
+}
+
+fn shell_command_for_key(key: &str, command: ShellCommand) -> Result<(), TransportError> {
     let sender = shells()
         .read()
-        .get(&key)
+        .get(key)
         .cloned()
         .ok_or(TransportError::UnknownClient)?;
     sender.try_send(command).map_err(|error| {
         TransportError::InvalidRequest(format!("shell control queue rejected input: {error}"))
     })?;
-    Ok(Value::Null)
+    Ok(())
 }
 
 fn session_for(params: &Value) -> Result<Arc<Session>, TransportError> {
@@ -731,7 +756,7 @@ async fn sftp_list(params: &Value) -> Result<Value, TransportError> {
             if is_directory {
                 filename.push('/');
             }
-            serde_json::to_string(&json!({
+            json!({
                 "filename": filename,
                 "isDirectory": if is_directory { 1 } else { 0 },
                 "modificationDate": metadata.mtime.unwrap_or_default().to_string(),
@@ -741,14 +766,9 @@ async fn sftp_list(params: &Value) -> Result<Value, TransportError> {
                 "ownerGroupID": metadata.gid.unwrap_or_default(),
                 "permissions": metadata.permissions.unwrap_or_default().to_string(),
                 "flags": 0,
-            }))
-            .map_err(|error| {
-                TransportError::InvalidRequest(format!(
-                    "could not serialize SFTP directory entry: {error}"
-                ))
             })
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
     Ok(json!(entries))
 }
 
@@ -1092,26 +1112,63 @@ where
 
 fn herdr_bridge_event(key: &str, terminal_id: &str, message: herdr_codec::Message) {
     if message.kind == "terminal" {
-        if message.bytes.is_empty() {
-            emit_event(json!({
-                "name": "HerdrBridge", "key": key,
-                "value": {"type": "terminal", "terminalId": terminal_id,
-                    "seq": message.sequence, "width": message.width,
-                    "height": message.height, "full": message.flag,
-                    "bytes": "", "final": true}
-            }));
+        let sink = uniffi_event_sink().read().clone();
+        let callback = *event_callback().read();
+        if callback.is_none() {
+            if let Some(sink) = sink {
+                sink.terminal_frame(
+                    key.to_owned(),
+                    terminal_id.to_owned(),
+                    message.sequence,
+                    message.width,
+                    message.height,
+                    message.flag,
+                    message.bytes,
+                );
+            }
             return;
         }
-        let chunks = message.bytes.chunks(6144).collect::<Vec<_>>();
-        let last = chunks.len().saturating_sub(1);
-        for (index, chunk) in chunks.into_iter().enumerate() {
-            emit_event(json!({
+        if let Some(sink) = sink {
+            sink.terminal_frame(
+                key.to_owned(),
+                terminal_id.to_owned(),
+                message.sequence,
+                message.width,
+                message.height,
+                message.flag,
+                message.bytes.clone(),
+            );
+        }
+
+        // Only transitional C-ABI clients need the base64 JSON representation.
+        if let Some(callback) = callback {
+            let chunks = message.bytes.chunks(6144).collect::<Vec<_>>();
+            let last = chunks.len().saturating_sub(1);
+            if chunks.is_empty() {
+                emit_legacy_json(
+                    callback,
+                    serde_json::to_string(&json!({
+                        "name": "HerdrBridge", "key": key,
+                        "value": {"type": "terminal", "terminalId": terminal_id,
+                            "seq": message.sequence, "width": message.width,
+                            "height": message.height, "full": message.flag,
+                            "bytes": "", "final": true}
+                    }))
+                    .unwrap_or_default(),
+                );
+            }
+            for (index, chunk) in chunks.into_iter().enumerate() {
+                let event = json!({
                 "name": "HerdrBridge", "key": key,
                 "value": {"type": "terminal", "terminalId": terminal_id,
                     "seq": message.sequence, "width": message.width,
                     "height": message.height, "full": message.flag,
                     "bytes": BASE64.encode(chunk), "final": index == last}
-            }));
+                });
+                if let Ok(json) = serde_json::to_string(&event) {
+                    emit_legacy_json(callback, json);
+                }
+            }
         }
         return;
     }
@@ -1310,9 +1367,18 @@ async fn start_bridge(params: &Value) -> Result<Value, TransportError> {
 fn bridge_command(params: &Value, command: BridgeCommand) -> Result<Value, TransportError> {
     let key = required_string(params, "key")?;
     let terminal_id = required_string(params, "terminalId")?;
+    bridge_command_for_key(&key, &terminal_id, command)?;
+    Ok(Value::Null)
+}
+
+fn bridge_command_for_key(
+    key: &str,
+    terminal_id: &str,
+    command: BridgeCommand,
+) -> Result<(), TransportError> {
     let handle = bridges()
         .read()
-        .get(&(key, terminal_id.clone()))
+        .get(&(key.to_owned(), terminal_id.to_owned()))
         .cloned()
         .ok_or_else(|| {
             TransportError::InvalidRequest(format!(
@@ -1324,7 +1390,7 @@ fn bridge_command(params: &Value, command: BridgeCommand) -> Result<Value, Trans
             "Herdr bridge queue rejected input for terminal {terminal_id}: {error}"
         ))
     })?;
-    Ok(Value::Null)
+    Ok(())
 }
 
 fn close_all_bridges(key: &str) {
@@ -1644,6 +1710,70 @@ pub async fn call_async(request_json: String) -> String {
     }
 }
 
+fn fast_path_result(result: Result<(), TransportError>) -> Option<String> {
+    result.err().map(|error| error.to_string())
+}
+
+#[uniffi::export]
+pub fn write_shell_input(key: String, data: String) -> Option<String> {
+    fast_path_result(shell_command_for_key(
+        &key,
+        ShellCommand::Write(data.into_bytes()),
+    ))
+}
+
+#[uniffi::export]
+pub fn resize_shell_fast(key: String, columns: u32, rows: u32) -> Option<String> {
+    fast_path_result(shell_command_for_key(
+        &key,
+        ShellCommand::Resize { columns, rows },
+    ))
+}
+
+#[uniffi::export]
+pub fn herdr_bridge_input_fast(key: String, terminal_id: String, text: String) -> Option<String> {
+    fast_path_result(bridge_command_for_key(
+        &key,
+        &terminal_id,
+        BridgeCommand::Send(herdr_codec::input(&text)),
+    ))
+}
+
+#[uniffi::export]
+pub fn herdr_bridge_resize_fast(
+    key: String,
+    terminal_id: String,
+    columns: u32,
+    rows: u32,
+    cell_width_px: u32,
+    cell_height_px: u32,
+) -> Option<String> {
+    fast_path_result(bridge_command_for_key(
+        &key,
+        &terminal_id,
+        BridgeCommand::Send(herdr_codec::resize(
+            columns,
+            rows,
+            cell_width_px,
+            cell_height_px,
+        )),
+    ))
+}
+
+#[uniffi::export]
+pub fn herdr_bridge_scroll_fast(
+    key: String,
+    terminal_id: String,
+    up: bool,
+    lines: u32,
+) -> Option<String> {
+    fast_path_result(bridge_command_for_key(
+        &key,
+        &terminal_id,
+        BridgeCommand::Send(herdr_codec::scroll(up, lines)),
+    ))
+}
+
 #[uniffi::export]
 pub fn set_event_sink(sink: Arc<dyn WhipSshEventSink>) {
     *uniffi_event_sink().write() = Some(sink);
@@ -1795,6 +1925,22 @@ mod tests {
     #[test]
     fn remote_home_command_expands_without_literal_quotes() {
         assert_eq!(REMOTE_HOME_COMMAND, "printf %s \"$HOME\"");
+    }
+
+    #[test]
+    fn typed_terminal_fast_paths_report_missing_sessions_without_json() {
+        assert_eq!(
+            write_shell_input("missing-shell".to_owned(), "x".to_owned()).as_deref(),
+            Some("unknown client")
+        );
+        assert!(
+            herdr_bridge_input_fast(
+                "missing-client".to_owned(),
+                "missing-terminal".to_owned(),
+                "x".to_owned(),
+            )
+            .is_some_and(|error| error.contains("Herdr bridge is not active"))
+        );
     }
 
     #[test]
@@ -2039,7 +2185,10 @@ mod tests {
             )
             .await;
             assert!(!entries.as_array().unwrap().iter().any(|entry| {
-                entry.as_str().unwrap_or_default().contains("whip-part")
+                entry["filename"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("whip-part")
             }));
 
             let forward_port = live_call(

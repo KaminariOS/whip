@@ -877,6 +877,12 @@ const terminalHtml = `<!doctype html>
       }
       entry.api[method]?.(...args);
     };
+    const flushInput = entry => {
+      entry.inputTimer = null;
+      const data = entry.pendingInput;
+      entry.pendingInput = '';
+      if (data) send({ type: 'input', data, key: entry.key });
+    };
     const receive = (entry, value) => {
       if (!value || typeof value.type !== 'string') return;
       if (value.type === 'ready') {
@@ -888,6 +894,13 @@ const terminalHtml = `<!doctype html>
         if (entry.key === activeKey) call(entry.key, 'herdrFit');
         return;
       }
+      if (value.type === 'input' && typeof value.data === 'string') {
+        entry.pendingInput += value.data;
+        if (entry.inputTimer === null) {
+          entry.inputTimer = setTimeout(() => flushInput(entry), 4);
+        }
+        return;
+      }
       send({ ...value, key: entry.key });
     };
     const create = key => {
@@ -895,7 +908,15 @@ const terminalHtml = `<!doctype html>
       const root = document.createElement('div');
       root.className = 'terminal-session';
       root.innerHTML = terminalMarkup;
-      const entry = { key, root, api: null, ready: false, pending: [] };
+      const entry = {
+        key,
+        root,
+        api: null,
+        ready: false,
+        pending: [],
+        pendingInput: '',
+        inputTimer: null,
+      };
       terminals.set(key, entry);
       document.getElementById('terminals').appendChild(root);
       entry.api = createTerminalSession(root, value => receive(entry, value));
@@ -917,6 +938,10 @@ const terminalHtml = `<!doctype html>
     window.herdrRemove = key => {
       const entry = terminals.get(key);
       if (!entry) return;
+      if (entry.inputTimer !== null) {
+        clearTimeout(entry.inputTimer);
+        flushInput(entry);
+      }
       entry.api.herdrDispose?.();
       entry.root.remove();
       terminals.delete(key);
