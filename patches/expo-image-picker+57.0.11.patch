@@ -1,0 +1,13 @@
+diff --git a/node_modules/expo-image-picker/ios/ImagePickerModule.swift b/node_modules/expo-image-picker/ios/ImagePickerModule.swift
+index 2fd9510..963cf3f 100644
+--- a/node_modules/expo-image-picker/ios/ImagePickerModule.swift
++++ b/node_modules/expo-image-picker/ios/ImagePickerModule.swift
+@@ -91,7 +91,7 @@ public class ImagePickerModule: Module, OnMediaPickingResultHandler {
+                                         options: options,
+                                         imagePickerHandler: imagePickerDelegate)
+ 
+-    if !options.allowsEditing && sourceType != .camera {
++    if options.allowsMultipleSelection && sourceType != .camera {
+       self.launchMultiSelectPicker(pickingContext: pickingContext)
+     } else {
+       self.launchLegacyImagePicker(sourceType: sourceType, pickingContext: pickingContext)
