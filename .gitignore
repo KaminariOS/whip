@@ -74,6 +74,10 @@ yarn-error.log
 /coverage
 /artifacts/
 
+# Generated Mermaid architecture renders
+/docs/*-architecture.svg
+/docs/*-architecture.png
+
 # Yarn
 .yarn/*
 !.yarn/patches
