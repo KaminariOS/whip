@@ -38,6 +38,18 @@ describe('About screen', () => {
     expect(screen).toContain("t('common.version', { version: whipVersion })");
   });
 
+  it('does not show connected host details in compatibility', () => {
+    const screen = readFileSync(
+      resolve(__dirname, '../src/components/AboutScreen.tsx'),
+      'utf8',
+    );
+
+    expect(screen).toContain("t('about.supportedHerdr')");
+    expect(screen).not.toContain("t('about.connectedHost')");
+    expect(screen).not.toContain('server?.version');
+    expect(screen).not.toContain('server?.protocol');
+  });
+
   it('shows the embedded build commit when available', () => {
     const screen = readFileSync(
       resolve(__dirname, '../src/components/AboutScreen.tsx'),

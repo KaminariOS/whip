@@ -24,8 +24,6 @@ export const zhHant: Record<string, string> = {
   'about.commitError': '無法開啟提交',
   'about.compatibility': '相容性',
   'about.supportedHerdr': '支援的 Herdr',
-  'about.connectedHost': '已連線主機',
-  'about.versionUnavailable': '無法取得版本',
   'about.compatibilityCopy': 'Whip 支援回報通訊協定 {{versions}} 的 Herdr 版本。為避免執行不相容的指令，其他通訊協定版本將被拒絕。',
   'about.terminalFonts': '終端機字型',
   'about.terminalTextFont': '文字',

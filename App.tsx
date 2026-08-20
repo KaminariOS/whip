@@ -1811,7 +1811,6 @@ function AppContent() {
               agentCommand={agentCommand}
               terminalHistory={terminalHistory}
               terminalPreferences={terminalPreferences}
-              server={activeSession?.snapshot.server || null}
               onAlertsChange={setAlertsEnabled}
               onPersistentAlertDurationChange={setPersistentAlertDurationSeconds}
               onTestPersistentAlert={() => {

@@ -14,7 +14,6 @@ import { useTranslation } from 'react-i18next';
 
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
-import type { ServerInfo } from '@/src/types';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { GlassBackdrop, GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -27,11 +26,7 @@ export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 const ABOUT_EXPAND_DURATION = 340;
 const ABOUT_COLLAPSE_DURATION = 260;
 
-export interface AboutSectionProps {
-  server: ServerInfo | null;
-}
-
-export function AboutSection({ server }: AboutSectionProps) {
+export function AboutSection() {
   const [expanded, setExpanded] = useState(false);
   const [contentMounted, setContentMounted] = useState(false);
   const [contentMeasured, setContentMeasured] = useState(false);
@@ -98,13 +93,6 @@ export function AboutSection({ server }: AboutSectionProps) {
       Alert.alert(t('about.shareHerdrError'), String(error));
     });
   };
-
-  const connectedVersion = server?.version
-    ? `Herdr ${server.version}`
-    : server?.running
-      ? t('about.versionUnavailable')
-      : t('common.notConnected');
-  const connectedProtocol = server?.protocol === undefined ? null : t('common.protocol', { version: server.protocol });
 
   return (
     <View className="border-t border-border px-4 py-5">
@@ -212,7 +200,6 @@ export function AboutSection({ server }: AboutSectionProps) {
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>
           <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
             <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: HERDR_PROTOCOL_VERSIONS_LABEL })} />
-            <AboutRow label={t('about.connectedHost')} value={connectedVersion} detail={connectedProtocol} divided />
           </GlassSurface>
           <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
             {t('about.compatibilityCopy', { versions: HERDR_PROTOCOL_VERSIONS_LABEL })}
@@ -234,13 +221,12 @@ export function AboutSection({ server }: AboutSectionProps) {
   );
 }
 
-function AboutRow({ label, value, detail, divided = false }: { label: string; value: string; detail?: string | null; divided?: boolean }) {
+function AboutRow({ label, value, divided = false }: { label: string; value: string; divided?: boolean }) {
   return (
     <View className={divided ? 'min-h-[68px] flex-row items-center border-t border-border px-4 py-3' : 'min-h-[68px] flex-row items-center px-4 py-3'}>
       <Text className="flex-1 text-[15px] font-semibold leading-5">{label}</Text>
       <View className="ml-4 items-end">
         <Text className="text-sm font-medium leading-5">{value}</Text>
-        {detail ? <Text className="text-xs leading-[17px] text-muted-foreground">{detail}</Text> : null}
       </View>
     </View>
   );

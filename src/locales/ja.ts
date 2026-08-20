@@ -24,8 +24,6 @@ export const ja = {
   'about.commitError': 'コミットを開けませんでした',
   'about.compatibility': '互換性',
   'about.supportedHerdr': 'Herdr をサポートしました',
-  'about.connectedHost': '接続されたホスト',
-  'about.versionUnavailable': 'バージョンが利用できません',
   'about.compatibilityCopy': 'Whip は、プロトコル {{versions}} をレポートする Herdr リリースで動作します。互換性のないコマンドを防ぐために、他のプロトコル バージョンは拒否されます。',
   'about.terminalFonts': '端末フォント',
   'about.terminalTextFont': 'テキスト',
