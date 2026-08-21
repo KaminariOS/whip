@@ -1,6 +1,6 @@
 {
   "name": "whip-pair",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Direct, QR-based SSH public-key enrollment prototype for Whip",
   "license": "AGPL-3.0-or-later",
   "author": "KaminariOS",

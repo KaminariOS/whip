@@ -4,7 +4,6 @@ mod protocol;
 
 use std::{
     io::{self, IsTerminal, Read as _, Write},
-    net::IpAddr,
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
@@ -28,7 +27,7 @@ use crate::{
     authorized_keys::{
         AppendOutcome, append_authorized_key, default_authorized_keys_path, remove_authorized_key,
     },
-    network::{BindCandidate, discover_bind_candidates, select_bind_candidate},
+    network::{AddressSelection, discover_address_candidates, select_address},
     protocol::{
         EnrollmentRequest, EnrollmentResponse, PairingPayload, decode_pairing_code,
         encode_pairing_code, fingerprint_public_key, validate_public_key,
@@ -63,10 +62,7 @@ enum Commands {
 
 #[derive(Debug, clap::Args)]
 struct ServeArgs {
-    /// Network address Whip should use. Without this, an interactive selector is shown.
-    #[arg(long)]
-    bind: Option<IpAddr>,
-    /// Hostname or address Whip should use instead of the selected address.
+    /// SSH hostname or address Whip should use. Without this, an interactive selector is shown.
     #[arg(long)]
     advertise_host: Option<String>,
     /// Port of the existing SSH service to advertise. Defaults to 22.
@@ -138,7 +134,6 @@ async fn main() {
 async fn run() -> Result<(), Error> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Commands::Serve(ServeArgs {
-        bind: None,
         advertise_host: None,
         ssh_port: None,
         ssh_user: None,
@@ -184,16 +179,14 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
         ));
     }
 
-    let interactive_setup = args.bind.is_none();
-    let selected = choose_bind_candidate(args.bind)?;
+    let interactive_setup = args.advertise_host.is_none();
+    let selected = choose_advertised_endpoint(args.advertise_host)?;
     let ssh_port = match args.ssh_port {
         Some(port) => validate_ssh_port(port)?,
         None if interactive_setup => prompt_ssh_port()?,
         None => DEFAULT_SSH_PORT,
     };
-    let ssh_host = args
-        .advertise_host
-        .unwrap_or_else(|| selected.address.to_string());
+    let ssh_host = selected.host.clone();
     let local_user = current_username();
     let ssh_user = args.ssh_user.unwrap_or_else(|| local_user.clone());
     if ssh_user != local_user {
@@ -657,16 +650,57 @@ impl Drop for TemporaryAuthorization {
     }
 }
 
-fn choose_bind_candidate(explicit: Option<IpAddr>) -> Result<BindCandidate, Error> {
-    if let Some(address) = explicit {
-        return Ok(BindCandidate {
-            interface: "explicit".into(),
-            address,
-            label: "Selected address".into(),
+struct AdvertisedEndpoint {
+    label: String,
+    source: String,
+    host: String,
+}
+
+fn choose_advertised_endpoint(explicit: Option<String>) -> Result<AdvertisedEndpoint, Error> {
+    if let Some(host) = explicit {
+        return Ok(AdvertisedEndpoint {
+            label: "Specified".into(),
+            source: "--advertise-host".into(),
+            host: validate_advertised_host(&host)?,
         });
     }
-    let candidates = discover_bind_candidates()?;
-    select_bind_candidate(&candidates).map_err(Error::Message)
+    let candidates = discover_address_candidates()?;
+    match select_address(&candidates).map_err(Error::Message)? {
+        AddressSelection::Discovered(candidate) => Ok(AdvertisedEndpoint {
+            label: candidate.label,
+            source: candidate.interface,
+            host: candidate.address.to_string(),
+        }),
+        AddressSelection::Other => Ok(AdvertisedEndpoint {
+            label: "Public/other".into(),
+            source: "manual".into(),
+            host: prompt_advertised_host()?,
+        }),
+    }
+}
+
+fn prompt_advertised_host() -> Result<String, Error> {
+    eprint!("Public IP or hostname: ");
+    io::stderr().flush()?;
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    validate_advertised_host(&answer)
+}
+
+fn validate_advertised_host(value: &str) -> Result<String, Error> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.len() > 253
+        || !value.is_ascii()
+        || value
+            .chars()
+            .any(|character| character.is_whitespace() || character.is_control())
+    {
+        return Err(Error::Message(
+            "SSH hostname must be printable ASCII without whitespace".into(),
+        ));
+    }
+    Ok(value.into())
 }
 
 fn prompt_ssh_port() -> Result<u16, Error> {
@@ -699,7 +733,7 @@ fn validate_ssh_port(port: u16) -> Result<u16, Error> {
 }
 
 fn print_pairing_screen(
-    selected: &BindCandidate,
+    selected: &AdvertisedEndpoint,
     payload: &PairingPayload,
     expires_at: u64,
     code: &str,
@@ -715,8 +749,8 @@ fn print_pairing_screen(
         .build();
     println!("\nWhip Pair\n");
     println!(
-        "Network: {} ({}, {})",
-        selected.label, selected.interface, selected.address
+        "Endpoint: {} ({}, {})",
+        selected.label, selected.source, selected.host
     );
     println!(
         "SSH:     {}@{}:{}",
@@ -940,5 +974,23 @@ mod tests {
         assert!(parse_prompted_ssh_port("0").is_err());
         assert!(parse_prompted_ssh_port("not-a-port").is_err());
         assert!(parse_prompted_ssh_port("65536").is_err());
+    }
+
+    #[test]
+    fn advertised_host_accepts_ip_addresses_and_hostnames() {
+        assert_eq!(
+            validate_advertised_host(" 203.0.113.10\n").unwrap(),
+            "203.0.113.10"
+        );
+        assert_eq!(
+            validate_advertised_host("ssh.example.com").unwrap(),
+            "ssh.example.com"
+        );
+    }
+
+    #[test]
+    fn advertised_host_rejects_empty_or_whitespace_values() {
+        assert!(validate_advertised_host("").is_err());
+        assert!(validate_advertised_host("ssh example.com").is_err());
     }
 }

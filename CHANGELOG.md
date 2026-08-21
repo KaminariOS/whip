@@ -12,6 +12,7 @@ Notable user-facing changes are recorded here. The format follows [Keep a Change
 
 ### Changed
 
+- Reworked `whip-pair` endpoint selection to offer Tailscale, LAN, and manually entered public addresses, replacing the misleading `--bind` option with `--advertise-host`.
 - Replaced the legacy Android JSch path with the shared Rust/UniFFI backend and moved terminal frames from JSON to a typed binary fast path.
 - Consolidated the app-facing SSH API, native UniFFI bridge, and Rust/Russh crate into `react-native-whip-ssh`, removing the obsolete compatibility package and native fallback sources.
 - Improved remote-file navigation, preview progress, tablet sizing, typography, terminal viewport sizing, and cross-platform navigation styling.

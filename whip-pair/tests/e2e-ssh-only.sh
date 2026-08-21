@@ -52,7 +52,7 @@ fi
 cargo build --quiet --manifest-path whip-pair/Cargo.toml
 pair_binary="whip-pair/target/debug/whip-pair"
 "$pair_binary" serve \
-  --bind 127.0.0.1 \
+  --advertise-host 127.0.0.1 \
   --ssh-port "$ssh_port" \
   --authorized-keys "$test_root/authorized_keys" \
   --ttl 30 \

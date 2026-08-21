@@ -43,7 +43,7 @@
     mkWhipPair = pkgs:
       pkgs.rustPlatform.buildRustPackage {
         pname = "whip-pair";
-        version = "0.1.0";
+        version = "0.1.1";
         src = pkgs.lib.cleanSourceWith {
           src = ./whip-pair;
           filter = path: type:

@@ -61,10 +61,26 @@ Run the public version:
 nix run github:KaminariOS/whip#whip-pair
 ```
 
-Select a specific reachable address when needed:
+Without arguments, `whip-pair` lists the host's reachable interface addresses
+and also offers a manual public-address choice:
+
+```text
+Choose how Whip will reach this host:
+
+  1. Tailscale    100.84.12.5                             tailscale0
+  2. Wi-Fi        192.168.1.20                            wlan0
+  3. Public/other Enter a public IP address or hostname
+
+Selection [1]:
+```
+
+A public address behind NAT is not assigned to a local interface, so it cannot
+be discovered reliably. Choose **Public/other** and enter its IP address or DNS
+name, or select a specific reachable endpoint non-interactively:
 
 ```bash
-nix run github:KaminariOS/whip#whip-pair -- serve --bind 192.168.1.10
+nix run github:KaminariOS/whip#whip-pair -- serve \
+  --advertise-host 192.168.1.10
 ```
 
 If SSH is already listening on a nonstandard port, advertise it with
@@ -72,14 +88,31 @@ If SSH is already listening on a nonstandard port, advertise it with
 
 ```bash
 nix run github:KaminariOS/whip#whip-pair -- serve \
-  --bind 192.168.1.10 \
+  --advertise-host ssh.example.com \
   --ssh-port 2222
 ```
 
 `--ssh-port` defaults to `22`. It does not open a new port; it must match the
-existing SSH service reachable at the selected or advertised host. When no
-`--bind` address is supplied, the interactive setup asks for this port and
-offers `22` as the default. Passing `--ssh-port` skips that question.
+existing SSH service reachable at the advertised host. When no
+`--advertise-host` is supplied, the interactive setup asks for the endpoint and
+port, offering `22` as the default. Passing both options skips those questions.
+`whip-pair` does not bind a TCP listener; Whip connects to the host's existing
+SSH service.
+
+For a public endpoint behind NAT, forward the advertised public port to the
+host's SSH port and allow that SSH port through the relevant router, host, or
+cloud firewalls. If the host cannot reach its own public endpoint because the
+router lacks NAT loopback, automatic `ssh-keyscan` discovery will fail. Read
+the local Ed25519 host-key fingerprint and pass it explicitly:
+
+```bash
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
+
+nix run github:KaminariOS/whip#whip-pair -- serve \
+  --advertise-host ssh.example.com \
+  --ssh-port 2222 \
+  --ssh-fingerprint 'SHA256:...'
+```
 
 From a local checkout:
 
@@ -94,7 +127,7 @@ ECDSA, and RSA host keys in Whip's `russh` preference order. Use
 During development, print the underlying envelope:
 
 ```bash
-nix run .#whip-pair -- serve --bind 192.168.1.10 --print-code
+nix run .#whip-pair -- serve --advertise-host 192.168.1.10 --print-code
 ```
 
 Exercise the SSH-only protocol with a disposable public key:
