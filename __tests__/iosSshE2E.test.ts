@@ -44,6 +44,7 @@ describe('iOS SSH integration wiring', () => {
 
   it('builds and uploads the unsigned iOS device app', () => {
     const workflow = read('.github/workflows/ci.yml');
+    const builder = read('scripts/build-ios-app.sh');
     const appDelegate = read('ios/HerdR/AppDelegate.swift');
     expect(appDelegate).toContain('internal import Expo');
     expect(appDelegate).not.toMatch(/^import Expo$/m);
@@ -55,16 +56,18 @@ describe('iOS SSH integration wiring', () => {
     expect(appDelegate).toContain('bridge.bundleURL ?? bundleURL()');
     expect(appDelegate).toContain('forBundleRoot: ".expo/.virtual-metro-entry"');
     expect(appDelegate).not.toContain('let factory = RCTReactNativeFactory(delegate: delegate)');
-    expect(workflow).toContain('name: iOS unsigned device build');
-    expect(workflow).toContain('Build unsigned iOS device app');
-    expect(workflow).toContain('-configuration Release');
-    expect(workflow).toContain('-sdk iphoneos');
-    expect(workflow).toContain('-destination "generic/platform=iOS"');
-    expect(workflow).toContain('CODE_SIGNING_ALLOWED=NO');
-    expect(workflow).toContain('Release-iphoneos/HerdR.app');
-    expect(workflow).toContain('test -f "$app_path/main.jsbundle"');
-    expect(workflow).toContain('if-no-files-found: warn');
-    expect(workflow).toContain('name: whip-ios-app');
-    expect(workflow).toContain('if: always()');
+    expect(workflow).toContain('name: iOS unsigned compile check');
+    expect(workflow).toContain('Compile and validate unsigned iOS device app');
+    expect(workflow).toContain('scripts/build-ios-app.sh');
+    expect(workflow).toContain('--unsigned');
+    expect(builder).toContain('-configuration Release');
+    expect(builder).toContain('-sdk iphoneos');
+    expect(builder).toContain('-destination generic/platform=iOS');
+    expect(builder).toContain('CODE_SIGNING_ALLOWED=NO');
+    expect(builder).toContain('Release-iphoneos/HerdR.app');
+    expect(builder).toContain('[[ -f "$app_path/main.jsbundle" ]]');
+    expect(workflow).toContain('if-no-files-found: error');
+    expect(workflow).toContain('name: whip-ios-unsigned-compile-only');
+    expect(workflow).not.toContain('if: always()');
   });
 });
