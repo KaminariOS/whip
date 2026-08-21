@@ -17,10 +17,10 @@ authorization.
 
 ## Pairing protocol (WP4)
 
-[![WP4 pairing sequence](https://raw.githubusercontent.com/KaminariOS/whip/main/whip-pair/docs/wp4-sequence.svg)](https://github.com/KaminariOS/whip/blob/main/whip-pair/docs/wp4-sequence.mmd)
+[![WP4 pairing sequence](docs/wp4-sequence.svg)](docs/wp4-sequence.mmd)
 
 The canonical Mermaid source is
-[`docs/wp4-sequence.mmd`](https://github.com/KaminariOS/whip/blob/main/whip-pair/docs/wp4-sequence.mmd).
+[`docs/wp4-sequence.mmd`](docs/wp4-sequence.mmd).
 Render and validate the tracked SVG with:
 
 ```bash

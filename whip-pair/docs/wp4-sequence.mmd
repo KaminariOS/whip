@@ -2,9 +2,9 @@ sequenceDiagram
     autonumber
     participant Keys as authorized_keys
     participant Pair as whip-pair
+    participant SSHD as sshd :22
     actor User
     participant Whip as Whip client
-    participant SSHD as sshd :22
 
     Pair->>Pair: Generate temporary Ed25519 credential
     Pair->>Pair: Open private local Unix socket
