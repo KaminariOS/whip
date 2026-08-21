@@ -99,6 +99,7 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 ### Connect securely
 
 - Import, inspect, copy, remove, or generate SSH keys, and reuse them from a biometric-protected global keychain.
+- Authorize a generated, global-keychain, or clipboard public key by scanning a one-time QR code from [`whip-pair`](whip-pair/README.md), using the host's existing SSH port without a relay.
 - Route connections through nested, OpenSSH-compatible jump hosts and optionally forward a profile's key as an SSH agent without copying the private key to the server.
 - Verify every direct and jump-host connection against a global known-hosts list, prompting for unknown fingerprints and rejecting changed host keys.
 - Store each host's password or private-key credential in Android Keystore or iOS Keychain, with encrypted, device-authenticated Block Store recovery on supported Android devices.
@@ -138,7 +139,31 @@ You need an SSH server on a laptop or server reachable from the mobile device. I
 ssh user@laptop.tailnet.ts.net 'herdr status server --json'
 ```
 
-Then in Whip:
+### Pair with a QR code (experimental)
+
+QR pairing is disabled by default. In Whip, enable **More → QR host pairing ·
+Experimental**. On the Mac or Linux host, install and run the pairing helper:
+
+```bash
+cargo install --locked whip-pair
+whip-pair
+```
+
+Select the reachable network and confirm the SSH port, then open **Add host**
+in Whip. Choose a newly generated key, a key from the global keychain, or a
+public key from the clipboard; scan the displayed QR and approve the key in
+the host terminal. Pairing uses the existing SSH port and automatically stores
+the verified SSH host key. A clipboard public key has no private credential in
+Whip, so it authorizes and saves the host without making it immediately
+connectable from that device.
+
+The Cargo installation requires `ssh-keyscan` from an OpenSSH client package.
+See the [`whip-pair` documentation](whip-pair/README.md) for the protocol,
+security boundaries, Nix command, and nonstandard-port options.
+
+### Enter a host manually
+
+To enter the host without QR pairing:
 
 1. Tap **Add your first host**.
 2. Enter the Tailscale DNS name or `100.x.y.z` address, SSH user, and password or private key. You can import, paste, or generate an Ed25519 key in the app.

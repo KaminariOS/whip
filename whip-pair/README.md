@@ -1,5 +1,7 @@
 # whip-pair prototype
 
+[![crates.io](https://img.shields.io/crates/v/whip-pair.svg)](https://crates.io/crates/whip-pair)
+
 `whip-pair` is a direct, one-shot SSH public-key enrollment prototype for
 Whip. It uses the host's existing SSH port: no relay, TLS listener, additional
 firewall rule, pairing account, or `sshd_config` change is required.
@@ -88,7 +90,8 @@ prompt.
 
 ### Cargo
 
-Install from crates.io with Rust 1.85 or newer:
+Install the [published crate](https://crates.io/crates/whip-pair) with Rust 1.85
+or newer:
 
 ```bash
 cargo install --locked whip-pair
@@ -172,27 +175,23 @@ nix run .#whip-pair -- inspect 'WP4:...'
 
 The [`Publish whip-pair to crates.io`](https://github.com/KaminariOS/whip/actions/workflows/publish-whip-pair.yml)
 workflow verifies the crate version, formatting, Clippy, tests, and package
-contents before publishing.
+contents before publishing. Crates.io trusts only `publish-whip-pair.yml` in
+`KaminariOS/whip` with the protected `crates-io` environment. The workflow
+uses a short-lived OIDC credential; GitHub stores no crates.io API token.
 
-The first crates.io release cannot use trusted publishing. For that one-time
-bootstrap:
+To release a version, update `version` in `whip-pair/Cargo.toml` and the
+`mkWhipPair` version in `flake.nix`, refresh `whip-pair/Cargo.lock`, and run:
 
-1. Create a protected GitHub environment named `crates-io`.
-2. Add a crates.io API token as the environment secret `CRATES_IO_TOKEN`.
-3. Run the workflow manually with the crate version and
-   `Bootstrap first release with API token` enabled.
-4. In the new crate's crates.io settings, add this trusted publisher:
-   `KaminariOS/whip`, workflow `publish-whip-pair.yml`, environment
-   `crates-io`.
-5. Delete `CRATES_IO_TOKEN` from GitHub.
+```bash
+nix develop -c cargo test --locked --manifest-path whip-pair/Cargo.toml
+nix develop -c cargo publish --locked --dry-run \
+  --manifest-path whip-pair/Cargo.toml
+```
 
-For later versions, update `version` in `Cargo.toml`, commit it, and push a tag
-whose version matches exactly:
+Commit those changes, then push a tag whose version matches `Cargo.toml`
+exactly:
 
 ```bash
 git tag whip-pair-v0.1.1
 git push origin whip-pair-v0.1.1
 ```
-
-Tag releases and manual runs without the bootstrap option use crates.io's
-short-lived OIDC token; no long-lived publishing secret is needed.
