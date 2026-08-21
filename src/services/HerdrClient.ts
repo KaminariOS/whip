@@ -1146,7 +1146,7 @@ export class HerdrClient {
   private handleHerdrBridgeEvent(terminalId: string, generation: number, event: HerdrBridgeEvent): void {
     if (this.terminalBridgeGenerations.get(terminalId) !== generation) return;
     if (event.type === 'terminal') {
-      if (typeof event.seq === 'number' && typeof event.width === 'number' && typeof event.height === 'number' && (typeof event.bytes === 'string' || event.bytes instanceof ArrayBuffer)) {
+      if (typeof event.seq === 'number' && typeof event.width === 'number' && typeof event.height === 'number' && (typeof event.bytes === 'string' || event.bytes instanceof ArrayBuffer || ArrayBuffer.isView(event.bytes))) {
         this.terminalConnections.get(terminalId)?.onFrame({
           type: 'terminal.frame',
           seq: event.seq,

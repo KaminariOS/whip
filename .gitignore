@@ -76,8 +76,7 @@ yarn-error.log
 /coverage
 /artifacts/
 
-# Generated Mermaid architecture renders
-/docs/*-architecture.svg
+# Generated Mermaid preview renders
 /docs/*-architecture.png
 
 # Yarn

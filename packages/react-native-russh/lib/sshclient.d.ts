@@ -22,6 +22,72 @@ export type CallbackFunction<T> = (error: CBError, response?: T) => void;
  * @param value - The value passed to the event handler.
  */
 export type EventHandler = (value: any) => void;
+export type OpenSSHUnixSocketChannelEvent = {
+    type: 'data';
+    channelId: string;
+    bytes: ArrayBuffer;
+} | {
+    type: 'closed';
+    channelId: string;
+    reason: string;
+    closedByClient: boolean;
+};
+/** A raw OpenSSH direct-streamlocal channel to a remote Unix-domain socket. */
+export declare class OpenSSHUnixSocketChannel {
+    readonly id: string;
+    readonly closed: boolean;
+    private _owner;
+    private _closed;
+    private _closePromise;
+    protected constructor();
+    /** Queues bytes for delivery to the remote Unix socket. */
+    write(bytes: ArrayBuffer): Promise<void>;
+    /** Closes the channel. Safe to call more than once. */
+    close(): Promise<void>;
+    private _markClosed;
+}
+export type LengthFormat = 'u8' | 'u16le' | 'u16be' | 'u32le' | 'u32be';
+export interface LengthPrefixedUnixSocketChannelOptions {
+    /** Byte order and width of the unsigned frame-length prefix. */
+    lengthFormat: LengthFormat;
+    /** Maximum accepted payload size. Defaults to 32 MiB. */
+    maxFrameBytes?: number;
+}
+/** A Unix-socket channel whose events and writes are complete framed payloads. */
+export declare class OpenSSHLengthPrefixedUnixSocketChannel extends OpenSSHUnixSocketChannel {
+    /** Prefixes and queues one complete payload. */
+    write(bytes: ArrayBuffer): Promise<void>;
+}
+export type OpenSSHExecChannelEvent = {
+    type: 'data';
+    channelId: string;
+    bytes: ArrayBuffer;
+} | {
+    type: 'closed';
+    channelId: string;
+    reason: string;
+    closedByClient: boolean;
+};
+/** A persistent SSH exec channel with binary input and output. */
+export declare class OpenSSHExecChannel {
+    readonly id: string;
+    readonly closed: boolean;
+    private _owner;
+    private _closed;
+    private _closePromise;
+    private constructor();
+    write(bytes: ArrayBuffer): Promise<void>;
+    close(): Promise<void>;
+    private _markClosed;
+}
+export interface UnixSocketRequestOptions {
+    /** Single-byte response delimiter. Defaults to a newline. */
+    responseTerminator?: string;
+    /** Response timeout in milliseconds. Defaults to 15 seconds. */
+    timeoutMs?: number;
+    /** Maximum buffered response size. Defaults to 8 MiB. */
+    maxResponseBytes?: number;
+}
 /**
  * Represents the result of a directory listing operation.
  */
@@ -124,11 +190,14 @@ export default class SSHClient {
     static connectWithPassword(host: string, port: number, username: string, password: string, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
     static connectWithPasswordViaJump(host: string, port: number, username: string, password: string, jumpClient: SSHClient, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
     private static _keyCounter;
+    private static _channelCounter;
     private _key;
     private _listeners;
     private _counters;
     private _activeStream;
     private _handlers;
+    private _unixSocketChannels;
+    private _execChannels;
     private host;
     private port;
     private username;
@@ -251,6 +320,21 @@ export default class SSHClient {
     openLocalForward(remoteHost: string, remotePort: number): Promise<number>;
     /** Closes a loopback listener previously returned by openLocalForward. */
     closeLocalForward(localPort: number): Promise<void>;
+    /**
+     * Opens an OpenSSH `direct-streamlocal@openssh.com` channel to a Unix-domain
+     * socket on the remote host. Data and closure notifications are delivered
+     * in order to `handler`.
+     */
+    openUnixSocketChannel(socketPath: string, handler: (event: OpenSSHUnixSocketChannelEvent) => void, callback?: CallbackFunction<OpenSSHUnixSocketChannel>): Promise<OpenSSHUnixSocketChannel>;
+    openLengthPrefixedUnixSocketChannel(socketPath: string, options: LengthPrefixedUnixSocketChannelOptions, handler: (event: OpenSSHUnixSocketChannelEvent) => void, callback?: CallbackFunction<OpenSSHLengthPrefixedUnixSocketChannel>): Promise<OpenSSHLengthPrefixedUnixSocketChannel>;
+    private writeUnixSocketChannel;
+    private writeLengthPrefixedUnixSocketChannel;
+    private closeUnixSocketChannel;
+    /** Sends text and reads one delimiter-terminated response on a fresh channel. */
+    requestUnixSocket(socketPath: string, request: string, options?: UnixSocketRequestOptions): Promise<string>;
+    openExecChannel(command: string, handler: (event: OpenSSHExecChannelEvent) => void, callback?: CallbackFunction<OpenSSHExecChannel>): Promise<OpenSSHExecChannel>;
+    private writeExecChannel;
+    private closeExecChannel;
     /** Starts a token-protected loopback HTTP server backed by ranged SFTP reads. */
     startSftpFileServer(remotePath: string): Promise<{ localPort: number; token: string }>;
     /** Closes a loopback SFTP file server previously returned by startSftpFileServer. */

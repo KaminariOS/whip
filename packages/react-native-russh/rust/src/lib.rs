@@ -1,4 +1,4 @@
-//! Whip's platform-neutral SSH transport.
+//! Product-neutral SSH transport for React Native.
 //!
 //! The public boundary keeps a small JSON API for control-plane operations and
 //! uses typed UniFFI calls for latency-sensitive terminal traffic. The original
@@ -6,9 +6,7 @@
 //! React Native owns JavaScript callbacks and lifecycle, while this crate owns
 //! the Tokio runtime, SSH sessions, host-key verification, and byte streams.
 
-mod herdr_codec;
 mod known_hosts;
-mod pairing;
 uniffi::setup_scaffolding!();
 
 use std::collections::HashMap;
@@ -43,12 +41,11 @@ type EventCallback = unsafe extern "C" fn(*const c_char);
 type ResponseCallback = unsafe extern "C" fn(u64, *const c_char);
 type Shells = RwLock<HashMap<String, mpsc::Sender<ShellCommand>>>;
 type SftpSessions = RwLock<HashMap<String, Arc<SftpSession>>>;
-type Streams = RwLock<HashMap<String, mpsc::Sender<StreamCommand>>>;
+type ExecChannels = RwLock<HashMap<(String, String), mpsc::Sender<StreamCommand>>>;
+type UnixSocketChannels = RwLock<HashMap<(String, String), UnixSocketChannelHandle>>;
 type Forwards = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
 type SftpFileServers = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
 type Transfers = RwLock<HashMap<(String, &'static str), Arc<AtomicBool>>>;
-type Bridges = RwLock<HashMap<(String, String), BridgeHandle>>;
-type PreparedBridges = RwLock<HashMap<String, BridgeHandle>>;
 
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 static SESSIONS: OnceLock<Sessions> = OnceLock::new();
@@ -58,12 +55,11 @@ static UNIFFI_EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn ReactNativeRusshEventSi
     OnceLock::new();
 static SHELLS: OnceLock<Shells> = OnceLock::new();
 static SFTP_SESSIONS: OnceLock<SftpSessions> = OnceLock::new();
-static STREAMS: OnceLock<Streams> = OnceLock::new();
+static EXEC_CHANNELS: OnceLock<ExecChannels> = OnceLock::new();
+static UNIX_SOCKET_CHANNELS: OnceLock<UnixSocketChannels> = OnceLock::new();
 static FORWARDS: OnceLock<Forwards> = OnceLock::new();
 static SFTP_FILE_SERVERS: OnceLock<SftpFileServers> = OnceLock::new();
 static TRANSFERS: OnceLock<Transfers> = OnceLock::new();
-static BRIDGES: OnceLock<Bridges> = OnceLock::new();
-static PREPARED_BRIDGES: OnceLock<PreparedBridges> = OnceLock::new();
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(1);
 static LIFECYCLE_EPOCH: AtomicU64 = AtomicU64::new(1);
 
@@ -95,8 +91,6 @@ enum TransportError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Sftp(#[from] russh_sftp::client::error::Error),
-    #[error("{0}")]
-    Pairing(#[from] pairing::PairingError),
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,21 +131,12 @@ impl Response {
 #[uniffi::export(with_foreign)]
 pub trait ReactNativeRusshEventSink: Send + Sync {
     fn emit(&self, event_json: String);
-    #[allow(clippy::too_many_arguments)]
-    fn terminal_frame(
-        &self,
-        key: String,
-        terminal_id: String,
-        sequence: u64,
-        width: u32,
-        height: u32,
-        full: bool,
-        bytes: Vec<u8>,
-    );
+    fn unix_socket_channel_data(&self, key: String, channel_id: String, bytes: Vec<u8>);
+    fn exec_channel_data(&self, key: String, channel_id: String, bytes: Vec<u8>);
 }
 
 struct Session {
-    handle: client::Handle<WhipHandler>,
+    handle: client::Handle<RusshHandler>,
     host: String,
     port: u16,
     agent: Arc<AgentState>,
@@ -168,11 +153,11 @@ struct AgentState {
 }
 
 #[derive(Clone)]
-struct WhipAgent {
+struct RestrictedAgent {
     allow_initial_add: Arc<AtomicBool>,
 }
 
-impl russh::keys::agent::server::Agent for WhipAgent {
+impl russh::keys::agent::server::Agent for RestrictedAgent {
     async fn confirm_request(&self, message: russh::keys::agent::server::MessageType) -> bool {
         match message {
             russh::keys::agent::server::MessageType::RequestKeys
@@ -196,26 +181,29 @@ enum StreamCommand {
     Close,
 }
 
-enum BridgeCommand {
-    Attach { terminal_id: String, takeover: bool },
-    Send(Vec<u8>),
-    Close,
+#[derive(Clone)]
+struct UnixSocketChannelHandle {
+    sender: mpsc::Sender<StreamCommand>,
+    framing: Option<LengthFormat>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LengthFormat {
+    U8,
+    U16Le,
+    U16Be,
+    U32Le,
+    U32Be,
 }
 
 #[derive(Clone)]
-struct BridgeHandle {
-    protocol: u32,
-    sender: mpsc::Sender<BridgeCommand>,
-}
-
-#[derive(Clone)]
-struct WhipHandler {
+struct RusshHandler {
     host: String,
     port: u16,
     agent: Arc<AgentState>,
 }
 
-impl client::Handler for WhipHandler {
+impl client::Handler for RusshHandler {
     type Error = TransportError;
 
     async fn check_server_key(
@@ -287,8 +275,11 @@ fn uniffi_event_sink() -> &'static RwLock<Option<Arc<dyn ReactNativeRusshEventSi
 fn sftp_sessions() -> &'static SftpSessions {
     SFTP_SESSIONS.get_or_init(|| RwLock::new(HashMap::new()))
 }
-fn streams() -> &'static Streams {
-    STREAMS.get_or_init(|| RwLock::new(HashMap::new()))
+fn exec_channels() -> &'static ExecChannels {
+    EXEC_CHANNELS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+fn unix_socket_channels() -> &'static UnixSocketChannels {
+    UNIX_SOCKET_CHANNELS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 fn forwards() -> &'static Forwards {
     FORWARDS.get_or_init(|| RwLock::new(HashMap::new()))
@@ -298,14 +289,6 @@ fn sftp_file_servers() -> &'static SftpFileServers {
 }
 fn transfers() -> &'static Transfers {
     TRANSFERS.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
-fn bridges() -> &'static Bridges {
-    BRIDGES.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
-fn prepared_bridges() -> &'static PreparedBridges {
-    PREPARED_BRIDGES.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
 fn emit_event(value: Value) {
@@ -391,7 +374,7 @@ fn generate_key_pair(params: &Value) -> Result<Value, TransportError> {
     let comment = params
         .get("comment")
         .and_then(Value::as_str)
-        .unwrap_or("whip");
+        .unwrap_or("react-native-russh");
     let mut rng =
         russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
     let mut private_key =
@@ -413,7 +396,7 @@ async fn initialize_agent(
     state: Arc<AgentState>,
 ) -> Result<(), TransportError> {
     let (sender, receiver) = futures_mpsc::unbounded::<std::io::Result<Box<dyn AgentIo>>>();
-    let agent_policy = WhipAgent {
+    let agent_policy = RestrictedAgent {
         allow_initial_add: Arc::new(AtomicBool::new(true)),
     };
     tokio::spawn(async move {
@@ -422,7 +405,7 @@ async fn initialize_agent(
 
     // Seed the private key into the in-process agent over the same protocol
     // used by forwarded clients. The remote side can list and sign with it,
-    // but WhipAgent rejects add/remove/lock requests.
+    // but RestrictedAgent rejects add/remove/lock requests.
     let (client_stream, server_stream) = tokio::io::duplex(256 * 1024);
     sender
         .unbounded_send(Ok(Box::new(server_stream)))
@@ -448,7 +431,7 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
         ..Default::default()
     });
     let agent = Arc::new(AgentState::default());
-    let handler = WhipHandler {
+    let handler = RusshHandler {
         host: host.clone(),
         port,
         agent: agent.clone(),
@@ -512,7 +495,7 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
 }
 
 async fn authenticate_password(
-    handle: &mut client::Handle<WhipHandler>,
+    handle: &mut client::Handle<RusshHandler>,
     username: &str,
     password: &str,
 ) -> Result<bool, TransportError> {
@@ -617,10 +600,10 @@ async fn execute(params: &Value) -> Result<Value, TransportError> {
         }
     }
     if stdout_truncated {
-        stdout.extend_from_slice(b"\n[Whip: stdout truncated at 8 MiB]\n");
+        stdout.extend_from_slice(b"\n[react-native-russh: stdout truncated at 8 MiB]\n");
     }
     if stderr_truncated {
-        stderr.extend_from_slice(b"\n[Whip: stderr truncated at 8 MiB]\n");
+        stderr.extend_from_slice(b"\n[react-native-russh: stderr truncated at 8 MiB]\n");
     }
     Ok(json!({
         "stdout": String::from_utf8_lossy(&stdout),
@@ -882,7 +865,7 @@ async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportE
                 })?;
             let destination_path = format!("{}/{}", remote.trim_end_matches('/'), filename);
             let transfer_id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-            let temp_path = format!("{destination_path}.whip-part-{transfer_id}");
+            let temp_path = format!("{destination_path}.russh-part-{transfer_id}");
             let destination = sftp.create(temp_path.clone()).await?;
             let copied = copy(Box::new(source), Box::new(destination), total).await;
             if let Err(error) = copied {
@@ -892,7 +875,7 @@ async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportE
             // Standard SFTP rename does not replace existing files on every
             // server. Preserve the prior file until the complete upload exists,
             // and restore it if the final rename fails.
-            let backup_path = format!("{destination_path}.whip-backup-{transfer_id}");
+            let backup_path = format!("{destination_path}.russh-backup-{transfer_id}");
             let had_prior_file = sftp.metadata(destination_path.clone()).await.is_ok();
             if had_prior_file {
                 sftp.rename(destination_path.clone(), backup_path.clone())
@@ -923,7 +906,7 @@ async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportE
                 })?;
             let destination_path = format!("{}/{}", local.trim_end_matches('/'), filename);
             let temp_path = format!(
-                "{destination_path}.whip-part-{}",
+                "{destination_path}.russh-part-{}",
                 NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
             );
             let destination = fs::File::create(&temp_path).await?;
@@ -944,28 +927,400 @@ async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportE
     result.map(Value::String)
 }
 
-async fn request_streamlocal(params: &Value) -> Result<Value, TransportError> {
+async fn request_unix_socket(params: &Value) -> Result<Value, TransportError> {
     let session = session_for(params)?;
     let socket_path = required_string(params, "socketPath")?;
     let request = required_string(params, "request")?;
+    let terminator = params
+        .get("responseTerminator")
+        .and_then(Value::as_str)
+        .unwrap_or("\n")
+        .as_bytes();
+    if terminator.len() != 1 {
+        return Err(TransportError::InvalidRequest(
+            "responseTerminator must encode to exactly one byte".to_owned(),
+        ));
+    }
+    let timeout_ms = params
+        .get("timeoutMs")
+        .and_then(Value::as_u64)
+        .unwrap_or(15_000)
+        .clamp(1, 300_000);
+    let max_response_bytes = params
+        .get("maxResponseBytes")
+        .and_then(Value::as_u64)
+        .unwrap_or(8 * 1024 * 1024)
+        .clamp(1, 32 * 1024 * 1024);
     let channel = session
         .handle
         .channel_open_direct_streamlocal(socket_path)
         .await?;
     let mut stream = BufReader::new(channel.into_stream());
     stream.write_all(request.as_bytes()).await?;
+    let mut reader = stream.take(max_response_bytes + 1);
     let mut response = Vec::new();
     tokio::time::timeout(
-        Duration::from_secs(15),
-        stream.read_until(b'\n', &mut response),
+        Duration::from_millis(timeout_ms),
+        reader.read_until(terminator[0], &mut response),
     )
     .await
     .map_err(|_| {
-        TransportError::InvalidRequest("timed out waiting for Herdr API response".to_owned())
+        TransportError::InvalidRequest("timed out waiting for Unix-socket response".to_owned())
     })??;
-    Ok(json!(
-        String::from_utf8_lossy(&response).trim_end_matches(['\r', '\n'])
-    ))
+    if response.len() as u64 > max_response_bytes {
+        return Err(TransportError::InvalidRequest(format!(
+            "Unix-socket response exceeds {max_response_bytes} bytes"
+        )));
+    }
+    if response.last() != Some(&terminator[0]) {
+        return Err(TransportError::InvalidRequest(
+            "Unix-socket response ended before its terminator".to_owned(),
+        ));
+    }
+    response.pop();
+    Ok(json!(String::from_utf8_lossy(&response)))
+}
+
+fn emit_unix_socket_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>) {
+    let sink = uniffi_event_sink().read().clone();
+    let callback = *event_callback().read();
+    let legacy_json = callback.map(|_| {
+        serde_json::to_string(&json!({
+            "name": "UnixSocketChannel",
+            "key": key,
+            "value": {
+                "type": "data",
+                "channelId": channel_id,
+                "bytes": BASE64.encode(&bytes),
+            },
+        }))
+        .unwrap_or_default()
+    });
+    if let Some(sink) = sink {
+        sink.unix_socket_channel_data(key.to_owned(), channel_id.to_owned(), bytes);
+    }
+    if let (Some(callback), Some(json)) = (callback, legacy_json) {
+        emit_legacy_json(callback, json);
+    }
+}
+
+impl LengthFormat {
+    fn parse(value: &str) -> Result<Self, TransportError> {
+        match value {
+            "u8" => Ok(Self::U8),
+            "u16le" => Ok(Self::U16Le),
+            "u16be" => Ok(Self::U16Be),
+            "u32le" => Ok(Self::U32Le),
+            "u32be" => Ok(Self::U32Be),
+            _ => Err(TransportError::InvalidRequest(format!(
+                "unsupported length format '{value}'"
+            ))),
+        }
+    }
+
+    fn prefix(self, length: usize) -> Result<Vec<u8>, TransportError> {
+        let overflow = || {
+            TransportError::InvalidRequest(format!(
+                "frame length {length} cannot be represented by this length format"
+            ))
+        };
+        match self {
+            Self::U8 => Ok(vec![u8::try_from(length).map_err(|_| overflow())?]),
+            Self::U16Le => Ok(u16::try_from(length)
+                .map_err(|_| overflow())?
+                .to_le_bytes()
+                .to_vec()),
+            Self::U16Be => Ok(u16::try_from(length)
+                .map_err(|_| overflow())?
+                .to_be_bytes()
+                .to_vec()),
+            Self::U32Le => Ok(u32::try_from(length)
+                .map_err(|_| overflow())?
+                .to_le_bytes()
+                .to_vec()),
+            Self::U32Be => Ok(u32::try_from(length)
+                .map_err(|_| overflow())?
+                .to_be_bytes()
+                .to_vec()),
+        }
+    }
+
+    fn width(self) -> usize {
+        match self {
+            Self::U8 => 1,
+            Self::U16Le | Self::U16Be => 2,
+            Self::U32Le | Self::U32Be => 4,
+        }
+    }
+
+    fn decode_length(self, prefix: &[u8]) -> usize {
+        match self {
+            Self::U8 => prefix[0] as usize,
+            Self::U16Le => u16::from_le_bytes([prefix[0], prefix[1]]) as usize,
+            Self::U16Be => u16::from_be_bytes([prefix[0], prefix[1]]) as usize,
+            Self::U32Le => {
+                u32::from_le_bytes([prefix[0], prefix[1], prefix[2], prefix[3]]) as usize
+            }
+            Self::U32Be => {
+                u32::from_be_bytes([prefix[0], prefix[1], prefix[2], prefix[3]]) as usize
+            }
+        }
+    }
+}
+
+struct LengthPrefixedFrameReader {
+    format: LengthFormat,
+    max_frame_bytes: usize,
+    prefix: [u8; 4],
+    prefix_read: usize,
+    payload: Option<Vec<u8>>,
+    payload_read: usize,
+}
+
+impl LengthPrefixedFrameReader {
+    fn new(format: LengthFormat, max_frame_bytes: usize) -> Self {
+        Self {
+            format,
+            max_frame_bytes,
+            prefix: [0; 4],
+            prefix_read: 0,
+            payload: None,
+            payload_read: 0,
+        }
+    }
+
+    async fn read_frame<R>(&mut self, reader: &mut R) -> Result<Option<Vec<u8>>, TransportError>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+    {
+        loop {
+            if self.payload.is_none() {
+                let prefix_width = self.format.width();
+                if self.prefix_read < prefix_width {
+                    let count = reader
+                        .read(&mut self.prefix[self.prefix_read..prefix_width])
+                        .await?;
+                    if count == 0 {
+                        if self.prefix_read == 0 {
+                            return Ok(None);
+                        }
+                        return Err(TransportError::InvalidRequest(
+                            "Unix-socket channel ended during a length prefix".to_owned(),
+                        ));
+                    }
+                    self.prefix_read += count;
+                    continue;
+                }
+
+                let length = self.format.decode_length(&self.prefix[..prefix_width]);
+                if length > self.max_frame_bytes {
+                    return Err(TransportError::InvalidRequest(format!(
+                        "Unix-socket frame exceeds {} bytes: {length}",
+                        self.max_frame_bytes
+                    )));
+                }
+                self.payload = Some(vec![0; length]);
+                self.payload_read = 0;
+                if length == 0 {
+                    self.prefix_read = 0;
+                    return Ok(self.payload.take());
+                }
+            }
+
+            let payload = self.payload.as_mut().expect("payload initialized above");
+            let count = reader.read(&mut payload[self.payload_read..]).await?;
+            if count == 0 {
+                return Err(TransportError::InvalidRequest(
+                    "Unix-socket channel ended during a length-prefixed frame".to_owned(),
+                ));
+            }
+            self.payload_read += count;
+            if self.payload_read == payload.len() {
+                self.prefix_read = 0;
+                self.payload_read = 0;
+                return Ok(self.payload.take());
+            }
+        }
+    }
+}
+
+async fn open_unix_socket_channel_with_framing(
+    params: &Value,
+    framing: Option<LengthFormat>,
+) -> Result<Value, TransportError> {
+    let key = required_string(params, "key")?;
+    let channel_id = required_string(params, "channelId")?;
+    if channel_id.is_empty() || channel_id.len() > 128 || channel_id.chars().any(char::is_control) {
+        return Err(TransportError::InvalidRequest(
+            "channelId must contain 1 through 128 printable characters".to_owned(),
+        ));
+    }
+    let map_key = (key.clone(), channel_id.clone());
+    if unix_socket_channels().read().contains_key(&map_key) {
+        return Err(TransportError::InvalidRequest(format!(
+            "Unix-socket channel '{channel_id}' is already open"
+        )));
+    }
+
+    let session = session_for(params)?;
+    let socket_path = required_string(params, "socketPath")?;
+    let channel = session
+        .handle
+        .channel_open_direct_streamlocal(socket_path)
+        .await?;
+    let max_frame_bytes = params
+        .get("maxFrameBytes")
+        .and_then(Value::as_u64)
+        .unwrap_or(32 * 1024 * 1024)
+        .clamp(1, 128 * 1024 * 1024) as usize;
+    let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
+    {
+        let mut channels = unix_socket_channels().write();
+        if channels.contains_key(&map_key) {
+            return Err(TransportError::InvalidRequest(format!(
+                "Unix-socket channel '{channel_id}' is already open"
+            )));
+        }
+        channels.insert(
+            map_key.clone(),
+            UnixSocketChannelHandle {
+                sender: sender.clone(),
+                framing,
+            },
+        );
+    }
+
+    tokio::spawn(async move {
+        let mut stream = channel.into_stream();
+        let mut buffer = vec![0u8; 32 * 1024];
+        let mut framed_reader =
+            framing.map(|format| LengthPrefixedFrameReader::new(format, max_frame_bytes));
+        let (reason, closed_by_client) = loop {
+            tokio::select! {
+                read = async {
+                    match &mut framed_reader {
+                        Some(reader) => reader.read_frame(&mut stream).await,
+                        None => match stream.read(&mut buffer).await {
+                            Ok(0) => Ok(None),
+                            Ok(count) => Ok(Some(buffer[..count].to_vec())),
+                            Err(error) => Err(error.into()),
+                        },
+                    }
+                } => match read {
+                    Ok(None) => break ("remote Unix socket reached EOF".to_owned(), false),
+                    Err(error) => break (format!("remote Unix-socket read failed: {error}"), false),
+                    Ok(Some(bytes)) => emit_unix_socket_channel_data(&key, &channel_id, bytes),
+                },
+                command = receiver.recv() => match command {
+                    Some(StreamCommand::Write(data)) => if let Err(error) = stream.write_all(&data).await {
+                        break (format!("remote Unix-socket write failed: {error}"), false);
+                    },
+                    Some(StreamCommand::Close) => break ("Unix-socket channel closed by client".to_owned(), true),
+                    None => break ("Unix-socket channel control queue closed".to_owned(), true),
+                }
+            }
+        };
+        let should_remove = unix_socket_channels()
+            .read()
+            .get(&map_key)
+            .is_some_and(|current| current.sender.same_channel(&sender));
+        if should_remove {
+            unix_socket_channels().write().remove(&map_key);
+        }
+        emit_event(json!({
+            "name": "UnixSocketChannel",
+            "key": key,
+            "value": {
+                "type": "closed",
+                "channelId": channel_id,
+                "reason": reason,
+                "closedByClient": closed_by_client,
+            },
+        }));
+    });
+
+    Ok(Value::Null)
+}
+
+async fn open_unix_socket_channel(params: &Value) -> Result<Value, TransportError> {
+    open_unix_socket_channel_with_framing(params, None).await
+}
+
+async fn open_length_prefixed_unix_socket_channel(params: &Value) -> Result<Value, TransportError> {
+    let format = LengthFormat::parse(&required_string(params, "lengthFormat")?)?;
+    open_unix_socket_channel_with_framing(params, Some(format)).await
+}
+
+fn unix_socket_channel_command_for_key(
+    key: &str,
+    channel_id: &str,
+    command: StreamCommand,
+) -> Result<(), TransportError> {
+    let handle = unix_socket_channels()
+        .read()
+        .get(&(key.to_owned(), channel_id.to_owned()))
+        .cloned()
+        .ok_or_else(|| {
+            TransportError::InvalidRequest(format!(
+                "Unix-socket channel '{channel_id}' is not open"
+            ))
+        })?;
+    handle.sender.try_send(command).map_err(|error| {
+        TransportError::InvalidRequest(format!(
+            "Unix-socket channel '{channel_id}' rejected input: {error}"
+        ))
+    })?;
+    Ok(())
+}
+
+fn write_unix_socket_channel_for_key(
+    key: &str,
+    channel_id: &str,
+    bytes: Vec<u8>,
+    framed: bool,
+) -> Result<(), TransportError> {
+    let handle = unix_socket_channels()
+        .read()
+        .get(&(key.to_owned(), channel_id.to_owned()))
+        .cloned()
+        .ok_or_else(|| {
+            TransportError::InvalidRequest(format!(
+                "Unix-socket channel '{channel_id}' is not open"
+            ))
+        })?;
+    let data = match (handle.framing, framed) {
+        (None, false) => bytes,
+        (Some(format), true) => {
+            let mut framed_bytes = format.prefix(bytes.len())?;
+            framed_bytes.extend_from_slice(&bytes);
+            framed_bytes
+        }
+        (Some(_), false) => {
+            return Err(TransportError::InvalidRequest(format!(
+                "Unix-socket channel '{channel_id}' requires framed writes"
+            )));
+        }
+        (None, true) => {
+            return Err(TransportError::InvalidRequest(format!(
+                "Unix-socket channel '{channel_id}' is not length-prefixed"
+            )));
+        }
+    };
+    handle
+        .sender
+        .try_send(StreamCommand::Write(data))
+        .map_err(|error| {
+            TransportError::InvalidRequest(format!(
+                "Unix-socket channel '{channel_id}' rejected input: {error}"
+            ))
+        })
+}
+
+fn close_unix_socket_channel(params: &Value) -> Result<Value, TransportError> {
+    let key = required_string(params, "key")?;
+    let channel_id = required_string(params, "channelId")?;
+    unix_socket_channel_command_for_key(&key, &channel_id, StreamCommand::Close)?;
+    Ok(Value::Null)
 }
 
 async fn open_local_forward(params: &Value) -> Result<Value, TransportError> {
@@ -1311,446 +1666,153 @@ async fn start_sftp_file_server(params: &Value) -> Result<Value, TransportError>
     Ok(json!({ "localPort": local_port, "token": returned_token }))
 }
 
-async fn start_stream(params: &Value, command_stream: bool) -> Result<Value, TransportError> {
+fn emit_exec_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>) {
+    let sink = uniffi_event_sink().read().clone();
+    let callback = *event_callback().read();
+    let legacy_json = callback.map(|_| {
+        serde_json::to_string(&json!({
+            "name": "ExecChannel",
+            "key": key,
+            "value": {
+                "type": "data",
+                "channelId": channel_id,
+                "bytes": BASE64.encode(&bytes),
+            },
+        }))
+        .unwrap_or_default()
+    });
+    if let Some(sink) = sink {
+        sink.exec_channel_data(key.to_owned(), channel_id.to_owned(), bytes);
+    }
+    if let (Some(callback), Some(json)) = (callback, legacy_json) {
+        emit_legacy_json(callback, json);
+    }
+}
+
+async fn open_exec_channel(params: &Value) -> Result<Value, TransportError> {
     let key = required_string(params, "key")?;
-    let stream_key = format!(
-        "{}:{}",
-        key,
-        if command_stream { "command" } else { "event" }
-    );
-    if streams().read().contains_key(&stream_key) {
-        return Ok(Value::Null);
+    let channel_id = required_string(params, "channelId")?;
+    if channel_id.is_empty() || channel_id.len() > 128 || channel_id.chars().any(char::is_control) {
+        return Err(TransportError::InvalidRequest(
+            "channelId must contain 1 through 128 printable characters".to_owned(),
+        ));
+    }
+    let map_key = (key.clone(), channel_id.clone());
+    if exec_channels().read().contains_key(&map_key) {
+        return Err(TransportError::InvalidRequest(format!(
+            "exec channel '{channel_id}' is already open"
+        )));
     }
     let session = session_for(params)?;
-    let channel = if command_stream {
-        let channel = session.handle.channel_open_session().await?;
-        request_agent_forwarding(&session, &channel).await?;
-        channel
-            .exec(true, required_string(params, "command")?)
-            .await?;
-        channel
-    } else {
-        session
-            .handle
-            .channel_open_direct_streamlocal(required_string(params, "socketPath")?)
-            .await?
-    };
-    let event_name = if command_stream {
-        "HerdrCommandStream"
-    } else {
-        "HerdrEventStream"
-    };
+    let channel = session.handle.channel_open_session().await?;
+    request_agent_forwarding(&session, &channel).await?;
+    channel
+        .exec(true, required_string(params, "command")?)
+        .await?;
     let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
-    streams().write().insert(stream_key.clone(), sender);
+    {
+        let mut channels = exec_channels().write();
+        if channels.contains_key(&map_key) {
+            return Err(TransportError::InvalidRequest(format!(
+                "exec channel '{channel_id}' is already open"
+            )));
+        }
+        channels.insert(map_key.clone(), sender.clone());
+    }
     tokio::spawn(async move {
         let mut stream = channel.into_stream();
         let mut buffer = vec![0u8; 8192];
-        let close_reason = loop {
+        let (reason, closed_by_client) = loop {
             tokio::select! {
                 read = stream.read(&mut buffer) => match read {
-                    Ok(0) => break "remote stream reached EOF".to_owned(),
-                    Err(error) => break format!("remote stream read failed: {error}"),
-                    Ok(count) => {
-                        let data = String::from_utf8_lossy(&buffer[..count]);
-                        let value = if command_stream { json!({"data": data, "closed": false}) } else { json!(data) };
-                        emit_event(json!({"name": event_name, "key": key, "value": value}));
-                    }
+                    Ok(0) => break ("remote exec channel reached EOF".to_owned(), false),
+                    Err(error) => break (format!("remote exec-channel read failed: {error}"), false),
+                    Ok(count) => emit_exec_channel_data(
+                        &key,
+                        &channel_id,
+                        buffer[..count].to_vec(),
+                    ),
                 },
                 command = receiver.recv() => match command {
                     Some(StreamCommand::Write(data)) => if let Err(error) = stream.write_all(&data).await {
-                        break format!("remote stream write failed: {error}");
+                        break (format!("remote exec-channel write failed: {error}"), false);
                     },
-                    Some(StreamCommand::Close) => break "stream closed by client".to_owned(),
-                    None => break "stream control queue closed".to_owned(),
+                    Some(StreamCommand::Close) => break ("exec channel closed by client".to_owned(), true),
+                    None => break ("exec-channel control queue closed".to_owned(), true),
                 }
             }
         };
-        let value = if command_stream {
-            json!({"closed": true, "reason": close_reason})
-        } else {
-            json!(format!(
-                "{}\n",
-                json!({
-                    "herdr_android_bridge_closed": true,
-                    "reason": close_reason,
-                })
-            ))
-        };
-        emit_event(json!({"name": event_name, "key": key, "value": value}));
-        streams().write().remove(&stream_key);
+        let should_remove = exec_channels()
+            .read()
+            .get(&map_key)
+            .is_some_and(|current| current.same_channel(&sender));
+        if should_remove {
+            exec_channels().write().remove(&map_key);
+        }
+        emit_event(json!({
+            "name": "ExecChannel",
+            "key": key,
+            "value": {
+                "type": "closed",
+                "channelId": channel_id,
+                "reason": reason,
+                "closedByClient": closed_by_client,
+            },
+        }));
     });
     Ok(Value::Null)
 }
 
-fn stream_command(
-    params: &Value,
-    command_stream: bool,
-    command: StreamCommand,
-) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let stream_key = format!(
-        "{}:{}",
-        key,
-        if command_stream { "command" } else { "event" }
-    );
-    let sender = streams()
-        .read()
-        .get(&stream_key)
-        .cloned()
-        .ok_or_else(|| TransportError::InvalidRequest("stream is not active".to_owned()))?;
-    sender.try_send(command).map_err(|error| {
-        TransportError::InvalidRequest(format!("stream control queue rejected input: {error}"))
-    })?;
-    Ok(Value::Null)
-}
-
-fn required_u32(params: &Value, name: &str, fallback: Option<u32>) -> Result<u32, TransportError> {
-    match params.get(name).and_then(Value::as_u64) {
-        Some(value) => u32::try_from(value)
-            .map_err(|_| TransportError::InvalidRequest(format!("parameter '{name}' exceeds u32"))),
-        None => fallback.ok_or_else(|| {
-            TransportError::InvalidRequest(format!("missing integer parameter '{name}'"))
-        }),
-    }
-}
-
-async fn read_bridge_frame<R>(reader: &mut R) -> Result<Option<Vec<u8>>, TransportError>
-where
-    R: tokio::io::AsyncRead + Unpin,
-{
-    let mut length = [0u8; 4];
-    let first = reader.read(&mut length[..1]).await?;
-    if first == 0 {
-        return Ok(None);
-    }
-    reader.read_exact(&mut length[1..]).await?;
-    let length = u32::from_le_bytes(length) as usize;
-    if length > herdr_codec::MAX_FRAME_SIZE {
-        return Err(TransportError::InvalidRequest(format!(
-            "Herdr bridge frame exceeds maximum size: {length}"
-        )));
-    }
-    let mut payload = vec![0; length];
-    reader.read_exact(&mut payload).await?;
-    Ok(Some(payload))
-}
-
-fn herdr_bridge_event(key: &str, terminal_id: &str, message: herdr_codec::Message) {
-    if message.kind == "terminal" {
-        let sink = uniffi_event_sink().read().clone();
-        let callback = *event_callback().read();
-        if callback.is_none() {
-            if let Some(sink) = sink {
-                sink.terminal_frame(
-                    key.to_owned(),
-                    terminal_id.to_owned(),
-                    message.sequence,
-                    message.width,
-                    message.height,
-                    message.flag,
-                    message.bytes,
-                );
-            }
-            return;
-        }
-        if let Some(sink) = sink {
-            sink.terminal_frame(
-                key.to_owned(),
-                terminal_id.to_owned(),
-                message.sequence,
-                message.width,
-                message.height,
-                message.flag,
-                message.bytes.clone(),
-            );
-        }
-
-        // Only transitional C-ABI clients need the base64 JSON representation.
-        if let Some(callback) = callback {
-            let chunks = message.bytes.chunks(6144).collect::<Vec<_>>();
-            let last = chunks.len().saturating_sub(1);
-            if chunks.is_empty() {
-                emit_legacy_json(
-                    callback,
-                    serde_json::to_string(&json!({
-                        "name": "HerdrBridge", "key": key,
-                        "value": {"type": "terminal", "terminalId": terminal_id,
-                            "seq": message.sequence, "width": message.width,
-                            "height": message.height, "full": message.flag,
-                            "bytes": "", "final": true}
-                    }))
-                    .unwrap_or_default(),
-                );
-            }
-            for (index, chunk) in chunks.into_iter().enumerate() {
-                let event = json!({
-                "name": "HerdrBridge", "key": key,
-                "value": {"type": "terminal", "terminalId": terminal_id,
-                    "seq": message.sequence, "width": message.width,
-                    "height": message.height, "full": message.flag,
-                    "bytes": BASE64.encode(chunk), "final": index == last}
-                });
-                if let Ok(json) = serde_json::to_string(&event) {
-                    emit_legacy_json(callback, json);
-                }
-            }
-        }
-        return;
-    }
-
-    let mut value = json!({
-        "type": message.kind,
-        "terminalId": terminal_id,
-        "flag": message.flag,
-        "kind": message.width,
-    });
-    if let Some(text) = message.text {
-        value["text"] = json!(text);
-    }
-    if let Some(body) = message.body {
-        value["body"] = json!(body);
-    }
-    if message.kind == "terminal_bell" {
-        value["count"] = json!(message.count);
-    }
-    emit_event(json!({"name": "HerdrBridge", "key": key, "value": value}));
-}
-
-fn herdr_bridge_closed(key: &str, terminal_id: &str, reason: impl ToString) {
-    emit_event(json!({
-        "name": "HerdrBridge", "key": key,
-        "value": {"type": "closed", "terminalId": terminal_id, "text": reason.to_string()}
-    }));
-}
-
-async fn create_bridge(
-    params: &Value,
-    socket_path: String,
-    terminal: Option<(String, bool)>,
-) -> Result<BridgeHandle, TransportError> {
-    let key = required_string(params, "key")?;
-    let protocol = required_u32(params, "protocol", None)?;
-    let columns = required_u32(params, "columns", Some(80))?;
-    let rows = required_u32(params, "rows", Some(24))?;
-    let cell_width = required_u32(params, "cellWidthPx", Some(0))?;
-    let cell_height = required_u32(params, "cellHeightPx", Some(0))?;
-    let session = session_for(params)?;
-    let channel = session
-        .handle
-        .channel_open_direct_streamlocal(socket_path)
-        .await?;
-    let mut stream = channel.into_stream();
-    let hello = herdr_codec::hello(protocol, columns, rows, cell_width, cell_height)
-        .map_err(TransportError::InvalidRequest)?;
-    stream.write_all(&hello).await?;
-    let payload = tokio::time::timeout(Duration::from_secs(15), read_bridge_frame(&mut stream))
-        .await
-        .map_err(|_| {
-            TransportError::InvalidRequest("timed out waiting for Herdr Welcome".to_owned())
-        })??
-        .ok_or_else(|| {
-            TransportError::InvalidRequest("Herdr bridge closed before Welcome".to_owned())
-        })?;
-    let welcome =
-        herdr_codec::decode(&payload, protocol).map_err(TransportError::InvalidRequest)?;
-    if welcome.kind != "welcome" {
-        return Err(TransportError::InvalidRequest(
-            "Herdr bridge did not send Welcome first".to_owned(),
-        ));
-    }
-    if let Some(error) = welcome.text {
-        return Err(TransportError::InvalidRequest(format!(
-            "Herdr bridge rejected protocol {protocol}: {error}"
-        )));
-    }
-    if welcome.sequence != protocol as u64 || welcome.width != 1 {
-        return Err(TransportError::InvalidRequest(format!(
-            "Herdr bridge negotiation mismatch (protocol {}, encoding {})",
-            welcome.sequence, welcome.width
-        )));
-    }
-    if let Some((terminal_id, takeover)) = &terminal {
-        stream
-            .write_all(&herdr_codec::attach(terminal_id, *takeover))
-            .await?;
-    }
-
-    let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
-    let handle = BridgeHandle {
-        protocol,
-        sender: sender.clone(),
-    };
-    tokio::spawn(async move {
-        let (mut reader, mut writer) = tokio::io::split(stream);
-        let mut terminal_id = terminal.map(|value| value.0);
-        let mut closed_by_client = false;
-        let mut close_reason = None;
-        loop {
-            tokio::select! {
-                frame = read_bridge_frame(&mut reader) => match frame {
-                    Ok(Some(payload)) => match herdr_codec::decode(&payload, protocol) {
-                        Ok(message) => {
-                            if let Some(id) = &terminal_id {
-                                let closed = message.kind == "closed";
-                                herdr_bridge_event(&key, id, message);
-                                if closed {
-                                    close_reason = None;
-                                    break;
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            close_reason = Some(format!("Herdr bridge frame decode failed: {error}"));
-                            break;
-                        }
-                    },
-                    Ok(None) => {
-                        close_reason = Some("Herdr remote-client-bridge reached EOF".to_owned());
-                        break;
-                    }
-                    Err(error) => {
-                        close_reason = Some(format!("Herdr bridge read failed: {error}"));
-                        break;
-                    }
-                },
-                command = receiver.recv() => match command {
-                    Some(BridgeCommand::Attach { terminal_id: id, takeover }) => {
-                        if let Err(error) = writer.write_all(&herdr_codec::attach(&id, takeover)).await {
-                            close_reason = Some(format!("Herdr bridge attach write failed: {error}"));
-                            terminal_id = Some(id);
-                            break;
-                        }
-                        terminal_id = Some(id);
-                    }
-                    Some(BridgeCommand::Send(frame)) => if let Err(error) = writer.write_all(&frame).await {
-                        close_reason = Some(format!("Herdr bridge send failed: {error}"));
-                        break;
-                    },
-                    Some(BridgeCommand::Close) | None => {
-                        closed_by_client = true;
-                        let _ = writer.write_all(&herdr_codec::detach()).await;
-                        break;
-                    }
-                }
-            }
-        }
-        if let Some(id) = &terminal_id {
-            let map_key = (key.clone(), id.clone());
-            let should_remove = bridges()
-                .read()
-                .get(&map_key)
-                .is_some_and(|current| current.sender.same_channel(&sender));
-            if should_remove {
-                bridges().write().remove(&map_key);
-            }
-            if !closed_by_client && let Some(reason) = close_reason {
-                herdr_bridge_closed(&key, id, reason);
-            }
-        } else {
-            let should_remove = prepared_bridges()
-                .read()
-                .get(&key)
-                .is_some_and(|current| current.sender.same_channel(&sender));
-            if should_remove {
-                prepared_bridges().write().remove(&key);
-            }
-        }
-    });
-    Ok(handle)
-}
-
-async fn prepare_bridge(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    if prepared_bridges().read().contains_key(&key) {
-        return Ok(Value::Null);
-    }
-    let socket_path = required_string(params, "command")?;
-    let handle = create_bridge(params, socket_path, None).await?;
-    prepared_bridges().write().insert(key, handle);
-    Ok(Value::Null)
-}
-
-async fn start_bridge(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let terminal_id = required_string(params, "terminalId")?;
-    let protocol = required_u32(params, "protocol", None)?;
-    let takeover = params
-        .get("takeover")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let map_key = (key.clone(), terminal_id.clone());
-    if bridges().read().contains_key(&map_key) {
-        return Ok(Value::Null);
-    }
-    if let Some(prepared) = prepared_bridges().write().remove(&key) {
-        if prepared.protocol == protocol
-            && prepared
-                .sender
-                .try_send(BridgeCommand::Attach {
-                    terminal_id: terminal_id.clone(),
-                    takeover,
-                })
-                .is_ok()
-        {
-            bridges().write().insert(map_key, prepared);
-            return Ok(Value::Null);
-        }
-        let _ = prepared.sender.try_send(BridgeCommand::Close);
-    }
-    let socket_path = required_string(params, "socketPath")?;
-    let handle = create_bridge(params, socket_path, Some((terminal_id, takeover))).await?;
-    bridges().write().insert(map_key, handle);
-    Ok(Value::Null)
-}
-
-fn bridge_command(params: &Value, command: BridgeCommand) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let terminal_id = required_string(params, "terminalId")?;
-    bridge_command_for_key(&key, &terminal_id, command)?;
-    Ok(Value::Null)
-}
-
-fn bridge_command_for_key(
+fn exec_channel_command_for_key(
     key: &str,
-    terminal_id: &str,
-    command: BridgeCommand,
+    channel_id: &str,
+    command: StreamCommand,
 ) -> Result<(), TransportError> {
-    let handle = bridges()
+    let sender = exec_channels()
         .read()
-        .get(&(key.to_owned(), terminal_id.to_owned()))
+        .get(&(key.to_owned(), channel_id.to_owned()))
         .cloned()
         .ok_or_else(|| {
-            TransportError::InvalidRequest(format!(
-                "Herdr bridge is not active for terminal {terminal_id}"
-            ))
+            TransportError::InvalidRequest(format!("exec channel '{channel_id}' is not open"))
         })?;
-    handle.sender.try_send(command).map_err(|error| {
+    sender.try_send(command).map_err(|error| {
         TransportError::InvalidRequest(format!(
-            "Herdr bridge queue rejected input for terminal {terminal_id}: {error}"
+            "exec channel '{channel_id}' rejected input: {error}"
         ))
-    })?;
-    Ok(())
+    })
 }
 
-fn close_all_bridges(key: &str) {
-    if let Some(prepared) = prepared_bridges().write().remove(key) {
-        let _ = prepared.sender.try_send(BridgeCommand::Close);
-    }
-    let owned = bridges()
-        .read()
-        .keys()
-        .filter(|(owner, _)| owner == key)
-        .cloned()
-        .collect::<Vec<_>>();
-    for map_key in owned {
-        if let Some(handle) = bridges().write().remove(&map_key) {
-            let _ = handle.sender.try_send(BridgeCommand::Close);
-        }
-    }
+fn close_exec_channel(params: &Value) -> Result<Value, TransportError> {
+    let key = required_string(params, "key")?;
+    let channel_id = required_string(params, "channelId")?;
+    exec_channel_command_for_key(&key, &channel_id, StreamCommand::Close)?;
+    Ok(Value::Null)
 }
 
 async fn disconnect_key(key: String) {
-    close_all_bridges(&key);
+    let channel_ids = unix_socket_channels()
+        .read()
+        .keys()
+        .filter_map(|(owner, channel_id)| (owner == &key).then_some(channel_id.clone()))
+        .collect::<Vec<_>>();
+    for channel_id in channel_ids {
+        if let Some(handle) = unix_socket_channels()
+            .write()
+            .remove(&(key.clone(), channel_id))
+        {
+            let _ = handle.sender.try_send(StreamCommand::Close);
+        }
+    }
+    let exec_channel_ids = exec_channels()
+        .read()
+        .keys()
+        .filter_map(|(owner, channel_id)| (owner == &key).then_some(channel_id.clone()))
+        .collect::<Vec<_>>();
+    for channel_id in exec_channel_ids {
+        if let Some(sender) = exec_channels().write().remove(&(key.clone(), channel_id)) {
+            let _ = sender.try_send(StreamCommand::Close);
+        }
+    }
     if let Some(cancel) = transfers().read().get(&(key.clone(), "upload")) {
         cancel.store(true, Ordering::Relaxed);
     }
@@ -1773,11 +1835,6 @@ async fn disconnect_key(key: String) {
     let removed_sftp = { sftp_sessions().write().remove(&key) };
     if let Some(sftp) = removed_sftp {
         let _ = sftp.close().await;
-    }
-    for suffix in ["event", "command"] {
-        if let Some(sender) = streams().write().remove(&format!("{key}:{suffix}")) {
-            let _ = sender.try_send(StreamCommand::Close);
-        }
     }
     let ports = forwards()
         .read()
@@ -1815,12 +1872,6 @@ async fn dispatch(request: Request) -> Result<Value, TransportError> {
         }
         "getKeyDetails" => key_details(&request.params),
         "generateKeyPair" => generate_key_pair(&request.params),
-        "pairHost" => {
-            let code = required_string(&request.params, "code")?;
-            let public_key = required_string(&request.params, "publicKey")?;
-            let device_name = required_string(&request.params, "deviceName")?;
-            Ok(pairing::pair_host(&code, &public_key, &device_name).await?)
-        }
         "connect" => connect(&request.params).await,
         "setAgentForwarding" => {
             let session = session_for(&request.params)?;
@@ -1919,62 +1970,14 @@ async fn dispatch(request: Request) -> Result<Value, TransportError> {
             }
             Ok(Value::Null)
         }
-        "requestHerdrApi" => request_streamlocal(&request.params).await,
-        "startHerdrEventStream" => start_stream(&request.params, false).await,
-        "writeHerdrEventStream" => stream_command(
-            &request.params,
-            false,
-            StreamCommand::Write(required_string(&request.params, "value")?.into_bytes()),
-        ),
-        "closeHerdrEventStream" => stream_command(&request.params, false, StreamCommand::Close),
-        "startHerdrCommandStream" => start_stream(&request.params, true).await,
-        "writeHerdrCommandStream" => stream_command(
-            &request.params,
-            true,
-            StreamCommand::Write(required_string(&request.params, "value")?.into_bytes()),
-        ),
-        "closeHerdrCommandStream" => stream_command(&request.params, true, StreamCommand::Close),
-        "prepareHerdrBridge" => prepare_bridge(&request.params).await,
-        "startHerdrBridge" => start_bridge(&request.params).await,
-        "herdrBridgeInput" => bridge_command(
-            &request.params,
-            BridgeCommand::Send(herdr_codec::input(&required_string(
-                &request.params,
-                "text",
-            )?)),
-        ),
-        "herdrBridgeResize" => bridge_command(
-            &request.params,
-            BridgeCommand::Send(herdr_codec::resize(
-                required_u32(&request.params, "columns", Some(80))?,
-                required_u32(&request.params, "rows", Some(24))?,
-                required_u32(&request.params, "cellWidthPx", Some(0))?,
-                required_u32(&request.params, "cellHeightPx", Some(0))?,
-            )),
-        ),
-        "herdrBridgeScroll" => bridge_command(
-            &request.params,
-            BridgeCommand::Send(herdr_codec::scroll(
-                request
-                    .params
-                    .get("up")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-                required_u32(&request.params, "lines", None)?,
-            )),
-        ),
-        "closeHerdrBridge" => {
-            let key = required_string(&request.params, "key")?;
-            let terminal_id = required_string(&request.params, "terminalId")?;
-            if let Some(handle) = bridges().write().remove(&(key, terminal_id)) {
-                let _ = handle.sender.try_send(BridgeCommand::Close);
-            }
-            Ok(Value::Null)
+        "openUnixSocketChannel" => open_unix_socket_channel(&request.params).await,
+        "openLengthPrefixedUnixSocketChannel" => {
+            open_length_prefixed_unix_socket_channel(&request.params).await
         }
-        "closeAllHerdrBridges" => {
-            close_all_bridges(&required_string(&request.params, "key")?);
-            Ok(Value::Null)
-        }
+        "closeUnixSocketChannel" => close_unix_socket_channel(&request.params),
+        "requestUnixSocket" => request_unix_socket(&request.params).await,
+        "openExecChannel" => open_exec_channel(&request.params).await,
+        "closeExecChannel" => close_exec_channel(&request.params),
         "disconnect" => {
             let key = required_string(&request.params, "key")?;
             disconnect_key(key).await;
@@ -2095,46 +2098,39 @@ pub fn resize_shell_fast(key: String, columns: u32, rows: u32) -> Option<String>
 }
 
 #[uniffi::export]
-pub fn herdr_bridge_input_fast(key: String, terminal_id: String, text: String) -> Option<String> {
-    fast_path_result(bridge_command_for_key(
+pub fn write_unix_socket_channel(
+    key: String,
+    channel_id: String,
+    bytes: Vec<u8>,
+) -> Option<String> {
+    fast_path_result(write_unix_socket_channel_for_key(
         &key,
-        &terminal_id,
-        BridgeCommand::Send(herdr_codec::input(&text)),
+        &channel_id,
+        bytes,
+        false,
     ))
 }
 
 #[uniffi::export]
-pub fn herdr_bridge_resize_fast(
+pub fn write_length_prefixed_unix_socket_channel(
     key: String,
-    terminal_id: String,
-    columns: u32,
-    rows: u32,
-    cell_width_px: u32,
-    cell_height_px: u32,
+    channel_id: String,
+    bytes: Vec<u8>,
 ) -> Option<String> {
-    fast_path_result(bridge_command_for_key(
+    fast_path_result(write_unix_socket_channel_for_key(
         &key,
-        &terminal_id,
-        BridgeCommand::Send(herdr_codec::resize(
-            columns,
-            rows,
-            cell_width_px,
-            cell_height_px,
-        )),
+        &channel_id,
+        bytes,
+        true,
     ))
 }
 
 #[uniffi::export]
-pub fn herdr_bridge_scroll_fast(
-    key: String,
-    terminal_id: String,
-    up: bool,
-    lines: u32,
-) -> Option<String> {
-    fast_path_result(bridge_command_for_key(
+pub fn write_exec_channel(key: String, channel_id: String, bytes: Vec<u8>) -> Option<String> {
+    fast_path_result(exec_channel_command_for_key(
         &key,
-        &terminal_id,
-        BridgeCommand::Send(herdr_codec::scroll(up, lines)),
+        &channel_id,
+        StreamCommand::Write(bytes),
     ))
 }
 
@@ -2334,19 +2330,103 @@ mod tests {
     }
 
     #[test]
-    fn typed_terminal_fast_paths_report_missing_sessions_without_json() {
+    fn typed_fast_paths_report_missing_channels_without_json() {
         assert_eq!(
             write_shell_input("missing-shell".to_owned(), "x".to_owned()).as_deref(),
             Some("unknown client")
         );
         assert!(
-            herdr_bridge_input_fast(
+            write_unix_socket_channel(
                 "missing-client".to_owned(),
-                "missing-terminal".to_owned(),
-                "x".to_owned(),
+                "missing-channel".to_owned(),
+                vec![1, 2, 3],
             )
-            .is_some_and(|error| error.contains("Herdr bridge is not active"))
+            .is_some_and(
+                |error| error.contains("Unix-socket channel 'missing-channel' is not open")
+            )
         );
+        assert!(
+            write_length_prefixed_unix_socket_channel(
+                "missing-client".to_owned(),
+                "missing-channel".to_owned(),
+                vec![1, 2, 3],
+            )
+            .is_some_and(
+                |error| error.contains("Unix-socket channel 'missing-channel' is not open")
+            )
+        );
+        assert!(
+            write_exec_channel(
+                "missing-client".to_owned(),
+                "missing-channel".to_owned(),
+                vec![1, 2, 3],
+            )
+            .is_some_and(|error| error.contains("exec channel 'missing-channel' is not open"))
+        );
+    }
+
+    #[test]
+    fn encodes_supported_frame_length_formats() {
+        assert_eq!(LengthFormat::U8.prefix(42).unwrap(), vec![42]);
+        assert_eq!(
+            LengthFormat::U16Le.prefix(0x1234).unwrap(),
+            vec![0x34, 0x12]
+        );
+        assert_eq!(
+            LengthFormat::U16Be.prefix(0x1234).unwrap(),
+            vec![0x12, 0x34]
+        );
+        assert_eq!(
+            LengthFormat::U32Le.prefix(0x1234_5678).unwrap(),
+            vec![0x78, 0x56, 0x34, 0x12],
+        );
+        assert_eq!(
+            LengthFormat::U32Be.prefix(0x1234_5678).unwrap(),
+            vec![0x12, 0x34, 0x56, 0x78],
+        );
+        assert!(LengthFormat::U8.prefix(256).is_err());
+    }
+
+    #[test]
+    fn reads_complete_length_prefixed_payloads() {
+        runtime().unwrap().block_on(async {
+            let mut input = &b"\x03\0\0\0abc\0\0\0\0"[..];
+            let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 1024);
+            assert_eq!(
+                reader.read_frame(&mut input).await.unwrap(),
+                Some(b"abc".to_vec()),
+            );
+            assert_eq!(
+                reader.read_frame(&mut input).await.unwrap(),
+                Some(Vec::new())
+            );
+            assert_eq!(reader.read_frame(&mut input).await.unwrap(), None);
+
+            let mut oversized = &b"\x04\0\0\0abcd"[..];
+            let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 3);
+            assert!(reader.read_frame(&mut oversized).await.is_err());
+        });
+    }
+
+    #[test]
+    fn preserves_partial_frame_state_when_a_read_is_cancelled() {
+        runtime().unwrap().block_on(async {
+            let (mut writer, mut input) = tokio::io::duplex(64);
+            let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 1024);
+
+            writer.write_all(b"\x03\0").await.unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(10), reader.read_frame(&mut input),)
+                    .await
+                    .is_err()
+            );
+
+            writer.write_all(b"\0\0abc").await.unwrap();
+            assert_eq!(
+                reader.read_frame(&mut input).await.unwrap(),
+                Some(b"abc".to_vec()),
+            );
+        });
     }
 
     #[test]
@@ -2384,7 +2464,7 @@ mod tests {
         let generated = generate_key_pair(&json!({
             "type": "ed25519",
             "passphrase": "test-passphrase",
-            "comment": "whip-test",
+            "comment": "russh-test",
         }))
         .unwrap();
         let details = key_details(&json!({
@@ -2438,26 +2518,26 @@ mod tests {
     #[test]
     #[ignore = "run through tests/live-ssh.sh"]
     fn live_openssh_feature_matrix() {
-        let host = std::env::var("WHIP_SSH_TEST_HOST").expect("missing test host");
-        let port = std::env::var("WHIP_SSH_TEST_PORT")
+        let host = std::env::var("RUSSH_SSH_TEST_HOST").expect("missing test host");
+        let port = std::env::var("RUSSH_SSH_TEST_PORT")
             .expect("missing test port")
             .parse::<u16>()
             .expect("invalid test port");
-        let target_port = std::env::var("WHIP_SSH_TEST_TARGET_PORT")
+        let target_port = std::env::var("RUSSH_SSH_TEST_TARGET_PORT")
             .expect("missing target port")
             .parse::<u16>()
             .expect("invalid target port");
-        let username = std::env::var("WHIP_SSH_TEST_USER").expect("missing test user");
+        let username = std::env::var("RUSSH_SSH_TEST_USER").expect("missing test user");
         let private_key = std::fs::read_to_string(
-            std::env::var("WHIP_SSH_TEST_PRIVATE_KEY").expect("missing private key path"),
+            std::env::var("RUSSH_SSH_TEST_PRIVATE_KEY").expect("missing private key path"),
         )
         .expect("could not read private key");
         let known_hosts = std::fs::read_to_string(
-            std::env::var("WHIP_SSH_TEST_KNOWN_HOSTS").expect("missing known_hosts path"),
+            std::env::var("RUSSH_SSH_TEST_KNOWN_HOSTS").expect("missing known_hosts path"),
         )
         .expect("could not read known_hosts");
         let shared = std::path::PathBuf::from(
-            std::env::var("WHIP_SSH_TEST_SHARED_DIR").expect("missing shared directory"),
+            std::env::var("RUSSH_SSH_TEST_SHARED_DIR").expect("missing shared directory"),
         );
 
         runtime().unwrap().block_on(async {
@@ -2480,10 +2560,10 @@ mod tests {
             .await;
             let executed = live_call(
                 "execute",
-                json!({"key": "live-main", "command": "printf whip-live"}),
+                json!({"key": "live-main", "command": "printf russh-live"}),
             )
             .await;
-            assert_eq!(executed["stdout"], "whip-live");
+            assert_eq!(executed["stdout"], "russh-live");
 
             live_call(
                 "setAgentForwarding",
@@ -2631,7 +2711,7 @@ mod tests {
                 entry["filename"]
                     .as_str()
                     .unwrap_or_default()
-                    .contains("whip-part")
+                    .contains("russh-part")
             }));
 
             let forward_port = live_call(
@@ -2685,7 +2765,7 @@ mod tests {
                     "host": host,
                     "port": port,
                     "username": username,
-                    "credential": {"type": "password", "password": "whip-test-password"},
+                    "credential": {"type": "password", "password": "russh-test-password"},
                     "key": "live-password",
                 }),
             )

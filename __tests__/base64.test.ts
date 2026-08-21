@@ -18,3 +18,8 @@ test('encodes buffers larger than an output part', () => {
   const input = Uint8Array.from({ length: 20_000 }, (_, index) => index % 251);
   expect(arrayBufferToBase64(input.buffer)).toBe(Buffer.from(input).toString('base64'));
 });
+
+test('encodes only the addressed bytes of an ArrayBufferView', () => {
+  const input = Uint8Array.from([9, 9, 1, 2, 3, 9]);
+  expect(arrayBufferToBase64(input.subarray(2, 5))).toBe('AQID');
+});

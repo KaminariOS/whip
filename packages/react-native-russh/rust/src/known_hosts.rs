@@ -163,7 +163,7 @@ mod tests {
     fn matches_hashed_hosts_and_scopes_nonstandard_ports() {
         use base64::engine::general_purpose::STANDARD;
 
-        let salt = b"whip-known-hosts-test";
+        let salt = b"russh-known-hosts-test";
         let mut hmac = Hmac::<Sha1>::new_from_slice(salt).unwrap();
         hmac.update(b"[example.com]:2222");
         let pattern = format!(

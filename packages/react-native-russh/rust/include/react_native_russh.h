@@ -1,5 +1,5 @@
-#ifndef WHIP_SSH_H
-#define WHIP_SSH_H
+#ifndef REACT_NATIVE_RUSSH_H
+#define REACT_NATIVE_RUSSH_H
 
 #include <stdint.h>
 

@@ -4,6 +4,8 @@ if (!nativeClient) {
 }
 const nativeClientEmitter = nativeClient;
 const NATIVE_EVENT_SHELL = 'Shell';
+const NATIVE_EVENT_UNIX_SOCKET_CHANNEL = 'UnixSocketChannel';
+const NATIVE_EVENT_EXEC_CHANNEL = 'ExecChannel';
 const NATIVE_EVENT_DOWNLOAD_PROGRESS = 'DownloadProgress';
 const NATIVE_EVENT_UPLOAD_PROGRESS = 'UploadProgress';
 /**
@@ -18,6 +20,85 @@ export var PtyType;
     PtyType["ANSI"] = "ansi";
     PtyType["XTERM"] = "xterm";
 })(PtyType || (PtyType = {}));
+/**
+ * A raw OpenSSH direct-streamlocal channel connected to a Unix-domain socket
+ * on the remote host.
+ */
+export class OpenSSHUnixSocketChannel {
+    constructor(owner, id) {
+        this._owner = owner;
+        this.id = id;
+        this._closed = false;
+        this._closePromise = null;
+    }
+    get closed() {
+        return this._closed;
+    }
+    write(bytes) {
+        if (this._closed || this._closePromise) {
+            return Promise.reject(new Error(`Unix-socket channel '${this.id}' is closed`));
+        }
+        return this._owner.writeUnixSocketChannel(this.id, bytes);
+    }
+    close() {
+        if (this._closed) {
+            return Promise.resolve();
+        }
+        if (!this._closePromise) {
+            this._closePromise = this._owner.closeUnixSocketChannel(this.id)
+                .then(() => {
+                    this._closed = true;
+                })
+                .catch(error => {
+                    this._closePromise = null;
+                    throw error;
+                });
+        }
+        return this._closePromise;
+    }
+    _markClosed() {
+        this._closed = true;
+    }
+}
+/** A length-prefixed OpenSSH direct-streamlocal channel. */
+export class OpenSSHLengthPrefixedUnixSocketChannel extends OpenSSHUnixSocketChannel {
+    write(bytes) {
+        if (this._closed || this._closePromise) {
+            return Promise.reject(new Error(`Unix-socket channel '${this.id}' is closed`));
+        }
+        return this._owner.writeLengthPrefixedUnixSocketChannel(this.id, bytes);
+    }
+}
+/** A persistent SSH exec channel with binary input and output. */
+export class OpenSSHExecChannel {
+    constructor(owner, id) {
+        this._owner = owner;
+        this.id = id;
+        this._closed = false;
+        this._closePromise = null;
+    }
+    get closed() {
+        return this._closed;
+    }
+    write(bytes) {
+        if (this._closed || this._closePromise) {
+            return Promise.reject(new Error(`Exec channel '${this.id}' is closed`));
+        }
+        return this._owner.writeExecChannel(this.id, bytes);
+    }
+    close() {
+        if (this._closed) return Promise.resolve();
+        if (!this._closePromise) {
+            this._closePromise = this._owner.closeExecChannel(this.id)
+                .then(() => { this._closed = true; })
+                .catch(error => { this._closePromise = null; throw error; });
+        }
+        return this._closePromise;
+    }
+    _markClosed() {
+        this._closed = true;
+    }
+}
 /**
  * Represents an SSH client that can connect to a remote server and perform various operations.
  * Instances of SSHClient are created using the following factory functions:
@@ -94,7 +175,7 @@ class SSHClient {
      */
     static connectWithKey(host, port, username, privateKey, passphrase, callback) {
         return new Promise((resolve, reject) => {
-            const result = new SSHClient(host, port, username, { privateKey, passphrase }, (error) => {
+            const result = new this(host, port, username, { privateKey, passphrase }, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -107,7 +188,7 @@ class SSHClient {
     }
     static connectWithKeyViaJump(host, port, username, privateKey, passphrase, jumpClient, callback) {
         return new Promise((resolve, reject) => {
-            const result = new SSHClient(host, port, username, { privateKey, passphrase }, (error) => {
+            const result = new this(host, port, username, { privateKey, passphrase }, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -131,7 +212,7 @@ class SSHClient {
      */
     static connectWithPassword(host, port, username, password, callback) {
         return new Promise((resolve, reject) => {
-            const result = new SSHClient(host, port, username, password, (error) => {
+            const result = new this(host, port, username, password, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -144,7 +225,7 @@ class SSHClient {
     }
     static connectWithPasswordViaJump(host, port, username, password, jumpClient, callback) {
         return new Promise((resolve, reject) => {
-            const result = new SSHClient(host, port, username, password, (error) => {
+            const result = new this(host, port, username, password, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -176,6 +257,8 @@ class SSHClient {
             shell: false,
         };
         this._handlers = {};
+        this._unixSocketChannels = new Map();
+        this._execChannels = new Map();
         this.host = host;
         this.port = port;
         this.username = username;
@@ -194,7 +277,7 @@ class SSHClient {
      */
     static getRandomClientKey() {
         const random = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-        return `ssh_${Date.now().toString(36)}_${(++SSHClient._keyCounter).toString(36)}_${random}`;
+        return `ssh_${Date.now().toString(36)}_${(++this._keyCounter).toString(36)}_${random}`;
     }
     /**
      * Handles a native event (callback).
@@ -202,6 +285,36 @@ class SSHClient {
      * @param event The native event to handle.
      */
     handleEvent(event) {
+        if (event.name === NATIVE_EVENT_UNIX_SOCKET_CHANNEL && this._key === event.key) {
+            const channelId = event.value?.channelId;
+            const entry = channelId ? this._unixSocketChannels.get(channelId) : undefined;
+            if (entry) {
+                if (event.value?.type === 'closed') {
+                    entry.channel._markClosed();
+                    this._unixSocketChannels.delete(channelId);
+                    if (this._unixSocketChannels.size === 0) {
+                        this.unregisterNativeListener(NATIVE_EVENT_UNIX_SOCKET_CHANNEL);
+                    }
+                }
+                entry.handler(event.value);
+            }
+            return;
+        }
+        if (event.name === NATIVE_EVENT_EXEC_CHANNEL && this._key === event.key) {
+            const channelId = event.value?.channelId;
+            const entry = channelId ? this._execChannels.get(channelId) : undefined;
+            if (entry) {
+                if (event.value?.type === 'closed') {
+                    entry.channel._markClosed();
+                    this._execChannels.delete(channelId);
+                    if (this._execChannels.size === 0) {
+                        this.unregisterNativeListener(NATIVE_EVENT_EXEC_CHANNEL);
+                    }
+                }
+                entry.handler(event.value);
+            }
+            return;
+        }
         if (this._handlers[event.name] && this._key === event.key) {
             this._handlers[event.name](event.value);
         }
@@ -411,6 +524,111 @@ class SSHClient {
     closeLocalForward(localPort) {
         return new Promise((resolve, reject) => {
             nativeClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    /** Opens a raw OpenSSH direct-streamlocal channel to a remote Unix socket. */
+    openUnixSocketChannel(socketPath, handler, callback) {
+        const channelId = `unix_${Date.now().toString(36)}_${(++SSHClient._channelCounter).toString(36)}`;
+        const channel = new OpenSSHUnixSocketChannel(this, channelId);
+        this._unixSocketChannels.set(channelId, { channel, handler });
+        if (this._unixSocketChannels.size === 1) {
+            this.registerNativeListener(NATIVE_EVENT_UNIX_SOCKET_CHANNEL);
+        }
+        return new Promise((resolve, reject) => {
+            nativeClient.openUnixSocketChannel(socketPath, channelId, this._key, error => {
+                if (callback) callback(error, error ? undefined : channel);
+                if (error) {
+                    channel._markClosed();
+                    this._unixSocketChannels.delete(channelId);
+                    if (this._unixSocketChannels.size === 0) {
+                        this.unregisterNativeListener(NATIVE_EVENT_UNIX_SOCKET_CHANNEL);
+                    }
+                    return reject(error);
+                }
+                resolve(channel);
+            });
+        });
+    }
+    /** Opens a channel that emits and accepts complete length-prefixed frames. */
+    openLengthPrefixedUnixSocketChannel(socketPath, options, handler, callback) {
+        const channelId = `framed_${Date.now().toString(36)}_${(++SSHClient._channelCounter).toString(36)}`;
+        const channel = new OpenSSHLengthPrefixedUnixSocketChannel(this, channelId);
+        this._unixSocketChannels.set(channelId, { channel, handler });
+        if (this._unixSocketChannels.size === 1) {
+            this.registerNativeListener(NATIVE_EVENT_UNIX_SOCKET_CHANNEL);
+        }
+        const lengthFormat = options?.lengthFormat ?? 'u32be';
+        const maxFrameBytes = options?.maxFrameBytes ?? 32 * 1024 * 1024;
+        return new Promise((resolve, reject) => {
+            nativeClient.openLengthPrefixedUnixSocketChannel(socketPath, channelId, lengthFormat, maxFrameBytes, this._key, error => {
+                if (callback) callback(error, error ? undefined : channel);
+                if (error) {
+                    channel._markClosed();
+                    this._unixSocketChannels.delete(channelId);
+                    if (this._unixSocketChannels.size === 0) {
+                        this.unregisterNativeListener(NATIVE_EVENT_UNIX_SOCKET_CHANNEL);
+                    }
+                    return reject(error);
+                }
+                resolve(channel);
+            });
+        });
+    }
+    writeUnixSocketChannel(channelId, bytes) {
+        return new Promise((resolve, reject) => {
+            nativeClient.writeUnixSocketChannel(channelId, bytes, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    writeLengthPrefixedUnixSocketChannel(channelId, bytes) {
+        return new Promise((resolve, reject) => {
+            nativeClient.writeLengthPrefixedUnixSocketChannel(channelId, bytes, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    closeUnixSocketChannel(channelId) {
+        return new Promise((resolve, reject) => {
+            nativeClient.closeUnixSocketChannel(channelId, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    /** Sends text and reads one delimiter-terminated response on a fresh channel. */
+    requestUnixSocket(socketPath, request, options = {}) {
+        const responseTerminator = options.responseTerminator ?? '\n';
+        const timeoutMs = options.timeoutMs ?? 15000;
+        const maxResponseBytes = options.maxResponseBytes ?? 8 * 1024 * 1024;
+        return new Promise((resolve, reject) => {
+            nativeClient.requestUnixSocket(socketPath, request, responseTerminator, timeoutMs, maxResponseBytes, this._key, (error, response) => error ? reject(error) : resolve(response));
+        });
+    }
+    /** Opens a persistent SSH exec channel with binary input and output. */
+    openExecChannel(command, handler, callback) {
+        const channelId = `exec_${Date.now().toString(36)}_${(++SSHClient._channelCounter).toString(36)}`;
+        const channel = new OpenSSHExecChannel(this, channelId);
+        this._execChannels.set(channelId, { channel, handler });
+        if (this._execChannels.size === 1) {
+            this.registerNativeListener(NATIVE_EVENT_EXEC_CHANNEL);
+        }
+        return new Promise((resolve, reject) => {
+            nativeClient.openExecChannel(command, channelId, this._key, error => {
+                if (callback) callback(error, error ? undefined : channel);
+                if (error) {
+                    channel._markClosed();
+                    this._execChannels.delete(channelId);
+                    if (this._execChannels.size === 0) {
+                        this.unregisterNativeListener(NATIVE_EVENT_EXEC_CHANNEL);
+                    }
+                    return reject(error);
+                }
+                resolve(channel);
+            });
+        });
+    }
+    writeExecChannel(channelId, bytes) {
+        return new Promise((resolve, reject) => {
+            nativeClient.writeExecChannel(channelId, bytes, this._key, error => error ? reject(error) : resolve());
+        });
+    }
+    closeExecChannel(channelId) {
+        return new Promise((resolve, reject) => {
+            nativeClient.closeExecChannel(channelId, this._key, error => error ? reject(error) : resolve());
         });
     }
     startSftpFileServer(remotePath) {
@@ -704,6 +922,16 @@ class SSHClient {
      */
     disconnect() {
         this.off(NATIVE_EVENT_SHELL);
+        for (const { channel } of this._unixSocketChannels.values()) {
+            channel._markClosed();
+        }
+        this._unixSocketChannels.clear();
+        this.unregisterNativeListener(NATIVE_EVENT_UNIX_SOCKET_CHANNEL);
+        for (const { channel } of this._execChannels.values()) {
+            channel._markClosed();
+        }
+        this._execChannels.clear();
+        this.unregisterNativeListener(NATIVE_EVENT_EXEC_CHANNEL);
         this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
         this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
         this._activeStream.shell = false;
@@ -713,4 +941,5 @@ class SSHClient {
 }
 // Monotonic counter used, together with a timestamp, to build unique client keys.
 SSHClient._keyCounter = 0;
+SSHClient._channelCounter = 0;
 export default SSHClient;

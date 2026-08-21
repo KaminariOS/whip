@@ -50,7 +50,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 - [How it works](#how-it-works)
 - [Architecture](#architecture)
   - [Mobile app](#mobile-app)
-  - [Whip SSH transport](#whip-ssh-transport)
+  - [SSH transport](#ssh-transport)
 - [Development](#development)
   - [EAS builds](#eas-builds)
   - [Google Play publishing](#google-play-publishing)
@@ -224,169 +224,37 @@ An unknown server key requires explicit fingerprint approval before Whip stores 
 
 ## Architecture
 
-Whip is split between the React Native mobile application and the shared Rust SSH transport. The diagrams below show both halves and their native bridge, terminal, Herdr, and remote-host boundaries.
+Whip is split between the React Native mobile application, its private
+pairing/Herdr adapter, and the public `react-native-russh` transport. The
+diagrams below show those boundaries together with the terminal and remote
+host paths.
 
 ### Mobile app
 
-```mermaid
-%%{init: {
-  "theme": "base",
-  "themeVariables": {
-    "background": "#ffffff",
-    "primaryTextColor": "#172033",
-    "lineColor": "#64748b",
-    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif"
-  },
-  "flowchart": {
-    "curve": "basis",
-    "htmlLabels": true,
-    "nodeSpacing": 34,
-    "rankSpacing": 48
-  }
-}}%%
-flowchart TB
-  subgraph ReactNative["React Native mobile app"]
-    direction LR
-    App["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/react.svg' width='44' height='44'/></span><br/><b>React Native</b><br/>Screens and state<br/>Hosts · Herd · Terminal · Files · Settings"]
-    TerminalHost["TerminalRendererHost<br/>renderer lifecycle · frame batching"]
-    HerdrClient["<span style='display:inline-block;width:44px;height:44px'><img src='data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkhlcmRyIGxvZ28iIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCBtZWV0Ij4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iI2Q5ZGFkOCIvPgogIDxnIGZpbGw9IiMzMDM0MzgiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgNTEyKSBzY2FsZSguMSAtLjEpIiBzdHJva2U9Im5vbmUiPgogICAgPHBhdGggZD0iTTI3OTQgMzcxMCBjLTEyOSAtMzMgLTI5OSAtMTM1IC0zNTkgLTIxNCAtMjEgLTI4IC0yNiAtNDIgLTIxIC02MyA5IC0zOCAxNTQgLTE3OCAxOTkgLTE5MiAzMiAtMTEgNDEgLTkgMTA0IDIzIDE3MSA4NiAzNTQgNzAgNDc1IC00MyAxNTAgLTEzOCAxNTAgLTM3OSAwIC01MTEgLTEwNyAtOTUgLTI3OCAtOTQgLTM4NiAyIGwtNDYgNDAgLTExIC0yOSBjLTE2IC00MCAtMTQgLTEyMiA0IC0xNjQgNjAgLTE0NCAyNjQgLTIyMiA0NTIgLTE3NCAzNjAgOTIgNTU5IDQ5NCA0MzAgODY4IC0zNiAxMDMgLTgxIDE3MyAtMTc1IDI2NyAtNzEgNzIgLTEwMCA5MyAtMTgwIDEzMiAtNTIgMjYgLTEyNyA1NCAtMTY3IDYyIC05NiAyMSAtMjMwIDIwIC0zMTkgLTR6IE0yMTgzIDM2OTUgYy0xMTYgLTMyIC0yMjEgLTEwOCAtMjczIC0xOTkgLTE3IC0yOCAtMzAgLTU0IC0zMCAtNTggMCAtNCAyMCAxIDQ1IDEyIDY2IDI4IDIyMCA2OCAyOTQgNzYgNjQgNyA2NSA3IDEzNyA4MyA0MCA0MSA3MSA3NyA2OSA3OSAtMiAyIC0yMSA4IC00MiAxMyAtNTUgMTIgLTE0MCAxMCAtMjAwIC02eiBNMjIxMiAzMzg4IGMtMTU5IC0yMiAtMzkwIC0xMjIgLTU1OSAtMjQxIC0yOTkgLTIxMCAtNTg1IC02MDAgLTYwOSAtODI4IC0xMiAtMTE4IDQwIC0yNTEgMTI1IC0zMTggOTYgLTc2IDE3OCAtOTggNDI2IC0xMTYgMTEwIC04IDIyNCAtMjEgMjU0IC0yOSAxMjUgLTM0IDIzMCAtMTE1IDI3MiAtMjExIDExIC0yNCAyNCAtODEgMzAgLTEyNyAyMCAtMTcwIDY1IC0yNzEgMTY2IC0zNzQgMzQgLTM1IDYzIC02NSA2MyAtNjcgMCAtMSAtMTAgLTI3IC0yMiAtNTcgLTI5IC03NiAtMzcgLTI1OSAtMTQgLTM1MCA0MiAtMTcwIDE1OCAtMzE4IDMxMSAtMzk3IDQ0IC0yMyA5OCAtNDYgMTIwIC01MiAyMiAtNiA0NSAtMTQgNTEgLTE4IDUgLTUgMTUgLTQ4IDIyIC05NiA2IC00OCAxNCAtOTIgMTcgLTk3IDQgLTYgNDE1IC0xMCAxMTMxIC0xMCBsMTEyNCAwIDAgMTU4NCAwIDE1ODUgLTU1IC0xOSBjLTg0IC0yOSAtMTQzIC02OCAtMjMyIC0xNTQgbC04MyAtNzggLTU0IDQ5IGMtMTExIDEwMiAtMjMzIDE1MSAtMzkxIDE2MCAtMTEzIDYgLTE5OSAtMTAgLTI5OCAtNTQgbC02MCAtMjcgLTI2IDM0IGMtMzcgNTEgLTEyMCAxMzQgLTEyNyAxMjggLTMgLTQgMCAtMzQgNyAtNjcgMTcgLTg5IDcgLTI2OCAtMjEgLTM1NiAtMTAzIC0zMjggLTM3NyAtNTQ1IC02ODggLTU0NSAtMTYxIDAgLTI3MyA0MSAtMzczIDEzNyAtMzcgMzUgLTY2IDc1IC04NSAxMTYgLTc5IDE3MyAtOCA0MDcgMTI0IDQwNyA0NCAwIDY4IC0xNCAxMTcgLTY2IDc0IC03OCAxNjcgLTgyIDIzOCAtOSA2MCA2MiA3MiAxNDcgMzMgMjMxIC00MiA5MCAtMTIwIDEzMCAtMjM4IDEyMiAtNTAgLTQgLTg1IC0xNCAtMTMxIC0zNyAtODkgLTQ1IC0xMjIgLTUyIC0xNzYgLTQwIC05MiAyMCAtMjYyIDE2MyAtMzAyIDI1MyAtMTEgMjUgLTIxIDQ1IC0yMiA0NSAtMSAtMSAtMzAgLTYgLTY1IC0xMXogbS0yNTYgLTUwNSBjMTE1IC04OCAxMjkgLTEwMiAxMzIgLTEzMSAyIC0xOCAtMiAtNDAgLTkgLTQ5IC03IC04IC02OSAtNTUgLTEzOCAtMTA1IC0xMDMgLTczIC0xMzAgLTg4IC0xNTEgLTgzIC0zNSA4IC01MSAzNCAtNDggNzQgMyAzMSAxMiA0MiA4MyA5MiA0NCAzMSA4MCA2MSA4MiA2NiAxIDQgLTMwIDMxIC02OSA1OCAtMzkgMjggLTc3IDU2IC04NSA2MyAtMTggMTkgLTE2IDcyIDQgOTQgMzIgMzUgNjMgMjMgMTk5IC03OXogbTUyOCAtODggYzIzIC0yNCAyOCAtNTIgMTQgLTgyIGwtMTMgLTI4IC0xNDEgLTMgYy0xMzAgLTIgLTE0MiAtMSAtMTU4IDE3IC0yMyAyNiAtMjQgNjYgLTEgOTEgMTYgMTggMzIgMjAgMTUxIDIwIDEwNSAwIDEzNiAtMyAxNDggLTE1eiIvPgogIDwvZz4KPC9zdmc+Cg==' width='44' height='44'/></span><br/><b>HerdrClient</b><br/>connections · channels · reconnects"]
-    SSHClient["SSHClient app API<br/>react-native-whip-ssh"]
-    WhipApi["<span style='display:inline-block;width:44px;height:44px'><img src='https://raw.githubusercontent.com/KaminariOS/whip/main/assets/whip-cyborg-hand-concept.svg' width='44' height='44'/></span><br/><b>react-native-whip-ssh</b><br/>typed terminal fast path<br/>JSON control facade"]
-
-    App --> TerminalHost
-    App <-->|"actions · snapshots · status"| HerdrClient
-    TerminalHost <-->|"terminal controller"| HerdrClient
-    HerdrClient <--> SSHClient
-    SSHClient <--> WhipApi
-  end
-
-  subgraph Terminal["Terminal renderer"]
-    direction LR
-    WebView["React Native WebView"]
-    Xterm["<span style='display:inline-block;width:44px;height:44px'><img src='https://raw.githubusercontent.com/xtermjs/xtermjs-branding/master/logo.svg' width='44' height='44'/></span><br/><b>xterm.js + addon-fit</b><br/>keyboard · selection · search · scrollback"]
-    Assets["Packaged terminal assets<br/>Android APK · iOS bundle"]
-
-    WebView <--> Xterm
-    Assets --> WebView
-  end
-
-  TerminalHost -->|"one injection per ANSI frame<br/>base64 only at WebView boundary"| WebView
-  WebView -->|"postMessage<br/>4 ms coalesced input · resize · scroll · clipboard"| TerminalHost
-
-  subgraph Platform["React Native New Architecture"]
-    direction LR
-    IOS["<span style='display:inline-block;width:40px;height:40px'><img src='https://api.iconify.design/logos/apple.svg' width='40' height='40'/></span><br/><b>iOS · arm64</b><br/>Objective-C++ TurboModule"]
-    JSI["Generated C++ JSI HostObject<br/>globalThis.NativeWhipSsh<br/>RustBuffer · futures · callbacks"]
-    Android["<span style='display:inline-block;width:40px;height:40px'><img src='https://api.iconify.design/logos/android-icon.svg' width='40' height='40'/></span><br/><b>Android · arm64-v8a</b><br/>Kotlin TurboModule · JNI"]
-
-    IOS -.->|"installs Runtime + CallInvoker"| JSI
-    Android -.->|"installs Runtime + CallInvoker"| JSI
-  end
-
-  WhipApi <-->|"typed calls · ArrayBuffer frames<br/>JSON for control operations"| JSI
-  JSI <-->|"UniFFI ABI"| Transport["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/rust.svg' width='44' height='44'/></span><br/><b>Shared whip-ssh Rust transport</b><br/>See whip-ssh-architecture"]
-
-  classDef react fill:#e9f1ff,stroke:#3772c5,color:#172033,stroke-width:1.5px
-  classDef terminal fill:#f2ecff,stroke:#7958b5,color:#172033,stroke-width:1.5px
-  classDef native fill:#e9f7f5,stroke:#23847a,color:#172033,stroke-width:1.5px
-  classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033,stroke-width:1.5px
-
-  class App,TerminalHost,HerdrClient,SSHClient,WhipApi react
-  class WebView,Xterm,Assets terminal
-  class IOS,JSI,Android native
-  class Transport rust
-```
+[![Mobile app architecture](docs/mobile-app-architecture.svg)](docs/mobile-app-architecture.svg)
 
 [Edit the mobile app diagram](docs/mobile-app-architecture.mmd).
 
-### Whip SSH transport
+### SSH transport
 
-```mermaid
-%%{init: {
-  "theme": "base",
-  "themeVariables": {
-    "background": "#ffffff",
-    "primaryTextColor": "#172033",
-    "lineColor": "#64748b",
-    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif"
-  },
-  "flowchart": {
-    "curve": "basis",
-    "htmlLabels": true,
-    "nodeSpacing": 34,
-    "rankSpacing": 48
-  }
-}}%%
-flowchart TB
-  subgraph Package["react-native-whip-ssh package"]
-    direction LR
-    Facade["<span style='display:inline-block;width:44px;height:44px'><img src='https://raw.githubusercontent.com/KaminariOS/whip/main/assets/whip-cyborg-hand-concept.svg' width='44' height='44'/></span><br/><b>TypeScript compatibility facade</b><br/>typed terminal methods · JSON control calls"]
-    Bindings["Generated UniFFI TypeScript<br/>strings · ArrayBuffer · futures · callbacks"]
-    JSI["Generated C++ JSI bridge<br/>Hermes HostObject · RustBuffer conversion"]
-    Platforms["Platform installers<br/>iOS Objective-C++ · Android Kotlin/JNI"]
+[![Whip and react-native-russh SSH transport architecture](docs/whip-ssh-architecture.svg)](docs/whip-ssh-architecture.svg)
 
-    Facade <--> Bindings
-    Bindings <--> JSI
-    Platforms -.-> JSI
-  end
+[Edit the SSH transport diagram](docs/whip-ssh-architecture.mmd).
 
-  subgraph Rust["Shared Rust SSH library"]
-    direction LR
-    UniFFI["UniFFI exports<br/>typed terminal calls · binary frame callback<br/>call · callAsync · events · shutdown"]
-    Core["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/rust.svg' width='44' height='44'/></span><br/><b>Whip SSH core</b><br/>session and channel ownership"]
-    Control["JSON control dispatcher<br/>connect · exec · SFTP · forwarding · lifecycle"]
-    Terminal["Typed terminal path<br/>input · resize · scroll · raw ANSI bytes"]
-    Tokio["Tokio runtime"]
-    KnownHosts["Strict known_hosts verification"]
-    Russh["Russh SSH client"]
-    SFTP["russh-sftp"]
+The reusable New Architecture transport is published on npm as
+[`react-native-russh`](packages/react-native-russh):
 
-    UniFFI <--> Core
-    Core <--> Control
-    Core <--> Terminal
-    Core <--> Tokio
-    Core --> KnownHosts
-    Tokio <--> Russh
-    Tokio <--> SFTP
-    SFTP --> Russh
-  end
-
-  JSI <-->|"UniFFI C ABI"| UniFFI
-
-  subgraph Remote["Remote host"]
-    direction LR
-    SSHD["OpenSSH server"]
-    Shell["PTY / exec shell<br/>plain SSH fallback"]
-    FileSystem["Remote filesystem"]
-    TCPServices["Remote / private web services"]
-    APISocket["Herdr API Unix socket<br/>snapshots · actions · events"]
-    ClientSocket["Herdr client Unix socket<br/>protocol 17–20 ANSI frames"]
-    Herdr["<span style='display:inline-block;width:44px;height:44px'><img src='data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkhlcmRyIGxvZ28iIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCBtZWV0Ij4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iI2Q5ZGFkOCIvPgogIDxnIGZpbGw9IiMzMDM0MzgiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgNTEyKSBzY2FsZSguMSAtLjEpIiBzdHJva2U9Im5vbmUiPgogICAgPHBhdGggZD0iTTI3OTQgMzcxMCBjLTEyOSAtMzMgLTI5OSAtMTM1IC0zNTkgLTIxNCAtMjEgLTI4IC0yNiAtNDIgLTIxIC02MyA5IC0zOCAxNTQgLTE3OCAxOTkgLTE5MiAzMiAtMTEgNDEgLTkgMTA0IDIzIDE3MSA4NiAzNTQgNzAgNDc1IC00MyAxNTAgLTEzOCAxNTAgLTM3OSAwIC01MTEgLTEwNyAtOTUgLTI3OCAtOTQgLTM4NiAyIGwtNDYgNDAgLTExIC0yOSBjLTE2IC00MCAtMTQgLTEyMiA0IC0xNjQgNjAgLTE0NCAyNjQgLTIyMiA0NTIgLTE3NCAzNjAgOTIgNTU5IDQ5NCA0MzAgODY4IC0zNiAxMDMgLTgxIDE3MyAtMTc1IDI2NyAtNzEgNzIgLTEwMCA5MyAtMTgwIDEzMiAtNTIgMjYgLTEyNyA1NCAtMTY3IDYyIC05NiAyMSAtMjMwIDIwIC0zMTkgLTR6IE0yMTgzIDM2OTUgYy0xMTYgLTMyIC0yMjEgLTEwOCAtMjczIC0xOTkgLTE3IC0yOCAtMzAgLTU0IC0zMCAtNTggMCAtNCAyMCAxIDQ1IDEyIDY2IDI4IDIyMCA2OCAyOTQgNzYgNjQgNyA2NSA3IDEzNyA4MyA0MCA0MSA3MSA3NyA2OSA3OSAtMiAyIC0yMSA4IC00MiAxMyAtNTUgMTIgLTE0MCAxMCAtMjAwIC02eiBNMjIxMiAzMzg4IGMtMTU5IC0yMiAtMzkwIC0xMjIgLTU1OSAtMjQxIC0yOTkgLTIxMCAtNTg1IC02MDAgLTYwOSAtODI4IC0xMiAtMTE4IDQwIC0yNTEgMTI1IC0zMTggOTYgLTc2IDE3OCAtOTggNDI2IC0xMTYgMTEwIC04IDIyNCAtMjEgMjU0IC0yOSAxMjUgLTM0IDIzMCAtMTE1IDI3MiAtMjExIDExIC0yNCAyNCAtODEgMzAgLTEyNyAyMCAtMTcwIDY1IC0yNzEgMTY2IC0zNzQgMzQgLTM1IDYzIC02NSA2MyAtNjcgMCAtMSAtMTAgLTI3IC0yMiAtNTcgLTI5IC03NiAtMzcgLTI1OSAtMTQgLTM1MCA0MiAtMTcwIDE1OCAtMzE4IDMxMSAtMzk3IDQ0IC0yMyA5OCAtNDYgMTIwIC01MiAyMiAtNiA0NSAtMTQgNTEgLTE4IDUgLTUgMTUgLTQ4IDIyIC05NiA2IC00OCAxNCAtOTIgMTcgLTk3IDQgLTYgNDE1IC0xMCAxMTMxIC0xMCBsMTEyNCAwIDAgMTU4NCAwIDE1ODUgLTU1IC0xOSBjLTg0IC0yOSAtMTQzIC02OCAtMjMyIC0xNTQgbC04MyAtNzggLTU0IDQ5IGMtMTExIDEwMiAtMjMzIDE1MSAtMzkxIDE2MCAtMTEzIDYgLTE5OSAtMTAgLTI5OCAtNTQgbC02MCAtMjcgLTI2IDM0IGMtMzcgNTEgLTEyMCAxMzQgLTEyNyAxMjggLTMgLTQgMCAtMzQgNyAtNjcgMTcgLTg5IDcgLTI2OCAtMjEgLTM1NiAtMTAzIC0zMjggLTM3NyAtNTQ1IC02ODggLTU0NSAtMTYxIDAgLTI3MyA0MSAtMzczIDEzNyAtMzcgMzUgLTY2IDc1IC04NSAxMTYgLTc5IDE3MyAtOCA0MDcgMTI0IDQwNyA0NCAwIDY4IC0xNCAxMTcgLTY2IDc0IC03OCAxNjcgLTgyIDIzOCAtOSA2MCA2MiA3MiAxNDcgMzMgMjMxIC00MiA5MCAtMTIwIDEzMCAtMjM4IDEyMiAtNTAgLTQgLTg1IC0xNCAtMTMxIC0zNyAtODkgLTQ1IC0xMjIgLTUyIC0xNzYgLTQwIC05MiAyMCAtMjYyIDE2MyAtMzAyIDI1MyAtMTEgMjUgLTIxIDQ1IC0yMiA0NSAtMSAtMSAtMzAgLTYgLTY1IC0xMXogbS0yNTYgLTUwNSBjMTE1IC04OCAxMjkgLTEwMiAxMzIgLTEzMSAyIC0xOCAtMiAtNDAgLTkgLTQ5IC03IC04IC02OSAtNTUgLTEzOCAtMTA1IC0xMDMgLTczIC0xMzAgLTg4IC0xNTEgLTgzIC0zNSA4IC01MSAzNCAtNDggNzQgMyAzMSAxMiA0MiA4MyA5MiA0NCAzMSA4MCA2MSA4MiA2NiAxIDQgLTMwIDMxIC02OSA1OCAtMzkgMjggLTc3IDU2IC04NSA2MyAtMTggMTkgLTE2IDcyIDQgOTQgMzIgMzUgNjMgMjMgMTk5IC03OXogbTUyOCAtODggYzIzIC0yNCAyOCAtNTIgMTQgLTgyIGwtMTMgLTI4IC0xNDEgLTMgYy0xMzAgLTIgLTE0MiAtMSAtMTU4IDE3IC0yMyAyNiAtMjQgNjYgLTEgOTEgMTYgMTggMzIgMjAgMTUxIDIwIDEwNSAwIDEzNiAtMyAxNDggLTE1eiIvPgogIDwvZz4KPC9zdmc+Cg==' width='44' height='44'/></span><br/><b>Herdr server</b><br/>sessions · panes · agents"]
-
-    APISocket <--> Herdr
-    ClientSocket <--> Herdr
-  end
-
-  Russh <-->|"encrypted SSH<br/>direct or ProxyJump"| SSHD
-  SFTP <-->|"SFTP subsystem"| SSHD
-  SSHD <-->|"session channel · PTY / exec"| Shell
-  SSHD <-->|"file operations"| FileSystem
-  SSHD <-->|"direct-tcpip · local forwarding"| TCPServices
-  SSHD <-->|"direct-streamlocal · API and events"| APISocket
-  SSHD <-->|"direct-streamlocal · terminal I/O"| ClientSocket
-
-  classDef package fill:#e9f7f5,stroke:#23847a,color:#172033,stroke-width:1.5px
-  classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033,stroke-width:1.5px
-  classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033,stroke-width:1.5px
-  classDef terminal fill:#f2ecff,stroke:#7958b5,color:#172033,stroke-width:1.5px
-
-  class Facade,Bindings,JSI,Platforms package
-  class UniFFI,Core,Control,Tokio,KnownHosts,Russh,SFTP rust
-  class Terminal terminal
-  class SSHD,Shell,FileSystem,TCPServices,APISocket,ClientSocket,Herdr remote
+```bash
+npm install react-native-russh
 ```
 
-[Edit the Whip SSH transport diagram](docs/whip-ssh-architecture.mmd).
+Its public package root exposes generic SSH, PTY, forwarding, `known_hosts`,
+SFTP, persistent exec, and raw/length-prefixed OpenSSH Unix-socket channels.
+Whip imports the unpublished `react-native-whip-ssh` subclass: all Herdr codec,
+negotiation, terminal event, and command/event wrapper behavior lives there,
+along with a small private native crate for QR-pinned WP4 pairing.
+
+After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 
 ## Development
 
@@ -483,7 +351,13 @@ npm test -- --runInBand
 npx expo export --platform android
 ```
 
-The complete SSH stack is maintained in [`packages/react-native-whip-ssh`](packages/react-native-whip-ssh): the app-facing `SSHClient` API, UniFFI bridge, native installers, and shared Rust/Russh crate. Both mobile platforms use this package and there is no legacy native SSH fallback. Edit the source package, never its symlink under `node_modules`.
+The native transport is maintained in
+[`packages/react-native-russh`](packages/react-native-russh) and published as
+`react-native-russh`. Its public API contains only generic SSH/SFTP features.
+[`packages/react-native-whip-ssh`](packages/react-native-whip-ssh) is the
+private Whip adapter that exposes WP4 QR pairing and Herdr protocols through
+the transport's internal dispatcher. Both mobile platforms use the same
+Rust/Russh transport; there is no legacy native SSH fallback.
 
 ## Community
 

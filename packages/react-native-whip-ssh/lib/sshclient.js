@@ -1,881 +1,407 @@
-// Whip owns this adapter and intentionally consumes the transport's private
-// native bridge. The public react-native-russh entry point remains generic.
-const nativeClient = require('../../react-native-russh/src').default;
-if (!nativeClient) {
-    throw new Error('Native SSH backend is unavailable');
+/* global TextDecoder */
+/* eslint-disable no-bitwise */
+
+import BaseSSHClient, { PtyType } from 'react-native-russh';
+import {
+  MAX_FRAME_BYTES,
+  attach,
+  decode,
+  detach,
+  encodeUtf8,
+  hello,
+  input,
+  resize,
+  scroll,
+} from './herdr-codec';
+
+export * from 'react-native-russh';
+export { PtyType };
+
+function privateNativeClient() {
+  return require('../src').default;
 }
-const nativeClientEmitter = nativeClient;
-const NATIVE_EVENT_SHELL = 'Shell';
-const NATIVE_EVENT_HERDR_BRIDGE = 'HerdrBridge';
-const NATIVE_EVENT_HERDR_EVENT_STREAM = 'HerdrEventStream';
-const NATIVE_EVENT_HERDR_COMMAND_STREAM = 'HerdrCommandStream';
-const NATIVE_EVENT_DOWNLOAD_PROGRESS = 'DownloadProgress';
-const NATIVE_EVENT_UPLOAD_PROGRESS = 'UploadProgress';
-/**
- * Represents the types of PTY (pseudo-terminal) for SSH connections.
- */
-export var PtyType;
-(function (PtyType) {
-    PtyType["VANILLA"] = "vanilla";
-    PtyType["VT100"] = "vt100";
-    PtyType["VT102"] = "vt102";
-    PtyType["VT220"] = "vt220";
-    PtyType["ANSI"] = "ansi";
-    PtyType["XTERM"] = "xterm";
-})(PtyType || (PtyType = {}));
-/**
- * Represents an SSH client that can connect to a remote server and perform various operations.
- * Instances of SSHClient are created using the following factory functions:
- * - SSHClient.connectWithKey()
- * - SSHClient.connectWithPassword()
- */
-class SSHClient {
-    /**
-     * Observes changes to the Android network set used for new SSH sessions.
-     * The returned subscription must be removed when it is no longer needed.
-     */
-    static addNetworkChangeListener(handler) {
-        // Russh opens a fresh socket for each connection and has no
-        // process-wide network monitor. Keep this compatibility hook inert.
-        void handler;
-        return { remove() { } };
+
+function createUtf8Decoder() {
+  if (typeof TextDecoder !== 'undefined') {
+    const decoder = new TextDecoder();
+    return (bytes, stream = true) => decoder.decode(bytes, { stream });
+  }
+  let pending = new Uint8Array(0);
+  return (buffer, stream = true) => {
+    const incoming = new Uint8Array(buffer);
+    const bytes = new Uint8Array(pending.length + incoming.length);
+    bytes.set(pending);
+    bytes.set(incoming, pending.length);
+    let end = bytes.length;
+    if (stream && end > 0) {
+      let lead = end - 1;
+      while (lead > 0 && (bytes[lead] & 0xc0) === 0x80) lead--;
+      const first = bytes[lead];
+      const expected = first < 0x80 ? 1 : first < 0xe0 ? 2 : first < 0xf0 ? 3 : 4;
+      if (lead + expected > end) end = lead;
     }
-    /**
-     * Replaces the process-wide OpenSSH known_hosts repository used by new
-     * SSH sessions on every native backend.
-     */
-    static setKnownHosts(knownHosts) {
-        nativeClient.setKnownHosts(knownHosts);
+    pending = bytes.slice(end);
+    let result = '';
+    for (let index = 0; index < end;) {
+      const first = bytes[index++];
+      if (first < 0x80) {
+        result += String.fromCodePoint(first);
+        continue;
+      }
+      const length = first < 0xe0 ? 2 : first < 0xf0 ? 3 : 4;
+      let codePoint = first & (length === 2 ? 0x1f : length === 3 ? 0x0f : 0x07);
+      let valid = index + length - 1 <= end;
+      for (let offset = 1; valid && offset < length; offset++) {
+        const next = bytes[index++];
+        valid = (next & 0xc0) === 0x80;
+        codePoint = (codePoint << 6) | (next & 0x3f);
+      }
+      result += valid ? String.fromCodePoint(codePoint) : '\ufffd';
     }
-    /**
-    * Retrieves the details of an SSH key.
-    * @param key - The SSH private key as a string.
-    * @param passphrase - The passphrase for an encrypted private key (optional).
-    * @returns A Promise that resolves to the details of the key, including its fingerprint, type and size.
-    */
-    static getKeyDetails(key, passphrase) {
-        return new Promise((resolve, reject) => {
-            nativeClient.getKeyDetails(key, passphrase || null)
-                .then((result) => {
-                resolve({
-                    keyType: result.keyType,
-                    keySize: result.keySize || 0,
-                    fingerprint: result.fingerprint,
-                    publicKey: result.publicKey
-                });
-            })
-                .catch((error) => {
-                reject(error);
-            });
-        });
-    }
-    static generateKeyPair(type, passphrase, keySize, comment) {
-        return new Promise((resolve, reject) => {
-            nativeClient.generateKeyPair(type, passphrase, keySize, comment, (error, keys) => {
-                if (error) {
-                    reject(error);
-                }
-                else {
-                    resolve({
-                        privateKey: keys.privateKey,
-                        publicKey: keys.publicKey,
-                    });
-                }
-            });
-        });
-    }
-    static pairHost(code, publicKey, deviceName) {
-        return nativeClient.pairHost(code, publicKey, deviceName);
-    }
-    /**
-     * Connects to an SSH server using a private key for authentication.
-     *
-     * @param host - The hostname or IP address of the SSH server.
-     * @param port - The port number of the SSH server.
-     * @param username - The username for authentication.
-     * @param privateKey - The private key for authentication.
-     * @param passphrase - The passphrase for the private key (optional).
-     * @param callback - A callback function to handle the connection result (optional).
-     *
-     * @returns A Promise that resolves to an instance of SSHClient if the connection is successful.
-     *          Otherwise, it rejects with an error.
-     */
-    static connectWithKey(host, port, username, privateKey, passphrase, callback) {
-        return new Promise((resolve, reject) => {
-            const result = new SSHClient(host, port, username, { privateKey, passphrase }, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve(result);
-            });
-        });
-    }
-    static connectWithKeyViaJump(host, port, username, privateKey, passphrase, jumpClient, callback) {
-        return new Promise((resolve, reject) => {
-            const result = new SSHClient(host, port, username, { privateKey, passphrase }, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve(result);
-            }, jumpClient);
-        });
-    }
-    /**
-     * Connects to an SSH server using password authentication.
-     *
-     * @param host - The hostname or IP address of the SSH server.
-     * @param port - The port number of the SSH server.
-     * @param username - The username for authentication.
-     * @param password - The password for authentication.
-     * @param callback - Optional callback function to handle any errors during the connection process.
-     * @returns A Promise that resolves to an instance of SSHClient if the connection is successful.
-     * @throws If there is an error during the connection process.
-     */
-    static connectWithPassword(host, port, username, password, callback) {
-        return new Promise((resolve, reject) => {
-            const result = new SSHClient(host, port, username, password, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve(result);
-            });
-        });
-    }
-    static connectWithPasswordViaJump(host, port, username, password, jumpClient, callback) {
-        return new Promise((resolve, reject) => {
-            const result = new SSHClient(host, port, username, password, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve(result);
-            }, jumpClient);
-        });
-    }
-    /**
-     * Creates a new SSHClient instance.
-     * Should not be called directly; use the `connectWithKey` or `connectWithPassword` factory functions instead.
-     * @param host The hostname or IP address of the SSH server.
-     * @param port The port number of the SSH server.
-     * @param username The username for authentication.
-     * @param passwordOrKey The password or private key for authentication.
-     * @param callback The callback function to be called after the connection is established.
-     */
-    constructor(host, port, username, passwordOrKey, callback, jumpClient) {
-        this._key = SSHClient.getRandomClientKey();
-        this._listeners = {};
-        this._counters = {
-            download: 0,
-            upload: 0,
-        };
-        this._activeStream = {
-            sftp: false,
-            shell: false,
-            herdrEventStream: false,
-            herdrCommandStream: false,
-        };
-        this._handlers = {};
-        this._herdrBridgeHandlers = new Map();
-        this.host = host;
-        this.port = port;
-        this.username = username;
-        this.connect(passwordOrKey, callback, jumpClient);
-    }
-    /**
-     * Generates a unique client key, used to identify which native callback and
-     * event belongs to which instance.
-     *
-     * Combines a timestamp, a process-lifetime monotonic counter, and a small
-     * random suffix. The counter guarantees uniqueness for clients created within
-     * the same millisecond, which the previous 16-bit random-only approach could
-     * not (it had a realistic collision risk across many connections).
-     *
-     * @returns A string uniquely identifying the client instance.
-     */
-    static getRandomClientKey() {
-        const random = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-        return `ssh_${Date.now().toString(36)}_${(++SSHClient._keyCounter).toString(36)}_${random}`;
-    }
-    /**
-     * Handles a native event (callback).
-     *
-     * @param event The native event to handle.
-     */
-    handleEvent(event) {
-        if (event.name === NATIVE_EVENT_HERDR_BRIDGE && this._key === event.key) {
-            const terminalId = event.value?.terminalId;
-            const handler = terminalId ? this._herdrBridgeHandlers.get(terminalId) : undefined;
-            if (handler) {
-                handler(event.value);
-            }
-            if (terminalId && event.value?.type === 'closed') {
-                this._herdrBridgeHandlers.delete(terminalId);
-                if (this._herdrBridgeHandlers.size === 0) {
-                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-                }
-            }
-            return;
-        }
-        if (event.name === NATIVE_EVENT_HERDR_EVENT_STREAM && event.value?.includes?.('herdr_android_bridge_closed')) {
-            this._activeStream.herdrEventStream = false;
-        }
-        if (event.name === NATIVE_EVENT_HERDR_COMMAND_STREAM && event.value?.closed) {
-            this._activeStream.herdrCommandStream = false;
-        }
-        if (this._handlers[event.name] && this._key === event.key) {
-            this._handlers[event.name](event.value);
-        }
-    }
-    /**
-     * Registers an event handler for the specified event.
-     *
-     * @param eventName - The name of the event.
-     * @param handler - The event handler function.
-     */
-    on(eventName, handler) {
-        this._handlers[eventName] = handler;
-    }
-    /**
-     * Removes the handler registered for the specified event, if any.
-     *
-     * Handlers registered via {@link on} otherwise persist until replaced; use this
-     * to cleanly tear down a subscription (for example in a component's unmount).
-     *
-     * @param eventName - The name of the event whose handler should be removed.
-     */
-    off(eventName) {
-        delete this._handlers[eventName];
-    }
-    /**
-     * Removes the handler registered for the specified event, if any.
-     *
-     * Alias for {@link off}, provided for familiarity with the event-emitter naming
-     * convention.
-     *
-     * @param eventName - The name of the event whose handler should be removed.
-     */
-    removeListener(eventName) {
-        this.off(eventName);
-    }
-    /**
-     * Registers a native listener for the specified event name.
-     *
-     * @param eventName - The name of the event to listen for.
-     */
-    registerNativeListener(eventName) {
-        this._listeners[eventName] = nativeClientEmitter.addListener(eventName, this.handleEvent.bind(this));
-    }
-    /**
-     * Unregisters a native listener for the specified event name.
-     * @param eventName - The name of the event.
-     */
-    unregisterNativeListener(eventName) {
-        const listener = this._listeners[eventName];
-        if (listener) {
-            listener.remove();
-            delete this._listeners[eventName];
-        }
-    }
-    /**
-     * Connects to the SSH server using the provided password or key.
-     *
-     * @param passwordOrKey - The password or key to authenticate with the server.
-     * @param callback - The callback function to be called after the connection attempt.
-     */
-    connect(passwordOrKey, callback, jumpClient) {
-        if (jumpClient) {
-            const method = typeof passwordOrKey === 'string'
-                ? nativeClient.connectToHostByPasswordViaJump
-                : nativeClient.connectToHostByKeyViaJump;
-            method(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, callback);
-        }
-        else {
-            nativeClient.connectToHost(this.host, this.port, this.username, passwordOrKey, this._key, callback);
-        }
-    }
-    /**
-     * Enables or disables SSH agent forwarding for subsequently opened shell
-     * and exec channels.
-     *
-     * The native client exposes only identities already loaded for this SSH
-     * connection; private key material is never copied to the remote host.
-     */
-    setAgentForwarding(enabled) {
-        nativeClient.setAgentForwarding(this._key, enabled);
-    }
-    /**
-     * Executes a command on the SSH server.
-     * @param command The command to execute.
-     * @param callback Optional callback function to handle the result asynchronously.
-     * @returns A promise that resolves with the response from the server.
-     */
-    execute(command, callback) {
-        return new Promise((resolve, reject) => {
-            nativeClient.execute(command, this._key, (error, response) => {
-                if (callback) {
-                    callback(error, response);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve(response);
-            });
-        });
-    }
-    /**
-     * Starts a shell session on the SSH server.
-     * @param ptyType - The type of pseudo-terminal to use for the shell session.
-     * @param callback - Optional callback function to handle the response.
-     * @returns A promise that resolves with the response from the server.
-     */
-    startShell(ptyType, callback) {
-        if (this._activeStream.shell) {
-            return Promise.resolve('');
-        }
-        return new Promise((resolve, reject) => {
-            this.registerNativeListener(NATIVE_EVENT_SHELL);
-            nativeClient.startShell(this._key, ptyType, (error, response) => {
-                if (callback) {
-                    callback(error, response);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                this._activeStream.shell = true;
-                resolve(response);
-            });
-        });
-    }
-    /**
-     * Starts a shell whose native events are emitted one complete line at a time.
-     *
-     * This is intended for newline-delimited application protocols. A large
-     * record must cross the React Native event bridge atomically; splitting one
-     * JSON record into many DeviceEventEmitter events can leave the receiver
-     * with an unusable partial initial snapshot when the bridge is busy.
-     */
-    startLineShell(ptyType, callback) {
-        if (this._activeStream.shell) {
-            return Promise.resolve('');
-        }
-        return new Promise((resolve, reject) => {
-            this.registerNativeListener(NATIVE_EVENT_SHELL);
-            nativeClient.startLineShell(this._key, ptyType, (error, response) => {
-                if (callback) {
-                    callback(error, response);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                this._activeStream.shell = true;
-                resolve(response);
-            });
-        });
-    }
-    /**
-     * Checks if the shell is active. If the shell is already active, it returns an empty string.
-     * Otherwise, it starts a new shell and returns the result.
-     * @param callback Optional callback function to handle errors.
-     * @returns A promise that resolves to a string representing the result of the shell check.
-     */
-    checkShell(callback) {
-        if (this._activeStream.shell) {
-            return Promise.resolve('');
-        }
-        return this.startShell(PtyType.VANILLA)
-            .then((res) => (res ? res + '\n' : ''))
-            .catch((error) => {
-            if (callback) {
-                callback(error);
-            }
-            throw error;
-        });
-    }
-    /**
-     * Writes a command to the shell.
-     * @param command - The command to write to the shell.
-     * @param callback - Optional callback function to handle the response.
-     * @returns A promise that resolves with the response from the shell.
-     */
-    writeToShell(command, callback) {
-        return this.checkShell(callback)
-            .then(() => new Promise((resolve, reject) => {
-            nativeClient.writeToShell(command, this._key, (error, response) => {
-                if (callback) {
-                    callback(error, response);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve(response);
-            });
-        }));
-    }
-    resizeShell(columns, rows) {
-        nativeClient.resizeShell(columns, rows, this._key);
-    }
-    /**
-     * Closes the SSH shell.
-     */
-    closeShell() {
-        this.unregisterNativeListener(NATIVE_EVENT_SHELL);
-        // TODO this should use a callback too
-        nativeClient.closeShell(this._key);
-        this._activeStream.shell = false;
-    }
-    prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
-        return new Promise((resolve, reject) => {
-            nativeClient.prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, this._key, error => {
-                if (callback) callback(error);
-                if (error) return reject(error);
-                resolve();
-            });
-        });
-    }
-    startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, handler, callback) {
-        if (this._herdrBridgeHandlers.has(terminalId)) {
-            this._herdrBridgeHandlers.set(terminalId, handler);
-            return Promise.resolve();
-        }
-        return new Promise((resolve, reject) => {
-            this._herdrBridgeHandlers.set(terminalId, handler);
-            if (!this._listeners[NATIVE_EVENT_HERDR_BRIDGE]) {
-                this.registerNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-            }
-            nativeClient.startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
-                if (callback) callback(error);
-                if (error) {
-                    this._herdrBridgeHandlers.delete(terminalId);
-                    if (this._herdrBridgeHandlers.size === 0) {
-                        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-                    }
-                    return reject(error);
-                }
-                resolve();
-            });
-        });
-    }
-    herdrBridgeInput(terminalId, text) {
-        return new Promise((resolve, reject) => {
-            nativeClient.herdrBridgeInput(terminalId, text, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    herdrBridgeResize(terminalId, columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
-        return new Promise((resolve, reject) => {
-            nativeClient.herdrBridgeResize(columns, rows, cellWidthPx, cellHeightPx, terminalId, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    herdrBridgeScroll(terminalId, direction, lines) {
-        return new Promise((resolve, reject) => {
-            nativeClient.herdrBridgeScroll(direction === 'up', lines, terminalId, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    closeHerdrBridge(terminalId) {
-        this._herdrBridgeHandlers.delete(terminalId);
-        nativeClient.closeHerdrBridge(terminalId, this._key);
-        if (this._herdrBridgeHandlers.size === 0) {
-            this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-        }
-    }
-    closeAllHerdrBridges() {
-        this._herdrBridgeHandlers.clear();
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-        nativeClient.closeAllHerdrBridges(this._key);
-    }
-    openLocalForward(remoteHost, remotePort) {
-        return new Promise((resolve, reject) => {
-            nativeClient.openLocalForward(remoteHost, remotePort, this._key, (error, localPort) => error ? reject(error) : resolve(localPort));
-        });
-    }
-    closeLocalForward(localPort) {
-        return new Promise((resolve, reject) => {
-            nativeClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    startSftpFileServer(remotePath) {
-        return new Promise((resolve, reject) => {
-            nativeClient.startSftpFileServer(remotePath, this._key, (error, server) => error ? reject(error) : resolve(server));
-        });
-    }
-    closeSftpFileServer(localPort) {
-        return new Promise((resolve, reject) => {
-            nativeClient.closeSftpFileServer(localPort, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    startHerdrEventStream(socketPath, handler, callback) {
-        if (this._activeStream.herdrEventStream) {
-            this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
-            return Promise.resolve();
-        }
-        return new Promise((resolve, reject) => {
-            this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
-            this.registerNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-            nativeClient.startHerdrEventStream(socketPath, this._key, error => {
-                if (callback) callback(error);
-                if (error) {
-                    this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
-                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-                    return reject(error);
-                }
-                this._activeStream.herdrEventStream = true;
-                resolve();
-            });
-        });
-    }
-    writeHerdrEventStream(value) {
-        return new Promise((resolve, reject) => {
-            nativeClient.writeHerdrEventStream(value, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    closeHerdrEventStream() {
-        this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        nativeClient.closeHerdrEventStream(this._key);
-        this._activeStream.herdrEventStream = false;
-    }
-    requestHerdrApi(socketPath, request) {
-        return new Promise((resolve, reject) => {
-            nativeClient.requestHerdrApi(socketPath, request, this._key, (error, response) => error ? reject(error) : resolve(response));
-        });
-    }
-    measureHostLatency() {
-        return new Promise((resolve, reject) => {
-            nativeClient.measureHostLatency(this._key, (error, latencyMs) => error ? reject(error) : resolve(latencyMs));
-        });
-    }
-    getRemoteHome() {
-        return new Promise((resolve, reject) => {
-            nativeClient.getRemoteHome(this._key, (error, home) => error ? reject(error) : resolve(home));
-        });
-    }
-    startHerdrCommandStream(command, handler, callback) {
-        if (this._activeStream.herdrCommandStream) {
-            this.on(NATIVE_EVENT_HERDR_COMMAND_STREAM, handler);
-            return Promise.resolve();
-        }
-        return new Promise((resolve, reject) => {
-            this.on(NATIVE_EVENT_HERDR_COMMAND_STREAM, handler);
-            this.registerNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-            nativeClient.startHerdrCommandStream(command, this._key, error => {
-                if (callback) callback(error);
-                if (error) {
-                    this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-                    return reject(error);
-                }
-                this._activeStream.herdrCommandStream = true;
-                resolve();
-            });
-        });
-    }
-    writeHerdrCommandStream(value) {
-        return new Promise((resolve, reject) => {
-            nativeClient.writeHerdrCommandStream(value, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    closeHerdrCommandStream() {
-        this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-        nativeClient.closeHerdrCommandStream(this._key);
-        this._activeStream.herdrCommandStream = false;
-    }
-    /**
-     * Connects to the SFTP server.
-     *
-     * It is not mandatory to call this method before calling any SFTP method.
-     * @param callback - Optional callback function to be called after the connection is established.
-     * @returns A promise that resolves when the connection is established successfully, or rejects with an error if the connection fails.
-     */
-    connectSFTP(callback) {
-        if (this._activeStream.sftp) {
-            return Promise.resolve();
-        }
-        return new Promise((resolve, reject) => {
-            nativeClient.connectSFTP(this._key, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                this._activeStream.sftp = true;
-                this.registerNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
-                this.registerNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
-                resolve();
-            });
-        });
-    }
-    /**
-     * Checks if SFTP is active. If not, it connects to SFTP.
-     * @param callback - Optional callback function to handle errors.
-     * @returns A promise that resolves when SFTP is active or rejects with an error.
-     */
-    checkSFTP(callback) {
-        if (this._activeStream.sftp) {
-            return Promise.resolve();
-        }
-        return this.connectSFTP()
-            .catch((error) => {
-            if (callback) {
-                callback(error);
-            }
-            throw error;
-        });
-    }
-    /**
-     * Lists the files and directories in the specified path using SFTP.
-     * @param path - The path to list.
-     * @param callback - Optional callback function to handle the result asynchronously.
-     * @returns A promise that resolves to the result of the SFTP listing operation.
-     */
-    sftpLs(path, callback) {
-        return this.checkSFTP(callback)
-            .then(() => new Promise((resolve, reject) => {
-            nativeClient.sftpLs(path, this._key, (error, _response) => {
-                const response = _response || undefined;
-                if (callback) {
-                    callback(error, response);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve(response);
-            });
-        }));
-    }
-    /**
-     * Renames a file or directory on the remote server using SFTP.
-     * @param oldPath The current path of the file or directory.
-     * @param newPath The new path to rename the file or directory to.
-     * @param callback An optional callback function to handle the result or error.
-     * @returns A Promise that resolves when the file or directory is successfully renamed.
-     */
-    sftpRename(oldPath, newPath, callback) {
-        return this.checkSFTP(callback)
-            .then(() => new Promise((resolve, reject) => {
-            nativeClient.sftpRename(oldPath, newPath, this._key, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve();
-            });
-        }));
-    }
-    /**
-     * Creates a directory on the remote server using SFTP.
-     * @param path - The path of the directory to create.
-     * @param callback - An optional callback function to handle the result.
-     * @returns A promise that resolves when the directory is created successfully.
-     */
-    sftpMkdir(path, callback) {
-        return this.checkSFTP(callback)
-            .then(() => new Promise((resolve, reject) => {
-            nativeClient.sftpMkdir(path, this._key, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve();
-            });
-        }));
-    }
-    /**
-     * Removes (unlinks) a file from the remote server using SFTP.
-     * @param path - The path of the file to remove.
-     * @param callback - An optional callback function to handle the result or error.
-     * @returns A promise that resolves when the file is successfully removed.
-     */
-    sftpRm(path, callback) {
-        return this.checkSFTP(callback)
-            .then(() => new Promise((resolve, reject) => {
-            nativeClient.sftpRm(path, this._key, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve();
-            });
-        }));
-    }
-    /**
-     * Removes a directory on the remote server using SFTP.
-     * @param path - The path of the directory to remove.
-     * @param callback - Optional callback function to handle the result or error.
-     * @returns A promise that resolves when the directory is successfully removed.
-     */
-    sftpRmdir(path, callback) {
-        return this.checkSFTP(callback)
-            .then(() => new Promise((resolve, reject) => {
-            nativeClient.sftpRmdir(path, this._key, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve();
-            });
-        }));
-    }
-    /**
-     * Changes the permissions of a file or directory on the remote server using SFTP.
-     * @param path - The path of the file or directory.
-     * @param permissions - The new permissions to set.
-     * @param callback - An optional callback function to handle the result or error.
-     * @returns A Promise that resolves when the permissions are successfully changed.
-     */
-    sftpChmod(path, permissions, callback) {
-        return this.checkSFTP(callback)
-            .then(() => new Promise((resolve, reject) => {
-            nativeClient.sftpChmod(path, permissions, this._key, (error) => {
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve();
-            });
-        }));
-    }
-    /**
-     * Uploads a file from the local file system to the remote file system using SFTP.
-     * @param localFilePath - The path of the file on the local file system.
-     * @param remoteFilePath - The path of the file on the remote file system.
-     * @param callback - An optional callback function to be called after the upload is complete or an error occurs.
-     * @returns A Promise that resolves when the upload is complete or rejects with an error.
-     */
-    sftpUpload(localFilePath, remoteFilePath, callback) {
-        // The native layer tracks a single cancel flag per client, so two concurrent
-        // uploads on the same client would clobber each other's cancel state. Reject
-        // a second upload while one is already running (review #13).
-        if (this._counters.upload > 0) {
-            const error = new Error('An SFTP upload is already in progress for this client');
-            if (callback) {
-                callback(error);
-            }
-            return Promise.reject(error);
-        }
-        return this.checkSFTP(callback)
-            .then(() => new Promise((resolve, reject) => {
-            ++this._counters.upload;
-            nativeClient.sftpUpload(localFilePath, remoteFilePath, this._key, (error) => {
-                --this._counters.upload;
-                if (callback) {
-                    callback(error);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve();
-            });
-        }));
-    }
-    /**
-     * Cancels the ongoing SFTP upload.
-     */
-    sftpCancelUpload() {
-        if (this._counters.upload > 0) {
-            nativeClient.sftpCancelUpload(this._key);
-        }
-    }
-    /**
-     * Downloads a file from the remote server using SFTP.
-     * @param remoteFilePath - The path of the file on the remote server.
-     * @param localFilePath - The path where the file will be saved locally.
-     * @param callback - An optional callback function to handle the result of the download.
-     * @returns A promise that resolves with the response string when the download is complete.
-     */
-    sftpDownload(remoteFilePath, localFilePath, callback) {
-        // The native layer tracks a single cancel flag per client, so two concurrent
-        // downloads on the same client would clobber each other's cancel state. Reject
-        // a second download while one is already running (review #13).
-        if (this._counters.download > 0) {
-            const error = new Error('An SFTP download is already in progress for this client');
-            if (callback) {
-                callback(error);
-            }
-            return Promise.reject(error);
-        }
-        return this.checkSFTP(callback)
-            .then(() => new Promise((resolve, reject) => {
-            ++this._counters.download;
-            nativeClient.sftpDownload(remoteFilePath, localFilePath, this._key, (error, response) => {
-                --this._counters.download;
-                if (callback) {
-                    callback(error, response);
-                }
-                if (error) {
-                    return reject(error);
-                }
-                resolve(response);
-            });
-        }));
-    }
-    /**
-     * Cancels the ongoing SFTP download operation.
-     */
-    sftpCancelDownload() {
-        if (this._counters.download > 0) {
-            nativeClient.sftpCancelDownload(this._key);
-        }
-    }
-    /**
-     * Disconnects the SFTP connection, closing the SFTP channel and removing the
-     * download/upload progress listeners. Supported on both iOS and Android.
-     *
-     * @example
-     * ```typescript
-     * disconnectSFTP();
-     * ```
-     */
-    disconnectSFTP() {
-        this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
-        this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
-        nativeClient.disconnectSFTP(this._key);
-        this._activeStream.sftp = false;
-    }
-    /**
-     * Disconnects the SSH client.
-     * If a shell is active, it will be closed.
-     * If an SFTP connection is active, it will be disconnected.
-     * @returns void
-     */
-    disconnect() {
-        this.off(NATIVE_EVENT_SHELL);
-        this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-        this._herdrBridgeHandlers.clear();
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-        this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
-        this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
-        this._activeStream.shell = false;
-        this._activeStream.sftp = false;
-        this._activeStream.herdrEventStream = false;
-        this._activeStream.herdrCommandStream = false;
-        nativeClient.disconnect(this._key);
-    }
+    return result;
+  };
 }
-// Monotonic counter used, together with a timestamp, to build unique client keys.
-SSHClient._keyCounter = 0;
+
+function bridgeEvent(message, terminalId) {
+  const event = { type: message.kind, terminalId };
+  if (message.kind === 'terminal') {
+    Object.assign(event, {
+      seq: message.sequence,
+      width: message.width,
+      height: message.height,
+      full: message.full,
+      bytes: message.bytes,
+      final: true,
+    });
+  } else if (message.kind === 'graphics') event.bytes = message.bytes;
+  else if (message.kind === 'closed' || message.kind === 'title') event.text = message.text;
+  else if (message.kind === 'notify') {
+    event.kind = message.notificationKind;
+    event.text = message.text;
+    event.body = message.body;
+  } else if (message.kind === 'clipboard') event.text = message.text;
+  else if (
+    message.kind === 'mouse_capture'
+    || message.kind === 'kitty_keyboard_report_all'
+    || message.kind === 'prefix_input_source'
+  ) event.flag = message.flag;
+  else if (message.kind === 'terminal_bell') event.count = message.count;
+  return event;
+}
+
+/** Whip's private Herdr adapter over the public product-neutral SSH client. */
+class SSHClient extends BaseSSHClient {
+  constructor(...args) {
+    super(...args);
+    this._activeStream.herdrEventStream = false;
+    this._activeStream.herdrCommandStream = false;
+    this._preparedHerdrBridge = null;
+    this._herdrBridges = new Map();
+    this._herdrEventChannel = null;
+    this._herdrEventHandler = null;
+    this._herdrEventDecode = null;
+    this._herdrCommandChannel = null;
+    this._herdrCommandHandler = null;
+    this._herdrCommandDecode = null;
+  }
+
+  static connectWithKey(...args) { return super.connectWithKey(...args); }
+  static connectWithKeyViaJump(...args) { return super.connectWithKeyViaJump(...args); }
+  static connectWithPassword(...args) { return super.connectWithPassword(...args); }
+  static connectWithPasswordViaJump(...args) { return super.connectWithPasswordViaJump(...args); }
+
+  static pairHost(code, publicKey, deviceName) {
+    return privateNativeClient().pairHost(code, publicKey, deviceName);
+  }
+
+  async _openHerdrBridge(socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx) {
+    let resolveWelcome;
+    let rejectWelcome;
+    let settled = false;
+    const welcome = new Promise((resolvePromise, rejectPromise) => {
+      resolveWelcome = resolvePromise;
+      rejectWelcome = rejectPromise;
+    });
+    const state = { channel: null, protocol, terminalId: null, handler: null, closing: false };
+    const fail = error => {
+      if (settled) return;
+      settled = true;
+      rejectWelcome(error instanceof Error ? error : new Error(String(error)));
+    };
+    state.channel = await this.openLengthPrefixedUnixSocketChannel(
+      socketPath,
+      { lengthFormat: 'u32le', maxFrameBytes: MAX_FRAME_BYTES },
+      event => {
+        if (event.type === 'closed') {
+          if (!settled) fail(new Error(`Herdr bridge closed before Welcome: ${event.reason}`));
+          if (state.terminalId && !state.closing) {
+            state.handler?.({ type: 'closed', terminalId: state.terminalId, text: event.reason });
+            this._herdrBridges.delete(state.terminalId);
+          }
+          return;
+        }
+        let message;
+        try {
+          message = decode(event.bytes, protocol);
+        } catch (error) {
+          if (!settled) fail(error);
+          else if (state.terminalId) {
+            state.handler?.({ type: 'closed', terminalId: state.terminalId, text: String(error) });
+          }
+          state.channel?.close().catch(() => {});
+          return;
+        }
+        if (!settled) {
+          if (message.kind !== 'welcome') return fail(new Error('Herdr bridge did not send Welcome first'));
+          if (message.error) return fail(new Error(`Herdr bridge rejected protocol ${protocol}: ${message.error}`));
+          if (message.sequence !== protocol || message.encoding !== 1) {
+            return fail(new Error(
+              `Herdr bridge negotiation mismatch (protocol ${message.sequence}, encoding ${message.encoding})`,
+            ));
+          }
+          settled = true;
+          resolveWelcome();
+          return;
+        }
+        if (!state.terminalId || message.kind === 'welcome') return;
+        state.handler?.(bridgeEvent(message, state.terminalId));
+        if (message.kind === 'closed') {
+          state.closing = true;
+          this._herdrBridges.delete(state.terminalId);
+          state.channel?.close().catch(() => {});
+        }
+      },
+    );
+    try {
+      await state.channel.write(hello(protocol, columns, rows, cellWidthPx, cellHeightPx));
+      let timer;
+      try {
+        await Promise.race([
+          welcome,
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('timed out waiting for Herdr Welcome')), 15_000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      return state;
+    } catch (error) {
+      state.closing = true;
+      state.channel?.close().catch(() => {});
+      throw error;
+    }
+  }
+
+  prepareHerdrBridge(socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
+    if (this._preparedHerdrBridge) {
+      if (callback) callback();
+      return Promise.resolve();
+    }
+    return this._openHerdrBridge(socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx)
+      .then(state => {
+        this._preparedHerdrBridge = state;
+        if (callback) callback();
+      })
+      .catch(error => {
+        if (callback) callback(error);
+        throw error;
+      });
+  }
+
+  async startHerdrBridge(
+    socketPath,
+    protocol,
+    terminalId,
+    takeover,
+    columns,
+    rows,
+    cellWidthPx,
+    cellHeightPx,
+    handler,
+    callback,
+  ) {
+    const active = this._herdrBridges.get(terminalId);
+    if (active) {
+      active.handler = handler;
+      if (callback) callback();
+      return;
+    }
+    let state = this._preparedHerdrBridge;
+    this._preparedHerdrBridge = null;
+    try {
+      if (state && state.protocol !== protocol) {
+        state.closing = true;
+        await state.channel.close();
+        state = null;
+      }
+      if (!state) {
+        state = await this._openHerdrBridge(
+          socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx,
+        );
+      }
+      state.terminalId = terminalId;
+      state.handler = handler;
+      this._herdrBridges.set(terminalId, state);
+      await state.channel.write(attach(terminalId, takeover));
+      if (callback) callback();
+    } catch (error) {
+      if (state) {
+        state.closing = true;
+        state.channel.close().catch(() => {});
+      }
+      this._herdrBridges.delete(terminalId);
+      if (callback) callback(error);
+      throw error;
+    }
+  }
+
+  _herdrBridge(terminalId) {
+    const state = this._herdrBridges.get(terminalId);
+    if (!state) throw new Error(`Herdr bridge is not active for terminal ${terminalId}`);
+    return state;
+  }
+
+  herdrBridgeInput(terminalId, text) {
+    return this._herdrBridge(terminalId).channel.write(input(text));
+  }
+
+  herdrBridgeResize(terminalId, columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
+    return this._herdrBridge(terminalId).channel.write(
+      resize(columns, rows, cellWidthPx, cellHeightPx),
+    );
+  }
+
+  herdrBridgeScroll(terminalId, direction, lines) {
+    return this._herdrBridge(terminalId).channel.write(scroll(direction === 'up', lines));
+  }
+
+  closeHerdrBridge(terminalId) {
+    const state = this._herdrBridges.get(terminalId);
+    if (!state) return;
+    this._herdrBridges.delete(terminalId);
+    state.closing = true;
+    state.channel.write(detach())
+      .catch(() => {})
+      .finally(() => state.channel.close().catch(() => {}));
+  }
+
+  closeAllHerdrBridges() {
+    const prepared = this._preparedHerdrBridge;
+    this._preparedHerdrBridge = null;
+    if (prepared) {
+      prepared.closing = true;
+      prepared.channel.close().catch(() => {});
+    }
+    for (const terminalId of [...this._herdrBridges.keys()]) this.closeHerdrBridge(terminalId);
+  }
+
+  startHerdrEventStream(socketPath, handler, callback) {
+    this._herdrEventHandler = handler;
+    if (this._herdrEventChannel) return Promise.resolve();
+    this._herdrEventDecode = createUtf8Decoder();
+    return this.openUnixSocketChannel(socketPath, event => {
+      if (event.type === 'data') {
+        const text = this._herdrEventDecode?.(event.bytes, true) || '';
+        if (text) this._herdrEventHandler?.(text);
+        return;
+      }
+      const tail = this._herdrEventDecode?.(new ArrayBuffer(0), false) || '';
+      if (tail) this._herdrEventHandler?.(tail);
+      this._herdrEventHandler?.(`${JSON.stringify({
+        herdr_android_bridge_closed: true,
+        reason: event.reason,
+      })}\n`);
+      this._herdrEventChannel = null;
+      this._herdrEventDecode = null;
+      this._activeStream.herdrEventStream = false;
+    }).then(channel => {
+      if (!channel.closed) {
+        this._herdrEventChannel = channel;
+        this._activeStream.herdrEventStream = true;
+      }
+      if (callback) callback();
+    }).catch(error => {
+      this._herdrEventHandler = null;
+      this._herdrEventDecode = null;
+      if (callback) callback(error);
+      throw error;
+    });
+  }
+
+  writeHerdrEventStream(value) {
+    if (!this._herdrEventChannel) return Promise.reject(new Error('Herdr event stream is not active'));
+    return this._herdrEventChannel.write(encodeUtf8(value).buffer);
+  }
+
+  closeHerdrEventStream() {
+    const channel = this._herdrEventChannel;
+    this._herdrEventChannel = null;
+    this._herdrEventHandler = null;
+    this._herdrEventDecode = null;
+    this._activeStream.herdrEventStream = false;
+    channel?.close().catch(() => {});
+  }
+
+  requestHerdrApi(socketPath, request) {
+    return this.requestUnixSocket(socketPath, request).then(response => response.replace(/\r$/, ''));
+  }
+
+  startHerdrCommandStream(command, handler, callback) {
+    this._herdrCommandHandler = handler;
+    if (this._herdrCommandChannel) {
+      if (callback) callback();
+      return Promise.resolve();
+    }
+    this._herdrCommandDecode = createUtf8Decoder();
+    return this.openExecChannel(command, event => {
+      if (event.type === 'data') {
+        const data = this._herdrCommandDecode?.(event.bytes, true) || '';
+        if (data) this._herdrCommandHandler?.({ data, closed: false });
+        return;
+      }
+      const data = this._herdrCommandDecode?.(new ArrayBuffer(0), false) || '';
+      if (data) this._herdrCommandHandler?.({ data, closed: false });
+      this._herdrCommandHandler?.({ closed: true, reason: event.reason });
+      this._herdrCommandChannel = null;
+      this._herdrCommandDecode = null;
+      this._activeStream.herdrCommandStream = false;
+    }).then(channel => {
+      if (!channel.closed) {
+        this._herdrCommandChannel = channel;
+        this._activeStream.herdrCommandStream = true;
+      }
+      if (callback) callback();
+    }).catch(error => {
+      this._herdrCommandHandler = null;
+      this._herdrCommandDecode = null;
+      if (callback) callback(error);
+      throw error;
+    });
+  }
+
+  writeHerdrCommandStream(value) {
+    if (!this._herdrCommandChannel) {
+      return Promise.reject(new Error('Herdr command stream is not active'));
+    }
+    return this._herdrCommandChannel.write(encodeUtf8(value).buffer);
+  }
+
+  closeHerdrCommandStream() {
+    const channel = this._herdrCommandChannel;
+    this._herdrCommandChannel = null;
+    this._herdrCommandHandler = null;
+    this._herdrCommandDecode = null;
+    this._activeStream.herdrCommandStream = false;
+    channel?.close().catch(() => {});
+  }
+
+  disconnect() {
+    this.closeAllHerdrBridges();
+    this.closeHerdrEventStream();
+    this.closeHerdrCommandStream();
+    super.disconnect();
+  }
+}
+
 export default SSHClient;

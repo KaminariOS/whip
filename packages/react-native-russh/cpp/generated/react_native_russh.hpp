@@ -46,7 +46,11 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value
-  cpp_uniffi_react_native_russh_fn_method_reactnativerussheventsink_terminal_frame(
+  cpp_uniffi_react_native_russh_fn_method_reactnativerussheventsink_unix_socket_channel_data(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_react_native_russh_fn_method_reactnativerussheventsink_exec_channel_data(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_react_native_russh_fn_func_call(
@@ -58,15 +62,6 @@ protected:
   jsi::Value cpp_uniffi_react_native_russh_fn_func_clear_event_sink(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_react_native_russh_fn_func_herdr_bridge_input_fast(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value cpp_uniffi_react_native_russh_fn_func_herdr_bridge_resize_fast(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value cpp_uniffi_react_native_russh_fn_func_herdr_bridge_scroll_fast(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
   jsi::Value cpp_uniffi_react_native_russh_fn_func_resize_shell_fast(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -76,7 +71,17 @@ protected:
   jsi::Value cpp_uniffi_react_native_russh_fn_func_shutdown(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_react_native_russh_fn_func_write_exec_channel(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_react_native_russh_fn_func_write_length_prefixed_unix_socket_channel(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_react_native_russh_fn_func_write_shell_input(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_react_native_russh_fn_func_write_unix_socket_channel(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_ffi_react_native_russh_rust_future_poll_u8(
@@ -232,18 +237,6 @@ protected:
   jsi::Value cpp_uniffi_react_native_russh_checksum_func_clear_event_sink(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value
-  cpp_uniffi_react_native_russh_checksum_func_herdr_bridge_input_fast(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value
-  cpp_uniffi_react_native_russh_checksum_func_herdr_bridge_resize_fast(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value
-  cpp_uniffi_react_native_russh_checksum_func_herdr_bridge_scroll_fast(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
   jsi::Value cpp_uniffi_react_native_russh_checksum_func_resize_shell_fast(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -253,7 +246,18 @@ protected:
   jsi::Value cpp_uniffi_react_native_russh_checksum_func_shutdown(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_react_native_russh_checksum_func_write_exec_channel(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_react_native_russh_checksum_func_write_length_prefixed_unix_socket_channel(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_react_native_russh_checksum_func_write_shell_input(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_react_native_russh_checksum_func_write_unix_socket_channel(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value
@@ -261,7 +265,11 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value
-  cpp_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_terminal_frame(
+  cpp_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_unix_socket_channel_data(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_exec_channel_data(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_ffi_react_native_russh_uniffi_contract_version(

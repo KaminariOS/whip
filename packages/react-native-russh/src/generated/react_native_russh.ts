@@ -19,12 +19,10 @@ import {
   type UniffiReferenceHolder,
   type UniffiRustCallStatus,
   FfiConverterArrayBuffer,
-  FfiConverterBool,
   FfiConverterObject,
   FfiConverterObjectWithCallbacks,
   FfiConverterOptional,
   FfiConverterUInt32,
-  FfiConverterUInt64,
   RustBuffer,
   UniffiAbstractObject,
   UniffiInternalError,
@@ -123,98 +121,6 @@ export function clearEventSink(): void {
   );
 }
 
-export function herdrBridgeInputFast(
-  key: string,
-  terminalId: string,
-  text: string,
-): string | undefined {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterOptionalString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_react_native_russh_fn_func_herdr_bridge_input_fast(
-          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
-  );
-}
-
-export function herdrBridgeResizeFast(
-  key: string,
-  terminalId: string,
-  columns: number,
-  rows: number,
-  cellWidthPx: number,
-  cellHeightPx: number,
-): string | undefined {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterOptionalString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_react_native_russh_fn_func_herdr_bridge_resize_fast(
-          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(
-            cellWidthPx,
-            nativeModule().rustbuffer_alloc,
-          ),
-          FfiConverterUInt32.lower(
-            cellHeightPx,
-            nativeModule().rustbuffer_alloc,
-          ),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
-  );
-}
-
-export function herdrBridgeScrollFast(
-  key: string,
-  terminalId: string,
-  up: boolean,
-  lines: number,
-): string | undefined {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterOptionalString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_react_native_russh_fn_func_herdr_bridge_scroll_fast(
-          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterBool.lower(up, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(lines, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
-  );
-}
-
 export function resizeShellFast(
   key: string,
   columns: number,
@@ -267,6 +173,58 @@ export function shutdown(): void {
   );
 }
 
+export function writeExecChannel(
+  key: string,
+  channelId: string,
+  bytes: ArrayBuffer,
+): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_react_native_russh_fn_func_write_exec_channel(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function writeLengthPrefixedUnixSocketChannel(
+  key: string,
+  channelId: string,
+  bytes: ArrayBuffer,
+): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_react_native_russh_fn_func_write_length_prefixed_unix_socket_channel(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function writeShellInput(key: string, data: string): string | undefined {
   return ((__rb: Uint8Array) => {
     try {
@@ -280,6 +238,32 @@ export function writeShellInput(key: string, data: string): string | undefined {
         return nativeModule().ubrn_uniffi_react_native_russh_fn_func_write_shell_input(
           FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
           FfiConverterString.lower(data, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function writeUnixSocketChannel(
+  key: string,
+  channelId: string,
+  bytes: ArrayBuffer,
+): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_react_native_russh_fn_func_write_unix_socket_channel(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
           callStatus,
         );
       },
@@ -352,15 +336,12 @@ const FfiConverterString = uniffiCreateFfiConverterString(stringConverter);
 
 export interface ReactNativeRusshEventSink {
   emit(eventJson: string): void;
-  terminalFrame(
+  unixSocketChannelData(
     key: string,
-    terminalId: string,
-    sequence: bigint,
-    width: number,
-    height: number,
-    full: boolean,
+    channelId: string,
     bytes: ArrayBuffer,
   ): void;
+  execChannelData(key: string, channelId: string, bytes: ArrayBuffer): void;
 }
 
 export class ReactNativeRusshEventSinkImpl
@@ -393,27 +374,36 @@ export class ReactNativeRusshEventSinkImpl
     );
   }
 
-  terminalFrame(
+  unixSocketChannelData(
     key: string,
-    terminalId: string,
-    sequence: bigint,
-    width: number,
-    height: number,
-    full: boolean,
+    channelId: string,
     bytes: ArrayBuffer,
   ): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_react_native_russh_fn_method_reactnativerussheventsink_terminal_frame(
+        nativeModule().ubrn_uniffi_react_native_russh_fn_method_reactnativerussheventsink_unix_socket_channel_data(
           uniffiTypeReactNativeRusshEventSinkImplObjectFactory.clonePointer(
             this,
           ),
           FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt64.lower(sequence, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(width, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(height, nativeModule().rustbuffer_alloc),
-          FfiConverterBool.lower(full, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  execChannelData(key: string, channelId: string, bytes: ArrayBuffer): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_react_native_russh_fn_method_reactnativerussheventsink_exec_channel_data(
+          uniffiTypeReactNativeRusshEventSinkImplObjectFactory.clonePointer(
+            this,
+          ),
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
           FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
           callStatus,
         );
@@ -539,26 +529,47 @@ const uniffiCallbackInterfaceReactNativeRusshEventSink: {
       );
       return uniffiResult;
     },
-    terminal_frame: (
+    unix_socket_channel_data: (
       uniffiHandle: bigint,
       key: Uint8Array,
-      terminalId: Uint8Array,
-      sequence: bigint,
-      width: number,
-      height: number,
-      full: number,
+      channelId: Uint8Array,
       bytes: Uint8Array,
     ) => {
       const uniffiMakeCall = (): void => {
         const jsCallback =
           FfiConverterTypeReactNativeRusshEventSink.lift(uniffiHandle);
-        return jsCallback.terminalFrame(
+        return jsCallback.unixSocketChannelData(
           FfiConverterString.lift(key),
-          FfiConverterString.lift(terminalId),
-          FfiConverterUInt64.lift(sequence),
-          FfiConverterUInt32.lift(width),
-          FfiConverterUInt32.lift(height),
-          FfiConverterBool.lift(full),
+          FfiConverterString.lift(channelId),
+          FfiConverterArrayBuffer.lift(bytes),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    exec_channel_data: (
+      uniffiHandle: bigint,
+      key: Uint8Array,
+      channelId: Uint8Array,
+      bytes: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeReactNativeRusshEventSink.lift(uniffiHandle);
+        return jsCallback.execChannelData(
+          FfiConverterString.lift(key),
+          FfiConverterString.lift(channelId),
           FfiConverterArrayBuffer.lift(bytes),
         );
       };
@@ -640,30 +651,6 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_react_native_russh_checksum_func_herdr_bridge_input_fast() !==
-    64387
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_react_native_russh_checksum_func_herdr_bridge_input_fast',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_react_native_russh_checksum_func_herdr_bridge_resize_fast() !==
-    55204
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_react_native_russh_checksum_func_herdr_bridge_resize_fast',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_react_native_russh_checksum_func_herdr_bridge_scroll_fast() !==
-    20520
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_react_native_russh_checksum_func_herdr_bridge_scroll_fast',
-    );
-  }
-  if (
     nativeModule().ubrn_uniffi_react_native_russh_checksum_func_resize_shell_fast() !==
     29495
   ) {
@@ -688,11 +675,35 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_react_native_russh_checksum_func_write_exec_channel() !==
+    65470
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_react_native_russh_checksum_func_write_exec_channel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_react_native_russh_checksum_func_write_length_prefixed_unix_socket_channel() !==
+    17315
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_react_native_russh_checksum_func_write_length_prefixed_unix_socket_channel',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_react_native_russh_checksum_func_write_shell_input() !==
     4071
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_react_native_russh_checksum_func_write_shell_input',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_react_native_russh_checksum_func_write_unix_socket_channel() !==
+    25640
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_react_native_russh_checksum_func_write_unix_socket_channel',
     );
   }
   if (
@@ -704,11 +715,19 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_terminal_frame() !==
-    46590
+    nativeModule().ubrn_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_unix_socket_channel_data() !==
+    35950
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_react_native_russh_checksum_method_reactnativerussheventsink_terminal_frame',
+      'uniffi_react_native_russh_checksum_method_reactnativerussheventsink_unix_socket_channel_data',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_exec_channel_data() !==
+    16917
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_react_native_russh_checksum_method_reactnativerussheventsink_exec_channel_data',
     );
   }
 

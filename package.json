@@ -7,7 +7,9 @@
   "scripts": {
     "android": "node scripts/sync-terminal-assets.mjs && expo run:android",
     "bundle:ios": "expo export:embed --platform ios --dev false --entry-file index.js --bundle-output build/ios/main.jsbundle --assets-dest build/ios",
+    "benchmark:terminal-bridge": "node --experimental-default-type=module --expose-gc scripts/benchmark-terminal-bridge.mjs",
     "generate:android-icon": "node scripts/generate-android-launcher-vector.mjs",
+    "generate:readme-diagrams": "node scripts/render-readme-diagrams.mjs",
     "start": "node scripts/sync-terminal-assets.mjs && expo start --dev-client",
     "lint": "eslint .",
     "test": "jest",

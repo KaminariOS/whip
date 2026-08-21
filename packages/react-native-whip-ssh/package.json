@@ -16,10 +16,21 @@
     "url": "https://github.com/kaminarios/whip.git"
   },
   "dependencies": {
+    "@ubjs/core": "0.31.0-3",
+    "uniffi-bindgen-react-native": "0.31.0-3",
     "react-native-russh": "file:../react-native-russh"
   },
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
+  },
+  "codegenConfig": {
+    "name": "WhipSshSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "outputDir": {
+      "ios": "ios/generated",
+      "android": "android/generated"
+    }
   }
 }

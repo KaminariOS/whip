@@ -1,0 +1,29 @@
+---
+rust:
+  directory: ./rust
+  manifestPath: Cargo.toml
+bindings:
+  cpp: cpp/generated
+  ts: src/generated
+ios:
+  directory: ios
+  targets:
+    - aarch64-apple-ios
+  frameworkName: build/WhipSsh
+  codegenOutputDir: ios/generated
+android:
+  directory: android
+  targets:
+    - arm64-v8a
+  apiLevel: 24
+  jniLibs: src/main/jniLibs
+  codegenOutputDir: android/generated
+turboModule:
+  cpp: cpp
+  ts: src
+  spec: WhipSshSpec
+  entrypoint: src/generated-entry.tsx
+noOverwrite:
+  - src/index.ts
+  - react-native.config.js
+  - android/CMakeLists.txt

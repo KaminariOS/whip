@@ -4,15 +4,21 @@ import { resolve } from 'node:path';
 const projectRoot = resolve(__dirname, '..');
 const uniffiRoot = resolve(projectRoot, 'packages/react-native-russh');
 const whipAdapterRoot = resolve(projectRoot, 'packages/react-native-whip-ssh');
-const readProject = (path: string) => readFileSync(resolve(projectRoot, path), 'utf8');
-const readUniffi = (path: string) => readFileSync(resolve(uniffiRoot, path), 'utf8');
+const readProject = (path: string) =>
+  readFileSync(resolve(projectRoot, path), 'utf8');
+const readUniffi = (path: string) =>
+  readFileSync(resolve(uniffiRoot, path), 'utf8');
+const readWhipAdapter = (path: string) =>
+  readFileSync(resolve(whipAdapterRoot, path), 'utf8');
 
 describe('UniFFI SSH integration', () => {
   it('pins matching published UniFFI React Native packages', () => {
     const rootPackage = JSON.parse(readProject('package.json'));
     const modulePackage = JSON.parse(readUniffi('package.json'));
 
-    expect(rootPackage.dependencies['uniffi-bindgen-react-native']).toBe('0.31.0-3');
+    expect(rootPackage.dependencies['uniffi-bindgen-react-native']).toBe(
+      '0.31.0-3',
+    );
     expect(rootPackage.dependencies['@ubjs/core']).toBe('0.31.0-3');
     expect(rootPackage.dependencies['react-native-whip-ssh']).toBe(
       'file:packages/react-native-whip-ssh',
@@ -20,7 +26,9 @@ describe('UniFFI SSH integration', () => {
     expect(rootPackage.dependencies['react-native-russh']).toBe(
       'file:packages/react-native-russh',
     );
-    expect(rootPackage.dependencies['@dylankenneally/react-native-ssh-sftp']).toBeUndefined();
+    expect(
+      rootPackage.dependencies['@dylankenneally/react-native-ssh-sftp'],
+    ).toBeUndefined();
     expect(modulePackage.dependencies).toMatchObject({
       '@ubjs/core': '0.31.0-3',
       'uniffi-bindgen-react-native': '0.31.0-3',
@@ -36,10 +44,17 @@ describe('UniFFI SSH integration', () => {
     const adapterPackage = JSON.parse(
       readFileSync(resolve(whipAdapterRoot, 'package.json'), 'utf8'),
     );
-    const adapter = readFileSync(resolve(whipAdapterRoot, 'lib/sshclient.js'), 'utf8');
+    const adapter = readFileSync(
+      resolve(whipAdapterRoot, 'lib/sshclient.js'),
+      'utf8',
+    );
 
-    expect(existsSync(resolve(projectRoot, 'packages/react-native-ssh-sftp'))).toBe(false);
-    expect(existsSync(resolve(projectRoot, 'react-native.config.js'))).toBe(false);
+    expect(
+      existsSync(resolve(projectRoot, 'packages/react-native-ssh-sftp')),
+    ).toBe(false);
+    expect(existsSync(resolve(projectRoot, 'react-native.config.js'))).toBe(
+      false,
+    );
     expect(modulePackage.main).toBe('lib/sshclient.js');
     expect(modulePackage['react-native']).toBe('lib/sshclient.js');
     expect(modulePackage.types).toBe('lib/sshclient.d.ts');
@@ -54,8 +69,35 @@ describe('UniFFI SSH integration', () => {
     expect(adapterPackage.dependencies['react-native-russh']).toBe(
       'file:../react-native-russh',
     );
-    expect(adapter).toContain("require('../../react-native-russh/src').default");
+    expect(adapterPackage.dependencies).toMatchObject({
+      '@ubjs/core': '0.31.0-3',
+      'uniffi-bindgen-react-native': '0.31.0-3',
+    });
+    expect(adapter).toContain(
+      "import BaseSSHClient, { PtyType } from 'react-native-russh'",
+    );
+    expect(adapter).toContain('class SSHClient extends BaseSSHClient');
+    expect(adapter).not.toContain("require('../../react-native-russh/src')");
+    expect(adapter).toContain("require('../src').default");
     expect(adapter).toContain('pairHost(code, publicKey, deviceName)');
+    expect(adapter).toContain('openLengthPrefixedUnixSocketChannel(');
+    expect(adapter).toContain('this.openExecChannel(command, event =>');
+    expect(adapter).toContain(
+      'return this.requestUnixSocket(socketPath, request)',
+    );
+    expect(adapter).toContain(
+      'return this.openUnixSocketChannel(socketPath, event =>',
+    );
+    expect(existsSync(resolve(uniffiRoot, 'rust/src/herdr_codec.rs'))).toBe(
+      false,
+    );
+    expect(existsSync(resolve(uniffiRoot, 'rust/src/pairing.rs'))).toBe(false);
+    expect(
+      existsSync(resolve(whipAdapterRoot, 'lib/herdr-codec.js')),
+    ).toBe(true);
+    expect(existsSync(resolve(whipAdapterRoot, 'rust/src/pairing.rs'))).toBe(
+      true,
+    );
     expect(javascript).not.toContain("require('react-native')");
     expect(javascript).not.toContain('Platform.OS');
     expect(javascript).not.toContain('legacySSHClient');
@@ -70,7 +112,9 @@ describe('UniFFI SSH integration', () => {
     expect(config).toContain('aarch64-apple-ios-sim');
     expect(config).not.toContain('x86_64-apple-ios');
     expect(config).toContain('spec: ReactNativeRusshSpec');
-    expect(podspec).toContain('s.vendored_frameworks = "build/ReactNativeRussh.xcframework"');
+    expect(podspec).toContain(
+      's.vendored_frameworks = "build/ReactNativeRussh.xcframework"',
+    );
     expect(entrypoint).toContain('installer.installRustCrate()');
   });
 
@@ -82,33 +126,80 @@ describe('UniFFI SSH integration', () => {
     expect(rust).toContain('#[uniffi::export(with_foreign)]');
     expect(rust).toContain('pub trait ReactNativeRusshEventSink');
     expect(rust).toContain('pub fn call(request_json: String) -> String');
-    expect(rust).toContain('pub async fn call_async(request_json: String) -> String');
+    expect(rust).toContain(
+      'pub async fn call_async(request_json: String) -> String',
+    );
     expect(rust).toContain('runtime.spawn(process_json_for_lifecycle');
     expect(rust).toContain('pub fn shutdown()');
-    expect(rust).toContain('fn terminal_frame(');
-    expect(rust).toContain('pub fn herdr_bridge_input_fast(');
-    expect(rust).toContain('pub fn herdr_bridge_resize_fast(');
-    expect(rust).toContain('pub fn herdr_bridge_scroll_fast(');
     expect(rust).toContain('pub fn write_shell_input(');
-    expect(generated).toContain('export function call(requestJson: string): string');
+    expect(rust).toContain('pub fn write_unix_socket_channel(');
+    expect(rust).toContain(
+      'pub fn write_length_prefixed_unix_socket_channel(',
+    );
+    expect(rust).toContain('pub fn write_exec_channel(');
+    expect(rust).toContain('fn unix_socket_channel_data(');
+    expect(rust).toContain('fn exec_channel_data(');
+    expect(rust).not.toMatch(/Herdr|herdr|pairHost|pair_host/);
+    expect(generated).toContain(
+      'export function call(requestJson: string): string',
+    );
     expect(generated).toContain('export async function callAsync(');
     expect(generated).toContain('export function setEventSink(');
-    expect(generated).toContain('terminalFrame(');
     expect(generated).toContain('bytes: ArrayBuffer');
-    expect(generated).toContain('export function herdrBridgeInputFast(');
+    expect(generated).toContain('export function writeUnixSocketChannel(');
+    expect(generated).toContain(
+      'export function writeLengthPrefixedUnixSocketChannel(',
+    );
+    expect(generated).toContain('export function writeExecChannel(');
+    expect(generated).toContain('unixSocketChannelData(');
+    expect(generated).toContain('execChannelData(');
   });
 
-  it('keeps terminal traffic off the generic JSON dispatcher', () => {
+  it('exports concurrent OpenSSH Unix-socket channels from the public facade', () => {
+    const adapter = readUniffi('src/index.ts');
+    const declarations = readUniffi('lib/sshclient.d.ts');
+    const rust = readUniffi('rust/src/lib.rs');
+
+    expect(adapter).toContain('openUnixSocketChannel(');
+    expect(adapter).toContain(
+      'writeUnixSocketChannelRust(key, channelId, bytes)',
+    );
+    expect(adapter).toContain('requestUnixSocket(');
+    expect(adapter).toContain('openLengthPrefixedUnixSocketChannel(');
+    expect(adapter).toContain('openExecChannel(');
+    expect(declarations).toContain(
+      'export declare class OpenSSHUnixSocketChannel',
+    );
+    expect(declarations).toContain('openUnixSocketChannel(');
+    expect(declarations).toContain('requestUnixSocket(');
+    expect(declarations).toContain(
+      'export declare class OpenSSHLengthPrefixedUnixSocketChannel',
+    );
+    expect(declarations).toContain(
+      'export declare class OpenSSHExecChannel',
+    );
+    expect(rust).toContain('channel_open_direct_streamlocal(socket_path)');
+    expect(rust).toContain('type UnixSocketChannels');
+    expect(rust).toContain('UNIX_SOCKET_CHANNELS');
+    expect(rust).toContain('max_response_bytes');
+  });
+
+  it('keeps product terminal traffic in the private codec', () => {
     const adapter = readUniffi('src/index.ts');
     const rust = readUniffi('rust/src/lib.rs');
     const sshClient = readUniffi('lib/sshclient.js');
+    const privateAdapter = readWhipAdapter('lib/sshclient.js');
+    const codec = readWhipAdapter('lib/herdr-codec.js');
 
     expect(adapter).toContain('writeShellInput(key, data)');
-    expect(adapter).toContain('herdrBridgeInputFast(key, terminalId, text)');
-    expect(adapter).toContain('herdrBridgeResizeFast(');
-    expect(adapter).toContain('herdrBridgeScrollFast(key, terminalId, up, lines)');
-    expect(adapter).toContain("dispatchEvent('HerdrBridge'");
-    expect(rust).toContain('sink.terminal_frame(');
+    expect(adapter).not.toMatch(/Herdr|herdr/);
+    expect(rust).not.toMatch(/Herdr|herdr/);
+    expect(privateAdapter).toContain(
+      'this._herdrBridge(terminalId).channel.write(input(text))',
+    );
+    expect(privateAdapter).toContain('bridgeEvent(message, state.terminalId)');
+    expect(codec).toContain("kind === 'terminal'");
+    expect(codec).toContain('export function decode(');
     expect(sshClient).not.toContain('JSON.parse(p.replace(');
   });
 
@@ -116,12 +207,14 @@ describe('UniFFI SSH integration', () => {
     const adapter = readUniffi('src/index.ts');
     const rust = readUniffi('rust/src/lib.rs');
 
-    expect(rust).toContain('remote stream read failed: {error}');
-    expect(rust).toContain('remote stream write failed: {error}');
-    expect(rust).toContain('Herdr bridge send failed: {error}');
-    expect(rust).toContain('"reason": close_reason');
-    expect(adapter).toContain('console.error(`[ReactNativeRussh] ${operation} failed: ${error}`)');
-    expect(adapter).toContain("finishFast('herdrBridgeInput'");
+    expect(rust).toContain('remote exec-channel read failed: {error}');
+    expect(rust).toContain('remote exec-channel write failed: {error}');
+    expect(rust).toContain('remote Unix-socket write failed: {error}');
+    expect(rust).toContain('"reason": reason');
+    expect(adapter).toContain(
+      'console.error(`[ReactNativeRussh] ${operation} failed: ${error}`)',
+    );
+    expect(adapter).toContain('writeExecChannelRust(key, channelId, bytes)');
   });
 
   it.each([
@@ -152,6 +245,26 @@ describe('UniFFI SSH integration', () => {
     'sftpCancelUpload',
     'sftpCancelDownload',
     'disconnectSFTP',
+    'openLocalForward',
+    'closeLocalForward',
+    'openUnixSocketChannel',
+    'writeUnixSocketChannel',
+    'closeUnixSocketChannel',
+    'requestUnixSocket',
+    'openLengthPrefixedUnixSocketChannel',
+    'writeLengthPrefixedUnixSocketChannel',
+    'openExecChannel',
+    'writeExecChannel',
+    'closeExecChannel',
+  ])('adapts the existing %s JavaScript contract', operation => {
+    expect(readUniffi('src/index.ts')).toContain(`${operation}(`);
+  });
+
+  it.each([
+    'requestHerdrApi',
+    'startHerdrEventStream',
+    'writeHerdrEventStream',
+    'closeHerdrEventStream',
     'prepareHerdrBridge',
     'startHerdrBridge',
     'herdrBridgeInput',
@@ -159,17 +272,16 @@ describe('UniFFI SSH integration', () => {
     'herdrBridgeScroll',
     'closeHerdrBridge',
     'closeAllHerdrBridges',
-    'openLocalForward',
-    'closeLocalForward',
-    'requestHerdrApi',
-    'startHerdrEventStream',
-    'writeHerdrEventStream',
-    'closeHerdrEventStream',
     'startHerdrCommandStream',
     'writeHerdrCommandStream',
     'closeHerdrCommandStream',
-  ])('adapts the existing %s JavaScript contract', operation => {
-    expect(readUniffi('src/index.ts')).toContain(`${operation}(`);
+  ])('keeps the product-level %s method in the private adapter', operation => {
+    const adapter = readFileSync(
+      resolve(whipAdapterRoot, 'lib/sshclient.js'),
+      'utf8',
+    );
+    expect(adapter).toContain(`${operation}(`);
+    expect(readUniffi('src/index.ts')).not.toContain(`${operation}(`);
   });
 
   it('builds only current ARM architectures in EAS and supports explicit local generation', () => {
@@ -192,12 +304,15 @@ describe('UniFFI SSH integration', () => {
     );
     expect(build).toContain('unset SDKROOT');
     expect(build).toContain('elif [[ -z "${IN_NIX_SHELL:-}" ]]');
-    expect(build).toContain('export PATH="$root_dir/node_modules/.bin:$build_path"');
+    expect(build).toContain(
+      'export PATH="$root_dir/node_modules/.bin:$build_path"',
+    );
     expect(build).not.toContain(
       'export PATH="$root_dir/node_modules/.bin:$HOME/.cargo/bin:$PATH"',
     );
     expect(build).toContain('IPHONEOS_DEPLOYMENT_TARGET');
     expect(build).toContain('ubrn build ios');
+    expect(build).toContain('packages/react-native-whip-ssh');
     expect(build).toContain('--and-generate');
     expect(build).toContain('--no-sim');
   });
@@ -216,7 +331,7 @@ describe('UniFFI SSH integration', () => {
 
     expect(rust).toContain('CONTROL_QUEUE_CAPACITY');
     expect(rust).toContain('EXECUTE_OUTPUT_LIMIT');
-    expect(rust).toContain('.whip-part-');
+    expect(rust).toContain('.russh-part-');
     expect(rust).toContain('tunnel_cancel.changed()');
   });
 });

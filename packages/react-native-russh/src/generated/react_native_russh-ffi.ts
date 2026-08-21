@@ -189,28 +189,6 @@ interface NativeModuleInterface {
   ubrn_uniffi_react_native_russh_fn_func_clear_event_sink(
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
-  ubrn_uniffi_react_native_russh_fn_func_herdr_bridge_input_fast(
-    key: Uint8Array,
-    terminalId: Uint8Array,
-    text: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_react_native_russh_fn_func_herdr_bridge_resize_fast(
-    key: Uint8Array,
-    terminalId: Uint8Array,
-    columns: number,
-    rows: number,
-    cellWidthPx: number,
-    cellHeightPx: number,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_react_native_russh_fn_func_herdr_bridge_scroll_fast(
-    key: Uint8Array,
-    terminalId: Uint8Array,
-    up: number,
-    lines: number,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
   ubrn_uniffi_react_native_russh_fn_func_resize_shell_fast(
     key: Uint8Array,
     columns: number,
@@ -224,9 +202,27 @@ interface NativeModuleInterface {
   ubrn_uniffi_react_native_russh_fn_func_shutdown(
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_react_native_russh_fn_func_write_exec_channel(
+    key: Uint8Array,
+    channelId: Uint8Array,
+    bytes: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_react_native_russh_fn_func_write_length_prefixed_unix_socket_channel(
+    key: Uint8Array,
+    channelId: Uint8Array,
+    bytes: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_react_native_russh_fn_func_write_shell_input(
     key: Uint8Array,
     data: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_react_native_russh_fn_func_write_unix_socket_channel(
+    key: Uint8Array,
+    channelId: Uint8Array,
+    bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_react_native_russh_fn_method_reactnativerussheventsink_emit(
@@ -234,14 +230,17 @@ interface NativeModuleInterface {
     eventJson: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
-  ubrn_uniffi_react_native_russh_fn_method_reactnativerussheventsink_terminal_frame(
+  ubrn_uniffi_react_native_russh_fn_method_reactnativerussheventsink_unix_socket_channel_data(
     uniffiSelf: bigint,
     key: Uint8Array,
-    terminalId: Uint8Array,
-    sequence: bigint,
-    width: number,
-    height: number,
-    full: number,
+    channelId: Uint8Array,
+    bytes: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_react_native_russh_fn_method_reactnativerussheventsink_exec_channel_data(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    channelId: Uint8Array,
     bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
@@ -249,15 +248,16 @@ interface NativeModuleInterface {
   ubrn_uniffi_react_native_russh_checksum_func_call(): number;
   ubrn_uniffi_react_native_russh_checksum_func_call_async(): number;
   ubrn_uniffi_react_native_russh_checksum_func_clear_event_sink(): number;
-  ubrn_uniffi_react_native_russh_checksum_func_herdr_bridge_input_fast(): number;
-  ubrn_uniffi_react_native_russh_checksum_func_herdr_bridge_resize_fast(): number;
-  ubrn_uniffi_react_native_russh_checksum_func_herdr_bridge_scroll_fast(): number;
   ubrn_uniffi_react_native_russh_checksum_func_resize_shell_fast(): number;
   ubrn_uniffi_react_native_russh_checksum_func_set_event_sink(): number;
   ubrn_uniffi_react_native_russh_checksum_func_shutdown(): number;
+  ubrn_uniffi_react_native_russh_checksum_func_write_exec_channel(): number;
+  ubrn_uniffi_react_native_russh_checksum_func_write_length_prefixed_unix_socket_channel(): number;
   ubrn_uniffi_react_native_russh_checksum_func_write_shell_input(): number;
+  ubrn_uniffi_react_native_russh_checksum_func_write_unix_socket_channel(): number;
   ubrn_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_emit(): number;
-  ubrn_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_terminal_frame(): number;
+  ubrn_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_unix_socket_channel_data(): number;
+  ubrn_uniffi_react_native_russh_checksum_method_reactnativerussheventsink_exec_channel_data(): number;
   ubrn_uniffi_internal_fn_method_reactnativerussheventsink_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -291,11 +291,13 @@ type UniffiCallbackInterfaceReactNativeRusshReactNativeRusshEventSinkMethod0 = (
 type UniffiCallbackInterfaceReactNativeRusshReactNativeRusshEventSinkMethod1 = (
   uniffiHandle: bigint,
   key: Uint8Array,
-  terminalId: Uint8Array,
-  sequence: bigint,
-  width: number,
-  height: number,
-  full: number,
+  channelId: Uint8Array,
+  bytes: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceReactNativeRusshReactNativeRusshEventSinkMethod2 = (
+  uniffiHandle: bigint,
+  key: Uint8Array,
+  channelId: Uint8Array,
   bytes: Uint8Array,
 ) => UniffiResult<void>;
 type UniffiCallbackInterfaceCloneReactNativeRusshReactNativeRusshEventSink = (
@@ -309,7 +311,8 @@ export type UniffiVTableCallbackInterfaceReactNativeRusshReactNativeRusshEventSi
     uniffi_free: UniffiCallbackInterfaceFreeReactNativeRusshReactNativeRusshEventSink;
     uniffi_clone: UniffiCallbackInterfaceCloneReactNativeRusshReactNativeRusshEventSink;
     emit: UniffiCallbackInterfaceReactNativeRusshReactNativeRusshEventSinkMethod0;
-    terminal_frame: UniffiCallbackInterfaceReactNativeRusshReactNativeRusshEventSinkMethod1;
+    unix_socket_channel_data: UniffiCallbackInterfaceReactNativeRusshReactNativeRusshEventSinkMethod1;
+    exec_channel_data: UniffiCallbackInterfaceReactNativeRusshReactNativeRusshEventSinkMethod2;
   };
 
 // UniffiRustFutureContinuationCallback is generated as part of the component interface's

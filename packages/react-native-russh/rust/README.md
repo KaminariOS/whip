@@ -1,11 +1,7 @@
 # react-native-russh transport
 
 This crate is the Rust/Russh transport behind the public `react-native-russh`
-client and Whip's private adapter. Both platforms use the same UniFFI React
-Native module.
-
-The public npm entry point exposes only generic SSH and SFTP operations. WP3
-pairing and Herdr internals are consumed only by the private Whip adapter.
+client. Android and iOS use the same UniFFI React Native module.
 
 ## Current mobile backend
 
@@ -22,8 +18,10 @@ Implemented:
 - ProxyJump-style chained SSH connections
 - restricted agent forwarding for the key-authenticated identity
 - loopback TCP forwarding through SSH direct-tcpip channels
-- Herdr direct stream-local API requests, event streams, and command streams
-- retained Herdr terminal bridges using the protocol 17–20 binary framing
+- concurrent OpenSSH direct-streamlocal channels with raw byte input/output
+- length-prefixed direct-streamlocal channels for binary protocols
+- persistent exec channels with binary stdin/stdout
+- bounded delimiter-based requests over remote Unix-domain sockets
 
 The package generates and tests Ed25519 keys by default. Imported OpenSSH private keys
 are decoded by the shared Russh backend on both platforms, including ECDSA and

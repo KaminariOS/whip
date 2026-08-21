@@ -2,13 +2,13 @@ import {
   call,
   callAsync,
   clearEventSink,
-  herdrBridgeInputFast,
-  herdrBridgeResizeFast,
-  herdrBridgeScrollFast,
   resizeShellFast,
   setEventSink,
   shutdown as shutdownRust,
   type ReactNativeRusshEventSink,
+  writeUnixSocketChannel as writeUnixSocketChannelRust,
+  writeLengthPrefixedUnixSocketChannel as writeLengthPrefixedUnixSocketChannelRust,
+  writeExecChannel as writeExecChannelRust,
   writeShellInput,
 } from './generated-entry';
 
@@ -116,25 +116,32 @@ const eventSink: ReactNativeRusshEventSink = {
       // Ignore malformed or application-handler events at the FFI boundary.
     }
   },
-  terminalFrame(
+  unixSocketChannelData(
     key: string,
-    terminalId: string,
-    sequence: bigint,
-    width: number,
-    height: number,
-    full: boolean,
+    channelId: string,
     bytes: ArrayBuffer,
   ): void {
-    dispatchEvent('HerdrBridge', {
-      name: 'HerdrBridge',
+    dispatchEvent('UnixSocketChannel', {
+      name: 'UnixSocketChannel',
       key,
       value: {
-        type: 'terminal',
-        terminalId,
-        seq: Number(sequence),
-        width,
-        height,
-        full,
+        type: 'data',
+        channelId,
+        bytes,
+      },
+    });
+  },
+  execChannelData(
+    key: string,
+    channelId: string,
+    bytes: ArrayBuffer,
+  ): void {
+    dispatchEvent('ExecChannel', {
+      name: 'ExecChannel',
+      key,
+      value: {
+        type: 'data',
+        channelId,
         bytes,
       },
     });
@@ -184,11 +191,7 @@ const nativeClient = {
   },
 
   generateKeyPair(type: string, passphrase: string, keySize: number, comment: string, callback: Callback) {
-    finish(invokeAsync('generateKeyPair', { type: type || 'ed25519', passphrase: passphrase || '', keySize, comment: comment || 'whip' }), callback);
-  },
-
-  pairHost(code: string, publicKey: string, deviceName: string) {
-    return invokeAsync('pairHost', { code, publicKey, deviceName });
+    finish(invokeAsync('generateKeyPair', { type: type || 'ed25519', passphrase: passphrase || '', keySize, comment: comment || 'react-native-russh' }), callback);
   },
 
   connectToHost(host: string, port: number, username: string, passwordOrKey: string | Params, key: string, callback: Callback) {
@@ -299,45 +302,6 @@ const nativeClient = {
     fireAsync('disconnectSFTP', { key });
   },
 
-  prepareHerdrBridge(command: string, protocol: number, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, key: string, callback: Callback) {
-    finish(invokeAsync('prepareHerdrBridge', { command, protocol, columns, rows, cellWidthPx, cellHeightPx, key }), callback);
-  },
-
-  startHerdrBridge(socketPath: string, protocol: number, terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, key: string, callback: Callback) {
-    finish(invokeAsync('startHerdrBridge', { socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, key }), callback);
-  },
-
-  herdrBridgeInput(terminalId: string, text: string, key: string, callback: Callback) {
-    finishFast('herdrBridgeInput', () => herdrBridgeInputFast(key, terminalId, text), callback);
-  },
-
-  herdrBridgeResize(columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, terminalId: string, key: string, callback: Callback) {
-    finishFast(
-      'herdrBridgeResize',
-      () => herdrBridgeResizeFast(
-        key,
-        terminalId,
-        columns,
-        rows,
-        cellWidthPx,
-        cellHeightPx,
-      ),
-      callback,
-    );
-  },
-
-  herdrBridgeScroll(up: boolean, lines: number, terminalId: string, key: string, callback: Callback) {
-    finishFast('herdrBridgeScroll', () => herdrBridgeScrollFast(key, terminalId, up, lines), callback);
-  },
-
-  closeHerdrBridge(terminalId: string, key: string) {
-    fireSync('closeHerdrBridge', { terminalId, key });
-  },
-
-  closeAllHerdrBridges(key: string) {
-    fireSync('closeAllHerdrBridges', { key });
-  },
-
   openLocalForward(remoteHost: string, remotePort: number, key: string, callback: Callback) {
     finish(invokeAsync('openLocalForward', { remoteHost, remotePort, key }), callback);
   },
@@ -346,32 +310,59 @@ const nativeClient = {
     finishSync('closeLocalForward', { localPort, key }, callback);
   },
 
-  requestHerdrApi(socketPath: string, requestJson: string, key: string, callback: Callback) {
-    finish(invokeAsync('requestHerdrApi', { socketPath, request: requestJson, key }), callback);
+  openUnixSocketChannel(socketPath: string, channelId: string, key: string, callback: Callback) {
+    finish(invokeAsync('openUnixSocketChannel', { socketPath, channelId, key }), callback);
   },
 
-  startHerdrEventStream(socketPath: string, key: string, callback: Callback) {
-    finish(invokeAsync('startHerdrEventStream', { socketPath, key }), callback);
+  openLengthPrefixedUnixSocketChannel(socketPath: string, channelId: string, lengthFormat: string, maxFrameBytes: number, key: string, callback: Callback) {
+    finish(invokeAsync('openLengthPrefixedUnixSocketChannel', { socketPath, channelId, lengthFormat, maxFrameBytes, key }), callback);
   },
 
-  writeHerdrEventStream(value: string, key: string, callback: Callback) {
-    finishSync('writeHerdrEventStream', { value, key }, callback);
+  writeUnixSocketChannel(channelId: string, bytes: ArrayBuffer, key: string, callback: Callback) {
+    finishFast(
+      'writeUnixSocketChannel',
+      () => writeUnixSocketChannelRust(key, channelId, bytes),
+      callback,
+    );
   },
 
-  closeHerdrEventStream(key: string) {
-    fireSync('closeHerdrEventStream', { key });
+  writeLengthPrefixedUnixSocketChannel(channelId: string, bytes: ArrayBuffer, key: string, callback: Callback) {
+    finishFast(
+      'writeLengthPrefixedUnixSocketChannel',
+      () => writeLengthPrefixedUnixSocketChannelRust(key, channelId, bytes),
+      callback,
+    );
   },
 
-  startHerdrCommandStream(command: string, key: string, callback: Callback) {
-    finish(invokeAsync('startHerdrCommandStream', { command, key }), callback);
+  closeUnixSocketChannel(channelId: string, key: string, callback: Callback) {
+    finishSync('closeUnixSocketChannel', { channelId, key }, callback);
   },
 
-  writeHerdrCommandStream(value: string, key: string, callback: Callback) {
-    finishSync('writeHerdrCommandStream', { value, key }, callback);
+  requestUnixSocket(socketPath: string, requestText: string, responseTerminator: string, timeoutMs: number, maxResponseBytes: number, key: string, callback: Callback) {
+    finish(invokeAsync('requestUnixSocket', {
+      socketPath,
+      request: requestText,
+      responseTerminator,
+      timeoutMs,
+      maxResponseBytes,
+      key,
+    }), callback);
   },
 
-  closeHerdrCommandStream(key: string) {
-    fireSync('closeHerdrCommandStream', { key });
+  openExecChannel(command: string, channelId: string, key: string, callback: Callback) {
+    finish(invokeAsync('openExecChannel', { command, channelId, key }), callback);
+  },
+
+  writeExecChannel(channelId: string, bytes: ArrayBuffer, key: string, callback: Callback) {
+    finishFast(
+      'writeExecChannel',
+      () => writeExecChannelRust(key, channelId, bytes),
+      callback,
+    );
+  },
+
+  closeExecChannel(channelId: string, key: string, callback: Callback) {
+    finishSync('closeExecChannel', { channelId, key }, callback);
   },
 };
 

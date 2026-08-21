@@ -2,7 +2,7 @@
 
 buildscript {
   // Buildscript is evaluated before everything else so we can't use getExtOrDefault
-  def kotlin_version = rootProject.ext.has("kotlinVersion") ? rootProject.ext.get("kotlinVersion") : project.properties["DummyLibForAndroid_kotlinVersion"]
+  def kotlin_version = rootProject.ext.has("kotlinVersion") ? rootProject.ext.get("kotlinVersion") : project.properties["Russh_kotlinVersion"]
 
   repositories {
     google()
@@ -55,7 +55,7 @@ android {
 
     sourceSets {
       main {
-        manifest.srcFile "src/main/AndroidManifestNew.xml"
+        manifest.srcFile "src/main/AndroidManifest.xml"
       }
     }
   }

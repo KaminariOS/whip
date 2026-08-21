@@ -3,15 +3,14 @@
 React Native SSH and SFTP for the New Architecture, powered by
 [`russh`](https://github.com/Eugeny/russh).
 
-The package intentionally exposes only generic SSH capabilities. Whip's WP3
-QR pairing and Herdr protocols live in a separate private adapter.
+The package exposes a generic SSH and SFTP API for React Native applications.
 
-```mermaid
-flowchart TD
-    W[Whip / Herdr adapter] --> R[react-native-russh]
-    A[Your React Native app] --> R
-    R --> S[Russh]
-```
+<p align="center">
+  <a href="docs/architecture.svg"><img src="docs/architecture.svg" alt="react-native-russh architecture" width="280"></a>
+</p>
+
+[Edit the architecture diagram](docs/architecture.mmd), then regenerate the
+SVG from the repository root with `nix develop -c npm run generate:readme-diagrams`.
 
 ## Requirements
 
@@ -59,6 +58,59 @@ const files = await ssh.sftpLs('/var/log');
 ssh.disconnect();
 ```
 
+## Remote Unix sockets
+
+OpenSSH `direct-streamlocal@openssh.com` channels provide byte-stream access to
+Unix-domain sockets on the SSH host. Channels are independently identified, so
+one SSH connection can carry several concurrent protocols.
+
+```ts
+const channel = await ssh.openUnixSocketChannel('/run/example.sock', event => {
+  if (event.type === 'data') {
+    consumeBytes(new Uint8Array(event.bytes));
+  } else {
+    console.log(`channel closed: ${event.reason}`);
+  }
+});
+
+await channel.write(new TextEncoder().encode('hello\n').buffer);
+await channel.close();
+
+const response = await ssh.requestUnixSocket(
+  '/run/example.sock',
+  '{"operation":"status"}\n',
+);
+
+const framed = await ssh.openLengthPrefixedUnixSocketChannel(
+  '/run/binary-protocol.sock',
+  { lengthFormat: 'u32le', maxFrameBytes: 4 * 1024 * 1024 },
+  event => {
+    if (event.type === 'data') consumeCompleteFrame(event.bytes);
+  },
+);
+await framed.write(binaryPayload);
+```
+
+The framed reader retains partial prefix/payload progress across cancellation,
+allocates each complete payload once, and transfers that owned payload through
+the typed callback.
+
+The SSH server must permit Unix-socket forwarding and the authenticated user
+must be able to access the requested socket path.
+
+## Persistent exec channels
+
+Use `openExecChannel` when a remote command stays alive and exchanges binary or
+streaming data over stdin/stdout:
+
+```ts
+const process = await ssh.openExecChannel('my-long-running-command', event => {
+  if (event.type === 'data') consumeOutput(event.bytes);
+});
+await process.write(new TextEncoder().encode('input\n').buffer);
+await process.close();
+```
+
 ## Public capabilities
 
 - OpenSSH `known_hosts` verification, including hashed hostnames
@@ -68,13 +120,16 @@ ssh.disconnect();
 - Command execution and interactive PTY shells
 - SSH agent forwarding for private-key sessions
 - Local TCP forwarding and host-latency measurement
+- Concurrent OpenSSH Unix-socket channels with raw or length-prefixed
+  `ArrayBuffer` I/O (`u8`, `u16`, or `u32`, big- or little-endian)
+- Persistent exec channels with binary stdin/stdout
 - SFTP listing, mutation, upload, download, cancellation, and ranged serving
 
-No Whip, Herdr, or QR-pairing type or method is exported from the package root.
+Only generic SSH and SFTP capabilities are exported from the package root.
 
 ## Development
 
-From the Whip repository root:
+From the repository root:
 
 ```sh
 nix develop -c cargo fmt --check \
@@ -88,7 +143,7 @@ nix develop -c bash packages/react-native-russh/rust/build-android.sh
 
 ## License and provenance
 
-The Rust/Russh transport and Whip-maintained React Native integration are
-licensed under `AGPL-3.0-or-later`. The compatibility shape of `SSHClient`
-descends from the MIT-licensed `react-native-ssh-sftp` fork family; see
+The Rust/Russh transport and React Native integration are licensed under
+`AGPL-3.0-or-later`. The compatibility shape of `SSHClient` descends from the
+MIT-licensed `react-native-ssh-sftp` fork family; see
 [`PROVENANCE.md`](PROVENANCE.md).

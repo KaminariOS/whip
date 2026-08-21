@@ -4,8 +4,10 @@ const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 const OUTPUT_PART_SIZE = 16_384;
 
 /** Encodes bridge bytes only at the WebView boundary, where a string is required. */
-export function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+export function arrayBufferToBase64(buffer: ArrayBuffer | ArrayBufferView): string {
+  const bytes = ArrayBuffer.isView(buffer)
+    ? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+    : new Uint8Array(buffer);
   const parts: string[] = [];
   let part = '';
   for (let index = 0; index < bytes.length; index += 3) {
