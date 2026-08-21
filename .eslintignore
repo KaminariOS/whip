@@ -3,4 +3,4 @@ android/app/build/
 modules/whip-terminal-assets/ios/TerminalAssets/
 dist/
 launch-videos/
-packages/react-native-ssh-sftp/lib/
+packages/react-native-whip-ssh/lib/

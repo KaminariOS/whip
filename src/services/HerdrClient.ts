@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrBridgeEvent, type LsResult, PtyType } from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient, { type HerdrBridgeEvent, type LsResult, PtyType } from 'react-native-whip-ssh';
 
 import { normalizePrivateKey } from '../lib/privateKey';
 import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';

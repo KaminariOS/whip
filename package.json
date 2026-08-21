@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@callstack/liquid-glass": "0.8.1",
-    "@dylankenneally/react-native-ssh-sftp": "file:packages/react-native-ssh-sftp",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native/new-app-screen": "0.86.2",
     "@rn-primitives/portal": "^1.5.2",
@@ -119,7 +118,7 @@
       },
       "reactNativeDirectoryCheck": {
         "exclude": [
-          "@dylankenneally/react-native-ssh-sftp"
+          "react-native-whip-ssh"
         ]
       }
     }

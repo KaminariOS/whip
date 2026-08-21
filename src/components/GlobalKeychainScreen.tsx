@@ -1,4 +1,4 @@
-import SSHClient from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient from 'react-native-whip-ssh';
 import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Plus, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, NativeModules, ScrollView, View } from 'react-native';

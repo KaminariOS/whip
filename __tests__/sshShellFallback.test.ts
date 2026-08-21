@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import SSHClient, { PtyType } from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient, { PtyType } from 'react-native-whip-ssh';
 
 import { HerdrClient } from '../src/services/HerdrClient';
 import { SSH_SHELL_TERMINAL_ID } from '../src/terminalSessions';
 import type { ConnectionProfile } from '../src/types';
 
-jest.mock('@dylankenneally/react-native-ssh-sftp', () => ({
+jest.mock('react-native-whip-ssh', () => ({
   __esModule: true,
   default: {
     connectWithPassword: jest.fn(),

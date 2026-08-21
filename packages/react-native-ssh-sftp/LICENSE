@@ -1,8 +1,0 @@
-Whip's modified React Native SSH transport is licensed under the GNU Affero
-General Public License, version 3 or (at your option) any later version.
-
-The complete license text is in the repository root at ../../LICENSE.
-
-The upstream react-native-ssh-sftp work remains available under its original
-MIT terms from its respective copyright holders. Whip's Rust transport and
-integration changes are AGPL-3.0-or-later.

@@ -5,15 +5,15 @@
 </p>
 
 <p align="center">
-  <strong>Run your Herdr workflow from Android.</strong><br>
-  Monitor and chat with remote agents, work in their terminals, and move files over SSH from a native mobile interface.
+  <strong>Run your Herdr workflow from your phone or tablet.</strong><br>
+  Monitor and chat with remote agents, work in their terminals, and move files over SSH from a native Android or iOS interface.
 </p>
 
 <p align="center">
   <a href="https://github.com/KaminariOS/whip/actions/workflows/ci.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
   <a href="https://expo.dev"><img src="https://img.shields.io/badge/React%20Native%20%2B%20Expo-000020?logo=expo&amp;logoColor=white" alt="Built with React Native and Expo"></a>
-  <a href="#help-bring-whip-to-ios"><img src="https://img.shields.io/badge/iOS-help%20wanted-blue?logo=apple&amp;logoColor=white" alt="Help wanted for an iOS release"></a>
+  <a href="#ios"><img src="https://img.shields.io/badge/iOS-unsigned%20build-blue?logo=apple&amp;logoColor=white" alt="Unsigned iOS build available"></a>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
   <a href="https://youtu.be/dx5s3LmMErE"><strong>Watch the Whip launch video</strong></a>
 </p>
 
-Whip gives [Herdr](https://github.com/ogulcancelik/herdr) a touch-friendly Android interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
+Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
 
 The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints and exposes their live Herdr state, **Herd** merges connected agents into a scoped attention queue, **Terminal** keeps open pane sessions within reach, and **More** holds security, notification, appearance, and terminal preferences.
 
@@ -78,7 +78,7 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 - Keep connected hosts first and order them by the same agent-status priority as the Herd queue; see each host's agent count, Herdr protocol, measured latency, and jump-host route.
 - Move through Herdr hosts, spaces, tabs, panes, and agents without living in a terminal.
 - Create, focus, rename, split, zoom, inspect, and close space resources, including swipe-to-close Herd tabs.
-- Launch agents and chat through a native multiline composer that works with Android keyboards, including Gboard voice input and suggestions.
+- Launch agents and chat through a native multiline composer with mobile keyboard, dictation, selection, and suggestion support.
 - Run editable commands from the Herd screen and reuse the same persistent input history available in the terminal.
 
 ### Work in terminals
@@ -93,7 +93,7 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 ### Move files and attachments
 
 - Browse the active terminal's current directory over SFTP, remember a location per terminal, and sort by name, modification time, or size.
-- Upload, download, edit, or swipe-delete remote files; preview code, text, Markdown with remote links and images, raster images, SVG, standalone Mermaid diagrams, streamed PDF and video, and sandboxed HTML.
+- Upload, download, edit, or swipe-delete remote files; preview code, text, Markdown with remote links and images, raster images, SVG, standalone Mermaid diagrams, streamed PDF, audio, and video, and sandboxed HTML.
 - Upload a photo, file, camera capture, or clipboard image to the host and paste its remote path into the terminal composer.
 
 ### Connect securely
@@ -101,32 +101,38 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 - Import, inspect, copy, remove, or generate SSH keys, and reuse them from a biometric-protected global keychain.
 - Route connections through nested, OpenSSH-compatible jump hosts and optionally forward a profile's key as an SSH agent without copying the private key to the server.
 - Verify every direct and jump-host connection against a global known-hosts list, prompting for unknown fingerprints and rejecting changed host keys.
-- Automatically save each host's password or private-key credential with Android Keystore and encrypted, device-authenticated Block Store recovery.
+- Store each host's password or private-key credential in Android Keystore or iOS Keychain, with encrypted, device-authenticated Block Store recovery on supported Android devices.
 - Keep several named Herdr hosts open and switch between their live sessions.
 
 ### Make it yours
 
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
 - Set the duration of background agent alerts, dismiss active alerts by returning to Whip, and customize terminal gestures, controls, history, fonts, and cached sessions.
-- Use the app in English or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.
+- Use the app in English, Japanese, Spanish, Simplified Chinese, or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.
 - Choose an app background image and optionally layer experimental translucent glass bars, rows, controls, and navigation over it.
 
 ## Install Whip
 
-The recommended installation is through the [Google Play Early Access program](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Before using the Google Play link, you must join the [Whip Community](https://groups.google.com/g/whip-community) and wait a moment for your membership to propagate. Google requires 12 closed testers to remain enrolled for 14 days before the app can be released publicly.
+### Android
+
+The recommended installation is through the [Google Play Early Access program](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Before using the Google Play link, join the [Whip Community](https://groups.google.com/g/whip-community) and wait a moment for membership to propagate.
 
 Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/KaminariOS/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
 
 1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
-2. Install through Google Play, or download `whip-arm64.apk` from the latest GitHub release.
+2. Install through Google Play, or download `whip-arm64.apk` and its checksum from the latest GitHub release.
 3. Allow installation from the app that downloaded the APK, then open Whip.
-4. Make the Herdr host reachable over SSH, preferably through a Tailnet you trust. An otherwise private destination can be reached through a saved jump host.(Normal SSH host without herdr is also supported)
+4. Make the host reachable over SSH, preferably through a Tailnet you trust. Whip can open a plain SSH shell even when Herdr is not installed, and a private destination can be reached through a saved jump host.
 
 Whip supports Android 7.0 and newer (`minSdk 24`). The current direct APK distribution targets 64-bit ARM Android devices. Keep using the same distribution source when updating: Google Play may re-sign store builds through Play App Signing, so Android can require an uninstall when switching between Play and GitHub packages.
 
+### iOS
+
+Whip supports iOS 16.4 and newer on ARM64 devices. CI and tagged GitHub releases publish `whip-ios.app.zip`, an **unsigned** device build for developers who can sign it with their own Apple identity. It is not an App Store or TestFlight package and cannot be installed as downloaded. Do not treat the unsigned archive as equivalent to the signed Android release.
+
 ## Connect your first host
 
-You need an SSH server on a laptop or server reachable from the phone. If Herdr is already installed, confirm the same connection outside Whip first:
+You need an SSH server on a laptop or server reachable from the mobile device. If Herdr is already installed, confirm the same connection outside Whip first:
 
 ```bash
 ssh user@laptop.tailnet.ts.net 'herdr status server --json'
@@ -150,7 +156,7 @@ Whip accepts Herdr releases that report protocols 17 through 20 and rejects othe
 
 ## How it works
 
-Whip connects from Android to the configured SSH host, either directly or through its saved jump-host chain. There is no Whip-operated relay service, and Herdr remains bound to the host as usual. Strict known-host verification applies to every hop.
+Whip connects from the mobile device to the configured SSH host, either directly or through its saved jump-host chain. There is no Whip-operated relay service, and Herdr remains bound to the host as usual. Strict known-host verification applies to every hop.
 
 Native screens read snapshots and live events from Herdr's local API sockets through the authenticated SSH connection. Actions use the same structured API, while each open pane terminal uses Herdr's client-protocol socket for live input, resize, scroll, and render frames. The remote file manager and terminal attachments use SFTP on that connection. Links found in terminal scrollback open directly when they are public; loopback and private-network addresses are forwarded through SSH first.
 
@@ -184,7 +190,7 @@ flowchart TB
     App["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/react.svg' width='44' height='44'/></span><br/><b>React Native</b><br/>Screens and state<br/>Hosts · Herd · Terminal · Files · Settings"]
     TerminalHost["TerminalRendererHost<br/>renderer lifecycle · frame batching"]
     HerdrClient["<span style='display:inline-block;width:44px;height:44px'><img src='data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkhlcmRyIGxvZ28iIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCBtZWV0Ij4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iI2Q5ZGFkOCIvPgogIDxnIGZpbGw9IiMzMDM0MzgiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgNTEyKSBzY2FsZSguMSAtLjEpIiBzdHJva2U9Im5vbmUiPgogICAgPHBhdGggZD0iTTI3OTQgMzcxMCBjLTEyOSAtMzMgLTI5OSAtMTM1IC0zNTkgLTIxNCAtMjEgLTI4IC0yNiAtNDIgLTIxIC02MyA5IC0zOCAxNTQgLTE3OCAxOTkgLTE5MiAzMiAtMTEgNDEgLTkgMTA0IDIzIDE3MSA4NiAzNTQgNzAgNDc1IC00MyAxNTAgLTEzOCAxNTAgLTM3OSAwIC01MTEgLTEwNyAtOTUgLTI3OCAtOTQgLTM4NiAyIGwtNDYgNDAgLTExIC0yOSBjLTE2IC00MCAtMTQgLTEyMiA0IC0xNjQgNjAgLTE0NCAyNjQgLTIyMiA0NTIgLTE3NCAzNjAgOTIgNTU5IDQ5NCA0MzAgODY4IC0zNiAxMDMgLTgxIDE3MyAtMTc1IDI2NyAtNzEgNzIgLTEwMCA5MyAtMTgwIDEzMiAtNTIgMjYgLTEyNyA1NCAtMTY3IDYyIC05NiAyMSAtMjMwIDIwIC0zMTkgLTR6IE0yMTgzIDM2OTUgYy0xMTYgLTMyIC0yMjEgLTEwOCAtMjczIC0xOTkgLTE3IC0yOCAtMzAgLTU0IC0zMCAtNTggMCAtNCAyMCAxIDQ1IDEyIDY2IDI4IDIyMCA2OCAyOTQgNzYgNjQgNyA2NSA3IDEzNyA4MyA0MCA0MSA3MSA3NyA2OSA3OSAtMiAyIC0yMSA4IC00MiAxMyAtNTUgMTIgLTE0MCAxMCAtMjAwIC02eiBNMjIxMiAzMzg4IGMtMTU5IC0yMiAtMzkwIC0xMjIgLTU1OSAtMjQxIC0yOTkgLTIxMCAtNTg1IC02MDAgLTYwOSAtODI4IC0xMiAtMTE4IDQwIC0yNTEgMTI1IC0zMTggOTYgLTc2IDE3OCAtOTggNDI2IC0xMTYgMTEwIC04IDIyNCAtMjEgMjU0IC0yOSAxMjUgLTM0IDIzMCAtMTE1IDI3MiAtMjExIDExIC0yNCAyNCAtODEgMzAgLTEyNyAyMCAtMTcwIDY1IC0yNzEgMTY2IC0zNzQgMzQgLTM1IDYzIC02NSA2MyAtNjcgMCAtMSAtMTAgLTI3IC0yMiAtNTcgLTI5IC03NiAtMzcgLTI1OSAtMTQgLTM1MCA0MiAtMTcwIDE1OCAtMzE4IDMxMSAtMzk3IDQ0IC0yMyA5OCAtNDYgMTIwIC01MiAyMiAtNiA0NSAtMTQgNTEgLTE4IDUgLTUgMTUgLTQ4IDIyIC05NiA2IC00OCAxNCAtOTIgMTcgLTk3IDQgLTYgNDE1IC0xMCAxMTMxIC0xMCBsMTEyNCAwIDAgMTU4NCAwIDE1ODUgLTU1IC0xOSBjLTg0IC0yOSAtMTQzIC02OCAtMjMyIC0xNTQgbC04MyAtNzggLTU0IDQ5IGMtMTExIDEwMiAtMjMzIDE1MSAtMzkxIDE2MCAtMTEzIDYgLTE5OSAtMTAgLTI5OCAtNTQgbC02MCAtMjcgLTI2IDM0IGMtMzcgNTEgLTEyMCAxMzQgLTEyNyAxMjggLTMgLTQgMCAtMzQgNyAtNjcgMTcgLTg5IDcgLTI2OCAtMjEgLTM1NiAtMTAzIC0zMjggLTM3NyAtNTQ1IC02ODggLTU0NSAtMTYxIDAgLTI3MyA0MSAtMzczIDEzNyAtMzcgMzUgLTY2IDc1IC04NSAxMTYgLTc5IDE3MyAtOCA0MDcgMTI0IDQwNyA0NCAwIDY4IC0xNCAxMTcgLTY2IDc0IC03OCAxNjcgLTgyIDIzOCAtOSA2MCA2MiA3MiAxNDcgMzMgMjMxIC00MiA5MCAtMTIwIDEzMCAtMjM4IDEyMiAtNTAgLTQgLTg1IC0xNCAtMTMxIC0zNyAtODkgLTQ1IC0xMjIgLTUyIC0xNzYgLTQwIC05MiAyMCAtMjYyIDE2MyAtMzAyIDI1MyAtMTEgMjUgLTIxIDQ1IC0yMiA0NSAtMSAtMSAtMzAgLTYgLTY1IC0xMXogbS0yNTYgLTUwNSBjMTE1IC04OCAxMjkgLTEwMiAxMzIgLTEzMSAyIC0xOCAtMiAtNDAgLTkgLTQ5IC03IC04IC02OSAtNTUgLTEzOCAtMTA1IC0xMDMgLTczIC0xMzAgLTg4IC0xNTEgLTgzIC0zNSA4IC01MSAzNCAtNDggNzQgMyAzMSAxMiA0MiA4MyA5MiA0NCAzMSA4MCA2MSA4MiA2NiAxIDQgLTMwIDMxIC02OSA1OCAtMzkgMjggLTc3IDU2IC04NSA2MyAtMTggMTkgLTE2IDcyIDQgOTQgMzIgMzUgNjMgMjMgMTk5IC03OXogbTUyOCAtODggYzIzIC0yNCAyOCAtNTIgMTQgLTgyIGwtMTMgLTI4IC0xNDEgLTMgYy0xMzAgLTIgLTE0MiAtMSAtMTU4IDE3IC0yMyAyNiAtMjQgNjYgLTEgOTEgMTYgMTggMzIgMjAgMTUxIDIwIDEwNSAwIDEzNiAtMyAxNDggLTE1eiIvPgogIDwvZz4KPC9zdmc+Cg==' width='44' height='44'/></span><br/><b>HerdrClient</b><br/>connections · channels · reconnects"]
-    SSHClient["SSHClient compatibility API<br/>react-native-ssh-sftp"]
+    SSHClient["SSHClient app API<br/>react-native-whip-ssh"]
     WhipApi["<span style='display:inline-block;width:44px;height:44px'><img src='https://raw.githubusercontent.com/KaminariOS/whip/main/assets/whip-cyborg-hand-concept.svg' width='44' height='44'/></span><br/><b>react-native-whip-ssh</b><br/>typed terminal fast path<br/>JSON control facade"]
 
     App --> TerminalHost
@@ -324,7 +330,7 @@ flowchart TB
 
 ## Development
 
-Whip uses Expo SDK 57 with a custom Android development build. It cannot run in Expo Go because SSH, Android Keystore, and the patched PTY stream use native modules.
+Whip uses Expo SDK 57 with custom Android and iOS native builds. It cannot run in Expo Go because the shared Rust SSH transport, platform credential stores, and terminal renderer use native modules.
 
 On NixOS, the included development shell provides Node.js 22, JDK 17, and the required Android SDK and NDK versions. Start Metro in one terminal, in offline mode with Whip's explicit development-client scheme and a LAN bind so the USB-reversed IPv4 endpoint works:
 
@@ -354,6 +360,17 @@ On other systems, install Node.js 22, JDK 17, Android SDK Platform 36, Build Too
 
 See [DEBUG.md](DEBUG.md) for the complete emulator and physical-device loop.
 
+On macOS, the Nix shell supplies Node.js, CocoaPods, and the pinned Rust target while Xcode supplies the Apple build toolchain:
+
+```bash
+nix develop
+npm ci
+cd ios
+bundle exec pod install
+```
+
+Open `ios/HerdR.xcworkspace` in Xcode for a signed device build. CI documents the reproducible unsigned ARM64 `xcodebuild` invocation in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
 ### EAS builds
 
 After authenticating and initializing the Expo project:
@@ -361,13 +378,14 @@ After authenticating and initializing the Expo project:
 ```bash
 npx eas-cli build --profile development --platform android
 npx eas-cli build --profile preview --platform android
+npx eas-cli build --profile ios-simulator --platform ios
 ```
 
-The `development` profile creates an Expo development client. The `preview` profile creates an installable APK.
+The `development` profile creates an Expo development client, `preview` creates an installable Android APK, and `ios-simulator` creates an unsigned iOS simulator build.
 
 ### Google Play publishing
 
-The manually triggered `Publish Android app bundle` GitHub Actions workflow builds a signed ARM64 `.aab` and uploads it through EAS Submit. Its default `production-draft` profile leaves the release in Google Play Console for manual review; the `internal` profile publishes it to internal testers.
+The manually triggered `Publish Android app bundle` GitHub Actions workflow builds a signed ARM64 `.aab` and uploads it through EAS Submit. Its default `internal-draft` profile leaves an internal-track release in Google Play Console for review; `production-draft` creates a production draft, and `internal` publishes to internal testers.
 
 Before the first run, create a Google Play service account with Play Console access and an Expo access token, then configure these GitHub repository or `google-play` environment secrets:
 
@@ -405,7 +423,7 @@ npm test -- --runInBand
 npx expo export --platform android
 ```
 
-The SSH bridge is maintained in [`packages/react-native-ssh-sftp`](packages/react-native-ssh-sftp). The root dependency uses that local package; do not edit or patch its symlink under `node_modules`.
+The complete SSH stack is maintained in [`packages/react-native-whip-ssh`](packages/react-native-whip-ssh): the app-facing `SSHClient` API, UniFFI bridge, native installers, and shared Rust/Russh crate. Both mobile platforms use this package and there is no legacy native SSH fallback. Edit the source package, never its symlink under `node_modules`.
 
 ## Community
 
@@ -415,11 +433,7 @@ The SSH bridge is maintained in [`packages/react-native-ssh-sftp`](packages/reac
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Review the [roadmap](ROADMAP.md) for current priorities.
 
-Feedback is especially useful around Android device compatibility, real-world Herdr workflows, terminal ergonomics, and safe SSH trust UX.
-
-### Help bring Whip to iOS
-
-Whip's React Native and Expo code is designed to be portable to iOS, but I do not have a Mac or an Apple Developer account to build, test, sign, and publish an iOS release. If you have iOS development experience and access to the required Apple hardware and developer tools, community help with validating the native dependencies, preparing an iOS build, testing it on real devices, and working toward a TestFlight or App Store release would be greatly appreciated. Please start a discussion or open an issue if you would like to help.
+Feedback is especially useful around Android and iOS device compatibility, real-world Herdr workflows, terminal ergonomics, safe SSH trust UX, and the path from the current unsigned iOS build to a signed beta.
 
 ## Credits
 

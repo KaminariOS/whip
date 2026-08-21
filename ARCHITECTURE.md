@@ -2,24 +2,24 @@
 
 ## Product boundary
 
-Whip is a remote client for a Herdr server running on another machine. It never starts a local Herdr runtime, local shell, or local PTY on the phone.
+Whip is a mobile client for a Herdr server running on another machine. It never starts a local Herdr runtime, shell, or PTY on the device.
 
 The app has two presentation modes:
 
-- **Herdr control surfaces become Android GUI.** Herd status, workspaces, tabs, panes, agent actions, settings, notifications, and connection state are React Native screens and sheets backed by structured Herdr state.
+- **Herdr control surfaces become mobile UI.** Herd status, workspaces, tabs, panes, agent actions, settings, notifications, and connection state are React Native screens and sheets backed by structured Herdr state.
 - **Pane terminals remain terminals.** When a user opens a shell or agent pane, the app attaches to that pane's terminal stream and renders its ANSI/TUI output faithfully in the terminal renderer.
 
-The app must not render the full Herdr management TUI in a terminal and place Android controls around it. Herdr's TUI is one client presentation; Android is another client presentation over the same server-owned state.
+The app must not render the full Herdr management TUI in a terminal and place mobile controls around it. Herdr's TUI is one client presentation; Whip is another presentation over the same server-owned state.
 
 ## Three planes
 
 ### Transport plane
 
-The phone reaches a remote machine over SSH. A saved server profile owns host, port, username, authentication reference, Herdr binary path, and named Herdr session.
+The mobile device reaches a remote machine over SSH. A saved host profile owns host, port, username, authentication reference, Herdr binary path, named Herdr session, optional jump host, and optional agent-forwarding setting.
 
-Metadata may be stored in AsyncStorage. Passwords, private keys, and passphrases must be stored through Android Keystore and referenced by profile ID; they must never be embedded in profile JSON, logs, screenshots, or fixtures.
+Metadata is stored in AsyncStorage. Passwords, private keys, and passphrases are stored through the platform credential store and referenced by profile ID; they must never be embedded in profile JSON, logs, screenshots, or fixtures. Android may back up only AES-GCM ciphertext, with its recovery token separated into Block Store. Global SSH keychain secrets are excluded from that recovery path.
 
-Production SSH requires known-host verification with explicit first-connect trust and changed-key rejection. The current native dependency disables `StrictHostKeyChecking`; this is a release blocker and must be replaced or patched before production use.
+Both platforms use the shared Rust/Russh transport. It loads one process-wide OpenSSH-compatible known-host repository, returns unknown keys for explicit fingerprint approval, and rejects changed keys. Direct hosts and every jump-host hop follow the same rule.
 
 ### Control plane
 
@@ -32,16 +32,14 @@ The control plane reads and mutates structured Herdr server state:
 - agents, status, metadata, and recent output
 - create, focus, rename, split, resize, send, close, and launch actions
 
-The current vertical slice uses Herdr's JSON-producing CLI over SSH exec channels. This is acceptable as a compatibility transport, but repeated CLI polling is not the final protocol.
+Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. Normal operation does not start a remote shell, poll JSON-producing CLI commands, or depend on private TUI layout/render messages.
 
-The target transport is one persistent newline-delimited JSON bridge to Herdr's local API socket over SSH stdio. It should support request IDs and `events.subscribe`, reconnect with backoff, refresh a snapshot after gaps, and expose neutral server concepts. It must not depend on private TUI layout or render messages.
+If Whip needs a new server capability, it should be a neutral Herdr socket API method or event, not a mobile-specific endpoint and not a second source of runtime truth.
 
-If Herdr needs a new bridge command, it should be a neutral API/stdio bridge in Herdr, not an Android-specific endpoint and not a second source of runtime truth.
-
-Herdr's current Unix API accepts one normal request and then closes that socket
-connection; only subscriptions remain open. Until the neutral stdio bridge
-exists, control requests must use separate short-lived stream-local channels.
-Do not treat the existing Unix API socket itself as a multiplexed transport.
+Herdr's Unix API accepts one normal request and then closes that socket
+connection; only subscriptions remain open. Control requests therefore use
+separate short-lived stream-local channels. Do not treat the API socket itself
+as a multiplexed transport.
 The first `session.snapshot` response also supplies the version and protocol, so
 cold connections use it as the availability handshake instead of opening a
 separate ping channel. Whip caches each resolved absolute socket path for the
@@ -50,20 +48,16 @@ cached path stops accepting channels.
 
 ### Terminal plane
 
-Each opened Herdr terminal owns an independent SSH exec channel and runs Herdr's client-protocol bridge:
-
-```text
-herdr [--session NAME] remote-client-bridge
-```
-
-The Android codec performs the binary `Hello` / `Welcome` handshake and then sends
-`AttachTerminal` for the selected terminal. Herdr emits terminal frames and accepts
-input, resize, scroll, and detach messages over that connection. Do not substitute
-the human-facing `terminal attach` command: nesting that interface inside an SSH PTY
-leaks shell chrome and breaks application-level input and resize behavior.
+Each opened Herdr terminal owns an independent SSH stream-local channel to the
+server's client-protocol socket. The shared Rust codec performs the binary
+`Hello` / `Welcome` handshake and sends `AttachTerminal` for the selected
+terminal. Herdr emits terminal frames and accepts input, resize, scroll, and
+detach messages over that connection. Do not substitute the human-facing
+`terminal attach` command: nesting that interface inside an SSH PTY leaks shell
+chrome and breaks application-level input and resize behavior.
 
 `TerminalAttach` is a direct pane connection. Its input bypasses Herdr's management
-prefix router, so Android must expose workspace, tab, and pane operations as GUI
+prefix router, so Whip must expose workspace, tab, and pane operations as native
 actions. Ctrl/Alt and control bytes in the terminal key rail belong to the program
 inside the pane; they are not Herdr navigation shortcuts.
 
@@ -82,7 +76,7 @@ The renderer is responsible for ANSI color, alternate screen applications, curso
 
 Transport objects do not live in React component state. A service owns SSH/API lifetimes; React consumes serializable state and invokes typed actions.
 
-## Android information architecture
+## Mobile information architecture
 
 ### Servers
 
@@ -102,7 +96,7 @@ An immersive terminal surface keeps a slim scrollable session rail, connection s
 
 ### Settings
 
-Connection details, notifications, speech, terminal preferences, known hosts, diagnostics, and disconnect are Android settings. Server-owned Herdr settings should be clearly distinguished from device-local preferences.
+Connection details, notifications, speech, terminal preferences, known hosts, diagnostics, and disconnect are device-local settings. Server-owned Herdr settings should be clearly distinguished from mobile preferences.
 
 ## Reliability rules
 
@@ -110,35 +104,35 @@ Connection details, notifications, speech, terminal preferences, known hosts, di
 - A stale control-plane connection must be visible and must not silently present old state as live.
 - Reconnect attempts are serialized per server/terminal and use bounded backoff.
 - After an event-stream gap or reconnect, fetch a fresh session snapshot before applying new events.
-- Terminal bridge envelopes are newline-delimited JSON, but decoded frame payloads are byte-stream ANSI data. Preserve the base64 bytes until they reach xterm.
+- Terminal frames are byte-stream ANSI data carried through the typed UniFFI/JSI path. Do not convert the hot path to JSON strings or reinterpret partial UTF-8 before xterm receives the bytes.
 - Keep control and terminal failures independent. One failed terminal must not disconnect the Herdr dashboard or other terminals.
 - Backgrounding may suspend polling/rendering, but it must not imply that the remote Herdr session stopped.
 
-## Current vertical slice
+## Current implementation
 
 Implemented:
 
 - concurrent remote SSH control connections with an active-session selector;
-- structured Herdr snapshot and native management screens;
-- independent SSH/PTTY connection and Herdr bridge controller per opened terminal;
-- Voltius-style persistent Hosts, Herd, Terminal, and More mobile shell with Android back handling;
-- Voltius-style outer live-host rail plus nested Herdr workspace/tab/pane navigation;
+- structured Herdr snapshots and native management screens;
+- independent client-socket terminal controller per opened pane;
+- persistent Hosts, Herd, Terminal, and More navigation adapted to Android and iOS conventions;
+- a live-host rail plus nested Herdr workspace/tab/pane navigation;
 - multiple mounted, switchable terminal sessions per host with bounded reconnect backoff and same-host restoration;
-- serialized snapshot refresh, stale-response rejection, and bounded control-channel reconnect without tearing down terminal SSH clients;
-- atomic Android line streaming for large Herdr NDJSON frames and a delayed PTY/controller redraw that makes fresh TUI attaches reliable;
-- an 8px mobile terminal default (82 columns on the verified emulator) with migration from the old 11px default;
-- terminal search, Android clipboard, OSC 52 writes, long-press word selection/paste, remote viewport swipes, and double-tap Tab;
+- serialized snapshot refresh, stale-response rejection, event resubscription, and bounded control reconnect without tearing down healthy terminal clients;
+- typed binary terminal frames through UniFFI/JSI, batched at the WebView boundary;
+- terminal search, clipboard and OSC 52 writes, selection handles, long-press selection/paste, remote viewport swipes, and configurable gestures;
 - mobile extra keys with one-shot and long-press-locked Ctrl/Alt modifiers;
-- persisted device terminal font, scrollback, cursor, notification, speech, and last-tab preferences;
-- multiple saved server profiles with per-host Android Keystore credentials and last-used ordering;
-- emulator, Metro, Expo MCP, and Argent debugging loop.
+- persisted terminal font, scrollback, cursor, notification, speech, language, appearance, security, and navigation preferences;
+- multiple saved host profiles with platform-protected credentials and last-used ordering;
+- strict host-key verification, nested jump hosts, restricted agent forwarding, and SSH-backed private-network browser tunnels;
+- SFTP browsing, transfer, editing, deletion, and previews for text, code, Markdown, images, SVG, Mermaid, PDF, audio, video, and sandboxed HTML;
+- shared Rust/Russh SSH behavior on Android and iOS through UniFFI, with typed binary terminal frames on the hot path;
+- Android release signing/Play delivery and unsigned ARM64 iOS device artifacts.
 
-Next transport/product milestones:
+Current transport/product milestones:
 
-1. Known-host verification and trust/change-key UI.
-2. Persistent Herdr API stdio bridge with events and capability negotiation.
-3. Terminal release semantics and restoration across Android process death.
-4. More Herdr-native GUI for agent/TUI workflows.
-
-Host organization and auxiliary Voltius surfaces are deferred for now; see the
-explicit scope list in `VOLTIUS_PORT.md`.
+1. Signed iOS beta/release distribution.
+2. Compatibility work for newly released Herdr protocols beyond 20.
+3. Terminal release semantics and restoration across mobile process death.
+4. Broader accessibility, large-screen, keyboard, and device coverage.
+5. More Herdr-native mobile actions that do not reproduce the management TUI.

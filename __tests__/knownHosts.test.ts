@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SSHClient from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient from 'react-native-whip-ssh';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -27,7 +27,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-jest.mock('@dylankenneally/react-native-ssh-sftp', () => ({
+jest.mock('react-native-whip-ssh', () => ({
   __esModule: true,
   default: {
     setKnownHosts: jest.fn(),
@@ -156,7 +156,7 @@ test('uses the Rust UniFFI Android native module with strict host-key support', 
     'utf8',
   );
   const knownHostsRust = readFileSync(
-    resolve(__dirname, '../packages/react-native-ssh-sftp/rust/src/known_hosts.rs'),
+    resolve(__dirname, '../packages/react-native-whip-ssh/rust/src/known_hosts.rs'),
     'utf8',
   );
 

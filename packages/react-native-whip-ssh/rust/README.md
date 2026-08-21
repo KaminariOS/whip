@@ -22,10 +22,10 @@ Implemented:
 - Herdr direct stream-local API requests, event streams, and command streams
 - retained Herdr terminal bridges using the protocol 17–20 binary framing
 
-The mobile backend intentionally rejects RSA private keys for now. Russh's current
-RSA path depends on a crate affected by RUSTSEC-2023-0071 with no patched
-release. Ed25519 keys are supported and tested; this restriction does not alter
-the legacy Android key support.
+Whip generates and tests Ed25519 keys by default. Imported OpenSSH private keys
+are decoded by the shared Russh backend on both platforms, including ECDSA and
+RSA keys supported by the negotiated server algorithms. Prefer Ed25519 for new
+profiles because it is the project's cross-platform test baseline.
 
 Agent forwarding exposes only the identity used for key authentication and
 rejects remote agent mutation requests. Password-authenticated sessions do not
@@ -40,14 +40,14 @@ Run the platform-neutral tests on Linux:
 
 ```sh
 nix develop -c nix shell nixpkgs#cargo nixpkgs#rustc -c \
-  cargo test --manifest-path packages/react-native-ssh-sftp/rust/Cargo.toml
+  cargo test --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml
 ```
 
 Run the live OpenSSH feature matrix with Podman (or Docker):
 
 ```sh
 nix develop -c nix shell nixpkgs#cargo nixpkgs#rustc nixpkgs#openssh -c \
-  bash packages/react-native-ssh-sftp/rust/tests/live-ssh.sh
+  bash packages/react-native-whip-ssh/rust/tests/live-ssh.sh
 ```
 
 Run an unsigned iOS simulator build on EAS (no paid Apple membership needed):

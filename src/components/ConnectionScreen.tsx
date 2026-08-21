@@ -1,5 +1,5 @@
 import { ArrowRight, Check, ChevronDown, ChevronLeft, ClipboardPaste, Copy, FileUp, KeyRound, Network, Sparkles, Trash2, X } from 'lucide-react-native';
-import SSHClient from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient from 'react-native-whip-ssh';
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

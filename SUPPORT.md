@@ -1,6 +1,6 @@
 # Support
 
-Whip is an experimental community project with best-effort support.
+Whip is an independent community project with best-effort support.
 
 ## Where to ask
 
@@ -9,13 +9,13 @@ Whip is an experimental community project with best-effort support.
 - **Reproducible Whip bugs:** use the repository bug-report form.
 - **Confirmed Whip feature work:** use the feature-request form.
 - **Security concerns:** report privately through [SECURITY.md](SECURITY.md).
-- **Herdr server or CLI bugs unrelated to Whip:** use the [upstream Herdr repository](https://github.com/ogulcancelik/herdr).
+- **Herdr server or CLI bugs unrelated to Whip:** use the [upstream Herdr repository](https://github.com/herdrdev/herdr).
 - **Tailscale account or network problems:** use Tailscale's support resources.
 
-Before asking for help, confirm this command works from another client:
+Before asking for connection help, confirm this command works from another SSH client:
 
 ```bash
 ssh user@laptop.tailnet.ts.net 'herdr status server --json'
 ```
 
-Include the Whip commit/tag, Android version, device model, CPU architecture, Herdr version, and sanitized error text. Never include credentials, private keys, Tailnet IPs, or sensitive terminal contents.
+Include the Whip commit/tag, platform and OS version, device model, CPU architecture, Herdr version and protocol, and sanitized error text. For UI or terminal bugs, include redacted screenshots or a short recording when safe. Never include credentials, private keys, Tailnet IPs, hostnames, unredacted logs, or sensitive terminal contents.

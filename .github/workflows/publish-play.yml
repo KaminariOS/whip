@@ -68,7 +68,7 @@ jobs:
       - name: Build Android Rust static library
         run: >-
           nix develop .#default -c bash
-          packages/react-native-ssh-sftp/rust/build-android.sh
+          packages/react-native-whip-ssh/rust/build-android.sh
 
       - name: Prepare signing and Play credentials
         env:

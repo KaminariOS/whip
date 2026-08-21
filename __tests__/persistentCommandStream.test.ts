@@ -1,4 +1,4 @@
-import SSHClient from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient from 'react-native-whip-ssh';
 
 import {
   clearHerdrSocketPathCache,
@@ -6,7 +6,7 @@ import {
 } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
 
-jest.mock('@dylankenneally/react-native-ssh-sftp', () => ({
+jest.mock('react-native-whip-ssh', () => ({
   __esModule: true,
   default: {
     connectWithPassword: jest.fn(),

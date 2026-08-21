@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SSHClient from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient from 'react-native-whip-ssh';
 
 import { createSecureId } from '../lib/secureId';
 import type { KnownHost } from '../types';

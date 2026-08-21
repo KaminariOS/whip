@@ -394,4 +394,3 @@ export default class SSHClient {
     disconnect(): void;
 }
 export {};
-//# sourceMappingURL=sshclient.d.ts.map

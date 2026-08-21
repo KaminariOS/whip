@@ -1,8 +1,8 @@
-const RNSSHClient = require('react-native-whip-ssh').default;
-if (!RNSSHClient) {
+const nativeClient = require('../src').default;
+if (!nativeClient) {
     throw new Error('Native SSH backend is unavailable');
 }
-const RNSSHClientEmitter = RNSSHClient;
+const nativeClientEmitter = nativeClient;
 const NATIVE_EVENT_SHELL = 'Shell';
 const NATIVE_EVENT_HERDR_BRIDGE = 'HerdrBridge';
 const NATIVE_EVENT_HERDR_EVENT_STREAM = 'HerdrEventStream';
@@ -43,7 +43,7 @@ class SSHClient {
      * SSH sessions on every native backend.
      */
     static setKnownHosts(knownHosts) {
-        RNSSHClient.setKnownHosts(knownHosts);
+        nativeClient.setKnownHosts(knownHosts);
     }
     /**
     * Retrieves the details of an SSH key.
@@ -53,7 +53,7 @@ class SSHClient {
     */
     static getKeyDetails(key, passphrase) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.getKeyDetails(key, passphrase || null)
+            nativeClient.getKeyDetails(key, passphrase || null)
                 .then((result) => {
                 resolve({
                     keyType: result.keyType,
@@ -69,7 +69,7 @@ class SSHClient {
     }
     static generateKeyPair(type, passphrase, keySize, comment) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.generateKeyPair(type, passphrase, keySize, comment, (error, keys) => {
+            nativeClient.generateKeyPair(type, passphrase, keySize, comment, (error, keys) => {
                 if (error) {
                     reject(error);
                 }
@@ -269,7 +269,7 @@ class SSHClient {
      * @param eventName - The name of the event to listen for.
      */
     registerNativeListener(eventName) {
-        this._listeners[eventName] = RNSSHClientEmitter.addListener(eventName, this.handleEvent.bind(this));
+        this._listeners[eventName] = nativeClientEmitter.addListener(eventName, this.handleEvent.bind(this));
     }
     /**
      * Unregisters a native listener for the specified event name.
@@ -291,12 +291,12 @@ class SSHClient {
     connect(passwordOrKey, callback, jumpClient) {
         if (jumpClient) {
             const method = typeof passwordOrKey === 'string'
-                ? RNSSHClient.connectToHostByPasswordViaJump
-                : RNSSHClient.connectToHostByKeyViaJump;
+                ? nativeClient.connectToHostByPasswordViaJump
+                : nativeClient.connectToHostByKeyViaJump;
             method(this.host, this.port, this.username, passwordOrKey, jumpClient._key, this._key, callback);
         }
         else {
-            RNSSHClient.connectToHost(this.host, this.port, this.username, passwordOrKey, this._key, callback);
+            nativeClient.connectToHost(this.host, this.port, this.username, passwordOrKey, this._key, callback);
         }
     }
     /**
@@ -307,7 +307,7 @@ class SSHClient {
      * connection; private key material is never copied to the remote host.
      */
     setAgentForwarding(enabled) {
-        RNSSHClient.setAgentForwarding(this._key, enabled);
+        nativeClient.setAgentForwarding(this._key, enabled);
     }
     /**
      * Executes a command on the SSH server.
@@ -317,7 +317,7 @@ class SSHClient {
      */
     execute(command, callback) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.execute(command, this._key, (error, response) => {
+            nativeClient.execute(command, this._key, (error, response) => {
                 if (callback) {
                     callback(error, response);
                 }
@@ -340,7 +340,7 @@ class SSHClient {
         }
         return new Promise((resolve, reject) => {
             this.registerNativeListener(NATIVE_EVENT_SHELL);
-            RNSSHClient.startShell(this._key, ptyType, (error, response) => {
+            nativeClient.startShell(this._key, ptyType, (error, response) => {
                 if (callback) {
                     callback(error, response);
                 }
@@ -366,7 +366,7 @@ class SSHClient {
         }
         return new Promise((resolve, reject) => {
             this.registerNativeListener(NATIVE_EVENT_SHELL);
-            RNSSHClient.startLineShell(this._key, ptyType, (error, response) => {
+            nativeClient.startLineShell(this._key, ptyType, (error, response) => {
                 if (callback) {
                     callback(error, response);
                 }
@@ -406,7 +406,7 @@ class SSHClient {
     writeToShell(command, callback) {
         return this.checkShell(callback)
             .then(() => new Promise((resolve, reject) => {
-            RNSSHClient.writeToShell(command, this._key, (error, response) => {
+            nativeClient.writeToShell(command, this._key, (error, response) => {
                 if (callback) {
                     callback(error, response);
                 }
@@ -418,7 +418,7 @@ class SSHClient {
         }));
     }
     resizeShell(columns, rows) {
-        RNSSHClient.resizeShell(columns, rows, this._key);
+        nativeClient.resizeShell(columns, rows, this._key);
     }
     /**
      * Closes the SSH shell.
@@ -426,12 +426,12 @@ class SSHClient {
     closeShell() {
         this.unregisterNativeListener(NATIVE_EVENT_SHELL);
         // TODO this should use a callback too
-        RNSSHClient.closeShell(this._key);
+        nativeClient.closeShell(this._key);
         this._activeStream.shell = false;
     }
     prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, this._key, error => {
+            nativeClient.prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, this._key, error => {
                 if (callback) callback(error);
                 if (error) return reject(error);
                 resolve();
@@ -448,7 +448,7 @@ class SSHClient {
             if (!this._listeners[NATIVE_EVENT_HERDR_BRIDGE]) {
                 this.registerNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
             }
-            RNSSHClient.startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
+            nativeClient.startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
                 if (callback) callback(error);
                 if (error) {
                     this._herdrBridgeHandlers.delete(terminalId);
@@ -463,22 +463,22 @@ class SSHClient {
     }
     herdrBridgeInput(terminalId, text) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.herdrBridgeInput(terminalId, text, this._key, error => error ? reject(error) : resolve());
+            nativeClient.herdrBridgeInput(terminalId, text, this._key, error => error ? reject(error) : resolve());
         });
     }
     herdrBridgeResize(terminalId, columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.herdrBridgeResize(columns, rows, cellWidthPx, cellHeightPx, terminalId, this._key, error => error ? reject(error) : resolve());
+            nativeClient.herdrBridgeResize(columns, rows, cellWidthPx, cellHeightPx, terminalId, this._key, error => error ? reject(error) : resolve());
         });
     }
     herdrBridgeScroll(terminalId, direction, lines) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.herdrBridgeScroll(direction === 'up', lines, terminalId, this._key, error => error ? reject(error) : resolve());
+            nativeClient.herdrBridgeScroll(direction === 'up', lines, terminalId, this._key, error => error ? reject(error) : resolve());
         });
     }
     closeHerdrBridge(terminalId) {
         this._herdrBridgeHandlers.delete(terminalId);
-        RNSSHClient.closeHerdrBridge(terminalId, this._key);
+        nativeClient.closeHerdrBridge(terminalId, this._key);
         if (this._herdrBridgeHandlers.size === 0) {
             this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
         }
@@ -486,26 +486,26 @@ class SSHClient {
     closeAllHerdrBridges() {
         this._herdrBridgeHandlers.clear();
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-        RNSSHClient.closeAllHerdrBridges(this._key);
+        nativeClient.closeAllHerdrBridges(this._key);
     }
     openLocalForward(remoteHost, remotePort) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.openLocalForward(remoteHost, remotePort, this._key, (error, localPort) => error ? reject(error) : resolve(localPort));
+            nativeClient.openLocalForward(remoteHost, remotePort, this._key, (error, localPort) => error ? reject(error) : resolve(localPort));
         });
     }
     closeLocalForward(localPort) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
+            nativeClient.closeLocalForward(localPort, this._key, error => error ? reject(error) : resolve());
         });
     }
     startSftpFileServer(remotePath) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.startSftpFileServer(remotePath, this._key, (error, server) => error ? reject(error) : resolve(server));
+            nativeClient.startSftpFileServer(remotePath, this._key, (error, server) => error ? reject(error) : resolve(server));
         });
     }
     closeSftpFileServer(localPort) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.closeSftpFileServer(localPort, this._key, error => error ? reject(error) : resolve());
+            nativeClient.closeSftpFileServer(localPort, this._key, error => error ? reject(error) : resolve());
         });
     }
     startHerdrEventStream(socketPath, handler, callback) {
@@ -516,7 +516,7 @@ class SSHClient {
         return new Promise((resolve, reject) => {
             this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
             this.registerNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-            RNSSHClient.startHerdrEventStream(socketPath, this._key, error => {
+            nativeClient.startHerdrEventStream(socketPath, this._key, error => {
                 if (callback) callback(error);
                 if (error) {
                     this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
@@ -530,28 +530,28 @@ class SSHClient {
     }
     writeHerdrEventStream(value) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.writeHerdrEventStream(value, this._key, error => error ? reject(error) : resolve());
+            nativeClient.writeHerdrEventStream(value, this._key, error => error ? reject(error) : resolve());
         });
     }
     closeHerdrEventStream() {
         this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        RNSSHClient.closeHerdrEventStream(this._key);
+        nativeClient.closeHerdrEventStream(this._key);
         this._activeStream.herdrEventStream = false;
     }
     requestHerdrApi(socketPath, request) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.requestHerdrApi(socketPath, request, this._key, (error, response) => error ? reject(error) : resolve(response));
+            nativeClient.requestHerdrApi(socketPath, request, this._key, (error, response) => error ? reject(error) : resolve(response));
         });
     }
     measureHostLatency() {
         return new Promise((resolve, reject) => {
-            RNSSHClient.measureHostLatency(this._key, (error, latencyMs) => error ? reject(error) : resolve(latencyMs));
+            nativeClient.measureHostLatency(this._key, (error, latencyMs) => error ? reject(error) : resolve(latencyMs));
         });
     }
     getRemoteHome() {
         return new Promise((resolve, reject) => {
-            RNSSHClient.getRemoteHome(this._key, (error, home) => error ? reject(error) : resolve(home));
+            nativeClient.getRemoteHome(this._key, (error, home) => error ? reject(error) : resolve(home));
         });
     }
     startHerdrCommandStream(command, handler, callback) {
@@ -562,7 +562,7 @@ class SSHClient {
         return new Promise((resolve, reject) => {
             this.on(NATIVE_EVENT_HERDR_COMMAND_STREAM, handler);
             this.registerNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-            RNSSHClient.startHerdrCommandStream(command, this._key, error => {
+            nativeClient.startHerdrCommandStream(command, this._key, error => {
                 if (callback) callback(error);
                 if (error) {
                     this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
@@ -576,13 +576,13 @@ class SSHClient {
     }
     writeHerdrCommandStream(value) {
         return new Promise((resolve, reject) => {
-            RNSSHClient.writeHerdrCommandStream(value, this._key, error => error ? reject(error) : resolve());
+            nativeClient.writeHerdrCommandStream(value, this._key, error => error ? reject(error) : resolve());
         });
     }
     closeHerdrCommandStream() {
         this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
         this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-        RNSSHClient.closeHerdrCommandStream(this._key);
+        nativeClient.closeHerdrCommandStream(this._key);
         this._activeStream.herdrCommandStream = false;
     }
     /**
@@ -597,7 +597,7 @@ class SSHClient {
             return Promise.resolve();
         }
         return new Promise((resolve, reject) => {
-            RNSSHClient.connectSFTP(this._key, (error) => {
+            nativeClient.connectSFTP(this._key, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -637,7 +637,7 @@ class SSHClient {
     sftpLs(path, callback) {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
-            RNSSHClient.sftpLs(path, this._key, (error, _response) => {
+            nativeClient.sftpLs(path, this._key, (error, _response) => {
                 const response = _response || undefined;
                 if (callback) {
                     callback(error, response);
@@ -659,7 +659,7 @@ class SSHClient {
     sftpRename(oldPath, newPath, callback) {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
-            RNSSHClient.sftpRename(oldPath, newPath, this._key, (error) => {
+            nativeClient.sftpRename(oldPath, newPath, this._key, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -679,7 +679,7 @@ class SSHClient {
     sftpMkdir(path, callback) {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
-            RNSSHClient.sftpMkdir(path, this._key, (error) => {
+            nativeClient.sftpMkdir(path, this._key, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -699,7 +699,7 @@ class SSHClient {
     sftpRm(path, callback) {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
-            RNSSHClient.sftpRm(path, this._key, (error) => {
+            nativeClient.sftpRm(path, this._key, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -719,7 +719,7 @@ class SSHClient {
     sftpRmdir(path, callback) {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
-            RNSSHClient.sftpRmdir(path, this._key, (error) => {
+            nativeClient.sftpRmdir(path, this._key, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -740,7 +740,7 @@ class SSHClient {
     sftpChmod(path, permissions, callback) {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
-            RNSSHClient.sftpChmod(path, permissions, this._key, (error) => {
+            nativeClient.sftpChmod(path, permissions, this._key, (error) => {
                 if (callback) {
                     callback(error);
                 }
@@ -772,7 +772,7 @@ class SSHClient {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
             ++this._counters.upload;
-            RNSSHClient.sftpUpload(localFilePath, remoteFilePath, this._key, (error) => {
+            nativeClient.sftpUpload(localFilePath, remoteFilePath, this._key, (error) => {
                 --this._counters.upload;
                 if (callback) {
                     callback(error);
@@ -789,7 +789,7 @@ class SSHClient {
      */
     sftpCancelUpload() {
         if (this._counters.upload > 0) {
-            RNSSHClient.sftpCancelUpload(this._key);
+            nativeClient.sftpCancelUpload(this._key);
         }
     }
     /**
@@ -813,7 +813,7 @@ class SSHClient {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
             ++this._counters.download;
-            RNSSHClient.sftpDownload(remoteFilePath, localFilePath, this._key, (error, response) => {
+            nativeClient.sftpDownload(remoteFilePath, localFilePath, this._key, (error, response) => {
                 --this._counters.download;
                 if (callback) {
                     callback(error, response);
@@ -830,7 +830,7 @@ class SSHClient {
      */
     sftpCancelDownload() {
         if (this._counters.download > 0) {
-            RNSSHClient.sftpCancelDownload(this._key);
+            nativeClient.sftpCancelDownload(this._key);
         }
     }
     /**
@@ -845,7 +845,7 @@ class SSHClient {
     disconnectSFTP() {
         this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
         this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
-        RNSSHClient.disconnectSFTP(this._key);
+        nativeClient.disconnectSFTP(this._key);
         this._activeStream.sftp = false;
     }
     /**
@@ -868,10 +868,9 @@ class SSHClient {
         this._activeStream.sftp = false;
         this._activeStream.herdrEventStream = false;
         this._activeStream.herdrCommandStream = false;
-        RNSSHClient.disconnect(this._key);
+        nativeClient.disconnect(this._key);
     }
 }
 // Monotonic counter used, together with a timestamp, to build unique client keys.
 SSHClient._keyCounter = 0;
 export default SSHClient;
-//# sourceMappingURL=sshclient.js.map

@@ -1,4 +1,4 @@
-import type { LsResult } from '@dylankenneally/react-native-ssh-sftp';
+import type { LsResult } from 'react-native-whip-ssh';
 
 export const MAX_REMOTE_TEXT_PREVIEW_BYTES = 512 * 1024;
 export const MAX_REMOTE_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;

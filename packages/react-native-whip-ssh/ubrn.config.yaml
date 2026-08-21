@@ -1,6 +1,6 @@
 ---
 rust:
-  directory: ../react-native-ssh-sftp/rust
+  directory: ./rust
   manifestPath: Cargo.toml
 bindings:
   cpp: cpp/generated

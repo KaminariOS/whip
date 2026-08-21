@@ -1,11 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const projectRoot = resolve(__dirname, '..');
-const legacyRoot = resolve(projectRoot, 'packages/react-native-ssh-sftp');
 const uniffiRoot = resolve(projectRoot, 'packages/react-native-whip-ssh');
 const readProject = (path: string) => readFileSync(resolve(projectRoot, path), 'utf8');
-const readLegacy = (path: string) => readFileSync(resolve(legacyRoot, path), 'utf8');
 const readUniffi = (path: string) => readFileSync(resolve(uniffiRoot, path), 'utf8');
 
 describe('UniFFI SSH integration', () => {
@@ -18,22 +16,29 @@ describe('UniFFI SSH integration', () => {
     expect(rootPackage.dependencies['react-native-whip-ssh']).toBe(
       'file:packages/react-native-whip-ssh',
     );
+    expect(rootPackage.dependencies['@dylankenneally/react-native-ssh-sftp']).toBeUndefined();
     expect(modulePackage.dependencies).toMatchObject({
       '@ubjs/core': '0.31.0-3',
       'uniffi-bindgen-react-native': '0.31.0-3',
     });
   });
 
-  it('uses the UniFFI package on both mobile platforms and disables legacy native linking', () => {
-    const rootConfig = readProject('react-native.config.js');
+  it('keeps the SSH facade and both native platforms in one UniFFI package', () => {
+    const rootPackage = JSON.parse(readProject('package.json'));
+    const modulePackage = JSON.parse(readUniffi('package.json'));
     const moduleConfig = readUniffi('react-native.config.js');
-    const javascript = readLegacy('lib/sshclient.js');
+    const javascript = readUniffi('lib/sshclient.js');
 
-    expect(rootConfig).toContain("'@dylankenneally/react-native-ssh-sftp'");
-    expect(rootConfig).toContain('ios: null');
-    expect(rootConfig).toContain('android: null');
+    expect(existsSync(resolve(projectRoot, 'packages/react-native-ssh-sftp'))).toBe(false);
+    expect(existsSync(resolve(projectRoot, 'react-native.config.js'))).toBe(false);
+    expect(modulePackage.main).toBe('lib/sshclient.js');
+    expect(modulePackage['react-native']).toBe('lib/sshclient.js');
+    expect(modulePackage.types).toBe('lib/sshclient.d.ts');
+    expect(rootPackage.expo.doctor.reactNativeDirectoryCheck.exclude).toContain(
+      'react-native-whip-ssh',
+    );
     expect(moduleConfig).toContain("sourceDir: './android'");
-    expect(javascript).toContain("require('react-native-whip-ssh').default");
+    expect(javascript).toContain("require('../src').default");
     expect(javascript).not.toContain("require('react-native')");
     expect(javascript).not.toContain('Platform.OS');
     expect(javascript).not.toContain('legacySSHClient');
@@ -53,7 +58,7 @@ describe('UniFFI SSH integration', () => {
   });
 
   it('exports generic synchronous, asynchronous, event, and shutdown entry points from Rust', () => {
-    const rust = readLegacy('rust/src/lib.rs');
+    const rust = readUniffi('rust/src/lib.rs');
     const generated = readUniffi('src/generated/whip_ssh.ts');
 
     expect(rust).toContain('uniffi::setup_scaffolding!();');
@@ -78,8 +83,8 @@ describe('UniFFI SSH integration', () => {
 
   it('keeps terminal traffic off the generic JSON dispatcher', () => {
     const adapter = readUniffi('src/index.ts');
-    const rust = readLegacy('rust/src/lib.rs');
-    const sshClient = readLegacy('lib/sshclient.js');
+    const rust = readUniffi('rust/src/lib.rs');
+    const sshClient = readUniffi('lib/sshclient.js');
 
     expect(adapter).toContain('writeShellInput(key, data)');
     expect(adapter).toContain('herdrBridgeInputFast(key, terminalId, text)');
@@ -170,7 +175,7 @@ describe('UniFFI SSH integration', () => {
 
   it('cleans up the Rust event sink and process-wide transport during hot reload', () => {
     const adapter = readUniffi('src/index.ts');
-    const rust = readLegacy('rust/src/lib.rs');
+    const rust = readUniffi('rust/src/lib.rs');
 
     expect(adapter).toContain('clearEventSink();');
     expect(adapter).toContain('shutdownRust();');
@@ -178,7 +183,7 @@ describe('UniFFI SSH integration', () => {
   });
 
   it('retains transport safety bounds and staged SFTP transfers', () => {
-    const rust = readLegacy('rust/src/lib.rs');
+    const rust = readUniffi('rust/src/lib.rs');
 
     expect(rust).toContain('CONTROL_QUEUE_CAPACITY');
     expect(rust).toContain('EXECUTE_OUTPUT_LIMIT');

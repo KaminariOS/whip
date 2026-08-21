@@ -1,4 +1,4 @@
-import SSHClient, { PtyType } from '@dylankenneally/react-native-ssh-sftp';
+import SSHClient, { PtyType } from 'react-native-whip-ssh';
 import { Directory, File, Paths } from 'expo-file-system';
 
 export const IOS_SSH_E2E_CONFIG_FILE = 'whip-ios-ssh-e2e-config.json';

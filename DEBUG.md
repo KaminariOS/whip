@@ -26,16 +26,16 @@ java -version
 adb version
 ```
 
-Install dependencies when `node_modules` is absent or the lockfile changed:
+Install the locked dependencies when `node_modules` is absent or the lockfile changed:
 
 ```bash
-npm install
+npm ci
 ```
 
-The SSH native bridge is maintained in `packages/react-native-ssh-sftp` and is
-installed through a local `file:` dependency. Make native SSH changes in that
-source directory, never in `node_modules`. The local package documents its
-differences from upstream in `HERDR_FORK.md`.
+The complete SSH stack is maintained in `packages/react-native-whip-ssh` and is
+installed through a local `file:` dependency. Its JavaScript facade, UniFFI
+bindings, native installers, and Rust/Russh crate live together there. Make SSH
+changes in that source directory, never in `node_modules`.
 
 On NixOS, the Android SDK in the Nix store is immutable. Do not let Gradle or `sdkmanager` attempt to modify it. If a build requires another Android platform, Build Tools release, or NDK release, add that version to `flake.nix`, update the lock if necessary, and re-enter `nix develop`.
 
@@ -73,7 +73,7 @@ Start Metro in a dedicated terminal and leave it running:
 
 ```bash
 nix develop
-EXPO_UNSTABLE_MCP_SERVER=1 npm start
+EXPO_UNSTABLE_MCP_SERVER=1 npm start -- --scheme whip --host lan --offline
 ```
 
 Confirm that Metro is listening before launching the app:
@@ -107,7 +107,7 @@ With the emulator and Metro already running:
 
 ```bash
 nix develop
-npm run android
+ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a npm run android -- --no-bundler
 ```
 
 This synchronizes the terminal assets and runs `expo run:android`. The first native build can be slow because Gradle downloads and transforms React Native, Hermes, Android plugins, and Maven dependencies. These artifacts are cached and later builds should be much faster.
@@ -124,7 +124,7 @@ For a verbose native build without Expo's launcher wrapper:
 cd android
 ./gradlew app:installDebug --info --console=plain \
   -PreactNativeDevServerPort=8081 \
-  -PreactNativeArchitectures=x86_64
+  -PreactNativeArchitectures=arm64-v8a
 ```
 
 ### Reuse the writable Android SDK cache
@@ -149,7 +149,7 @@ env \
   ANDROID_NDK_ROOT=/home/kosumi/repos/.android-sdk-herdr/ndk/27.1.12297006 \
   GRADLE_OPTS=-Dorg.gradle.project.android.aapt2FromMavenOverride=/home/kosumi/repos/.android-sdk-herdr/build-tools/36.0.0/aapt2 \
   ./gradlew :app:installDebug --console=plain \
-  -PreactNativeArchitectures=x86_64
+  -PreactNativeArchitectures=arm64-v8a
 ```
 
 Find the current JDK 17 store path instead of copying a stale hash:
@@ -161,7 +161,7 @@ fd -t d 'openjdk-17' /nix/store --max-depth 1
 The full JDK path must be used. A partially realized `openjdk-headless` path may
 fail to start with a missing `libjli.so` until its complete Nix closure exists.
 
-Use `x86_64` for this emulator. A physical ARM64 phone needs the matching architecture or the normal multi-architecture build.
+Whip's maintained native build target is `arm64-v8a`. Use a physical ARM64 device or an ARM64 emulator image; do not silently fall back to a multi-architecture release build.
 
 ## Relaunch deterministically
 
@@ -309,7 +309,7 @@ For a final Android smoke test:
 ssh user@laptop.tailnet.ts.net 'herdr status server --json'
 ```
 
-Never put SSH passwords, private keys, Tailnet credentials, or captured secrets into logs, screenshots, fixtures, or commits. The current SSH dependency also does not pin host keys, so end-to-end tests should only use a trusted Tailnet.
+Never put SSH passwords, private keys, Tailnet credentials, hostnames, or captured secrets into logs, screenshots, fixtures, or commits. End-to-end tests must verify the expected fingerprint on first use and must treat a changed host key as a failure.
 
 ## Credential recovery
 
@@ -353,33 +353,17 @@ The Android session view follows Voltius's mobile terminal model: selecting a He
 
 Do not implement the live view by running `herdr terminal attach` inside the SSH shell. That command is the human-facing nested-PTY interface; it echoes the SSH login and attach command and does not behave reliably as an application transport.
 
-Use Herdr's client bridge instead:
-
-```bash
-herdr terminal session control <terminal-or-pane> --takeover --cols 80 --rows 24
-```
-
-The long-running command writes newline-delimited JSON:
-
-- `terminal.frame` contains base64-encoded ANSI bytes. Decode the bytes in the xterm WebView and write the resulting `Uint8Array` to xterm.
-- `terminal.closed` ends the stream.
-
-It accepts newline-delimited JSON on stdin:
-
-- `terminal.input` for keyboard bytes/text.
-- `terminal.resize` after every xterm fit or keyboard/viewport change.
-- `terminal.scroll` for touch scrolling of Herdr's server-side viewport.
-- `terminal.release` for an explicit controller handoff.
+Use a direct SSH stream-local channel to Herdr's client-protocol socket instead. The shared Rust codec performs the binary `Hello` / `Welcome` handshake, sends `AttachTerminal`, and carries terminal frame, input, resize, scroll, bell, and detach messages. Terminal frame bytes stay binary through UniFFI/JSI and are batched only at the WebView boundary.
 
 A direct terminal attach owns a server-side resize lock for that pane. When a
 terminal screen unmounts, the app enters the background, or a live host is
-closed, the Android bridge must send Herdr's detach message and close the exec
-channel. Removing only the JavaScript frame callback leaves the bridge alive,
-keeps the pane at the phone's dimensions, and prevents a native desktop client
-from restoring the laptop-sized PTY. On the server, stale bridges are visible as
-long-lived `herdr remote-client-bridge` processes.
+closed, the bridge must send Herdr's detach message and close the stream-local
+channel. Removing only the JavaScript frame callback leaves the controller
+alive, keeps the pane at the mobile viewport's dimensions, and prevents a
+desktop client from restoring its PTY size.
 
-The parser must tolerate and discard SSH login banners, prompts, and the echoed launch command before the first valid protocol record. The implementation and its protocol tests live in `src/lib/terminalBridge.ts` and `__tests__/terminalBridge.test.ts`.
+The codec implementation and protocol fixtures live in
+`packages/react-native-whip-ssh/rust/src/herdr_codec.rs` and its Rust tests.
 
 The terminal HTML is generated by `scripts/sync-terminal-assets.mjs` and copied into the APK at `android/app/src/main/assets/herdr-terminal.html`. Regenerate it and rebuild the APK whenever the script changes:
 
@@ -388,7 +372,7 @@ node scripts/sync-terminal-assets.mjs
 cd android
 ./gradlew app:installDebug --console=plain \
   -PreactNativeDevServerPort=8081 \
-  -PreactNativeArchitectures=x86_64
+  -PreactNativeArchitectures=arm64-v8a
 ```
 
 For a real smoke test, connect to a disposable or known-safe Herdr pane, open **Session**, and verify all of the following visually:
