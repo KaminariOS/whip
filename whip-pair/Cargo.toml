@@ -2,8 +2,14 @@
 name = "whip-pair"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 license = "AGPL-3.0-or-later"
 description = "Direct, QR-based SSH public-key enrollment prototype for Whip"
+repository = "https://github.com/KaminariOS/whip"
+readme = "README.md"
+keywords = ["ssh", "qr-code", "authorized-keys", "pairing", "cli"]
+categories = ["authentication", "command-line-utilities"]
+publish = ["crates-io"]
 
 [dependencies]
 base64 = "0.22"

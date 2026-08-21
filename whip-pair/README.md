@@ -13,9 +13,10 @@ authorization.
 
 ## Pairing protocol (WP4)
 
-[![WP4 pairing sequence](docs/wp4-sequence.svg)](docs/wp4-sequence.mmd)
+[![WP4 pairing sequence](https://raw.githubusercontent.com/KaminariOS/whip/main/whip-pair/docs/wp4-sequence.svg)](https://github.com/KaminariOS/whip/blob/main/whip-pair/docs/wp4-sequence.mmd)
 
-The canonical Mermaid source is [`docs/wp4-sequence.mmd`](docs/wp4-sequence.mmd).
+The canonical Mermaid source is
+[`docs/wp4-sequence.mmd`](https://github.com/KaminariOS/whip/blob/main/whip-pair/docs/wp4-sequence.mmd).
 Render and validate the tracked SVG with:
 
 ```bash
@@ -83,7 +84,22 @@ prompt.
   locks updates, uses atomic replacement for removal, and creates `.ssh` and
   `authorized_keys` with modes `0700` and `0600` when needed.
 
-## Run with Nix
+## Install
+
+### Cargo
+
+Install from crates.io with Rust 1.85 or newer:
+
+```bash
+cargo install --locked whip-pair
+whip-pair
+```
+
+Cargo installs the Rust binary but not the external `ssh-keyscan` command.
+Install an OpenSSH client package first if `ssh-keyscan` is not already on
+`PATH`.
+
+### Nix
 
 Run the public version:
 
@@ -151,3 +167,32 @@ nix run .#whip-pair -- inspect 'WP4:...'
 - The terminal QR uses error-correction level L to stay compact.
 - Whip's mobile scanner supports WP4. The `request` subcommand remains a
   protocol test client.
+
+## Publishing
+
+The [`Publish whip-pair to crates.io`](https://github.com/KaminariOS/whip/actions/workflows/publish-whip-pair.yml)
+workflow verifies the crate version, formatting, Clippy, tests, and package
+contents before publishing.
+
+The first crates.io release cannot use trusted publishing. For that one-time
+bootstrap:
+
+1. Create a protected GitHub environment named `crates-io`.
+2. Add a crates.io API token as the environment secret `CRATES_IO_TOKEN`.
+3. Run the workflow manually with the crate version and
+   `Bootstrap first release with API token` enabled.
+4. In the new crate's crates.io settings, add this trusted publisher:
+   `KaminariOS/whip`, workflow `publish-whip-pair.yml`, environment
+   `crates-io`.
+5. Delete `CRATES_IO_TOKEN` from GitHub.
+
+For later versions, update `version` in `Cargo.toml`, commit it, and push a tag
+whose version matches exactly:
+
+```bash
+git tag whip-pair-v0.1.1
+git push origin whip-pair-v0.1.1
+```
+
+Tag releases and manual runs without the bootstrap option use crates.io's
+short-lived OIDC token; no long-lived publishing secret is needed.

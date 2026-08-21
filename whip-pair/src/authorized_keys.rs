@@ -41,7 +41,7 @@ pub fn append_authorized_key(path: &Path, key_line: &str) -> io::Result<AppendOu
     validate_target(&file)?;
     file.lock_exclusive()?;
     let result = append_locked(&mut file, key_line);
-    let unlock_result = file.unlock();
+    let unlock_result = FileExt::unlock(&file);
     match result {
         Ok(outcome) => {
             unlock_result?;
@@ -79,7 +79,7 @@ pub fn remove_authorized_key(path: &Path, key_line: &str) -> io::Result<bool> {
         }
     }
     if !removed {
-        file.unlock()?;
+        FileExt::unlock(&file)?;
         return Ok(false);
     }
 
@@ -90,7 +90,7 @@ pub fn remove_authorized_key(path: &Path, key_line: &str) -> io::Result<bool> {
     replacement.as_file_mut().sync_all()?;
     replacement.persist(path).map_err(|error| error.error)?;
     File::open(parent)?.sync_all()?;
-    file.unlock()?;
+    FileExt::unlock(&file)?;
     Ok(true)
 }
 
