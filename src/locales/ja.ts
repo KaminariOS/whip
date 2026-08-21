@@ -18,7 +18,7 @@ export const ja = {
   'about.expand': '展開について',
   'about.collapse': '折りたたむ',
   'about.appIcon': 'Whip アプリのアイコン',
-  'about.tagline': 'Herdr の非公式 Android クライアント',
+  'about.tagline': 'Herdr 向けに設計されたエージェントネイティブなモバイル SSH クライアント',
   'about.commit': '{{hash}} をコミット',
   'about.openCommit': 'GitHub でコミット {{hash}} を開く',
   'about.commitError': 'コミットを開けませんでした',

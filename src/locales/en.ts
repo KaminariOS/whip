@@ -20,7 +20,7 @@ export const en = {
   'about.expand': 'Expand About',
   'about.collapse': 'Collapse About',
   'about.appIcon': 'Whip app icon',
-  'about.tagline': 'Unofficial Android client for Herdr',
+  'about.tagline': 'An Agent-native mobile SSH client, designed for Herdr',
   'about.commit': 'Commit {{hash}}',
   'about.openCommit': 'Open commit {{hash}} on GitHub',
   'about.commitError': 'Could not open commit',

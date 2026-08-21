@@ -18,7 +18,7 @@ export const zhHant: Record<string, string> = {
   'about.expand': '展開「關於」',
   'about.collapse': '收合「關於」',
   'about.appIcon': 'Whip 應用程式圖示',
-  'about.tagline': '非官方 Herdr Android 用戶端',
+  'about.tagline': '專為 Herdr 設計的 Agent 原生行動 SSH 用戶端',
   'about.commit': '提交 {{hash}}',
   'about.openCommit': '在 GitHub 開啟提交 {{hash}}',
   'about.commitError': '無法開啟提交',

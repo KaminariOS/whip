@@ -18,7 +18,7 @@ export const es = {
   'about.expand': 'Ampliar Acerca de',
   'about.collapse': 'Contraer Acerca de',
   'about.appIcon': 'Icono de la aplicación Whip',
-  'about.tagline': 'Cliente Android no oficial para Herdr',
+  'about.tagline': 'Un cliente SSH móvil nativo para agentes, diseñado para Herdr',
   'about.commit': 'Confirmar {{hash}}',
   'about.openCommit': 'Abrir confirmación {{hash}} en GitHub',
   'about.commitError': 'No se pudo abrir la confirmación',

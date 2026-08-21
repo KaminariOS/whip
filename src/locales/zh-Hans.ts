@@ -18,7 +18,7 @@ export const zhHans = {
   'about.expand': '展开关于',
   'about.collapse': '折叠关于',
   'about.appIcon': 'Whip 应用程序图标',
-  'about.tagline': 'Herdr 的非官方 Android 客户端',
+  'about.tagline': '专为 Herdr 设计的 Agent 原生移动 SSH 客户端',
   'about.commit': '提交 {{hash}}',
   'about.openCommit': '在 GitHub 上打开提交 {{hash}}',
   'about.commitError': '无法打开提交',

@@ -42,6 +42,7 @@ describe('localization resources', () => {
   });
 
   it('describes hosts as general SSH destinations', () => {
+    expect(en['about.tagline']).toBe('An Agent-native mobile SSH client, designed for Herdr');
     expect(en['hosts.emptyCopy']).toBe('Add an SSH destination to manage its Herdr session.');
     expect(en['connection.displayName']).toBe('Display name (optional)');
     expect(en['connection.hostOrIp']).toBe('SSH host or IP');
