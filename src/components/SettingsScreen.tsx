@@ -1,6 +1,6 @@
 import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Clipboard, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
+import { Alert, Clipboard, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -47,6 +47,7 @@ import { Text } from './ui/text';
 
 const DOUBLE_TAP_MENU_EXPAND_DURATION = 280;
 const DOUBLE_TAP_MENU_COLLAPSE_DURATION = 220;
+export const WHIP_PAIR_REPOSITORY_URL = 'https://github.com/KaminariOS/whip/blob/main/whip-pair/README.md';
 
 const SettingsDetailsContext = createContext<{ showDetails: (copy: string, y: number) => void }>({
   showDetails: (_copy: string, _y: number) => undefined,
@@ -199,6 +200,12 @@ export function SettingsSection(props: SettingsSectionProps) {
     }
   };
 
+  const openWhipPairRepository = () => {
+    Linking.openURL(WHIP_PAIR_REPOSITORY_URL).catch(error => {
+      Alert.alert(t('about.githubError'), String(error));
+    });
+  };
+
   return (
     <View className="px-4 py-5">
         <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
@@ -257,6 +264,7 @@ export function SettingsSection(props: SettingsSectionProps) {
             copy={t('settings.sshQrPairingCopy')}
             value={props.sshQrPairingEnabled}
             onChange={props.onSshQrPairingEnabledChange}
+            onDetailsPress={openWhipPairRepository}
             divided
           />
           <SettingRow title={t('settings.biometricForKeys')} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
@@ -898,7 +906,7 @@ function AppBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { busy: bo
   );
 }
 
-function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold leading-5' }: { title: string; copy: string; titleClassName?: string }) {
+function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold leading-5', onDetailsPress }: { title: string; copy: string; titleClassName?: string; onDetailsPress?: () => void }) {
   const { showDetails } = useContext(SettingsDetailsContext);
   const buttonRef = useRef<View>(null);
   const { t } = useTranslation();
@@ -915,6 +923,10 @@ function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold
           hitSlop={8}
           onPress={event => {
             event.stopPropagation();
+            if (onDetailsPress) {
+              onDetailsPress();
+              return;
+            }
             buttonRef.current?.measureInWindow((_x, y) => {
               showDetails(copy, y);
             });
@@ -926,8 +938,8 @@ function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold
   );
 }
 
-function SettingRow({ title, copy, value, onChange, divided = false, disabled = false }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; divided?: boolean; disabled?: boolean }) {
-  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}><View className="flex-1 pr-[18px]"><DetailsTitle title={title} copy={copy} /></View><Switch checked={value} disabled={disabled} onCheckedChange={onChange} /></View>;
+function SettingRow({ title, copy, value, onChange, onDetailsPress, divided = false, disabled = false }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; onDetailsPress?: () => void; divided?: boolean; disabled?: boolean }) {
+  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}><View className="flex-1 pr-[18px]"><DetailsTitle title={title} copy={copy} onDetailsPress={onDetailsPress} /></View><Switch checked={value} disabled={disabled} onCheckedChange={onChange} /></View>;
 }
 
 function ActionRow({ title, copy, icon, value, onPress, divided = false }: { title: string; copy: string; icon: LucideIcon; value?: string; onPress: () => void | Promise<void>; divided?: boolean }) {

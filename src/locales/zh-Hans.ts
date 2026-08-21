@@ -117,6 +117,7 @@ export const zhHans = {
   'pairing.title': '添加主机',
   'pairing.heading': '与附近主机配对',
   'pairing.intro': '选择要授权的 SSH 密钥，然后扫描主机上 whip-pair 显示的一次性二维码。',
+  'pairing.runOnHost': '在主机上运行以下任一命令：',
   'pairing.chooseKey': '要授权的 SSH 密钥',
   'pairing.generate': '生成新密钥',
   'pairing.generateCopy': '为此主机创建新的 Ed25519 密钥。',

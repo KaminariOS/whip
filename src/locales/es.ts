@@ -117,6 +117,7 @@ export const es = {
   'pairing.title': 'Añadir host',
   'pairing.heading': 'Emparejar con un host cercano',
   'pairing.intro': 'Elige la clave SSH que quieres autorizar y escanea el código QR de un solo uso que muestra whip-pair.',
+  'pairing.runOnHost': 'En el host, ejecuta uno de estos comandos:',
   'pairing.chooseKey': 'Clave SSH que se autorizará',
   'pairing.generate': 'Generar una clave nueva',
   'pairing.generateCopy': 'Crea una clave Ed25519 nueva para este host.',

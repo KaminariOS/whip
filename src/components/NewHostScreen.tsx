@@ -192,6 +192,14 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
           </Text>
         </View>
 
+        <View className="mb-6 rounded-xl border border-border bg-muted/50 px-4 py-3">
+          <Text className="text-sm font-semibold">{t('pairing.runOnHost')}</Text>
+          <View className="mt-2 gap-2">
+            <Text selectable className="rounded-lg bg-background px-3 py-2 font-mono text-sm">uvx whip-pair</Text>
+            <Text selectable className="rounded-lg bg-background px-3 py-2 font-mono text-sm">npx whip-pair</Text>
+          </View>
+        </View>
+
         <Text className="mb-2 text-sm font-semibold text-muted-foreground">{t('pairing.chooseKey')}</Text>
         <View className="overflow-hidden rounded-xl border border-border bg-background">
           <KeyChoice

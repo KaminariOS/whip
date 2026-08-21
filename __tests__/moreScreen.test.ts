@@ -47,6 +47,9 @@ test('offers QR host pairing as an opt-in setting', () => {
 
   expect(settings).toContain("title={t('settings.sshQrPairing')}");
   expect(settings).toContain('value={props.sshQrPairingEnabled}');
+  expect(settings).toContain("export const WHIP_PAIR_REPOSITORY_URL = 'https://github.com/KaminariOS/whip/blob/main/whip-pair/README.md';");
+  expect(settings).toContain('Linking.openURL(WHIP_PAIR_REPOSITORY_URL)');
+  expect(settings).toContain('onDetailsPress={openWhipPairRepository}');
   expect(app).toContain('if (sshQrPairingEnabled) setNewHostOpen(true);');
   expect(app).toContain('else setEditorProfile(emptyConnectionProfile());');
 });

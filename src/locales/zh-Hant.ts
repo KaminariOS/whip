@@ -117,6 +117,7 @@ export const zhHant: Record<string, string> = {
   'pairing.title': '新增主機',
   'pairing.heading': '與附近主機配對',
   'pairing.intro': '選擇要授權的 SSH 金鑰，然後掃描主機上 whip-pair 顯示的一次性 QR 碼。',
+  'pairing.runOnHost': '在主機上執行以下任一命令：',
   'pairing.chooseKey': '要授權的 SSH 金鑰',
   'pairing.generate': '產生新金鑰',
   'pairing.generateCopy': '為此主機建立新的 Ed25519 金鑰。',
