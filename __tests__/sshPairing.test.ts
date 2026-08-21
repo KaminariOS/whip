@@ -26,8 +26,8 @@ describe('SSH QR pairing helpers', () => {
   });
 
   it('recognizes only the current compact pairing envelope', () => {
-    expect(isWhipPairingCode(' WP3:BB8 ')).toBe(true);
-    expect(isWhipPairingCode('WP2:BB8')).toBe(false);
+    expect(isWhipPairingCode(' WP4:BB8 ')).toBe(true);
+    expect(isWhipPairingCode('WP3:BB8')).toBe(false);
     expect(isWhipPairingCode('https://example.com')).toBe(false);
   });
 
@@ -37,6 +37,8 @@ describe('SSH QR pairing helpers', () => {
       sshPort: 2222,
       sshUser: 'alice',
       sshHostFingerprint: 'SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      sshHostKeyType: 'ssh-ed25519',
+      sshHostPublicKey: 'ssh-ed25519 AAAA',
       alreadyPresent: false,
     }, {
       source: 'generated',

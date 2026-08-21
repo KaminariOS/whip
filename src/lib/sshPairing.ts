@@ -17,6 +17,8 @@ export interface PairHostResult {
   sshPort: number;
   sshUser: string;
   sshHostFingerprint: string;
+  sshHostKeyType: string;
+  sshHostPublicKey: string;
   keyFingerprint?: string;
   alreadyPresent: boolean;
 }
@@ -36,7 +38,7 @@ export function normalizeOpenSshPublicKey(value: string): string | null {
 }
 
 export function isWhipPairingCode(value: string): boolean {
-  return value.trim().startsWith('WP3:');
+  return value.trim().startsWith('WP4:');
 }
 
 export function profileFromPairing(

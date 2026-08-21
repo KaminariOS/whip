@@ -3,47 +3,43 @@ mod network;
 mod protocol;
 
 use std::{
-    io::{self, IsTerminal, Write},
-    net::{IpAddr, SocketAddr},
-    path::PathBuf,
+    io::{self, IsTerminal, Read as _, Write},
+    net::IpAddr,
+    path::{Path, PathBuf},
     process::Command,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use clap::{Parser, Subcommand};
 use qrcode::{EcLevel, QrCode, render::unicode};
 use rand::{RngCore, rngs::OsRng};
-use rcgen::generate_simple_self_signed;
-use rustls::{
-    CertificateError, ClientConfig, DigitallySignedStruct, ServerConfig, SignatureScheme,
-    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
-    crypto::{WebPkiSupportedAlgorithms, verify_tls12_signature, verify_tls13_signature},
-    pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName},
-};
+use russh::{ChannelMsg, client, keys::PrivateKeyWithHashAlg};
 use sha2::{Digest, Sha256};
+use ssh_key::{PrivateKey, PublicKey, private::Ed25519Keypair};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpListener, TcpStream},
+    net::{UnixListener, UnixStream},
     time::{Instant, timeout, timeout_at},
 };
-use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use crate::{
-    authorized_keys::{AppendOutcome, append_authorized_key, default_authorized_keys_path},
+    authorized_keys::{
+        AppendOutcome, append_authorized_key, default_authorized_keys_path, remove_authorized_key,
+    },
     network::{BindCandidate, discover_bind_candidates, select_bind_candidate},
     protocol::{
-        EnrollmentRequest, EnrollmentResponse, PairingHello, PairingPayload, PairingServerInfo,
-        decode_pairing_code, encode_pairing_code, fingerprint_public_key, validate_public_key,
+        EnrollmentRequest, EnrollmentResponse, PairingPayload, decode_pairing_code,
+        encode_pairing_code, fingerprint_public_key, validate_public_key,
     },
 };
 
 const DEFAULT_TTL_SECONDS: u64 = 120;
 const DEFAULT_SSH_PORT: u16 = 22;
-const DEFAULT_PAIRING_PORT: u16 = 8765;
 const MAX_MESSAGE_BYTES: usize = 16 * 1024;
-const UNAUTHENTICATED_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -54,30 +50,29 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Bind a one-shot pairing server and display its QR code.
+    /// Prepare a one-shot SSH pairing credential and display its QR code.
     Serve(ServeArgs),
     /// Development client: submit a public key using a copied pairing code.
     Request(RequestArgs),
     /// Decode and print a copied pairing code.
     Inspect { code: String },
+    /// Relay a forced SSH command to the local approval process.
+    #[command(hide = true)]
+    Exchange(ExchangeArgs),
 }
 
 #[derive(Debug, clap::Args)]
 struct ServeArgs {
-    /// Interface address to bind. Without this, an interactive selector is shown.
+    /// Network address Whip should use. Without this, an interactive selector is shown.
     #[arg(long)]
     bind: Option<IpAddr>,
-    /// Pairing port. Use zero to ask the OS for an available port.
-    #[arg(long, default_value_t = DEFAULT_PAIRING_PORT)]
-    port: u16,
-    /// Hostname or address Whip should use for the pairing connection.
+    /// Hostname or address Whip should use instead of the selected address.
     #[arg(long)]
     advertise_host: Option<String>,
-    /// Hostname or address Whip should save for SSH.
-    #[arg(long)]
-    ssh_host: Option<String>,
+    /// Port of the existing SSH service to advertise.
     #[arg(long, default_value_t = DEFAULT_SSH_PORT)]
     ssh_port: u16,
+    /// SSH account to pair. It must be the current local user.
     #[arg(long)]
     ssh_user: Option<String>,
     /// Override SSH host-key discovery (primarily useful for prototypes/tests).
@@ -110,6 +105,12 @@ struct RequestArgs {
     device_name: String,
 }
 
+#[derive(Debug, clap::Args)]
+struct ExchangeArgs {
+    #[arg(long)]
+    socket: PathBuf,
+}
+
 #[derive(Debug, thiserror::Error)]
 enum Error {
     #[error("{0}")]
@@ -120,8 +121,10 @@ enum Error {
     Json(#[from] serde_json::Error),
     #[error(transparent)]
     Protocol(#[from] protocol::ProtocolError),
-    #[error("TLS error: {0}")]
-    Tls(#[from] rustls::Error),
+    #[error("SSH error: {0}")]
+    Ssh(#[from] russh::Error),
+    #[error("SSH key error: {0}")]
+    SshKey(#[from] ssh_key::Error),
 }
 
 #[tokio::main]
@@ -136,9 +139,7 @@ async fn run() -> Result<(), Error> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Commands::Serve(ServeArgs {
         bind: None,
-        port: DEFAULT_PAIRING_PORT,
         advertise_host: None,
-        ssh_host: None,
         ssh_port: DEFAULT_SSH_PORT,
         ssh_user: None,
         ssh_fingerprint: None,
@@ -150,22 +151,25 @@ async fn run() -> Result<(), Error> {
     })) {
         Commands::Serve(args) => serve(args).await,
         Commands::Request(args) => request(args).await,
-        Commands::Inspect { code } => {
-            let payload = decode_pairing_code(&code)?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "version": 3,
-                    "pair_host": payload.pair_host,
-                    "pair_port": payload.pair_port,
-                    "token": "<redacted>",
-                    "tls_certificate_sha256": URL_SAFE_NO_PAD
-                        .encode(payload.tls_certificate_sha256),
-                }))?
-            );
-            Ok(())
-        }
+        Commands::Exchange(args) => exchange(args).await,
+        Commands::Inspect { code } => inspect(&code),
     }
+}
+
+fn inspect(code: &str) -> Result<(), Error> {
+    let payload = decode_pairing_code(code)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "version": 4,
+            "ssh_host": payload.ssh_host,
+            "ssh_port": payload.ssh_port,
+            "ssh_user": payload.ssh_user,
+            "temporary_private_key_seed": "<redacted>",
+            "ssh_host_key_sha256": STANDARD_NO_PAD.encode(payload.ssh_host_key_sha256),
+        }))?
+    );
+    Ok(())
 }
 
 async fn serve(args: ServeArgs) -> Result<(), Error> {
@@ -181,165 +185,109 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
     }
 
     let selected = choose_bind_candidate(args.bind)?;
-    let listener = TcpListener::bind(SocketAddr::new(selected.address, args.port)).await?;
-    let bound = listener.local_addr()?;
-    let pair_host = args
+    let ssh_host = args
         .advertise_host
         .unwrap_or_else(|| selected.address.to_string());
-    server_name(&pair_host)?;
-    let ssh_host = args.ssh_host.unwrap_or_else(|| pair_host.clone());
-    let ssh_user = args.ssh_user.unwrap_or_else(current_username);
-    let ssh_fingerprint = match args.ssh_fingerprint {
+    let local_user = current_username();
+    let ssh_user = args.ssh_user.unwrap_or_else(|| local_user.clone());
+    if ssh_user != local_user {
+        return Err(Error::Message(format!(
+            "--ssh-user must be the current local user ({local_user})"
+        )));
+    }
+    let fingerprint = match args.ssh_fingerprint {
         Some(value) => validate_ssh_fingerprint(&value)?,
         None => discover_ssh_fingerprint(&ssh_host, args.ssh_port)?,
     };
+    let ssh_host_key_sha256 = decode_ssh_fingerprint(&fingerprint)?;
 
-    let certified = generate_simple_self_signed(vec![pair_host.clone()]).map_err(|error| {
-        Error::Message(format!("could not generate pairing certificate: {error}"))
-    })?;
-    let certificate = certified.cert.der().clone();
-    let private_key = PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der());
-    let server_config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![certificate.clone()], private_key.into())?;
-    let acceptor = TlsAcceptor::from(Arc::new(server_config));
+    let mut temporary_private_key_seed = [0_u8; 32];
+    OsRng.fill_bytes(&mut temporary_private_key_seed);
+    let mut temporary_private_key = temporary_private_key(&temporary_private_key_seed);
+    temporary_private_key.set_comment("whip-pair temporary credential");
 
-    let mut token = [0_u8; 16];
-    OsRng.fill_bytes(&mut token);
-    let now = unix_seconds()?;
-    let server_info = PairingServerInfo {
+    let exchange_directory = tempfile::Builder::new().prefix("whip-pair-").tempdir()?;
+    let socket_path = exchange_directory.path().join("exchange.sock");
+    let listener = UnixListener::bind(&socket_path)?;
+    let forced_command = forced_command(&socket_path)?;
+    let temporary_line = temporary_authorized_key_line(&temporary_private_key, &forced_command)?;
+    let authorized_keys = args
+        .authorized_keys
+        .unwrap_or(default_authorized_keys_path()?);
+    if append_authorized_key(&authorized_keys, &temporary_line)? != AppendOutcome::Added {
+        return Err(Error::Message(
+            "the generated temporary key unexpectedly already exists".into(),
+        ));
+    }
+    let mut temporary_authorization =
+        TemporaryAuthorization::new(authorized_keys.clone(), temporary_line);
+
+    let payload = PairingPayload {
         ssh_host,
         ssh_port: args.ssh_port,
         ssh_user,
-        ssh_host_fingerprint: ssh_fingerprint,
-    };
-    let expires_at = now + args.ttl;
-    validate_server_info(&server_info)?;
-    let payload = PairingPayload {
-        pair_host,
-        pair_port: bound.port(),
-        token,
-        tls_certificate_sha256: Sha256::digest(certificate.as_ref()).into(),
+        temporary_private_key_seed,
+        ssh_host_key_sha256,
     };
     let code = encode_pairing_code(&payload)?;
     if let Some(path) = args.code_output.as_deref() {
         write_secret_file(path, &code)?;
     }
-    print_pairing_screen(&selected, &server_info, expires_at, &code, args.print_code)?;
+    let expires_at = unix_seconds()? + args.ttl;
+    print_pairing_screen(&selected, &payload, expires_at, &code, args.print_code)?;
 
     let deadline = Instant::now() + Duration::from_secs(args.ttl);
-    let connection_context = ConnectionContext {
-        acceptor: &acceptor,
-        payload: &payload,
-        server_info: &server_info,
-        authorized_keys_override: args.authorized_keys.as_deref(),
-        assume_yes: args.yes,
-        expires_at,
-        deadline,
-    };
-    loop {
-        let (stream, peer) = match timeout_at(deadline, listener.accept()).await {
-            Ok(result) => result?,
-            Err(_) => return Err(Error::Message("pairing code expired".into())),
-        };
-
-        match handle_connection(stream, peer, &connection_context).await {
-            Ok(ConnectionOutcome::Enrolled) => return Ok(()),
-            Ok(ConnectionOutcome::Ignored) => continue,
-            Err(error) => {
-                eprintln!("ignored pairing connection from {peer}: {error}");
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
+    let outcome = loop {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let (stream, _) = accepted?;
+                match handle_exchange(stream, &authorized_keys, args.yes, expires_at).await {
+                    Ok(ExchangeOutcome::Enrolled) => break Ok(()),
+                    Ok(ExchangeOutcome::Ignored) => continue,
+                    Err(error) => eprintln!("ignored pairing exchange: {error}"),
+                }
+            }
+            _ = timeout_at(deadline, std::future::pending::<()>()) => {
+                break Err(Error::Message("pairing code expired".into()));
+            }
+            result = &mut shutdown => {
+                result?;
+                println!("\nPairing cancelled.");
+                break Ok(());
             }
         }
+    };
+
+    if let Err(error) = temporary_authorization.cleanup() {
+        eprintln!(
+            "warning: could not remove the restricted temporary key from {}: {error}",
+            authorized_keys.display()
+        );
     }
+    drop(exchange_directory);
+    outcome
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum ConnectionOutcome {
+enum ExchangeOutcome {
     Enrolled,
     Ignored,
 }
 
-struct ConnectionContext<'a> {
-    acceptor: &'a TlsAcceptor,
-    payload: &'a PairingPayload,
-    server_info: &'a PairingServerInfo,
-    authorized_keys_override: Option<&'a std::path::Path>,
+async fn handle_exchange(
+    stream: UnixStream,
+    authorized_keys: &Path,
     assume_yes: bool,
     expires_at: u64,
-    deadline: Instant,
-}
-
-async fn handle_connection(
-    stream: TcpStream,
-    peer: SocketAddr,
-    context: &ConnectionContext<'_>,
-) -> Result<ConnectionOutcome, Error> {
-    let request_deadline = std::cmp::min(
-        context.deadline,
-        Instant::now() + UNAUTHENTICATED_CONNECTION_TIMEOUT,
-    );
-    let tls = match timeout_at(request_deadline, context.acceptor.accept(stream)).await {
-        Ok(Ok(tls)) => tls,
-        Ok(Err(error)) => return Err(Error::Message(format!("TLS handshake failed: {error}"))),
-        Err(_) => return Err(Error::Message("pairing code expired".into())),
-    };
-    let (reader, mut writer) = tokio::io::split(tls);
+) -> Result<ExchangeOutcome, Error> {
+    let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
-    let mut bytes = Vec::new();
-    let read = timeout_at(request_deadline, reader.read_until(b'\n', &mut bytes))
+    let request_bytes = timeout(CONNECT_TIMEOUT, read_bounded_line(&mut reader))
         .await
         .map_err(|_| Error::Message("pairing request timed out".into()))??;
-    if read == 0 || bytes.len() > MAX_MESSAGE_BYTES || bytes.last() != Some(&b'\n') {
-        send_response(
-            &mut writer,
-            &EnrollmentResponse::error("invalid_request", "expected one bounded JSON line"),
-        )
-        .await?;
-        return Ok(ConnectionOutcome::Ignored);
-    }
-
-    let hello: PairingHello = match serde_json::from_slice(&bytes[..bytes.len() - 1]) {
-        Ok(hello) => hello,
-        Err(_) => {
-            send_response(
-                &mut writer,
-                &EnrollmentResponse::error("invalid_request", "pairing hello is not valid JSON"),
-            )
-            .await?;
-            return Ok(ConnectionOutcome::Ignored);
-        }
-    };
-    if !matches!(decode_token(&hello.token), Ok(token) if token == context.payload.token) {
-        send_response(
-            &mut writer,
-            &EnrollmentResponse::error("unauthorized", "pairing token did not match"),
-        )
-        .await?;
-        return Ok(ConnectionOutcome::Ignored);
-    }
-    if unix_seconds()? > context.expires_at {
-        send_response(
-            &mut writer,
-            &EnrollmentResponse::error("expired", "pairing code expired"),
-        )
-        .await?;
-        return Ok(ConnectionOutcome::Ignored);
-    }
-    send_json_line(&mut writer, context.server_info).await?;
-
-    bytes.clear();
-    let read = timeout_at(request_deadline, reader.read_until(b'\n', &mut bytes))
-        .await
-        .map_err(|_| Error::Message("pairing request timed out".into()))??;
-    if read == 0 || bytes.len() > MAX_MESSAGE_BYTES || bytes.last() != Some(&b'\n') {
-        send_response(
-            &mut writer,
-            &EnrollmentResponse::error("invalid_request", "expected one bounded JSON line"),
-        )
-        .await?;
-        return Ok(ConnectionOutcome::Ignored);
-    }
-    let request: EnrollmentRequest = match serde_json::from_slice(&bytes[..bytes.len() - 1]) {
+    let request: EnrollmentRequest = match serde_json::from_slice(&request_bytes) {
         Ok(request) => request,
         Err(_) => {
             send_response(
@@ -347,9 +295,17 @@ async fn handle_connection(
                 &EnrollmentResponse::error("invalid_request", "request is not valid JSON"),
             )
             .await?;
-            return Ok(ConnectionOutcome::Ignored);
+            return Ok(ExchangeOutcome::Ignored);
         }
     };
+    if unix_seconds()? > expires_at {
+        send_response(
+            &mut writer,
+            &EnrollmentResponse::error("expired", "pairing code expired"),
+        )
+        .await?;
+        return Ok(ExchangeOutcome::Ignored);
+    }
 
     let public_key = match validate_public_key(&request.public_key) {
         Ok(key) => key,
@@ -359,15 +315,15 @@ async fn handle_connection(
                 &EnrollmentResponse::error("invalid_key", &error.to_string()),
             )
             .await?;
-            return Ok(ConnectionOutcome::Ignored);
+            return Ok(ExchangeOutcome::Ignored);
         }
     };
     let fingerprint = fingerprint_public_key(&public_key);
     let device_name = printable_device_name(&request.device_name);
-    println!("\n{} ({peer}) wants SSH access.", device_name);
+    println!("\n{device_name} wants SSH access.");
     println!("Key: {fingerprint}");
 
-    let approved = if context.assume_yes {
+    let approved = if assume_yes {
         true
     } else {
         tokio::task::spawn_blocking(confirm_enrollment)
@@ -381,23 +337,18 @@ async fn handle_connection(
         )
         .await?;
         println!("Enrollment rejected.");
-        return Ok(ConnectionOutcome::Ignored);
+        return Ok(ExchangeOutcome::Ignored);
     }
-    if unix_seconds()? > context.expires_at {
+    if unix_seconds()? > expires_at {
         send_response(
             &mut writer,
             &EnrollmentResponse::error("expired", "pairing code expired"),
         )
         .await?;
-        return Ok(ConnectionOutcome::Ignored);
+        return Ok(ExchangeOutcome::Ignored);
     }
 
-    let path = context
-        .authorized_keys_override
-        .map(PathBuf::from)
-        .unwrap_or(default_authorized_keys_path()?);
-    let key_line = public_key.canonical_line();
-    let outcome = append_authorized_key(&path, key_line)?;
+    let outcome = append_authorized_key(authorized_keys, public_key.canonical_line())?;
     send_response(
         &mut writer,
         &EnrollmentResponse::approved(&fingerprint, outcome == AppendOutcome::AlreadyPresent),
@@ -410,29 +361,40 @@ async fn handle_connection(
         } else {
             "Key already present in"
         },
-        path.display()
+        authorized_keys.display()
     );
-    println!("Pairing server stopped.");
-    Ok(ConnectionOutcome::Enrolled)
+    println!("Pairing stopped.");
+    Ok(ExchangeOutcome::Enrolled)
 }
 
-async fn send_response<W: AsyncWriteExt + Unpin>(
-    writer: &mut W,
-    response: &EnrollmentResponse,
-) -> Result<(), Error> {
-    send_json_line(writer, response).await?;
-    writer.shutdown().await?;
-    Ok(())
-}
+async fn exchange(args: ExchangeArgs) -> Result<(), Error> {
+    let mut request = Vec::new();
+    io::stdin()
+        .take((MAX_MESSAGE_BYTES + 1) as u64)
+        .read_to_end(&mut request)?;
+    if request.is_empty()
+        || request.len() > MAX_MESSAGE_BYTES
+        || request.last() != Some(&b'\n')
+        || serde_json::from_slice::<EnrollmentRequest>(&request[..request.len() - 1]).is_err()
+    {
+        return Err(Error::Message(
+            "expected one bounded enrollment request on stdin".into(),
+        ));
+    }
 
-async fn send_json_line<W, T>(writer: &mut W, value: &T) -> Result<(), Error>
-where
-    W: AsyncWriteExt + Unpin,
-    T: serde::Serialize,
-{
-    let mut encoded = serde_json::to_vec(value)?;
-    encoded.push(b'\n');
-    writer.write_all(&encoded).await?;
+    let mut stream = timeout(CONNECT_TIMEOUT, UnixStream::connect(&args.socket))
+        .await
+        .map_err(|_| Error::Message("local pairing process connection timed out".into()))??;
+    stream.write_all(&request).await?;
+    stream.shutdown().await?;
+    let mut reader = BufReader::new(stream);
+    let response = timeout(APPROVAL_TIMEOUT, read_bounded_line(&mut reader))
+        .await
+        .map_err(|_| Error::Message("host approval timed out".into()))??;
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&response)?;
+    stdout.write_all(b"\n")?;
+    stdout.flush()?;
     Ok(())
 }
 
@@ -440,148 +402,252 @@ async fn request(args: RequestArgs) -> Result<(), Error> {
     let payload = decode_pairing_code(&args.code)?;
     let public_key_text = std::fs::read_to_string(&args.public_key)?;
     let public_key = validate_public_key(&public_key_text)?;
-
-    let verifier = PinnedCertificateVerifier::new(payload.tls_certificate_sha256);
-    let client_config = ClientConfig::builder()
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(verifier))
-        .with_no_client_auth();
-    let connector = TlsConnector::from(Arc::new(client_config));
-    let server_name = server_name(&payload.pair_host)?;
-    let tcp = timeout(
-        Duration::from_secs(5),
-        TcpStream::connect((payload.pair_host.as_str(), payload.pair_port)),
-    )
-    .await
-    .map_err(|_| Error::Message("pairing server connection timed out".into()))??;
-    let tls = connector
-        .connect(server_name, tcp)
-        .await
-        .map_err(|error| Error::Message(format!("pairing TLS verification failed: {error}")))?;
-    let (reader, mut writer) = tokio::io::split(tls);
-    send_json_line(
-        &mut writer,
-        &PairingHello {
-            token: URL_SAFE_NO_PAD.encode(payload.token),
+    let result = pair_over_ssh(
+        &payload,
+        &EnrollmentRequest {
+            device_name: args.device_name,
+            public_key: public_key.canonical_line().to_owned(),
         },
     )
     .await?;
+    if !result.response.approved {
+        return Err(refusal_error(&result.response));
+    }
+    println!(
+        "Enrollment approved: {}",
+        result
+            .response
+            .fingerprint
+            .as_deref()
+            .unwrap_or("unknown fingerprint")
+    );
+    println!(
+        "SSH profile: {}@{}:{}",
+        payload.ssh_user, payload.ssh_host, payload.ssh_port
+    );
+    Ok(())
+}
 
-    let mut reader = BufReader::new(reader);
-    let mut server_info_bytes = Vec::new();
-    let read = timeout(
-        Duration::from_secs(5),
-        reader.read_until(b'\n', &mut server_info_bytes),
+struct PairingResult {
+    response: EnrollmentResponse,
+    #[allow(dead_code)]
+    host_public_key: String,
+}
+
+async fn pair_over_ssh(
+    payload: &PairingPayload,
+    request: &EnrollmentRequest,
+) -> Result<PairingResult, Error> {
+    let accepted_host_key = Arc::new(Mutex::new(None));
+    let handler = PinnedSshHostKey {
+        expected_sha256: payload.ssh_host_key_sha256,
+        accepted_public_key: accepted_host_key.clone(),
+    };
+    let config = Arc::new(client::Config {
+        inactivity_timeout: Some(Duration::from_secs(30)),
+        ..Default::default()
+    });
+    let mut handle = timeout(
+        CONNECT_TIMEOUT,
+        client::connect(
+            config,
+            (payload.ssh_host.as_str(), payload.ssh_port),
+            handler,
+        ),
     )
     .await
-    .map_err(|_| Error::Message("pairing server information timed out".into()))??;
-    if read == 0
-        || server_info_bytes.last() != Some(&b'\n')
-        || server_info_bytes.len() > MAX_MESSAGE_BYTES
-    {
+    .map_err(|_| Error::Message("SSH pairing connection timed out".into()))??;
+
+    let private_key = Arc::new(temporary_private_key(&payload.temporary_private_key_seed));
+    let authentication = handle
+        .authenticate_publickey(
+            &payload.ssh_user,
+            PrivateKeyWithHashAlg::new(private_key, None),
+        )
+        .await?;
+    if !authentication.success() {
         return Err(Error::Message(
-            "pairing server returned invalid connection information".into(),
+            "the restricted temporary SSH key was not accepted".into(),
         ));
     }
-    let server_info: PairingServerInfo =
-        serde_json::from_slice(&server_info_bytes[..server_info_bytes.len() - 1])?;
-    validate_server_info(&server_info)?;
-    let request = EnrollmentRequest {
-        device_name: args.device_name,
-        public_key: public_key.canonical_line().to_owned(),
-    };
-    send_json_line(&mut writer, &request).await?;
 
-    let mut response = Vec::new();
-    let read = timeout(
-        Duration::from_secs(600),
-        reader.read_until(b'\n', &mut response),
-    )
+    let mut channel = handle.channel_open_session().await?;
+    channel.exec(true, "whip-pair").await?;
+    let mut encoded = serde_json::to_vec(request)?;
+    encoded.push(b'\n');
+    channel.data(encoded.as_slice()).await?;
+    channel.eof().await?;
+
+    let (stdout, stderr, exit_status) = timeout(APPROVAL_TIMEOUT, async {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_status = None;
+        while let Some(message) = channel.wait().await {
+            match message {
+                ChannelMsg::Data { data } => append_bounded(&mut stdout, &data)?,
+                ChannelMsg::ExtendedData { data, ext: 1 } => append_bounded(&mut stderr, &data)?,
+                ChannelMsg::ExitStatus { exit_status: value } => exit_status = Some(value),
+                _ => {}
+            }
+        }
+        Ok::<_, Error>((stdout, stderr, exit_status))
+    })
     .await
     .map_err(|_| Error::Message("host approval timed out".into()))??;
-    if read == 0 || response.last() != Some(&b'\n') || response.len() > MAX_MESSAGE_BYTES {
+    if exit_status.is_some_and(|status| status != 0) {
+        return Err(Error::Message(format!(
+            "restricted pairing command failed: {}",
+            String::from_utf8_lossy(&stderr).trim()
+        )));
+    }
+    let response: EnrollmentResponse = serde_json::from_slice(trim_line_ending(&stdout))?;
+    let host_public_key = accepted_host_key
+        .lock()
+        .ok()
+        .and_then(|key| key.clone())
+        .ok_or_else(|| Error::Message("SSH server did not present a host key".into()))?;
+    Ok(PairingResult {
+        response,
+        host_public_key,
+    })
+}
+
+#[derive(Clone)]
+struct PinnedSshHostKey {
+    expected_sha256: [u8; 32],
+    accepted_public_key: Arc<Mutex<Option<String>>>,
+}
+
+impl client::Handler for PinnedSshHostKey {
+    type Error = Error;
+
+    async fn check_server_key(
+        &mut self,
+        server_public_key: &PublicKey,
+    ) -> Result<bool, Self::Error> {
+        let encoded = server_public_key.to_bytes()?;
+        let actual: [u8; 32] = Sha256::digest(&encoded).into();
+        if actual != self.expected_sha256 {
+            return Err(Error::Message(
+                "SSH host key did not match the fingerprint pinned in the QR code".into(),
+            ));
+        }
+        if let Ok(mut accepted) = self.accepted_public_key.lock() {
+            *accepted = Some(server_public_key.to_openssh()?);
+        }
+        Ok(true)
+    }
+}
+
+fn append_bounded(destination: &mut Vec<u8>, source: &[u8]) -> Result<(), Error> {
+    if destination.len().saturating_add(source.len()) > MAX_MESSAGE_BYTES {
         return Err(Error::Message(
-            "pairing server returned an invalid response".into(),
+            "restricted pairing command returned too much data".into(),
         ));
     }
-    let response: EnrollmentResponse = serde_json::from_slice(&response[..response.len() - 1])?;
-    if response.approved {
-        println!(
-            "Enrollment approved: {}",
-            response
-                .fingerprint
-                .as_deref()
-                .unwrap_or("unknown fingerprint")
-        );
-        println!(
-            "SSH profile: {}@{}:{}",
-            server_info.ssh_user, server_info.ssh_host, server_info.ssh_port
-        );
-        Ok(())
-    } else {
-        Err(Error::Message(format!(
-            "enrollment refused ({}): {}",
-            response.code.as_deref().unwrap_or("unknown"),
-            response.message.as_deref().unwrap_or("no detail")
-        )))
+    destination.extend_from_slice(source);
+    Ok(())
+}
+
+fn trim_line_ending(bytes: &[u8]) -> &[u8] {
+    let bytes = bytes.strip_suffix(b"\n").unwrap_or(bytes);
+    bytes.strip_suffix(b"\r").unwrap_or(bytes)
+}
+
+fn refusal_error(response: &EnrollmentResponse) -> Error {
+    Error::Message(format!(
+        "enrollment refused ({}): {}",
+        response.code.as_deref().unwrap_or("unknown"),
+        response.message.as_deref().unwrap_or("no detail")
+    ))
+}
+
+async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+) -> Result<Vec<u8>, Error> {
+    let mut bytes = Vec::new();
+    let read = reader.read_until(b'\n', &mut bytes).await?;
+    if read == 0 || bytes.len() > MAX_MESSAGE_BYTES || bytes.last() != Some(&b'\n') {
+        return Err(Error::Message("expected one bounded JSON line".into()));
     }
+    bytes.pop();
+    Ok(bytes)
 }
 
-#[derive(Debug)]
-struct PinnedCertificateVerifier {
-    expected_sha256: [u8; 32],
-    supported_algorithms: WebPkiSupportedAlgorithms,
+async fn send_response<W: AsyncWriteExt + Unpin>(
+    writer: &mut W,
+    response: &EnrollmentResponse,
+) -> Result<(), Error> {
+    let mut encoded = serde_json::to_vec(response)?;
+    encoded.push(b'\n');
+    writer.write_all(&encoded).await?;
+    writer.shutdown().await?;
+    Ok(())
 }
 
-impl PinnedCertificateVerifier {
-    fn new(expected_sha256: [u8; 32]) -> Self {
+fn temporary_private_key(seed: &[u8; 32]) -> PrivateKey {
+    Ed25519Keypair::from_seed(seed).into()
+}
+
+fn forced_command(socket_path: &Path) -> Result<String, Error> {
+    let executable = std::env::current_exe()?;
+    Ok(format!(
+        "{} exchange --socket {}",
+        shell_quote(&executable)?,
+        shell_quote(socket_path)?
+    ))
+}
+
+fn shell_quote(path: &Path) -> Result<String, Error> {
+    let value = path
+        .to_str()
+        .ok_or_else(|| Error::Message("pairing paths must be valid UTF-8".into()))?;
+    if value.contains(['\n', '\r', '\0']) {
+        return Err(Error::Message("pairing path contains control data".into()));
+    }
+    Ok(format!("'{}'", value.replace('\'', "'\\''")))
+}
+
+fn temporary_authorized_key_line(private_key: &PrivateKey, command: &str) -> Result<String, Error> {
+    let escaped_command = command.replace('\\', "\\\\").replace('"', "\\\"");
+    let public_key = private_key.public_key().to_openssh()?;
+    Ok(format!(
+        "restrict,command=\"{escaped_command}\" {public_key} whip-pair-temporary"
+    ))
+}
+
+struct TemporaryAuthorization {
+    path: PathBuf,
+    line: String,
+    active: bool,
+}
+
+impl TemporaryAuthorization {
+    fn new(path: PathBuf, line: String) -> Self {
         Self {
-            expected_sha256,
-            supported_algorithms: rustls::crypto::ring::default_provider()
-                .signature_verification_algorithms,
+            path,
+            line,
+            active: true,
         }
+    }
+
+    fn cleanup(&mut self) -> io::Result<()> {
+        if self.active {
+            remove_authorized_key(&self.path, &self.line)?;
+            self.active = false;
+        }
+        Ok(())
     }
 }
 
-impl ServerCertVerifier for PinnedCertificateVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        // The QR is the trust root for this short-lived connection. The exact
-        // certificate still has to prove possession of its private key in the
-        // TLS handshake; the signature methods below retain that verification.
-        let actual_sha256: [u8; 32] = Sha256::digest(end_entity.as_ref()).into();
-        if actual_sha256 != self.expected_sha256 {
-            return Err(CertificateError::ApplicationVerificationFailure.into());
+impl Drop for TemporaryAuthorization {
+    fn drop(&mut self) {
+        if let Err(error) = self.cleanup() {
+            eprintln!(
+                "warning: could not remove temporary pairing key from {}: {error}",
+                self.path.display()
+            );
         }
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls12_signature(message, cert, dss, &self.supported_algorithms)
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls13_signature(message, cert, dss, &self.supported_algorithms)
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.supported_algorithms.supported_schemes()
     }
 }
 
@@ -599,7 +665,7 @@ fn choose_bind_candidate(explicit: Option<IpAddr>) -> Result<BindCandidate, Erro
 
 fn print_pairing_screen(
     selected: &BindCandidate,
-    server_info: &PairingServerInfo,
+    payload: &PairingPayload,
     expires_at: u64,
     code: &str,
     print_code: bool,
@@ -619,7 +685,7 @@ fn print_pairing_screen(
     );
     println!(
         "SSH:     {}@{}:{}",
-        server_info.ssh_user, server_info.ssh_host, server_info.ssh_port
+        payload.ssh_user, payload.ssh_host, payload.ssh_port
     );
     println!(
         "Expires: {} seconds\n",
@@ -663,12 +729,11 @@ fn discover_ssh_fingerprint(host: &str, port: u16) -> Result<String, Error> {
             "could not discover the SSH host key for {host}:{port}; ensure sshd is running or pass --ssh-fingerprint"
         )));
     }
-    if let Some(fingerprint) = fingerprint_from_ssh_keyscan(&output.stdout) {
-        return Ok(fingerprint);
-    }
-    Err(Error::Message(format!(
-        "{host}:{port} did not present an SSH host key supported by Whip"
-    )))
+    fingerprint_from_ssh_keyscan(&output.stdout).ok_or_else(|| {
+        Error::Message(format!(
+            "{host}:{port} did not present an SSH host key supported by Whip"
+        ))
+    })
 }
 
 fn fingerprint_from_ssh_keyscan(output: &[u8]) -> Option<String> {
@@ -701,64 +766,26 @@ fn ssh_host_key_preference(kind: &str) -> Option<u8> {
         "ecdsa-sha2-nistp256" => Some(1),
         "ecdsa-sha2-nistp384" => Some(2),
         "ecdsa-sha2-nistp521" => Some(3),
-        // rsa-sha2-512, rsa-sha2-256, and legacy ssh-rsa all use the same
-        // ssh-rsa public-key blob and therefore the same host-key fingerprint.
         "ssh-rsa" => Some(4),
         _ => None,
     }
 }
 
 fn validate_ssh_fingerprint(value: &str) -> Result<String, Error> {
-    let Some(encoded) = value.strip_prefix("SHA256:") else {
-        return Err(Error::Message(
-            "SSH fingerprint must start with SHA256:".into(),
-        ));
-    };
-    if encoded.len() != 43
-        || !encoded
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/'))
-    {
-        return Err(Error::Message(
-            "SSH fingerprint must be an OpenSSH SHA256 fingerprint".into(),
-        ));
-    }
+    decode_ssh_fingerprint(value)?;
     Ok(value.to_owned())
 }
 
-fn validate_server_info(info: &PairingServerInfo) -> Result<(), Error> {
-    if info.ssh_host.is_empty()
-        || info.ssh_user.is_empty()
-        || info.ssh_port == 0
-        || info
-            .ssh_host
-            .chars()
-            .chain(info.ssh_user.chars())
-            .any(|character| character.is_whitespace() || character.is_control())
-    {
-        return Err(Error::Message(
-            "pairing server returned an invalid SSH profile".into(),
-        ));
-    }
-    validate_ssh_fingerprint(&info.ssh_host_fingerprint)?;
-    Ok(())
-}
-
-fn decode_token(encoded: &str) -> Result<[u8; 16], Error> {
-    let decoded = URL_SAFE_NO_PAD
+fn decode_ssh_fingerprint(value: &str) -> Result<[u8; 32], Error> {
+    let encoded = value
+        .strip_prefix("SHA256:")
+        .ok_or_else(|| Error::Message("SSH fingerprint must start with SHA256:".into()))?;
+    let decoded = STANDARD_NO_PAD
         .decode(encoded)
-        .map_err(|_| Error::Message("pairing token is not valid base64url".into()))?;
+        .map_err(|_| Error::Message("SSH fingerprint is not valid Base64".into()))?;
     decoded
         .try_into()
-        .map_err(|_| Error::Message("pairing token has the wrong length".into()))
-}
-
-fn server_name(host: &str) -> Result<ServerName<'static>, Error> {
-    if let Ok(address) = host.parse::<IpAddr>() {
-        return Ok(ServerName::IpAddress(address.into()));
-    }
-    ServerName::try_from(host.to_owned())
-        .map_err(|_| Error::Message(format!("invalid pairing hostname: {host}")))
+        .map_err(|_| Error::Message("SSH fingerprint must contain a 32-byte SHA-256 digest".into()))
 }
 
 fn current_username() -> String {
@@ -788,7 +815,7 @@ fn printable_device_name(value: &str) -> String {
     }
 }
 
-fn write_secret_file(path: &std::path::Path, value: &str) -> Result<(), Error> {
+fn write_secret_file(path: &Path, value: &str) -> Result<(), Error> {
     use std::fs::OpenOptions;
     use std::os::unix::fs::OpenOptionsExt;
 
@@ -817,7 +844,6 @@ mod tests {
             "host ecdsa-sha2-nistp256 {ECDSA_P256_BLOB}\nhost ssh-ed25519 {ED25519_BLOB}\n"
         );
         let ed25519 = validate_public_key(&format!("ssh-ed25519 {ED25519_BLOB}")).unwrap();
-
         assert_eq!(
             fingerprint_from_ssh_keyscan(scan.as_bytes()),
             Some(fingerprint_public_key(&ed25519))
@@ -828,7 +854,6 @@ mod tests {
     fn ssh_keyscan_selection_accepts_ecdsa_without_ed25519() {
         let scan = format!("host ecdsa-sha2-nistp256 {ECDSA_P256_BLOB}\n");
         let ecdsa = validate_public_key(&format!("ecdsa-sha2-nistp256 {ECDSA_P256_BLOB}")).unwrap();
-
         assert_eq!(
             fingerprint_from_ssh_keyscan(scan.as_bytes()),
             Some(fingerprint_public_key(&ecdsa))
@@ -843,5 +868,24 @@ mod tests {
         assert_eq!(ssh_host_key_preference("ecdsa-sha2-nistp521"), Some(3));
         assert_eq!(ssh_host_key_preference("ssh-rsa"), Some(4));
         assert_eq!(ssh_host_key_preference("ssh-dss"), None);
+    }
+
+    #[test]
+    fn restricted_authorization_forces_only_the_exchange_command() {
+        let key = temporary_private_key(&[7; 32]);
+        let line = temporary_authorized_key_line(
+            &key,
+            "'/nix/store/example/bin/whip-pair' exchange --socket '/tmp/example.sock'",
+        )
+        .unwrap();
+        assert!(line.starts_with("restrict,command=\""));
+        assert!(line.contains(" exchange --socket "));
+    }
+
+    #[test]
+    fn fingerprint_digest_round_trips() {
+        let digest = [9; 32];
+        let fingerprint = format!("SHA256:{}", STANDARD_NO_PAD.encode(digest));
+        assert_eq!(decode_ssh_fingerprint(&fingerprint).unwrap(), digest);
     }
 }

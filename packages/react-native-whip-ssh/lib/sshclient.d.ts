@@ -84,6 +84,8 @@ export interface PairHostResult {
     sshPort: number;
     sshUser: string;
     sshHostFingerprint: string;
+    sshHostKeyType: string;
+    sshHostPublicKey: string;
     keyFingerprint?: string;
     alreadyPresent: boolean;
 }

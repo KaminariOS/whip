@@ -1,23 +1,18 @@
-use std::{net::IpAddr, sync::Arc, time::Duration};
-
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use rustls::{
-    CertificateError, ClientConfig, DigitallySignedStruct, SignatureScheme,
-    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
-    crypto::{WebPkiSupportedAlgorithms, verify_tls12_signature, verify_tls13_signature},
-    pki_types::{CertificateDer, ServerName},
+use std::{
+    net::IpAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
 };
+
+use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
+use russh::{ChannelMsg, client, keys::PrivateKeyWithHashAlg};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::TcpStream,
-    time::timeout,
-};
-use tokio_rustls::TlsConnector;
+use ssh_key::{PrivateKey, PublicKey, private::Ed25519Keypair};
+use tokio::time::timeout;
 
-const ENVELOPE_PREFIX: &str = "WP3:";
+const ENVELOPE_PREFIX: &str = "WP4:";
 const BASE45_ALPHABET: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 const ADDRESS_IPV4: u8 = 1;
 const ADDRESS_IPV6: u8 = 2;
@@ -25,6 +20,8 @@ const ADDRESS_HOSTNAME: u8 = 3;
 const MAX_HOSTNAME_BYTES: usize = 253;
 const MAX_BASE45_BYTES: usize = 461;
 const MAX_MESSAGE_BYTES: usize = 16 * 1024;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, thiserror::Error)]
 pub enum PairingError {
@@ -32,49 +29,37 @@ pub enum PairingError {
     BadPrefix,
     #[error("pairing code is not valid Base45")]
     BadEncoding,
-    #[error("pairing code contains an invalid host or port")]
+    #[error("pairing code contains an invalid SSH profile")]
     BadPayload,
-    #[error("invalid pairing hostname: {0}")]
-    BadHostname(String),
-    #[error("pairing server connection timed out")]
+    #[error("SSH pairing connection timed out")]
     ConnectionTimeout,
-    #[error("pairing server information timed out")]
-    ServerInfoTimeout,
     #[error("host approval timed out")]
     ApprovalTimeout,
-    #[error("pairing TLS verification failed: {0}")]
-    Tls(String),
-    #[error("pairing server returned invalid data")]
+    #[error("temporary SSH authentication failed")]
+    AuthenticationFailed,
+    #[error("SSH host key did not match the fingerprint pinned in the QR code")]
+    HostKeyMismatch,
+    #[error("restricted pairing command returned invalid data")]
     InvalidResponse,
-    #[error("pairing server returned an invalid SSH profile")]
-    InvalidSshProfile,
+    #[error("restricted pairing command failed: {0}")]
+    CommandFailed(String),
     #[error("enrollment refused ({code}): {message}")]
     Refused { code: String, message: String },
     #[error("{0}")]
-    Io(#[from] std::io::Error),
+    Ssh(#[from] russh::Error),
+    #[error("{0}")]
+    SshKey(#[from] ssh_key::Error),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct PairingPayload {
-    pair_host: String,
-    pair_port: u16,
-    token: [u8; 16],
-    tls_certificate_sha256: [u8; 32],
-}
-
-#[derive(Serialize)]
-struct PairingHello {
-    token: String,
-}
-
-#[derive(Deserialize)]
-struct PairingServerInfo {
     ssh_host: String,
     ssh_port: u16,
     ssh_user: String,
-    ssh_host_fingerprint: String,
+    temporary_private_key_seed: [u8; 32],
+    ssh_host_key_sha256: [u8; 32],
 }
 
 #[derive(Serialize)]
@@ -92,6 +77,40 @@ struct EnrollmentResponse {
     message: Option<String>,
 }
 
+#[derive(Clone)]
+struct PinnedSshHostKey {
+    expected_sha256: [u8; 32],
+    accepted: Arc<Mutex<Option<AcceptedHostKey>>>,
+}
+
+#[derive(Clone)]
+struct AcceptedHostKey {
+    key_type: String,
+    public_key: String,
+}
+
+impl client::Handler for PinnedSshHostKey {
+    type Error = PairingError;
+
+    async fn check_server_key(
+        &mut self,
+        server_public_key: &PublicKey,
+    ) -> Result<bool, Self::Error> {
+        let encoded = server_public_key.to_bytes()?;
+        let actual: [u8; 32] = Sha256::digest(&encoded).into();
+        if actual != self.expected_sha256 {
+            return Err(PairingError::HostKeyMismatch);
+        }
+        if let Ok(mut accepted) = self.accepted.lock() {
+            *accepted = Some(AcceptedHostKey {
+                key_type: server_public_key.algorithm().as_str().to_owned(),
+                public_key: server_public_key.to_openssh()?,
+            });
+        }
+        Ok(true)
+    }
+}
+
 pub async fn pair_host(
     code: &str,
     public_key: &str,
@@ -104,119 +123,115 @@ pub async fn pair_host(
         return Err(PairingError::InvalidResponse);
     }
 
-    let verifier = PinnedCertificateVerifier::new(payload.tls_certificate_sha256);
-    let client_config = ClientConfig::builder()
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(verifier))
-        .with_no_client_auth();
-    let connector = TlsConnector::from(Arc::new(client_config));
-    let server_name = server_name(&payload.pair_host)?;
-    let tcp = timeout(
-        Duration::from_secs(5),
-        TcpStream::connect((payload.pair_host.as_str(), payload.pair_port)),
+    let accepted_host_key = Arc::new(Mutex::new(None));
+    let handler = PinnedSshHostKey {
+        expected_sha256: payload.ssh_host_key_sha256,
+        accepted: accepted_host_key.clone(),
+    };
+    let config = Arc::new(client::Config {
+        inactivity_timeout: Some(Duration::from_secs(30)),
+        ..Default::default()
+    });
+    let mut handle = timeout(
+        CONNECT_TIMEOUT,
+        client::connect(
+            config,
+            (payload.ssh_host.as_str(), payload.ssh_port),
+            handler,
+        ),
     )
     .await
     .map_err(|_| PairingError::ConnectionTimeout)??;
-    let tls = connector
-        .connect(server_name, tcp)
-        .await
-        .map_err(|error| PairingError::Tls(error.to_string()))?;
-    let (reader, mut writer) = tokio::io::split(tls);
 
-    send_json_line(
-        &mut writer,
-        &PairingHello {
-            token: URL_SAFE_NO_PAD.encode(payload.token),
-        },
-    )
-    .await?;
+    let private_key = Arc::new(temporary_private_key(&payload.temporary_private_key_seed));
+    let authentication = handle
+        .authenticate_publickey(
+            &payload.ssh_user,
+            PrivateKeyWithHashAlg::new(private_key, None),
+        )
+        .await?;
+    if !authentication.success() {
+        return Err(PairingError::AuthenticationFailed);
+    }
 
-    let mut reader = BufReader::new(reader);
-    let server_info_bytes = timeout(Duration::from_secs(5), read_bounded_line(&mut reader))
-        .await
-        .map_err(|_| PairingError::ServerInfoTimeout)??;
-    let server_info: PairingServerInfo = serde_json::from_slice(&server_info_bytes)?;
-    validate_server_info(&server_info)?;
-
+    let mut channel = handle.channel_open_session().await?;
+    channel.exec(true, "whip-pair").await?;
     let device_name = printable_device_name(device_name);
-    send_json_line(
-        &mut writer,
-        &EnrollmentRequest {
-            device_name: &device_name,
-            public_key,
-        },
-    )
-    .await?;
+    let mut encoded = serde_json::to_vec(&EnrollmentRequest {
+        device_name: &device_name,
+        public_key,
+    })?;
+    encoded.push(b'\n');
+    channel.data(encoded.as_slice()).await?;
+    channel.eof().await?;
 
-    let response_bytes = timeout(Duration::from_secs(600), read_bounded_line(&mut reader))
-        .await
-        .map_err(|_| PairingError::ApprovalTimeout)??;
-    let response: EnrollmentResponse = serde_json::from_slice(&response_bytes)?;
+    let (stdout, stderr, exit_status) = timeout(APPROVAL_TIMEOUT, async {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_status = None;
+        while let Some(message) = channel.wait().await {
+            match message {
+                ChannelMsg::Data { data } => append_bounded(&mut stdout, &data)?,
+                ChannelMsg::ExtendedData { data, ext: 1 } => append_bounded(&mut stderr, &data)?,
+                ChannelMsg::ExitStatus { exit_status: value } => exit_status = Some(value),
+                _ => {}
+            }
+        }
+        Ok::<_, PairingError>((stdout, stderr, exit_status))
+    })
+    .await
+    .map_err(|_| PairingError::ApprovalTimeout)??;
+    if exit_status.is_some_and(|status| status != 0) {
+        return Err(PairingError::CommandFailed(
+            String::from_utf8_lossy(&stderr).trim().to_owned(),
+        ));
+    }
+
+    let response: EnrollmentResponse = serde_json::from_slice(trim_line_ending(&stdout))
+        .map_err(|_| PairingError::InvalidResponse)?;
     if !response.approved {
         return Err(PairingError::Refused {
             code: response.code.unwrap_or_else(|| "unknown".into()),
             message: response.message.unwrap_or_else(|| "no detail".into()),
         });
     }
+    let accepted = accepted_host_key
+        .lock()
+        .ok()
+        .and_then(|key| key.clone())
+        .ok_or(PairingError::InvalidResponse)?;
+    let ssh_host_fingerprint = format!(
+        "SHA256:{}",
+        STANDARD_NO_PAD.encode(payload.ssh_host_key_sha256)
+    );
 
     Ok(json!({
-        "sshHost": server_info.ssh_host,
-        "sshPort": server_info.ssh_port,
-        "sshUser": server_info.ssh_user,
-        "sshHostFingerprint": server_info.ssh_host_fingerprint,
+        "sshHost": payload.ssh_host,
+        "sshPort": payload.ssh_port,
+        "sshUser": payload.ssh_user,
+        "sshHostFingerprint": ssh_host_fingerprint,
+        "sshHostKeyType": accepted.key_type,
+        "sshHostPublicKey": accepted.public_key,
         "keyFingerprint": response.fingerprint,
         "alreadyPresent": response.already_present.unwrap_or(false),
     }))
 }
 
-async fn send_json_line<T: Serialize>(
-    writer: &mut (impl AsyncWriteExt + Unpin),
-    value: &T,
-) -> Result<(), PairingError> {
-    let mut encoded = serde_json::to_vec(value)?;
-    encoded.push(b'\n');
-    writer.write_all(&encoded).await?;
-    Ok(())
+fn temporary_private_key(seed: &[u8; 32]) -> PrivateKey {
+    Ed25519Keypair::from_seed(seed).into()
 }
 
-async fn read_bounded_line<R: tokio::io::AsyncRead + Unpin>(
-    reader: &mut BufReader<R>,
-) -> Result<Vec<u8>, PairingError> {
-    let mut bytes = Vec::new();
-    let read = reader
-        .take((MAX_MESSAGE_BYTES + 1) as u64)
-        .read_until(b'\n', &mut bytes)
-        .await?;
-    if read == 0 || bytes.last() != Some(&b'\n') || bytes.len() > MAX_MESSAGE_BYTES {
+fn append_bounded(destination: &mut Vec<u8>, source: &[u8]) -> Result<(), PairingError> {
+    if destination.len().saturating_add(source.len()) > MAX_MESSAGE_BYTES {
         return Err(PairingError::InvalidResponse);
     }
-    bytes.pop();
-    Ok(bytes)
+    destination.extend_from_slice(source);
+    Ok(())
 }
 
-fn validate_server_info(info: &PairingServerInfo) -> Result<(), PairingError> {
-    if info.ssh_host.is_empty()
-        || info.ssh_user.is_empty()
-        || info.ssh_port == 0
-        || info
-            .ssh_host
-            .chars()
-            .chain(info.ssh_user.chars())
-            .any(|character| character.is_whitespace() || character.is_control())
-    {
-        return Err(PairingError::InvalidSshProfile);
-    }
-    let Some(encoded) = info.ssh_host_fingerprint.strip_prefix("SHA256:") else {
-        return Err(PairingError::InvalidSshProfile);
-    };
-    if encoded.len() != 43
-        || !encoded
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/'))
-    {
-        return Err(PairingError::InvalidSshProfile);
-    }
-    Ok(())
+fn trim_line_ending(bytes: &[u8]) -> &[u8] {
+    let bytes = bytes.strip_suffix(b"\n").unwrap_or(bytes);
+    bytes.strip_suffix(b"\r").unwrap_or(bytes)
 }
 
 fn printable_device_name(value: &str) -> String {
@@ -232,13 +247,6 @@ fn printable_device_name(value: &str) -> String {
     }
 }
 
-fn server_name(host: &str) -> Result<ServerName<'static>, PairingError> {
-    if let Ok(address) = host.parse::<IpAddr>() {
-        return Ok(ServerName::IpAddress(address.into()));
-    }
-    ServerName::try_from(host.to_owned()).map_err(|_| PairingError::BadHostname(host.into()))
-}
-
 fn decode_pairing_code(code: &str) -> Result<PairingPayload, PairingError> {
     let body = code
         .strip_prefix(ENVELOPE_PREFIX)
@@ -246,7 +254,7 @@ fn decode_pairing_code(code: &str) -> Result<PairingPayload, PairingError> {
     let decoded = base45_decode(body)?;
     let mut cursor = 0;
     let address_type = take_bytes(&decoded, &mut cursor, 1)?[0];
-    let pair_host = match address_type {
+    let ssh_host = match address_type {
         ADDRESS_IPV4 => {
             let octets: [u8; 4] = take_bytes(&decoded, &mut cursor, 4)?
                 .try_into()
@@ -266,33 +274,40 @@ fn decode_pairing_code(code: &str) -> Result<PairingPayload, PairingError> {
         }
         _ => return Err(PairingError::BadEncoding),
     };
-    let pair_port = u16::from_be_bytes(
+    let ssh_port = u16::from_be_bytes(
         take_bytes(&decoded, &mut cursor, 2)?
             .try_into()
             .map_err(|_| PairingError::BadEncoding)?,
     );
-    let token = take_bytes(&decoded, &mut cursor, 16)?
+    let user_length = usize::from(take_bytes(&decoded, &mut cursor, 1)?[0]);
+    let ssh_user = String::from_utf8(take_bytes(&decoded, &mut cursor, user_length)?.to_vec())
+        .map_err(|_| PairingError::BadEncoding)?;
+    let temporary_private_key_seed = take_bytes(&decoded, &mut cursor, 32)?
         .try_into()
         .map_err(|_| PairingError::BadEncoding)?;
-    let tls_certificate_sha256 = take_bytes(&decoded, &mut cursor, 32)?
+    let ssh_host_key_sha256 = take_bytes(&decoded, &mut cursor, 32)?
         .try_into()
         .map_err(|_| PairingError::BadEncoding)?;
     if cursor != decoded.len()
-        || pair_host.is_empty()
-        || pair_host.len() > MAX_HOSTNAME_BYTES
-        || pair_port == 0
-        || !pair_host.is_ascii()
-        || pair_host
+        || ssh_host.is_empty()
+        || ssh_host.len() > MAX_HOSTNAME_BYTES
+        || ssh_port == 0
+        || ssh_user.is_empty()
+        || !ssh_host.is_ascii()
+        || !ssh_user.is_ascii()
+        || ssh_host
             .chars()
+            .chain(ssh_user.chars())
             .any(|character| character.is_whitespace() || character.is_control())
     {
         return Err(PairingError::BadPayload);
     }
     Ok(PairingPayload {
-        pair_host,
-        pair_port,
-        token,
-        tls_certificate_sha256,
+        ssh_host,
+        ssh_port,
+        ssh_user,
+        temporary_private_key_seed,
+        ssh_host_key_sha256,
     })
 }
 
@@ -343,61 +358,6 @@ fn base45_value(byte: u8) -> Result<usize, PairingError> {
         .ok_or(PairingError::BadEncoding)
 }
 
-#[derive(Debug)]
-struct PinnedCertificateVerifier {
-    expected_sha256: [u8; 32],
-    supported_algorithms: WebPkiSupportedAlgorithms,
-}
-
-impl PinnedCertificateVerifier {
-    fn new(expected_sha256: [u8; 32]) -> Self {
-        Self {
-            expected_sha256,
-            supported_algorithms: rustls::crypto::ring::default_provider()
-                .signature_verification_algorithms,
-        }
-    }
-}
-
-impl ServerCertVerifier for PinnedCertificateVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        let actual_sha256: [u8; 32] = Sha256::digest(end_entity.as_ref()).into();
-        if actual_sha256 != self.expected_sha256 {
-            return Err(CertificateError::ApplicationVerificationFailure.into());
-        }
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls12_signature(message, cert, dss, &self.supported_algorithms)
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls13_signature(message, cert, dss, &self.supported_algorithms)
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.supported_algorithms.supported_schemes()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,28 +379,34 @@ mod tests {
         encoded
     }
 
-    #[test]
-    fn decodes_v3_ipv4_payload() {
-        let mut bytes = vec![ADDRESS_IPV4, 192, 168, 1, 7];
-        bytes.extend_from_slice(&43123_u16.to_be_bytes());
-        bytes.extend_from_slice(&[7; 16]);
+    fn code(address: &[u8], username: &str) -> String {
+        let mut bytes = address.to_vec();
+        bytes.extend_from_slice(&22_u16.to_be_bytes());
+        bytes.push(username.len() as u8);
+        bytes.extend_from_slice(username.as_bytes());
+        bytes.extend_from_slice(&[7; 32]);
         bytes.extend_from_slice(&[9; 32]);
-        let code = format!("{ENVELOPE_PREFIX}{}", base45_encode(&bytes));
-        let payload = decode_pairing_code(&code).unwrap();
-        assert_eq!(payload.pair_host, "192.168.1.7");
-        assert_eq!(payload.pair_port, 43123);
-        assert_eq!(payload.token, [7; 16]);
-        assert_eq!(payload.tls_certificate_sha256, [9; 32]);
+        format!("{ENVELOPE_PREFIX}{}", base45_encode(&bytes))
+    }
+
+    #[test]
+    fn decodes_v4_ipv4_payload() {
+        let payload = decode_pairing_code(&code(&[ADDRESS_IPV4, 192, 168, 1, 7], "alice")).unwrap();
+        assert_eq!(payload.ssh_host, "192.168.1.7");
+        assert_eq!(payload.ssh_port, 22);
+        assert_eq!(payload.ssh_user, "alice");
+        assert_eq!(payload.temporary_private_key_seed, [7; 32]);
+        assert_eq!(payload.ssh_host_key_sha256, [9; 32]);
     }
 
     #[test]
     fn rejects_wrong_version_and_truncated_payloads() {
         assert!(matches!(
-            decode_pairing_code("WP2:BB8"),
+            decode_pairing_code("WP3:BB8"),
             Err(PairingError::BadPrefix)
         ));
         assert!(matches!(
-            decode_pairing_code("WP3:00"),
+            decode_pairing_code("WP4:00"),
             Err(PairingError::BadEncoding)
         ));
     }
@@ -454,5 +420,15 @@ mod tests {
         ] {
             assert_eq!(base45_decode(encoded).unwrap(), plain.as_bytes());
         }
+    }
+
+    #[test]
+    fn temporary_private_key_is_deterministic() {
+        let first = temporary_private_key(&[7; 32]);
+        let second = temporary_private_key(&[7; 32]);
+        assert_eq!(
+            first.public_key().to_openssh().unwrap(),
+            second.public_key().to_openssh().unwrap()
+        );
     }
 }

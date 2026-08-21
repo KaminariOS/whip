@@ -1423,6 +1423,15 @@ function AppContent() {
   };
 
   const savePairedHost = async (result: PairHostResult, key: PairingKeySelection) => {
+    const nextKnownHosts = await trustKnownHost(knownHostsRef.current, {
+      host: result.sshHost,
+      port: result.sshPort,
+      keyType: result.sshHostKeyType,
+      publicKey: result.sshHostPublicKey,
+      fingerprint: result.sshHostFingerprint,
+    });
+    knownHostsRef.current = nextKnownHosts;
+    setKnownHosts(nextKnownHosts);
     const profile = profileFromPairing(result, key);
     const saved = await saveConnectionProfile(hostsRef.current, profile);
     hostsRef.current = saved.hosts;

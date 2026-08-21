@@ -137,7 +137,7 @@ export const ja = {
   'pairing.cameraDeniedTitle': 'カメラへのアクセスが必要です',
   'pairing.cameraDeniedCopy': 'ホストのペアリングコードをスキャンするため、カメラへのアクセスを許可してください。',
   'pairing.invalidQrTitle': 'Whip のペアリングコードではありません',
-  'pairing.invalidQrCopy': 'whip-pair が生成した有効な WP3 コードをスキャンしてください。',
+  'pairing.invalidQrCopy': 'whip-pair が生成した有効な WP4 コードをスキャンしてください。',
   'pairing.keyError': 'SSH 鍵を準備できませんでした: {{error}}',
   'pairing.pairError': 'ホストとペアリングできませんでした: {{error}}',
   'pairing.deviceName': 'Whip モバイル',

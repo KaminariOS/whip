@@ -137,7 +137,7 @@ export const zhHant: Record<string, string> = {
   'pairing.cameraDeniedTitle': '需要相機權限',
   'pairing.cameraDeniedCopy': '請允許使用相機以掃描主機配對碼。',
   'pairing.invalidQrTitle': '不是 Whip 配對碼',
-  'pairing.invalidQrCopy': '請掃描由 whip-pair 產生的有效 WP3 配對碼。',
+  'pairing.invalidQrCopy': '請掃描由 whip-pair 產生的有效 WP4 配對碼。',
   'pairing.keyError': '無法準備 SSH 金鑰：{{error}}',
   'pairing.pairError': '無法與主機配對：{{error}}',
   'pairing.deviceName': 'Whip 行動版',

@@ -1,0 +1,34 @@
+sequenceDiagram
+    autonumber
+    participant Keys as authorized_keys
+    participant Pair as whip-pair
+    actor User
+    participant Whip as Whip client
+    participant SSHD as sshd :22
+
+    Pair->>Pair: Generate temporary Ed25519 credential
+    Pair->>Pair: Open private local Unix socket
+    Pair->>Keys: Add restrict + forced-command temporary key
+    Pair-->>User: Show one-time WP4 QR code
+    User->>Whip: Scan QR code
+    Note over Pair,Whip: SSH endpoint + username + temporary seed + host-key pin
+    Whip->>SSHD: Connect and verify pinned SSH host key
+    Whip->>SSHD: Authenticate with temporary key
+    SSHD->>Pair: Start forced exchange command
+    Whip->>SSHD: EnrollmentRequest on channel stdin
+    SSHD->>Pair: Relay request over private Unix socket
+    Pair->>Pair: Validate permanent public key
+    Pair-->>User: Show device and key fingerprint
+    User->>Pair: Approve or reject
+    alt User approves before expiry
+        Pair->>Keys: Append permanent key idempotently
+        Pair-->>SSHD: approved response
+        SSHD-->>Whip: approved response
+        Pair->>Keys: Remove temporary key
+        Pair->>Pair: Close socket and stop
+        Whip->>Whip: Store verified SSH host key
+    else User rejects
+        Pair-->>SSHD: rejected response
+        SSHD-->>Whip: rejected response
+        Pair->>Pair: Continue until success or expiry
+    end

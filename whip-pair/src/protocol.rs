@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use ssh_key::{HashAlg, PublicKey};
 use std::net::IpAddr;
 
-pub const ENVELOPE_PREFIX: &str = "WP3:";
+pub const ENVELOPE_PREFIX: &str = "WP4:";
 const BASE45_ALPHABET: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 const ADDRESS_IPV4: u8 = 1;
 const ADDRESS_IPV6: u8 = 2;
@@ -12,23 +12,11 @@ const MAX_BASE45_BYTES: usize = 461;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PairingPayload {
-    pub pair_host: String,
-    pub pair_port: u16,
-    pub token: [u8; 16],
-    pub tls_certificate_sha256: [u8; 32],
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PairingHello {
-    pub token: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PairingServerInfo {
     pub ssh_host: String,
     pub ssh_port: u16,
     pub ssh_user: String,
-    pub ssh_host_fingerprint: String,
+    pub temporary_private_key_seed: [u8; 32],
+    pub ssh_host_key_sha256: [u8; 32],
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -100,8 +88,8 @@ pub enum ProtocolError {
 
 pub fn encode_pairing_code(payload: &PairingPayload) -> Result<String, ProtocolError> {
     validate_payload(payload)?;
-    let mut bytes = Vec::with_capacity(68);
-    match payload.pair_host.parse::<IpAddr>() {
+    let mut bytes = Vec::with_capacity(104);
+    match payload.ssh_host.parse::<IpAddr>() {
         Ok(IpAddr::V4(address)) => {
             bytes.push(ADDRESS_IPV4);
             bytes.extend_from_slice(&address.octets());
@@ -111,7 +99,7 @@ pub fn encode_pairing_code(payload: &PairingPayload) -> Result<String, ProtocolE
             bytes.extend_from_slice(&address.octets());
         }
         Err(_) => {
-            let host = payload.pair_host.as_bytes();
+            let host = payload.ssh_host.as_bytes();
             if host.len() > MAX_HOSTNAME_BYTES {
                 return Err(ProtocolError::BadPayload(
                     "pairing hostname is too long".into(),
@@ -124,9 +112,14 @@ pub fn encode_pairing_code(payload: &PairingPayload) -> Result<String, ProtocolE
             bytes.extend_from_slice(host);
         }
     }
-    bytes.extend_from_slice(&payload.pair_port.to_be_bytes());
-    bytes.extend_from_slice(&payload.token);
-    bytes.extend_from_slice(&payload.tls_certificate_sha256);
+    bytes.extend_from_slice(&payload.ssh_port.to_be_bytes());
+    let user = payload.ssh_user.as_bytes();
+    let user_length = u8::try_from(user.len())
+        .map_err(|_| ProtocolError::BadPayload("SSH username is too long".into()))?;
+    bytes.push(user_length);
+    bytes.extend_from_slice(user);
+    bytes.extend_from_slice(&payload.temporary_private_key_seed);
+    bytes.extend_from_slice(&payload.ssh_host_key_sha256);
     Ok(format!("{ENVELOPE_PREFIX}{}", base45_encode(&bytes)))
 }
 
@@ -139,7 +132,7 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
     let address_type = *take_bytes(&decoded, &mut cursor, 1)?
         .first()
         .ok_or(ProtocolError::BadEncoding)?;
-    let pair_host = match address_type {
+    let ssh_host = match address_type {
         ADDRESS_IPV4 => {
             let octets: [u8; 4] = take_bytes(&decoded, &mut cursor, 4)?
                 .try_into()
@@ -163,43 +156,55 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
         }
         _ => return Err(ProtocolError::BadEncoding),
     };
-    let pair_port = u16::from_be_bytes(
+    let ssh_port = u16::from_be_bytes(
         take_bytes(&decoded, &mut cursor, 2)?
             .try_into()
             .map_err(|_| ProtocolError::BadEncoding)?,
     );
-    let token = take_bytes(&decoded, &mut cursor, 16)?
+    let user_length = usize::from(
+        *take_bytes(&decoded, &mut cursor, 1)?
+            .first()
+            .ok_or(ProtocolError::BadEncoding)?,
+    );
+    let ssh_user = String::from_utf8(take_bytes(&decoded, &mut cursor, user_length)?.to_vec())
+        .map_err(|_| ProtocolError::BadEncoding)?;
+    let temporary_private_key_seed = take_bytes(&decoded, &mut cursor, 32)?
         .try_into()
         .map_err(|_| ProtocolError::BadEncoding)?;
-    let tls_certificate_sha256 = take_bytes(&decoded, &mut cursor, 32)?
+    let ssh_host_key_sha256 = take_bytes(&decoded, &mut cursor, 32)?
         .try_into()
         .map_err(|_| ProtocolError::BadEncoding)?;
     if cursor != decoded.len() {
         return Err(ProtocolError::BadEncoding);
     }
     let payload = PairingPayload {
-        pair_host,
-        pair_port,
-        token,
-        tls_certificate_sha256,
+        ssh_host,
+        ssh_port,
+        ssh_user,
+        temporary_private_key_seed,
+        ssh_host_key_sha256,
     };
     validate_payload(&payload)?;
     Ok(payload)
 }
 
 fn validate_payload(payload: &PairingPayload) -> Result<(), ProtocolError> {
-    if payload.pair_host.is_empty()
-        || payload.pair_host.len() > MAX_HOSTNAME_BYTES
-        || payload.pair_port == 0
+    if payload.ssh_host.is_empty()
+        || payload.ssh_host.len() > MAX_HOSTNAME_BYTES
+        || payload.ssh_port == 0
+        || payload.ssh_user.is_empty()
+        || payload.ssh_user.len() > u8::MAX.into()
     {
         return Err(ProtocolError::BadPayload(
             "missing or invalid required field".into(),
         ));
     }
-    if !payload.pair_host.is_ascii()
+    if !payload.ssh_host.is_ascii()
+        || !payload.ssh_user.is_ascii()
         || payload
-            .pair_host
+            .ssh_host
             .chars()
+            .chain(payload.ssh_user.chars())
             .any(|character| character.is_whitespace() || character.is_control())
     {
         return Err(ProtocolError::BadPayload(
@@ -300,10 +305,11 @@ mod tests {
 
     fn payload() -> PairingPayload {
         PairingPayload {
-            pair_host: "100.64.0.2".into(),
-            pair_port: 43123,
-            token: [7; 16],
-            tls_certificate_sha256: [9; 32],
+            ssh_host: "100.64.0.2".into(),
+            ssh_port: 22,
+            ssh_user: "alice".into(),
+            temporary_private_key_seed: [7; 32],
+            ssh_host_key_sha256: [9; 32],
         }
     }
 
@@ -312,19 +318,19 @@ mod tests {
         let payload = payload();
         let code = encode_pairing_code(&payload).unwrap();
         assert!(code.starts_with(ENVELOPE_PREFIX));
-        assert_eq!(code.len(), 87);
+        assert_eq!(code.len(), 120);
         let qr = QrCode::with_error_correction_level(code.as_bytes(), EcLevel::L).unwrap();
-        assert_eq!(qr.width(), 33);
+        assert_eq!(qr.width(), 37);
         assert_eq!(decode_pairing_code(&code).unwrap(), payload);
     }
 
     #[test]
     fn pairing_code_round_trips_ipv6_and_hostname() {
-        for pair_host in ["fd7a:115c:a1e0::1", "host.example.test"] {
+        for ssh_host in ["fd7a:115c:a1e0::1", "host.example.test"] {
             let mut payload = payload();
-            payload.pair_host = pair_host.into();
+            payload.ssh_host = ssh_host.into();
             let code = encode_pairing_code(&payload).unwrap();
-            assert!(code.len() <= 110);
+            assert!(code.len() <= 145);
             assert_eq!(decode_pairing_code(&code).unwrap(), payload);
         }
     }
@@ -332,7 +338,7 @@ mod tests {
     #[test]
     fn pairing_code_rejects_another_version() {
         assert!(matches!(
-            decode_pairing_code("WHIP-PAIR:2:e30"),
+            decode_pairing_code("WP3:BB8"),
             Err(ProtocolError::BadPrefix)
         ));
     }

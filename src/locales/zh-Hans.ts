@@ -137,7 +137,7 @@ export const zhHans = {
   'pairing.cameraDeniedTitle': '需要相机权限',
   'pairing.cameraDeniedCopy': '请允许使用相机以扫描主机配对码。',
   'pairing.invalidQrTitle': '不是 Whip 配对码',
-  'pairing.invalidQrCopy': '请扫描由 whip-pair 生成的有效 WP3 配对码。',
+  'pairing.invalidQrCopy': '请扫描由 whip-pair 生成的有效 WP4 配对码。',
   'pairing.keyError': '无法准备 SSH 密钥：{{error}}',
   'pairing.pairError': '无法与主机配对：{{error}}',
   'pairing.deviceName': 'Whip 移动端',

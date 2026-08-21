@@ -6,7 +6,7 @@ use std::{
 };
 
 use fs2::FileExt;
-use ssh_key::authorized_keys::Entry;
+use ssh_key::PublicKey;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum AppendOutcome {
@@ -51,6 +51,49 @@ pub fn append_authorized_key(path: &Path, key_line: &str) -> io::Result<AppendOu
     }
 }
 
+pub fn remove_authorized_key(path: &Path, key_line: &str) -> io::Result<bool> {
+    let identity = key_identity(key_line)?;
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "authorized_keys has no parent")
+    })?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?;
+    validate_target(&file)?;
+    file.lock_exclusive()?;
+
+    let mut current = String::new();
+    file.read_to_string(&mut current)?;
+    let mut removed = false;
+    let mut retained = String::with_capacity(current.len());
+    for line in current.split_inclusive('\n') {
+        let candidate = line
+            .strip_suffix('\n')
+            .unwrap_or(line)
+            .trim_end_matches('\r');
+        if key_identity(candidate).is_ok_and(|candidate| candidate == identity) {
+            removed = true;
+        } else {
+            retained.push_str(line);
+        }
+    }
+    if !removed {
+        file.unlock()?;
+        return Ok(false);
+    }
+
+    let permissions = file.metadata()?.permissions();
+    let mut replacement = tempfile::NamedTempFile::new_in(parent)?;
+    replacement.as_file_mut().set_permissions(permissions)?;
+    replacement.write_all(retained.as_bytes())?;
+    replacement.as_file_mut().sync_all()?;
+    replacement.persist(path).map_err(|error| error.error)?;
+    File::open(parent)?.sync_all()?;
+    file.unlock()?;
+    Ok(true)
+}
+
 fn validate_target(file: &File) -> io::Result<()> {
     let metadata = file.metadata()?;
     if !metadata.file_type().is_file() {
@@ -91,13 +134,19 @@ fn append_locked(file: &mut File, key_line: &str) -> io::Result<AppendOutcome> {
 }
 
 fn key_identity(line: &str) -> io::Result<String> {
-    let entry = line.parse::<Entry>().map_err(|error| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("invalid authorized_keys entry: {error}"),
-        )
-    })?;
-    let mut public_key = entry.public_key().clone();
+    let trimmed = line.trim();
+    let public_key = PublicKey::from_openssh(trimmed)
+        .or_else(|_| {
+            let key_start = options_end(trimmed).ok_or(ssh_key::Error::FormatEncoding)?;
+            PublicKey::from_openssh(trimmed[key_start..].trim_start())
+        })
+        .map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid authorized_keys entry: {error}"),
+            )
+        })?;
+    let mut public_key = public_key;
     public_key.set_comment("");
     public_key.to_openssh().map_err(|error| {
         io::Error::new(
@@ -105,6 +154,24 @@ fn key_identity(line: &str) -> io::Result<String> {
             format!("could not encode SSH public key: {error}"),
         )
     })
+}
+
+fn options_end(line: &str) -> Option<usize> {
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, character) in line.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' if quoted => escaped = true,
+            '"' => quoted = !quoted,
+            character if character.is_whitespace() && !quoted => return Some(index),
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -157,5 +224,32 @@ mod tests {
         symlink(&victim, &path).unwrap();
         assert!(append_authorized_key(&path, ED25519_KEY).is_err());
         assert_eq!(fs::read_to_string(victim).unwrap(), "keep\n");
+    }
+
+    #[test]
+    fn removes_only_the_matching_temporary_key() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join(".ssh/authorized_keys");
+        fs::create_dir(path.parent().unwrap()).unwrap();
+        let temporary = format!("restrict,command=\"whip-pair exchange\" {ED25519_KEY} temporary");
+        fs::write(
+            &path,
+            format!("# keep this comment\n{temporary}\n{ECDSA_KEY} permanent\n"),
+        )
+        .unwrap();
+
+        assert!(remove_authorized_key(&path, &temporary).unwrap());
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            format!("# keep this comment\n{ECDSA_KEY} permanent\n")
+        );
+    }
+
+    #[test]
+    fn parses_forced_commands_with_spaces_and_quotes() {
+        let line = format!(
+            "restrict,command=\"'/nix/store/whip pair' exchange --socket '/tmp/pair socket'\" {ED25519_KEY} temporary"
+        );
+        assert!(key_identity(&line).is_ok());
     }
 }

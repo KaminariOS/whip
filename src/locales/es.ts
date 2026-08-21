@@ -137,7 +137,7 @@ export const es = {
   'pairing.cameraDeniedTitle': 'Se necesita acceso a la cámara',
   'pairing.cameraDeniedCopy': 'Permite el acceso a la cámara para escanear el código del host.',
   'pairing.invalidQrTitle': 'No es un código de emparejamiento de Whip',
-  'pairing.invalidQrCopy': 'Escanea un código WP3 vigente generado por whip-pair.',
+  'pairing.invalidQrCopy': 'Escanea un código WP4 vigente generado por whip-pair.',
   'pairing.keyError': 'No se pudo preparar la clave SSH: {{error}}',
   'pairing.pairError': 'No se pudo emparejar con el host: {{error}}',
   'pairing.deviceName': 'Whip móvil',

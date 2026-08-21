@@ -13,18 +13,14 @@ if-addrs = "0.13"
 libc = "0.2"
 qrcode = { version = "0.14", default-features = false }
 rand = "0.8"
-rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+russh = { version = "=0.62.6", default-features = false, features = ["flate2", "ring"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-ssh-key = { version = "=0.7.0-rc.11", default-features = false, features = ["ecdsa", "std"] }
-thiserror = "2"
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
-
-[dev-dependencies]
+ssh-key = { version = "=0.7.0-rc.11", default-features = false, features = ["ecdsa", "ed25519", "std"] }
 tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
 
 [profile.release]
 codegen-units = 1
