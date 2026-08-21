@@ -70,6 +70,7 @@ yarn-error.log
 .eas-secrets/
 .expo_token
 .crate
+.npmToken
 
 # testing
 /coverage
