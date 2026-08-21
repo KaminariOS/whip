@@ -4,18 +4,21 @@ import { resolve } from 'node:path';
 const read = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
 
 describe('iOS SSH integration wiring', () => {
-  it('boots the dedicated runner only when the iOS launch argument enables it', () => {
+  it('keeps the dedicated runner out of the production entry point', () => {
     const entry = read('index.js');
-    expect(entry).toContain("Settings.get('WhipE2EEnabled')");
-    expect(entry).toContain("[true, 1, '1', 'YES', 'true'].includes(iosE2EFlag)");
-    expect(entry).toContain('IosSshE2EScreen');
+    const e2eEntry = read('index.ios-e2e.js');
+    expect(entry).toContain('registerRootComponent(App)');
+    expect(entry).not.toContain('IosSshE2EScreen');
+    expect(entry).not.toContain('WhipE2EEnabled');
+    expect(e2eEntry).toContain('IosSshE2EScreen');
+    expect(e2eEntry).toContain('registerRootComponent(IosSshE2EScreen)');
   });
 
   it('launches the same app key that Expo registerRootComponent registers', () => {
     const entry = read('index.js');
     const appDelegate = read('ios/HerdR/AppDelegate.swift');
     expect(entry).toContain("import { registerRootComponent } from 'expo'");
-    expect(entry).toContain('registerRootComponent(RootComponent)');
+    expect(entry).toContain('registerRootComponent(App)');
     expect(appDelegate).toContain('withModuleName: "main"');
     expect(appDelegate).not.toContain('withModuleName: "HerdR"');
   });

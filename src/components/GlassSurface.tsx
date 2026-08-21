@@ -3,7 +3,7 @@ import {
   LiquidGlassView,
 } from '@callstack/liquid-glass';
 import { BlurView } from 'expo-blur';
-import { createContext, useContext, useEffect, type ReactNode, type RefObject } from 'react';
+import { createContext, useContext, type ReactNode, type RefObject } from 'react';
 import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
@@ -17,19 +17,6 @@ interface GlassContextValue {
 const GlassContext = createContext<GlassContextValue | null>(null);
 
 export function GlassProvider({ blurTarget, enabled, children }: GlassContextValue & { children: ReactNode }) {
-  useEffect(() => {
-    const capability = {
-      isLiquidGlassSupported,
-      legacyGlassEnabled: enabled,
-      platform: Platform.OS,
-    };
-    const nativeLoggingHook = (globalThis as typeof globalThis & {
-      nativeLoggingHook?: (message: string, level: number) => void;
-    }).nativeLoggingHook;
-    nativeLoggingHook?.(`[LiquidGlass] runtime ${JSON.stringify(capability)}`, 1);
-    console.info('[LiquidGlass] capability', capability);
-  }, [enabled]);
-
   return <GlassContext.Provider value={{ blurTarget, enabled }}>{children}</GlassContext.Provider>;
 }
 

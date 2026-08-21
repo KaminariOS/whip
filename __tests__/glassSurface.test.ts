@@ -32,10 +32,8 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(glass).toContain("className.includes('rounded-full')");
   expect(glass).toContain('pointerEvents="none"');
   expect(glass).not.toContain('interactive');
-  expect(glass).toContain("console.info('[LiquidGlass] capability'");
-  expect(glass).toContain('isLiquidGlassSupported,');
-  expect(glass).toContain('legacyGlassEnabled: enabled,');
-  expect(glass).toContain('[LiquidGlass] runtime');
+  expect(glass).not.toContain('nativeLoggingHook');
+  expect(glass).not.toContain("console.info('[LiquidGlass]");
   expect(appDelegate).toContain('[LiquidGlass] native capability supported=%@');
   expect(appDelegate).toContain('NSClassFromString("UIGlassEffect")');
   expect(glass).toContain('backgroundColor: colors.surface');
