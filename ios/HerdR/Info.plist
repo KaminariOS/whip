@@ -47,8 +47,6 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Allow Whip to use Face ID to protect SSH keys and app access.</string>
 	<key>NSLocalNetworkUsageDescription</key>

@@ -19,4 +19,5 @@ test('keeps the native iOS camera usage description in sync with Expo plugins', 
   expect(nativeDescription).toBeTruthy();
   expect(cameraPlugin?.[1]?.cameraPermission).toBe(nativeDescription);
   expect(imagePickerPlugin?.[1]?.cameraPermission).toBe(nativeDescription);
+  expect(infoPlist).not.toContain('<key>NSLocationWhenInUseUsageDescription</key>');
 });

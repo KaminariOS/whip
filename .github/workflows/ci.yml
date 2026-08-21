@@ -159,7 +159,7 @@ jobs:
           --no-daemon
 
   ios:
-    name: iOS unsigned device build
+    name: iOS unsigned compile check
     runs-on: macos-26
     timeout-minutes: 30
     env:
@@ -199,40 +199,22 @@ jobs:
         working-directory: ios
         run: bundle exec pod install
 
-      - name: Build unsigned iOS device app
-        working-directory: ios
+      - name: Compile and validate unsigned iOS device app
         run: |
-          set -o pipefail
-          xcodebuild \
-            -workspace HerdR.xcworkspace \
-            -scheme HerdR \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination "generic/platform=iOS" \
-            -derivedDataPath "$RUNNER_TEMP/WhipDerivedData" \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=YES \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=NO \
-            FORCE_BUNDLING=1 \
-            "SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) WHIP_EMBEDDED_BUNDLE" \
-            build
+          scripts/build-ios-app.sh \
+            --unsigned \
+            --derived-data "$RUNNER_TEMP/WhipDerivedData"
           app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphoneos/HerdR.app"
-          test -d "$app_path"
-          test -f "$app_path/main.jsbundle"
           ditto -c -k --sequesterRsrc --keepParent \
             "$app_path" \
-            "$RUNNER_TEMP/Whip-iOS.app.zip"
+            "$RUNNER_TEMP/Whip-iOS-unsigned-compile-only.app.zip"
 
-      - name: Upload unsigned iOS app
-        if: always()
+      - name: Upload compile-only iOS artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: whip-ios-app
-          path: ${{ runner.temp }}/Whip-iOS.app.zip
-          if-no-files-found: warn
+          name: whip-ios-unsigned-compile-only
+          path: ${{ runner.temp }}/Whip-iOS-unsigned-compile-only.app.zip
+          if-no-files-found: error
           retention-days: 7
 
   ios-xcframework:
