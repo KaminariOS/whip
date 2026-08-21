@@ -65,10 +65,10 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci --include=dev
 
-      - name: Build Android Rust static library
+      - name: Build Android Rust static libraries
         run: >-
           nix develop .#default -c bash
-          packages/react-native-russh/rust/build-android.sh
+          scripts/build-android-rust.sh
 
       - name: Prepare signing and Play credentials
         env:

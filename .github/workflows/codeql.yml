@@ -84,11 +84,11 @@ jobs:
         if: matrix.language == 'java-kotlin'
         run: npm ci
 
-      - name: Build Android Rust static library
+      - name: Build Android Rust static libraries
         if: matrix.language == 'java-kotlin'
         run: >-
           nix develop .#default -c bash
-          packages/react-native-russh/rust/build-android.sh
+          scripts/build-android-rust.sh
 
       - name: Build Java and Kotlin
         if: matrix.language == 'java-kotlin'

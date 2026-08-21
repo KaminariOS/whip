@@ -36,7 +36,9 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          workspaces: packages/react-native-russh/rust
+          workspaces: |
+            packages/react-native-russh/rust
+            packages/react-native-whip-ssh/rust
 
       - name: Check Rust formatting
         run: cargo fmt --check
@@ -45,6 +47,18 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test Rust SSH transport
+        run: cargo test --locked
+
+      - name: Check private Rust formatting
+        working-directory: ${{ github.workspace }}/packages/react-native-whip-ssh/rust
+        run: cargo fmt --check
+
+      - name: Lint private WP4 crate
+        working-directory: ${{ github.workspace }}/packages/react-native-whip-ssh/rust
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test private WP4 crate
+        working-directory: ${{ github.workspace }}/packages/react-native-whip-ssh/rust
         run: cargo test --locked
 
       - name: Audit Rust dependencies
@@ -132,10 +146,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
 
-      - name: Build Android Rust static library
+      - name: Build Android Rust static libraries
         run: >-
           nix develop .#default -c bash
-          packages/react-native-russh/rust/build-android.sh
+          scripts/build-android-rust.sh
 
       - name: Run Android lint and build
         working-directory: android
