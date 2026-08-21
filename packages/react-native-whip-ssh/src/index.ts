@@ -141,11 +141,13 @@ const eventSink: WhipSshEventSink = {
   },
 };
 
-function finishFast(invoke: () => string | undefined, callback: Callback): void {
+function finishFast(operation: string, invoke: () => string | undefined, callback: Callback): void {
   try {
     const error = invoke();
+    if (error) console.error(`[WhipSsh] ${operation} failed: ${error}`);
     callback(error || undefined);
   } catch (error) {
+    console.error(`[WhipSsh] ${operation} failed: ${errorMessage(error)}`);
     callback(errorMessage(error));
   }
 }
@@ -210,7 +212,7 @@ const nativeClient = {
   },
 
   writeToShell(data: string, key: string, callback: Callback) {
-    finishFast(() => writeShellInput(key, data), callback);
+    finishFast('writeShellInput', () => writeShellInput(key, data), callback);
   },
 
   resizeShell(columns: number, rows: number, key: string) {
@@ -302,11 +304,12 @@ const nativeClient = {
   },
 
   herdrBridgeInput(terminalId: string, text: string, key: string, callback: Callback) {
-    finishFast(() => herdrBridgeInputFast(key, terminalId, text), callback);
+    finishFast('herdrBridgeInput', () => herdrBridgeInputFast(key, terminalId, text), callback);
   },
 
   herdrBridgeResize(columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, terminalId: string, key: string, callback: Callback) {
     finishFast(
+      'herdrBridgeResize',
       () => herdrBridgeResizeFast(
         key,
         terminalId,
@@ -320,7 +323,7 @@ const nativeClient = {
   },
 
   herdrBridgeScroll(up: boolean, lines: number, terminalId: string, key: string, callback: Callback) {
-    finishFast(() => herdrBridgeScrollFast(key, terminalId, up, lines), callback);
+    finishFast('herdrBridgeScroll', () => herdrBridgeScrollFast(key, terminalId, up, lines), callback);
   },
 
   closeHerdrBridge(terminalId: string, key: string) {

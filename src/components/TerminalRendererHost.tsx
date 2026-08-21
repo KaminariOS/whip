@@ -26,6 +26,7 @@ import {
   touchTerminalRendererEntry,
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
+import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
 
@@ -241,15 +242,29 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (AppState.currentState !== 'active') return;
       const nextAttempt = entry.reconnectAttempt + 1;
       if (nextAttempt > MAX_RECONNECT_ATTEMPTS) {
+        recordNetworkDiagnostic('error', 'terminal-reconnect-exhausted', {
+          sessionId: entry.target.hostSessionId,
+          terminalId,
+          attempts: entry.reconnectAttempt,
+          reason: networkErrorMessage(reason),
+        });
         reportStatus(entry.target, 'error', reason, entry.reconnectAttempt);
         return;
       }
       entry.reconnectAttempt = nextAttempt;
+      const delayMs = Math.min(8000, 750 * (2 ** (nextAttempt - 1)));
+      recordNetworkDiagnostic('warn', 'terminal-reconnect-scheduled', {
+        sessionId: entry.target.hostSessionId,
+        terminalId,
+        attempt: nextAttempt,
+        delayMs,
+        reason: networkErrorMessage(reason),
+      });
       reportStatus(entry.target, 'disconnected', reason, nextAttempt);
       if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
       entry.reconnectTimer = setTimeout(
         () => connectEntry(entry),
-        Math.min(8000, 750 * (2 ** (nextAttempt - 1))),
+        delayMs,
       );
     };
     client.openTerminal(
@@ -258,9 +273,17 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reason => scheduleReconnect(reason || 'Remote terminal closed'),
     ).then(() => {
       if (entries.current.get(entry.target.key) !== entry) return;
+      const recoveryAttempt = entry.reconnectAttempt;
       entry.connecting = false;
       entry.reconnectAttempt = 0;
       reportStatus(entry.target, 'connected', undefined, 0);
+      if (recoveryAttempt > 0) {
+        recordNetworkDiagnostic('info', 'terminal-reconnect-recovered', {
+          sessionId: entry.target.hostSessionId,
+          terminalId,
+          attempt: recoveryAttempt,
+        });
+      }
     }).catch(reason => {
       if (entries.current.get(entry.target.key) !== entry) return;
       const message = String(reason);
@@ -322,6 +345,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.connecting = false;
       entry.reconnectAttempt = 0;
       entry.target.client.closeTerminal(entry.target.session.terminalId);
+      recordNetworkDiagnostic('info', 'terminal-manual-retry', {
+        sessionId: entry.target.hostSessionId,
+        terminalId: entry.target.session.terminalId,
+      });
       reportStatus(entry.target, 'connecting', undefined, 0);
       connectEntry(entry);
     },

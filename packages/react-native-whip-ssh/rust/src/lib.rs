@@ -1341,10 +1341,11 @@ async fn start_stream(params: &Value, command_stream: bool) -> Result<Value, Tra
     tokio::spawn(async move {
         let mut stream = channel.into_stream();
         let mut buffer = vec![0u8; 8192];
-        loop {
+        let close_reason = loop {
             tokio::select! {
                 read = stream.read(&mut buffer) => match read {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) => break "remote stream reached EOF".to_owned(),
+                    Err(error) => break format!("remote stream read failed: {error}"),
                     Ok(count) => {
                         let data = String::from_utf8_lossy(&buffer[..count]);
                         let value = if command_stream { json!({"data": data, "closed": false}) } else { json!(data) };
@@ -1352,15 +1353,24 @@ async fn start_stream(params: &Value, command_stream: bool) -> Result<Value, Tra
                     }
                 },
                 command = receiver.recv() => match command {
-                    Some(StreamCommand::Write(data)) => if stream.write_all(&data).await.is_err() { break },
-                    Some(StreamCommand::Close) | None => break,
+                    Some(StreamCommand::Write(data)) => if let Err(error) = stream.write_all(&data).await {
+                        break format!("remote stream write failed: {error}");
+                    },
+                    Some(StreamCommand::Close) => break "stream closed by client".to_owned(),
+                    None => break "stream control queue closed".to_owned(),
                 }
             }
-        }
+        };
         let value = if command_stream {
-            json!({"closed": true})
+            json!({"closed": true, "reason": close_reason})
         } else {
-            json!("{\"herdr_android_bridge_closed\":true}\n")
+            json!(format!(
+                "{}\n",
+                json!({
+                    "herdr_android_bridge_closed": true,
+                    "reason": close_reason,
+                })
+            ))
         };
         emit_event(json!({"name": event_name, "key": key, "value": value}));
         streams().write().remove(&stream_key);
@@ -1570,6 +1580,7 @@ async fn create_bridge(
         let (mut reader, mut writer) = tokio::io::split(stream);
         let mut terminal_id = terminal.map(|value| value.0);
         let mut closed_by_client = false;
+        let mut close_reason = None;
         loop {
             tokio::select! {
                 frame = read_bridge_frame(&mut reader) => match frame {
@@ -1578,26 +1589,39 @@ async fn create_bridge(
                             if let Some(id) = &terminal_id {
                                 let closed = message.kind == "closed";
                                 herdr_bridge_event(&key, id, message);
-                                if closed { break; }
+                                if closed {
+                                    close_reason = None;
+                                    break;
+                                }
                             }
                         }
                         Err(error) => {
-                            if let Some(id) = &terminal_id { herdr_bridge_closed(&key, id, error); }
+                            close_reason = Some(format!("Herdr bridge frame decode failed: {error}"));
                             break;
                         }
                     },
-                    Ok(None) => break,
+                    Ok(None) => {
+                        close_reason = Some("Herdr remote-client-bridge reached EOF".to_owned());
+                        break;
+                    }
                     Err(error) => {
-                        if let Some(id) = &terminal_id { herdr_bridge_closed(&key, id, error); }
+                        close_reason = Some(format!("Herdr bridge read failed: {error}"));
                         break;
                     }
                 },
                 command = receiver.recv() => match command {
                     Some(BridgeCommand::Attach { terminal_id: id, takeover }) => {
-                        if writer.write_all(&herdr_codec::attach(&id, takeover)).await.is_err() { break; }
+                        if let Err(error) = writer.write_all(&herdr_codec::attach(&id, takeover)).await {
+                            close_reason = Some(format!("Herdr bridge attach write failed: {error}"));
+                            terminal_id = Some(id);
+                            break;
+                        }
                         terminal_id = Some(id);
                     }
-                    Some(BridgeCommand::Send(frame)) => if writer.write_all(&frame).await.is_err() { break; },
+                    Some(BridgeCommand::Send(frame)) => if let Err(error) = writer.write_all(&frame).await {
+                        close_reason = Some(format!("Herdr bridge send failed: {error}"));
+                        break;
+                    },
                     Some(BridgeCommand::Close) | None => {
                         closed_by_client = true;
                         let _ = writer.write_all(&herdr_codec::detach()).await;
@@ -1615,8 +1639,10 @@ async fn create_bridge(
             if should_remove {
                 bridges().write().remove(&map_key);
             }
-            if !closed_by_client {
-                herdr_bridge_closed(&key, id, "Herdr remote-client-bridge closed");
+            if !closed_by_client
+                && let Some(reason) = close_reason
+            {
+                herdr_bridge_closed(&key, id, reason);
             }
         } else {
             let should_remove = prepared_bridges()

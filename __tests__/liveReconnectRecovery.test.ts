@@ -28,4 +28,18 @@ describe('live connection recovery', () => {
   test('preserves jump-host routing when replacing the control connection', () => {
     expect(client).toContain('this.connectSsh(profile, port, this.jumpProfiles)');
   });
+
+  test('records control, event-stream, snapshot, and latency recovery diagnostics', () => {
+    expect(app).toContain("'control-reconnect-scheduled'");
+    expect(app).toContain("'control-reconnect-failed'");
+    expect(app).toContain("'control-reconnect-recovered'");
+    expect(app).toContain("'event-stream-closed'");
+    expect(app).toContain("'event-stream-recovered'");
+    expect(app).toContain("'snapshot-refresh-failed'");
+    expect(app).toContain("'snapshot-status-divergence'");
+    expect(app).toContain("'latency-probe-failed'");
+    expect(app).toContain("'latency-probe-recovered'");
+    expect(app).toContain("'agent-status-event'");
+    expect(app).toContain("'app-state-changed'");
+  });
 });

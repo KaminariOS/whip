@@ -134,6 +134,15 @@ describe('terminal renderer lifecycle', () => {
     expect(app).toContain('await refreshHost(sessionId);');
   });
 
+  it('records terminal reconnect failures and recovery in app diagnostics', () => {
+    const renderer = readSource('src/components/TerminalRendererHost.tsx');
+
+    expect(renderer).toContain("'terminal-reconnect-scheduled'");
+    expect(renderer).toContain("'terminal-reconnect-exhausted'");
+    expect(renderer).toContain("'terminal-reconnect-recovered'");
+    expect(renderer).toContain('reason: networkErrorMessage(reason)');
+  });
+
   it('keeps terminal focus bidirectional with Herdr', () => {
     const app = readSource('App.tsx');
     const session = readSource('src/components/SessionScreen.tsx');

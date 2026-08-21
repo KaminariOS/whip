@@ -658,7 +658,10 @@ export class HerdrClient {
         } else if (event) {
           subscription.onEvent(event);
         } else if ((message as { herdr_android_bridge_closed?: boolean }).herdr_android_bridge_closed) {
-          close('Herdr event bridge closed');
+          const reason = (message as { reason?: unknown }).reason;
+          close(typeof reason === 'string' && reason.trim()
+            ? `Herdr event bridge closed: ${reason}`
+            : 'Herdr event bridge closed');
         }
       }
     };

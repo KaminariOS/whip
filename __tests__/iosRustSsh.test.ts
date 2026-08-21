@@ -95,6 +95,18 @@ describe('UniFFI SSH integration', () => {
     expect(sshClient).not.toContain('JSON.parse(p.replace(');
   });
 
+  it('preserves native stream failure reasons and logs fast-path send failures', () => {
+    const adapter = readUniffi('src/index.ts');
+    const rust = readUniffi('rust/src/lib.rs');
+
+    expect(rust).toContain('remote stream read failed: {error}');
+    expect(rust).toContain('remote stream write failed: {error}');
+    expect(rust).toContain('Herdr bridge send failed: {error}');
+    expect(rust).toContain('"reason": close_reason');
+    expect(adapter).toContain('console.error(`[WhipSsh] ${operation} failed: ${error}`)');
+    expect(adapter).toContain("finishFast('herdrBridgeInput'");
+  });
+
   it.each([
     'setKnownHosts',
     'getKeyDetails',

@@ -124,6 +124,7 @@ import {
   type TerminalPreferences,
 } from './src/services/devicePreferences';
 import { HerdrClient } from './src/services/HerdrClient';
+import { networkErrorMessage, recordNetworkDiagnostic } from './src/services/networkDiagnostics';
 import {
   deleteHostProfile,
   loadConnectionProfile,
@@ -196,6 +197,7 @@ interface LiveRuntime {
   eventReconnectAttempts: number;
   eventReconnectTimer: ReturnType<typeof setTimeout> | null;
   eventRefresh: EventRefreshScheduler;
+  latencyFailureActive: boolean;
 }
 
 interface SnapshotMeasurement {
@@ -530,11 +532,22 @@ function AppContent() {
     if (!runtime || runtime.eventReconnectTimer) return;
     const decision = nextReconnect(runtime.eventReconnectAttempts);
     if (decision.action === 'stop') {
+      recordNetworkDiagnostic('error', 'event-stream-reconnect-exhausted', {
+        sessionId,
+        attempts: decision.attempts,
+        cause: networkErrorMessage(cause),
+      });
       runtime.eventReconnectAttempts = 0;
       refreshHost(sessionId).catch(() => undefined);
       return;
     }
     runtime.eventReconnectAttempts = decision.attempt;
+    recordNetworkDiagnostic('warn', 'event-stream-reconnect-scheduled', {
+      sessionId,
+      attempt: decision.attempt,
+      delayMs: decision.delayMs,
+      cause: networkErrorMessage(cause),
+    });
     runtime.eventReconnectTimer = setTimeout(async () => {
       runtime.eventReconnectTimer = null;
       const session = findLiveHostSession(liveSessionsRef.current, sessionId);
@@ -545,6 +558,11 @@ function AppContent() {
         // immediately so closed tabs and completed agents do not remain stale.
         await refreshHost(sessionId);
       } catch (error) {
+        recordNetworkDiagnostic('warn', 'event-stream-reconnect-failed', {
+          sessionId,
+          attempt: decision.attempt,
+          error: networkErrorMessage(error),
+        });
         scheduleEventReconnect(sessionId, error || cause);
       }
     }, decision.delayMs);
@@ -573,6 +591,7 @@ function AppContent() {
     const paneIds = snapshot.panes.map(pane => pane.pane_id).sort();
     const paneKey = paneIds.join('\n');
     if (!force && runtime.eventPaneKey === paneKey && runtime.eventStatus !== 'closed') return;
+    const recoveryAttempt = runtime.eventReconnectAttempts;
 
     clearEventTimers(runtime);
     runtime.client.closeEventStream();
@@ -634,7 +653,14 @@ function AppContent() {
             useBriefAlert ? 'brief' : 'persistent',
             persistentAlertDurationSecondsRef.current * 1_000).catch(() => undefined);
           }
-          if (agentStatus) runtime.previousStatuses?.set(paneId, agentStatus);
+          if (agentStatus) {
+            recordNetworkDiagnostic('info', 'agent-status-event', {
+              sessionId,
+              paneId,
+              status: agentStatus,
+            });
+            runtime.previousStatuses?.set(paneId, agentStatus);
+          }
           setLiveSessions(current => applyLiveHostAgentStatus(current, sessionId, paneId, event.data));
         }
         runtime.eventRefresh.schedule(event.event);
@@ -642,12 +668,25 @@ function AppContent() {
       reason => {
         if (runtimes.current.get(sessionId) !== runtime) return;
         runtime.eventStatus = 'closed';
-        scheduleEventReconnect(sessionId, reason || t('app.eventBridgeClosed'));
+        const cause = reason || t('app.eventBridgeClosed');
+        recordNetworkDiagnostic('warn', 'event-stream-closed', {
+          sessionId,
+          paneCount: paneIds.length,
+          reason: networkErrorMessage(cause),
+        });
+        scheduleEventReconnect(sessionId, cause);
       },
     );
     if (runtimes.current.get(sessionId) !== runtime) return;
     runtime.eventStatus = 'open';
     runtime.eventReconnectAttempts = 0;
+    if (force || recoveryAttempt > 0) {
+      recordNetworkDiagnostic('info', 'event-stream-recovered', {
+        sessionId,
+        attempt: recoveryAttempt,
+        paneCount: paneIds.length,
+      });
+    }
   }
 
   const scheduleReconnect = (sessionId: string, cause: unknown) => {
@@ -657,6 +696,10 @@ function AppContent() {
     if (session?.status === 'connected') recordHostDisconnect(sessionId);
     if (isHerdrProtocolMismatch(cause)) {
       clearReconnect(runtime);
+      recordNetworkDiagnostic('error', 'control-reconnect-protocol-mismatch', {
+        sessionId,
+        error: networkErrorMessage(cause),
+      });
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
         status: 'error',
         error: String(cause),
@@ -666,6 +709,11 @@ function AppContent() {
     if (runtime.reconnectTimer) return;
     const decision = nextReconnect(runtime.reconnectAttempts);
     if (decision.action === 'stop') {
+      recordNetworkDiagnostic('error', 'control-reconnect-exhausted', {
+        sessionId,
+        attempts: decision.attempts,
+        cause: networkErrorMessage(cause),
+      });
       setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
         status: 'error',
         error: String(cause),
@@ -681,6 +729,12 @@ function AppContent() {
     }
 
     runtime.reconnectAttempts = decision.attempt;
+    recordNetworkDiagnostic('warn', 'control-reconnect-scheduled', {
+      sessionId,
+      attempt: decision.attempt,
+      delayMs: decision.delayMs,
+      cause: networkErrorMessage(cause),
+    });
     setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
       status: 'reconnecting',
       error: String(cause),
@@ -691,11 +745,26 @@ function AppContent() {
       if (runtimes.current.get(sessionId) !== runtime) return;
       runtime.refresh.invalidate();
       try {
+        recordNetworkDiagnostic('info', 'control-reconnect-started', {
+          sessionId,
+          attempt: decision.attempt,
+        });
         await runtime.client.reconnectControl(runtime.profile);
         runtime.reconnectAttempts = 0;
         setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
-        await refreshHost(sessionId);
+        const refreshed = await refreshHostSnapshot(sessionId);
+        if (refreshed) {
+          recordNetworkDiagnostic('info', 'control-reconnect-recovered', {
+            sessionId,
+            attempt: decision.attempt,
+          });
+        }
       } catch (error) {
+        recordNetworkDiagnostic('warn', 'control-reconnect-failed', {
+          sessionId,
+          attempt: decision.attempt,
+          error: networkErrorMessage(error),
+        });
         scheduleReconnect(sessionId, error);
       }
     }, decision.delayMs);
@@ -712,6 +781,7 @@ function AppContent() {
       eventStatus: 'closed',
       eventReconnectAttempts: 0,
       eventReconnectTimer: null,
+      latencyFailureActive: false,
       eventRefresh: createEventRefreshScheduler(() => {
         refreshHost(sessionId).catch(() => undefined);
       }),
@@ -721,7 +791,25 @@ function AppContent() {
         setLiveSessions(current => beginLiveHostSync(current, sessionId).state);
         // Measure device-to-host network RTT separately from the much larger
         // SSH/Herdr snapshot operation so control-plane work cannot inflate it.
-        const latencyMs = await runtime.client.measureLatency().catch(() => null);
+        const latencyMs = await runtime.client.measureLatency().then(value => {
+          if (runtime.latencyFailureActive) {
+            runtime.latencyFailureActive = false;
+            recordNetworkDiagnostic('info', 'latency-probe-recovered', {
+              sessionId,
+              latencyMs: value,
+            });
+          }
+          return value;
+        }).catch(error => {
+          if (!runtime.latencyFailureActive) {
+            runtime.latencyFailureActive = true;
+            recordNetworkDiagnostic('warn', 'latency-probe-failed', {
+              sessionId,
+              error: networkErrorMessage(error),
+            });
+          }
+          return null;
+        });
         const snapshot = await runtime.client.snapshot();
         return { snapshot, latencyMs };
       },
@@ -729,6 +817,16 @@ function AppContent() {
         if (runtimes.current.get(sessionId) !== runtime) return;
         const { snapshot, latencyMs } = measurement;
         const statuses = new Map(snapshot.agents.map(agent => [agent.pane_id, agent.agent_status]));
+        const changedAgentCount = runtime.previousStatuses
+          ? snapshot.agents.filter(agent => runtime.previousStatuses?.get(agent.pane_id) !== agent.agent_status).length
+          : 0;
+        if (changedAgentCount > 0) {
+          recordNetworkDiagnostic('warn', 'snapshot-status-divergence', {
+            sessionId,
+            eventStatus: runtime.eventStatus,
+            changedAgentCount,
+          });
+        }
         const visibleSnapshot = findLiveHostSession(liveSessionsRef.current, sessionId)?.snapshot;
         if (alertsEnabledRef.current && runtime.previousStatuses) {
           for (const agent of snapshot.agents) {
@@ -790,6 +888,12 @@ function AppContent() {
       }
       return result.value.snapshot;
     } else if (result.status === 'failed') {
+      recordNetworkDiagnostic('error', 'snapshot-refresh-failed', {
+        sessionId,
+        connectionStatus: session.status,
+        eventStatus: runtime.eventStatus,
+        error: networkErrorMessage(result.error),
+      });
       setLiveSessions(current => {
         const currentSession = findLiveHostSession(current, sessionId);
         if (!currentSession) return current;
@@ -976,7 +1080,14 @@ function AppContent() {
 
   useEffect(() => {
     if (liveSessions.sessions.length === 0) return;
+    let previousState = AppState.currentState;
     const subscription = AppState.addEventListener('change', state => {
+      recordNetworkDiagnostic('info', 'app-state-changed', {
+        from: previousState,
+        to: state,
+        liveHostCount: liveSessionsRef.current.sessions.length,
+      });
+      previousState = state;
       if (state === 'active') {
         restartLiveConnections('app-resume');
         resumeLiveConnections(false);
@@ -998,6 +1109,9 @@ function AppContent() {
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const subscription = HerdrClient.addNetworkChangeListener(() => {
+      recordNetworkDiagnostic('warn', 'native-network-change', {
+        liveHostCount: liveSessionsRef.current.sessions.length,
+      });
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         debounceTimer = null;

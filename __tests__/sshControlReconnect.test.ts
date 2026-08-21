@@ -150,6 +150,22 @@ describe('SSH control reconnects', () => {
     }));
   });
 
+  test('preserves the native event-stream close reason for diagnostics', async () => {
+    const native = streamingNativeClient();
+    connectWithPassword.mockResolvedValue(native.client);
+    const client = new HerdrClient();
+    const onClosed = jest.fn();
+
+    await client.connect(profile);
+    await client.initialSnapshot();
+    await client.openEventStream([], jest.fn(), onClosed);
+    native.emitEventData('{"herdr_android_bridge_closed":true,"reason":"remote stream write failed: broken pipe"}\n');
+
+    expect(onClosed).toHaveBeenCalledWith(
+      'Herdr event bridge closed: remote stream write failed: broken pipe',
+    );
+  });
+
   test('does not replay a mutating command when its channel fails', async () => {
     const stale = nativeClient({ startError: 'channel is not opened.' });
     connectWithPassword.mockResolvedValue(stale);
