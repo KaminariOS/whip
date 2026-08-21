@@ -1639,9 +1639,7 @@ async fn create_bridge(
             if should_remove {
                 bridges().write().remove(&map_key);
             }
-            if !closed_by_client
-                && let Some(reason) = close_reason
-            {
+            if !closed_by_client && let Some(reason) = close_reason {
                 herdr_bridge_closed(&key, id, reason);
             }
         } else {

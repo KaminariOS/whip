@@ -5,7 +5,9 @@ describe('host latency measurement', () => {
   it('does not label full snapshot duration as network latency', () => {
     const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
 
-    expect(app).toContain('runtime.client.measureLatency().catch(() => null)');
+    expect(app).toMatch(
+      /const latencyMs = await runtime\.client\.measureLatency\(\)[\s\S]{0,800}\.catch\(error => \{[\s\S]{0,800}return null;\s*\}\);/,
+    );
     expect(app).toContain('runtime.client.snapshot()');
     expect(app).not.toContain('elapsedLatencyMs');
     expect(app).not.toMatch(/startedAt[\s\S]{0,160}client\.snapshot\(\)/);
