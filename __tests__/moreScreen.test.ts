@@ -100,3 +100,23 @@ test('shows settings explanations in dismissible floating details', () => {
   expect(detailsTitle).not.toContain('onLongPress');
   expect(settings).not.toMatch(/<Text[^>]*>\{t\('settings\.[^']+Copy'/);
 });
+
+test('uses sliders for dimming and terminal font size with a live preview', () => {
+  const settings = readFileSync(
+    resolve(__dirname, '../src/components/SettingsScreen.tsx'),
+    'utf8',
+  );
+
+  expect(settings).toContain("import Slider from '@react-native-community/slider';");
+  expect(settings.match(/title=\{t\('settings\.backgroundDimming'\)\}/g)).toHaveLength(2);
+  expect(settings).toContain("title={t('settings.fontSize')}");
+  expect(settings.match(/<SliderRow/g)).toHaveLength(3);
+  expect(settings).toContain('minimumValue={8}');
+  expect(settings).toContain('maximumValue={24}');
+  expect(settings).toContain('minimumValue={0}');
+  expect(settings).toContain('maximumValue={100}');
+  expect(settings).toContain('accessibilityRole="adjustable"');
+  expect(settings).toContain('fontPreview');
+  expect(settings).toContain('$ herdr status');
+  expect(settings).toContain('fontSize: value, lineHeight: Math.ceil(value * 1.35)');
+});

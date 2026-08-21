@@ -1,3 +1,4 @@
+import Slider from '@react-native-community/slider';
 import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Clipboard, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
@@ -17,6 +18,7 @@ import {
 } from '@/src/lib/terminalDoubleTap';
 import { deviceLanguage, type SupportedLanguage } from '@/src/i18n';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
+import { useTheme } from '@/src/theme';
 import {
   MIN_XTERM_CACHE_CAPACITY,
 } from '@/src/lib/terminalRendererLru';
@@ -290,12 +292,15 @@ export function SettingsSection(props: SettingsSectionProps) {
               onChoose={chooseAppBackground}
               onRemove={removeAppBackground}
             />
-            <ValueRow
+            <SliderRow
               title={t('settings.backgroundDimming')}
-              value={`${props.appBackgroundDimming}%`}
+              value={props.appBackgroundDimming}
+              minimumValue={0}
+              maximumValue={100}
+              step={5}
+              formatValue={value => `${value}%`}
               disabled={!props.appBackgroundImageUri}
-              onDecrease={() => props.onAppBackgroundDimmingChange(Math.max(0, props.appBackgroundDimming - 5))}
-              onIncrease={() => props.onAppBackgroundDimmingChange(Math.min(100, props.appBackgroundDimming + 5))}
+              onChange={props.onAppBackgroundDimmingChange}
               divided
             />
             <SettingRow
@@ -371,7 +376,17 @@ export function SettingsSection(props: SettingsSectionProps) {
             divided
           />
           <SettingRow title={t('settings.pauseResizeInBackground')} copy={t('settings.pauseResizeInBackgroundCopy')} value={props.terminalPreferences.pauseResizeInBackground} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, pauseResizeInBackground: value })} divided />
-          <ValueRow title={t('settings.fontSize')} value={`${props.terminalPreferences.fontSize}px`} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.max(8, props.terminalPreferences.fontSize - 1) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize: Math.min(24, props.terminalPreferences.fontSize + 1) })} divided />
+          <SliderRow
+            title={t('settings.fontSize')}
+            value={props.terminalPreferences.fontSize}
+            minimumValue={8}
+            maximumValue={24}
+            step={1}
+            formatValue={value => `${value}px`}
+            onChange={fontSize => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize })}
+            fontPreview
+            divided
+          />
           <ValueRow title={t('settings.scrollback')} value={t('settings.lines', { count: props.terminalPreferences.scrollback })} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
           <XtermCacheCapacityRow value={props.terminalPreferences.xtermCacheCapacity} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, xtermCacheCapacity: value })} />
           <SettingRow title={t('settings.blinkingCursor')} copy={t('settings.blinkingCursorCopy')} value={props.terminalPreferences.cursorBlink} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, cursorBlink: value })} divided />
@@ -382,12 +397,15 @@ export function SettingsSection(props: SettingsSectionProps) {
             onChoose={chooseBackground}
             onRemove={removeBackground}
           />
-          <ValueRow
+          <SliderRow
             title={t('settings.backgroundDimming')}
-            value={`${props.terminalPreferences.backgroundDimming}%`}
+            value={props.terminalPreferences.backgroundDimming}
+            minimumValue={0}
+            maximumValue={100}
+            step={5}
+            formatValue={value => `${value}%`}
             disabled={!props.terminalPreferences.backgroundImageUri}
-            onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming: Math.max(0, props.terminalPreferences.backgroundDimming - 5) })}
-            onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming: Math.min(100, props.terminalPreferences.backgroundDimming + 5) })}
+            onChange={backgroundDimming => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming })}
             divided
           />
         </GlassSurface>
@@ -553,6 +571,42 @@ function ValueRow({ title, copy, value, onDecrease, onIncrease, divided = false,
     ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2'
     : 'min-h-16 flex-row items-center px-3.5 py-2';
   return <View className={rowClassName}><View className="min-w-0 flex-1 pr-2">{copy ? <DetailsTitle title={title} copy={copy} /> : <Text className="text-[15px] font-semibold leading-5">{title}</Text>}</View><View className="flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[64px] text-center text-xs text-muted-foreground/50' : 'min-w-[64px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
+}
+
+function SliderRow({ title, value, minimumValue, maximumValue, step, formatValue, onChange, fontPreview = false, divided = false, disabled = false }: { title: string; value: number; minimumValue: number; maximumValue: number; step: number; formatValue: (value: number) => string; onChange: (value: number) => void; fontPreview?: boolean; divided?: boolean; disabled?: boolean }) {
+  const { colors } = useTheme();
+  const formattedValue = formatValue(value);
+  const fontPreviewSize = { fontSize: value, lineHeight: Math.ceil(value * 1.35) };
+  return (
+    <View className={cn('px-3.5 py-3', divided && 'border-t border-border', disabled && 'opacity-50')}>
+      <View className="flex-row items-center justify-between gap-3">
+        <Text className="min-w-0 flex-1 text-[15px] font-semibold leading-5">{title}</Text>
+        <Text className="font-mono text-xs font-semibold text-primary">{formattedValue}</Text>
+      </View>
+      <Slider
+        accessibilityLabel={title}
+        accessibilityRole="adjustable"
+        accessibilityState={{ disabled }}
+        accessibilityValue={{ min: minimumValue, max: maximumValue, now: value, text: formattedValue }}
+        disabled={disabled}
+        maximumTrackTintColor={colors.divider}
+        maximumValue={maximumValue}
+        minimumTrackTintColor={colors.primary}
+        minimumValue={minimumValue}
+        step={step}
+        style={styles.slider}
+        tapToSeek
+        thumbTintColor={colors.primary}
+        value={value}
+        onValueChange={onChange}
+      />
+      {fontPreview ? (
+        <View className="mt-1 overflow-hidden rounded-md bg-terminal-canvas px-3 py-2.5">
+          <Text numberOfLines={1} className="text-terminal-text" style={[styles.fontPreviewText, fontPreviewSize]}>$ herdr status</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function XtermCacheCapacityRow({ value, onChange }: { value: number; onChange: (value: number) => void }) {
@@ -954,6 +1008,8 @@ function ActionRow({ title, copy, icon, value, onPress, divided = false }: { tit
 }
 
 const styles = StyleSheet.create({
+  fontPreviewText: { fontFamily: terminalFontFamily },
+  slider: { height: 36, marginHorizontal: -2 },
   terminalPreviewText: { fontFamily: 'monospace' },
   detailsTooltip: {
     elevation: 12,
