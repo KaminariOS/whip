@@ -11,9 +11,11 @@ import {
   type PairHostResult,
   type PairingKeySelection,
 } from '@/src/lib/sshPairing';
-import { useTheme } from '@/src/theme';
+import { cn } from '@/src/lib/utils';
+import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -28,6 +30,7 @@ interface Props {
 export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const [permission, requestPermission] = useCameraPermissions();
   const [selectedKey, setSelectedKey] = useState<PairingKeySelection | null>(null);
   const [globalKeys, setGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
@@ -192,16 +195,26 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
           </Text>
         </View>
 
-        <View className="mb-6 rounded-xl border border-border bg-muted/50 px-4 py-3">
+        <GlassSurface className="mb-6 rounded-xl border border-white/30 px-4 py-3 dark:border-white/10">
           <Text className="text-sm font-semibold">{t('pairing.runOnHost')}</Text>
           <View className="mt-2 gap-2">
-            <Text selectable className="rounded-lg bg-background px-3 py-2 font-mono text-sm">uvx whip-pair</Text>
-            <Text selectable className="rounded-lg bg-background px-3 py-2 font-mono text-sm">npx whip-pair</Text>
+            <Text
+              selectable
+              className={cn('rounded-lg border px-3 py-2 font-mono text-sm', !appGlassEnabled && 'border-border bg-background')}
+              style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}>
+              {'uvx whip-pair'}
+            </Text>
+            <Text
+              selectable
+              className={cn('rounded-lg border px-3 py-2 font-mono text-sm', !appGlassEnabled && 'border-border bg-background')}
+              style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}>
+              {'npx whip-pair'}
+            </Text>
           </View>
-        </View>
+        </GlassSurface>
 
         <Text className="mb-2 text-sm font-semibold text-muted-foreground">{t('pairing.chooseKey')}</Text>
-        <View className="overflow-hidden rounded-xl border border-border bg-background">
+        <GlassSurface className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10">
           <KeyChoice
             icon={Sparkles}
             title={t('pairing.generate')}
@@ -228,10 +241,10 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
             disabled={working}
             onPress={pastePublicKey}
           />
-        </View>
+        </GlassSurface>
 
         {selectedKey ? (
-          <View className="mt-4 flex-row items-start gap-3 rounded-lg bg-muted px-4 py-3">
+          <GlassSurface className="mt-4 flex-row items-start gap-3 rounded-lg border border-white/30 px-4 py-3 dark:border-white/10">
             <Icon as={Check} className="mt-0.5 text-primary" size={17} />
             <View className="min-w-0 flex-1">
               <Text className="text-sm font-semibold" numberOfLines={1}>{selectedKey.label}</Text>
@@ -239,7 +252,7 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
                 {selectedKey.fingerprint || t('pairing.publicOnlyWarning')}
               </Text>
             </View>
-          </View>
+          </GlassSurface>
         ) : null}
 
         {error ? <Text accessibilityLiveRegion="polite" className="mt-4 text-sm leading-5 text-destructive">{error}</Text> : null}
@@ -254,20 +267,27 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
       </ScrollView>
 
       <Modal transparent animationType="fade" visible={globalKeys !== null} onRequestClose={() => setGlobalKeys(null)}>
-        <Pressable className="flex-1 justify-end bg-black/45" onPress={() => setGlobalKeys(null)}>
-          <Pressable className="max-h-[70%] rounded-t-[24px] bg-background px-5 pb-8 pt-4" onPress={event => event.stopPropagation()}>
+        <View className="flex-1 justify-end">
+          <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/45" onPress={() => setGlobalKeys(null)} />
+          <GlassSurface className="max-h-[70%] rounded-t-[24px] border-t border-white/30 px-5 pb-8 pt-4 dark:border-white/10">
             <View className="mb-4 h-1 w-10 self-center rounded-full bg-muted-foreground/30" />
             <Text className="text-xl font-semibold">{t('pairing.chooseGlobalKey')}</Text>
-            <ScrollView className="mt-3">
+            <ScrollView className="mt-3" contentContainerClassName="gap-2">
               {globalKeys?.map(key => (
-                <Button key={key.id} size="content" variant="ghost" className="h-auto w-full justify-start gap-3 border-b border-border px-1 py-4" onPress={() => selectGlobalKey(key)}>
+                <Button
+                  key={key.id}
+                  size="content"
+                  variant="ghost"
+                  className={cn('h-auto w-full justify-start gap-3 rounded-xl px-3 py-3', appGlassEnabled && 'border')}
+                  style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+                  onPress={() => selectGlobalKey(key)}>
                   <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={KeyRound} className="text-primary" size={18} /></View>
                   <View className="min-w-0 flex-1 items-start"><Text className="font-semibold" numberOfLines={1}>{key.name}</Text><Text className="mt-0.5 text-xs text-muted-foreground" numberOfLines={1}>{key.fingerprint}</Text></View>
                 </Button>
               ))}
             </ScrollView>
-          </Pressable>
-        </Pressable>
+          </GlassSurface>
+        </View>
       </Modal>
     </View>
   );

@@ -9,8 +9,8 @@ describe('New Host screen', () => {
     );
 
     expect(screen).toContain("t('pairing.runOnHost')");
-    expect(screen).toContain('>uvx whip-pair</Text>');
-    expect(screen).toContain('>npx whip-pair</Text>');
-    expect(screen.match(/<Text selectable/g)).toHaveLength(2);
+    expect(screen).toContain("{'uvx whip-pair'}");
+    expect(screen).toContain("{'npx whip-pair'}");
+    expect(screen.match(/\bselectable\b/g)).toHaveLength(2);
   });
 });

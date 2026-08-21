@@ -16,6 +16,7 @@ test('gates app glass across bars and rows behind its experiment and background 
   const appUi = readSource('src/components/app-ui.tsx');
   const globalKeychain = readSource('src/components/GlobalKeychainScreen.tsx');
   const knownHosts = readSource('src/components/KnownHostsScreen.tsx');
+  const newHost = readSource('src/components/NewHostScreen.tsx');
 
   expect(app).toContain('enabled={appGlassEnabled && Boolean(appBackgroundImageUri)}');
   expect(glass).toContain('glass?.enabled === true');
@@ -49,6 +50,8 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(connection).toContain("variant={appGlassEnabled ? 'ghost' : 'default'}");
   expect(connection.match(/appGlassControlStyle\(false, colors\)/g)?.length).toBeGreaterThanOrEqual(4);
   expect(connection.match(/appGlassControlStyle\(true, colors\)/g)?.length).toBeGreaterThanOrEqual(2);
+  expect(connection.match(/<GlassSurface accessibilityViewIsModal/g)).toHaveLength(2);
+  expect(connection).toContain("className={cn('h-14 justify-start rounded-xl px-3', appGlassEnabled && 'border')}");
   expect(connection).toContain('className="flex-1">');
   expect(connection).not.toContain('className="flex-1 bg-background">');
   expect(app.match(/<AppBackground uri=\{appBackgroundImageUri\} dimming=\{appBackgroundDimming\} \/>/g)).toHaveLength(5);
@@ -73,4 +76,8 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(globalKeychain).not.toContain('className="flex-1 bg-background"');
   expect(knownHosts.match(/<GlassSurface/g)?.length).toBeGreaterThanOrEqual(2);
   expect(knownHosts).not.toContain('className="flex-1 bg-background"');
+  expect(newHost.match(/<GlassSurface/g)?.length).toBeGreaterThanOrEqual(4);
+  expect(newHost).toContain('const appGlassEnabled = useAppGlassEnabled();');
+  expect(newHost.match(/appGlassControlStyle\(false, colors\)/g)?.length).toBeGreaterThanOrEqual(3);
+  expect(newHost).not.toContain('rounded-xl border border-border bg-background');
 });

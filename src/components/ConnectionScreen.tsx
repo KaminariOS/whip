@@ -425,10 +425,13 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
   onSelectFile: () => void;
 }) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityLabel={t('connection.closeKeyActions')} className="flex-1 justify-end bg-black/55" onPress={onClose}>
-        <Pressable className="rounded-t-[28px] border-t border-border bg-card px-4 pb-8 pt-5" onPress={event => event.stopPropagation()}>
+      <View className="flex-1 justify-end">
+        <Pressable accessibilityLabel={t('connection.closeKeyActions')} className="absolute inset-0 bg-black/55" onPress={onClose} />
+        <GlassSurface accessibilityViewIsModal className="rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
           <Text className="px-2 text-lg font-semibold">{hasKey ? t('connection.copySshKey') : t('connection.addPrivateKey')}</Text>
           <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">
             {hasKey ? t('connection.copyWhich') : t('connection.chooseAddMethod')}
@@ -446,9 +449,15 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
               <KeyAction icon={Sparkles} label={t('connection.generateNew')} onPress={onGenerate} />
             </>
           )}
-          <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
-        </Pressable>
-      </Pressable>
+          <Button
+            className={cn('mt-2 rounded-full', appGlassEnabled && 'border')}
+            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+            variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            onPress={hapticPress(onClose)}>
+            <Text>{t('common.cancel')}</Text>
+          </Button>
+        </GlassSurface>
+      </View>
     </Modal>
   );
 }
@@ -460,15 +469,24 @@ function GlobalKeyPicker({ keys, visible, onClose, onSelect }: {
   onSelect: (key: GlobalSshKeyMaterial) => void;
 }) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityLabel={t('keychain.closePicker')} className="flex-1 justify-end bg-black/55" onPress={onClose}>
-        <Pressable className="max-h-[72%] rounded-t-[28px] border-t border-border bg-card px-4 pb-8 pt-5" onPress={event => event.stopPropagation()}>
+      <View className="flex-1 justify-end">
+        <Pressable accessibilityLabel={t('keychain.closePicker')} className="absolute inset-0 bg-black/55" onPress={onClose} />
+        <GlassSurface accessibilityViewIsModal className="max-h-[72%] rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
           <Text className="px-2 text-lg font-semibold">{t('keychain.chooseKey')}</Text>
           <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">{t('keychain.chooseKeyCopy')}</Text>
-          <ScrollView>
+          <ScrollView contentContainerClassName="gap-2">
             {keys.map(key => (
-              <Button key={key.id} className="min-h-[68px] justify-start rounded-xl px-3 py-2" size="content" variant="ghost" onPress={hapticPress(() => onSelect(key))}>
+              <Button
+                key={key.id}
+                className={cn('min-h-[68px] justify-start rounded-xl px-3 py-2', appGlassEnabled && 'border')}
+                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+                size="content"
+                variant="ghost"
+                onPress={hapticPress(() => onSelect(key))}>
                 <Icon as={KeyRound} size={19} />
                 <View className="ml-1 min-w-0 flex-1">
                   <Text className="text-[15px] font-medium" numberOfLines={1}>{key.name}</Text>
@@ -478,9 +496,15 @@ function GlobalKeyPicker({ keys, visible, onClose, onSelect }: {
               </Button>
             ))}
           </ScrollView>
-          <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
-        </Pressable>
-      </Pressable>
+          <Button
+            className={cn('mt-2 rounded-full', appGlassEnabled && 'border')}
+            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+            variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            onPress={hapticPress(onClose)}>
+            <Text>{t('common.cancel')}</Text>
+          </Button>
+        </GlassSurface>
+      </View>
     </Modal>
   );
 }
@@ -534,5 +558,7 @@ function JumpHostPicker({ hosts, selectedHostId, visible, onClose, onSelect }: {
 }
 
 function KeyAction({ icon, label, onPress }: { icon: typeof KeyRound; label: string; onPress: () => void }) {
-  return <Button className="h-14 justify-start rounded-xl px-3" variant="ghost" onPress={hapticPress(onPress)}><Icon as={icon} size={19} /><Text className="text-[15px] font-medium">{label}</Text></Button>;
+  const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
+  return <Button className={cn('h-14 justify-start rounded-xl px-3', appGlassEnabled && 'border')} style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined} variant="ghost" onPress={hapticPress(onPress)}><Icon as={icon} size={19} /><Text className="text-[15px] font-medium">{label}</Text></Button>;
 }
