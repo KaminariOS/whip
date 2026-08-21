@@ -21,7 +21,7 @@ export interface PairHostResult {
   alreadyPresent: boolean;
 }
 
-export function normalizeEd25519PublicKey(value: string): string | null {
+export function normalizeOpenSshPublicKey(value: string): string | null {
   const trimmed = value.trim();
   const hasControlCharacter = [...trimmed].some(character => {
     const codePoint = character.codePointAt(0) || 0;
@@ -29,7 +29,8 @@ export function normalizeEd25519PublicKey(value: string): string | null {
   });
   if (!trimmed || trimmed.length > 4096 || hasControlCharacter) return null;
   const fields = trimmed.split(/\s+/);
-  if (fields.length < 2 || fields[0] !== 'ssh-ed25519') return null;
+  if (fields.length < 2 || !/^[A-Za-z0-9][A-Za-z0-9@._+-]*$/.test(fields[0]))
+    return null;
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(fields[1])) return null;
   return fields.join(' ');
 }

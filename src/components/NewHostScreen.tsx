@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   isWhipPairingCode,
-  normalizeEd25519PublicKey,
+  normalizeOpenSshPublicKey,
   type PairHostResult,
   type PairingKeySelection,
 } from '@/src/lib/sshPairing';
@@ -100,7 +100,7 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
   const pastePublicKey = async () => {
     setError(null);
     try {
-      const publicKey = normalizeEd25519PublicKey(await Clipboard.getString());
+      const publicKey = normalizeOpenSshPublicKey(await Clipboard.getString());
       if (!publicKey) {
         Alert.alert(t('pairing.invalidPublicKeyTitle'), t('pairing.invalidPublicKeyCopy'));
         return;

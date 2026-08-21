@@ -6,6 +6,7 @@ use std::{
 };
 
 use fs2::FileExt;
+use ssh_key::authorized_keys::Entry;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum AppendOutcome {
@@ -90,20 +91,20 @@ fn append_locked(file: &mut File, key_line: &str) -> io::Result<AppendOutcome> {
 }
 
 fn key_identity(line: &str) -> io::Result<String> {
-    let mut fields = line.split_whitespace();
-    let kind = fields
-        .next()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing key type"))?;
-    let blob = fields
-        .next()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing key blob"))?;
-    if kind != "ssh-ed25519" {
-        return Err(io::Error::new(
+    let entry = line.parse::<Entry>().map_err(|error| {
+        io::Error::new(
             io::ErrorKind::InvalidData,
-            "unsupported key type",
-        ));
-    }
-    Ok(format!("{kind} {blob}"))
+            format!("invalid authorized_keys entry: {error}"),
+        )
+    })?;
+    let mut public_key = entry.public_key().clone();
+    public_key.set_comment("");
+    public_key.to_openssh().map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("could not encode SSH public key: {error}"),
+        )
+    })
 }
 
 #[cfg(test)]
@@ -111,20 +112,37 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    const ED25519_KEY: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti";
+    const ECDSA_KEY: &str = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBHwf2HMM5TRXvo2SQJjsNkiDD5KqiiNjrGVv3UUh+mMT5RHxiRtOnlqvjhQtBq0VpmpCV/PwUdhOig4vkbqAcEc=";
+
     #[test]
     fn appends_once_and_preserves_existing_lines() {
         let directory = tempdir().unwrap();
         let path = directory.path().join(".ssh/authorized_keys");
-        let key = "ssh-ed25519 AAAA prototype";
+        let key = format!("{ED25519_KEY} prototype");
         assert_eq!(
-            append_authorized_key(&path, key).unwrap(),
+            append_authorized_key(&path, &key).unwrap(),
             AppendOutcome::Added
         );
         assert_eq!(
-            append_authorized_key(&path, "ssh-ed25519 AAAA another-comment").unwrap(),
+            append_authorized_key(&path, &format!("{ED25519_KEY} another-comment")).unwrap(),
             AppendOutcome::AlreadyPresent
         );
         assert_eq!(fs::read_to_string(path).unwrap(), format!("{key}\n"));
+    }
+
+    #[test]
+    fn detects_an_existing_non_ed25519_key_with_options() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join(".ssh/authorized_keys");
+        fs::create_dir(path.parent().unwrap()).unwrap();
+        fs::write(&path, format!("restrict {ECDSA_KEY} existing\n")).unwrap();
+
+        assert_eq!(
+            append_authorized_key(&path, &format!("{ECDSA_KEY} pairing")).unwrap(),
+            AppendOutcome::AlreadyPresent
+        );
     }
 
     #[test]
@@ -137,7 +155,7 @@ mod tests {
         fs::write(&victim, "keep\n").unwrap();
         let path = ssh.join("authorized_keys");
         symlink(&victim, &path).unwrap();
-        assert!(append_authorized_key(&path, "ssh-ed25519 AAAA test").is_err());
+        assert!(append_authorized_key(&path, ED25519_KEY).is_err());
         assert_eq!(fs::read_to_string(victim).unwrap(), "keep\n");
     }
 }

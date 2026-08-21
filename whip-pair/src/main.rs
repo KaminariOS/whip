@@ -396,8 +396,8 @@ async fn handle_connection(
         .authorized_keys_override
         .map(PathBuf::from)
         .unwrap_or(default_authorized_keys_path()?);
-    let key_line = public_key.canonical_line(request.public_key.trim());
-    let outcome = append_authorized_key(&path, &key_line)?;
+    let key_line = public_key.canonical_line();
+    let outcome = append_authorized_key(&path, key_line)?;
     send_response(
         &mut writer,
         &EnrollmentResponse::approved(&fingerprint, outcome == AppendOutcome::AlreadyPresent),
@@ -488,7 +488,7 @@ async fn request(args: RequestArgs) -> Result<(), Error> {
     validate_server_info(&server_info)?;
     let request = EnrollmentRequest {
         device_name: args.device_name,
-        public_key: public_key.canonical_line(public_key_text.trim()),
+        public_key: public_key.canonical_line().to_owned(),
     };
     send_json_line(&mut writer, &request).await?;
 

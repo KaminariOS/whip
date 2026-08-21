@@ -1,6 +1,5 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use ssh_key::{HashAlg, PublicKey};
 use std::net::IpAddr;
 
 pub const ENVELOPE_PREFIX: &str = "WP3:";
@@ -75,25 +74,13 @@ impl EnrollmentResponse {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ValidatedPublicKey {
-    kind: String,
-    blob: String,
-    decoded_blob: Vec<u8>,
+    public_key: PublicKey,
+    canonical_line: String,
 }
 
 impl ValidatedPublicKey {
-    pub fn identity(&self) -> String {
-        format!("{} {}", self.kind, self.blob)
-    }
-
-    pub fn canonical_line(&self, original: &str) -> String {
-        let comment = original
-            .split_once(&self.identity())
-            .map(|(_, rest)| rest.trim())
-            .filter(|comment| !comment.is_empty());
-        match comment {
-            Some(comment) => format!("{} {comment}", self.identity()),
-            None => self.identity(),
-        }
+    pub fn canonical_line(&self) -> &str {
+        &self.canonical_line
     }
 }
 
@@ -105,7 +92,7 @@ pub enum ProtocolError {
     BadEncoding,
     #[error("pairing payload is invalid: {0}")]
     BadPayload(String),
-    #[error("only bare ssh-ed25519 public keys are supported")]
+    #[error("only a bare OpenSSH public key supported by Whip is accepted")]
     UnsupportedKey,
     #[error("SSH public key is malformed")]
     MalformedKey,
@@ -288,61 +275,27 @@ fn base45_value(byte: u8) -> Result<usize, ProtocolError> {
 
 pub fn validate_public_key(line: &str) -> Result<ValidatedPublicKey, ProtocolError> {
     let trimmed = line.trim();
-    if trimmed.len() > 4096 || trimmed.chars().any(char::is_control) {
+    if trimmed.is_empty() || trimmed.len() > 4096 || trimmed.chars().any(char::is_control) {
         return Err(ProtocolError::MalformedKey);
     }
-    let mut fields = trimmed.split_whitespace();
-    let kind = fields.next().ok_or(ProtocolError::MalformedKey)?;
-    let blob = fields.next().ok_or(ProtocolError::MalformedKey)?;
-    if kind != "ssh-ed25519" {
-        return Err(ProtocolError::UnsupportedKey);
-    }
-    let decoded_blob = base64::engine::general_purpose::STANDARD
-        .decode(blob)
+    let public_key = PublicKey::from_openssh(trimmed).map_err(|_| ProtocolError::UnsupportedKey)?;
+    let canonical_line = public_key
+        .to_openssh()
         .map_err(|_| ProtocolError::MalformedKey)?;
-    validate_ed25519_blob(&decoded_blob)?;
     Ok(ValidatedPublicKey {
-        kind: kind.into(),
-        blob: blob.into(),
-        decoded_blob,
+        public_key,
+        canonical_line,
     })
 }
 
-fn validate_ed25519_blob(blob: &[u8]) -> Result<(), ProtocolError> {
-    let mut cursor = 0;
-    let kind = read_ssh_string(blob, &mut cursor)?;
-    let key = read_ssh_string(blob, &mut cursor)?;
-    if kind != b"ssh-ed25519" || key.len() != 32 || cursor != blob.len() {
-        return Err(ProtocolError::MalformedKey);
-    }
-    Ok(())
-}
-
-fn read_ssh_string<'a>(blob: &'a [u8], cursor: &mut usize) -> Result<&'a [u8], ProtocolError> {
-    let end_of_length = cursor.checked_add(4).ok_or(ProtocolError::MalformedKey)?;
-    let length_bytes: [u8; 4] = blob
-        .get(*cursor..end_of_length)
-        .ok_or(ProtocolError::MalformedKey)?
-        .try_into()
-        .map_err(|_| ProtocolError::MalformedKey)?;
-    *cursor = end_of_length;
-    let length = u32::from_be_bytes(length_bytes) as usize;
-    let end = cursor
-        .checked_add(length)
-        .ok_or(ProtocolError::MalformedKey)?;
-    let value = blob.get(*cursor..end).ok_or(ProtocolError::MalformedKey)?;
-    *cursor = end;
-    Ok(value)
-}
-
 pub fn fingerprint_public_key(key: &ValidatedPublicKey) -> String {
-    let digest = Sha256::digest(&key.decoded_blob);
-    format!("SHA256:{}", STANDARD_NO_PAD.encode(digest))
+    key.public_key.fingerprint(HashAlg::Sha256).to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine as _;
     use qrcode::{EcLevel, QrCode};
 
     fn payload() -> PairingPayload {
@@ -427,8 +380,34 @@ mod tests {
             base64::engine::general_purpose::STANDARD.encode(blob)
         );
         let key = validate_public_key(&line).unwrap();
-        assert_eq!(key.canonical_line(&line), line);
+        assert_eq!(key.canonical_line(), line);
         assert!(fingerprint_public_key(&key).starts_with("SHA256:"));
+    }
+
+    #[test]
+    fn accepts_other_public_key_algorithms_understood_by_russh_key_parser() {
+        let ecdsa = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBHwf2HMM5TRXvo2SQJjsNkiDD5KqiiNjrGVv3UUh+mMT5RHxiRtOnlqvjhQtBq0VpmpCV/PwUdhOig4vkbqAcEc= ecdsa@example";
+        let security_key = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAINSoElFleH+nN83FoLqqepJjN+y7Gs5lrn7qXjBqQZyuAAAABHNzaDo= token@example";
+        let mut rsa_blob = Vec::new();
+        append_ssh_field(&mut rsa_blob, b"ssh-rsa");
+        append_ssh_field(&mut rsa_blob, &[1, 0, 1]);
+        let mut modulus = vec![0_u8, 0x80];
+        modulus.extend_from_slice(&[0x5a; 255]);
+        append_ssh_field(&mut rsa_blob, &modulus);
+        let rsa = format!(
+            "ssh-rsa {} rsa@example",
+            base64::engine::general_purpose::STANDARD.encode(rsa_blob)
+        );
+        for line in [ecdsa, security_key, &rsa] {
+            let key = validate_public_key(line).unwrap();
+            assert_eq!(key.canonical_line(), line);
+            assert!(fingerprint_public_key(&key).starts_with("SHA256:"));
+        }
+    }
+
+    fn append_ssh_field(encoded: &mut Vec<u8>, value: &[u8]) {
+        encoded.extend_from_slice(&(value.len() as u32).to_be_bytes());
+        encoded.extend_from_slice(value);
     }
 
     #[test]

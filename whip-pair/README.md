@@ -90,7 +90,8 @@ the server-side TTL expires. Error responses use the codes `invalid_request`,
   intended client.
 - The returned SSH host-key fingerprint is protected by the pinned TLS channel
   and can be stored for SSH host verification.
-- Only bare `ssh-ed25519` keys are accepted. `authorized_keys` options are
+- Bare OpenSSH public keys understood by the same `ssh-key` parser used by
+  Whip's `russh` transport are accepted. `authorized_keys` options are
   rejected, comments are preserved, and duplicate keys are not appended.
 - The writer refuses symlink targets and files not owned by the current user,
   locks the file while checking and appending, and creates `.ssh`/the key file
@@ -146,7 +147,6 @@ nix run .#whip-pair -- inspect 'WP3:...'
 
 ## Prototype limitations
 
-- Only bare Ed25519 public keys are accepted.
 - SSH host-key discovery requires `ssh-keyscan` and an Ed25519 host key.
 - The version 3 envelope is compact binary encoded as Base45. SSH metadata is
   delivered after pinned TLS, while expiry is enforced only by the server.

@@ -1,19 +1,28 @@
 import {
   isWhipPairingCode,
-  normalizeEd25519PublicKey,
+  normalizeOpenSshPublicKey,
   profileFromPairing,
 } from '../src/lib/sshPairing';
 
 describe('SSH QR pairing helpers', () => {
-  it('accepts a bare Ed25519 public key and normalizes spacing', () => {
-    expect(normalizeEd25519PublicKey('  ssh-ed25519   AAAAC3NzaC1lZDI1NTE5AAAAIA==  phone  '))
+  it('accepts a bare OpenSSH public key and normalizes spacing', () => {
+    expect(normalizeOpenSshPublicKey('  ssh-ed25519   AAAAC3NzaC1lZDI1NTE5AAAAIA==  phone  '))
       .toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== phone');
   });
 
-  it('rejects private keys, authorized_keys options, and non-Ed25519 keys', () => {
-    expect(normalizeEd25519PublicKey('-----BEGIN OPENSSH PRIVATE KEY-----')).toBeNull();
-    expect(normalizeEd25519PublicKey('from="10.0.0.1" ssh-ed25519 AAAA')).toBeNull();
-    expect(normalizeEd25519PublicKey('ssh-rsa AAAA')).toBeNull();
+  it('accepts other SSH algorithm names for authoritative native validation', () => {
+    for (const key of [
+      'ecdsa-sha2-nistp256 AAAA ecdsa',
+      'ssh-rsa AAAA rsa',
+      'sk-ssh-ed25519@openssh.com AAAA security-key',
+    ]) {
+      expect(normalizeOpenSshPublicKey(key)).toBe(key);
+    }
+  });
+
+  it('rejects private keys and authorized_keys options', () => {
+    expect(normalizeOpenSshPublicKey('-----BEGIN OPENSSH PRIVATE KEY-----')).toBeNull();
+    expect(normalizeOpenSshPublicKey('from="10.0.0.1" ssh-ed25519 AAAA')).toBeNull();
   });
 
   it('recognizes only the current compact pairing envelope', () => {
