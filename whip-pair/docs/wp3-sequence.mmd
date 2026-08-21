@@ -1,0 +1,26 @@
+sequenceDiagram
+    actor HostUser as Host user
+    participant Host as whip-pair
+    participant Whip as Whip client
+    participant Keys as authorized_keys
+
+    Host->>Host: Select interface and bind TCP listener
+    Host->>Host: Generate token and ephemeral TLS certificate
+    Host-->>HostUser: Display WP3 QR code
+    HostUser-->>Whip: Scan QR code
+    Whip->>Whip: Decode endpoint, token, and certificate pin
+    Whip->>Host: Connect with TLS and verify pinned certificate SHA-256
+    Whip->>Host: PairingHello { token }
+    Host->>Host: Check token and server-side expiry
+    Host-->>Whip: PairingServerInfo { SSH host, port, user, host-key fingerprint }
+    Whip->>Host: EnrollmentRequest { device name, Ed25519 public key }
+    Host->>Host: Validate key and calculate fingerprint
+    Host-->>HostUser: Show device and key fingerprint and request approval
+    alt approved
+        Host->>Keys: Append key safely and idempotently
+        Host-->>Whip: approved { fingerprint, already_present }
+        Host->>Host: Stop pairing server
+    else rejected or invalid
+        Host-->>Whip: error { code, message }
+        Host->>Host: Continue until success or expiry
+    end

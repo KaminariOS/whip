@@ -20,9 +20,101 @@ networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8765 ];
 Use `--port 0` only when the firewall already permits dynamically selected
 ports, or choose another explicitly allowed port with `--port`.
 
+## Pairing protocol (WP3)
+
+WP3 uses the QR code only to bootstrap a direct connection from Whip to the
+host. There is no relay, account, discovery service, or long-running daemon.
+The SSH public key is not embedded in the QR code.
+
+[View the WP3 pairing sequence diagram source](docs/wp3-sequence.mmd).
+
+Render and validate it locally with:
+
+```bash
+nix shell nixpkgs#mermaid-cli -c mmdc \
+  -i whip-pair/docs/wp3-sequence.mmd \
+  -o whip-pair/docs/wp3-sequence.svg
+```
+
+The generated SVG is ignored by Git.
+
+### QR bootstrap envelope
+
+The QR contains `WP3:` followed by Base45-encoded binary data. Fixed-width
+binary fields keep the QR substantially smaller than a URL or JSON document.
+
+| Field               | Encoding                                            | Purpose                                          |
+| ------------------- | --------------------------------------------------- | ------------------------------------------------ |
+| Address type        | 1 byte                                              | `1` for IPv4, `2` for IPv6, `3` for hostname     |
+| Pairing address     | 4 or 16 bytes, or 1-byte length plus ASCII hostname | Address selected or advertised by the host       |
+| Pairing port        | 2-byte unsigned integer, big-endian                 | Direct TCP listener port                         |
+| Token               | 16 random bytes                                     | One-time 128-bit bearer secret                   |
+| TLS certificate pin | 32 bytes                                            | SHA-256 of the ephemeral certificate in DER form |
+
+The envelope deliberately omits the SSH user, SSH port, SSH host-key
+fingerprint, and expiry. The server delivers the SSH profile only after the
+client has established pinned TLS and presented the token. Expiry is based on
+the host's clock and is enforced by the running server.
+
+### Wire exchange
+
+After TLS is established, each application message is one newline-terminated
+JSON object, limited to 16 KiB. The exchange is:
+
+1. The client sends `PairingHello` with the 16-byte token encoded as unpadded
+   Base64url.
+2. The server validates the token and expiry, then sends `PairingServerInfo`
+   containing `ssh_host`, `ssh_port`, `ssh_user`, and
+   `ssh_host_fingerprint`.
+3. The client sends an `EnrollmentRequest` containing `device_name` and
+   `public_key`.
+4. The server validates the Ed25519 key and shows its SHA-256 fingerprint in
+   the host terminal. The host user approves or rejects it. `--yes` skips this
+   prompt and should be reserved for controlled automation.
+5. On approval, the server appends the key to `~/.ssh/authorized_keys` and
+   returns its fingerprint plus `already_present`. The successful enrollment
+   consumes the one-shot server and causes it to exit.
+
+Rejected, malformed, unauthorized, or prematurely disconnected clients do not
+consume the server. It continues listening until one enrollment succeeds or
+the server-side TTL expires. Error responses use the codes `invalid_request`,
+`unauthorized`, `expired`, `invalid_key`, and `rejected`.
+
+### Security properties and boundaries
+
+- The TLS certificate is generated for each server run. Whip accepts it only
+  when its DER SHA-256 digest matches the pin scanned from the QR; the public
+  Web PKI is not involved.
+- The QR is a secret invitation: anyone who can read it and reach the selected
+  interface can submit a key while it is valid. Keep it visible only to the
+  intended client.
+- The returned SSH host-key fingerprint is protected by the pinned TLS channel
+  and can be stored for SSH host verification.
+- Only bare `ssh-ed25519` keys are accepted. `authorized_keys` options are
+  rejected, comments are preserved, and duplicate keys are not appended.
+- The writer refuses symlink targets and files not owned by the current user,
+  locks the file while checking and appending, and creates `.ssh`/the key file
+  with modes `0700`/`0600` when needed.
+- WP3 requests and transfers only the public key; it never requests or
+  transfers private-key material. Normal SSH authentication proves possession
+  when that key is later used. This intentionally permits enrolling a public
+  key whose private half remains on another device.
+
 ## Run with Nix
 
-Start the host-side pairing server:
+Run the latest version directly from the public GitHub repository:
+
+```bash
+nix run github:KaminariOS/whip#whip-pair
+```
+
+Pass server options after `--`, for example:
+
+```bash
+nix run github:KaminariOS/whip#whip-pair -- serve --bind 192.168.1.10
+```
+
+From a local checkout, start the host-side pairing server with:
 
 ```bash
 nix run .#whip-pair
@@ -54,10 +146,6 @@ nix run .#whip-pair -- inspect 'WP3:...'
 
 ## Prototype limitations
 
-- The development client does not yet prove possession of the submitted
-  private key. Host approval, the one-time token, and pinned TLS are present;
-  proof-of-possession and the final SSH verification belong in the next
-  iteration before production use.
 - Only bare Ed25519 public keys are accepted.
 - SSH host-key discovery requires `ssh-keyscan` and an Ed25519 host key.
 - The version 3 envelope is compact binary encoded as Base45. SSH metadata is
