@@ -32,6 +32,33 @@ The app separates connection management from daily supervision: **Hosts** manage
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
+## Contents
+
+- [Preview](#preview)
+- [What you can do](#what-you-can-do)
+  - [Supervise Herdr](#supervise-herdr)
+  - [Work in terminals](#work-in-terminals)
+  - [Move files and attachments](#move-files-and-attachments)
+  - [Connect securely](#connect-securely)
+  - [Make it yours](#make-it-yours)
+- [Install Whip](#install-whip)
+  - [Android](#android)
+  - [iOS](#ios)
+- [Connect your first host](#connect-your-first-host)
+  - [Pair with a QR code (experimental)](#pair-with-a-qr-code-experimental)
+  - [Enter a host manually](#enter-a-host-manually)
+- [How it works](#how-it-works)
+- [Architecture](#architecture)
+  - [Mobile app](#mobile-app)
+  - [Whip SSH transport](#whip-ssh-transport)
+- [Development](#development)
+  - [EAS builds](#eas-builds)
+  - [Google Play publishing](#google-play-publishing)
+  - [Validation](#validation)
+- [Community](#community)
+- [Credits](#credits)
+- [License](#license)
+
 ## Preview
 
 <table>
