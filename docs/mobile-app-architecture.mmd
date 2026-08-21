@@ -18,9 +18,9 @@ flowchart TB
     direction LR
     App["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/react.svg' width='44' height='44'/></span><br/><b>React Native</b><br/>Screens and state<br/>Hosts · Herd · Terminal · Files · Settings"]
     Pairing["WP4 QR pairing<br/>camera · key selection · host approval"]
-    TerminalHost["TerminalRendererHost<br/>renderer lifecycle · frame batching"]
+    TerminalHost["TerminalRendererHost<br/>renderer lifecycle · frame batching<br/>offset-aware WebView encoding"]
     HerdrClient["<span style='display:inline-block;width:44px;height:44px'><img src='https://raw.githubusercontent.com/KaminariOS/whip/main/assets/whip-cyborg-hand-concept.svg' width='44' height='44'/></span><br/><b>HerdrClient</b><br/>connections · channels · reconnects"]
-    WhipAdapter["Private Whip adapter subclass<br/>react-native-whip-ssh<br/>Herdr codec/behavior · WP4 API"]
+    WhipAdapter["Private Whip adapter subclass<br/>react-native-whip-ssh<br/>Herdr codec/behavior · WP4 API<br/>terminal Uint8Array subarray views"]
     NativeClient["Public react-native-russh SSHClient<br/>raw/framed sockets · persistent exec<br/>SSH · SFTP · typed bytes"]
 
     App --> Pairing
@@ -42,13 +42,13 @@ flowchart TB
     Assets --> WebView
   end
 
-  TerminalHost <-->|"ANSI frames → WebView · base64 at boundary<br/>← input · resize · scroll · clipboard"| WebView
+  TerminalHost <-->|"ANSI ArrayBufferView → base64 only at WebView<br/>← input · resize · scroll · clipboard"| WebView
 
   subgraph Platform["React Native New Architecture"]
     direction LR
     IOS["<span style='display:inline-block;width:40px;height:40px'><img src='https://api.iconify.design/logos/apple.svg' width='40' height='40'/></span><br/><b>iOS · arm64</b><br/>Objective-C++ TurboModule"]
     JSI["Public generated C++ JSI<br/>ReactNativeRussh"]
-    PairingJSI["Private generated C++ JSI<br/>WhipSsh · WP4 only"]
+    PairingJSI["Private WhipSsh TurboModule<br/>generated TypeScript · C++ JSI · UniFFI<br/>WP4 only"]
     Android["<span style='display:inline-block;width:40px;height:40px'><img src='https://api.iconify.design/logos/android-icon.svg' width='40' height='40'/></span><br/><b>Android · arm64-v8a</b><br/>Kotlin TurboModule · JNI"]
 
     IOS -.->|"installs Runtime + CallInvoker"| JSI
@@ -57,8 +57,8 @@ flowchart TB
     Android -.-> PairingJSI
   end
 
-  NativeClient <-->|"typed calls · ArrayBuffer frames<br/>JSON for control operations"| JSI
-  JSI <-->|"UniFFI ABI"| Transport["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/rust.svg' width='44' height='44'/></span><br/><b>react-native-russh transport</b><br/>See SSH transport architecture"]
+  NativeClient <-->|"typed calls · owned complete frames<br/>JSON for control operations"| JSI
+  JSI <-->|"UniFFI ABI · owned Vec&lt;u8&gt; callbacks"| Transport["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/rust.svg' width='44' height='44'/></span><br/><b>react-native-russh transport</b><br/>persistent cancellation-safe frame reader<br/>one payload allocation"]
   WhipAdapter <-->|"pairHost"| PairingJSI
   PairingJSI <-->|"UniFFI ABI"| PairingTransport["Private WP4 Rust crate<br/>QR-pinned bootstrap SSH"]
 

@@ -17,18 +17,24 @@ flowchart TB
   subgraph Adapter["Private Whip adapter"]
     direction LR
     WhipAdapter["react-native-whip-ssh<br/>SSHClient subclass and product API"]
-    HerdrProtocols["Herdr JavaScript behavior<br/>codec · negotiation · terminal events<br/>command/event wrappers"]
-    PairingNative["Private WP4 native crate<br/>QR-pinned bootstrap SSH only"]
+    HerdrProtocols["Herdr JavaScript behavior<br/>codec · negotiation · terminal events<br/>command/event wrappers<br/>Uint8Array.subarray → ArrayBufferView"]
 
     WhipAdapter <--> HerdrProtocols
-    WhipAdapter <--> PairingNative
+  end
+
+  subgraph Pairing["Private WP4 native module"]
+    direction LR
+    PairingJSI["WhipSsh TurboModule<br/>generated TypeScript · C++ JSI"]
+    PairingNative["Private WP4 Rust crate<br/>UniFFI · QR-pinned bootstrap SSH<br/>isolated connection state"]
+
+    PairingJSI <-->|"UniFFI ABI"| PairingNative
   end
 
   subgraph Package["Public react-native-russh package"]
     direction LR
     Facade["Public generic SSHClient facade<br/>known_hosts · PTY · forwarding · SFTP<br/>raw/framed Unix sockets · persistent exec"]
     NativeClient["Native dispatcher<br/>typed shell/socket/exec bytes · JSON control"]
-    Bindings["Generated UniFFI TypeScript<br/>strings · ArrayBuffer · futures · callbacks"]
+    Bindings["Generated UniFFI TypeScript<br/>owned frame callbacks · futures · control"]
     JSI["Generated C++ JSI bridge<br/>Hermes HostObject · RustBuffer conversion"]
     Platforms["Platform installers<br/>iOS Objective-C++ · Android Kotlin/JNI"]
 
@@ -40,8 +46,8 @@ flowchart TB
 
   subgraph Rust["Public product-neutral react-native-russh Rust library"]
     direction LR
-    UniFFI["UniFFI exports<br/>typed shell/socket/exec byte paths<br/>call · callAsync · events · shutdown"]
-    Core["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/rust.svg' width='44' height='44'/></span><br/><b>react-native-russh</b><br/>session and channel ownership"]
+    UniFFI["UniFFI exports<br/>typed shell/socket/exec byte paths<br/>owned Vec&lt;u8&gt; callbacks<br/>call · callAsync · events · shutdown"]
+    Core["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/rust.svg' width='44' height='44'/></span><br/><b>react-native-russh</b><br/>session and channel ownership<br/>persistent cancellation-safe frame reader<br/>one allocation per framed payload"]
     Control["JSON control dispatcher<br/>connect · SFTP · forwarding · streamlocal · exec · lifecycle"]
     Tokio["<span style='display:inline-block;width:44px;height:44px'><img src='https://tokio.rs/img/icons/tokio.svg' width='44' height='44'/></span><br/><b>Tokio runtime</b>"]
     KnownHosts["Strict known_hosts verification"]
@@ -57,7 +63,8 @@ flowchart TB
     SFTP --> Russh
   end
 
-  WhipAdapter -->|"inherits generic transport"| Facade
+  WhipAdapter <-->|"inherits generic transport<br/>complete ArrayBuffer frames"| Facade
+  WhipAdapter -->|"pairHost"| PairingJSI
   JSI <-->|"UniFFI C ABI"| UniFFI
 
   subgraph Remote["Remote host"]
@@ -88,7 +95,7 @@ flowchart TB
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033,stroke-width:1.5px
   classDef terminal fill:#f2ecff,stroke:#7958b5,color:#172033,stroke-width:1.5px
 
-  class WhipAdapter,HerdrProtocols,PairingNative terminal
-  class Facade,NativeClient,Bindings,JSI,Platforms package
-  class UniFFI,Core,Control,Tokio,KnownHosts,Russh,SFTP rust
+  class WhipAdapter,HerdrProtocols terminal
+  class Facade,NativeClient,Bindings,JSI,Platforms,PairingJSI package
+  class UniFFI,Core,Control,Tokio,KnownHosts,Russh,SFTP,PairingNative rust
   class SSHD,Shell,FileSystem,TCPServices,APISocket,ClientSocket,Herdr remote
