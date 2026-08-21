@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "whip-pair"
+dynamic = ["version"]
+description = "Direct, QR-based SSH public-key enrollment prototype for Whip"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "AGPL-3.0-or-later"
+authors = [{ name = "KaminariOS" }]
+keywords = ["ssh", "qr-code", "authorized-keys", "pairing", "cli"]
+classifiers = [
+  "Environment :: Console",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Rust",
+  "Topic :: Security",
+  "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/KaminariOS/whip/tree/main/whip-pair"
+Repository = "https://github.com/KaminariOS/whip"
+Issues = "https://github.com/KaminariOS/whip/issues"
+
+[tool.maturin]
+bindings = "bin"
+strip = true

@@ -169,9 +169,17 @@ ssh user@laptop.tailnet.ts.net 'herdr status server --json'
 ### Pair with a QR code (experimental)
 
 QR pairing is disabled by default. In Whip, enable **More → QR host pairing ·
-Experimental**. On the Mac or Linux host, install and run the pairing helper:
+Experimental**. On the Mac or Linux host, run the pairing helper with any one
+of these package managers:
 
 ```bash
+# uv
+uvx whip-pair
+
+# npm
+npx whip-pair
+
+# Cargo
 cargo install --locked whip-pair
 whip-pair
 ```
@@ -184,9 +192,9 @@ the verified SSH host key. A clipboard public key has no private credential in
 Whip, so it authorizes and saves the host without making it immediately
 connectable from that device.
 
-The Cargo installation requires `ssh-keyscan` from an OpenSSH client package.
-See the [`whip-pair` documentation](whip-pair/README.md) for the protocol,
-security boundaries, Nix command, and nonstandard-port options.
+The uv, npm, and Cargo versions require `ssh-keyscan` from an OpenSSH client
+package. See the [`whip-pair` documentation](whip-pair/README.md) for the
+protocol, security boundaries, Nix command, and nonstandard-port options.
 
 ### Enter a host manually
 

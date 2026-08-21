@@ -1,0 +1,48 @@
+{
+  "name": "whip-pair",
+  "version": "0.1.0",
+  "description": "Direct, QR-based SSH public-key enrollment prototype for Whip",
+  "license": "AGPL-3.0-or-later",
+  "author": "KaminariOS",
+  "homepage": "https://github.com/KaminariOS/whip/tree/main/whip-pair#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KaminariOS/whip.git",
+    "directory": "whip-pair"
+  },
+  "bugs": {
+    "url": "https://github.com/KaminariOS/whip/issues"
+  },
+  "keywords": [
+    "ssh",
+    "qr-code",
+    "authorized-keys",
+    "pairing",
+    "cli"
+  ],
+  "bin": {
+    "whip-pair": "bin/whip-pair.js"
+  },
+  "files": [
+    "bin/",
+    "vendor/",
+    "README.md"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prepublishOnly": "node scripts/verify-package.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -10,6 +10,7 @@ readme = "README.md"
 keywords = ["ssh", "qr-code", "authorized-keys", "pairing", "cli"]
 categories = ["authentication", "command-line-utilities"]
 publish = ["crates-io"]
+exclude = ["/npm", "/pyproject.toml"]
 
 [dependencies]
 base64 = "0.22"

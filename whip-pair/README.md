@@ -1,6 +1,8 @@
 # whip-pair prototype
 
 [![crates.io](https://img.shields.io/crates/v/whip-pair.svg)](https://crates.io/crates/whip-pair)
+[![PyPI](https://img.shields.io/pypi/v/whip-pair.svg)](https://pypi.org/project/whip-pair/)
+[![npm](https://img.shields.io/npm/v/whip-pair.svg)](https://www.npmjs.com/package/whip-pair)
 
 `whip-pair` is a direct, one-shot SSH public-key enrollment prototype for
 Whip. It uses the host's existing SSH port: no relay, TLS listener, additional
@@ -88,6 +90,32 @@ prompt.
 
 ## Install
 
+All non-Nix installations require `ssh-keyscan` from an OpenSSH client package
+to be available on `PATH`.
+
+### uv
+
+Run the native binary from PyPI without installing Rust:
+
+```bash
+uvx whip-pair
+```
+
+`uvx` is an alias for `uv tool run`; either form creates an isolated tool
+environment and runs `whip-pair`. Published wheels support macOS and Linux on
+ARM64 and x64.
+
+### npm
+
+Run the native binary from npm without installing Rust:
+
+```bash
+npx whip-pair
+```
+
+The npm package is a dependency-free launcher containing the same four native
+binaries. Node.js 18 or newer is required.
+
 ### Cargo
 
 Install the [published crate](https://crates.io/crates/whip-pair) with Rust 1.85
@@ -97,10 +125,6 @@ or newer:
 cargo install --locked whip-pair
 whip-pair
 ```
-
-Cargo installs the Rust binary but not the external `ssh-keyscan` command.
-Install an OpenSSH client package first if `ssh-keyscan` is not already on
-`PATH`.
 
 ### Nix
 
@@ -179,13 +203,31 @@ contents before publishing. Crates.io trusts only `publish-whip-pair.yml` in
 `KaminariOS/whip` with the protected `crates-io` environment. The workflow
 uses a short-lived OIDC credential; GitHub stores no crates.io API token.
 
-To release a version, update `version` in `whip-pair/Cargo.toml` and the
-`mkWhipPair` version in `flake.nix`, refresh `whip-pair/Cargo.lock`, and run:
+The [`Publish whip-pair to PyPI and npm`](https://github.com/KaminariOS/whip/actions/workflows/publish-whip-pair-packages.yml)
+workflow builds native PyPI wheels and npm binaries for macOS and Linux on
+ARM64 and x64. PyPI should trust `publish-whip-pair-packages.yml` with the
+`pypi` environment. After the first npm release, npm should trust the same
+workflow with the `npm` environment. Both registries then publish with
+short-lived GitHub OIDC credentials and provenance instead of stored tokens.
+
+PyPI supports a pending trusted publisher for the first release. npm requires
+the package to exist before trusted publishing can be configured, so add a
+short-lived `NPM_TOKEN` secret to the protected `npm` environment, manually run
+the workflow once with **Publish the npm package** and **Bootstrap the first
+npm release with NPM_TOKEN** enabled, configure npm trusted publishing, and
+then delete the secret.
+
+To release a version, update `version` in `whip-pair/Cargo.toml`,
+`whip-pair/npm/package.json`, and the `mkWhipPair` version in `flake.nix`,
+refresh `whip-pair/Cargo.lock`, and run:
 
 ```bash
 nix develop -c cargo test --locked --manifest-path whip-pair/Cargo.toml
 nix develop -c cargo publish --locked --dry-run \
   --manifest-path whip-pair/Cargo.toml
+nix develop -c uvx maturin build --release --locked \
+  --manifest-path whip-pair/Cargo.toml \
+  --out whip-pair/dist
 ```
 
 Commit those changes, then push a tag whose version matches `Cargo.toml`

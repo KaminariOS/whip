@@ -1,0 +1,287 @@
+name: Publish whip-pair to PyPI and npm
+
+on:
+  push:
+    tags:
+      - 'whip-pair-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version from whip-pair/Cargo.toml, without a leading v
+        required: true
+        default: 0.1.0
+        type: string
+      publish_pypi:
+        description: Publish the PyPI wheels
+        required: true
+        default: true
+        type: boolean
+      publish_npm:
+        description: Publish the npm package
+        required: true
+        default: false
+        type: boolean
+      bootstrap_npm_with_token:
+        description: Bootstrap the first npm release with NPM_TOKEN
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-whip-pair-packages
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify source package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: whip-pair
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install latest stable Rust toolchain
+        run: |
+          rustup toolchain install stable \
+            --profile minimal \
+            --component clippy \
+            --component rustfmt
+          rustup default stable
+          rustc --version
+
+      - name: Verify release versions
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cargo_version="$(cargo metadata --locked --format-version 1 --no-deps \
+            | jq -r '.packages[0].version')"
+          npm_version="$(node -p "require('./npm/package.json').version")"
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            expected_version="${RELEASE_TAG#whip-pair-v}"
+          else
+            expected_version="$MANUAL_VERSION"
+          fi
+          if [[ -z "$expected_version" || "$cargo_version" != "$expected_version" ]]; then
+            echo "Expected whip-pair version $expected_version, found $cargo_version" >&2
+            exit 1
+          fi
+          if [[ "$npm_version" != "$cargo_version" ]]; then
+            echo "npm version $npm_version does not match Cargo version $cargo_version" >&2
+            exit 1
+          fi
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Check npm launcher syntax
+        run: |
+          node --check npm/bin/whip-pair.js
+          node --check npm/scripts/verify-package.js
+
+  build:
+    name: Build ${{ matrix.package_target }} packages
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            rust_target: x86_64-unknown-linux-musl
+            wheel_target: x86_64
+            package_target: linux-x64
+            is_linux: true
+          - runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-musl
+            wheel_target: aarch64
+            package_target: linux-arm64
+            is_linux: true
+          - runner: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            wheel_target: x86_64
+            package_target: darwin-x64
+            is_linux: false
+          - runner: macos-26
+            rust_target: aarch64-apple-darwin
+            wheel_target: aarch64
+            package_target: darwin-arm64
+            is_linux: false
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install latest stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add "${{ matrix.rust_target }}"
+          rustc --version
+
+      - name: Install musl compiler
+        if: matrix.is_linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+
+      - name: Build native npm binary
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          PACKAGE_TARGET: ${{ matrix.package_target }}
+        run: |
+          if [[ "${{ matrix.is_linux }}" == "true" ]]; then
+            target_key="${RUST_TARGET^^}"
+            target_key="${target_key//-/_}"
+            export "CC_${RUST_TARGET//-/_}=musl-gcc"
+            export "CARGO_TARGET_${target_key}_LINKER=musl-gcc"
+          fi
+          cargo build --release --locked \
+            --manifest-path whip-pair/Cargo.toml \
+            --target "$RUST_TARGET"
+          mkdir -p "whip-pair/npm/vendor/$PACKAGE_TARGET"
+          install -m 755 \
+            "whip-pair/target/$RUST_TARGET/release/whip-pair" \
+            "whip-pair/npm/vendor/$PACKAGE_TARGET/whip-pair"
+          "whip-pair/npm/vendor/$PACKAGE_TARGET/whip-pair" --version
+          tar -czf "$RUNNER_TEMP/native-$PACKAGE_TARGET.tar.gz" \
+            -C whip-pair/npm "vendor/$PACKAGE_TARGET"
+
+      - name: Build manylinux wheel
+        if: matrix.is_linux
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        with:
+          target: ${{ matrix.wheel_target }}
+          manylinux: '2014'
+          working-directory: whip-pair
+          args: --release --locked --out dist
+
+      - name: Build macOS wheel
+        if: ${{ !matrix.is_linux }}
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        with:
+          target: ${{ matrix.wheel_target }}
+          working-directory: whip-pair
+          args: --release --locked --out dist
+
+      - name: Upload native npm binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-${{ matrix.package_target }}
+          path: ${{ runner.temp }}/native-${{ matrix.package_target }}.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wheel-${{ matrix.package_target }}
+          path: whip-pair/dist/*.whl
+          if-no-files-found: error
+          retention-days: 3
+
+  publish-pypi:
+    name: Publish wheels to PyPI
+    needs: build
+    if: github.event_name == 'push' || inputs.publish_pypi == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish with PyPI trusted publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          skip-existing: true
+
+  publish-npm:
+    name: Publish native package to npm
+    needs: build
+    if: github.event_name == 'push' || inputs.publish_npm == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js for trusted publishing
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Download native binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: native-*
+          path: native-dist
+          merge-multiple: true
+
+      - name: Assemble and verify npm package
+        run: |
+          for archive in native-dist/*.tar.gz; do
+            tar -xzf "$archive" -C whip-pair/npm
+          done
+          chmod +x whip-pair/npm/bin/whip-pair.js whip-pair/npm/vendor/*/whip-pair
+          node whip-pair/npm/scripts/verify-package.js
+          node whip-pair/npm/bin/whip-pair.js --version
+          npm pack ./whip-pair/npm --dry-run
+
+      - name: Publish with npm trusted publishing
+        if: github.event_name == 'push' || inputs.bootstrap_npm_with_token == false
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          if npm view "whip-pair@$package_version" version >/dev/null 2>&1; then
+            echo "whip-pair@$package_version is already published to npm"
+          else
+            npm publish
+          fi
+        working-directory: whip-pair/npm
+
+      - name: Bootstrap first npm release with API token
+        if: github.event_name == 'workflow_dispatch' && inputs.bootstrap_npm_with_token == true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -z "$NODE_AUTH_TOKEN" ]]; then
+            echo "Missing npm environment secret NPM_TOKEN" >&2
+            exit 1
+          fi
+          package_version="$(node -p "require('./package.json').version")"
+          if npm view "whip-pair@$package_version" version >/dev/null 2>&1; then
+            echo "whip-pair@$package_version is already published to npm"
+          else
+            npm publish
+          fi
+        working-directory: whip-pair/npm
