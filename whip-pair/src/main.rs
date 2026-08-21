@@ -69,9 +69,9 @@ struct ServeArgs {
     /// Hostname or address Whip should use instead of the selected address.
     #[arg(long)]
     advertise_host: Option<String>,
-    /// Port of the existing SSH service to advertise.
-    #[arg(long, default_value_t = DEFAULT_SSH_PORT)]
-    ssh_port: u16,
+    /// Port of the existing SSH service to advertise. Defaults to 22.
+    #[arg(long)]
+    ssh_port: Option<u16>,
     /// SSH account to pair. It must be the current local user.
     #[arg(long)]
     ssh_user: Option<String>,
@@ -140,7 +140,7 @@ async fn run() -> Result<(), Error> {
     match cli.command.unwrap_or(Commands::Serve(ServeArgs {
         bind: None,
         advertise_host: None,
-        ssh_port: DEFAULT_SSH_PORT,
+        ssh_port: None,
         ssh_user: None,
         ssh_fingerprint: None,
         ttl: DEFAULT_TTL_SECONDS,
@@ -184,7 +184,13 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
         ));
     }
 
+    let interactive_setup = args.bind.is_none();
     let selected = choose_bind_candidate(args.bind)?;
+    let ssh_port = match args.ssh_port {
+        Some(port) => validate_ssh_port(port)?,
+        None if interactive_setup => prompt_ssh_port()?,
+        None => DEFAULT_SSH_PORT,
+    };
     let ssh_host = args
         .advertise_host
         .unwrap_or_else(|| selected.address.to_string());
@@ -197,7 +203,7 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
     }
     let fingerprint = match args.ssh_fingerprint {
         Some(value) => validate_ssh_fingerprint(&value)?,
-        None => discover_ssh_fingerprint(&ssh_host, args.ssh_port)?,
+        None => discover_ssh_fingerprint(&ssh_host, ssh_port)?,
     };
     let ssh_host_key_sha256 = decode_ssh_fingerprint(&fingerprint)?;
 
@@ -224,7 +230,7 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
 
     let payload = PairingPayload {
         ssh_host,
-        ssh_port: args.ssh_port,
+        ssh_port,
         ssh_user,
         temporary_private_key_seed,
         ssh_host_key_sha256,
@@ -663,6 +669,35 @@ fn choose_bind_candidate(explicit: Option<IpAddr>) -> Result<BindCandidate, Erro
     select_bind_candidate(&candidates).map_err(Error::Message)
 }
 
+fn prompt_ssh_port() -> Result<u16, Error> {
+    eprint!("SSH port [{DEFAULT_SSH_PORT}]: ");
+    io::stderr().flush()?;
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    parse_prompted_ssh_port(&answer)
+}
+
+fn parse_prompted_ssh_port(answer: &str) -> Result<u16, Error> {
+    let answer = answer.trim();
+    if answer.is_empty() {
+        return Ok(DEFAULT_SSH_PORT);
+    }
+    let port = answer
+        .parse::<u16>()
+        .map_err(|_| Error::Message("SSH port must be a number from 1 to 65535".into()))?;
+    validate_ssh_port(port)
+}
+
+fn validate_ssh_port(port: u16) -> Result<u16, Error> {
+    if port == 0 {
+        Err(Error::Message(
+            "SSH port must be a number from 1 to 65535".into(),
+        ))
+    } else {
+        Ok(port)
+    }
+}
+
 fn print_pairing_screen(
     selected: &BindCandidate,
     payload: &PairingPayload,
@@ -887,5 +922,23 @@ mod tests {
         let digest = [9; 32];
         let fingerprint = format!("SHA256:{}", STANDARD_NO_PAD.encode(digest));
         assert_eq!(decode_ssh_fingerprint(&fingerprint).unwrap(), digest);
+    }
+
+    #[test]
+    fn interactive_ssh_port_defaults_to_22() {
+        assert_eq!(parse_prompted_ssh_port("").unwrap(), 22);
+        assert_eq!(parse_prompted_ssh_port("\n").unwrap(), 22);
+    }
+
+    #[test]
+    fn interactive_ssh_port_accepts_nonstandard_port() {
+        assert_eq!(parse_prompted_ssh_port("2222\n").unwrap(), 2222);
+    }
+
+    #[test]
+    fn interactive_ssh_port_rejects_invalid_values() {
+        assert!(parse_prompted_ssh_port("0").is_err());
+        assert!(parse_prompted_ssh_port("not-a-port").is_err());
+        assert!(parse_prompted_ssh_port("65536").is_err());
     }
 }

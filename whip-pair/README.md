@@ -107,7 +107,9 @@ nix run github:KaminariOS/whip#whip-pair -- serve \
 ```
 
 `--ssh-port` defaults to `22`. It does not open a new port; it must match the
-existing SSH service reachable at the selected or advertised host.
+existing SSH service reachable at the selected or advertised host. When no
+`--bind` address is supplied, the interactive setup asks for this port and
+offers `22` as the default. Passing `--ssh-port` skips that question.
 
 From a local checkout:
 
