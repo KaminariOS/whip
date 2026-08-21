@@ -647,7 +647,15 @@ fn confirm_enrollment() -> Result<bool, io::Error> {
 
 fn discover_ssh_fingerprint(host: &str, port: u16) -> Result<String, Error> {
     let output = Command::new("ssh-keyscan")
-        .args(["-T", "3", "-t", "ed25519", "-p", &port.to_string(), host])
+        .args([
+            "-T",
+            "3",
+            "-t",
+            "ed25519,ecdsa,rsa",
+            "-p",
+            &port.to_string(),
+            host,
+        ])
         .output()
         .map_err(|error| Error::Message(format!("could not run ssh-keyscan: {error}")))?;
     if !output.status.success() && output.stdout.is_empty() {
@@ -655,21 +663,49 @@ fn discover_ssh_fingerprint(host: &str, port: u16) -> Result<String, Error> {
             "could not discover the SSH host key for {host}:{port}; ensure sshd is running or pass --ssh-fingerprint"
         )));
     }
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        let mut fields = line.split_whitespace();
-        let _host = fields.next();
-        let kind = fields.next();
-        let blob = fields.next();
-        if kind == Some("ssh-ed25519")
-            && let Some(blob) = blob
-        {
-            let public_key = validate_public_key(&format!("ssh-ed25519 {blob}"))?;
-            return Ok(fingerprint_public_key(&public_key));
-        }
+    if let Some(fingerprint) = fingerprint_from_ssh_keyscan(&output.stdout) {
+        return Ok(fingerprint);
     }
     Err(Error::Message(format!(
-        "{host}:{port} did not present an Ed25519 SSH host key"
+        "{host}:{port} did not present an SSH host key supported by Whip"
     )))
+}
+
+fn fingerprint_from_ssh_keyscan(output: &[u8]) -> Option<String> {
+    let mut selected = None;
+    for line in String::from_utf8_lossy(output).lines() {
+        let mut fields = line.split_whitespace();
+        let _host = fields.next();
+        let (Some(kind), Some(blob)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let Some(preference) = ssh_host_key_preference(kind) else {
+            continue;
+        };
+        let Ok(public_key) = validate_public_key(&format!("{kind} {blob}")) else {
+            continue;
+        };
+        if selected
+            .as_ref()
+            .is_none_or(|(current, _)| preference < *current)
+        {
+            selected = Some((preference, fingerprint_public_key(&public_key)));
+        }
+    }
+    selected.map(|(_, fingerprint)| fingerprint)
+}
+
+fn ssh_host_key_preference(kind: &str) -> Option<u8> {
+    match kind {
+        "ssh-ed25519" => Some(0),
+        "ecdsa-sha2-nistp256" => Some(1),
+        "ecdsa-sha2-nistp384" => Some(2),
+        "ecdsa-sha2-nistp521" => Some(3),
+        // rsa-sha2-512, rsa-sha2-256, and legacy ssh-rsa all use the same
+        // ssh-rsa public-key blob and therefore the same host-key fingerprint.
+        "ssh-rsa" => Some(4),
+        _ => None,
+    }
 }
 
 fn validate_ssh_fingerprint(value: &str) -> Result<String, Error> {
@@ -765,4 +801,47 @@ fn write_secret_file(path: &std::path::Path, value: &str) -> Result<(), Error> {
     file.write_all(b"\n")?;
     file.sync_all()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ED25519_BLOB: &str =
+        "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";
+    const ECDSA_P256_BLOB: &str = "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBHwf2HMM5TRXvo2SQJjsNkiDD5KqiiNjrGVv3UUh+mMT5RHxiRtOnlqvjhQtBq0VpmpCV/PwUdhOig4vkbqAcEc=";
+
+    #[test]
+    fn ssh_keyscan_selection_matches_russh_preference_order() {
+        let scan = format!(
+            "host ecdsa-sha2-nistp256 {ECDSA_P256_BLOB}\nhost ssh-ed25519 {ED25519_BLOB}\n"
+        );
+        let ed25519 = validate_public_key(&format!("ssh-ed25519 {ED25519_BLOB}")).unwrap();
+
+        assert_eq!(
+            fingerprint_from_ssh_keyscan(scan.as_bytes()),
+            Some(fingerprint_public_key(&ed25519))
+        );
+    }
+
+    #[test]
+    fn ssh_keyscan_selection_accepts_ecdsa_without_ed25519() {
+        let scan = format!("host ecdsa-sha2-nistp256 {ECDSA_P256_BLOB}\n");
+        let ecdsa = validate_public_key(&format!("ecdsa-sha2-nistp256 {ECDSA_P256_BLOB}")).unwrap();
+
+        assert_eq!(
+            fingerprint_from_ssh_keyscan(scan.as_bytes()),
+            Some(fingerprint_public_key(&ecdsa))
+        );
+    }
+
+    #[test]
+    fn ssh_host_key_preference_covers_russh_defaults() {
+        assert_eq!(ssh_host_key_preference("ssh-ed25519"), Some(0));
+        assert_eq!(ssh_host_key_preference("ecdsa-sha2-nistp256"), Some(1));
+        assert_eq!(ssh_host_key_preference("ecdsa-sha2-nistp384"), Some(2));
+        assert_eq!(ssh_host_key_preference("ecdsa-sha2-nistp521"), Some(3));
+        assert_eq!(ssh_host_key_preference("ssh-rsa"), Some(4));
+        assert_eq!(ssh_host_key_preference("ssh-dss"), None);
+    }
 }

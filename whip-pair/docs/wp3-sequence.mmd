@@ -1,26 +1,30 @@
 sequenceDiagram
-    actor HostUser as Host user
-    participant Host as whip-pair
-    participant Whip as Whip client
+    autonumber
     participant Keys as authorized_keys
+    participant Pair as whip-pair
+    actor User
+    participant Whip as Whip client
 
-    Host->>Host: Select interface and bind TCP listener
-    Host->>Host: Generate token and ephemeral TLS certificate
-    Host-->>HostUser: Display WP3 QR code
-    HostUser-->>Whip: Scan QR code
+    Pair->>Pair: Bind selected interface
+    Pair->>Pair: Generate token and ephemeral TLS certificate
+    Pair-->>User: Show one-time WP3 QR code
+    User->>Whip: Scan QR code
+    Note over Pair,Whip: QR bootstrap: endpoint + token + certificate pin
     Whip->>Whip: Decode endpoint, token, and certificate pin
-    Whip->>Host: Connect with TLS and verify pinned certificate SHA-256
-    Whip->>Host: PairingHello { token }
-    Host->>Host: Check token and server-side expiry
-    Host-->>Whip: PairingServerInfo { SSH host, port, user, host-key fingerprint }
-    Whip->>Host: EnrollmentRequest { device name, Ed25519 public key }
-    Host->>Host: Validate key and calculate fingerprint
-    Host-->>HostUser: Show device and key fingerprint and request approval
-    alt approved
-        Host->>Keys: Append key safely and idempotently
-        Host-->>Whip: approved { fingerprint, already_present }
-        Host->>Host: Stop pairing server
-    else rejected or invalid
-        Host-->>Whip: error { code, message }
-        Host->>Host: Continue until success or expiry
+    Whip->>Pair: Connect with TLS and verify certificate SHA-256
+    Whip->>Pair: PairingHello { token }
+    Pair->>Pair: Check token and server-side expiry
+    Pair-->>Whip: PairingServerInfo { SSH profile + host-key fingerprint }
+    Whip->>Pair: EnrollmentRequest { device name + OpenSSH public key }
+    Pair->>Pair: Validate key and calculate fingerprint
+    Pair-->>User: Show device and key fingerprint
+    User->>Pair: Approve or reject
+    alt User approves before expiry
+        Pair->>Keys: Append key safely and idempotently
+        Keys-->>Pair: Added or already present
+        Pair-->>Whip: approved { fingerprint, already_present }
+        Pair->>Pair: Stop one-shot server
+    else User rejects
+        Pair-->>Whip: rejected { code, message }
+        Pair->>Pair: Continue listening until success or expiry
     end

@@ -26,7 +26,9 @@ WP3 uses the QR code only to bootstrap a direct connection from Whip to the
 host. There is no relay, account, discovery service, or long-running daemon.
 The SSH public key is not embedded in the QR code.
 
-[View the WP3 pairing sequence diagram source](docs/wp3-sequence.mmd).
+[![WP3 pairing sequence](docs/wp3-sequence.svg)](docs/wp3-sequence.mmd)
+
+The canonical Mermaid source is [`docs/wp3-sequence.mmd`](docs/wp3-sequence.mmd).
 
 Render and validate it locally with:
 
@@ -36,7 +38,8 @@ nix shell nixpkgs#mermaid-cli -c mmdc \
   -o whip-pair/docs/wp3-sequence.svg
 ```
 
-The generated SVG is ignored by Git.
+Commit the generated SVG so Markdown previews can display the diagram without
+duplicating its Mermaid source in this README.
 
 ### QR bootstrap envelope
 
@@ -68,9 +71,9 @@ JSON object, limited to 16 KiB. The exchange is:
    `ssh_host_fingerprint`.
 3. The client sends an `EnrollmentRequest` containing `device_name` and
    `public_key`.
-4. The server validates the Ed25519 key and shows its SHA-256 fingerprint in
-   the host terminal. The host user approves or rejects it. `--yes` skips this
-   prompt and should be reserved for controlled automation.
+4. The server validates the OpenSSH public key and shows its SHA-256 fingerprint
+   in the host terminal. The host user approves or rejects it. `--yes` skips
+   this prompt and should be reserved for controlled automation.
 5. On approval, the server appends the key to `~/.ssh/authorized_keys` and
    returns its fingerprint plus `already_present`. The successful enrollment
    consumes the one-shot server and causes it to exit.
@@ -88,8 +91,9 @@ the server-side TTL expires. Error responses use the codes `invalid_request`,
 - The QR is a secret invitation: anyone who can read it and reach the selected
   interface can submit a key while it is valid. Keep it visible only to the
   intended client.
-- The returned SSH host-key fingerprint is protected by the pinned TLS channel
-  and can be stored for SSH host verification.
+- The returned SSH host-key fingerprint is protected by the pinned TLS channel.
+  The current Whip client still uses its normal global known-hosts trust flow
+  on the first SSH connection.
 - Bare OpenSSH public keys understood by the same `ssh-key` parser used by
   Whip's `russh` transport are accepted. `authorized_keys` options are
   rejected, comments are preserved, and duplicate keys are not appended.
@@ -121,6 +125,10 @@ From a local checkout, start the host-side pairing server with:
 nix run .#whip-pair
 ```
 
+The Nix app includes `ssh-keyscan`. Automatic discovery requests Ed25519,
+ECDSA, and RSA host keys, then selects the key using Whip's `russh` preference
+order. Use `--ssh-fingerprint` to provide a fingerprint explicitly.
+
 If multiple usable interfaces exist, select the one the phone can reach. The
 QR is printed immediately afterward. During CLI development, add
 `--print-code` to print the underlying envelope for copy/paste:
@@ -147,7 +155,6 @@ nix run .#whip-pair -- inspect 'WP3:...'
 
 ## Prototype limitations
 
-- SSH host-key discovery requires `ssh-keyscan` and an Ed25519 host key.
 - The version 3 envelope is compact binary encoded as Base45. SSH metadata is
   delivered after pinned TLS, while expiry is enforced only by the server.
 - The terminal QR uses error-correction level L to stay compact. Keep the
