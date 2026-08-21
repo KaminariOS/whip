@@ -82,6 +82,9 @@ class SSHClient {
             });
         });
     }
+    static pairHost(code, publicKey, deviceName) {
+        return nativeClient.pairHost(code, publicKey, deviceName);
+    }
     /**
      * Connects to an SSH server using a private key for authentication.
      *

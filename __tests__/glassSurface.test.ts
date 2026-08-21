@@ -51,7 +51,7 @@ test('gates app glass across bars and rows behind its experiment and background 
   expect(connection.match(/appGlassControlStyle\(true, colors\)/g)?.length).toBeGreaterThanOrEqual(2);
   expect(connection).toContain('className="flex-1">');
   expect(connection).not.toContain('className="flex-1 bg-background">');
-  expect(app.match(/<AppBackground uri=\{appBackgroundImageUri\} dimming=\{appBackgroundDimming\} \/>/g)).toHaveLength(4);
+  expect(app.match(/<AppBackground uri=\{appBackgroundImageUri\} dimming=\{appBackgroundDimming\} \/>/g)).toHaveLength(5);
   expect(hosts).toContain('<GlassSurface className="min-h-[88px]');
   expect(hosts).toContain('<AgentStatusMedallion');
   expect(readSource('src/components/app-ui.tsx')).toContain('<GlassSurface\n        className="items-center justify-center rounded-full border"');

@@ -31,6 +31,7 @@ export function MoreScreen(props: Props) {
         appBackgroundImageUri={props.appBackgroundImageUri}
         appBackgroundDimming={props.appBackgroundDimming}
         appGlassEnabled={props.appGlassEnabled}
+        sshQrPairingEnabled={props.sshQrPairingEnabled}
         language={props.language}
         keepScreenOn={props.keepScreenOn}
         reopenTerminalOnLaunch={props.reopenTerminalOnLaunch}
@@ -50,6 +51,7 @@ export function MoreScreen(props: Props) {
         onAppBackgroundImageChange={props.onAppBackgroundImageChange}
         onAppBackgroundDimmingChange={props.onAppBackgroundDimmingChange}
         onAppGlassEnabledChange={props.onAppGlassEnabledChange}
+        onSshQrPairingEnabledChange={props.onSshQrPairingEnabledChange}
         onLanguageChange={props.onLanguageChange}
         onKeepScreenOnChange={props.onKeepScreenOnChange}
         onReopenTerminalOnLaunchChange={props.onReopenTerminalOnLaunchChange}

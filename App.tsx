@@ -28,6 +28,7 @@ import { GlobalKeychainScreen } from './src/components/GlobalKeychainScreen';
 import { GlassProvider } from './src/components/GlassSurface';
 import { HostsScreen } from './src/components/HostsScreen';
 import { KnownHostsScreen } from './src/components/KnownHostsScreen';
+import { NewHostScreen } from './src/components/NewHostScreen';
 import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
@@ -37,6 +38,7 @@ import { TrustHostSheet } from './src/components/TrustHostSheet';
 import { AgentStatusAnimationProvider, ReducedMotionProvider, WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
 import { emptyConnectionProfile, hostDisplayName, resolveJumpHostChain } from './src/lib/hostProfiles';
+import { profileFromPairing, type PairHostResult, type PairingKeySelection } from './src/lib/sshPairing';
 import { hostRuntimeSummary } from './src/lib/hostRuntimeSummary';
 import {
   classifyConnectionError,
@@ -279,6 +281,7 @@ function AppContent() {
   const [notificationResponse, setNotificationResponse] = useState<Notifications.NotificationResponse | null>(null);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
+  const [newHostOpen, setNewHostOpen] = useState(false);
   const [globalSshKeys, setGlobalSshKeys] = useState<GlobalSshKey[]>([]);
   const [unlockedGlobalKeys, setUnlockedGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
@@ -310,6 +313,7 @@ function AppContent() {
   const [appBackgroundImageUri, setAppBackgroundImageUri] = useState(defaultDevicePreferences.appBackgroundImageUri);
   const [appBackgroundDimming, setAppBackgroundDimming] = useState(defaultDevicePreferences.appBackgroundDimming);
   const [appGlassEnabled, setAppGlassEnabled] = useState(defaultDevicePreferences.appGlassEnabled);
+  const [sshQrPairingEnabled, setSshQrPairingEnabled] = useState(defaultDevicePreferences.sshQrPairingEnabled);
   const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
   const [reopenTerminalOnLaunch, setReopenTerminalOnLaunch] = useState(defaultDevicePreferences.reopenTerminalOnLaunch);
@@ -419,6 +423,7 @@ function AppContent() {
         setAppBackgroundImageUri(preferences.appBackgroundImageUri);
         setAppBackgroundDimming(preferences.appBackgroundDimming);
         setAppGlassEnabled(preferences.appGlassEnabled);
+        setSshQrPairingEnabled(preferences.sshQrPairingEnabled);
         setLanguage(preferences.language);
         setKeepScreenOn(preferences.keepScreenOn);
         setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
@@ -459,6 +464,7 @@ function AppContent() {
       appBackgroundImageUri,
       appBackgroundDimming,
       appGlassEnabled,
+      sshQrPairingEnabled,
       language,
       keepScreenOn,
       reopenTerminalOnLaunch,
@@ -467,7 +473,7 @@ function AppContent() {
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, appGlassEnabled, biometricForKeys, biometricOnResume, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, appGlassEnabled, biometricForKeys, biometricOnResume, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, sshQrPairingEnabled, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   useEffect(() => {
     if (!terminalHistoryLoaded) return;
@@ -1146,6 +1152,11 @@ function AppContent() {
         setConnectError(null);
         return true;
       }
+      if (newHostOpen) {
+        setNewHostOpen(false);
+        setConnectError(null);
+        return true;
+      }
       if (selectedPaneId) {
         setSelectedPaneId(null);
         return true;
@@ -1155,7 +1166,7 @@ function AppContent() {
       return result.handled;
     });
     return () => subscription.remove();
-  }, [editorProfile, knownHostsOpen, navigation, selectedPaneId, unlockedGlobalKeys]);
+  }, [editorProfile, knownHostsOpen, navigation, newHostOpen, selectedPaneId, unlockedGlobalKeys]);
 
   const selectTab = (tab: AppTab) => setNavigation(current => selectMobileTab(current, tab));
 
@@ -1409,6 +1420,20 @@ function AppContent() {
     } catch (error) {
       setConnectError(t('app.saveHostError', { error: String(error) }));
     }
+  };
+
+  const savePairedHost = async (result: PairHostResult, key: PairingKeySelection) => {
+    const profile = profileFromPairing(result, key);
+    const saved = await saveConnectionProfile(hostsRef.current, profile);
+    hostsRef.current = saved.hosts;
+    setHosts(saved.hosts);
+    setCredentialRecovery(await credentialRecoveryStatus());
+    setNewHostOpen(false);
+    if (!key.privateKey) return;
+    Alert.alert(
+      t(result.alreadyPresent ? 'pairing.alreadyPairedTitle' : 'pairing.successTitle'),
+      t('pairing.successCopy', { user: result.sshUser, host: result.sshHost }),
+    );
   };
 
   const openHostEditor = async (host: HostProfile) => {
@@ -1851,7 +1876,8 @@ function AppContent() {
               credentialRecoveryBusy={credentialRecoveryBusy}
               onAdd={() => {
                 setConnectError(null);
-                setEditorProfile(emptyConnectionProfile());
+                if (sshQrPairingEnabled) setNewHostOpen(true);
+                else setEditorProfile(emptyConnectionProfile());
               }}
               onConnect={host => connectSavedHost(host).catch(error => setConnectError(String(error)))}
               onDelete={confirmDeleteHost}
@@ -1919,6 +1945,7 @@ function AppContent() {
               appBackgroundImageUri={appBackgroundImageUri}
               appBackgroundDimming={appBackgroundDimming}
               appGlassEnabled={appGlassEnabled}
+              sshQrPairingEnabled={sshQrPairingEnabled}
               language={language}
               keepScreenOn={keepScreenOn}
               reopenTerminalOnLaunch={reopenTerminalOnLaunch}
@@ -1955,6 +1982,7 @@ function AppContent() {
               onAppBackgroundImageChange={setAppBackgroundImageUri}
               onAppBackgroundDimmingChange={setAppBackgroundDimming}
               onAppGlassEnabledChange={setAppGlassEnabled}
+              onSshQrPairingEnabledChange={setSshQrPairingEnabled}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
               onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
@@ -1995,8 +2023,26 @@ function AppContent() {
         )}
         </NavigationBlurTarget>
 
-        {!immersiveTerminal && !editorProfile && unlockedGlobalKeys === null && !knownHostsOpen && (
+        {!immersiveTerminal && !editorProfile && !newHostOpen && unlockedGlobalKeys === null && !knownHostsOpen && (
           <BottomNavigation activeTab={navigation.tab} blurTarget={navigationBlurTargetRef} onSelect={selectTab} />
+        )}
+
+        {newHostOpen && (
+          <View className="absolute inset-0 z-40 bg-background">
+            <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
+            <NewHostScreen
+              onCancel={() => {
+                setNewHostOpen(false);
+                setConnectError(null);
+              }}
+              onManual={() => {
+                setNewHostOpen(false);
+                setEditorProfile(emptyConnectionProfile());
+              }}
+              onLoadGlobalKeys={unlockGlobalKeychain}
+              onPaired={savePairedHost}
+            />
+          </View>
         )}
 
         {editorProfile && (

@@ -106,6 +106,7 @@ export interface SettingsSectionProps {
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
+  sshQrPairingEnabled: boolean;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -124,6 +125,7 @@ export interface SettingsSectionProps {
   onAppBackgroundImageChange: (value: string | null) => void;
   onAppBackgroundDimmingChange: (value: number) => void;
   onAppGlassEnabledChange: (value: boolean) => void;
+  onSshQrPairingEnabledChange: (value: boolean) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
   onReopenTerminalOnLaunchChange: (value: boolean) => void;
@@ -248,6 +250,13 @@ export function SettingsSection(props: SettingsSectionProps) {
             copy={t('settings.knownHostsCopy', { count: props.knownHostCount })}
             icon={Fingerprint}
             onPress={props.onManageKnownHosts}
+            divided
+          />
+          <SettingRow
+            title={t('settings.sshQrPairing')}
+            copy={t('settings.sshQrPairingCopy')}
+            value={props.sshQrPairingEnabled}
+            onChange={props.onSshQrPairingEnabledChange}
             divided
           />
           <SettingRow title={t('settings.biometricForKeys')} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />

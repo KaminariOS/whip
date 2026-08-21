@@ -9,6 +9,14 @@
     "plugins": [
       "expo-asset",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Whip to scan a host pairing QR code.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "cameraPermission": "Allow Whip to attach photos you take to the remote terminal.",

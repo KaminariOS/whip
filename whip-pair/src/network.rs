@@ -1,0 +1,150 @@
+use std::{collections::HashSet, io, net::IpAddr};
+
+use if_addrs::get_if_addrs;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct BindCandidate {
+    pub interface: String,
+    pub address: IpAddr,
+    pub label: String,
+}
+
+pub fn discover_bind_candidates() -> io::Result<Vec<BindCandidate>> {
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+    for interface in get_if_addrs()? {
+        let address = interface.ip();
+        if !is_usable(&interface.name, address) || !seen.insert(address) {
+            continue;
+        }
+        candidates.push(BindCandidate {
+            label: label_for(&interface.name, address),
+            interface: interface.name,
+            address,
+        });
+    }
+    candidates.sort_by_key(candidate_rank);
+    Ok(candidates)
+}
+
+pub fn select_bind_candidate(candidates: &[BindCandidate]) -> Result<BindCandidate, String> {
+    match candidates {
+        [] => Err("no usable network interface found; pass --bind <address>".into()),
+        [only] => Ok(only.clone()),
+        many => {
+            eprintln!("Choose the network Whip should use:\n");
+            for (index, candidate) in many.iter().enumerate() {
+                eprintln!(
+                    "  {}. {:<12} {:<12} {}",
+                    index + 1,
+                    candidate.label,
+                    candidate.interface,
+                    candidate.address
+                );
+            }
+            eprint!("\nSelection [1]: ");
+            use std::io::Write as _;
+            std::io::stderr()
+                .flush()
+                .map_err(|error| error.to_string())?;
+            let mut answer = String::new();
+            std::io::stdin()
+                .read_line(&mut answer)
+                .map_err(|error| error.to_string())?;
+            let selected = if answer.trim().is_empty() {
+                1
+            } else {
+                answer
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| "selection must be a number".to_owned())?
+            };
+            many.get(selected.saturating_sub(1))
+                .cloned()
+                .ok_or_else(|| "selection is outside the displayed range".into())
+        }
+    }
+}
+
+fn is_usable(interface: &str, address: IpAddr) -> bool {
+    if address.is_loopback() || address.is_unspecified() || address.is_multicast() {
+        return false;
+    }
+    let lower = interface.to_ascii_lowercase();
+    if [
+        "docker", "podman", "virbr", "veth", "cni", "flannel", "kube", "br-",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix))
+    {
+        return false;
+    }
+    match address {
+        IpAddr::V4(address) => !address.is_link_local(),
+        IpAddr::V6(address) => !address.is_unicast_link_local(),
+    }
+}
+
+fn label_for(interface: &str, address: IpAddr) -> String {
+    let lower = interface.to_ascii_lowercase();
+    if lower.starts_with("tailscale") || is_tailscale_address(address) {
+        "Tailscale".into()
+    } else if lower.starts_with("wl") || matches!(lower.as_str(), "en0" | "en1") {
+        "Wi-Fi".into()
+    } else if lower.starts_with("en") || lower.starts_with("eth") {
+        "Ethernet".into()
+    } else {
+        "Network".into()
+    }
+}
+
+fn candidate_rank(candidate: &BindCandidate) -> (u8, u8, String) {
+    let network_rank = match candidate.label.as_str() {
+        "Tailscale" => 0,
+        "Wi-Fi" => 1,
+        "Ethernet" => 2,
+        _ => 3,
+    };
+    let family_rank = if candidate.address.is_ipv4() { 0 } else { 1 };
+    (network_rank, family_rank, candidate.interface.clone())
+}
+
+fn is_tailscale_address(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => {
+            let octets = address.octets();
+            octets[0] == 100 && (64..=127).contains(&octets[1])
+        }
+        IpAddr::V6(address) => address.segments()[0] == 0xfd7a,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ranks_tailscale_before_lan() {
+        let mut candidates = [
+            BindCandidate {
+                interface: "wlan0".into(),
+                address: "192.168.1.10".parse().unwrap(),
+                label: "Wi-Fi".into(),
+            },
+            BindCandidate {
+                interface: "tailscale0".into(),
+                address: "100.80.0.5".parse().unwrap(),
+                label: "Tailscale".into(),
+            },
+        ];
+        candidates.sort_by_key(candidate_rank);
+        assert_eq!(candidates[0].interface, "tailscale0");
+    }
+
+    #[test]
+    fn filters_container_and_link_local_addresses() {
+        assert!(!is_usable("docker0", "172.17.0.1".parse().unwrap()));
+        assert!(!is_usable("wlan0", "169.254.1.2".parse().unwrap()));
+        assert!(is_usable("wlan0", "192.168.1.2".parse().unwrap()));
+    }
+}

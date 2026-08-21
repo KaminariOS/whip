@@ -8,6 +8,7 @@
 
 mod herdr_codec;
 mod known_hosts;
+mod pairing;
 uniffi::setup_scaffolding!();
 
 use std::collections::HashMap;
@@ -93,6 +94,8 @@ enum TransportError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Sftp(#[from] russh_sftp::client::error::Error),
+    #[error("{0}")]
+    Pairing(#[from] pairing::PairingError),
 }
 
 #[derive(Debug, Deserialize)]
@@ -1811,6 +1814,12 @@ async fn dispatch(request: Request) -> Result<Value, TransportError> {
         }
         "getKeyDetails" => key_details(&request.params),
         "generateKeyPair" => generate_key_pair(&request.params),
+        "pairHost" => {
+            let code = required_string(&request.params, "code")?;
+            let public_key = required_string(&request.params, "publicKey")?;
+            let device_name = required_string(&request.params, "deviceName")?;
+            Ok(pairing::pair_host(&code, &public_key, &device_name).await?)
+        }
         "connect" => connect(&request.params).await,
         "setAgentForwarding" => {
             let session = session_for(&request.params)?;

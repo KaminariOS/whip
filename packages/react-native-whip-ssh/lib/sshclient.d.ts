@@ -79,6 +79,14 @@ export interface KeyDetails {
     fingerprint: string;
     publicKey: string;
 }
+export interface PairHostResult {
+    sshHost: string;
+    sshPort: number;
+    sshUser: string;
+    sshHostFingerprint: string;
+    keyFingerprint?: string;
+    alreadyPresent: boolean;
+}
 /**
  * @deprecated Use {@link GeneratedKeyPair} instead. This alias will be removed in a future major version.
  */
@@ -115,6 +123,7 @@ export default class SSHClient {
     */
     static getKeyDetails(key: string, passphrase?: string): Promise<KeyDetails>;
     static generateKeyPair(type: string, passphrase?: string, keySize?: number, comment?: string): Promise<GeneratedKeyPair>;
+    static pairHost(code: string, publicKey: string, deviceName: string): Promise<PairHostResult>;
     /**
      * Connects to an SSH server using a private key for authentication.
      *

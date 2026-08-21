@@ -187,6 +187,10 @@ const nativeClient = {
     finish(invokeAsync('generateKeyPair', { type: type || 'ed25519', passphrase: passphrase || '', keySize, comment: comment || 'whip' }), callback);
   },
 
+  pairHost(code: string, publicKey: string, deviceName: string) {
+    return invokeAsync('pairHost', { code, publicKey, deviceName });
+  },
+
   connectToHost(host: string, port: number, username: string, passwordOrKey: string | Params, key: string, callback: Callback) {
     finish(invokeAsync('connect', { host, port, username, credential: credential(passwordOrKey as any), key }), callback);
   },

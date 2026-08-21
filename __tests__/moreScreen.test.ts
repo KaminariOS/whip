@@ -38,6 +38,19 @@ test('does not show a Disconnect SSH button', () => {
   expect(settings).not.toContain("t('settings.disconnect')");
 });
 
+test('offers QR host pairing as an opt-in setting', () => {
+  const settings = readFileSync(
+    resolve(__dirname, '../src/components/SettingsScreen.tsx'),
+    'utf8',
+  );
+  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
+
+  expect(settings).toContain("title={t('settings.sshQrPairing')}");
+  expect(settings).toContain('value={props.sshQrPairingEnabled}');
+  expect(app).toContain('if (sshQrPairingEnabled) setNewHostOpen(true);');
+  expect(app).toContain('else setEditorProfile(emptyConnectionProfile());');
+});
+
 test('offers the genuine persistent agent alert as a notification test', () => {
   const settings = readFileSync(
     resolve(__dirname, '../src/components/SettingsScreen.tsx'),
