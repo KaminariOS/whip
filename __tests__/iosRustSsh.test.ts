@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const projectRoot = resolve(__dirname, '..');
-const uniffiRoot = resolve(projectRoot, 'packages/react-native-whip-ssh');
+const uniffiRoot = resolve(projectRoot, 'packages/react-native-russh');
+const whipAdapterRoot = resolve(projectRoot, 'packages/react-native-whip-ssh');
 const readProject = (path: string) => readFileSync(resolve(projectRoot, path), 'utf8');
 const readUniffi = (path: string) => readFileSync(resolve(uniffiRoot, path), 'utf8');
 
@@ -16,6 +17,9 @@ describe('UniFFI SSH integration', () => {
     expect(rootPackage.dependencies['react-native-whip-ssh']).toBe(
       'file:packages/react-native-whip-ssh',
     );
+    expect(rootPackage.dependencies['react-native-russh']).toBe(
+      'file:packages/react-native-russh',
+    );
     expect(rootPackage.dependencies['@dylankenneally/react-native-ssh-sftp']).toBeUndefined();
     expect(modulePackage.dependencies).toMatchObject({
       '@ubjs/core': '0.31.0-3',
@@ -23,11 +27,16 @@ describe('UniFFI SSH integration', () => {
     });
   });
 
-  it('keeps the SSH facade and both native platforms in one UniFFI package', () => {
+  it('keeps the public transport generic and Whip protocols in a private adapter', () => {
     const rootPackage = JSON.parse(readProject('package.json'));
     const modulePackage = JSON.parse(readUniffi('package.json'));
     const moduleConfig = readUniffi('react-native.config.js');
     const javascript = readUniffi('lib/sshclient.js');
+    const declarations = readUniffi('lib/sshclient.d.ts');
+    const adapterPackage = JSON.parse(
+      readFileSync(resolve(whipAdapterRoot, 'package.json'), 'utf8'),
+    );
+    const adapter = readFileSync(resolve(whipAdapterRoot, 'lib/sshclient.js'), 'utf8');
 
     expect(existsSync(resolve(projectRoot, 'packages/react-native-ssh-sftp'))).toBe(false);
     expect(existsSync(resolve(projectRoot, 'react-native.config.js'))).toBe(false);
@@ -35,10 +44,18 @@ describe('UniFFI SSH integration', () => {
     expect(modulePackage['react-native']).toBe('lib/sshclient.js');
     expect(modulePackage.types).toBe('lib/sshclient.d.ts');
     expect(rootPackage.expo.doctor.reactNativeDirectoryCheck.exclude).toContain(
-      'react-native-whip-ssh',
+      'react-native-russh',
     );
     expect(moduleConfig).toContain("sourceDir: './android'");
     expect(javascript).toContain("require('../src').default");
+    expect(javascript).not.toMatch(/Herdr|herdr|pairHost/);
+    expect(declarations).not.toMatch(/Herdr|herdr|PairHost|pairHost/);
+    expect(adapterPackage.private).toBe(true);
+    expect(adapterPackage.dependencies['react-native-russh']).toBe(
+      'file:../react-native-russh',
+    );
+    expect(adapter).toContain("require('../../react-native-russh/src').default");
+    expect(adapter).toContain('pairHost(code, publicKey, deviceName)');
     expect(javascript).not.toContain("require('react-native')");
     expect(javascript).not.toContain('Platform.OS');
     expect(javascript).not.toContain('legacySSHClient');
@@ -46,24 +63,24 @@ describe('UniFFI SSH integration', () => {
 
   it('generates a TurboModule, bindings, podspec, and ARM64 XCFramework', () => {
     const config = readUniffi('ubrn.config.yaml');
-    const podspec = readUniffi('WhipSsh.podspec');
+    const podspec = readUniffi('ReactNativeRussh.podspec');
     const entrypoint = readUniffi('src/generated-entry.tsx');
 
     expect(config).toContain('aarch64-apple-ios');
-    expect(config).not.toContain('aarch64-apple-ios-sim');
+    expect(config).toContain('aarch64-apple-ios-sim');
     expect(config).not.toContain('x86_64-apple-ios');
-    expect(config).toContain('spec: WhipSshSpec');
-    expect(podspec).toContain('s.vendored_frameworks = "build/WhipSsh.xcframework"');
+    expect(config).toContain('spec: ReactNativeRusshSpec');
+    expect(podspec).toContain('s.vendored_frameworks = "build/ReactNativeRussh.xcframework"');
     expect(entrypoint).toContain('installer.installRustCrate()');
   });
 
   it('exports generic synchronous, asynchronous, event, and shutdown entry points from Rust', () => {
     const rust = readUniffi('rust/src/lib.rs');
-    const generated = readUniffi('src/generated/whip_ssh.ts');
+    const generated = readUniffi('src/generated/react_native_russh.ts');
 
     expect(rust).toContain('uniffi::setup_scaffolding!();');
     expect(rust).toContain('#[uniffi::export(with_foreign)]');
-    expect(rust).toContain('pub trait WhipSshEventSink');
+    expect(rust).toContain('pub trait ReactNativeRusshEventSink');
     expect(rust).toContain('pub fn call(request_json: String) -> String');
     expect(rust).toContain('pub async fn call_async(request_json: String) -> String');
     expect(rust).toContain('runtime.spawn(process_json_for_lifecycle');
@@ -103,7 +120,7 @@ describe('UniFFI SSH integration', () => {
     expect(rust).toContain('remote stream write failed: {error}');
     expect(rust).toContain('Herdr bridge send failed: {error}');
     expect(rust).toContain('"reason": close_reason');
-    expect(adapter).toContain('console.error(`[WhipSsh] ${operation} failed: ${error}`)');
+    expect(adapter).toContain('console.error(`[ReactNativeRussh] ${operation} failed: ${error}`)');
     expect(adapter).toContain("finishFast('herdrBridgeInput'");
   });
 

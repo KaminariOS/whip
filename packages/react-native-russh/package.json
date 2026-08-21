@@ -1,0 +1,74 @@
+{
+  "name": "react-native-russh",
+  "version": "0.1.0",
+  "description": "A React Native SSH and SFTP client powered by Russh",
+  "main": "lib/sshclient.js",
+  "react-native": "lib/sshclient.js",
+  "types": "lib/sshclient.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/sshclient.d.ts",
+      "react-native": "./lib/sshclient.js",
+      "default": "./lib/sshclient.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "android/CMakeLists.txt",
+    "android/build.gradle",
+    "android/cpp-adapter.cpp",
+    "android/src/main/AndroidManifest.xml",
+    "android/src/main/java",
+    "android/src/main/jniLibs/arm64-v8a/libreact_native_russh.a",
+    "build/ReactNativeRussh.xcframework",
+    "cpp",
+    "ios",
+    "lib",
+    "src",
+    "LICENSE",
+    "PROVENANCE.md",
+    "README.md",
+    "ReactNativeRussh.podspec",
+    "react-native.config.js"
+  ],
+  "homepage": "https://github.com/KaminariOS/whip/tree/main/packages/react-native-russh",
+  "license": "AGPL-3.0-or-later",
+  "author": {
+    "name": "Whip contributors"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KaminariOS/whip.git",
+    "directory": "packages/react-native-russh"
+  },
+  "bugs": {
+    "url": "https://github.com/KaminariOS/whip/issues"
+  },
+  "keywords": [
+    "react-native",
+    "ssh",
+    "sftp",
+    "russh"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "dependencies": {
+    "@ubjs/core": "0.31.0-3",
+    "uniffi-bindgen-react-native": "0.31.0-3"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": ">=0.76"
+  },
+  "codegenConfig": {
+    "name": "ReactNativeRusshSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "outputDir": {
+      "ios": "ios/generated",
+      "android": "android/generated"
+    }
+  }
+}

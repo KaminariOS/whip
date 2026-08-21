@@ -2,7 +2,7 @@
   "name": "react-native-whip-ssh",
   "version": "0.1.0",
   "private": true,
-  "description": "Whip's React Native SSH client and shared Rust/Russh transport",
+  "description": "Private Whip pairing and Herdr adapter for react-native-russh",
   "main": "lib/sshclient.js",
   "react-native": "lib/sshclient.js",
   "types": "lib/sshclient.d.ts",
@@ -16,20 +16,10 @@
     "url": "https://github.com/kaminarios/whip.git"
   },
   "dependencies": {
-    "@ubjs/core": "0.31.0-3",
-    "uniffi-bindgen-react-native": "0.31.0-3"
+    "react-native-russh": "file:../react-native-russh"
   },
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
-  },
-  "codegenConfig": {
-    "name": "WhipSshSpec",
-    "type": "modules",
-    "jsSrcsDir": "src",
-    "outputDir": {
-      "ios": "ios/generated",
-      "android": "android/generated"
-    }
   }
 }

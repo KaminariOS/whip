@@ -152,16 +152,16 @@ test('forgetting a host immediately replaces the native repository', async () =>
 
 test('uses the Rust UniFFI Android native module with strict host-key support', () => {
   const androidCmake = readFileSync(
-    resolve(__dirname, '../packages/react-native-whip-ssh/android/CMakeLists.txt'),
+    resolve(__dirname, '../packages/react-native-russh/android/CMakeLists.txt'),
     'utf8',
   );
   const knownHostsRust = readFileSync(
-    resolve(__dirname, '../packages/react-native-whip-ssh/rust/src/known_hosts.rs'),
+    resolve(__dirname, '../packages/react-native-russh/rust/src/known_hosts.rs'),
     'utf8',
   );
 
-  expect(androidCmake).toContain('libwhip_ssh.a');
-  expect(androidCmake).toContain('WhipSshSpec-generated.cpp');
+  expect(androidCmake).toContain('libreact_native_russh.a');
+  expect(androidCmake).toContain('ReactNativeRusshSpec-generated.cpp');
   expect(knownHostsRust).toContain('E_HOST_KEY_UNKNOWN:');
   expect(knownHostsRust).toContain('E_HOST_KEY_CHANGED:');
 });

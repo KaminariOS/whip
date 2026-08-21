@@ -88,5 +88,12 @@ yarn-error.log
 !.yarn/sdks
 !.yarn/versions
 AGENTS.md
+/packages/react-native-russh/android/src/main/jniLibs/arm64-v8a/libreact_native_russh.a
+/packages/react-native-russh/android/.cxx/
+/packages/react-native-russh/android/build/
+/packages/react-native-russh/build/
+/packages/react-native-whip-ssh/android/.cxx/
+/packages/react-native-whip-ssh/android/build/
 /packages/react-native-whip-ssh/android/src/main/jniLibs/arm64-v8a/libwhip_ssh.a
+/packages/react-native-whip-ssh/rust/target/
 .codex-*

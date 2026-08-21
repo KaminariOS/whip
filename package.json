@@ -60,6 +60,7 @@
     "react-native-enriched-markdown": "^0.7.4",
     "react-native-keychain": "^10.0.0",
     "react-native-reanimated": "4.5.1",
+    "react-native-russh": "file:packages/react-native-russh",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "react-native-webview": "13.16.1",
@@ -118,7 +119,7 @@
       },
       "reactNativeDirectoryCheck": {
         "exclude": [
-          "react-native-whip-ssh"
+          "react-native-russh"
         ]
       }
     }

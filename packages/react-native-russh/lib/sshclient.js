@@ -1,14 +1,9 @@
-// Whip owns this adapter and intentionally consumes the transport's private
-// native bridge. The public react-native-russh entry point remains generic.
-const nativeClient = require('../../react-native-russh/src').default;
+const nativeClient = require('../src').default;
 if (!nativeClient) {
     throw new Error('Native SSH backend is unavailable');
 }
 const nativeClientEmitter = nativeClient;
 const NATIVE_EVENT_SHELL = 'Shell';
-const NATIVE_EVENT_HERDR_BRIDGE = 'HerdrBridge';
-const NATIVE_EVENT_HERDR_EVENT_STREAM = 'HerdrEventStream';
-const NATIVE_EVENT_HERDR_COMMAND_STREAM = 'HerdrCommandStream';
 const NATIVE_EVENT_DOWNLOAD_PROGRESS = 'DownloadProgress';
 const NATIVE_EVENT_UPLOAD_PROGRESS = 'UploadProgress';
 /**
@@ -83,9 +78,6 @@ class SSHClient {
                 }
             });
         });
-    }
-    static pairHost(code, publicKey, deviceName) {
-        return nativeClient.pairHost(code, publicKey, deviceName);
     }
     /**
      * Connects to an SSH server using a private key for authentication.
@@ -182,11 +174,8 @@ class SSHClient {
         this._activeStream = {
             sftp: false,
             shell: false,
-            herdrEventStream: false,
-            herdrCommandStream: false,
         };
         this._handlers = {};
-        this._herdrBridgeHandlers = new Map();
         this.host = host;
         this.port = port;
         this.username = username;
@@ -213,26 +202,6 @@ class SSHClient {
      * @param event The native event to handle.
      */
     handleEvent(event) {
-        if (event.name === NATIVE_EVENT_HERDR_BRIDGE && this._key === event.key) {
-            const terminalId = event.value?.terminalId;
-            const handler = terminalId ? this._herdrBridgeHandlers.get(terminalId) : undefined;
-            if (handler) {
-                handler(event.value);
-            }
-            if (terminalId && event.value?.type === 'closed') {
-                this._herdrBridgeHandlers.delete(terminalId);
-                if (this._herdrBridgeHandlers.size === 0) {
-                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-                }
-            }
-            return;
-        }
-        if (event.name === NATIVE_EVENT_HERDR_EVENT_STREAM && event.value?.includes?.('herdr_android_bridge_closed')) {
-            this._activeStream.herdrEventStream = false;
-        }
-        if (event.name === NATIVE_EVENT_HERDR_COMMAND_STREAM && event.value?.closed) {
-            this._activeStream.herdrCommandStream = false;
-        }
         if (this._handlers[event.name] && this._key === event.key) {
             this._handlers[event.name](event.value);
         }
@@ -434,65 +403,6 @@ class SSHClient {
         nativeClient.closeShell(this._key);
         this._activeStream.shell = false;
     }
-    prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
-        return new Promise((resolve, reject) => {
-            nativeClient.prepareHerdrBridge(command, protocol, columns, rows, cellWidthPx, cellHeightPx, this._key, error => {
-                if (callback) callback(error);
-                if (error) return reject(error);
-                resolve();
-            });
-        });
-    }
-    startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, handler, callback) {
-        if (this._herdrBridgeHandlers.has(terminalId)) {
-            this._herdrBridgeHandlers.set(terminalId, handler);
-            return Promise.resolve();
-        }
-        return new Promise((resolve, reject) => {
-            this._herdrBridgeHandlers.set(terminalId, handler);
-            if (!this._listeners[NATIVE_EVENT_HERDR_BRIDGE]) {
-                this.registerNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-            }
-            nativeClient.startHerdrBridge(socketPath, protocol, terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, this._key, (error) => {
-                if (callback) callback(error);
-                if (error) {
-                    this._herdrBridgeHandlers.delete(terminalId);
-                    if (this._herdrBridgeHandlers.size === 0) {
-                        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-                    }
-                    return reject(error);
-                }
-                resolve();
-            });
-        });
-    }
-    herdrBridgeInput(terminalId, text) {
-        return new Promise((resolve, reject) => {
-            nativeClient.herdrBridgeInput(terminalId, text, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    herdrBridgeResize(terminalId, columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
-        return new Promise((resolve, reject) => {
-            nativeClient.herdrBridgeResize(columns, rows, cellWidthPx, cellHeightPx, terminalId, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    herdrBridgeScroll(terminalId, direction, lines) {
-        return new Promise((resolve, reject) => {
-            nativeClient.herdrBridgeScroll(direction === 'up', lines, terminalId, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    closeHerdrBridge(terminalId) {
-        this._herdrBridgeHandlers.delete(terminalId);
-        nativeClient.closeHerdrBridge(terminalId, this._key);
-        if (this._herdrBridgeHandlers.size === 0) {
-            this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-        }
-    }
-    closeAllHerdrBridges() {
-        this._herdrBridgeHandlers.clear();
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-        nativeClient.closeAllHerdrBridges(this._key);
-    }
     openLocalForward(remoteHost, remotePort) {
         return new Promise((resolve, reject) => {
             nativeClient.openLocalForward(remoteHost, remotePort, this._key, (error, localPort) => error ? reject(error) : resolve(localPort));
@@ -513,42 +423,6 @@ class SSHClient {
             nativeClient.closeSftpFileServer(localPort, this._key, error => error ? reject(error) : resolve());
         });
     }
-    startHerdrEventStream(socketPath, handler, callback) {
-        if (this._activeStream.herdrEventStream) {
-            this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
-            return Promise.resolve();
-        }
-        return new Promise((resolve, reject) => {
-            this.on(NATIVE_EVENT_HERDR_EVENT_STREAM, handler);
-            this.registerNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-            nativeClient.startHerdrEventStream(socketPath, this._key, error => {
-                if (callback) callback(error);
-                if (error) {
-                    this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
-                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-                    return reject(error);
-                }
-                this._activeStream.herdrEventStream = true;
-                resolve();
-            });
-        });
-    }
-    writeHerdrEventStream(value) {
-        return new Promise((resolve, reject) => {
-            nativeClient.writeHerdrEventStream(value, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    closeHerdrEventStream() {
-        this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        nativeClient.closeHerdrEventStream(this._key);
-        this._activeStream.herdrEventStream = false;
-    }
-    requestHerdrApi(socketPath, request) {
-        return new Promise((resolve, reject) => {
-            nativeClient.requestHerdrApi(socketPath, request, this._key, (error, response) => error ? reject(error) : resolve(response));
-        });
-    }
     measureHostLatency() {
         return new Promise((resolve, reject) => {
             nativeClient.measureHostLatency(this._key, (error, latencyMs) => error ? reject(error) : resolve(latencyMs));
@@ -558,37 +432,6 @@ class SSHClient {
         return new Promise((resolve, reject) => {
             nativeClient.getRemoteHome(this._key, (error, home) => error ? reject(error) : resolve(home));
         });
-    }
-    startHerdrCommandStream(command, handler, callback) {
-        if (this._activeStream.herdrCommandStream) {
-            this.on(NATIVE_EVENT_HERDR_COMMAND_STREAM, handler);
-            return Promise.resolve();
-        }
-        return new Promise((resolve, reject) => {
-            this.on(NATIVE_EVENT_HERDR_COMMAND_STREAM, handler);
-            this.registerNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-            nativeClient.startHerdrCommandStream(command, this._key, error => {
-                if (callback) callback(error);
-                if (error) {
-                    this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-                    this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-                    return reject(error);
-                }
-                this._activeStream.herdrCommandStream = true;
-                resolve();
-            });
-        });
-    }
-    writeHerdrCommandStream(value) {
-        return new Promise((resolve, reject) => {
-            nativeClient.writeHerdrCommandStream(value, this._key, error => error ? reject(error) : resolve());
-        });
-    }
-    closeHerdrCommandStream() {
-        this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-        nativeClient.closeHerdrCommandStream(this._key);
-        this._activeStream.herdrCommandStream = false;
     }
     /**
      * Connects to the SFTP server.
@@ -861,18 +704,10 @@ class SSHClient {
      */
     disconnect() {
         this.off(NATIVE_EVENT_SHELL);
-        this.off(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        this.off(NATIVE_EVENT_HERDR_COMMAND_STREAM);
-        this._herdrBridgeHandlers.clear();
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_BRIDGE);
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_EVENT_STREAM);
-        this.unregisterNativeListener(NATIVE_EVENT_HERDR_COMMAND_STREAM);
         this.unregisterNativeListener(NATIVE_EVENT_DOWNLOAD_PROGRESS);
         this.unregisterNativeListener(NATIVE_EVENT_UPLOAD_PROGRESS);
         this._activeStream.shell = false;
         this._activeStream.sftp = false;
-        this._activeStream.herdrEventStream = false;
-        this._activeStream.herdrCommandStream = false;
         nativeClient.disconnect(this._key);
     }
 }
