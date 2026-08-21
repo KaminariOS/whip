@@ -23,12 +23,18 @@ describe('terminal hierarchy status glyphs', () => {
       '<AnimatedAgentStatusGlyph status={item.agent_status} color={sessionTabStatusColor(item.agent_status, itemSession?.status, colors)} size={isIpad ? 16 : 12} />',
     );
     expect(appUi).toContain('const glyphBoxSize = size + 4;');
+    expect(appUi).toContain("status === 'blocked' ? (");
+    expect(appUi).toContain('<BlockedAgentStatusGlyph color={color} size={size * 1.1} />');
+    expect(appUi).toContain('function BlockedAgentStatusGlyph');
+    expect(appUi).toContain('r={10}');
+    expect(appUi).toContain('r={3.5}');
     expect(appUi).toContain('const AGENT_SPINNER_INTERVAL_MS = 125;');
     expect(appUi).toContain('const agentSpinnerListeners = new Set<() => void>();');
     expect(appUi).toContain('const AgentStatusAnimationContext = createContext(true);');
     expect(appUi).toContain('const animationsEnabled = useContext(AgentStatusAnimationContext);');
     expect(appUi).toContain('const frame = useAgentSpinnerFrame(animationsEnabled && spins && !reduceMotion);');
-    expect(appUi).toContain('const { style } = useStatusMotion(status, false);');
+    expect(appUi).toContain('const { style } = useStatusMotion(status, false, false);');
+    expect(appUi).toContain('scalePulsing ? 1 - (progress.value * 0.18) : 1');
     expect(appUi).toContain('export function AgentStatusMedallion');
     expect(appUi).toContain('const bloomSize = size + 4;');
     expect(appUi).toContain('agentStatusCircleBloomStyle(color, bloomSize)');

@@ -269,12 +269,14 @@ export function AnimatedAgentStatusGlyph({
   const animationsEnabled = useContext(AgentStatusAnimationContext);
   const spins = status === 'working' || status === 'running';
   const frame = useAgentSpinnerFrame(animationsEnabled && spins && !reduceMotion);
-  const { style } = useStatusMotion(status, false);
+  const { style } = useStatusMotion(status, false, false);
   const glyphBoxSize = size + 4;
   return (
     <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
       {spins ? (
         <CircularAgentSpinner frame={frame} color={color} size={size} />
+      ) : status === 'blocked' ? (
+        <BlockedAgentStatusGlyph color={color} size={size * 1.1} />
       ) : (
         <Text
           className="text-center"
@@ -288,6 +290,15 @@ export function AnimatedAgentStatusGlyph({
         </Text>
       )}
     </Animated.View>
+  );
+}
+
+function BlockedAgentStatusGlyph({ color, size }: { color: string; size: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={10} fill="none" stroke={color} strokeWidth={2.5} />
+      <Circle cx={12} cy={12} r={3.5} fill={color} />
+    </Svg>
   );
 }
 
@@ -397,7 +408,7 @@ export function AnimatedEntrance({ children, delay = 0, className }: { children:
   );
 }
 
-function useStatusMotion(status: string, rotateSpinning = true) {
+function useStatusMotion(status: string, rotateSpinning = true, scalePulsing = true) {
   const motion = statusMotionKind(status);
   const reduceMotion = useReducedMotion();
   const progress = useSharedValue(0);
@@ -429,11 +440,11 @@ function useStatusMotion(status: string, rotateSpinning = true) {
     if (motion === 'pulse') {
       return {
         opacity: 1 - (progress.value * 0.45),
-        transform: [{ scale: 1 - (progress.value * 0.18) }],
+        transform: [{ scale: scalePulsing ? 1 - (progress.value * 0.18) : 1 }],
       };
     }
     return { opacity: 1, transform: [{ scale: 1 }] };
-  }, [motion, rotateSpinning]);
+  }, [motion, rotateSpinning, scalePulsing]);
   return { motion, style, reduceMotion };
 }
 
