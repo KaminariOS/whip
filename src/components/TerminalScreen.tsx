@@ -50,6 +50,8 @@ interface Props {
   terminalPanHandlers?: GestureResponderHandlers;
   onControlUse: (control: TerminalControlId) => void;
   onHistoryEntry: (entry: string) => void;
+  getComposerDraft: (terminalId: string) => string;
+  onComposerDraftChange: (terminalId: string, value: string) => void;
   linkScanRequest?: number;
   pasteRequest?: {
     id: number;
@@ -187,6 +189,8 @@ export function TerminalScreen({
   terminalPanHandlers,
   onControlUse,
   onHistoryEntry,
+  getComposerDraft,
+  onComposerDraftChange,
   linkScanRequest = 0,
   pasteRequest,
   onRequestAttachment,
@@ -208,6 +212,7 @@ export function TerminalScreen({
   const activeTargetRef = useRef(activeTarget);
   const controlsRef = useRef<View | null>(null);
   const handledPasteRequest = useRef(0);
+  const composeAttachmentsByTargetRef = useRef(new Map<string, ComposeAttachment[]>());
   const composeAttachmentsRef = useRef<ComposeAttachment[]>([]);
   const composeInputRef = useRef<TextInputHandle | null>(null);
   const composeTextRef = useRef('');
@@ -245,6 +250,14 @@ export function TerminalScreen({
   activeTargetRef.current = activeTarget;
 
   useEffect(() => {
+    const nextComposeText = terminalId ? getComposerDraft(terminalId) : '';
+    const nextComposeAttachments = activeTarget?.key
+      ? composeAttachmentsByTargetRef.current.get(activeTarget.key) || []
+      : [];
+    composeTextRef.current = nextComposeText;
+    setComposeText(nextComposeText);
+    composeAttachmentsRef.current = nextComposeAttachments;
+    setComposeAttachments(nextComposeAttachments);
     setError(null);
     setSearchOpen(false);
     setComposeOpen(false);
@@ -257,10 +270,7 @@ export function TerminalScreen({
     setCtrl('off');
     setShift('off');
     setAlt('off');
-    for (const attachment of composeAttachmentsRef.current) attachment.dispose();
-    composeAttachmentsRef.current = [];
-    setComposeAttachments([]);
-  }, [activeTarget?.key, setAlt, setCtrl, setShift]);
+  }, [activeTarget?.key, getComposerDraft, setAlt, setCtrl, setShift, terminalId]);
 
   useEffect(() => {
     setScrollPosition(activeTarget?.scroll);
@@ -387,6 +397,12 @@ export function TerminalScreen({
         dispose: pasteRequest.dispose || (() => {}),
       };
       composeAttachmentsRef.current = [...composeAttachmentsRef.current, attachment];
+      if (activeTargetRef.current) {
+        composeAttachmentsByTargetRef.current.set(
+          activeTargetRef.current.key,
+          composeAttachmentsRef.current,
+        );
+      }
       setComposeAttachments(composeAttachmentsRef.current);
       return;
     }
@@ -395,6 +411,7 @@ export function TerminalScreen({
       const next = `${current}${current && !/\s$/.test(current) ? ' ' : ''}${pasteRequest.text}`;
       composeTextRef.current = next;
       setComposeText(next);
+      onComposerDraftChange(terminalId, next);
       composeInputRef.current?.setNativeProps({ text: next });
       composeInputRef.current?.setSelection(next.length, next.length);
       pasteRequest.dispose?.();
@@ -403,12 +420,24 @@ export function TerminalScreen({
     renderer.current?.paste(pasteRequest.text);
     onHistoryEntry(pasteRequest.text);
     pasteRequest.dispose?.();
-  }, [composeOpen, onHistoryEntry, pasteRequest, ready, visible]);
+  }, [composeOpen, onComposerDraftChange, onHistoryEntry, pasteRequest, ready, terminalId, visible]);
 
   useEffect(() => () => {
-    for (const attachment of composeAttachmentsRef.current) attachment.dispose();
+    for (const attachments of composeAttachmentsByTargetRef.current.values()) {
+      for (const attachment of attachments) attachment.dispose();
+    }
+    composeAttachmentsByTargetRef.current.clear();
     composeAttachmentsRef.current = [];
   }, []);
+
+  useEffect(() => {
+    const targetKeys = new Set(targets.map(target => target.key));
+    for (const [key, attachments] of composeAttachmentsByTargetRef.current) {
+      if (targetKeys.has(key)) continue;
+      for (const attachment of attachments) attachment.dispose();
+      composeAttachmentsByTargetRef.current.delete(key);
+    }
+  }, [targets]);
 
   useEffect(() => {
     if (!visible) {
@@ -535,8 +564,12 @@ export function TerminalScreen({
     onHistoryEntry(submission.historyEntry);
     composeTextRef.current = '';
     setComposeText('');
+    if (terminalId) onComposerDraftChange(terminalId, '');
     composeInputRef.current?.clear();
     for (const attachment of composeAttachmentsRef.current) attachment.dispose();
+    if (activeTargetRef.current) {
+      composeAttachmentsByTargetRef.current.delete(activeTargetRef.current.key);
+    }
     composeAttachmentsRef.current = [];
     setComposeAttachments([]);
   };
@@ -551,6 +584,16 @@ export function TerminalScreen({
     const attachment = composeAttachmentsRef.current.find(item => item.id === id);
     attachment?.dispose();
     composeAttachmentsRef.current = composeAttachmentsRef.current.filter(item => item.id !== id);
+    if (activeTargetRef.current) {
+      if (composeAttachmentsRef.current.length) {
+        composeAttachmentsByTargetRef.current.set(
+          activeTargetRef.current.key,
+          composeAttachmentsRef.current,
+        );
+      } else {
+        composeAttachmentsByTargetRef.current.delete(activeTargetRef.current.key);
+      }
+    }
     setComposeAttachments(composeAttachmentsRef.current);
   };
 
@@ -558,6 +601,7 @@ export function TerminalScreen({
     if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
     composeTextRef.current = value;
     setComposeText(value);
+    if (terminalId) onComposerDraftChange(terminalId, value);
   };
 
   const renderTerminalControl = (control: TerminalControlId) => {

@@ -272,6 +272,7 @@ function AppContent() {
   const handledNotificationIdRef = useRef<string | null>(null);
   const remoteFilesRequestIdRef = useRef(0);
   const remoteFilePathsRef = useRef(new Map<string, string>());
+  const terminalComposerDraftsRef = useRef(new Map<string, string>());
   const biometricOnResumeRef = useRef(defaultDevicePreferences.biometricOnResume);
   const biometricForKeysRef = useRef(defaultDevicePreferences.biometricForKeys);
   const preferencesLoadedRef = useRef(false);
@@ -1699,6 +1700,20 @@ function AppContent() {
     });
   }, []);
 
+  const getTerminalComposerDraft = useCallback((sessionId: string, terminalId: string) => (
+    terminalComposerDraftsRef.current.get(`${sessionId}:${terminalId}`) || ''
+  ), []);
+
+  const updateTerminalComposerDraft = useCallback((
+    sessionId: string,
+    terminalId: string,
+    value: string,
+  ) => {
+    const key = `${sessionId}:${terminalId}`;
+    if (value) terminalComposerDraftsRef.current.set(key, value);
+    else terminalComposerDraftsRef.current.delete(key);
+  }, []);
+
   const openAgentTerminal = (sessionId: string, agent: AgentInfo) => {
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
     const pane = session?.snapshot.panes.find(item => item.pane_id === agent.pane_id);
@@ -2013,6 +2028,8 @@ function AppContent() {
             terminalControlUsage={terminalControlUsage}
             terminalHistory={terminalHistory}
             onOpenFiles={openRemoteFiles}
+            getTerminalComposerDraft={getTerminalComposerDraft}
+            onTerminalComposerDraftChange={updateTerminalComposerDraft}
             onTerminalControlUse={recordTerminalControlUse}
             onTerminalHistoryEntry={recordTerminalHistoryEntry}
             onTerminalOpenLinksInAppChange={updateTerminalOpenLinksInApp}
@@ -2184,6 +2201,8 @@ function LiveSessionView({
   terminalControlUsage,
   terminalHistory,
   onOpenFiles,
+  getTerminalComposerDraft,
+  onTerminalComposerDraftChange,
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
@@ -2203,6 +2222,8 @@ function LiveSessionView({
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
   onOpenFiles: (sessionId: string, terminalId: string) => void;
+  getTerminalComposerDraft: (sessionId: string, terminalId: string) => string;
+  onTerminalComposerDraftChange: (sessionId: string, terminalId: string, value: string) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
@@ -2220,6 +2241,14 @@ function LiveSessionView({
   const activateTerminal = useCallback((pane: PaneInfo) => onActivateTerminal(sessionId, pane), [onActivateTerminal, sessionId]);
   const closeTerminal = useCallback((terminalId: string) => onCloseTerminal(sessionId, terminalId), [onCloseTerminal, sessionId]);
   const openFiles = useCallback((terminalId: string) => onOpenFiles(sessionId, terminalId), [onOpenFiles, sessionId]);
+  const getComposerDraft = useCallback(
+    (terminalId: string) => getTerminalComposerDraft(sessionId, terminalId),
+    [getTerminalComposerDraft, sessionId],
+  );
+  const updateComposerDraft = useCallback(
+    (terminalId: string, value: string) => onTerminalComposerDraftChange(sessionId, terminalId, value),
+    [onTerminalComposerDraftChange, sessionId],
+  );
 
   return (
     <SessionScreen
@@ -2238,6 +2267,8 @@ function LiveSessionView({
       terminalControlUsage={terminalControlUsage}
       terminalHistory={terminalHistory}
       onOpenFiles={openFiles}
+      getComposerDraft={getComposerDraft}
+      onComposerDraftChange={updateComposerDraft}
       onTerminalControlUse={onTerminalControlUse}
       onTerminalHistoryEntry={onTerminalHistoryEntry}
       onTerminalOpenLinksInAppChange={onTerminalOpenLinksInAppChange}

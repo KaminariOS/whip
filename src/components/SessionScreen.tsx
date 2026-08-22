@@ -70,6 +70,8 @@ interface Props {
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
   onOpenFiles: (terminalId: string) => void;
+  getComposerDraft: (terminalId: string) => string;
+  onComposerDraftChange: (terminalId: string, value: string) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onTerminalOpenLinksInAppChange: (value: boolean) => void;
@@ -113,6 +115,8 @@ export function SessionScreen({
   terminalControlUsage,
   terminalHistory,
   onOpenFiles,
+  getComposerDraft,
+  onComposerDraftChange,
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onTerminalOpenLinksInAppChange,
@@ -736,6 +740,8 @@ export function SessionScreen({
             preferences={terminalPreferences}
             controlUsage={terminalControlUsage}
             historyEntries={terminalHistory}
+            getComposerDraft={getComposerDraft}
+            onComposerDraftChange={onComposerDraftChange}
             linkScanRequest={linkScanRequest}
             pasteRequest={pasteRequest && pasteRequest.terminalId === activeTerminalSession?.terminalId
               ? {
