@@ -14,6 +14,14 @@ import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolSta
 import { isSshShellTerminalId } from '../terminalSessions';
 import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
+import {
+  terminalNativeResponseDelivered,
+  terminalNativeResponseReceived,
+  terminalNativePreflightStarted,
+  terminalNativeWriteQueued,
+  terminalNativeWriteStarted,
+  type TerminalInputTrace,
+} from './performanceTrace';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
@@ -111,6 +119,7 @@ export class HerdrClient {
   private terminalBridges = new Set<string>();
   private terminalBridgeGenerations = new Map<string, number>();
   private terminalProtocolStates = new Map<string, TerminalProtocolState>();
+  private terminalInputTraces = new Map<string, TerminalInputTrace[]>();
   private terminalBridgeSequence = 0;
   private eventClient: SSHClient | null = null;
   private eventSubscription: EventSubscription | null = null;
@@ -422,14 +431,41 @@ export class HerdrClient {
     }
   }
 
-  async writeToTerminal(terminalId: string, data: string): Promise<string> {
+  async writeToTerminal(
+    terminalId: string,
+    data: string,
+    inputTrace: TerminalInputTrace | null = null,
+  ): Promise<string> {
+    terminalNativePreflightStarted(inputTrace);
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening;
     if (isSshShellTerminalId(terminalId)) {
-      return this.requireSshShell(terminalId).client.writeToShell(data);
+      this.queueTerminalInputTrace(terminalId, inputTrace);
+      terminalNativeWriteStarted(inputTrace);
+      try {
+        const write = this.requireSshShell(terminalId).client.writeToShell(data);
+        terminalNativeWriteQueued(inputTrace, true);
+        return await write;
+      } catch (error) {
+        terminalNativeWriteQueued(inputTrace, false);
+        this.removeTerminalInputTrace(terminalId, inputTrace);
+        throw error;
+      }
     }
-    await this.ensureTerminalBridge(terminalId);
-    await this.requireClient().herdrBridgeInput(terminalId, data);
+    if (!this.terminalBridges.has(terminalId)) {
+      await this.ensureTerminalBridge(terminalId);
+    }
+    this.queueTerminalInputTrace(terminalId, inputTrace);
+    terminalNativeWriteStarted(inputTrace);
+    try {
+      const write = this.requireClient().herdrBridgeInput(terminalId, data);
+      terminalNativeWriteQueued(inputTrace, true);
+      await write;
+    } catch (error) {
+      terminalNativeWriteQueued(inputTrace, false);
+      this.removeTerminalInputTrace(terminalId, inputTrace);
+      throw error;
+    }
     return '';
   }
 
@@ -1106,14 +1142,16 @@ export class HerdrClient {
       const active = this.sshShellConnections.get(terminalId);
       if (active !== connection) return;
       const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
-      active.onFrame({
-        type: 'terminal.frame',
-        seq: ++active.sequence,
-        encoding: 'utf8',
-        width: size.columns,
-        height: size.rows,
-        full: false,
-        bytes: data,
+      this.deliverTracedTerminalFrame(terminalId, () => {
+        active.onFrame({
+          type: 'terminal.frame',
+          seq: ++active.sequence,
+          encoding: 'utf8',
+          width: size.columns,
+          height: size.rows,
+          full: false,
+          bytes: data,
+        });
       });
     };
     this.sshShellConnections.set(terminalId, connection);
@@ -1185,15 +1223,17 @@ export class HerdrClient {
     if (this.terminalBridgeGenerations.get(terminalId) !== generation) return;
     if (event.type === 'terminal') {
       if (typeof event.seq === 'number' && typeof event.width === 'number' && typeof event.height === 'number' && (typeof event.bytes === 'string' || event.bytes instanceof ArrayBuffer || ArrayBuffer.isView(event.bytes))) {
-        this.terminalConnections.get(terminalId)?.onFrame({
-          type: 'terminal.frame',
-          seq: event.seq,
-          encoding: 'ansi',
-          width: event.width,
-          height: event.height,
-          full: Boolean(event.full),
-          bytes: event.bytes,
-          final: event.final !== false,
+        this.deliverTracedTerminalFrame(terminalId, () => {
+          this.terminalConnections.get(terminalId)?.onFrame({
+            type: 'terminal.frame',
+            seq: event.seq as number,
+            encoding: 'ansi',
+            width: event.width as number,
+            height: event.height as number,
+            full: Boolean(event.full),
+            bytes: event.bytes as string | ArrayBufferView,
+            final: event.final !== false,
+          });
         });
       }
       return;
@@ -1265,5 +1305,48 @@ export class HerdrClient {
     this.terminalBridges.clear();
     this.terminalBridgeGenerations.clear();
     this.terminalProtocolStates.clear();
+  }
+
+  private queueTerminalInputTrace(
+    terminalId: string,
+    trace: TerminalInputTrace | null,
+  ): void {
+    if (!trace) return;
+    const queue = this.terminalInputTraces.get(terminalId) || [];
+    queue.push(trace);
+    this.terminalInputTraces.set(terminalId, queue);
+  }
+
+  private removeTerminalInputTrace(
+    terminalId: string,
+    trace: TerminalInputTrace | null,
+  ): void {
+    if (!trace) return;
+    const queue = this.terminalInputTraces.get(terminalId);
+    if (!queue) return;
+    const next = queue.filter(item => item !== trace);
+    if (next.length) this.terminalInputTraces.set(terminalId, next);
+    else this.terminalInputTraces.delete(terminalId);
+  }
+
+  private takeTerminalInputTrace(terminalId: string): TerminalInputTrace | null {
+    const queue = this.terminalInputTraces.get(terminalId);
+    if (!queue) return null;
+    let trace: TerminalInputTrace | undefined;
+    while ((trace = queue.shift())) {
+      if (terminalNativeResponseReceived(trace)) break;
+      trace = undefined;
+    }
+    if (!queue.length) this.terminalInputTraces.delete(terminalId);
+    return trace || null;
+  }
+
+  private deliverTracedTerminalFrame(terminalId: string, deliver: () => void): void {
+    const trace = this.takeTerminalInputTrace(terminalId);
+    try {
+      deliver();
+    } finally {
+      terminalNativeResponseDelivered(trace);
+    }
   }
 }

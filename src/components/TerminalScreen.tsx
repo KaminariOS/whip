@@ -363,7 +363,9 @@ export function TerminalScreen({
     onInteraction?.(target);
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     try {
-      const write = target.client.writeToTerminal(target.session.terminalId, data);
+      const write = inputTrace
+        ? target.client.writeToTerminal(target.session.terminalId, data, inputTrace)
+        : target.client.writeToTerminal(target.session.terminalId, data);
       endTerminalWriteTrace(inputTrace, true);
       await write;
       if (target.key === activeTargetRef.current?.key) setError(null);

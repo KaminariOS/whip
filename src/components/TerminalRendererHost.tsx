@@ -676,7 +676,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           : [];
         await enqueueInput(entry, async () => {
           for (const [index, data] of terminalSubmissionWrites(pastedParts).entries()) {
-            const write = entry.target.client.writeToTerminal(entry.target.session.terminalId, data);
+            const write = index === 0 && inputTrace
+              ? entry.target.client.writeToTerminal(
+                entry.target.session.terminalId,
+                data,
+                inputTrace,
+              )
+              : entry.target.client.writeToTerminal(entry.target.session.terminalId, data);
             if (index === 0) endTerminalWriteTrace(inputTrace, true);
             await write;
           }

@@ -106,6 +106,19 @@ describe('terminal bridge channels', () => {
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
   });
 
+  test('dispatches input to a retained bridge without an async readiness yield', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn());
+
+    const write = client.writeToTerminal('term-1', '\u001b[B');
+
+    expect(native.herdrBridgeInput).toHaveBeenCalledWith('term-1', '\u001b[B');
+    await write;
+  });
+
   test('forwards the touched terminal cell with attached-pane scrolling', async () => {
     const native = bridgeClient();
     connectWithPassword.mockResolvedValue(native);

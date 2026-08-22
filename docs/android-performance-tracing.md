@@ -19,8 +19,22 @@ The app-defined slices divide perceived latency into these intervals:
 - `Whip terminal input to native dispatch`: React Native handling through creation
   of the Rust/SSH write promise. This is local app overhead and does not await the
   transport operation.
+- `Whip terminal app pre-native wait`: app-owned terminal bridge readiness and JS
+  scheduling between creation of the write promise and entry into native code.
+  Retained bridges bypass the asynchronous readiness path.
+- `Whip terminal native enqueue`: Whip's call through the JSI/UniFFI fast path,
+  including Rust validation, length-prefix framing, and enqueueing the bytes for
+  russh. It ends before russh performs the network write.
+- `Whip terminal native queue to response`: time after the Rust queue accepts the
+  input until the first terminal response reaches Whip's `HerdrClient`. This
+  intentionally treats russh as a black box and therefore contains the russh
+  write/read, network RTT, remote processing, inbound FFI callback, and private
+  Herdr frame decoding.
+- `Whip terminal native response to renderer`: Whip's synchronous delivery of the
+  decoded frame from `HerdrClient` through the React Native renderer callback and
+  WebView injection call.
 - `Whip terminal input to first frame`: input handling until the first SSH terminal
-  output reaches React Native. This contains transport RTT and remote processing.
+  output reaches the renderer. This contains transport RTT and remote processing.
 - `Whip terminal frame to visible`: React Native frame handling, WebView injection,
   xterm parsing, and two animation-frame boundaries.
 - `Whip terminal input to visible`: the complete measured user-visible path.
@@ -35,6 +49,10 @@ or less while input-to-first-frame is near the measured 70–150 ms host RTT, th
 network dominates. If either local slice is repeatedly tens of milliseconds,
 inspect its JS, WebView, CPU scheduling, and frame-timeline tracks before treating
 the app cost as negligible.
+
+No markers are added inside the external `react-native-russh` dependency. The
+owned outbound boundary is measured precisely; inbound FFI overhead remains part
+of `native queue to response` because separating it would require a russh marker.
 
 The terminal protocol cannot identify which PTY output byte was caused by a
 specific input byte. The trace therefore pairs each input with the first subsequent
