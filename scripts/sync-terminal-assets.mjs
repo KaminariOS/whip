@@ -242,7 +242,7 @@ const terminalSessionHtml = `<!doctype html>
       lineHeight: 1.12,
       letterSpacing: 0,
       scrollback: 5000,
-      overviewRuler: { width: 1 },
+      scrollbar: { showScrollbar: false },
       theme: {
         background: 'rgba(0,0,0,0)', foreground: '#c0caf5', cursor: '#c0caf5', selectionBackground: '#283457',
         black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
