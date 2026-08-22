@@ -274,8 +274,8 @@ const nativeClient = {
     finish(invokeAsync('sftpChmod', { path, permissions, key }), callback);
   },
 
-  sftpUpload(localPath: string, remotePath: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpUpload', { localPath, remotePath, key }), callback);
+  sftpUpload(localPath: string, remoteDirectoryPath: string, key: string, callback: Callback) {
+    finish(invokeAsync('sftpUpload', { localPath, remotePath: remoteDirectoryPath, key }), callback);
   },
 
   sftpDownload(remotePath: string, localPath: string, key: string, callback: Callback) {

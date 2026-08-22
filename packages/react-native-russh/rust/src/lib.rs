@@ -804,7 +804,7 @@ async fn sftp_mutation(params: &Value, operation: &str) -> Result<Value, Transpo
 async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportError> {
     let (key, sftp) = sftp_for(params)?;
     let local = required_string(params, "localPath")?;
-    let remote = required_string(params, "remotePath")?;
+    let remote_path = required_string(params, "remotePath")?;
     let direction = if upload { "upload" } else { "download" };
     let event = if upload {
         "UploadProgress"
@@ -863,7 +863,9 @@ async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportE
                 .ok_or_else(|| {
                     TransportError::InvalidRequest("local path has no filename".to_owned())
                 })?;
-            let destination_path = format!("{}/{}", remote.trim_end_matches('/'), filename);
+            // Uploads intentionally interpret remotePath as a directory and
+            // preserve the local basename. Downloads interpret it as a file.
+            let destination_path = format!("{}/{}", remote_path.trim_end_matches('/'), filename);
             let transfer_id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
             let temp_path = format!("{destination_path}.russh-part-{transfer_id}");
             let destination = sftp.create(temp_path.clone()).await?;
@@ -896,9 +898,9 @@ async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportE
             }
             Ok(String::new())
         } else {
-            let source = sftp.open(&remote).await?;
+            let source = sftp.open(&remote_path).await?;
             let total = source.metadata().await?.size.unwrap_or_default();
-            let filename = std::path::Path::new(&remote)
+            let filename = std::path::Path::new(&remote_path)
                 .file_name()
                 .and_then(|v| v.to_str())
                 .ok_or_else(|| {

@@ -820,11 +820,11 @@ class SSHClient {
     /**
      * Uploads a file from the local file system to the remote file system using SFTP.
      * @param localFilePath - The path of the file on the local file system.
-     * @param remoteFilePath - The path of the file on the remote file system.
+     * @param remoteDirectoryPath - The remote directory where the local basename will be uploaded.
      * @param callback - An optional callback function to be called after the upload is complete or an error occurs.
      * @returns A Promise that resolves when the upload is complete or rejects with an error.
      */
-    sftpUpload(localFilePath, remoteFilePath, callback) {
+    sftpUpload(localFilePath, remoteDirectoryPath, callback) {
         // The native layer tracks a single cancel flag per client, so two concurrent
         // uploads on the same client would clobber each other's cancel state. Reject
         // a second upload while one is already running (review #13).
@@ -838,7 +838,7 @@ class SSHClient {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
             ++this._counters.upload;
-            nativeClient.sftpUpload(localFilePath, remoteFilePath, this._key, (error) => {
+            nativeClient.sftpUpload(localFilePath, remoteDirectoryPath, this._key, (error) => {
                 --this._counters.upload;
                 if (callback) {
                     callback(error);

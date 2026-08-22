@@ -19,6 +19,7 @@ import type { TerminalPreferences } from '../services/devicePreferences';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
+import { composeTerminalSubmission } from '../lib/terminalSubmission';
 import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '../lib/volumeKeys';
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import { terminalFontFamily } from '../lib/terminalFonts';
@@ -363,11 +364,13 @@ export function TerminalScreen({
   useEffect(() => {
     if (!pasteRequest || !ready || !visible || pasteRequest.id <= handledPasteRequest.current) return;
     handledPasteRequest.current = pasteRequest.id;
-    if (composeOpen && pasteRequest.previewUri) {
+    // Attachment requests always include previewUri; null identifies a
+    // non-image attachment that must still remain a distinct paste event.
+    if (composeOpen && pasteRequest.previewUri !== undefined) {
       const attachment = {
         id: pasteRequest.id,
         remotePath: pasteRequest.text,
-        previewUri: pasteRequest.previewUri,
+        previewUri: pasteRequest.previewUri || null,
         dispose: pasteRequest.dispose || (() => {}),
       };
       composeAttachmentsRef.current = [...composeAttachmentsRef.current, attachment];
@@ -505,13 +508,13 @@ export function TerminalScreen({
   const submitCompose = () => {
     if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
     const attachmentPaths = composeAttachmentsRef.current.map(attachment => attachment.remotePath);
-    const submitted = [composeText.trimEnd(), ...attachmentPaths].filter(Boolean).join(' ');
-    if (!submitted) {
+    const submission = composeTerminalSubmission(composeText, attachmentPaths);
+    if (!submission.historyEntry) {
       sendInput(ENTER_INPUT);
       return;
     }
-    renderer.current?.submit(submitted);
-    onHistoryEntry(submitted);
+    renderer.current?.submitPastes(submission.pasteEvents);
+    onHistoryEntry(submission.historyEntry);
     setComposeText('');
     for (const attachment of composeAttachmentsRef.current) attachment.dispose();
     composeAttachmentsRef.current = [];
@@ -1086,7 +1089,7 @@ export function TerminalScreen({
 interface ComposeAttachment {
   id: number;
   remotePath: string;
-  previewUri: string;
+  previewUri: string | null;
   dispose: () => void;
 }
 
@@ -1111,7 +1114,13 @@ function ComposeAttachmentsStrip({
       contentContainerClassName="gap-2">
       {attachments.map(attachment => (
         <View key={attachment.id} className="relative size-16 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-surface">
-          <Image className="size-full" resizeMode="cover" source={{ uri: attachment.previewUri }} />
+          {attachment.previewUri ? (
+            <Image className="size-full" resizeMode="cover" source={{ uri: attachment.previewUri }} />
+          ) : (
+            <View className="size-full items-center justify-center">
+              <Paperclip size={23} color={colors.muted} />
+            </View>
+          )}
           <Button
             accessibilityLabel={removeLabel}
             className="absolute right-0.5 top-0.5 size-6 rounded-full bg-black/75 px-0"

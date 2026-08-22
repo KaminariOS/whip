@@ -21,6 +21,7 @@ import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes'
 import type { TerminalFrame, TerminalProtocolState } from '../lib/terminalBridge';
 import { arrayBufferToBase64 } from '../lib/base64';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
+import { terminalSubmissionWrites } from '../lib/terminalSubmission';
 import {
   terminalRendererEvictionKeys,
   touchTerminalRendererEntry,
@@ -71,7 +72,7 @@ export interface TerminalRendererHandle {
   scroll: (direction: 'up' | 'down', lines: number) => void;
   search: (query: string, caseSensitive: boolean, regex: boolean, direction: number) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
-  submit: (data: string) => void;
+  submitPastes: (parts: readonly string[]) => void;
 }
 
 interface Props {
@@ -386,7 +387,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (enabled) webView.current?.requestFocus();
       activeCall('herdrSetKeyboardEnabled', [enabled]);
     },
-    submit: data => activeCall('herdrSubmit', [data]),
+    submitPastes: parts => activeCall('herdrSubmitPastes', [parts]),
   }), [activeCall, connectEntry]);
 
   useEffect(() => {
@@ -527,7 +528,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       await reportInput(entry.target, message.data);
     } else if (message.type === 'buffered-submit') {
       try {
-        await entry.target.client.writeToTerminal(entry.target.session.terminalId, message.data);
+        const pastedParts = Array.isArray(message.parts)
+          ? message.parts.filter((part: unknown): part is string => typeof part === 'string')
+          : [];
+        for (const data of terminalSubmissionWrites(pastedParts)) {
+          await entry.target.client.writeToTerminal(entry.target.session.terminalId, data);
+        }
       } catch (reason) {
         reportError(entry.target, String(reason));
       }

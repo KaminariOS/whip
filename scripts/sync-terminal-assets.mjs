@@ -465,12 +465,16 @@ const terminalSessionHtml = `<!doctype html>
     };
     window.herdrScroll = (direction, lines) => scrollTerminal(direction, lines);
     window.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
-    window.herdrSubmit = data => {
-      bufferedInput = '';
-      terminal.paste(data);
-      const value = bufferedInput;
+    window.herdrSubmitPastes = parts => {
+      const values = [];
+      for (const part of Array.isArray(parts) ? parts : []) {
+        if (typeof part !== 'string' || !part) continue;
+        bufferedInput = '';
+        terminal.paste(part);
+        values.push(bufferedInput);
+      }
       bufferedInput = null;
-      send({ type: 'buffered-submit', data: value });
+      send({ type: 'buffered-submit', parts: values });
       hideToolbar();
     };
     let searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
@@ -1149,7 +1153,7 @@ const terminalHtml = `<!doctype html>
     window.herdrChangeFontSize = (key, delta) => call(key, 'herdrChangeFontSize', [delta]);
     window.herdrScroll = (key, direction, lines) => call(key, 'herdrScroll', [direction, lines]);
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
-    window.herdrSubmit = (key, data) => call(key, 'herdrSubmit', [data]);
+    window.herdrSubmitPastes = (key, parts) => call(key, 'herdrSubmitPastes', [parts]);
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');
     window.herdrSearch = (key, query, caseSensitive, regex, direction) => call(key, 'herdrSearch', [query, caseSensitive, regex, direction]);
     window.herdrScanLinks = key => call(key, 'herdrScanLinks');

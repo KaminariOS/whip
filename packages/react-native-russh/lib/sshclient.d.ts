@@ -407,7 +407,7 @@ export default class SSHClient {
      * @param callback - An optional callback function to be called after the upload is complete or an error occurs.
      * @returns A Promise that resolves when the upload is complete or rejects with an error.
      */
-    sftpUpload(localFilePath: string, remoteFilePath: string, callback?: CallbackFunction<void>): Promise<void>;
+    sftpUpload(localFilePath: string, remoteDirectoryPath: string, callback?: CallbackFunction<void>): Promise<void>;
     /**
      * Cancels the ongoing SFTP upload.
      */

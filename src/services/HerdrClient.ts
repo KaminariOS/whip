@@ -1,7 +1,9 @@
 import SSHClient, { type HerdrBridgeEvent, type LsResult, PtyType } from 'react-native-whip-ssh';
 
 import { normalizePrivateKey } from '../lib/privateKey';
-import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
+import { normalizeRemotePath, remoteEntryName, sortRemoteEntries } from '../lib/remoteFiles';
+import { uniqueRemoteAttachmentName } from '../lib/attachmentPaste';
+import { createSecureId } from '../lib/secureId';
 import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import { apiEvent, apiErrorMessage, apiRequestLine, eventsSubscribeRequest, HerdrApiBridgeDecoder, type HerdrApiEvent, type HerdrApiMessage, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
@@ -347,6 +349,8 @@ export class HerdrClient {
 
   async uploadTerminalAttachment(localFilePath: string): Promise<string> {
     const client = this.requireClient();
+    const sourceFilename = localFilePath.replace(/\\/g, '/').split('/').pop();
+    if (!sourceFilename) throw new Error('The selected attachment has no filename');
     const home = await this.remoteHomeDirectory();
     const appDirectory = `${home}/.whip`;
     const uploadDirectory = `${appDirectory}/uploads`;
@@ -359,10 +363,34 @@ export class HerdrClient {
         await client.sftpLs(directory);
       }
     }
-    await client.sftpUpload(localFilePath, uploadDirectory);
-    const filename = localFilePath.replace(/\\/g, '/').split('/').pop();
-    if (!filename) throw new Error('The selected attachment has no filename');
-    return `${uploadDirectory}/${filename}`;
+    const uploadId = createSecureId('attachment');
+    const stagingDirectory = `${uploadDirectory}/.${uploadId}.upload`;
+    const stagingPath = `${stagingDirectory}/${sourceFilename}`;
+    const remoteFilename = uniqueRemoteAttachmentName(sourceFilename, uploadId);
+    const remotePath = `${uploadDirectory}/${remoteFilename}`;
+    let stagingCreated = false;
+    let promoted = false;
+    try {
+      await client.sftpMkdir(stagingDirectory);
+      stagingCreated = true;
+      // react-native-russh currently expects a remote directory here and
+      // appends the local basename. Rename afterward to the exact unique path.
+      await client.sftpUpload(localFilePath, stagingDirectory);
+      await client.sftpRename(stagingPath, remotePath);
+      promoted = true;
+      const entries = await client.sftpLs(uploadDirectory);
+      const uploaded = entries.find(entry => remoteEntryName(entry) === remoteFilename);
+      if (!uploaded || Boolean(uploaded.isDirectory)) {
+        throw new Error(`Uploaded attachment was not found at ${remotePath}`);
+      }
+      return remotePath;
+    } catch (error) {
+      if (promoted) await client.sftpRm(remotePath).catch(() => undefined);
+      else if (stagingCreated) await client.sftpRm(stagingPath).catch(() => undefined);
+      throw error;
+    } finally {
+      if (stagingCreated) await client.sftpRmdir(stagingDirectory).catch(() => undefined);
+    }
   }
 
   async openTerminal(
