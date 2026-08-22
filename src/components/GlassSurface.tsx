@@ -4,10 +4,11 @@ import {
 } from '@callstack/liquid-glass';
 import { BlurView } from 'expo-blur';
 import { createContext, useContext, type ReactNode, type RefObject } from 'react';
-import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
 import { useTheme } from '@/src/theme';
+import { liquidGlassShapeStyle } from './glassShape';
 
 interface GlassContextValue {
   blurTarget: RefObject<View | null>;
@@ -91,28 +92,3 @@ export function GlassSurface({
     </View>
   );
 }
-
-function liquidGlassShapeStyle(className?: string): ViewStyle | undefined {
-  if (!className) return undefined;
-  if (className.includes('rounded-full')) return styles.roundedFull;
-
-  const topRadius = className.match(/rounded-t-\[(\d+)px\]/)?.[1];
-  if (topRadius) {
-    const radius = Number(topRadius);
-    return { borderTopLeftRadius: radius, borderTopRightRadius: radius };
-  }
-
-  const arbitraryRadius = className.match(/rounded-\[(\d+)px\]/)?.[1];
-  if (arbitraryRadius) return { borderRadius: Number(arbitraryRadius) };
-  if (className.includes('rounded-xl')) return styles.roundedXl;
-  if (className.includes('rounded-lg')) return styles.roundedLg;
-  if (className.includes('rounded-md')) return styles.roundedMd;
-  return undefined;
-}
-
-const styles = StyleSheet.create({
-  roundedFull: { borderRadius: 9999 },
-  roundedLg: { borderRadius: 8 },
-  roundedMd: { borderRadius: 6 },
-  roundedXl: { borderRadius: 12 },
-});
