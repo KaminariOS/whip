@@ -178,7 +178,7 @@ describe('direct Herdr API requests', () => {
     expect(requests[2].params).toEqual({
       pane_id: 'pane-new',
       text: 'codex',
-      keys: ['Enter'],
+      keys: ['enter'],
     });
   });
 
@@ -207,7 +207,7 @@ describe('direct Herdr API requests', () => {
     expect(requests[2].params).toEqual({
       pane_id: 'pane-command',
       text: 'npm test',
-      keys: ['Enter'],
+      keys: ['enter'],
     });
   });
 
@@ -227,7 +227,7 @@ describe('direct Herdr API requests', () => {
     expect(requests[1].params).toEqual({
       pane_id: 'pane-default-name',
       text: 'npm test',
-      keys: ['Enter'],
+      keys: ['enter'],
     });
   });
 
@@ -246,14 +246,12 @@ describe('direct Herdr API requests', () => {
       'pane.send_input',
       'pane.send_text',
       'pane.send_input',
-      'pane.send_keys',
     ]);
     expect(requests.map(request => request.params)).toEqual([
       { pane_id: 'pane-1', text: 'a long paste', keys: [] },
       { pane_id: 'pane-1', text: 'please inspect', keys: [] },
       { pane_id: 'pane-1', text: ' ' },
-      { pane_id: 'pane-1', text: '/tmp/image.png', keys: [] },
-      { pane_id: 'pane-1', keys: ['Enter'] },
+      { pane_id: 'pane-1', text: '/tmp/image.png', keys: ['enter'] },
     ]);
   });
 
@@ -266,12 +264,17 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
 
     const [read] = await Promise.all([
-      client.readPane('pane-1'),
+      client.readPane('pane-1', 500),
       client.focusPane('pane-1'),
     ]);
 
     expect(read).toBe('first\n你好');
     expect(native.requestHerdrApi).toHaveBeenCalledTimes(2);
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    expect(requests[0]).toMatchObject({
+      method: 'pane.read',
+      params: { pane_id: 'pane-1', source: 'recent', lines: 500, format: 'ansi', strip_ansi: false },
+    });
   });
 
   test('rejects an in-flight command when the persistent stream closes', async () => {

@@ -773,11 +773,11 @@ export class HerdrClient {
     this.apiServer = null;
   }
 
-  readPane(paneId: string): Promise<string> {
+  readPane(paneId: string, lines = 160): Promise<string> {
     return this.apiRequest<{ type: 'pane_read'; read: { text: string } }>('pane.read', {
       pane_id: paneId,
       source: 'recent',
-      lines: 160,
+      lines: Math.max(1, Math.min(5000, Math.round(lines))),
       format: 'ansi',
       strip_ansi: false,
     }).then(result => result.read.text);
@@ -810,7 +810,7 @@ export class HerdrClient {
     await this.apiRequest('pane.send_input', {
       pane_id: created.root_pane.pane_id,
       text: command.trim(),
-      keys: ['Enter'],
+      keys: ['enter'],
     });
     return created.root_pane.pane_id;
   }
@@ -893,29 +893,33 @@ export class HerdrClient {
     await this.apiRequest('pane.send_input', {
       pane_id: paneId,
       text,
-      keys: ['Enter'],
+      keys: ['enter'],
     });
   }
 
-  async pasteIntoPane(paneId: string, text: string): Promise<void> {
+  async pasteIntoPane(paneId: string, text: string, keys: readonly string[] = []): Promise<void> {
     await this.apiRequest('pane.send_input', {
       pane_id: paneId,
       text,
-      keys: [],
+      keys,
     });
   }
 
   async submitPastesToPane(paneId: string, parts: readonly string[]): Promise<void> {
-    let wrotePart = false;
-    for (const text of parts) {
-      if (!text) continue;
-      if (wrotePart) {
+    const pasteEvents = parts.filter(Boolean);
+    for (const [index, text] of pasteEvents.entries()) {
+      if (index > 0) {
         await this.apiRequest('pane.send_text', { pane_id: paneId, text: ' ' });
       }
-      await this.pasteIntoPane(paneId, text);
-      wrotePart = true;
+      // Keep the final paste and Enter in one Herdr request so a successful
+      // outbox delivery means the message was submitted, not merely pasted.
+      await this.pasteIntoPane(
+        paneId,
+        text,
+        index === pasteEvents.length - 1 ? ['enter'] : [],
+      );
     }
-    await this.sendPaneKeys(paneId, ['Enter']);
+    if (!pasteEvents.length) await this.sendPaneKeys(paneId, ['enter']);
   }
 
   async sendPaneKeys(paneId: string, keys: string[]): Promise<void> {

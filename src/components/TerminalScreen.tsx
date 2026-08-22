@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Portal } from '@rn-primitives/portal';
-import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, Undo2, X, type LucideIcon } from 'lucide-react-native';
 import { AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +20,7 @@ import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
 import { composeTerminalSubmission } from '../lib/terminalSubmission';
+import { terminalTranscript } from '../lib/terminalTranscript';
 import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '../lib/volumeKeys';
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import { terminalFontFamily } from '../lib/terminalFonts';
@@ -43,6 +44,7 @@ interface Props {
   controlUsage: TerminalControlUsage;
   historyEntries: readonly string[];
   compact?: boolean;
+  statusBannerTopInset?: number;
   swipe?: {
     direction: -1 | 1;
     offset: SharedValue<number>;
@@ -185,6 +187,7 @@ export function TerminalScreen({
   controlUsage,
   historyEntries,
   compact = false,
+  statusBannerTopInset = 0,
   swipe,
   terminalPanHandlers,
   onControlUse,
@@ -214,6 +217,13 @@ export function TerminalScreen({
   const handledPasteRequest = useRef(0);
   const composeAttachmentsByTargetRef = useRef(new Map<string, ComposeAttachment[]>());
   const composeAttachmentsRef = useRef<ComposeAttachment[]>([]);
+  const queuedMessagesByTargetRef = useRef(new Map<string, QueuedComposerMessage[]>());
+  const queuedMessageSequenceRef = useRef(0);
+  const queueFlushesRef = useRef(new Set<string>());
+  const queueRetryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const terminalOutputCacheRef = useRef(new Map<string, string>());
+  const flushQueuedTargetRef = useRef<(target: TerminalRenderTarget) => void>(() => {});
+  const targetsRef = useRef(targets);
   const composeInputRef = useRef<TextInputHandle | null>(null);
   const composeTextRef = useRef('');
   const wasVisible = useRef(visible);
@@ -231,6 +241,8 @@ export function TerminalScreen({
   const [composeExpanded, setComposeExpanded] = useState(false);
   const [composeText, setComposeText] = useState('');
   const [composeAttachments, setComposeAttachments] = useState<ComposeAttachment[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
+  const [cachedTerminalOutput, setCachedTerminalOutput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [keyboardEnabled, setKeyboardEnabled] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -248,6 +260,7 @@ export function TerminalScreen({
   const scrollThumb = alternateScreen ? null : terminalScrollThumb(scrollPosition);
   const title = reportedTitle || sessionTitle;
   activeTargetRef.current = activeTarget;
+  targetsRef.current = targets;
 
   useEffect(() => {
     const nextComposeText = terminalId ? getComposerDraft(terminalId) : '';
@@ -258,6 +271,9 @@ export function TerminalScreen({
     setComposeText(nextComposeText);
     composeAttachmentsRef.current = nextComposeAttachments;
     setComposeAttachments(nextComposeAttachments);
+    setQueuedMessages(activeTarget?.key
+      ? queuedMessagesByTargetRef.current.get(activeTarget.key) || []
+      : []);
     setError(null);
     setSearchOpen(false);
     setComposeOpen(false);
@@ -272,6 +288,58 @@ export function TerminalScreen({
     setAlt('off');
   }, [activeTarget?.key, getComposerDraft, setAlt, setCtrl, setShift, terminalId]);
 
+  const cacheTargetKey = activeTarget?.key || '';
+  const cacheTargetClient = activeTarget?.client || null;
+  const cacheTargetPaneId = activeTarget?.session.paneId || '';
+  const cacheTargetKind = activeTarget?.session.kind;
+  const cacheTargetStatus = activeTarget?.session.status;
+  const cacheLineLimit = preferences.scrollback;
+
+  useEffect(() => {
+    if (!cacheTargetKey) {
+      setCachedTerminalOutput('');
+      return;
+    }
+    setCachedTerminalOutput(terminalOutputCacheRef.current.get(cacheTargetKey) || '');
+    if (
+      !visible
+      || !cacheTargetClient
+      || cacheTargetKind === 'ssh'
+      || cacheTargetStatus !== 'connected'
+    ) return;
+    let cancelled = false;
+    let requestInFlight = false;
+    const refreshCache = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const output = await cacheTargetClient.readPane(cacheTargetPaneId, cacheLineLimit);
+        if (cancelled || !output) return;
+        const transcript = terminalTranscript(output, cacheLineLimit);
+        terminalOutputCacheRef.current.set(cacheTargetKey, transcript);
+        if (activeTargetRef.current?.key === cacheTargetKey) setCachedTerminalOutput(transcript);
+      } catch {
+        // The existing cache remains readable when its refresh loses the network.
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    refreshCache();
+    const timer = setInterval(refreshCache, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [
+    cacheLineLimit,
+    cacheTargetClient,
+    cacheTargetKey,
+    cacheTargetKind,
+    cacheTargetPaneId,
+    cacheTargetStatus,
+    visible,
+  ]);
+
   useEffect(() => {
     setScrollPosition(activeTarget?.scroll);
   }, [activeTarget?.key, activeTarget?.scroll]);
@@ -282,10 +350,16 @@ export function TerminalScreen({
     refocusTerminal = true,
   ): Promise<boolean> => {
     if (!target) return false;
+    if (target.session.status !== 'connected') {
+      return target.key === activeTargetRef.current?.key
+        ? Boolean(renderer.current?.input(data))
+        : false;
+    }
     onInteraction?.(target);
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     try {
       await target.client.writeToTerminal(target.session.terminalId, data);
+      if (target.key === activeTargetRef.current?.key) setError(null);
       if (
         refocusTerminal
         && target.key === activeTargetRef.current?.key
@@ -422,11 +496,101 @@ export function TerminalScreen({
     pasteRequest.dispose?.();
   }, [composeOpen, onComposerDraftChange, onHistoryEntry, pasteRequest, ready, terminalId, visible]);
 
+  const publishQueuedMessages = useCallback((
+    targetKey: string,
+    messages: QueuedComposerMessage[],
+  ) => {
+    if (messages.length) queuedMessagesByTargetRef.current.set(targetKey, messages);
+    else queuedMessagesByTargetRef.current.delete(targetKey);
+    if (activeTargetRef.current?.key === targetKey) setQueuedMessages(messages);
+  }, []);
+
+  const scheduleQueuedRetry = useCallback((targetKey: string, attempts: number) => {
+    if (queueRetryTimersRef.current.has(targetKey)) return;
+    const delayMs = Math.min(8000, 750 * (2 ** Math.max(0, attempts - 1)));
+    const timer = setTimeout(() => {
+      queueRetryTimersRef.current.delete(targetKey);
+      const target = targetsRef.current.find(item => item.key === targetKey);
+      if (target) flushQueuedTargetRef.current(target);
+    }, delayMs);
+    queueRetryTimersRef.current.set(targetKey, timer);
+  }, []);
+
+  const flushQueuedTarget = useCallback(async (target: TerminalRenderTarget) => {
+    const targetKey = target.key;
+    if (target.session.status !== 'connected' || queueFlushesRef.current.has(targetKey)) return;
+    const terminalRenderer = renderer.current;
+    if (!terminalRenderer) return;
+    const retryTimer = queueRetryTimersRef.current.get(targetKey);
+    if (retryTimer) clearTimeout(retryTimer);
+    queueRetryTimersRef.current.delete(targetKey);
+    queueFlushesRef.current.add(targetKey);
+    try {
+      while (true) {
+        const message = queuedMessagesByTargetRef.current.get(targetKey)?.[0];
+        if (!message) return;
+        const sendingMessage = { ...message, sending: true, error: null };
+        const sendingQueue = [
+          sendingMessage,
+          ...(queuedMessagesByTargetRef.current.get(targetKey)?.slice(1) || []),
+        ];
+        publishQueuedMessages(targetKey, sendingQueue);
+        try {
+          await terminalRenderer.submitPastes(target, message.pasteEvents);
+          if (target.key === activeTargetRef.current?.key) setError(null);
+        } catch (reason) {
+          const current = queuedMessagesByTargetRef.current.get(targetKey) || [];
+          const failed = current.map(item => item.id === message.id
+            ? {
+                ...item,
+                sending: false,
+                attempts: item.attempts + 1,
+                error: String(reason),
+              }
+            : item);
+          publishQueuedMessages(targetKey, failed);
+          scheduleQueuedRetry(targetKey, message.attempts + 1);
+          return;
+        }
+        const current = queuedMessagesByTargetRef.current.get(targetKey) || [];
+        if (current.some(item => item.id === message.id)) {
+          publishQueuedMessages(targetKey, current.filter(item => item.id !== message.id));
+          for (const attachment of message.attachments) attachment.dispose();
+          onHistoryEntry(message.historyEntry);
+        }
+      }
+    } finally {
+      queueFlushesRef.current.delete(targetKey);
+    }
+  }, [onHistoryEntry, publishQueuedMessages, scheduleQueuedRetry]);
+  flushQueuedTargetRef.current = target => {
+    flushQueuedTarget(target).catch(() => undefined);
+  };
+
+  useEffect(() => {
+    for (const target of targets) {
+      if (
+        target.session.status === 'connected'
+        && queuedMessagesByTargetRef.current.has(target.key)
+      ) {
+        flushQueuedTargetRef.current(target);
+      }
+    }
+  }, [targets]);
+
   useEffect(() => () => {
     for (const attachments of composeAttachmentsByTargetRef.current.values()) {
       for (const attachment of attachments) attachment.dispose();
     }
     composeAttachmentsByTargetRef.current.clear();
+    for (const messages of queuedMessagesByTargetRef.current.values()) {
+      for (const message of messages) {
+        for (const attachment of message.attachments) attachment.dispose();
+      }
+    }
+    queuedMessagesByTargetRef.current.clear();
+    for (const timer of queueRetryTimersRef.current.values()) clearTimeout(timer);
+    queueRetryTimersRef.current.clear();
     composeAttachmentsRef.current = [];
   }, []);
 
@@ -436,6 +600,16 @@ export function TerminalScreen({
       if (targetKeys.has(key)) continue;
       for (const attachment of attachments) attachment.dispose();
       composeAttachmentsByTargetRef.current.delete(key);
+    }
+    for (const [key, messages] of queuedMessagesByTargetRef.current) {
+      if (targetKeys.has(key)) continue;
+      for (const message of messages) {
+        for (const attachment of message.attachments) attachment.dispose();
+      }
+      queuedMessagesByTargetRef.current.delete(key);
+      const timer = queueRetryTimersRef.current.get(key);
+      if (timer) clearTimeout(timer);
+      queueRetryTimersRef.current.delete(key);
     }
   }, [targets]);
 
@@ -553,25 +727,67 @@ export function TerminalScreen({
   };
 
   const submitCompose = () => {
-    if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
+    const target = activeTargetRef.current;
+    if (target) onInteraction?.(target);
     const attachmentPaths = composeAttachmentsRef.current.map(attachment => attachment.remotePath);
     const submission = composeTerminalSubmission(composeTextRef.current, attachmentPaths);
     if (!submission.historyEntry) {
       sendInput(ENTER_INPUT);
       return;
     }
-    renderer.current?.submitPastes(submission.pasteEvents);
-    onHistoryEntry(submission.historyEntry);
+    if (!target) return;
+    const message: QueuedComposerMessage = {
+      id: ++queuedMessageSequenceRef.current,
+      text: composeTextRef.current,
+      pasteEvents: submission.pasteEvents,
+      historyEntry: submission.historyEntry,
+      attachments: composeAttachmentsRef.current,
+      sending: false,
+      attempts: 0,
+      error: null,
+    };
+    publishQueuedMessages(target.key, [
+      ...(queuedMessagesByTargetRef.current.get(target.key) || []),
+      message,
+    ]);
     composeTextRef.current = '';
     setComposeText('');
     if (terminalId) onComposerDraftChange(terminalId, '');
     composeInputRef.current?.clear();
-    for (const attachment of composeAttachmentsRef.current) attachment.dispose();
-    if (activeTargetRef.current) {
-      composeAttachmentsByTargetRef.current.delete(activeTargetRef.current.key);
-    }
+    composeAttachmentsByTargetRef.current.delete(target.key);
     composeAttachmentsRef.current = [];
     setComposeAttachments([]);
+    flushQueuedTargetRef.current(target);
+  };
+
+  const unqueueComposeMessage = (id: number) => {
+    const target = activeTargetRef.current;
+    if (!target) return;
+    const queue = queuedMessagesByTargetRef.current.get(target.key) || [];
+    const message = queue.find(item => item.id === id);
+    if (!message || message.sending) return;
+    const remaining = queue.filter(item => item.id !== id);
+    publishQueuedMessages(target.key, remaining);
+    if (!remaining.length) {
+      const retryTimer = queueRetryTimersRef.current.get(target.key);
+      if (retryTimer) clearTimeout(retryTimer);
+      queueRetryTimersRef.current.delete(target.key);
+    }
+    const currentText = composeTextRef.current;
+    const nextText = [message.text, currentText].filter(Boolean).join('\n');
+    composeTextRef.current = nextText;
+    setComposeText(nextText);
+    onComposerDraftChange(target.session.terminalId, nextText);
+    composeInputRef.current?.setNativeProps({ text: nextText });
+    composeInputRef.current?.setSelection(nextText.length, nextText.length);
+    composeAttachmentsRef.current = [
+      ...message.attachments,
+      ...composeAttachmentsRef.current,
+    ];
+    if (composeAttachmentsRef.current.length) {
+      composeAttachmentsByTargetRef.current.set(target.key, composeAttachmentsRef.current);
+    }
+    setComposeAttachments(composeAttachmentsRef.current);
   };
 
   const selectHistoryEntry = (entry: string) => {
@@ -831,7 +1047,6 @@ export function TerminalScreen({
           {error && <Text className="text-[8px] text-terminal-error">{t('terminal.attachFailed')}</Text>}
         </View>
       )}
-      {compact && error && <Text className="bg-terminal-error/15 px-2 py-1 text-[8px] text-terminal-error">{t('terminal.attachFailed')} · {String(error)}</Text>}
       {searchOpen && (
         <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
           <Input
@@ -868,6 +1083,7 @@ export function TerminalScreen({
           targets={targets}
           visible={visible}
           preferences={preferences}
+          offlineTranscript={cachedTerminalOutput}
           swipe={swipe}
           onReady={() => setReady(true)}
           onInput={async (target, data) => {
@@ -897,7 +1113,12 @@ export function TerminalScreen({
           onSelectionStateChange={(target, active) => {
             if (target.key === activeTarget?.key) setTerminalSelectionActive(active);
           }}
-          onStatus={onStatus}
+          onStatus={(target, nextStatus, nextError, reconnectAttempt) => {
+            if (nextStatus === 'connected' && target.key === activeTargetRef.current?.key) {
+              setError(null);
+            }
+            onStatus(target, nextStatus, nextError, reconnectAttempt);
+          }}
           onError={(target, message) => {
             if (target.key === activeTarget?.key) setError(message);
           }}
@@ -916,22 +1137,26 @@ export function TerminalScreen({
         )}
       </View>
       {session && status !== 'connected' && (
-        <View className="absolute inset-0 z-20 items-center justify-center bg-terminal-canvas/95 p-[30px]">
-          <View className={cn('size-2 rounded-full bg-terminal-success', status === 'error' && 'bg-terminal-error')} />
-          <Text className="mt-[15px] text-center text-[17px] font-semibold leading-[22px] text-terminal-text">
-            {status === 'connecting' ? t('terminal.connecting') : status === 'disconnected' ? t('terminal.reconnecting') : t('terminal.failed')}
-          </Text>
-          <Text numberOfLines={3} className="mt-2 max-w-80 text-center text-[11px] leading-[17px] text-terminal-muted">
-            {session.error || error || t('terminal.opening', { title })}
-          </Text>
-          {status === 'disconnected' && session.reconnectAttempt > 0 && (
-            <Text className="mt-2.5 text-[11px] text-terminal-muted">{t('terminal.attempt', { attempt: session.reconnectAttempt, total: MAX_RECONNECT_ATTEMPTS })}</Text>
-          )}
-          <View className="mt-5 flex-row gap-2">
+        <View
+          pointerEvents="box-none"
+          className="absolute inset-x-2 z-20"
+          style={{ top: statusBannerTopInset + 8 }}>
+          <View className="flex-row items-center gap-2 rounded-lg border border-terminal-divider bg-terminal-panel/95 p-2 shadow-lg">
+            <View className={cn('size-2 rounded-full bg-terminal-success', status === 'error' && 'bg-terminal-error')} />
+            <View className="min-w-0 flex-1">
+              <Text numberOfLines={1} className="text-[12px] font-semibold text-terminal-text">
+                {status === 'connecting' ? t('terminal.connecting') : status === 'disconnected' ? t('terminal.reconnecting') : t('terminal.failed')}
+              </Text>
+              <Text numberOfLines={1} className="text-[9px] text-terminal-muted">
+                {status === 'disconnected' && session.reconnectAttempt > 0
+                  ? t('terminal.attempt', { attempt: session.reconnectAttempt, total: MAX_RECONNECT_ATTEMPTS })
+                  : session.error || error || t('terminal.opening', { title })}
+              </Text>
+            </View>
             {status !== 'connecting' && (
-              <Button className="min-h-[42px] rounded-full bg-terminal-accent px-4" onPress={retryNow}><Text className="text-[13px] font-semibold text-terminal-ink">{t('terminal.retry')}</Text></Button>
+              <Button className="h-8 rounded-full bg-terminal-accent px-3" onPress={retryNow}><Text className="text-[10px] font-semibold text-terminal-ink">{t('terminal.retry')}</Text></Button>
             )}
-            <Button className="min-h-[42px] rounded-full bg-terminal-surface px-4" variant="secondary" onPress={onClose}><Text className="text-[13px] font-semibold text-terminal-text">{t('terminal.closeSession')}</Text></Button>
+            <Button accessibilityLabel={t('terminal.closeSession')} className="size-8 rounded-full px-0" variant="ghost" onPress={onClose}><X size={16} color={colors.text} /></Button>
           </View>
         </View>
       )}
@@ -961,6 +1186,14 @@ export function TerminalScreen({
                   </Button>
                 </View>
                 <View className="min-w-0 flex-1 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas">
+                  <QueuedMessagesStrip
+                    messages={queuedMessages}
+                    label={t('terminal.outbox')}
+                    queuedLabel={t('terminal.queued')}
+                    sendingLabel={t('terminal.sending')}
+                    unqueueLabel={t('terminal.unqueue')}
+                    onUnqueue={unqueueComposeMessage}
+                  />
                   <ComposeAttachmentsStrip
                     attachments={composeAttachments}
                     removeLabel={t('terminal.removeAttachment')}
@@ -1054,6 +1287,15 @@ export function TerminalScreen({
                 <Text className="font-mono text-[11px] font-bold text-terminal-ink">SEND</Text>
               </Button>
             </View>
+            <QueuedMessagesStrip
+              messages={queuedMessages}
+              label={t('terminal.outbox')}
+              queuedLabel={t('terminal.queued')}
+              sendingLabel={t('terminal.sending')}
+              unqueueLabel={t('terminal.unqueue')}
+              onUnqueue={unqueueComposeMessage}
+              expanded
+            />
             <ComposeAttachmentsStrip
               attachments={composeAttachments}
               removeLabel={t('terminal.removeAttachment')}
@@ -1147,6 +1389,72 @@ export function TerminalScreen({
           </View>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+interface QueuedComposerMessage {
+  id: number;
+  text: string;
+  pasteEvents: string[];
+  historyEntry: string;
+  attachments: ComposeAttachment[];
+  sending: boolean;
+  attempts: number;
+  error: string | null;
+}
+
+function QueuedMessagesStrip({
+  messages,
+  label,
+  queuedLabel,
+  sendingLabel,
+  unqueueLabel,
+  onUnqueue,
+  expanded = false,
+}: {
+  messages: readonly QueuedComposerMessage[];
+  label: string;
+  queuedLabel: string;
+  sendingLabel: string;
+  unqueueLabel: string;
+  onUnqueue: (id: number) => void;
+  expanded?: boolean;
+}) {
+  if (!messages.length) return null;
+  return (
+    <View className={cn(expanded ? 'border-b border-terminal-divider px-3 py-3' : 'border-b border-terminal-divider px-2 py-2')}>
+      <Text className="mb-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-terminal-muted">
+        {label} · {messages.length}
+      </Text>
+      <ScrollView
+        horizontal
+        keyboardShouldPersistTaps="always"
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="gap-2">
+        {messages.map(message => (
+          <View
+            key={message.id}
+            className="h-12 w-56 flex-row items-center gap-2 rounded-md border border-terminal-divider bg-terminal-surface px-2">
+            <View className="min-w-0 flex-1">
+              <Text numberOfLines={1} className="font-mono text-[10px] text-terminal-text">
+                {message.historyEntry}
+              </Text>
+              <Text className="font-mono text-[8px] text-terminal-muted">
+                {message.sending ? sendingLabel : queuedLabel}
+              </Text>
+            </View>
+            <Button
+              accessibilityLabel={unqueueLabel}
+              className="size-8 rounded-full px-0"
+              disabled={message.sending}
+              variant="ghost"
+              onPress={() => onUnqueue(message.id)}>
+              <Undo2 size={15} color={message.sending ? colors.muted : colors.text} />
+            </Button>
+          </View>
+        ))}
+      </ScrollView>
     </View>
   );
 }

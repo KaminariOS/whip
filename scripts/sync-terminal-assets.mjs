@@ -270,12 +270,42 @@ const terminalSessionHtml = `<!doctype html>
     let doubleTapAction = 'tab';
     let keyboardEnabled = false;
     let localScrollback = false;
+    let offlineScrollback = false;
+    let offlineTranscriptChunks = [];
+    let offlineTranscriptVisible = false;
     installAndroidImeBridge(terminal, send, navigator.userAgent);
+    const handleOfflineInput = data => {
+      if (!offlineScrollback || typeof data !== 'string') return false;
+      const page = Math.max(1, terminal.rows - 1);
+      if (data === '\u001b[A' || data === '\u001bOA') terminal.scrollLines(-1);
+      else if (data === '\u001b[B' || data === '\u001bOB') terminal.scrollLines(1);
+      else if (data === '\u001b[5~' || data === '\u001b[1;5A') terminal.scrollLines(-page);
+      else if (data === '\u001b[6~' || data === '\u001b[1;5B') terminal.scrollLines(page);
+      else if (data === '\u001b[H' || data === '\u001bOH') terminal.scrollToTop();
+      else if (data === '\u001b[F' || data === '\u001bOF') terminal.scrollToBottom();
+      else return false;
+      return true;
+    };
     const controlSequenceForKey = key => {
       const upper = key.length === 1 ? key.toUpperCase() : '';
       return upper >= 'A' && upper <= 'Z' ? String.fromCharCode(upper.charCodeAt(0) - 64) : null;
     };
     terminal.attachCustomKeyEventHandler(event => {
+      if (offlineScrollback) {
+        if (event.type === 'keydown') {
+          const offlineKey = event.key === 'ArrowUp' ? '\u001b[A'
+            : event.key === 'ArrowDown' ? '\u001b[B'
+              : event.key === 'PageUp' ? '\u001b[5~'
+                : event.key === 'PageDown' ? '\u001b[6~'
+                  : event.key === 'Home' ? '\u001b[H'
+                    : event.key === 'End' ? '\u001b[F'
+                      : '';
+          if (offlineKey) handleOfflineInput(offlineKey);
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return false;
+      }
       if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return true;
       const sequence = controlSequenceForKey(event.key);
       if (sequence === null) return true;
@@ -286,6 +316,10 @@ const terminalSessionHtml = `<!doctype html>
     });
     let bufferedInput = null;
     terminal.onData(data => {
+      if (offlineScrollback) {
+        handleOfflineInput(data);
+        return;
+      }
       if (bufferedInput !== null) bufferedInput += data;
       else send({ type: 'input', data });
     });
@@ -352,8 +386,21 @@ const terminalSessionHtml = `<!doctype html>
       }
       return false;
     });
-    window.herdrWrite = data => terminal.write(data);
+    const prepareLiveWrite = () => {
+      if (!offlineTranscriptVisible) return;
+      offlineTranscriptVisible = false;
+      offlineTranscriptChunks = [];
+      clearOsc8Links();
+      clearInteractiveSelection(false);
+      // Queue RIS through xterm's parser so it cannot race a pending transcript.
+      terminal.write('\u001bc');
+    };
+    window.herdrWrite = data => {
+      prepareLiveWrite();
+      terminal.write(data);
+    };
     window.herdrWriteBase64 = data => {
+      prepareLiveWrite();
       const binary = atob(data);
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
@@ -371,16 +418,46 @@ const terminalSessionHtml = `<!doctype html>
     };
     window.herdrReset = () => {
       pendingFrames.clear();
+      offlineTranscriptChunks = [];
+      offlineTranscriptVisible = false;
       clearOsc8Links();
       terminal.reset();
       clearInteractiveSelection(false);
     };
+    window.herdrBeginOfflineTranscript = () => {
+      offlineTranscriptChunks = [];
+    };
+    window.herdrAppendOfflineTranscript = data => {
+      if (typeof data === 'string') offlineTranscriptChunks.push(data);
+    };
+    window.herdrCommitOfflineTranscript = () => {
+      const transcript = offlineTranscriptChunks.join('');
+      offlineTranscriptChunks = [];
+      if (!transcript) return;
+      pendingFrames.clear();
+      offlineTranscriptVisible = true;
+      clearOsc8Links();
+      clearInteractiveSelection(false);
+      terminal.write('\u001bc' + transcript, () => terminal.scrollToBottom());
+    };
+    window.herdrHideOfflineTranscript = () => {
+      offlineTranscriptChunks = [];
+      if (!offlineTranscriptVisible) return;
+      offlineTranscriptVisible = false;
+      clearOsc8Links();
+      clearInteractiveSelection(false);
+      terminal.write('\u001bc');
+    };
+    window.herdrOfflineInput = data => handleOfflineInput(data);
     window.herdrConfigure = options => {
       terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
       doubleTapAction = ['none', 'paste', 'tab', 'escape'].includes(options.doubleTapAction) ? options.doubleTapAction : 'tab';
+      const nextOfflineScrollback = options.offlineScrollback === true;
+      if (offlineScrollback && !nextOfflineScrollback) terminal.scrollToBottom();
       localScrollback = options.localScrollback === true;
+      offlineScrollback = nextOfflineScrollback;
       if (doubleTapAction === 'none') lastTap = null;
       const backgroundUri = options.backgroundImageUri || '';
       const dimming = Math.max(0, Math.min(100, Number(options.backgroundDimming) || 0)) / 100;
@@ -411,14 +488,14 @@ const terminalSessionHtml = `<!doctype html>
       };
     };
     const sendRemoteClick = point => {
-      if (localScrollback || keyboardEnabled) return false;
+      if (localScrollback || offlineScrollback || keyboardEnabled) return false;
       const cell = terminalMouseCell(point);
       if (!cell) return false;
       send({ type: 'terminal-click', column: cell.col, row: cell.row });
       return true;
     };
     const dispatchTerminalMouse = (action, point) => {
-      if (!terminalMouseCaptured() || !terminal.element) return false;
+      if (offlineScrollback || !terminalMouseCaptured() || !terminal.element) return false;
       const eventType = action === 'down' ? 'mousedown' : action === 'move' ? 'mousemove' : 'mouseup';
       terminal.element.dispatchEvent(new MouseEvent(eventType, {
         bubbles: true,
@@ -456,6 +533,10 @@ const terminalSessionHtml = `<!doctype html>
     };
     const scrollTerminal = (direction, lines, point) => {
       const count = Math.max(1, Math.round(Number(lines) || 1));
+      if (offlineScrollback) {
+        terminal.scrollLines(direction === 'up' ? -count : count);
+        return;
+      }
       if (dispatchTerminalWheel(direction, count, point)) return;
       if (localScrollback) terminal.scrollLines(direction === 'up' ? -count : count);
       else {
@@ -806,7 +887,7 @@ const terminalSessionHtml = `<!doctype html>
           touch.selection = selection;
           setInteractiveSelection(selection.start, selection.end);
           showToolbar(touch.x, touch.y);
-        } else {
+        } else if (!offlineScrollback) {
           send({ type: 'clipboard-read' });
         }
       }, 420);
@@ -1149,6 +1230,11 @@ const terminalHtml = `<!doctype html>
     window.herdrWriteBase64Chunk = (key, sequence, data, final) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final]);
     window.herdrWrite = (key, data) => call(key, 'herdrWrite', [data]);
     window.herdrReset = key => call(key, 'herdrReset');
+    window.herdrBeginOfflineTranscript = key => call(key, 'herdrBeginOfflineTranscript');
+    window.herdrAppendOfflineTranscript = (key, data) => call(key, 'herdrAppendOfflineTranscript', [data]);
+    window.herdrCommitOfflineTranscript = key => call(key, 'herdrCommitOfflineTranscript');
+    window.herdrHideOfflineTranscript = key => call(key, 'herdrHideOfflineTranscript');
+    window.herdrOfflineInput = (key, data) => call(key, 'herdrOfflineInput', [data]);
     window.herdrConfigure = (key, options) => call(key, 'herdrConfigure', [options]);
     window.herdrChangeFontSize = (key, delta) => call(key, 'herdrChangeFontSize', [delta]);
     window.herdrScroll = (key, direction, lines) => call(key, 'herdrScroll', [direction, lines]);

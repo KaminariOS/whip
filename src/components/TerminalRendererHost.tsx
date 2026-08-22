@@ -20,7 +20,11 @@ import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes'
 
 import type { TerminalFrame, TerminalProtocolState } from '../lib/terminalBridge';
 import { arrayBufferToBase64 } from '../lib/base64';
-import type { TerminalRenderTarget } from '../lib/terminalRenderer';
+import {
+  isOfflineTerminalNavigationInput,
+  terminalScrollbackMode,
+  type TerminalRenderTarget,
+} from '../lib/terminalRenderer';
 import { prepareTerminalPaste } from '../lib/terminalPaste';
 import { terminalSubmissionWrites } from '../lib/terminalSubmission';
 import {
@@ -34,6 +38,7 @@ import type { TerminalSessionStatus } from '../terminalSessions';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
+const TRANSCRIPT_CHUNK_SIZE = 16_384;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const TERMINAL_SOURCE = Platform.select({
@@ -68,13 +73,14 @@ export interface TerminalRendererHandle {
   clearSearch: () => void;
   fit: () => void;
   focus: () => void;
+  input: (data: string) => boolean;
   paste: (data: string) => void;
   retry: () => void;
   scanLinks: () => void;
   scroll: (direction: 'up' | 'down', lines: number) => void;
   search: (query: string, caseSensitive: boolean, regex: boolean, direction: number) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
-  submitPastes: (parts: readonly string[]) => void;
+  submitPastes: (target: TerminalRenderTarget, parts: readonly string[]) => Promise<void>;
 }
 
 interface Props {
@@ -83,6 +89,7 @@ interface Props {
   targets: readonly TerminalRenderTarget[];
   visible: boolean;
   preferences: TerminalPreferences;
+  offlineTranscript?: string;
   swipe?: {
     direction: -1 | 1;
     offset: SharedValue<number>;
@@ -114,6 +121,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   targets,
   visible,
   preferences,
+  offlineTranscript = '',
   swipe,
   style,
   onReady,
@@ -136,7 +144,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const knownTargets = useRef(new Map<string, TerminalRenderTarget>());
   const activeKey = useRef<string | null>(null);
   const appState = useRef(AppState.currentState);
+  const offlineTranscriptRef = useRef(offlineTranscript);
   activeKey.current = activeTarget?.key || null;
+  offlineTranscriptRef.current = offlineTranscript;
 
   const reportReady = useEffectEvent(() => onReady?.());
   const reportInput = useEffectEvent(onInput);
@@ -188,13 +198,38 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [disposeEntry, preferences.xtermCacheCapacity]);
 
   const configureEntry = useCallback((entry: RendererEntry) => {
+    const scrollbackMode = terminalScrollbackMode(entry.target.session);
     inject(`window.herdrConfigure(${JSON.stringify(entry.target.key)}, ${JSON.stringify({
       ...preferences,
       fontSize: entry.fontSize,
       backgroundImageUri: null,
-      localScrollback: entry.target.session.kind === 'ssh',
+      ...scrollbackMode,
     })});`);
   }, [inject, preferences]);
+
+  const syncOfflineTranscript = useCallback((
+    targetKey: string,
+    targetKind: TerminalRenderTarget['session']['kind'],
+    targetStatus: TerminalRenderTarget['session']['status'],
+    transcript: string,
+  ) => {
+    const key = JSON.stringify(targetKey);
+    if (
+      targetKind === 'ssh'
+      || targetStatus === 'connected'
+      || !transcript
+    ) {
+      inject(`window.herdrHideOfflineTranscript(${key});`);
+      return;
+    }
+    inject(`window.herdrBeginOfflineTranscript(${key});`);
+    for (let offset = 0; offset < transcript.length; offset += TRANSCRIPT_CHUNK_SIZE) {
+      inject(`window.herdrAppendOfflineTranscript(${key}, ${JSON.stringify(
+        transcript.slice(offset, offset + TRANSCRIPT_CHUNK_SIZE),
+      )});`);
+    }
+    inject(`window.herdrCommitOfflineTranscript(${key});`);
+  }, [inject]);
 
   const injectFrame = useCallback((entry: RendererEntry, frame: TerminalFrame) => {
     if (!hostReady.current || !entry.rendererReady) {
@@ -371,10 +406,22 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       webView.current?.requestFocus();
       activeCall('herdrFocus');
     },
+    input: data => {
+      const key = activeKey.current;
+      const entry = key ? entries.current.get(key) : null;
+      if (
+        !entry
+        || entry.target.session.status === 'connected'
+        || !isOfflineTerminalNavigationInput(data)
+      ) return false;
+      activeCall('herdrOfflineInput', [data]);
+      return true;
+    },
     paste: data => {
       const key = activeKey.current;
       const entry = key ? entries.current.get(key) : null;
       if (!entry) return;
+      if (entry.target.session.status !== 'connected') return;
       if (entry.target.session.kind === 'ssh') {
         activeCall('herdrPaste', [data]);
         return;
@@ -411,21 +458,26 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (enabled) webView.current?.requestFocus();
       activeCall('herdrSetKeyboardEnabled', [enabled]);
     },
-    submitPastes: parts => {
-      const key = activeKey.current;
-      const entry = key ? entries.current.get(key) : null;
-      if (!entry) return;
+    submitPastes: (target, parts) => {
+      const entry = ensureEntry(target);
+      if (!entry) return Promise.reject(new Error('Terminal is not available'));
+      if (entry.target.session.status !== 'connected') {
+        return Promise.reject(new Error('Terminal is offline and read-only'));
+      }
       if (entry.target.session.kind === 'ssh') {
-        activeCall('herdrSubmitPastes', [parts]);
-        return;
+        inject(`window.herdrSubmitPastes(${JSON.stringify(target.key)}, ${JSON.stringify(parts)});`);
+        return Promise.resolve();
       }
       const prepared = parts.map(prepareTerminalPaste);
-      enqueueInput(entry, () => entry.target.client.submitPastesToPane(
+      return enqueueInput(entry, () => entry.target.client.submitPastesToPane(
         entry.target.session.paneId,
         prepared,
-      )).catch(reason => reportError(entry.target, String(reason)));
+      )).catch(reason => {
+        reportError(entry.target, String(reason));
+        throw reason;
+      });
     },
-  }), [activeCall, connectEntry, enqueueInput]);
+  }), [activeCall, connectEntry, enqueueInput, ensureEntry, inject]);
 
   useEffect(() => {
     const valid = new Map(targets.map(target => [target.key, target]));
@@ -439,7 +491,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     for (const [key, entry] of entries.current) {
       const target = valid.get(key);
       if (target) {
+        const previousScrollbackMode = terminalScrollbackMode(entry.target.session);
+        const nextScrollbackMode = terminalScrollbackMode(target.session);
         entry.target = target;
+        if (
+          hostReady.current
+          && previousScrollbackMode.offlineScrollback !== nextScrollbackMode.offlineScrollback
+        ) {
+          configureEntry(entry);
+        }
         continue;
       }
       disposeEntry(key, entry, true);
@@ -450,7 +510,26 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       activeTarget?.key,
       previewTarget?.key,
     ].filter((key): key is string => Boolean(key))));
-  }, [activeTarget, disposeEntry, ensureEntry, previewTarget, pruneEntries, targets]);
+  }, [activeTarget, configureEntry, disposeEntry, ensureEntry, previewTarget, pruneEntries, targets]);
+
+  const activeTranscriptKey = activeTarget?.key || '';
+  const activeTranscriptKind = activeTarget?.session.kind || 'herdr';
+  const activeTranscriptStatus = activeTarget?.session.status || 'connecting';
+  useEffect(() => {
+    if (!hostReady.current || !activeTranscriptKey) return;
+    syncOfflineTranscript(
+      activeTranscriptKey,
+      activeTranscriptKind,
+      activeTranscriptStatus,
+      offlineTranscript,
+    );
+  }, [
+    activeTranscriptKey,
+    activeTranscriptKind,
+    activeTranscriptStatus,
+    offlineTranscript,
+    syncOfflineTranscript,
+  ]);
 
   useEffect(() => {
     for (const entry of entries.current.values()) {
@@ -549,6 +628,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (visible && activeKey.current) {
         inject(`window.herdrActivate(${JSON.stringify(activeKey.current)});`);
       }
+      const entry = activeKey.current ? entries.current.get(activeKey.current) : null;
+      if (entry) syncOfflineTranscript(
+        entry.target.key,
+        entry.target.session.kind,
+        entry.target.session.status,
+        offlineTranscriptRef.current,
+      );
       reportReady();
       return;
     }
@@ -562,8 +648,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       return;
     }
     if (message.type === 'input') {
+      if (entry.target.session.status !== 'connected') return;
       await enqueueInput(entry, () => reportInput(entry.target, message.data));
     } else if (message.type === 'buffered-submit') {
+      if (entry.target.session.status !== 'connected') return;
       try {
         const pastedParts = Array.isArray(message.parts)
           ? message.parts.filter((part: unknown): part is string => typeof part === 'string')
@@ -577,6 +665,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportError(entry.target, String(reason));
       }
     } else if (message.type === 'resize') {
+      if (entry.target.session.status !== 'connected') return;
       if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
       entry.target.client.resizeTerminal(
         entry.target.session.terminalId,
@@ -586,6 +675,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         message.cellHeightPx,
       );
     } else if (message.type === 'scroll') {
+      if (entry.target.session.status !== 'connected') return;
       reportScroll(entry.target, message.direction, message.lines);
       try {
         await entry.target.client.scrollTerminal(
@@ -599,6 +689,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportError(entry.target, String(reason));
       }
     } else if (message.type === 'terminal-click') {
+      if (entry.target.session.status !== 'connected') return;
       try {
         await entry.target.client.clickTerminal(
           entry.target.session.terminalId,
@@ -618,6 +709,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(message.text || '');
     } else if (message.type === 'clipboard-read') {
+      if (entry.target.session.status !== 'connected') return;
       const value = await Clipboard.getString();
       if (value) {
         if (entry.target.session.kind === 'ssh') {
