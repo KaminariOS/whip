@@ -732,7 +732,7 @@ export function SessionScreen({
             previewTarget={previewTarget}
             targets={terminalTargets}
             compact
-            statusBannerTopInset={55 + (selectedTab && panes.length > 1 ? 37 : 0)}
+            topOverlayInset={55 + (selectedTab && panes.length > 1 ? 37 : 0)}
             visible={visible && Boolean(activeTarget)}
             swipe={tabSwipe && previewTarget
               ? { direction: tabSwipe.direction, offset: tabSwipeTranslateX }

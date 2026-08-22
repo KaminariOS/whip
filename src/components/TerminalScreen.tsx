@@ -44,7 +44,7 @@ interface Props {
   controlUsage: TerminalControlUsage;
   historyEntries: readonly string[];
   compact?: boolean;
-  statusBannerTopInset?: number;
+  topOverlayInset?: number;
   swipe?: {
     direction: -1 | 1;
     offset: SharedValue<number>;
@@ -187,7 +187,7 @@ export function TerminalScreen({
   controlUsage,
   historyEntries,
   compact = false,
-  statusBannerTopInset = 0,
+  topOverlayInset = 0,
   swipe,
   terminalPanHandlers,
   onControlUse,
@@ -1048,7 +1048,9 @@ export function TerminalScreen({
         </View>
       )}
       {searchOpen && (
-        <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
+        <View
+          className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]"
+          style={topOverlayInset > 0 ? { marginTop: topOverlayInset } : undefined}>
           <Input
             autoFocus
             value={searchQuery}
@@ -1140,7 +1142,7 @@ export function TerminalScreen({
         <View
           pointerEvents="box-none"
           className="absolute inset-x-2 z-20"
-          style={{ top: statusBannerTopInset + 8 }}>
+          style={{ top: topOverlayInset + 8 }}>
           <View className="flex-row items-center gap-2 rounded-lg border border-terminal-divider bg-terminal-panel/95 p-2 shadow-lg">
             <View className={cn('size-2 rounded-full bg-terminal-success', status === 'error' && 'bg-terminal-error')} />
             <View className="min-w-0 flex-1">
