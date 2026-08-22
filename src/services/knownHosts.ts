@@ -73,8 +73,11 @@ export async function deleteKnownHost(hosts: KnownHost[], id: string): Promise<K
 }
 
 export function parseUnknownHostKey(error: unknown): UnknownHostKeyChallenge | null {
-  const text = error instanceof Error ? error.message : String(error);
-  const parsed = parseHostKeyPayload(text, UNKNOWN_HOST_KEY_PREFIX);
+  const parsed = structuredHostKeyPayload(error, 'HOST_KEY_UNKNOWN')
+    || parseHostKeyPayload(
+      error instanceof Error ? error.message : String(error),
+      UNKNOWN_HOST_KEY_PREFIX,
+    );
   if (
     !parsed
     || typeof parsed.keyType !== 'string'
@@ -94,10 +97,40 @@ export function parseUnknownHostKey(error: unknown): UnknownHostKeyChallenge | n
 
 export function hostKeyErrorHost(error: unknown): string | null {
   const text = error instanceof Error ? error.message : String(error);
-  const parsed = parseHostKeyPayload(text, UNKNOWN_HOST_KEY_PREFIX)
+  const parsed = structuredHostKeyPayload(error, 'HOST_KEY_UNKNOWN')
+    || structuredHostKeyPayload(error, 'HOST_KEY_CHANGED')
+    || parseHostKeyPayload(text, UNKNOWN_HOST_KEY_PREFIX)
     || parseHostKeyPayload(text, CHANGED_HOST_KEY_PREFIX);
   if (!parsed) return null;
   return parsed.port === 22 ? parsed.host : `[${parsed.host}]:${parsed.port}`;
+}
+
+function structuredHostKeyPayload(
+  error: unknown,
+  expectedCode: 'HOST_KEY_UNKNOWN' | 'HOST_KEY_CHANGED',
+): { host: string; port: number; [key: string]: unknown } | null {
+  if (!error || typeof error !== 'object' || !('code' in error) || !('details' in error)) {
+    return null;
+  }
+  const candidate = error as { code?: unknown; details?: unknown };
+  if (candidate.code !== expectedCode || !candidate.details || typeof candidate.details !== 'object') {
+    return null;
+  }
+  const details = candidate.details as Record<string, unknown>;
+  if (
+    typeof details.host !== 'string'
+    || typeof details.port !== 'number'
+    || !Number.isInteger(details.port)
+    || details.port < 1
+    || details.port > 65535
+  ) {
+    return null;
+  }
+  return {
+    ...details,
+    host: normalizeHost(details.host),
+    port: details.port,
+  };
 }
 
 function parseHostKeyPayload(

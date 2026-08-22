@@ -8,6 +8,12 @@ import {
 
 describe('connection error presentation', () => {
   test.each([
+    [{ code: 'AUTHENTICATION_FAILED' }, 'authentication'],
+    [{ code: 'CONNECTION_REFUSED' }, 'connectionRefused'],
+    [{ code: 'CONNECTION_TIMEOUT' }, 'timeout'],
+    [{ code: 'HOST_UNREACHABLE' }, 'unreachable'],
+    [{ code: 'HOST_KEY_UNKNOWN' }, 'hostKey'],
+    [{ code: 'INVALID_PRIVATE_KEY' }, 'invalidKey'],
     ['java.net.UnknownHostException: thinker', 'unreachable'],
     ['connect failed: ENETUNREACH (Network is unreachable)', 'unreachable'],
     ['java.net.SocketTimeoutException: connect timed out', 'timeout'],
@@ -19,7 +25,7 @@ describe('connection error presentation', () => {
     ['Herdr protocol mismatch: Whip supports 17–20, server reports 16', 'incompatibleProtocol'],
     ['Herdr API socket is not available', 'herdrUnavailable'],
     ['unexpected native failure', 'unknown'],
-  ] as const)('maps %s to a friendly %s message', (error, kind) => {
+  ] as const)('maps %p to a friendly %s message', (error, kind) => {
     expect(classifyConnectionError(error)).toBe(kind);
   });
 

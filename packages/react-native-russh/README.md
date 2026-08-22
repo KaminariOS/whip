@@ -37,7 +37,7 @@ cd ios && pod install
 
 `react-native-russh` verifies host keys strictly. Load an OpenSSH
 `known_hosts` entry before connecting; an unknown or changed key rejects the
-connection with structured details in the error message.
+connection with a structured `SshError`.
 
 ```ts
 import SSHClient from 'react-native-russh';
@@ -57,6 +57,19 @@ const output = await ssh.execute('uname -a');
 const files = await ssh.sftpLs('/var/log');
 ssh.disconnect();
 ```
+
+## Errors
+
+Native failures are JavaScript `Error` objects with stable `code`, `message`,
+and optional `details` fields. UI text should be selected from `code`; `message`
+is intended for logs and diagnostics.
+
+Host-key failures use `HOST_KEY_UNKNOWN` or `HOST_KEY_CHANGED`. Their `details`
+contain `host`, `port`, `keyType`, `fingerprint`, and `publicKey`, so consumers
+never need to parse a Russh message or a JSON suffix. Other transport codes
+include `AUTHENTICATION_FAILED`, `CONNECTION_REFUSED`, `CONNECTION_TIMEOUT`,
+`HOST_UNREACHABLE`, `CHANNEL_UNAVAILABLE`, `SESSION_CLOSED`,
+`INVALID_PRIVATE_KEY`, and `SFTP_FAILURE`.
 
 ## Remote Unix sockets
 

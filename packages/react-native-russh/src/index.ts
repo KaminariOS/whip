@@ -15,13 +15,19 @@ import {
 export * from './generated-entry';
 
 type Params = Record<string, unknown>;
-type Callback = (error?: string | null, value?: unknown) => void;
+type Callback = (error?: Error | string | null, value?: unknown) => void;
 type Listener = (event: Record<string, unknown>) => void;
+
+type RustError = {
+  code: string;
+  message: string;
+  details?: unknown;
+};
 
 type RustResponse = {
   ok: boolean;
   value?: unknown;
-  error?: string;
+  error?: RustError | string;
 };
 
 const listeners = new Map<string, Set<Listener>>();
@@ -34,6 +40,26 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function decodeError(value: unknown, fallback = 'Rust SSH operation failed'): Error {
+  let error = value;
+  if (typeof error === 'string' && error.startsWith('{')) {
+    try {
+      error = JSON.parse(error);
+    } catch {
+      // Older native builds return a plain error string.
+    }
+  }
+  if (error && typeof error === 'object') {
+    const payload = error as Partial<RustError>;
+    const result = new Error(typeof payload.message === 'string' ? payload.message : fallback);
+    result.name = 'SshError';
+    if (typeof payload.code === 'string') Object.assign(result, { code: payload.code });
+    if ('details' in payload) Object.assign(result, { details: payload.details });
+    return result;
+  }
+  return new Error(typeof error === 'string' && error ? error : fallback);
+}
+
 function decodeResponse(responseJson: string): unknown {
   let response: RustResponse;
   try {
@@ -42,7 +68,7 @@ function decodeResponse(responseJson: string): unknown {
     throw new Error('Rust SSH returned invalid JSON');
   }
   if (!response.ok) {
-    throw new Error(response.error || 'Rust SSH operation failed');
+    throw decodeError(response.error);
   }
   return response.value;
 }
@@ -69,7 +95,7 @@ function finish(promise: Promise<unknown>, callback: Callback, select?: (value: 
     const selected = select ? select(value) : value;
     if (selected === undefined || selected === null) callback();
     else callback(null, selected);
-  }).catch(error => callback(errorMessage(error)));
+  }).catch(error => callback(error instanceof Error ? error : decodeError(error)));
 }
 
 function finishSync(operation: string, params: Params, callback: Callback): void {
@@ -78,7 +104,7 @@ function finishSync(operation: string, params: Params, callback: Callback): void
     if (value === undefined || value === null) callback();
     else callback(null, value);
   } catch (error) {
-    callback(errorMessage(error));
+    callback(error instanceof Error ? error : decodeError(error));
   }
 }
 
@@ -152,10 +178,10 @@ function finishFast(operation: string, invoke: () => string | undefined, callbac
   try {
     const error = invoke();
     if (error) console.error(`[ReactNativeRussh] ${operation} failed: ${error}`);
-    callback(error || undefined);
+    callback(error ? decodeError(error) : undefined);
   } catch (error) {
     console.error(`[ReactNativeRussh] ${operation} failed: ${errorMessage(error)}`);
-    callback(errorMessage(error));
+    callback(error instanceof Error ? error : decodeError(error));
   }
 }
 

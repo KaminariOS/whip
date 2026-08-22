@@ -89,6 +89,8 @@ describe('SSH control reconnects', () => {
   });
 
   test.each([
+    { code: 'CHANNEL_UNAVAILABLE', message: 'channel not open' },
+    { code: 'SESSION_CLOSED', message: 'session closed' },
     'channel not open',
     'channel is not opened.',
     'Failed to open channel (ConnectFailed)',

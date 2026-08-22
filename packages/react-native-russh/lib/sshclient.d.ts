@@ -9,7 +9,36 @@ export declare enum PtyType {
     ANSI = "ansi",
     XTERM = "xterm"
 }
-type CBError = any;
+export type SshErrorCode =
+    | 'AUTHENTICATION_FAILED'
+    | 'HOST_KEY_UNKNOWN'
+    | 'HOST_KEY_CHANGED'
+    | 'CONNECTION_REFUSED'
+    | 'CONNECTION_TIMEOUT'
+    | 'HOST_UNREACHABLE'
+    | 'CHANNEL_UNAVAILABLE'
+    | 'SESSION_CLOSED'
+    | 'INVALID_PRIVATE_KEY'
+    | 'SFTP_FAILURE'
+    | 'INVALID_REQUEST'
+    | 'UNKNOWN';
+export interface HostKeyChallenge {
+    host: string;
+    port: number;
+    keyType: string;
+    fingerprint: string;
+    publicKey: string;
+}
+export interface SshError extends Error {
+    name: 'SshError';
+    code: SshErrorCode;
+    details?: unknown;
+}
+export interface HostKeySshError extends SshError {
+    code: 'HOST_KEY_UNKNOWN' | 'HOST_KEY_CHANGED';
+    details: HostKeyChallenge;
+}
+type CBError = SshError | Error | string | null | undefined;
 /**
  * Represents a callback function with an optional response.
  * @template T The type of the response.

@@ -63,6 +63,26 @@ export function connectionErrorContext(error: unknown): Record<string, string> {
 }
 
 export function classifyConnectionError(error: unknown): ConnectionErrorKind {
+  switch (errorCode(error)) {
+    case 'AUTHENTICATION_FAILED':
+      return 'authentication';
+    case 'HOST_KEY_UNKNOWN':
+    case 'HOST_KEY_CHANGED':
+      return 'hostKey';
+    case 'INVALID_PRIVATE_KEY':
+      return 'invalidKey';
+    case 'CONNECTION_REFUSED':
+      return 'connectionRefused';
+    case 'CONNECTION_TIMEOUT':
+      return 'timeout';
+    case 'HOST_UNREACHABLE':
+    case 'CHANNEL_UNAVAILABLE':
+    case 'SESSION_CLOSED':
+      return 'unreachable';
+  }
+
+  // Preserve friendly handling for product-layer and older native errors that
+  // do not originate from the structured Rust transport boundary.
   const message = errorText(error).toLowerCase();
 
   if (/herdr protocol mismatch/.test(message)) return 'incompatibleProtocol';

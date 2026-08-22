@@ -135,17 +135,6 @@ impl HostKeyChallenge {
             public_key,
         }
     }
-
-    pub fn error_message(&self, changed: bool) -> String {
-        let prefix = if changed {
-            "E_HOST_KEY_CHANGED:"
-        } else {
-            "E_HOST_KEY_UNKNOWN:"
-        };
-        let details = serde_json::to_string(self)
-            .unwrap_or_else(|_| r#"{"error":"could not serialize host-key details"}"#.to_owned());
-        format!("{prefix}{details}")
-    }
 }
 
 #[cfg(test)]

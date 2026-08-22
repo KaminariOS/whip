@@ -1,5 +1,6 @@
 import SSHClient, { PtyType } from 'react-native-whip-ssh';
 import { Directory, File, Paths } from 'expo-file-system';
+import { errorCode } from '../lib/connectionErrors';
 
 export const IOS_SSH_E2E_CONFIG_FILE = 'whip-ios-ssh-e2e-config.json';
 export const IOS_SSH_E2E_RESULT_FILE = 'whip-ios-ssh-e2e-result.json';
@@ -62,7 +63,7 @@ export async function runIosSshE2E(
           config.username,
           config.privateKey,
         ),
-        'E_HOST_KEY_UNKNOWN:',
+        'HOST_KEY_UNKNOWN',
       );
     });
 
@@ -75,7 +76,7 @@ export async function runIosSshE2E(
           config.username,
           config.privateKey,
         ),
-        'E_HOST_KEY_CHANGED:',
+        'HOST_KEY_CHANGED',
       );
     });
 
@@ -241,7 +242,7 @@ async function expectConnectionFailure(connect: () => Promise<SSHClient>, expect
   try {
     client = await connect();
   } catch (error) {
-    if (errorMessage(error).includes(expected)) return;
+    if (errorCode(error) === expected || errorMessage(error).includes(expected)) return;
     throw error;
   }
   client.disconnect();

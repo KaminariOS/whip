@@ -127,9 +127,17 @@ test('repairs a previously stored full OpenSSH public key when it is trusted aga
 
 test('parses an unknown-key challenge returned by the native handshake', () => {
   expect(
-    parseUnknownHostKey(
-      'E_HOST_KEY_UNKNOWN:{"host":"Savior","port":22,"keyType":"ssh-ed25519","publicKey":"AAAA","fingerprint":"SHA256:key"}',
-    ),
+    parseUnknownHostKey({
+      code: 'HOST_KEY_UNKNOWN',
+      message: 'unknown SSH host key',
+      details: {
+        host: 'Savior',
+        port: 22,
+        keyType: 'ssh-ed25519',
+        publicKey: 'AAAA',
+        fingerprint: 'SHA256:key',
+      },
+    }),
   ).toEqual({
     host: 'savior',
     port: 22,
@@ -139,7 +147,10 @@ test('parses an unknown-key challenge returned by the native handshake', () => {
   });
   expect(parseUnknownHostKey('HostKey has been changed')).toBeNull();
   expect(
-    hostKeyErrorHost('E_HOST_KEY_CHANGED:{"host":"Jump.Example","port":2222}'),
+    hostKeyErrorHost({
+      code: 'HOST_KEY_CHANGED',
+      details: { host: 'Jump.Example', port: 2222 },
+    }),
   ).toBe('[jump.example]:2222');
 });
 

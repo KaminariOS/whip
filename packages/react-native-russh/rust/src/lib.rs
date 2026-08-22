@@ -80,7 +80,13 @@ enum TransportError {
     #[error("authentication failed")]
     AuthenticationFailed,
     #[error("{0}")]
-    HostKey(String),
+    ChannelUnavailable(String),
+    #[error("{0}")]
+    HostUnreachable(String),
+    #[error("unknown SSH host key")]
+    HostKeyUnknown(known_hosts::HostKeyChallenge),
+    #[error("SSH host key changed")]
+    HostKeyChanged(known_hosts::HostKeyChallenge),
     #[error("{0}")]
     Ssh(#[from] russh::Error),
     #[error("{0}")]
@@ -91,6 +97,119 @@ enum TransportError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Sftp(#[from] russh_sftp::client::error::Error),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum SshErrorCode {
+    AuthenticationFailed,
+    HostKeyUnknown,
+    HostKeyChanged,
+    ConnectionRefused,
+    ConnectionTimeout,
+    HostUnreachable,
+    ChannelUnavailable,
+    SessionClosed,
+    InvalidPrivateKey,
+    SftpFailure,
+    InvalidRequest,
+    Unknown,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SshError {
+    code: SshErrorCode,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<Value>,
+}
+
+impl SshError {
+    fn new(code: SshErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    fn unknown(message: impl Into<String>) -> Self {
+        Self::new(SshErrorCode::Unknown, message)
+    }
+}
+
+impl From<TransportError> for SshError {
+    fn from(error: TransportError) -> Self {
+        let code = transport_error_code(&error);
+        let details = match &error {
+            TransportError::HostKeyUnknown(challenge)
+            | TransportError::HostKeyChanged(challenge) => Some(json!(challenge)),
+            _ => None,
+        };
+        Self {
+            code,
+            message: error.to_string(),
+            details,
+        }
+    }
+}
+
+fn transport_error_code(error: &TransportError) -> SshErrorCode {
+    match error {
+        TransportError::InvalidRequest(_) => SshErrorCode::InvalidRequest,
+        TransportError::UnknownClient => SshErrorCode::SessionClosed,
+        TransportError::AuthenticationFailed => SshErrorCode::AuthenticationFailed,
+        TransportError::ChannelUnavailable(_) => SshErrorCode::ChannelUnavailable,
+        TransportError::HostUnreachable(_) => SshErrorCode::HostUnreachable,
+        TransportError::HostKeyUnknown(_) => SshErrorCode::HostKeyUnknown,
+        TransportError::HostKeyChanged(_) => SshErrorCode::HostKeyChanged,
+        TransportError::Ssh(error) => match error {
+            russh::Error::WrongChannel | russh::Error::ChannelOpenFailure(_) => {
+                SshErrorCode::ChannelUnavailable
+            }
+            russh::Error::Disconnect
+            | russh::Error::HUP
+            | russh::Error::SendError
+            | russh::Error::RecvError => SshErrorCode::SessionClosed,
+            russh::Error::ConnectionTimeout
+            | russh::Error::KeepaliveTimeout
+            | russh::Error::InactivityTimeout
+            | russh::Error::Elapsed(_) => SshErrorCode::ConnectionTimeout,
+            russh::Error::IO(error) => io_error_code(error),
+            _ => SshErrorCode::Unknown,
+        },
+        TransportError::Key(_) | TransportError::SshKey(_) => SshErrorCode::InvalidPrivateKey,
+        TransportError::Io(error) => io_error_code(error),
+        TransportError::Sftp(_) => SshErrorCode::SftpFailure,
+    }
+}
+
+fn io_error_code(error: &std::io::Error) -> SshErrorCode {
+    match error.kind() {
+        std::io::ErrorKind::ConnectionRefused => SshErrorCode::ConnectionRefused,
+        std::io::ErrorKind::TimedOut => SshErrorCode::ConnectionTimeout,
+        std::io::ErrorKind::NotConnected
+        | std::io::ErrorKind::ConnectionReset
+        | std::io::ErrorKind::ConnectionAborted
+        | std::io::ErrorKind::BrokenPipe
+        | std::io::ErrorKind::UnexpectedEof
+        | std::io::ErrorKind::AddrNotAvailable
+        | std::io::ErrorKind::NetworkUnreachable
+        | std::io::ErrorKind::HostUnreachable => SshErrorCode::HostUnreachable,
+        _ => SshErrorCode::Unknown,
+    }
+}
+
+fn classify_direct_connect_error(error: TransportError) -> TransportError {
+    match error {
+        TransportError::Ssh(russh::Error::IO(source))
+            if io_error_code(&source) == SshErrorCode::Unknown =>
+        {
+            TransportError::HostUnreachable(source.to_string())
+        }
+        error => error,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,7 +226,7 @@ struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     value: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
+    error: Option<SshError>,
 }
 
 impl Response {
@@ -119,11 +238,11 @@ impl Response {
         }
     }
 
-    fn failure(error: impl ToString) -> Self {
+    fn failure(error: impl Into<SshError>) -> Self {
         Self {
             ok: false,
             value: None,
-            error: Some(error.to_string()),
+            error: Some(error.into()),
         }
     }
 }
@@ -215,12 +334,8 @@ impl client::Handler for RusshHandler {
             .check(&self.host, self.port, server_public_key);
         match decision {
             HostKeyDecision::Trusted => Ok(true),
-            HostKeyDecision::Unknown(challenge) => {
-                Err(TransportError::HostKey(challenge.error_message(false)))
-            }
-            HostKeyDecision::Changed(challenge) => {
-                Err(TransportError::HostKey(challenge.error_message(true)))
-            }
+            HostKeyDecision::Unknown(challenge) => Err(TransportError::HostKeyUnknown(challenge)),
+            HostKeyDecision::Changed(challenge) => Err(TransportError::HostKeyChanged(challenge)),
         }
     }
 
@@ -446,7 +561,9 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
             .await?;
         client::connect_stream(config, channel.into_stream(), handler).await?
     } else {
-        client::connect(config, (host.as_str(), port), handler).await?
+        client::connect(config, (host.as_str(), port), handler)
+            .await
+            .map_err(classify_direct_connect_error)?
     };
 
     let mut forwarding_key = None;
@@ -704,7 +821,7 @@ fn shell_command_for_key(key: &str, command: ShellCommand) -> Result<(), Transpo
         .cloned()
         .ok_or(TransportError::UnknownClient)?;
     sender.try_send(command).map_err(|error| {
-        TransportError::InvalidRequest(format!("shell control queue rejected input: {error}"))
+        TransportError::ChannelUnavailable(format!("shell control queue rejected input: {error}"))
     })?;
     Ok(())
 }
@@ -1263,12 +1380,12 @@ fn unix_socket_channel_command_for_key(
         .get(&(key.to_owned(), channel_id.to_owned()))
         .cloned()
         .ok_or_else(|| {
-            TransportError::InvalidRequest(format!(
+            TransportError::ChannelUnavailable(format!(
                 "Unix-socket channel '{channel_id}' is not open"
             ))
         })?;
     handle.sender.try_send(command).map_err(|error| {
-        TransportError::InvalidRequest(format!(
+        TransportError::ChannelUnavailable(format!(
             "Unix-socket channel '{channel_id}' rejected input: {error}"
         ))
     })?;
@@ -1286,7 +1403,7 @@ fn write_unix_socket_channel_for_key(
         .get(&(key.to_owned(), channel_id.to_owned()))
         .cloned()
         .ok_or_else(|| {
-            TransportError::InvalidRequest(format!(
+            TransportError::ChannelUnavailable(format!(
                 "Unix-socket channel '{channel_id}' is not open"
             ))
         })?;
@@ -1312,7 +1429,7 @@ fn write_unix_socket_channel_for_key(
         .sender
         .try_send(StreamCommand::Write(data))
         .map_err(|error| {
-            TransportError::InvalidRequest(format!(
+            TransportError::ChannelUnavailable(format!(
                 "Unix-socket channel '{channel_id}' rejected input: {error}"
             ))
         })
@@ -1775,10 +1892,10 @@ fn exec_channel_command_for_key(
         .get(&(key.to_owned(), channel_id.to_owned()))
         .cloned()
         .ok_or_else(|| {
-            TransportError::InvalidRequest(format!("exec channel '{channel_id}' is not open"))
+            TransportError::ChannelUnavailable(format!("exec channel '{channel_id}' is not open"))
         })?;
     sender.try_send(command).map_err(|error| {
-        TransportError::InvalidRequest(format!(
+        TransportError::ChannelUnavailable(format!(
             "exec channel '{channel_id}' rejected input: {error}"
         ))
     })
@@ -2002,7 +2119,9 @@ async fn dispatch(request: Request) -> Result<Value, TransportError> {
 
 fn serialize_response(response: &Response) -> String {
     serde_json::to_string(response).unwrap_or_else(|error| {
-        format!(r#"{{"ok":false,"error":"response serialization failed: {error}"}}"#)
+        format!(
+            r#"{{"ok":false,"error":{{"code":"UNKNOWN","message":"response serialization failed: {error}"}}}}"#
+        )
     })
 }
 
@@ -2012,7 +2131,10 @@ async fn dispatch_json(input: &str) -> String {
             Ok(value) => Response::success(value),
             Err(error) => Response::failure(error),
         },
-        Err(error) => Response::failure(format!("invalid request JSON: {error}")),
+        Err(error) => Response::failure(SshError::new(
+            SshErrorCode::InvalidRequest,
+            format!("invalid request JSON: {error}"),
+        )),
     };
     serialize_response(&response)
 }
@@ -2020,16 +2142,18 @@ async fn dispatch_json(input: &str) -> String {
 async fn process_json_async(input: &str) -> String {
     match AssertUnwindSafe(dispatch_json(input)).catch_unwind().await {
         Ok(response) => response,
-        Err(_) => serialize_response(&Response::failure("Rust SSH operation panicked")),
+        Err(_) => serialize_response(&Response::failure(SshError::unknown(
+            "Rust SSH operation panicked",
+        ))),
     }
 }
 
 fn process_json(input: &str) -> String {
     match runtime() {
         Ok(runtime) => runtime.block_on(process_json_async(input)),
-        Err(error) => serialize_response(&Response::failure(format!(
+        Err(error) => serialize_response(&Response::failure(SshError::unknown(format!(
             "failed to initialize SSH runtime: {error}"
-        ))),
+        )))),
     }
 }
 
@@ -2041,13 +2165,19 @@ async fn process_json_for_lifecycle(input: Option<String>, lifecycle_epoch: u64)
     });
     let mut response = match input {
         Some(input) => process_json_async(&input).await,
-        None => r#"{"ok":false,"error":"request pointer was null"}"#.to_owned(),
+        None => serialize_response(&Response::failure(SshError::new(
+            SshErrorCode::InvalidRequest,
+            "request pointer was null",
+        ))),
     };
     if LIFECYCLE_EPOCH.load(Ordering::Acquire) != lifecycle_epoch {
         if let Some(key) = request_key {
             disconnect_key(key).await;
         }
-        response = r#"{"ok":false,"error":"Rust SSH bridge was invalidated"}"#.to_owned();
+        response = serialize_response(&Response::failure(SshError::new(
+            SshErrorCode::SessionClosed,
+            "Rust SSH bridge was invalidated",
+        )));
     }
     response
 }
@@ -2066,21 +2196,24 @@ pub async fn call_async(request_json: String) -> String {
             lifecycle_epoch,
         )),
         Err(error) => {
-            return serialize_response(&Response::failure(format!(
+            return serialize_response(&Response::failure(SshError::unknown(format!(
                 "failed to initialize SSH runtime: {error}"
-            )));
+            ))));
         }
     };
     match task.await {
         Ok(response) => response,
-        Err(error) => serialize_response(&Response::failure(format!(
+        Err(error) => serialize_response(&Response::failure(SshError::unknown(format!(
             "SSH runtime task failed: {error}"
-        ))),
+        )))),
     }
 }
 
 fn fast_path_result(result: Result<(), TransportError>) -> Option<String> {
-    result.err().map(|error| error.to_string())
+    result
+        .err()
+        .map(SshError::from)
+        .and_then(|error| serde_json::to_string(&error).ok())
 }
 
 #[uniffi::export]
@@ -2189,9 +2322,9 @@ pub unsafe extern "C" fn react_native_russh_call_async(
     let runtime = match runtime() {
         Ok(runtime) => runtime,
         Err(error) => {
-            let response = serialize_response(&Response::failure(format!(
+            let response = serialize_response(&Response::failure(SshError::unknown(format!(
                 "failed to initialize SSH runtime: {error}"
-            )));
+            ))));
             if let Ok(response) = CString::new(response) {
                 unsafe { callback(request_id, response.as_ptr()) };
             }
@@ -2263,8 +2396,9 @@ mod tests {
     fn invalid_json_is_a_structured_failure() {
         let result: Value = serde_json::from_str(&process_json("{")).unwrap();
         assert_eq!(result["ok"], false);
+        assert_eq!(result["error"]["code"], "INVALID_REQUEST");
         assert!(
-            result["error"]
+            result["error"]["message"]
                 .as_str()
                 .unwrap()
                 .contains("invalid request JSON")
@@ -2276,11 +2410,67 @@ mod tests {
         let result: Value =
             serde_json::from_str(&process_json(r#"{"operation":"connect"}"#)).unwrap();
         assert_eq!(result["ok"], false);
+        assert_eq!(result["error"]["code"], "INVALID_REQUEST");
         assert!(
-            result["error"]
+            result["error"]["message"]
                 .as_str()
                 .unwrap()
                 .contains("missing string parameter 'key'")
+        );
+    }
+
+    #[test]
+    fn transport_errors_have_stable_codes() {
+        assert_eq!(
+            transport_error_code(&TransportError::AuthenticationFailed),
+            SshErrorCode::AuthenticationFailed,
+        );
+        assert_eq!(
+            transport_error_code(&TransportError::Io(std::io::Error::from(
+                std::io::ErrorKind::ConnectionRefused,
+            ))),
+            SshErrorCode::ConnectionRefused,
+        );
+        assert_eq!(
+            transport_error_code(&TransportError::Ssh(russh::Error::WrongChannel)),
+            SshErrorCode::ChannelUnavailable,
+        );
+        assert!(matches!(
+            classify_direct_connect_error(TransportError::Ssh(russh::Error::IO(
+                std::io::Error::other("host lookup failed"),
+            ))),
+            TransportError::HostUnreachable(_),
+        ));
+    }
+
+    #[test]
+    fn host_key_errors_carry_structured_challenges() {
+        let mut rng =
+            russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
+        let private_key =
+            russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap();
+        let challenge =
+            match KnownHosts::default().check("Example.COM", 2222, private_key.public_key()) {
+                HostKeyDecision::Unknown(challenge) => challenge,
+                _ => panic!("empty known_hosts should reject the key as unknown"),
+            };
+        let error = serde_json::to_value(SshError::from(TransportError::HostKeyUnknown(challenge)))
+            .unwrap();
+        assert_eq!(error["code"], "HOST_KEY_UNKNOWN");
+        assert_eq!(error["details"]["host"], "Example.COM");
+        assert_eq!(error["details"]["port"], 2222);
+        assert_eq!(error["details"]["keyType"], "ssh-ed25519");
+        assert!(
+            error["details"]["fingerprint"]
+                .as_str()
+                .unwrap()
+                .starts_with("SHA256:")
+        );
+        assert!(
+            error["details"]["publicKey"]
+                .as_str()
+                .unwrap()
+                .starts_with("ssh-ed25519 ")
         );
     }
 
@@ -2333,19 +2523,25 @@ mod tests {
 
     #[test]
     fn typed_fast_paths_report_missing_channels_without_json() {
-        assert_eq!(
-            write_shell_input("missing-shell".to_owned(), "x".to_owned()).as_deref(),
-            Some("unknown client")
-        );
+        let shell_error: Value = serde_json::from_str(
+            &write_shell_input("missing-shell".to_owned(), "x".to_owned()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(shell_error["code"], "SESSION_CLOSED");
         assert!(
             write_unix_socket_channel(
                 "missing-client".to_owned(),
                 "missing-channel".to_owned(),
                 vec![1, 2, 3],
             )
-            .is_some_and(
-                |error| error.contains("Unix-socket channel 'missing-channel' is not open")
-            )
+            .is_some_and(|error| {
+                let error: Value = serde_json::from_str(&error).unwrap();
+                error["code"] == "CHANNEL_UNAVAILABLE"
+                    && error["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("Unix-socket channel 'missing-channel' is not open")
+            })
         );
         assert!(
             write_length_prefixed_unix_socket_channel(
@@ -2353,9 +2549,14 @@ mod tests {
                 "missing-channel".to_owned(),
                 vec![1, 2, 3],
             )
-            .is_some_and(
-                |error| error.contains("Unix-socket channel 'missing-channel' is not open")
-            )
+            .is_some_and(|error| {
+                let error: Value = serde_json::from_str(&error).unwrap();
+                error["code"] == "CHANNEL_UNAVAILABLE"
+                    && error["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("Unix-socket channel 'missing-channel' is not open")
+            })
         );
         assert!(
             write_exec_channel(
@@ -2363,7 +2564,14 @@ mod tests {
                 "missing-channel".to_owned(),
                 vec![1, 2, 3],
             )
-            .is_some_and(|error| error.contains("exec channel 'missing-channel' is not open"))
+            .is_some_and(|error| {
+                let error: Value = serde_json::from_str(&error).unwrap();
+                error["code"] == "CHANNEL_UNAVAILABLE"
+                    && error["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("exec channel 'missing-channel' is not open")
+            })
         );
     }
 

@@ -5,6 +5,7 @@ import { normalizeRemotePath, remoteEntryName, sortRemoteEntries } from '../lib/
 import { uniqueRemoteAttachmentName } from '../lib/attachmentPaste';
 import { createSecureId } from '../lib/secureId';
 import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
+import { errorCode } from '../lib/connectionErrors';
 import { apiEvent, apiErrorMessage, apiRequestLine, eventsSubscribeRequest, HerdrApiBridgeDecoder, type HerdrApiEvent, type HerdrApiMessage, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
 import { parseRemoteGitDiff, parseRemoteGitRepository, parseRemoteGitStatus, remoteGitDiffCommand, remoteGitRepositoryCommand, remoteGitStatusCommand, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '../lib/remoteGit';
@@ -40,6 +41,8 @@ export function clearHerdrSocketPathCache(): void {
 }
 
 export function isUnavailableSshChannel(error: unknown): boolean {
+  const code = errorCode(error);
+  if (code === 'CHANNEL_UNAVAILABLE' || code === 'SESSION_CLOSED') return true;
   const message = error instanceof Error ? error.message : String(error);
   return /channel (?:is )?not open(?:ed)?|failed to open channel \(connectfailed\)|session is down|socket is not established/i.test(message);
 }
