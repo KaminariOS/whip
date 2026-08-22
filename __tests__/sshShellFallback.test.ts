@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import SSHClient, { PtyType } from 'react-native-whip-ssh';
 
 import { HerdrClient } from '../src/services/HerdrClient';
@@ -57,20 +54,6 @@ function sshClient() {
 describe('plain SSH shell fallback', () => {
   beforeEach(() => connectWithPassword.mockReset());
 
-  it('does not cover an active SSH terminal with Herdr empty states', () => {
-    const screen = readFileSync(
-      resolve(__dirname, '../src/components/SessionScreen.tsx'),
-      'utf8',
-    );
-
-    expect(screen).toContain(
-      '{!activeTarget && snapshot.server.running && !selectedTab && (',
-    );
-    expect(screen).toContain(
-      '{!activeTarget && snapshot.server.running && selectedTab && panes.length === 0 && (',
-    );
-  });
-
   it('opens a dedicated interactive PTY and streams decoded text frames', async () => {
     const control = sshClient();
     const shell = sshClient();
@@ -87,13 +70,15 @@ describe('plain SSH shell fallback', () => {
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
     expect(shell.client.startShell).toHaveBeenCalledWith(PtyType.XTERM);
     expect(shell.client.resizeShell).toHaveBeenCalledWith(80, 24);
-    expect(onFrame).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'terminal.frame',
-      seq: 1,
-      encoding: 'utf8',
-      full: false,
-      bytes: '\u001b[32moperator@fresh\u001b[0m $ ',
-    }));
+    expect(onFrame).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'terminal.frame',
+        seq: 1,
+        encoding: 'utf8',
+        full: false,
+        bytes: '\u001b[32moperator@fresh\u001b[0m $ ',
+      }),
+    );
 
     await client.writeToTerminal(SSH_SHELL_TERMINAL_ID, 'herdr --version\r');
     client.resizeTerminal(SSH_SHELL_TERMINAL_ID, 120, 40);

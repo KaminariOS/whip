@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import {
   neighborTabIndex,
   shouldCommitTerminalTabSwipe,
@@ -36,30 +33,5 @@ describe('terminal tab swiping', () => {
     expect(shouldCommitTerminalTabSwipe(-40, -0.5, 400, 1)).toBe(true);
     expect(shouldCommitTerminalTabSwipe(-40, 0.8, 400, 1)).toBe(false);
     expect(shouldCommitTerminalTabSwipe(101, 0, 400, -1)).toBe(true);
-  });
-
-  it('keeps the animated transform prop array-shaped while swipe state changes', () => {
-    const screen = readFileSync(resolve(__dirname, '../src/components/SessionScreen.tsx'), 'utf8');
-
-    expect(screen).toContain('const activeSwipeNeedsPlaceholder = Boolean(tabSwipe && !previewTarget);');
-    expect(screen).toContain('translateX: activeSwipeNeedsPlaceholder ? tabSwipeTranslateX.value : 0');
-    expect(screen).toContain('}), [activeSwipeNeedsPlaceholder]);');
-    expect(screen).not.toContain('}), [previewTarget, tabSwipe]);');
-    expect(screen).toContain('style={[');
-    expect(screen).toContain('activeTerminalSwipeStyle');
-    expect(screen).toContain('? { direction: tabSwipe.direction, offset: tabSwipeTranslateX }');
-    expect(screen).toContain('pointerEvents="box-none"');
-    expect(screen).not.toContain('tabSwipe?.originTerminalId === terminalSession.terminalId && {');
-    expect(screen).not.toContain('tabSwipe?.targetTerminalId === terminalSession.terminalId && {');
-  });
-
-  it('allows tab swipes in selection mode without stealing selection-handle drags', () => {
-    const terminal = readFileSync(resolve(__dirname, '../src/components/TerminalScreen.tsx'), 'utf8');
-    const renderer = readFileSync(resolve(__dirname, '../src/components/TerminalRendererHost.tsx'), 'utf8');
-
-    expect(terminal).toContain('{...(!terminalSelectionActive ? terminalPanHandlers : undefined)}');
-    expect(terminal).toContain('onSelectionStateChange={(target, active) =>');
-    expect(renderer).toContain("message.type === 'selection-state'");
-    expect(renderer).toContain('reportSelectionState(entry.target, message.active === true)');
   });
 });

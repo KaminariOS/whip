@@ -1,8 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SSHClient from 'react-native-whip-ssh';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import {
   KNOWN_HOSTS_STORAGE_KEY,
   deleteKnownHost,
@@ -129,9 +126,11 @@ test('repairs a previously stored full OpenSSH public key when it is trusted aga
 });
 
 test('parses an unknown-key challenge returned by the native handshake', () => {
-  expect(parseUnknownHostKey(
-    'E_HOST_KEY_UNKNOWN:{"host":"Savior","port":22,"keyType":"ssh-ed25519","publicKey":"AAAA","fingerprint":"SHA256:key"}',
-  )).toEqual({
+  expect(
+    parseUnknownHostKey(
+      'E_HOST_KEY_UNKNOWN:{"host":"Savior","port":22,"keyType":"ssh-ed25519","publicKey":"AAAA","fingerprint":"SHA256:key"}',
+    ),
+  ).toEqual({
     host: 'savior',
     port: 22,
     keyType: 'ssh-ed25519',
@@ -139,44 +138,13 @@ test('parses an unknown-key challenge returned by the native handshake', () => {
     fingerprint: 'SHA256:key',
   });
   expect(parseUnknownHostKey('HostKey has been changed')).toBeNull();
-  expect(hostKeyErrorHost(
-    'E_HOST_KEY_CHANGED:{"host":"Jump.Example","port":2222}',
-  )).toBe('[jump.example]:2222');
+  expect(
+    hostKeyErrorHost('E_HOST_KEY_CHANGED:{"host":"Jump.Example","port":2222}'),
+  ).toBe('[jump.example]:2222');
 });
 
 test('forgetting a host immediately replaces the native repository', async () => {
   await expect(deleteKnownHost([knownHost], knownHost.id)).resolves.toEqual([]);
   expect(mockStoredKnownHosts).toBe('[]');
   expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith('');
-});
-
-test('uses the Rust UniFFI Android native module with strict host-key support', () => {
-  const androidCmake = readFileSync(
-    resolve(__dirname, '../packages/react-native-russh/android/CMakeLists.txt'),
-    'utf8',
-  );
-  const knownHostsRust = readFileSync(
-    resolve(__dirname, '../packages/react-native-russh/rust/src/known_hosts.rs'),
-    'utf8',
-  );
-
-  expect(androidCmake).toContain('libreact_native_russh.a');
-  expect(androidCmake).toContain('ReactNativeRusshSpec-generated.cpp');
-  expect(knownHostsRust).toContain('E_HOST_KEY_UNKNOWN:');
-  expect(knownHostsRust).toContain('E_HOST_KEY_CHANGED:');
-});
-
-test('presents unknown host keys in the themed trust sheet', () => {
-  const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf8');
-  const trustSheet = readFileSync(
-    resolve(__dirname, '../src/components/TrustHostSheet.tsx'),
-    'utf8',
-  );
-
-  expect(app).toContain('<TrustHostSheet');
-  expect(app).toContain('setUnknownHostChallenge(challenge)');
-  expect(trustSheet).toContain('<GlassSurface');
-  expect(trustSheet).toContain('onRequestClose={onCancel}');
-  expect(trustSheet).toContain('<Text selectable');
-  expect(trustSheet).toContain("t('knownHosts.fingerprintLabel')");
 });

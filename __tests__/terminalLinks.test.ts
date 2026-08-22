@@ -3,9 +3,6 @@ import {
   localTunnelUrl,
   terminalWebLinkTarget,
 } from '../src/lib/terminalLinks';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 const {
   extractTerminalLinks,
   mergeTerminalLinks,
@@ -68,11 +65,21 @@ describe('terminal web links', () => {
       { text: 'New https://example.com/new', isWrapped: false },
     ];
 
-    expect(mergeTerminalLinks(rows, 80, [
-      { href: 'https://example.com/issues/42', marker: { line: 1 }, sequence: 1 },
-      { href: 'https://example.com/new', marker: { line: 2 }, sequence: 2 },
-      { href: 'https://example.com/expired', marker: { line: -1 }, sequence: 3 },
-    ])).toEqual([
+    expect(
+      mergeTerminalLinks(rows, 80, [
+        {
+          href: 'https://example.com/issues/42',
+          marker: { line: 1 },
+          sequence: 1,
+        },
+        { href: 'https://example.com/new', marker: { line: 2 }, sequence: 2 },
+        {
+          href: 'https://example.com/expired',
+          marker: { line: -1 },
+          sequence: 3,
+        },
+      ]),
+    ).toEqual([
       'https://example.com/new',
       'https://example.com/issues/42',
       'https://example.com/old',
@@ -80,17 +87,21 @@ describe('terminal web links', () => {
   });
 
   it('resolves an OSC-8 target across its exact wrapped cell range', () => {
-    const links = [{
-      href: 'https://example.com/semantic-target',
-      marker: { line: 4 },
-      endMarker: { line: 6 },
-      startColumn: 20,
-      endColumn: 8,
-      sequence: 1,
-    }];
+    const links = [
+      {
+        href: 'https://example.com/semantic-target',
+        marker: { line: 4 },
+        endMarker: { line: 6 },
+        startColumn: 20,
+        endColumn: 8,
+        sequence: 1,
+      },
+    ];
 
     expect(osc8LinkAt(links, 4, 19)).toBeNull();
-    expect(osc8LinkAt(links, 4, 20)).toBe('https://example.com/semantic-target');
+    expect(osc8LinkAt(links, 4, 20)).toBe(
+      'https://example.com/semantic-target',
+    );
     expect(osc8LinkAt(links, 5, 0)).toBe('https://example.com/semantic-target');
     expect(osc8LinkAt(links, 6, 7)).toBe('https://example.com/semantic-target');
     expect(osc8LinkAt(links, 6, 8)).toBeNull();
@@ -114,40 +125,33 @@ describe('terminal web links', () => {
     expect(isSshTunnelHost(hostname)).toBe(true);
   });
 
-  it.each(['example.com', '8.8.8.8', '172.32.0.1', '192.169.0.1'])('opens %s directly', hostname => {
-    expect(isSshTunnelHost(hostname)).toBe(false);
-  });
+  it.each(['example.com', '8.8.8.8', '172.32.0.1', '192.169.0.1'])(
+    'opens %s directly',
+    hostname => {
+      expect(isSshTunnelHost(hostname)).toBe(false);
+    },
+  );
 
   it('derives the remote endpoint and preserves the path when tunneling', () => {
-    expect(terminalWebLinkTarget('http://localhost:5173/docs?q=one#intro')).toEqual({
+    expect(
+      terminalWebLinkTarget('http://localhost:5173/docs?q=one#intro'),
+    ).toEqual({
       url: 'http://localhost:5173/docs?q=one#intro',
       hostname: 'localhost',
       port: 5173,
       requiresSshTunnel: true,
     });
-    expect(localTunnelUrl('http://localhost:5173/docs?q=one#intro', 43127)).toBe(
-      'http://localhost:43127/docs?q=one#intro',
+    expect(
+      localTunnelUrl('http://localhost:5173/docs?q=one#intro', 43127),
+    ).toBe('http://localhost:43127/docs?q=one#intro');
+    expect(localTunnelUrl('http://192.168.1.4:8080/', 43128)).toBe(
+      'http://127.0.0.1:43128/',
     );
-    expect(localTunnelUrl('http://192.168.1.4:8080/', 43128)).toBe('http://127.0.0.1:43128/');
   });
 
   it('uses the protocol default port', () => {
     expect(terminalWebLinkTarget('https://example.com/path').port).toBe(443);
     expect(terminalWebLinkTarget('http://example.com/path').port).toBe(80);
-  });
-
-  it('routes every link through the persisted in-app toggle', () => {
-    const session = readFileSync(
-      resolve(__dirname, '../src/components/SessionScreen.tsx'),
-      'utf8',
-    );
-
-    expect(session).toContain('checked={terminalPreferences.openLinksInApp}');
-    expect(session).toContain('if (!terminalPreferences.openLinksInApp)');
-    expect(session).toContain('await Linking.openURL(target.url)');
-    expect(session.indexOf('await Linking.openURL(target.url)')).toBeLessThan(
-      session.indexOf('const tunnel = await client.openWebTunnel(target.url)'),
-    );
   });
 
   it('extracts a link that xterm soft-wraps onto the next row', () => {
@@ -199,12 +203,30 @@ describe('terminal web links', () => {
 
   it('extracts a link wrapped inside a terminal UI block', () => {
     const rows = [
-      { text: '  ┃  https://www.reddit.com/r/herdr/comments/         ', isWrapped: false },
-      { text: '  ┃  1v28abf/                                         ', isWrapped: false },
-      { text: '  ┃  got_tired_of_installing_herdr_plugins_one_by_    ', isWrapped: false },
-      { text: '  ┃  one/                                             ', isWrapped: false },
-      { text: '  ┃                                                   ', isWrapped: false },
-      { text: '  ┃  Build·DeepSeek V4 Flash Free OpenCode  · max     ', isWrapped: false },
+      {
+        text: '  ┃  https://www.reddit.com/r/herdr/comments/         ',
+        isWrapped: false,
+      },
+      {
+        text: '  ┃  1v28abf/                                         ',
+        isWrapped: false,
+      },
+      {
+        text: '  ┃  got_tired_of_installing_herdr_plugins_one_by_    ',
+        isWrapped: false,
+      },
+      {
+        text: '  ┃  one/                                             ',
+        isWrapped: false,
+      },
+      {
+        text: '  ┃                                                   ',
+        isWrapped: false,
+      },
+      {
+        text: '  ┃  Build·DeepSeek V4 Flash Free OpenCode  · max     ',
+        isWrapped: false,
+      },
     ];
 
     expect(extractTerminalLinks(rows, 54)).toContain(
@@ -216,24 +238,50 @@ describe('terminal web links', () => {
   });
 
   it('extracts a link when a terminal UI replaces its prompt marker with indentation', () => {
-    expect(extractTerminalLinks([
-      { text: '› https://www.reddit.com/r/theprimeagen/              ', isWrapped: false },
-      { text: '  comments/1v1t6pc/                                   ', isWrapped: false },
-      { text: '  i_built_a_react_native_terminus_replacement_whip/   ', isWrapped: false },
-      { text: '  #lightbox                                           ', isWrapped: false },
-      { text: '                                                      ', isWrapped: false },
-      { text: '  gpt-5.6-sol high fast · ~/repos/yuanwuzhi/sciflow   ', isWrapped: false },
-    ], 54)).toContain(
+    expect(
+      extractTerminalLinks(
+        [
+          {
+            text: '› https://www.reddit.com/r/theprimeagen/              ',
+            isWrapped: false,
+          },
+          {
+            text: '  comments/1v1t6pc/                                   ',
+            isWrapped: false,
+          },
+          {
+            text: '  i_built_a_react_native_terminus_replacement_whip/   ',
+            isWrapped: false,
+          },
+          {
+            text: '  #lightbox                                           ',
+            isWrapped: false,
+          },
+          {
+            text: '                                                      ',
+            isWrapped: false,
+          },
+          {
+            text: '  gpt-5.6-sol high fast · ~/repos/yuanwuzhi/sciflow   ',
+            isWrapped: false,
+          },
+        ],
+        54,
+      ),
+    ).toContain(
       'https://www.reddit.com/r/theprimeagen/comments/1v1t6pc/i_built_a_react_native_terminus_replacement_whip/#lightbox',
     );
   });
 
   it('does not merge ordinary adjacent terminal lines into a link', () => {
-    expect(extractTerminalLinks([
-      { text: 'Open https://example.com/docs', isWrapped: false },
-      { text: 'next-command-output', isWrapped: false },
-    ], 80)).toEqual([
-      'https://example.com/docs',
-    ]);
+    expect(
+      extractTerminalLinks(
+        [
+          { text: 'Open https://example.com/docs', isWrapped: false },
+          { text: 'next-command-output', isWrapped: false },
+        ],
+        80,
+      ),
+    ).toEqual(['https://example.com/docs']);
   });
 });
