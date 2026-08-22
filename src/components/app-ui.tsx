@@ -36,7 +36,7 @@ import {
   statusMotionKind,
   statusTone,
 } from '@/src/lib/statusMotion';
-import { appGlassControlStyle, useTheme } from '@/src/theme';
+import { appGlassControlStyle, colorWithAlpha, useTheme } from '@/src/theme';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -335,7 +335,7 @@ export function AgentStatusMedallion({
         <Animated.View
           pointerEvents="none"
           className="absolute rounded-full"
-          style={[agentStatusCircleBloomStyle(color, bloomSize), bloomStyle]}
+          style={[statusBloomStyle(color, bloomSize), bloomStyle]}
         />
       ) : null}
       <GlassSurface
@@ -527,14 +527,6 @@ function statusBloomStyle(color: string, size: number) {
   } as const;
 }
 
-function agentStatusCircleBloomStyle(color: string, size: number) {
-  return statusBloomStyle(color, size);
-}
-
-function colorWithAlpha(color: string, alpha: string) {
-  return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
-}
-
 export function ScreenHeader({ title, subtitle, left, right }: { title: string; subtitle?: string; left?: ReactNode; right?: ReactNode }) {
   return (
     <GlassSurface className="min-h-16 flex-row items-center border-b border-white/30 px-4 py-2 dark:border-white/10">
@@ -546,10 +538,6 @@ export function ScreenHeader({ title, subtitle, left, right }: { title: string; 
       {right ? <View className="ml-2 min-w-10 items-end">{right}</View> : null}
     </GlassSurface>
   );
-}
-
-export function SectionLabel({ children, className }: { children: ReactNode; className?: string }) {
-  return <Text className={cn('px-1 text-sm font-semibold text-muted-foreground', className)}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({

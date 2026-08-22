@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { Alert, Clipboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { normalizePrivateKey } from '@/src/lib/privateKey';
+import { errorCode, privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
 import { hostDisplayName, jumpHostCandidates } from '@/src/lib/hostProfiles';
+import { normalizePrivateKey } from '@/src/lib/privateKey';
 import {
   credentialDraftsForProfile,
   switchCredentialAuthMode,
@@ -180,8 +181,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         return;
       }
       setGlobalKeys(keys);
-    } catch (keychainError: any) {
-      if (keychainError?.code !== 'E_GLOBAL_KEYCHAIN_CANCELLED') {
+    } catch (keychainError) {
+      if (errorCode(keychainError) !== 'E_GLOBAL_KEYCHAIN_CANCELLED') {
         Alert.alert(t('keychain.unlockError'), String(keychainError));
       }
     }
@@ -209,15 +210,11 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         : (await SSHClient.getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined)).publicKey;
       Clipboard.setString(publicKey);
       copied(t('connection.publicKey'));
-    } catch (copyError: any) {
+    } catch (copyError) {
       setKeyActionsOpen(false);
       Alert.alert(
         t('connection.copyPublicError'),
-        copyError?.code === 'E_KEY_PASSPHRASE_REQUIRED'
-          ? t('connection.enterPassphraseFirst')
-          : copyError?.code === 'E_KEY_PASSPHRASE_INVALID'
-            ? t('connection.incorrectPassphrase')
-            : t('connection.unreadableKey'),
+        t(privateKeyErrorTranslationKey(copyError)),
       );
     }
   };

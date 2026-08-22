@@ -8,6 +8,7 @@ import type { TFunction } from 'i18next';
 import { orderByConnectionAndAgentStatusPriority } from '@/src/herdQueue';
 import { hostDisplayName } from '@/src/lib/hostProfiles';
 import type { HostRuntimeSummary } from '@/src/lib/hostRuntimeSummary';
+import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import {
   HOST_SWIPE_ACTION_WIDTH,
   hostSwipeOffset,
@@ -252,12 +253,7 @@ function SwipeableHostRow({
   const settle = (open: boolean) => {
     openRef.current = open;
     setActionsOpen(open);
-    translateX.value = withSpring(open ? -HOST_SWIPE_ACTION_WIDTH : 0, {
-      damping: 24,
-      stiffness: 260,
-      mass: 0.8,
-      overshootClamping: true,
-    });
+    translateX.value = withSpring(open ? -HOST_SWIPE_ACTION_WIDTH : 0, DEFAULT_SPRING_CONFIG);
   };
 
   const panResponder = useRef(PanResponder.create({

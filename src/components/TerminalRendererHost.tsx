@@ -88,7 +88,6 @@ interface Props {
   onReady?: () => void;
   onInput: (target: TerminalRenderTarget, data: string) => void | Promise<void>;
   onScroll: (target: TerminalRenderTarget, direction: 'up' | 'down', lines: number) => void;
-  onFontSizeChange: (target: TerminalRenderTarget, fontSize: number) => void;
   onSearchResult: (count: number, index: number, invalid: boolean) => void;
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
@@ -117,7 +116,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onReady,
   onInput,
   onScroll,
-  onFontSizeChange,
   onSearchResult,
   onLinksScanned,
   onOpenLink,
@@ -140,7 +138,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportReady = useEffectEvent(() => onReady?.());
   const reportInput = useEffectEvent(onInput);
   const reportScroll = useEffectEvent(onScroll);
-  const reportFontSize = useEffectEvent(onFontSizeChange);
   const reportSearch = useEffectEvent(onSearchResult);
   const reportLinks = useEffectEvent(onLinksScanned);
   const reportOpenLink = useEffectEvent(onOpenLink);
@@ -570,7 +567,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const fontSize = Number(message.fontSize);
       if (Number.isFinite(fontSize)) {
         entry.fontSize = Math.max(8, Math.min(24, Math.round(fontSize)));
-        reportFontSize(entry.target, entry.fontSize);
       }
     } else if (message.type === 'buffer-mode') {
       reportBufferMode(entry.target, message.alternate === true);

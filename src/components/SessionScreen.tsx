@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview';
 
 import { orderByAgentStatusPriority, tabAgentStateChangeSequence } from '@/src/herdQueue';
+import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { cn } from '@/src/lib/utils';
 import { serverFocusMatchesPendingPane } from '@/src/lib/terminalFocus';
 import { terminalWebLinkTarget } from '@/src/lib/terminalLinks';
@@ -449,10 +450,8 @@ export function SessionScreen({
     if (!swipe) return;
     const destination = commit ? -swipe.direction * terminalWidthRef.current : 0;
     tabSwipeTranslateX.value = withSpring(destination, {
-      damping: 24,
+      ...DEFAULT_SPRING_CONFIG,
       stiffness: 240,
-      mass: 0.8,
-      overshootClamping: true,
     }, finished => {
       if (finished) {
         scheduleOnRN(finishTabSwipe, swipe.originTabId, swipe.targetTabId, commit);
@@ -866,7 +865,7 @@ export function SessionScreen({
                     <View pointerEvents="none" className="absolute inset-x-0 top-0 items-center py-2">
                       <ActivityIndicator color={colors.primary} />
                     </View>
-        )}
+                  )}
                 </View>
               </>
             ) : (

@@ -2,6 +2,8 @@ import {
   classifyConnectionError,
   connectionErrorContext,
   connectionErrorTranslationKeys,
+  errorCode,
+  privateKeyErrorTranslationKey,
 } from '../src/lib/connectionErrors';
 
 describe('connection error presentation', () => {
@@ -41,5 +43,19 @@ describe('connection error presentation', () => {
       expectedProtocol: '17 through 20',
       receivedProtocol: '21',
     });
+  });
+
+  it('reads native error codes without using any', () => {
+    expect(errorCode({ code: 'E_GLOBAL_KEYCHAIN_CANCELLED' })).toBe('E_GLOBAL_KEYCHAIN_CANCELLED');
+    expect(errorCode(new Error('failed'))).toBeNull();
+    expect(errorCode({ code: 42 })).toBeNull();
+  });
+
+  test.each([
+    ['E_KEY_PASSPHRASE_REQUIRED', 'connection.enterPassphraseFirst'],
+    ['E_KEY_PASSPHRASE_INVALID', 'connection.incorrectPassphrase'],
+    ['E_KEY_INVALID', 'connection.unreadableKey'],
+  ] as const)('maps private-key error %s to %s', (code, translationKey) => {
+    expect(privateKeyErrorTranslationKey({ code })).toBe(translationKey);
   });
 });

@@ -138,61 +138,67 @@ export interface SettingsSectionProps {
   onTerminalPreferencesChange: (value: TerminalPreferences) => void;
 }
 
+function useBackgroundImageActions({
+  uri,
+  selectImage,
+  removeImage,
+  onChange,
+}: {
+  uri: string | null;
+  selectImage: (currentUri: string | null) => Promise<string | null | undefined>;
+  removeImage: (currentUri: string | null) => Promise<void>;
+  onChange: (uri: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const { t } = useTranslation();
+
+  const run = async (action: 'choose' | 'remove') => {
+    setBusy(true);
+    try {
+      if (action === 'choose') {
+        const selectedUri = await selectImage(uri);
+        if (selectedUri) onChange(selectedUri);
+      } else {
+        await removeImage(uri);
+        onChange(null);
+      }
+    } catch (error) {
+      Alert.alert(
+        t(action === 'choose' ? 'settings.imageError' : 'settings.removeImageError'),
+        String(error),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return {
+    busy,
+    choose: () => run('choose'),
+    remove: () => run('remove'),
+  };
+}
+
 export function SettingsSection(props: SettingsSectionProps) {
-  const [appBackgroundBusy, setAppBackgroundBusy] = useState(false);
-  const [terminalBackgroundBusy, setTerminalBackgroundBusy] = useState(false);
   const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const [historyManagerOpen, setHistoryManagerOpen] = useState(false);
   const { t } = useTranslation();
-
-  const chooseBackground = async () => {
-    setTerminalBackgroundBusy(true);
-    try {
-      const uri = await selectTerminalBackgroundImage(props.terminalPreferences.backgroundImageUri);
-      if (uri) props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundImageUri: uri });
-    } catch (error) {
-      Alert.alert(t('settings.imageError'), String(error));
-    } finally {
-      setTerminalBackgroundBusy(false);
-    }
-  };
-
-  const removeBackground = async () => {
-    setTerminalBackgroundBusy(true);
-    try {
-      await removeTerminalBackgroundImage(props.terminalPreferences.backgroundImageUri);
-      props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundImageUri: null });
-    } catch (error) {
-      Alert.alert(t('settings.removeImageError'), String(error));
-    } finally {
-      setTerminalBackgroundBusy(false);
-    }
-  };
-
-  const chooseAppBackground = async () => {
-    setAppBackgroundBusy(true);
-    try {
-      const uri = await selectAppBackgroundImage(props.appBackgroundImageUri);
-      if (uri) props.onAppBackgroundImageChange(uri);
-    } catch (error) {
-      Alert.alert(t('settings.imageError'), String(error));
-    } finally {
-      setAppBackgroundBusy(false);
-    }
-  };
-
-  const removeAppBackground = async () => {
-    setAppBackgroundBusy(true);
-    try {
-      await removeAppBackgroundImage(props.appBackgroundImageUri);
-      props.onAppBackgroundImageChange(null);
-    } catch (error) {
-      Alert.alert(t('settings.removeImageError'), String(error));
-    } finally {
-      setAppBackgroundBusy(false);
-    }
-  };
+  const appBackground = useBackgroundImageActions({
+    uri: props.appBackgroundImageUri,
+    selectImage: selectAppBackgroundImage,
+    removeImage: removeAppBackgroundImage,
+    onChange: props.onAppBackgroundImageChange,
+  });
+  const terminalBackground = useBackgroundImageActions({
+    uri: props.terminalPreferences.backgroundImageUri,
+    selectImage: selectTerminalBackgroundImage,
+    removeImage: removeTerminalBackgroundImage,
+    onChange: backgroundImageUri => props.onTerminalPreferencesChange({
+      ...props.terminalPreferences,
+      backgroundImageUri,
+    }),
+  });
 
   const changeNotificationSettings = async () => {
     try {
@@ -210,226 +216,228 @@ export function SettingsSection(props: SettingsSectionProps) {
 
   return (
     <View className="px-4 py-5">
-        <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
-        <Text className="mb-3 mt-4 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
-        <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-          <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
-          {Platform.OS === 'android' ? <ValueRow
-            title={t('settings.backgroundAlertDuration')}
-            copy={t('settings.backgroundAlertDurationCopy')}
-            value={t('settings.seconds', { count: props.persistentAlertDurationSeconds })}
-            disabled={!props.alertsEnabled}
-            onDecrease={() => props.onPersistentAlertDurationChange(Math.max(
-              MIN_PERSISTENT_ALERT_DURATION_SECONDS,
-              props.persistentAlertDurationSeconds - PERSISTENT_ALERT_DURATION_STEP_SECONDS,
-            ))}
-            onIncrease={() => props.onPersistentAlertDurationChange(Math.min(
-              MAX_PERSISTENT_ALERT_DURATION_SECONDS,
-              props.persistentAlertDurationSeconds + PERSISTENT_ALERT_DURATION_STEP_SECONDS,
-            ))}
-            divided
-          /> : null}
-          {Platform.OS !== 'web' ? <ActionRow
-            title={t('settings.testPersistentAlert')}
-            copy={t('settings.testPersistentAlertCopy')}
-            icon={BellRing}
-            onPress={props.onTestPersistentAlert}
-            divided
-          /> : null}
-          <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
-          <ActionRow
-            title={t('settings.changeNotificationSettings')}
-            copy={t('settings.changeNotificationSettingsCopy')}
-            icon={BellRing}
-            onPress={changeNotificationSettings}
-            divided
-          />
-        </GlassSurface>
+      <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
+      <Text className="mb-3 mt-4 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
+      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+        <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
+        {Platform.OS === 'android' ? <ValueRow
+          title={t('settings.backgroundAlertDuration')}
+          copy={t('settings.backgroundAlertDurationCopy')}
+          value={t('settings.seconds', { count: props.persistentAlertDurationSeconds })}
+          disabled={!props.alertsEnabled}
+          onDecrease={() => props.onPersistentAlertDurationChange(Math.max(
+            MIN_PERSISTENT_ALERT_DURATION_SECONDS,
+            props.persistentAlertDurationSeconds - PERSISTENT_ALERT_DURATION_STEP_SECONDS,
+          ))}
+          onIncrease={() => props.onPersistentAlertDurationChange(Math.min(
+            MAX_PERSISTENT_ALERT_DURATION_SECONDS,
+            props.persistentAlertDurationSeconds + PERSISTENT_ALERT_DURATION_STEP_SECONDS,
+          ))}
+          divided
+        /> : null}
+        {Platform.OS !== 'web' ? <ActionRow
+          title={t('settings.testPersistentAlert')}
+          copy={t('settings.testPersistentAlertCopy')}
+          icon={BellRing}
+          onPress={props.onTestPersistentAlert}
+          divided
+        /> : null}
+        <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
+        <ActionRow
+          title={t('settings.changeNotificationSettings')}
+          copy={t('settings.changeNotificationSettingsCopy')}
+          icon={BellRing}
+          onPress={changeNotificationSettings}
+          divided
+        />
+      </GlassSurface>
 
-        <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
+      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
+      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+        <ActionRow
+          title={t('settings.globalKeychain')}
+          copy={t('settings.globalKeychainCopy', { count: props.globalKeyCount })}
+          icon={KeyRound}
+          onPress={props.onManageGlobalKeychain}
+        />
+        <ActionRow
+          title={t('settings.knownHosts')}
+          copy={t('settings.knownHostsCopy', { count: props.knownHostCount })}
+          icon={Fingerprint}
+          onPress={props.onManageKnownHosts}
+          divided
+        />
+        <SettingRow
+          title={t('settings.sshQrPairing')}
+          copy={t('settings.sshQrPairingCopy')}
+          value={props.sshQrPairingEnabled}
+          onChange={props.onSshQrPairingEnabledChange}
+          onDetailsPress={openWhipPairRepository}
+          divided
+        />
+        <SettingRow title={t('settings.biometricForKeys')} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
+        <SettingRow title={t('settings.biometricOnResume')} copy={t(Platform.OS === 'ios' ? 'settings.biometricOnResumeCopyIos' : 'settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
+      </GlassSurface>
+
+      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>
+      <View className="gap-3">
+        <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
         <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-          <ActionRow
-            title={t('settings.globalKeychain')}
-            copy={t('settings.globalKeychainCopy', { count: props.globalKeyCount })}
-            icon={KeyRound}
-            onPress={props.onManageGlobalKeychain}
-          />
-          <ActionRow
-            title={t('settings.knownHosts')}
-            copy={t('settings.knownHostsCopy', { count: props.knownHostCount })}
-            icon={Fingerprint}
-            onPress={props.onManageKnownHosts}
-            divided
-          />
           <SettingRow
-            title={t('settings.sshQrPairing')}
-            copy={t('settings.sshQrPairingCopy')}
-            value={props.sshQrPairingEnabled}
-            onChange={props.onSshQrPairingEnabledChange}
-            onDetailsPress={openWhipPairRepository}
-            divided
+            title={t('settings.fullscreenApp')}
+            copy={t('settings.fullscreenAppCopy')}
+            value={props.fullscreenApp}
+            onChange={props.onFullscreenAppChange}
           />
-          <SettingRow title={t('settings.biometricForKeys')} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
-          <SettingRow title={t('settings.biometricOnResume')} copy={t(Platform.OS === 'ios' ? 'settings.biometricOnResumeCopyIos' : 'settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
         </GlassSurface>
-
-        <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>
-        <View className="gap-3">
-          <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
-          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-            <SettingRow
-              title={t('settings.fullscreenApp')}
-              copy={t('settings.fullscreenAppCopy')}
-              value={props.fullscreenApp}
-              onChange={props.onFullscreenAppChange}
-            />
-          </GlassSurface>
-          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-            <AppBackgroundRow
-              busy={appBackgroundBusy}
-              uri={props.appBackgroundImageUri}
-              dimming={props.appBackgroundDimming}
-              onChoose={chooseAppBackground}
-              onRemove={removeAppBackground}
-            />
-            <SliderRow
-              title={t('settings.backgroundDimming')}
-              value={props.appBackgroundDimming}
-              minimumValue={0}
-              maximumValue={100}
-              step={5}
-              formatValue={value => `${value}%`}
-              disabled={!props.appBackgroundImageUri}
-              onChange={props.onAppBackgroundDimmingChange}
-              divided
-            />
-            <SettingRow
-              title={t('settings.experimentalGlass')}
-              copy={props.appBackgroundImageUri
-                ? t('settings.experimentalGlassCopy')
-                : t('settings.experimentalGlassRequiresImage')}
-              value={props.appGlassEnabled}
-              disabled={!props.appBackgroundImageUri}
-              onChange={props.onAppGlassEnabledChange}
-              divided
-            />
-          </GlassSurface>
-          <LanguageRow value={props.language} onChange={props.onLanguageChange} />
-        </View>
-
-        <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.herd')}</Text>
         <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-          <View className="p-3.5">
-            <DetailsTitle
-              title={t('settings.agentCommand')}
-              copy={t('settings.agentCommandCopy')}
-            />
-            <Input
-              className="mt-3 font-mono"
-              value={props.agentCommand}
-              onChangeText={props.onAgentCommandChange}
-              placeholder="opencode"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-        </GlassSurface>
-
-        <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.terminal')}</Text>
-        <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-          <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
-          <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
-          <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
-          <SettingRow title={t('settings.useModifierKeyIcons')} copy={t('settings.useModifierKeyIconsCopy')} value={props.terminalPreferences.useModifierKeyIcons} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, useModifierKeyIcons: value })} divided />
-          <ActionRow
-            title={t('settings.terminalHistory')}
-            copy={t('settings.terminalHistoryCopy')}
-            icon={History}
-            value={t('settings.terminalHistoryCount', { count: props.terminalHistory.length })}
-            onPress={() => setHistoryManagerOpen(true)}
-            divided
-          />
-          {Platform.OS === 'android' ? <ChoiceRow
-            title={t('settings.volumeUpKey')}
-            copy={t('settings.volumeKeyCopy')}
-            value={t(volumeKeyActionLabelKey('up', props.terminalPreferences.volumeUpAction))}
-            onPress={() => setVolumeKeyEditor('up')}
-            divided
-          /> : null}
-          {Platform.OS === 'android' ? <ChoiceRow
-            title={t('settings.volumeDownKey')}
-            copy={t('settings.volumeKeyCopy')}
-            value={t(volumeKeyActionLabelKey('down', props.terminalPreferences.volumeDownAction))}
-            onPress={() => setVolumeKeyEditor('down')}
-            divided
-          /> : null}
-          <DoubleTapActionMenu
-            expanded={doubleTapExpanded}
-            value={props.terminalPreferences.doubleTapAction}
-            onToggle={() => {
-              setDoubleTapExpanded(expanded => !expanded);
-            }}
-            onSelect={action => {
-              props.onTerminalPreferencesChange({ ...props.terminalPreferences, doubleTapAction: action });
-              setDoubleTapExpanded(false);
-            }}
-            divided
-          />
-          <SettingRow title={t('settings.pauseResizeInBackground')} copy={t('settings.pauseResizeInBackgroundCopy')} value={props.terminalPreferences.pauseResizeInBackground} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, pauseResizeInBackground: value })} divided />
-          <SliderRow
-            title={t('settings.fontSize')}
-            value={props.terminalPreferences.fontSize}
-            minimumValue={8}
-            maximumValue={24}
-            step={1}
-            formatValue={value => `${value}px`}
-            onChange={fontSize => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize })}
-            fontPreview
-            divided
-          />
-          <ValueRow title={t('settings.scrollback')} value={t('settings.lines', { count: props.terminalPreferences.scrollback })} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
-          <XtermCacheCapacityRow value={props.terminalPreferences.xtermCacheCapacity} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, xtermCacheCapacity: value })} />
-          <SettingRow title={t('settings.blinkingCursor')} copy={t('settings.blinkingCursorCopy')} value={props.terminalPreferences.cursorBlink} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, cursorBlink: value })} divided />
-          <TerminalBackgroundRow
-            busy={terminalBackgroundBusy}
-            uri={props.terminalPreferences.backgroundImageUri}
-            dimming={props.terminalPreferences.backgroundDimming}
-            onChoose={chooseBackground}
-            onRemove={removeBackground}
+          <BackgroundImageRow
+            busy={appBackground.busy}
+            uri={props.appBackgroundImageUri}
+            dimming={props.appBackgroundDimming}
+            variant="app"
+            onChoose={appBackground.choose}
+            onRemove={appBackground.remove}
           />
           <SliderRow
             title={t('settings.backgroundDimming')}
-            value={props.terminalPreferences.backgroundDimming}
+            value={props.appBackgroundDimming}
             minimumValue={0}
             maximumValue={100}
             step={5}
             formatValue={value => `${value}%`}
-            disabled={!props.terminalPreferences.backgroundImageUri}
-            onChange={backgroundDimming => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming })}
+            disabled={!props.appBackgroundImageUri}
+            onChange={props.onAppBackgroundDimmingChange}
+            divided
+          />
+          <SettingRow
+            title={t('settings.experimentalGlass')}
+            copy={props.appBackgroundImageUri
+              ? t('settings.experimentalGlassCopy')
+              : t('settings.experimentalGlassRequiresImage')}
+            value={props.appGlassEnabled}
+            disabled={!props.appBackgroundImageUri}
+            onChange={props.onAppGlassEnabledChange}
             divided
           />
         </GlassSurface>
-
-        {Platform.OS === 'android' ? <VolumeKeyActionSheet
-          keyName={volumeKeyEditor}
-          value={volumeKeyEditor === 'down'
-            ? props.terminalPreferences.volumeDownAction
-            : props.terminalPreferences.volumeUpAction}
-          onClose={() => setVolumeKeyEditor(null)}
-          onSelect={action => {
-            props.onTerminalPreferencesChange(volumeKeyEditor === 'down'
-              ? { ...props.terminalPreferences, volumeDownAction: action }
-              : { ...props.terminalPreferences, volumeUpAction: action });
-            setVolumeKeyEditor(null);
-          }}
-        /> : null}
-        <TerminalHistoryManager
-          entries={props.terminalHistory}
-          visible={historyManagerOpen}
-          onClose={() => setHistoryManagerOpen(false)}
-          onDelete={props.onDeleteTerminalHistory}
-        />
+        <LanguageRow value={props.language} onChange={props.onLanguageChange} />
       </View>
+
+      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.herd')}</Text>
+      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+        <View className="p-3.5">
+          <DetailsTitle
+            title={t('settings.agentCommand')}
+            copy={t('settings.agentCommandCopy')}
+          />
+          <Input
+            className="mt-3 font-mono"
+            value={props.agentCommand}
+            onChangeText={props.onAgentCommandChange}
+            placeholder="opencode"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+      </GlassSurface>
+
+      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.terminal')}</Text>
+      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+        <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
+        <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
+        <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
+        <SettingRow title={t('settings.useModifierKeyIcons')} copy={t('settings.useModifierKeyIconsCopy')} value={props.terminalPreferences.useModifierKeyIcons} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, useModifierKeyIcons: value })} divided />
+        <ActionRow
+          title={t('settings.terminalHistory')}
+          copy={t('settings.terminalHistoryCopy')}
+          icon={History}
+          value={t('settings.terminalHistoryCount', { count: props.terminalHistory.length })}
+          onPress={() => setHistoryManagerOpen(true)}
+          divided
+        />
+        {Platform.OS === 'android' ? <ChoiceRow
+          title={t('settings.volumeUpKey')}
+          copy={t('settings.volumeKeyCopy')}
+          value={t(volumeKeyActionLabelKey('up', props.terminalPreferences.volumeUpAction))}
+          onPress={() => setVolumeKeyEditor('up')}
+          divided
+        /> : null}
+        {Platform.OS === 'android' ? <ChoiceRow
+          title={t('settings.volumeDownKey')}
+          copy={t('settings.volumeKeyCopy')}
+          value={t(volumeKeyActionLabelKey('down', props.terminalPreferences.volumeDownAction))}
+          onPress={() => setVolumeKeyEditor('down')}
+          divided
+        /> : null}
+        <DoubleTapActionMenu
+          expanded={doubleTapExpanded}
+          value={props.terminalPreferences.doubleTapAction}
+          onToggle={() => {
+            setDoubleTapExpanded(expanded => !expanded);
+          }}
+          onSelect={action => {
+            props.onTerminalPreferencesChange({ ...props.terminalPreferences, doubleTapAction: action });
+            setDoubleTapExpanded(false);
+          }}
+          divided
+        />
+        <SettingRow title={t('settings.pauseResizeInBackground')} copy={t('settings.pauseResizeInBackgroundCopy')} value={props.terminalPreferences.pauseResizeInBackground} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, pauseResizeInBackground: value })} divided />
+        <SliderRow
+          title={t('settings.fontSize')}
+          value={props.terminalPreferences.fontSize}
+          minimumValue={8}
+          maximumValue={24}
+          step={1}
+          formatValue={value => `${value}px`}
+          onChange={fontSize => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fontSize })}
+          fontPreview
+          divided
+        />
+        <ValueRow title={t('settings.scrollback')} value={t('settings.lines', { count: props.terminalPreferences.scrollback })} onDecrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.max(1000, props.terminalPreferences.scrollback - 1000) })} onIncrease={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, scrollback: Math.min(20000, props.terminalPreferences.scrollback + 1000) })} divided />
+        <XtermCacheCapacityRow value={props.terminalPreferences.xtermCacheCapacity} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, xtermCacheCapacity: value })} />
+        <SettingRow title={t('settings.blinkingCursor')} copy={t('settings.blinkingCursorCopy')} value={props.terminalPreferences.cursorBlink} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, cursorBlink: value })} divided />
+        <BackgroundImageRow
+          busy={terminalBackground.busy}
+          uri={props.terminalPreferences.backgroundImageUri}
+          dimming={props.terminalPreferences.backgroundDimming}
+          variant="terminal"
+          onChoose={terminalBackground.choose}
+          onRemove={terminalBackground.remove}
+        />
+        <SliderRow
+          title={t('settings.backgroundDimming')}
+          value={props.terminalPreferences.backgroundDimming}
+          minimumValue={0}
+          maximumValue={100}
+          step={5}
+          formatValue={value => `${value}%`}
+          disabled={!props.terminalPreferences.backgroundImageUri}
+          onChange={backgroundDimming => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming })}
+          divided
+        />
+      </GlassSurface>
+
+      {Platform.OS === 'android' ? <VolumeKeyActionSheet
+        keyName={volumeKeyEditor}
+        value={volumeKeyEditor === 'down'
+          ? props.terminalPreferences.volumeDownAction
+          : props.terminalPreferences.volumeUpAction}
+        onClose={() => setVolumeKeyEditor(null)}
+        onSelect={action => {
+          props.onTerminalPreferencesChange(volumeKeyEditor === 'down'
+            ? { ...props.terminalPreferences, volumeDownAction: action }
+            : { ...props.terminalPreferences, volumeUpAction: action });
+          setVolumeKeyEditor(null);
+        }}
+      /> : null}
+      <TerminalHistoryManager
+        entries={props.terminalHistory}
+        visible={historyManagerOpen}
+        onClose={() => setHistoryManagerOpen(false)}
+        onDelete={props.onDeleteTerminalHistory}
+      />
+    </View>
   );
 }
 
@@ -714,23 +722,23 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
               contentHeight.value = event.nativeEvent.layout.height;
               setContentMeasured(true);
             }}>
-          <View className="overflow-hidden rounded-lg border border-border bg-card">
-            {terminalDoubleTapActions.map((action, index) => {
-              const selected = action === value;
-              return (
-                <Button
-                  key={action}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
-                  variant={selected ? 'secondary' : 'ghost'}
-                  onPress={hapticPress(() => onSelect(action))}>
-                  <Text className="flex-1 text-left text-sm font-medium">{t(doubleTapActionLabelKey(action))}</Text>
-                  {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
-                </Button>
-              );
-            })}
-          </View>
+            <View className="overflow-hidden rounded-lg border border-border bg-card">
+              {terminalDoubleTapActions.map((action, index) => {
+                const selected = action === value;
+                return (
+                  <Button
+                    key={action}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
+                    variant={selected ? 'secondary' : 'ghost'}
+                    onPress={hapticPress(() => onSelect(action))}>
+                    <Text className="flex-1 text-left text-sm font-medium">{t(doubleTapActionLabelKey(action))}</Text>
+                    {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
+                  </Button>
+                );
+              })}
+            </View>
           </View>
         ) : null}
       </Animated.View>
@@ -921,36 +929,29 @@ function TerminalHistoryManager({
   );
 }
 
-function TerminalBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {
+function BackgroundImageRow({ busy, uri, dimming, variant, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; variant: 'app' | 'terminal'; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {
   const { t } = useTranslation();
+  const terminal = variant === 'terminal';
   return (
-    <View className="border-t border-border p-3.5">
+    <View className={terminal ? 'border-t border-border p-3.5' : 'p-3.5'}>
       <View className="mb-3"><DetailsTitle title={t('settings.backgroundImage')} copy={t('settings.backgroundImageCopy')} /></View>
-      <View className="relative h-28 overflow-hidden rounded-md bg-terminal-canvas">
+      <View className={cn('relative h-28 overflow-hidden rounded-md', terminal ? 'bg-terminal-canvas' : 'bg-background')}>
         {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
-        {uri ? <View className="absolute inset-0" style={{ backgroundColor: `rgba(24, 24, 24, ${dimming / 100})` }} /> : null}
-        <View className="absolute inset-0 justify-end p-3"><Text style={styles.terminalPreviewText} className="text-xs text-terminal-text">user@host:~ $ herdr status</Text><Text style={styles.terminalPreviewText} className="mt-1 text-[10px] text-terminal-muted">{t('settings.terminalPreview')}</Text></View>
-      </View>
-      <View className="mt-3 flex-row gap-2">
-        <Button className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(onChoose)}><Icon as={ImagePlus} size={16} /><Text>{uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></Button>
-        {uri ? <Button className="rounded-full px-4" variant="ghost" disabled={busy} onPress={hapticPress(onRemove)}><Icon as={Trash2} className="text-destructive" size={16} /><Text className="text-destructive">{t('common.remove')}</Text></Button> : null}
-      </View>
-    </View>
-  );
-}
-
-function AppBackgroundRow({ busy, uri, dimming, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {
-  const { t } = useTranslation();
-  return (
-    <View className="p-3.5">
-      <View className="mb-3"><DetailsTitle title={t('settings.backgroundImage')} copy={t('settings.backgroundImageCopy')} /></View>
-      <View className="relative h-28 overflow-hidden rounded-md bg-background">
-        {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
-        {uri ? <View className="absolute inset-0 bg-background" style={{ opacity: dimming / 100 }} /> : null}
-        <View className="absolute inset-0 justify-between p-3">
-          <Text className="text-base font-semibold">Herdr</Text>
-          <Text className="text-xs text-muted-foreground">{t('settings.appPreview')}</Text>
-        </View>
+        {uri ? terminal
+          ? <View className="absolute inset-0" style={{ backgroundColor: `rgba(24, 24, 24, ${dimming / 100})` }} />
+          : <View className="absolute inset-0 bg-background" style={{ opacity: dimming / 100 }} />
+          : null}
+        {terminal ? (
+          <View className="absolute inset-0 justify-end p-3">
+            <Text style={styles.terminalPreviewText} className="text-xs text-terminal-text">user@host:~ $ herdr status</Text>
+            <Text style={styles.terminalPreviewText} className="mt-1 text-[10px] text-terminal-muted">{t('settings.terminalPreview')}</Text>
+          </View>
+        ) : (
+          <View className="absolute inset-0 justify-between p-3">
+            <Text className="text-base font-semibold">Herdr</Text>
+            <Text className="text-xs text-muted-foreground">{t('settings.appPreview')}</Text>
+          </View>
+        )}
       </View>
       <View className="mt-3 flex-row gap-2">
         <Button className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(onChoose)}><Icon as={ImagePlus} size={16} /><Text>{uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></Button>

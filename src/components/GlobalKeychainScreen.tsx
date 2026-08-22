@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { Alert, Clipboard, NativeModules, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { cn } from '@/src/lib/utils';
+import { privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
 import { normalizePrivateKey } from '@/src/lib/privateKey';
+import { cn } from '@/src/lib/utils';
 import { deleteGlobalSshKey, saveGlobalSshKey } from '@/src/services/globalSshKeychain';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial } from '@/src/types';
@@ -102,14 +103,10 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
         passphrase,
       }));
       resetDraft();
-    } catch (error: any) {
+    } catch (error) {
       Alert.alert(
         t('keychain.saveError'),
-        error?.code === 'E_KEY_PASSPHRASE_REQUIRED'
-          ? t('connection.enterPassphraseFirst')
-          : error?.code === 'E_KEY_PASSPHRASE_INVALID'
-            ? t('connection.incorrectPassphrase')
-            : t('connection.unreadableKey'),
+        t(privateKeyErrorTranslationKey(error)),
       );
     } finally {
       setBusy(false);

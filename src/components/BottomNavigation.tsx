@@ -5,7 +5,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useTheme, type ThemeColors } from '@/src/theme';
+import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import type { AppTab } from '@/src/types';
 import { hapticPress, HerdrMark } from './app-ui';
 import { Button } from './ui/button';
@@ -120,10 +120,6 @@ function floatingBloomStyle(active: boolean, colors: ThemeColors) {
         }
       : { filter: [{ blur: active ? 6 : 4 }] }),
   } as const;
-}
-
-function colorWithAlpha(color: string, alpha: string) {
-  return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }
 
 const styles = StyleSheet.create({

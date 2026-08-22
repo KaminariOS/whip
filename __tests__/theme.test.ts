@@ -1,5 +1,6 @@
 import {
   appGlassControlStyle,
+  colorWithAlpha,
   darkColors,
   githubLightPalette,
   lightColors,
@@ -66,5 +67,10 @@ describe('application theme', () => {
       backgroundColor: 'transparent',
       borderColor: `${darkColors.primary}D6`,
     });
+  });
+
+  test('adds alpha only to six-digit hex colors', () => {
+    expect(colorWithAlpha('#7AA2F7', '80')).toBe('#7AA2F780');
+    expect(colorWithAlpha('rgb(122, 162, 247)', '80')).toBe('rgb(122, 162, 247)');
   });
 });

@@ -6,6 +6,7 @@ import type { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
+import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import { cn } from '@/src/lib/utils';
 import {
   orderTerminalControls,
@@ -214,7 +215,9 @@ export function TerminalScreen({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [keyboardEnabled, setKeyboardEnabled] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardInset, setKeyboardInset] = useState(0);
+  const { inset: keyboardInset } = useKeyboardInset(controlsRef, {
+    onVisibilityChange: setKeyboardVisible,
+  });
   const [terminalSelectionActive, setTerminalSelectionActive] = useState(false);
   const [alternateScreen, setAlternateScreen] = useState(false);
   const [reportedTitle, setReportedTitle] = useState('');
@@ -400,32 +403,6 @@ export function TerminalScreen({
   }, [terminalId]);
 
   useEffect(() => {
-    let insetTimer: ReturnType<typeof setTimeout> | null = null;
-    const show = Keyboard.addListener('keyboardDidShow', event => {
-      if (insetTimer) clearTimeout(insetTimer);
-      setKeyboardVisible(true);
-      setKeyboardInset(0);
-      insetTimer = setTimeout(() => {
-        const keyboardTop = event.endCoordinates.screenY;
-        controlsRef.current?.measureInWindow((_x, y, _width, height) => {
-          setKeyboardInset(Math.max(0, Math.ceil(y + height - keyboardTop)));
-        });
-      }, 50);
-    });
-    const hide = Keyboard.addListener('keyboardDidHide', () => {
-      if (insetTimer) clearTimeout(insetTimer);
-      insetTimer = null;
-      setKeyboardVisible(false);
-      setKeyboardInset(0);
-    });
-    return () => {
-      if (insetTimer) clearTimeout(insetTimer);
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-
-  useEffect(() => {
     if (!ready) return;
     const timer = setTimeout(() => {
       renderer.current?.fit();
@@ -552,6 +529,11 @@ export function TerminalScreen({
     attachment?.dispose();
     composeAttachmentsRef.current = composeAttachmentsRef.current.filter(item => item.id !== id);
     setComposeAttachments(composeAttachmentsRef.current);
+  };
+
+  const updateComposeText = (value: string) => {
+    if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
+    setComposeText(value);
   };
 
   const renderTerminalControl = (control: TerminalControlId) => {
@@ -727,68 +709,39 @@ export function TerminalScreen({
         </Button>
       );
     }
-    if (control === 'ctrl') {
-      return (
-        <Button
-          key={control}
-          accessibilityLabel={t('terminal.ctrlModifier')}
-          accessibilityState={{ selected: ctrl !== 'off' }}
-          onPress={() => {
-            onControlUse(control);
-            setCtrl(value => value === 'off' ? 'armed' : 'off');
-          }}
-          onLongPress={() => setCtrl('locked')}
-          delayLongPress={450}
-          className={cn(preferences.useModifierKeyIcons ? TERMINAL_ICON_CONTROL_CLASS : TERMINAL_TEXT_CONTROL_CLASS, ctrl === 'armed' && 'border-primary', ctrl === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
-          variant="secondary">
-          {preferences.useModifierKeyIcons ? (
-            <TerminalControlIcon icon={ChevronUp} className={cn(ctrl === 'armed' && 'text-primary', ctrl === 'locked' && 'text-primary-foreground')} />
-          ) : (
-            <TerminalControlLabel label="CTRL" className={cn(ctrl === 'armed' && 'text-primary', ctrl === 'locked' && 'text-primary-foreground')} />
-          )}
-        </Button>
-      );
-    }
-    if (control === 'shift') {
-      return (
-        <Button
-          key={control}
-          accessibilityLabel={t('terminal.shiftModifier')}
-          accessibilityState={{ selected: shift !== 'off' }}
-          onPress={() => {
-            onControlUse(control);
-            setShift(value => value === 'off' ? 'armed' : 'off');
-          }}
-          onLongPress={() => setShift('locked')}
-          delayLongPress={450}
-          className={cn(preferences.useModifierKeyIcons ? TERMINAL_ICON_CONTROL_CLASS : TERMINAL_TEXT_CONTROL_CLASS, shift === 'armed' && 'border-primary', shift === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
-          variant="secondary">
-          {preferences.useModifierKeyIcons ? (
-            <TerminalControlIcon icon={ArrowBigUp} className={cn(shift === 'armed' && 'text-primary', shift === 'locked' && 'text-primary-foreground')} />
-          ) : (
-            <TerminalControlLabel label="SHIFT" className={cn(shift === 'armed' && 'text-primary', shift === 'locked' && 'text-primary-foreground')} />
-          )}
-        </Button>
-      );
-    }
-    if (control !== 'alt') return null;
+    const modifier = control === 'ctrl'
+      ? { value: ctrl, setValue: setCtrl, icon: ChevronUp, label: 'CTRL', accessibilityKey: 'terminal.ctrlModifier' }
+      : control === 'shift'
+        ? { value: shift, setValue: setShift, icon: ArrowBigUp, label: 'SHIFT', accessibilityKey: 'terminal.shiftModifier' }
+        : control === 'alt'
+          ? { value: alt, setValue: setAlt, icon: Option, label: 'ALT', accessibilityKey: 'terminal.altModifier' }
+          : null;
+    if (!modifier) return null;
+    const modifierClassName = cn(
+      modifier.value === 'armed' && 'text-primary',
+      modifier.value === 'locked' && 'text-primary-foreground',
+    );
     return (
       <Button
         key={control}
-        accessibilityLabel={t('terminal.altModifier')}
-        accessibilityState={{ selected: alt !== 'off' }}
+        accessibilityLabel={t(modifier.accessibilityKey)}
+        accessibilityState={{ selected: modifier.value !== 'off' }}
+        className={cn(
+          preferences.useModifierKeyIcons ? TERMINAL_ICON_CONTROL_CLASS : TERMINAL_TEXT_CONTROL_CLASS,
+          modifier.value === 'armed' && 'border-primary',
+          modifier.value === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80',
+        )}
+        delayLongPress={450}
+        variant="secondary"
+        onLongPress={() => modifier.setValue('locked')}
         onPress={() => {
           onControlUse(control);
-          setAlt(value => value === 'off' ? 'armed' : 'off');
-        }}
-        onLongPress={() => setAlt('locked')}
-        delayLongPress={450}
-        className={cn(preferences.useModifierKeyIcons ? TERMINAL_ICON_CONTROL_CLASS : TERMINAL_TEXT_CONTROL_CLASS, alt === 'armed' && 'border-primary', alt === 'locked' && 'border-primary bg-primary/70 active:bg-primary/80')}
-        variant="secondary">
+          modifier.setValue(value => value === 'off' ? 'armed' : 'off');
+        }}>
         {preferences.useModifierKeyIcons ? (
-          <TerminalControlIcon icon={Option} className={cn(alt === 'armed' && 'text-primary', alt === 'locked' && 'text-primary-foreground')} />
+          <TerminalControlIcon icon={modifier.icon} className={modifierClassName} />
         ) : (
-          <TerminalControlLabel label="ALT" className={cn(alt === 'armed' && 'text-primary', alt === 'locked' && 'text-primary-foreground')} />
+          <TerminalControlLabel label={modifier.label} className={modifierClassName} />
         )}
       </Button>
     );
@@ -857,7 +810,6 @@ export function TerminalScreen({
               setScrollPosition(current => moveTerminalScroll(current, direction, lines));
             }
           }}
-          onFontSizeChange={() => undefined}
           onSearchResult={(count, index, invalid) => setSearchResult({ count, index, invalid })}
           onLinksScanned={links => onLinksScanned?.(links)}
           onOpenLink={link => onOpenLink?.(link)}
@@ -954,10 +906,7 @@ export function TerminalScreen({
                     numberOfLines={3}
                     textAlignVertical="top"
                     value={composeText}
-                    onChangeText={value => {
-                      if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
-                      setComposeText(value);
-                    }}
+                    onChangeText={updateComposeText}
                     placeholder={t('terminal.composePlaceholder')}
                     placeholderTextColor={colors.muted}
                     className="h-[76px] rounded-none border-0 bg-transparent px-3 py-2 font-mono text-[12px] leading-[17px] text-terminal-text"
@@ -1050,10 +999,7 @@ export function TerminalScreen({
               multiline
               textAlignVertical="top"
               value={composeText}
-              onChangeText={value => {
-                if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
-                setComposeText(value);
-              }}
+              onChangeText={updateComposeText}
               placeholder={t('terminal.composePlaceholder')}
               placeholderTextColor={colors.muted}
               className="h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] text-terminal-text shadow-none"

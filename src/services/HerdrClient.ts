@@ -66,6 +66,13 @@ interface TerminalSize {
   cellHeightPx: number;
 }
 
+const DEFAULT_TERMINAL_SIZE: TerminalSize = {
+  columns: 80,
+  rows: 24,
+  cellWidthPx: 0,
+  cellHeightPx: 0,
+};
+
 export interface RemoteHtmlPreviewHandle {
   url: string;
   displayUrl: string;
@@ -174,10 +181,8 @@ export class HerdrClient {
     this.resolvedApiSocketPathFromCache = Boolean(this.resolvedApiSocketPath);
     this.remoteHome = null;
     const retainedTerminalIds = [...this.terminalBridges];
-    this.terminalBridges.clear();
+    this.clearAllTerminalBridgeState();
     this.terminalOpenings.clear();
-    this.terminalBridgeGenerations.clear();
-    this.terminalProtocolStates.clear();
     previousClient?.off('Shell');
     if (previousClient) this.disconnectSsh(previousClient);
     for (const [localPort, tunnelClient] of this.localForwards) {
@@ -226,9 +231,7 @@ export class HerdrClient {
     this.terminalOpenings.clear();
     this.terminalConnections.clear();
     this.terminalSizes.clear();
-    this.terminalBridges.clear();
-    this.terminalBridgeGenerations.clear();
-    this.terminalProtocolStates.clear();
+    this.clearAllTerminalBridgeState();
     this.controlReconnect = null;
     this.localForwards.clear();
     this.remoteHtmlPreviews.clear();
@@ -490,9 +493,7 @@ export class HerdrClient {
       return;
     }
     this.terminalConnections.delete(terminalId);
-    this.terminalBridges.delete(terminalId);
-    this.terminalBridgeGenerations.delete(terminalId);
-    this.terminalProtocolStates.delete(terminalId);
+    this.clearTerminalBridgeState(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -517,9 +518,7 @@ export class HerdrClient {
     if (this.terminalConnections.get(terminalId) !== connection) return;
 
     this.terminalConnections.delete(terminalId);
-    this.terminalBridges.delete(terminalId);
-    this.terminalBridgeGenerations.delete(terminalId);
-    this.terminalProtocolStates.delete(terminalId);
+    this.clearTerminalBridgeState(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -550,9 +549,7 @@ export class HerdrClient {
     this.terminalConnections.delete(terminalId);
     this.terminalOpenings.delete(terminalId);
     this.terminalSizes.delete(terminalId);
-    this.terminalBridges.delete(terminalId);
-    this.terminalBridgeGenerations.delete(terminalId);
-    this.terminalProtocolStates.delete(terminalId);
+    this.clearTerminalBridgeState(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -562,9 +559,7 @@ export class HerdrClient {
     }
     this.terminalConnections.clear();
     this.terminalOpenings.clear();
-    this.terminalBridges.clear();
-    this.terminalBridgeGenerations.clear();
-    this.terminalProtocolStates.clear();
+    this.clearAllTerminalBridgeState();
     this.client?.closeAllHerdrBridges();
   }
 
@@ -962,36 +957,14 @@ export class HerdrClient {
   private async probeServer(): Promise<ServerInfo> {
     let socket = await this.apiSocketPath();
     try {
-      const pong = await this.apiRequest<{
-        type: 'pong';
-        version: string;
-        protocol: number;
-      }>('ping', {}, socket);
-      return {
-        running: true,
-        version: pong.version,
-        protocol: pong.protocol,
-        compatible: true,
-        socket,
-      };
+      return await this.pingServer(socket);
     } catch (error) {
       if (!isUnavailableSshChannel(error)) throw error;
       if (this.resolvedApiSocketPathFromCache) {
         this.invalidateCachedApiSocketPath();
         socket = await this.apiSocketPath();
         try {
-          const pong = await this.apiRequest<{
-            type: 'pong';
-            version: string;
-            protocol: number;
-          }>('ping', {}, socket);
-          return {
-            running: true,
-            version: pong.version,
-            protocol: pong.protocol,
-            compatible: true,
-            socket,
-          };
+          return await this.pingServer(socket);
         } catch (retryError) {
           if (!isUnavailableSshChannel(retryError)) throw retryError;
           return { running: false, socket };
@@ -1004,6 +977,21 @@ export class HerdrClient {
       await this.requireClient().getRemoteHome();
       return { running: false, socket };
     }
+  }
+
+  private async pingServer(socket: string): Promise<ServerInfo> {
+    const pong = await this.apiRequest<{
+      type: 'pong';
+      version: string;
+      protocol: number;
+    }>('ping', {}, socket);
+    return {
+      running: true,
+      version: pong.version,
+      protocol: pong.protocol,
+      compatible: true,
+      socket,
+    };
   }
 
   private baseCommand(): string {
@@ -1092,12 +1080,7 @@ export class HerdrClient {
     const onData = (data: string) => {
       const active = this.sshShellConnections.get(terminalId);
       if (active !== connection) return;
-      const size = this.terminalSizes.get(terminalId) || {
-        columns: 80,
-        rows: 24,
-        cellWidthPx: 0,
-        cellHeightPx: 0,
-      };
+      const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
       active.onFrame({
         type: 'terminal.frame',
         seq: ++active.sequence,
@@ -1112,12 +1095,7 @@ export class HerdrClient {
     try {
       client.on('Shell', onData);
       await client.startShell(PtyType.XTERM);
-      const size = this.terminalSizes.get(terminalId) || {
-        columns: 80,
-        rows: 24,
-        cellWidthPx: 0,
-        cellHeightPx: 0,
-      };
+      const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
       client.resizeShell(size.columns, size.rows);
     } catch (error) {
       this.closeSshShell(terminalId);
@@ -1141,12 +1119,7 @@ export class HerdrClient {
   }
 
   private async attachTerminal(terminalId: string): Promise<void> {
-    const size = this.terminalSizes.get(terminalId) || {
-      columns: 80,
-      rows: 24,
-      cellWidthPx: 0,
-      cellHeightPx: 0,
-    };
+    const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
     await this.ensureTerminalBridge(terminalId, size);
     await this.requireClient().herdrBridgeResize(terminalId, size.columns, size.rows, size.cellWidthPx, size.cellHeightPx);
   }
@@ -1155,13 +1128,7 @@ export class HerdrClient {
     if (this.terminalBridges.has(terminalId)) return;
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) return opening;
-    const size = requestedSize ||
-      this.terminalSizes.get(terminalId) || {
-        columns: 80,
-        rows: 24,
-        cellWidthPx: 0,
-        cellHeightPx: 0,
-      };
+    const size = requestedSize || this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
     const server = await this.requireBridgeServer();
     const generation = ++this.terminalBridgeSequence;
     this.terminalBridgeGenerations.set(terminalId, generation);
@@ -1246,9 +1213,7 @@ export class HerdrClient {
       return;
     }
     if (event.type === 'closed') {
-      this.terminalBridges.delete(terminalId);
-      this.terminalBridgeGenerations.delete(terminalId);
-      this.terminalProtocolStates.delete(terminalId);
+      this.clearTerminalBridgeState(terminalId);
       this.terminalConnections.get(terminalId)?.onClosed?.(event.text || 'Herdr remote-client-bridge closed');
     }
   }
@@ -1263,5 +1228,17 @@ export class HerdrClient {
     const state = { ...current, ...update };
     this.terminalProtocolStates.set(terminalId, state);
     this.terminalConnections.get(terminalId)?.onControl?.({ type: 'protocol-state', state });
+  }
+
+  private clearTerminalBridgeState(terminalId: string): void {
+    this.terminalBridges.delete(terminalId);
+    this.terminalBridgeGenerations.delete(terminalId);
+    this.terminalProtocolStates.delete(terminalId);
+  }
+
+  private clearAllTerminalBridgeState(): void {
+    this.terminalBridges.clear();
+    this.terminalBridgeGenerations.clear();
+    this.terminalProtocolStates.clear();
   }
 }

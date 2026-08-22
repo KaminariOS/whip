@@ -174,7 +174,7 @@ export function appGlassControlStyle(active: boolean, palette: ThemeColors) {
   };
 }
 
-function colorWithAlpha(color: string, alpha: string) {
+export function colorWithAlpha(color: string, alpha: string): string {
   return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }
 

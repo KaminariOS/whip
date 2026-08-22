@@ -171,8 +171,9 @@ export function selectLiveHost(
 }
 
 /**
- * Remove one host session. Matching Voltius, closing the active session selects
- * the last surviving rail item instead of disconnecting any other host.
+ * Remove one host session. Matching the session rail, closing the active
+ * session selects the last surviving rail item instead of disconnecting any
+ * other host.
  */
 export function closeLiveHostSession(
   state: LiveHostSessionsState,

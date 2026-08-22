@@ -21,6 +21,7 @@ import {
   MIN_IMAGE_ZOOM,
   type ImageZoomSize,
 } from '@/src/lib/imageZoom';
+import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 
 interface Props {
   accessibilityLabel: string;
@@ -37,13 +38,6 @@ interface Point {
   x: number;
   y: number;
 }
-
-const spring = {
-  damping: 24,
-  stiffness: 260,
-  mass: 0.8,
-  overshootClamping: true,
-};
 
 const emptySize: ImageZoomSize = { width: 0, height: 0 };
 
@@ -94,9 +88,9 @@ export function ZoomableImagePreview({ accessibilityLabel, uri }: Props) {
         ? 0
         : clampImageTranslation(next.y, size.height, bounds.height, zoom);
     liveTransformRef.current = { scale: zoom, x, y };
-    scale.value = animate ? withSpring(zoom, spring) : zoom;
-    translateX.value = animate ? withSpring(x, spring) : x;
-    translateY.value = animate ? withSpring(y, spring) : y;
+    scale.value = animate ? withSpring(zoom, DEFAULT_SPRING_CONFIG) : zoom;
+    translateX.value = animate ? withSpring(x, DEFAULT_SPRING_CONFIG) : x;
+    translateY.value = animate ? withSpring(y, DEFAULT_SPRING_CONFIG) : y;
   };
 
   const reset = (animate: boolean) => {

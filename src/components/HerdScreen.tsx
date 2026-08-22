@@ -13,7 +13,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
-  Keyboard,
   KeyboardAvoidingView,
   Modal,
   PanResponder,
@@ -47,12 +46,14 @@ import {
   type HerdHostQueue,
   type HerdQueueAgent,
 } from '@/src/herdQueue';
+import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import {
   HERD_TAB_MAX_DRAG,
   herdTabSwipeOffset,
   shouldClaimHerdTabSwipe,
   shouldCloseHerdTabSwipe,
 } from '@/src/lib/herdTabSwipeActions';
+import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
@@ -151,8 +152,11 @@ export function HerdScreen({
   const [commandRunnerOpen, setCommandRunnerOpen] = useState(false);
   const [tabNameDraft, setTabNameDraft] = useState('');
   const [commandDraft, setCommandDraft] = useState('');
-  const [commandKeyboardInset, setCommandKeyboardInset] = useState(0);
   const commandComposerRef = useRef<View | null>(null);
+  const {
+    inset: commandKeyboardInset,
+    resetInset: resetCommandKeyboardInset,
+  } = useKeyboardInset(commandComposerRef, { enabled: Platform.OS === 'android' });
   const commandInputRef = useRef<TextInputHandle | null>(null);
   const workspaceCwdInputRef = useRef<TextInputHandle | null>(null);
 
@@ -192,31 +196,6 @@ export function HerdScreen({
     selectedWorkspaceId,
     workspaceFilterId,
   ]);
-
-  useEffect(() => {
-    if (Platform.OS !== 'android') return undefined;
-    let insetTimer: ReturnType<typeof setTimeout> | null = null;
-    const show = Keyboard.addListener('keyboardDidShow', event => {
-      if (insetTimer) clearTimeout(insetTimer);
-      setCommandKeyboardInset(0);
-      insetTimer = setTimeout(() => {
-        const keyboardTop = event.endCoordinates.screenY;
-        commandComposerRef.current?.measureInWindow((_x, y, _width, height) => {
-          setCommandKeyboardInset(Math.max(0, Math.ceil(y + height - keyboardTop)));
-        });
-      }, 50);
-    });
-    const hide = Keyboard.addListener('keyboardDidHide', () => {
-      if (insetTimer) clearTimeout(insetTimer);
-      insetTimer = null;
-      setCommandKeyboardInset(0);
-    });
-    return () => {
-      if (insetTimer) clearTimeout(insetTimer);
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   const selectHost = (hostId: string | null) => {
     setWorkspaceEditorMode(null);
@@ -303,13 +282,13 @@ export function HerdScreen({
   const openCommandRunner = () => {
     setTabNameDraft('');
     setCommandDraft(agentCommand.trim());
-    setCommandKeyboardInset(0);
+    resetCommandKeyboardInset();
     setCommandRunnerOpen(true);
   };
 
   const closeCommandRunner = () => {
     if (workspaceBusy) return;
-    setCommandKeyboardInset(0);
+    resetCommandKeyboardInset();
     setCommandRunnerOpen(false);
   };
 
@@ -767,12 +746,7 @@ const AgentRow = memo(
     }));
 
     const restore = () => {
-      translateX.value = withSpring(0, {
-        damping: 24,
-        stiffness: 260,
-        mass: 0.8,
-        overshootClamping: true,
-      });
+      translateX.value = withSpring(0, DEFAULT_SPRING_CONFIG);
     };
 
     const finishClose = (finished: boolean) => {
@@ -835,113 +809,110 @@ const AgentRow = memo(
 
     return (
       <Animated.View className="overflow-hidden rounded-xl" style={rowStyle}>
-        <>
-          <View
-            className="relative min-h-[92px] overflow-hidden rounded-xl"
-            onLayout={event => {
-              const { height, width } = event.nativeEvent.layout;
-              rowWidthRef.current = width;
-              restingHeightRef.current = Math.max(
-                HERD_AGENT_ROW_MIN_HEIGHT,
-                height,
-              );
-              if (!committingRef.current) {
-                rowHeight.value = restingHeightRef.current;
-              }
-            }}
+        <View
+          className="relative min-h-[92px] overflow-hidden rounded-xl"
+          onLayout={event => {
+            const { height, width } = event.nativeEvent.layout;
+            rowWidthRef.current = width;
+            restingHeightRef.current = Math.max(
+              HERD_AGENT_ROW_MIN_HEIGHT,
+              height,
+            );
+            if (!committingRef.current) {
+              rowHeight.value = restingHeightRef.current;
+            }
+          }}>
+          <Animated.View
+            className="absolute inset-y-0 right-0 overflow-hidden rounded-r-xl bg-destructive"
+            style={actionRevealStyle}
           >
-            <Animated.View
-              className="absolute inset-y-0 right-0 overflow-hidden rounded-r-xl bg-destructive"
-              style={actionRevealStyle}
+            <View
+              className="absolute inset-y-0 right-0 items-end justify-center pr-7"
+              style={{ width: HERD_TAB_MAX_DRAG }}
             >
-              <View
-                className="absolute inset-y-0 right-0 items-end justify-center pr-7"
-                style={{ width: HERD_TAB_MAX_DRAG }}
-              >
-                <Icon
-                  as={X}
-                  className="text-destructive-foreground"
-                  size={22}
-                />
-              </View>
-            </Animated.View>
-            <Animated.View
-              className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10"
-              style={contentStyle}
-              {...panResponder.panHandlers}
+              <Icon
+                as={X}
+                className="text-destructive-foreground"
+                size={22}
+              />
+            </View>
+          </Animated.View>
+          <Animated.View
+            className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10"
+            style={contentStyle}
+            {...panResponder.panHandlers}
+          >
+            <GlassBackdrop shapeClassName="rounded-xl" />
+            <Button
+              accessibilityActions={[
+                {
+                  name: 'open-files',
+                  label: t('terminal.openFiles'),
+                },
+                {
+                  name: 'close-tab',
+                  label: t('session.closeTab', { tab: item.tabLabel }),
+                },
+              ]}
+              accessibilityLabel={t('herd.openAgentTerminal', {
+                agent: primaryLabel,
+                host: item.hostLabel,
+              })}
+              className="h-auto min-h-[90px] w-full justify-start gap-3 rounded-none px-3 py-[12px]"
+              disabled={closing}
+              variant="ghost"
+              onAccessibilityAction={event => {
+                if (event.nativeEvent.actionName === 'open-files') {
+                  onOpenFiles(item.hostId, agent);
+                } else if (event.nativeEvent.actionName === 'close-tab') {
+                  commitClose();
+                }
+              }}
+              onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}
+              onLongPress={hapticPress(() => onOpenFiles(item.hostId, agent))}
             >
-              <GlassBackdrop shapeClassName="rounded-xl" />
-              <Button
-                accessibilityActions={[
-                  {
-                    name: 'open-files',
-                    label: t('terminal.openFiles'),
-                  },
-                  {
-                    name: 'close-tab',
-                    label: t('session.closeTab', { tab: item.tabLabel }),
-                  },
-                ]}
-                accessibilityLabel={t('herd.openAgentTerminal', {
-                  agent: primaryLabel,
-                  host: item.hostLabel,
-                })}
-                className="h-auto min-h-[90px] w-full justify-start gap-3 rounded-none px-3 py-[12px]"
-                disabled={closing}
-                variant="ghost"
-                onAccessibilityAction={event => {
-                  if (event.nativeEvent.actionName === 'open-files') {
-                    onOpenFiles(item.hostId, agent);
-                  } else if (event.nativeEvent.actionName === 'close-tab') {
-                    commitClose();
-                  }
-                }}
-                onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}
-                onLongPress={hapticPress(() => onOpenFiles(item.hostId, agent))}
-              >
-                <AgentStatusMedallion
-                  accessibilityLabel={`${primaryLabel}: ${stateLabel}`}
-                  color={tone}
-                  connected
-                  glyphSize={18}
-                  size={40}
-                  status={agent.agent_status}
-                />
-                <View className="min-w-0 flex-1">
-                  <View className="flex-row items-center gap-2">
-                    <Text
-                      className="flex-1 text-base font-semibold"
-                      numberOfLines={1}
-                    >
-                      {primaryLabel}
-                    </Text>
-                    <StatusBadge
-                      showIndicator={false}
-                      status={agent.agent_status}
-                      label={stateLabel}
-                    />
-                  </View>
+              <AgentStatusMedallion
+                accessibilityLabel={`${primaryLabel}: ${stateLabel}`}
+                color={tone}
+                connected
+                glyphSize={18}
+                size={40}
+                status={agent.agent_status}
+              />
+              <View className="min-w-0 flex-1">
+                <View className="flex-row items-center gap-2">
                   <Text
-                    className="mt-1 text-[13px] leading-[18px] text-muted-foreground"
+                    className="flex-1 text-base font-semibold"
                     numberOfLines={1}
                   >
-                    {agent.title ||
-                      agent.foreground_cwd ||
-                      agent.cwd ||
-                      t('herd.untitledTask')}
+                    {primaryLabel}
                   </Text>
-                  <Text
-                    className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70"
-                    numberOfLines={1}
-                  >
-                    {context}
-                  </Text>
+                  <StatusBadge
+                    showIndicator={false}
+                    status={agent.agent_status}
+                    label={stateLabel}
+                  />
                 </View>
-                <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
-              </Button>
-            </Animated.View>
-          </View>
-        </>
+                <Text
+                  className="mt-1 text-[13px] leading-[18px] text-muted-foreground"
+                  numberOfLines={1}
+                >
+                  {agent.title ||
+                    agent.foreground_cwd ||
+                    agent.cwd ||
+                    t('herd.untitledTask')}
+                </Text>
+                <Text
+                  className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70"
+                  numberOfLines={1}
+                >
+                  {context}
+                </Text>
+              </View>
+              <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
+            </Button>
+          </Animated.View>
+        </View>
       </Animated.View>
     );
   },

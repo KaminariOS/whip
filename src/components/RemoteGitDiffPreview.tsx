@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { RemoteGitDiffRow, RemoteGitDiff } from '@/src/lib/remoteGit';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
-import { useTheme, type ThemeColors } from '@/src/theme';
+import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -175,10 +175,6 @@ function DiffRow({
       </Text>
     </View>
   );
-}
-
-function colorWithAlpha(color: string, alpha: string): string {
-  return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }
 
 const styles = StyleSheet.create({

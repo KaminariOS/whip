@@ -21,6 +21,23 @@ export const connectionErrorTranslationKeys: Record<ConnectionErrorKind, string>
   unknown: 'app.connectUnknownError',
 };
 
+export type PrivateKeyErrorTranslationKey =
+  | 'connection.enterPassphraseFirst'
+  | 'connection.incorrectPassphrase'
+  | 'connection.unreadableKey';
+
+export function errorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null;
+  return typeof error.code === 'string' ? error.code : null;
+}
+
+export function privateKeyErrorTranslationKey(error: unknown): PrivateKeyErrorTranslationKey {
+  const code = errorCode(error);
+  if (code === 'E_KEY_PASSPHRASE_REQUIRED') return 'connection.enterPassphraseFirst';
+  if (code === 'E_KEY_PASSPHRASE_INVALID') return 'connection.incorrectPassphrase';
+  return 'connection.unreadableKey';
+}
+
 export function connectionErrorContext(error: unknown): Record<string, string> {
   if (error && typeof error === 'object' && 'expected' in error) {
     const mismatch = error as { expected?: unknown; received?: unknown };

@@ -9,12 +9,13 @@ import { useTranslation } from 'react-i18next';
 
 import { formatRemoteFileSize, isRemoteHiddenPath, joinRemotePath, nextRemoteFileSort, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortDirection, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
 import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '@/src/lib/remoteFileSwipeActions';
+import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { absoluteRemoteGitPath, buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
 import type { HerdrClient, RemoteHtmlPreviewHandle, RemoteSftpFileServerHandle } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { defaultRemoteFilePreferences, loadRemoteFilePreferences, saveRemoteFilePreferences } from '@/src/services/remoteFilePreferences';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
-import { useTheme, type ThemeColors } from '@/src/theme';
+import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview } from './CodePreview';
 import { HtmlPreview } from './HtmlPreview';
@@ -604,19 +605,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
             {preview.editing ? (
               <CodeEditor editable={!actionBusy} filename={remoteEntryName(preview.entry)} onChangeText={draft => updatePreview({ draft })} progressIdentity={previewProgressIdentity!} value={preview.draft} />
             ) : preview.error ? (
-              <View className="flex-1 items-center justify-center p-8">
-                <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.openFailed')}</Text>
-                <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">{preview.error}</Text>
-                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry)))}>
-                  <RefreshCw size={16} color={colors.text} />
-                  <Text>{t('files.retry')}</Text>
-                </Button>
-              </View>
+              <FileErrorState
+                error={preview.error}
+                title={t('files.openFailed')}
+                onRetry={() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry))}
+              />
             ) : previewLoading ? (
-              <View className="flex-1 items-center justify-center gap-3 p-8">
-                <ActivityIndicator color={colors.primary} />
-                <Text className="text-[12px] text-muted-foreground">{t('files.opening')}</Text>
-              </View>
+              <FileLoadingState label={t('files.opening')} />
             ) : preview.gitStatus && preview.gitDiff ? (
               <RemoteGitDiffPreview
                 diff={preview.gitDiff}
@@ -720,33 +715,21 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
               </Button>
             </View>
             {busy ? (
-              <View className="flex-1 items-center justify-center gap-3 p-8">
-                <ActivityIndicator color={colors.primary} />
-                <Text className="text-[12px] text-muted-foreground">{t('files.loading')}</Text>
-              </View>
+              <FileLoadingState label={t('files.loading')} />
             ) : error ? (
-              <View className="flex-1 items-center justify-center p-8">
-                <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.listFailed')}</Text>
-                <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">{error}</Text>
-                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => loadDirectory(path || initialPath))}>
-                  <RefreshCw size={16} color={colors.text} />
-                  <Text>{t('files.retry')}</Text>
-                </Button>
-              </View>
+              <FileErrorState
+                error={error}
+                title={t('files.listFailed')}
+                onRetry={() => loadDirectory(path || initialPath)}
+              />
             ) : gitMode && gitBusy ? (
-              <View className="flex-1 items-center justify-center gap-3 p-8">
-                <ActivityIndicator color={colors.primary} />
-                <Text className="text-[12px] text-muted-foreground">{t('files.gitLoading')}</Text>
-              </View>
+              <FileLoadingState label={t('files.gitLoading')} />
             ) : gitMode && gitError ? (
-              <View className="flex-1 items-center justify-center p-8">
-                <Text className="text-center text-[14px] font-semibold text-destructive">{t('files.gitFailed')}</Text>
-                <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">{gitError}</Text>
-                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => refreshGitChanges())}>
-                  <RefreshCw size={16} color={colors.text} />
-                  <Text>{t('files.retry')}</Text>
-                </Button>
-              </View>
+              <FileErrorState
+                error={gitError}
+                title={t('files.gitFailed')}
+                onRetry={refreshGitChanges}
+              />
             ) : gitMode && gitTreeRows.length ? (
               <FlatList
                 contentContainerStyle={remoteGitListContentStyle}
@@ -818,13 +801,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
                 windowSize={10}
               />
             ) : gitMode && gitStatus.length && !showHiddenFiles ? (
-              <View className="flex-1 items-center justify-center p-8">
-                <FolderOpen size={30} color={colors.textSecondary} />
-                <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">{t('files.hiddenOnly')}</Text>
-                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => updateShowHiddenFiles(true))}>
-                  <Text>{t('files.showHiddenAction')}</Text>
-                </Button>
-              </View>
+              <HiddenOnlyState onShow={() => updateShowHiddenFiles(true)} />
             ) : gitMode ? (
               <View className="flex-1 items-center justify-center p-8">
                 <GitCompareArrows size={30} color={colors.working} />
@@ -882,13 +859,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
                 })}
               </ScrollView>
             ) : entries.length && !showHiddenFiles ? (
-              <View className="flex-1 items-center justify-center p-8">
-                <FolderOpen size={30} color={colors.textSecondary} />
-                <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">{t('files.hiddenOnly')}</Text>
-                <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(() => updateShowHiddenFiles(true))}>
-                  <Text>{t('files.showHiddenAction')}</Text>
-                </Button>
-              </View>
+              <HiddenOnlyState onShow={() => updateShowHiddenFiles(true)} />
             ) : (
               <View className="flex-1 items-center justify-center p-8">
                 <FolderOpen size={30} color={colors.textSecondary} />
@@ -953,6 +924,45 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
   );
 }
 
+function FileLoadingState({ label }: { label: string }) {
+  const { colors } = useTheme();
+  return (
+    <View className="flex-1 items-center justify-center gap-3 p-8">
+      <ActivityIndicator color={colors.primary} />
+      <Text className="text-[12px] text-muted-foreground">{label}</Text>
+    </View>
+  );
+}
+
+function FileErrorState({ title, error, onRetry }: { title: string; error: string; onRetry: () => void | Promise<void> }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  return (
+    <View className="flex-1 items-center justify-center p-8">
+      <Text className="text-center text-[14px] font-semibold text-destructive">{title}</Text>
+      <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">{error}</Text>
+      <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(onRetry)}>
+        <RefreshCw size={16} color={colors.text} />
+        <Text>{t('files.retry')}</Text>
+      </Button>
+    </View>
+  );
+}
+
+function HiddenOnlyState({ onShow }: { onShow: () => void }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  return (
+    <View className="flex-1 items-center justify-center p-8">
+      <FolderOpen size={30} color={colors.textSecondary} />
+      <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">{t('files.hiddenOnly')}</Text>
+      <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(onShow)}>
+        <Text>{t('files.showHiddenAction')}</Text>
+      </Button>
+    </View>
+  );
+}
+
 function SwipeableRemoteFileRow({ children, deleting, disabled, name, onDelete }: { children: (controls: { actionsOpen: boolean; closeActions: () => void }) => ReactNode; deleting: boolean; disabled: boolean; name: string; onDelete: () => void }) {
   const { t } = useTranslation();
   const translateX = useSharedValue(0);
@@ -968,12 +978,7 @@ function SwipeableRemoteFileRow({ children, deleting, disabled, name, onDelete }
   const settle = (open: boolean) => {
     openRef.current = open;
     setActionsOpen(open);
-    translateX.value = withSpring(open ? -REMOTE_FILE_SWIPE_ACTION_WIDTH : 0, {
-      damping: 24,
-      stiffness: 260,
-      mass: 0.8,
-      overshootClamping: true,
-    });
+    translateX.value = withSpring(open ? -REMOTE_FILE_SWIPE_ACTION_WIDTH : 0, DEFAULT_SPRING_CONFIG);
   };
 
   const panResponder = useRef(
@@ -1039,10 +1044,6 @@ function remoteGitStatusColor(status: RemoteGitStatusEntry, colors: ThemeColors)
   if (label.includes('A')) return colors.working;
   if (label.includes('R') || label.includes('C')) return colors.primary;
   return colors.warning;
-}
-
-function colorWithAlpha(color: string, alpha: string): string {
-  return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }
 
 function isPickerCancellation(reason: unknown): boolean {
