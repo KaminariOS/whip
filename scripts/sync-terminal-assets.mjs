@@ -74,6 +74,10 @@ await Promise.all([
     'addon-fit.js',
   ),
   copyTerminalAsset(
+    resolve(root, 'node_modules/@xterm/addon-image/lib/addon-image.js'),
+    'addon-image.js',
+  ),
+  copyTerminalAsset(
     resolve(root, 'node_modules/mermaid/dist/mermaid.min.js'),
     'mermaid.min.js',
   ),
@@ -211,6 +215,7 @@ const terminalSessionHtml = `<!doctype html>
   <div id="selection-toolbar"><button id="copy-selection">COPY</button><button id="select-all-selection">SELECT ALL</button><button id="paste-selection">PASTE</button></div>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
+  <script src="addon-image.js"></script>
   <script>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
@@ -249,6 +254,17 @@ const terminalSessionHtml = `<!doctype html>
     });
     const fit = new FitAddon.FitAddon();
     terminal.loadAddon(fit);
+    const images = new ImageAddon.ImageAddon({
+      kittySupport: true,
+      sixelSupport: false,
+      iipSupport: false,
+      enableSizeReports: true,
+      pixelLimit: 4194304,
+      kittySizeLimit: 8388608,
+      storageLimit: 8,
+      showPlaceholder: true,
+    });
+    terminal.loadAddon(images);
     terminal.open(document.getElementById('terminal'));
     let lastTap = null;
     let doubleTapAction = 'tab';
@@ -1013,6 +1029,7 @@ const terminalHtml = `<!doctype html>
   <div id="terminals"></div>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
+  <script src="addon-image.js"></script>
   <script>
     const terminalMarkup = ${JSON.stringify(terminalSessionMarkup).replaceAll('<', '\\u003c')};
     const createTerminalSession = (root, report) => {

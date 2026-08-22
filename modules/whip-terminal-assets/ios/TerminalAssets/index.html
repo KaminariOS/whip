@@ -68,6 +68,7 @@
   <div id="terminals"></div>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
+  <script src="addon-image.js"></script>
   <script>
     const terminalMarkup = "  \u003cdiv id=\"terminal-background-layer\">\n    \u003cimg id=\"terminal-background-image\" alt=\"\" />\n    \u003cdiv id=\"terminal-background-glass\">\u003c/div>\n  \u003c/div>\n  \u003cdiv id=\"terminal\">\u003c/div>\n  \u003cdiv id=\"selection-handles\" aria-hidden=\"true\">\n    \u003cdiv id=\"selection-start-handle\" class=\"selection-handle\">\u003c/div>\n    \u003cdiv id=\"selection-end-handle\" class=\"selection-handle\">\u003c/div>\n  \u003c/div>\n  \u003cdiv id=\"selection-toolbar\">\u003cbutton id=\"copy-selection\">COPY\u003c/button>\u003cbutton id=\"select-all-selection\">SELECT ALL\u003c/button>\u003cbutton id=\"paste-selection\">PASTE\u003c/button>\u003c/div>";
     const createTerminalSession = (root, report) => {
@@ -277,6 +278,17 @@
     });
     const fit = new FitAddon.FitAddon();
     terminal.loadAddon(fit);
+    const images = new ImageAddon.ImageAddon({
+      kittySupport: true,
+      sixelSupport: false,
+      iipSupport: false,
+      enableSizeReports: true,
+      pixelLimit: 4194304,
+      kittySizeLimit: 8388608,
+      storageLimit: 8,
+      showPlaceholder: true,
+    });
+    terminal.loadAddon(images);
     terminal.open(root.querySelector('#terminal'));
     let lastTap = null;
     let doubleTapAction = 'tab';
