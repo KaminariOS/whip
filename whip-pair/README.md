@@ -61,22 +61,24 @@ Run the public version:
 nix run github:KaminariOS/whip#whip-pair
 ```
 
-Without arguments, `whip-pair` lists the host's reachable interface addresses
-and also offers a manual public-address choice:
+Without arguments, `whip-pair` lists the host's reachable interface addresses,
+uses `ifconfig.me` to discover its public IP when `curl` is available, and also
+offers a manual public-address choice:
 
 ```text
 Choose how Whip will reach this host:
 
   1. Tailscale    100.84.12.5                             tailscale0
   2. Wi-Fi        192.168.1.20                            wlan0
-  3. Public/other Enter a public IP address or hostname
+  3. Public       203.0.113.10                            ifconfig.me
+  4. Public/other Enter a public IP address or hostname
 
 Selection [1]:
 ```
 
-A public address behind NAT is not assigned to a local interface, so it cannot
-be discovered reliably. Choose **Public/other** and enter its IP address or DNS
-name, or select a specific reachable endpoint non-interactively:
+Public-IP discovery does not verify that SSH is reachable through the router or
+firewall. Choose **Public/other** to enter a DNS name or a different address, or
+select a specific reachable endpoint non-interactively:
 
 ```bash
 nix run github:KaminariOS/whip#whip-pair -- serve \
@@ -270,6 +272,6 @@ Commit those changes, then push a tag whose version matches `Cargo.toml`
 exactly:
 
 ```bash
-git tag whip-pair-v0.1.1
-git push origin whip-pair-v0.1.1
+git tag whip-pair-v0.1.2
+git push origin whip-pair-v0.1.2
 ```
