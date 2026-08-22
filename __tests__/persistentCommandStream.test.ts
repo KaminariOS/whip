@@ -231,6 +231,32 @@ describe('direct Herdr API requests', () => {
     });
   });
 
+  test('sends paste events through the pane input API in submission order', async () => {
+    const native = apiClient(() => ({ type: 'ok' }));
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await client.pasteIntoPane('pane-1', 'a long paste');
+    await client.submitPastesToPane('pane-1', ['please inspect', '/tmp/image.png']);
+
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    expect(requests.map(request => request.method)).toEqual([
+      'pane.send_input',
+      'pane.send_input',
+      'pane.send_text',
+      'pane.send_input',
+      'pane.send_keys',
+    ]);
+    expect(requests.map(request => request.params)).toEqual([
+      { pane_id: 'pane-1', text: 'a long paste', keys: [] },
+      { pane_id: 'pane-1', text: 'please inspect', keys: [] },
+      { pane_id: 'pane-1', text: ' ' },
+      { pane_id: 'pane-1', text: '/tmp/image.png', keys: [] },
+      { pane_id: 'pane-1', keys: ['Enter'] },
+    ]);
+  });
+
   test('serializes concurrent commands and preserves multiline UTF-8 output', async () => {
     const native = apiClient(request => request.method === 'pane.read'
       ? { type: 'pane_read', read: { text: 'first\n你好' } }

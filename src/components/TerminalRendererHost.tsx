@@ -21,6 +21,7 @@ import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes'
 import type { TerminalFrame, TerminalProtocolState } from '../lib/terminalBridge';
 import { arrayBufferToBase64 } from '../lib/base64';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
+import { prepareTerminalPaste } from '../lib/terminalPaste';
 import { terminalSubmissionWrites } from '../lib/terminalSubmission';
 import {
   terminalRendererEvictionKeys,
@@ -58,6 +59,7 @@ interface RendererEntry {
   fontPreference: number;
   fontSize: number;
   protocolState: TerminalProtocolState;
+  inputTail: Promise<void>;
 }
 
 export interface TerminalRendererHandle {
@@ -331,6 +333,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         protocolState: {
           kittyKeyboardReportAll: false,
         },
+        inputTail: Promise.resolve(),
       };
       entries.current.set(target.key, entry);
       if (hostReady.current) {
@@ -350,6 +353,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     inject(`window.${method}(${[JSON.stringify(key), ...args.map(value => JSON.stringify(value))].join(', ')});`);
   }, [inject]);
 
+  const enqueueInput = useCallback((
+    entry: RendererEntry,
+    operation: () => void | Promise<void>,
+  ) => {
+    const pending = entry.inputTail.then(operation, operation);
+    entry.inputTail = pending.catch(() => undefined);
+    return pending;
+  }, []);
+
   useImperativeHandle(forwardedRef, () => ({
     blur: () => activeCall('herdrBlur'),
     changeFontSize: delta => activeCall('herdrChangeFontSize', [delta]),
@@ -359,7 +371,19 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       webView.current?.requestFocus();
       activeCall('herdrFocus');
     },
-    paste: data => activeCall('herdrPaste', [data]),
+    paste: data => {
+      const key = activeKey.current;
+      const entry = key ? entries.current.get(key) : null;
+      if (!entry) return;
+      if (entry.target.session.kind === 'ssh') {
+        activeCall('herdrPaste', [data]);
+        return;
+      }
+      enqueueInput(entry, () => entry.target.client.pasteIntoPane(
+        entry.target.session.paneId,
+        prepareTerminalPaste(data),
+      )).catch(reason => reportError(entry.target, String(reason)));
+    },
     retry: () => {
       const key = activeKey.current;
       const entry = key ? entries.current.get(key) : null;
@@ -387,8 +411,21 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (enabled) webView.current?.requestFocus();
       activeCall('herdrSetKeyboardEnabled', [enabled]);
     },
-    submitPastes: parts => activeCall('herdrSubmitPastes', [parts]),
-  }), [activeCall, connectEntry]);
+    submitPastes: parts => {
+      const key = activeKey.current;
+      const entry = key ? entries.current.get(key) : null;
+      if (!entry) return;
+      if (entry.target.session.kind === 'ssh') {
+        activeCall('herdrSubmitPastes', [parts]);
+        return;
+      }
+      const prepared = parts.map(prepareTerminalPaste);
+      enqueueInput(entry, () => entry.target.client.submitPastesToPane(
+        entry.target.session.paneId,
+        prepared,
+      )).catch(reason => reportError(entry.target, String(reason)));
+    },
+  }), [activeCall, connectEntry, enqueueInput]);
 
   useEffect(() => {
     const valid = new Map(targets.map(target => [target.key, target]));
@@ -525,15 +562,17 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       return;
     }
     if (message.type === 'input') {
-      await reportInput(entry.target, message.data);
+      await enqueueInput(entry, () => reportInput(entry.target, message.data));
     } else if (message.type === 'buffered-submit') {
       try {
         const pastedParts = Array.isArray(message.parts)
           ? message.parts.filter((part: unknown): part is string => typeof part === 'string')
           : [];
-        for (const data of terminalSubmissionWrites(pastedParts)) {
-          await entry.target.client.writeToTerminal(entry.target.session.terminalId, data);
-        }
+        await enqueueInput(entry, async () => {
+          for (const data of terminalSubmissionWrites(pastedParts)) {
+            await entry.target.client.writeToTerminal(entry.target.session.terminalId, data);
+          }
+        });
       } catch (reason) {
         reportError(entry.target, String(reason));
       }
@@ -581,7 +620,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     } else if (message.type === 'clipboard-read') {
       const value = await Clipboard.getString();
       if (value) {
-        inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(value)});`);
+        if (entry.target.session.kind === 'ssh') {
+          inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(value)});`);
+        } else {
+          enqueueInput(entry, () => entry.target.client.pasteIntoPane(
+            entry.target.session.paneId,
+            prepareTerminalPaste(value),
+          )).catch(reason => reportError(entry.target, String(reason)));
+        }
         reportPaste(entry.target, value);
       }
     } else if (

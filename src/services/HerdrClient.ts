@@ -897,6 +897,27 @@ export class HerdrClient {
     });
   }
 
+  async pasteIntoPane(paneId: string, text: string): Promise<void> {
+    await this.apiRequest('pane.send_input', {
+      pane_id: paneId,
+      text,
+      keys: [],
+    });
+  }
+
+  async submitPastesToPane(paneId: string, parts: readonly string[]): Promise<void> {
+    let wrotePart = false;
+    for (const text of parts) {
+      if (!text) continue;
+      if (wrotePart) {
+        await this.apiRequest('pane.send_text', { pane_id: paneId, text: ' ' });
+      }
+      await this.pasteIntoPane(paneId, text);
+      wrotePart = true;
+    }
+    await this.sendPaneKeys(paneId, ['Enter']);
+  }
+
   async sendPaneKeys(paneId: string, keys: string[]): Promise<void> {
     await this.apiRequest('pane.send_keys', { pane_id: paneId, keys });
   }
