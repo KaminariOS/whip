@@ -106,7 +106,7 @@ export function AboutSection() {
           if (!expanded) setContentMounted(true);
           setExpanded(value => !value);
         })}>
-        <GlassBackdrop />
+        <GlassBackdrop shapeClassName="rounded-lg" />
         <View className="min-w-0 flex-1">
           <Text className="text-[17px] font-semibold leading-6">{t('about.title')}</Text>
           <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.copy')}</Text>
@@ -133,7 +133,7 @@ export function AboutSection() {
               className="h-auto min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
               variant="outline"
               onPress={hapticPress(openReleases)}>
-              <GlassBackdrop />
+              <GlassBackdrop shapeClassName="rounded-lg" />
               <View className="size-11 items-center justify-center rounded-full bg-accent">
                 <Icon as={Code2} size={22} />
               </View>
@@ -149,7 +149,7 @@ export function AboutSection() {
               size="content"
               variant="outline"
               onPress={hapticPress(shareReleases)}>
-              <GlassBackdrop />
+              <GlassBackdrop shapeClassName="rounded-lg" />
               <Icon as={Share2} size={21} />
             </Button>
           </View>
@@ -159,7 +159,7 @@ export function AboutSection() {
               className="h-auto min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
               variant="outline"
               onPress={hapticPress(openHerdrWebsite)}>
-              <GlassBackdrop />
+              <GlassBackdrop shapeClassName="rounded-lg" />
               <HerdrMark size={44} accessibilityLabel={t('about.herdrIcon')} />
               <View className="min-w-0 flex-1">
                 <Text className="text-[15px] font-semibold leading-5">{t('about.herdrWebsite')}</Text>
@@ -173,7 +173,7 @@ export function AboutSection() {
               size="content"
               variant="outline"
               onPress={hapticPress(shareHerdrWebsite)}>
-              <GlassBackdrop />
+              <GlassBackdrop shapeClassName="rounded-lg" />
               <Icon as={Share2} size={21} />
             </Button>
           </View>
