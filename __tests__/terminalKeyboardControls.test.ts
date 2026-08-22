@@ -65,18 +65,25 @@ describe('terminal keyboard controls', () => {
       resolve(__dirname, '../src/components/TerminalScreen.tsx'),
       'utf8',
     );
+    const renderer = readFileSync(
+      resolve(__dirname, '../src/components/TerminalRendererHost.tsx'),
+      'utf8',
+    );
     const assets = readFileSync(
       resolve(__dirname, '../scripts/sync-terminal-assets.mjs'),
       'utf8',
     );
 
     expect(screen).toContain('const [keyboardEnabled, setKeyboardEnabled] = useState(false)');
+    expect(screen).toContain('if (enabled) renderer.current?.setKeyboardEnabled(true)');
     expect(screen).toContain('renderer.current?.setKeyboardEnabled(keyboardEnabled)');
     expect(screen).toContain('Keyboard.dismiss()');
     expect(screen).toContain('{...(!terminalSelectionActive ? terminalPanHandlers : undefined)}');
     expect(assets).toContain('let keyboardEnabled = false');
     expect(assets).toContain('window.herdrSetKeyboardEnabled = enabled =>');
     expect(assets).toContain('if (!keyboardEnabled) terminal.blur()');
+    expect(renderer).toContain('requestFocus: () => void');
+    expect(renderer).toContain('webView.current?.requestFocus()');
   });
 
   it('syncs keyboard mode when a terminal renderer becomes active for the first time', () => {
@@ -113,7 +120,7 @@ describe('terminal keyboard controls', () => {
       'utf8',
     );
     expect(assets).toContain('if (!touch.moved && !touch.longPressed && point) {');
-    expect(assets).toContain('if (terminalMouseCaptured()) {');
+    expect(assets).toContain('if (!keyboardEnabled && terminalMouseCaptured()) {');
     expect(assets).toContain('terminal.focus();');
   });
 

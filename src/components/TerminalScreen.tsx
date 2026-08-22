@@ -586,6 +586,7 @@ export function TerminalScreen({
           onPress={() => {
             onControlUse(control);
             const enabled = !keyboardEnabled;
+            if (enabled) renderer.current?.setKeyboardEnabled(true);
             setKeyboardEnabled(enabled);
             if (enabled) {
               setTimeout(() => {

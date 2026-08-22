@@ -394,6 +394,13 @@ const terminalSessionHtml = `<!doctype html>
         row: Math.max(0, Math.min(terminal.rows - 1, Math.floor((point.clientY - bounds.top) / bounds.height * terminal.rows))),
       };
     };
+    const sendRemoteClick = point => {
+      if (localScrollback || keyboardEnabled) return false;
+      const cell = terminalMouseCell(point);
+      if (!cell) return false;
+      send({ type: 'terminal-click', column: cell.col, row: cell.row });
+      return true;
+    };
     const dispatchTerminalMouse = (action, point) => {
       if (!terminalMouseCaptured() || !terminal.element) return false;
       const eventType = action === 'down' ? 'mousedown' : action === 'move' ? 'mousemove' : 'mouseup';
@@ -733,6 +740,7 @@ const terminalSessionHtml = `<!doctype html>
     );
     document.getElementById('terminal').addEventListener('touchstart', event => {
       if (event.target.closest?.('#selection-toolbar')) return;
+      if (keyboardEnabled && event.touches.length === 1) terminal.focus();
       if (!keyboardEnabled) {
         event.preventDefault();
         event.stopPropagation();
@@ -870,7 +878,8 @@ const terminalSessionHtml = `<!doctype html>
         event.stopPropagation();
         const link = urlAtPoint(point.clientX, point.clientY);
         if (link) send({ type: 'open-link', link });
-        else if (terminalMouseCaptured()) dispatchTerminalClick(point);
+        else if (sendRemoteClick(point)) lastTap = null;
+        else if (!keyboardEnabled && terminalMouseCaptured()) dispatchTerminalClick(point);
         else {
           clearInteractiveSelection(true);
         }
@@ -878,7 +887,14 @@ const terminalSessionHtml = `<!doctype html>
         return;
       }
       if (!touch.moved && !touch.longPressed && point) {
-        if (terminalMouseCaptured()) {
+        if (sendRemoteClick(point)) {
+          event.preventDefault();
+          event.stopPropagation();
+          lastTap = null;
+          touch = null;
+          return;
+        }
+        if (!keyboardEnabled && terminalMouseCaptured()) {
           event.preventDefault();
           event.stopPropagation();
           dispatchTerminalClick(point);

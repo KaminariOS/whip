@@ -42,6 +42,7 @@ const TERMINAL_SOURCE = Platform.select({
 
 interface WebViewHandle {
   injectJavaScript: (script: string) => void;
+  requestFocus: () => void;
 }
 
 interface RendererEntry {
@@ -356,7 +357,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     changeFontSize: delta => activeCall('herdrChangeFontSize', [delta]),
     clearSearch: () => activeCall('herdrClearSearch'),
     fit: () => activeCall('herdrFit'),
-    focus: () => activeCall('herdrFocus'),
+    focus: () => {
+      webView.current?.requestFocus();
+      activeCall('herdrFocus');
+    },
     paste: data => activeCall('herdrPaste', [data]),
     retry: () => {
       const key = activeKey.current;
@@ -381,7 +385,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       'herdrSearch',
       [query, caseSensitive, regex, direction],
     ),
-    setKeyboardEnabled: enabled => activeCall('herdrSetKeyboardEnabled', [enabled]),
+    setKeyboardEnabled: enabled => {
+      if (enabled) webView.current?.requestFocus();
+      activeCall('herdrSetKeyboardEnabled', [enabled]);
+    },
     submit: data => activeCall('herdrSubmit', [data]),
   }), [activeCall, connectEntry]);
 
@@ -543,6 +550,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           entry.target.session.terminalId,
           message.direction,
           message.lines,
+          message.column,
+          message.row,
+        );
+      } catch (reason) {
+        reportError(entry.target, String(reason));
+      }
+    } else if (message.type === 'terminal-click') {
+      try {
+        await entry.target.client.clickTerminal(
+          entry.target.session.terminalId,
           message.column,
           message.row,
         );

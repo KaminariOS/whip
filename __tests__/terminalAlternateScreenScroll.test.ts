@@ -35,7 +35,7 @@ describe('alternate-screen terminal scrolling', () => {
     expect(assets).toContain("dispatchTerminalMouse('down', { clientX: touch.x, clientY: touch.y })");
     expect(assets).toContain("dispatchTerminalMouse('move', point)");
     expect(assets).toContain("dispatchTerminalMouse('up', point)");
-    expect(assets).toContain('else if (terminalMouseCaptured()) dispatchTerminalClick(point)');
+    expect(assets).toContain('else if (!keyboardEnabled && terminalMouseCaptured()) dispatchTerminalClick(point)');
   });
 
   it('sends the touched terminal cell with remote wheel requests', () => {

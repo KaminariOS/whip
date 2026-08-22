@@ -430,6 +430,19 @@ export class HerdrClient {
     return '';
   }
 
+  async clickTerminal(terminalId: string, column: number, row: number): Promise<void> {
+    const opening = this.terminalOpenings.get(terminalId);
+    if (opening) await opening;
+    if (isSshShellTerminalId(terminalId)) return;
+    await this.ensureTerminalBridge(terminalId);
+    const sgrColumn = Math.max(0, Math.min(0xffff, Math.round(column))) + 1;
+    const sgrRow = Math.max(0, Math.min(0xffff, Math.round(row))) + 1;
+    await this.requireClient().herdrBridgeInput(
+      terminalId,
+      `\u001b[<0;${sgrColumn};${sgrRow}M\u001b[<0;${sgrColumn};${sgrRow}m`,
+    );
+  }
+
   resizeTerminal(terminalId: string, columns: number, rows: number, cellWidthPx = 0, cellHeightPx = 0): void {
     const size = {
       columns: Math.max(20, columns),

@@ -40,6 +40,7 @@ function bridgeClient(protocol = 17) {
     requestHerdrApi,
     getRemoteHome: jest.fn(async () => '/home/herdr'),
     startHerdrBridge: jest.fn(async () => undefined),
+    herdrBridgeInput: jest.fn(async () => undefined),
     herdrBridgeResize: jest.fn(async () => undefined),
     herdrBridgeScroll: jest.fn(async () => undefined),
     closeHerdrBridge: jest.fn(),
@@ -120,6 +121,21 @@ describe('terminal bridge channels', () => {
       3,
       12,
       7,
+    );
+  });
+
+  test('encodes a stationary terminal tap as an SGR mouse click', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn());
+
+    await client.clickTerminal('term-1', 12, 7);
+
+    expect(native.herdrBridgeInput).toHaveBeenCalledWith(
+      'term-1',
+      '\u001b[<0;13;8M\u001b[<0;13;8m',
     );
   });
 
