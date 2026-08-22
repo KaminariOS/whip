@@ -612,6 +612,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       javaScriptEnabled
       textZoom={100}
       onMessage={handleMessage}
+      onTouchStart={() => {
+        if (!visible || !activeKey.current) return;
+        webView.current?.requestFocus();
+        activeCall('herdrFocus');
+      }}
       style={style}
       containerStyle={WEBVIEW_CONTAINER_STYLE}
     />
