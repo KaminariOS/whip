@@ -126,6 +126,18 @@ const TERMINAL_CONTROL_LABEL_STYLE = {
 } as const;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
+type ComposerInputProps = Omit<React.ComponentProps<typeof Input>, 'defaultValue' | 'value'> & {
+  initialValue: string;
+};
+
+function ComposerInput({ initialValue, ...props }: ComposerInputProps) {
+  // React Native sends `defaultValue` to Android as the native text prop. Keep
+  // it stable for this mounted input so partial IME results are never written
+  // back over the keyboard's active composing span.
+  const nativeInitialValue = useRef(initialValue).current;
+  return <Input {...props} defaultValue={nativeInitialValue} />;
+}
+
 export function TerminalBackground({ preferences }: { preferences: TerminalPreferences }) {
   if (!preferences.backgroundImageUri) return null;
 
@@ -198,6 +210,7 @@ export function TerminalScreen({
   const handledPasteRequest = useRef(0);
   const composeAttachmentsRef = useRef<ComposeAttachment[]>([]);
   const composeInputRef = useRef<TextInputHandle | null>(null);
+  const composeTextRef = useRef('');
   const wasVisible = useRef(visible);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -378,7 +391,12 @@ export function TerminalScreen({
       return;
     }
     if (composeOpen) {
-      setComposeText(current => `${current}${current && !/\s$/.test(current) ? ' ' : ''}${pasteRequest.text}`);
+      const current = composeTextRef.current;
+      const next = `${current}${current && !/\s$/.test(current) ? ' ' : ''}${pasteRequest.text}`;
+      composeTextRef.current = next;
+      setComposeText(next);
+      composeInputRef.current?.setNativeProps({ text: next });
+      composeInputRef.current?.setSelection(next.length, next.length);
       pasteRequest.dispose?.();
       return;
     }
@@ -508,14 +526,16 @@ export function TerminalScreen({
   const submitCompose = () => {
     if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
     const attachmentPaths = composeAttachmentsRef.current.map(attachment => attachment.remotePath);
-    const submission = composeTerminalSubmission(composeText, attachmentPaths);
+    const submission = composeTerminalSubmission(composeTextRef.current, attachmentPaths);
     if (!submission.historyEntry) {
       sendInput(ENTER_INPUT);
       return;
     }
     renderer.current?.submitPastes(submission.pasteEvents);
     onHistoryEntry(submission.historyEntry);
+    composeTextRef.current = '';
     setComposeText('');
+    composeInputRef.current?.clear();
     for (const attachment of composeAttachmentsRef.current) attachment.dispose();
     composeAttachmentsRef.current = [];
     setComposeAttachments([]);
@@ -536,6 +556,7 @@ export function TerminalScreen({
 
   const updateComposeText = (value: string) => {
     if (activeTargetRef.current) onInteraction?.(activeTargetRef.current);
+    composeTextRef.current = value;
     setComposeText(value);
   };
 
@@ -901,14 +922,14 @@ export function TerminalScreen({
                     removeLabel={t('terminal.removeAttachment')}
                     onRemove={removeComposeAttachment}
                   />
-                  <Input
+                  <ComposerInput
                     ref={composeInputRef}
+                    initialValue={composeText}
                     autoFocus={keyboardEnabled}
                     showSoftInputOnFocus={keyboardEnabled}
                     multiline
                     numberOfLines={3}
                     textAlignVertical="top"
-                    value={composeText}
                     onChangeText={updateComposeText}
                     placeholder={t('terminal.composePlaceholder')}
                     placeholderTextColor={colors.muted}
@@ -995,13 +1016,13 @@ export function TerminalScreen({
               onRemove={removeComposeAttachment}
               expanded
             />
-            <Input
+            <ComposerInput
               ref={composeInputRef}
+              initialValue={composeText}
               autoFocus={keyboardEnabled}
               showSoftInputOnFocus={keyboardEnabled}
               multiline
               textAlignVertical="top"
-              value={composeText}
               onChangeText={updateComposeText}
               placeholder={t('terminal.composePlaceholder')}
               placeholderTextColor={colors.muted}
