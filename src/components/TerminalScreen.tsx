@@ -16,6 +16,7 @@ import {
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import type { TerminalProtocolState } from '../lib/terminalBridge';
 import type { TerminalPreferences } from '../services/devicePreferences';
+import { beginTerminalInputTrace, endTerminalWriteTrace } from '../services/performanceTrace';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
@@ -355,10 +356,16 @@ export function TerminalScreen({
         ? Boolean(renderer.current?.input(data))
         : false;
     }
+    const inputTrace = beginTerminalInputTrace(
+      target.key,
+      data.includes('\r') || data.includes('\n') ? 'submit' : 'input',
+    );
     onInteraction?.(target);
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     try {
-      await target.client.writeToTerminal(target.session.terminalId, data);
+      const write = target.client.writeToTerminal(target.session.terminalId, data);
+      endTerminalWriteTrace(inputTrace, true);
+      await write;
       if (target.key === activeTargetRef.current?.key) setError(null);
       if (
         refocusTerminal
@@ -370,6 +377,7 @@ export function TerminalScreen({
       }
       return true;
     } catch (reason) {
+      endTerminalWriteTrace(inputTrace, false);
       if (target.key === activeTargetRef.current?.key) setError(String(reason));
       return false;
     }

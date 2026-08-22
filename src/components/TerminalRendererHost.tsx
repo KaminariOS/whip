@@ -33,6 +33,12 @@ import {
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
+import {
+  beginTerminalInputTrace,
+  endTerminalWriteTrace,
+  terminalFrameReceived,
+  terminalFrameRendered,
+} from '../services/performanceTrace';
 import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
 
@@ -57,7 +63,7 @@ interface RendererEntry {
   rendererReady: boolean;
   controllerAttached: boolean;
   connecting: boolean;
-  pendingFrames: TerminalFrame[];
+  pendingFrames: Array<{ frame: TerminalFrame; traceCookie: number | null }>;
   resetOnNextFrame: boolean;
   reconnectAttempt: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
@@ -231,22 +237,27 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     inject(`window.herdrCommitOfflineTranscript(${key});`);
   }, [inject]);
 
-  const injectFrame = useCallback((entry: RendererEntry, frame: TerminalFrame) => {
+  const injectFrame = useCallback((
+    entry: RendererEntry,
+    frame: TerminalFrame,
+    traceCookie: number | null = terminalFrameReceived(entry.target.key),
+  ) => {
     if (!hostReady.current || !entry.rendererReady) {
-      entry.pendingFrames.push(frame);
+      entry.pendingFrames.push({ frame, traceCookie });
       return;
     }
     const key = JSON.stringify(entry.target.key);
+    const serializedTraceCookie = traceCookie === null ? 'null' : String(traceCookie);
     const reset = entry.resetOnNextFrame;
     if (reset) entry.resetOnNextFrame = false;
     const resetScript = reset ? `window.herdrReset(${key}); ` : '';
     if (frame.encoding === 'utf8') {
       if (typeof frame.bytes !== 'string') return;
-      inject(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)});`);
+      inject(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)}, ${serializedTraceCookie});`);
       return;
     }
     if (typeof frame.bytes === 'string' && typeof frame.final === 'boolean') {
-      inject(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final});`);
+      inject(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}, ${serializedTraceCookie});`);
       return;
     }
     const encoded = typeof frame.bytes === 'string'
@@ -263,7 +274,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
     }
     // A frame can require multiple chunks, but it crosses into the WebView once.
-    inject(`${resetScript}${writes.join('')}`);
+    inject(`${resetScript}${writes.join('')}window.herdrTraceRendered(${key}, ${serializedTraceCookie});`);
   }, [inject]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
@@ -469,10 +480,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         return Promise.resolve();
       }
       const prepared = parts.map(prepareTerminalPaste);
-      return enqueueInput(entry, () => entry.target.client.submitPastesToPane(
-        entry.target.session.paneId,
-        prepared,
-      )).catch(reason => {
+      const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
+      return enqueueInput(entry, () => {
+        const submission = entry.target.client.submitPastesToPane(
+          entry.target.session.paneId,
+          prepared,
+        );
+        endTerminalWriteTrace(inputTrace, true);
+        return submission;
+      }).catch(reason => {
+        endTerminalWriteTrace(inputTrace, false);
         reportError(entry.target, String(reason));
         throw reason;
       });
@@ -644,7 +661,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.rendererReady = true;
       const frames = entry.pendingFrames;
       entry.pendingFrames = [];
-      for (const frame of frames) injectFrame(entry, frame);
+      for (const pending of frames) injectFrame(entry, pending.frame, pending.traceCookie);
       return;
     }
     if (message.type === 'input') {
@@ -652,18 +669,24 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       await enqueueInput(entry, () => reportInput(entry.target, message.data));
     } else if (message.type === 'buffered-submit') {
       if (entry.target.session.status !== 'connected') return;
+      const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
       try {
         const pastedParts = Array.isArray(message.parts)
           ? message.parts.filter((part: unknown): part is string => typeof part === 'string')
           : [];
         await enqueueInput(entry, async () => {
-          for (const data of terminalSubmissionWrites(pastedParts)) {
-            await entry.target.client.writeToTerminal(entry.target.session.terminalId, data);
+          for (const [index, data] of terminalSubmissionWrites(pastedParts).entries()) {
+            const write = entry.target.client.writeToTerminal(entry.target.session.terminalId, data);
+            if (index === 0) endTerminalWriteTrace(inputTrace, true);
+            await write;
           }
         });
       } catch (reason) {
+        endTerminalWriteTrace(inputTrace, false);
         reportError(entry.target, String(reason));
       }
+    } else if (message.type === 'trace-rendered') {
+      if (Number.isInteger(message.cookie)) terminalFrameRendered(message.cookie);
     } else if (message.type === 'resize') {
       if (entry.target.session.status !== 'connected') return;
       if (preferences.pauseResizeInBackground && appState.current !== 'active') return;

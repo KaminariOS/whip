@@ -395,26 +395,39 @@ const terminalSessionHtml = `<!doctype html>
       // Queue RIS through xterm's parser so it cannot race a pending transcript.
       terminal.write('\u001bc');
     };
-    window.herdrWrite = data => {
-      prepareLiveWrite();
-      terminal.write(data);
+    const reportTraceRendered = traceCookie => {
+      if (!Number.isInteger(traceCookie)) return;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        send({ type: 'trace-rendered', cookie: traceCookie });
+      }));
     };
-    window.herdrWriteBase64 = data => {
+    window.herdrWrite = (data, traceCookie) => {
+      prepareLiveWrite();
+      terminal.write(data, () => reportTraceRendered(traceCookie));
+    };
+    window.herdrWriteBase64 = (data, traceCookie) => {
       prepareLiveWrite();
       const binary = atob(data);
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-      terminal.write(bytes);
+      terminal.write(bytes, () => reportTraceRendered(traceCookie));
     };
     const pendingFrames = new Map();
-    window.herdrWriteBase64Chunk = (sequence, data, final) => {
-      const encoded = (pendingFrames.get(sequence) || '') + data;
+    window.herdrWriteBase64Chunk = (sequence, data, final, traceCookie) => {
+      const pending = pendingFrames.get(sequence);
+      const encoded = (pending?.encoded || '') + data;
+      const pendingTraceCookie = Number.isInteger(traceCookie)
+        ? traceCookie
+        : pending?.traceCookie;
       if (!final) {
-        pendingFrames.set(sequence, encoded);
+        pendingFrames.set(sequence, { encoded, traceCookie: pendingTraceCookie });
         return;
       }
       pendingFrames.delete(sequence);
-      window.herdrWriteBase64(encoded);
+      window.herdrWriteBase64(encoded, pendingTraceCookie);
+    };
+    window.herdrTraceRendered = traceCookie => {
+      terminal.write('', () => reportTraceRendered(traceCookie));
     };
     window.herdrReset = () => {
       pendingFrames.clear();
@@ -1227,8 +1240,9 @@ const terminalHtml = `<!doctype html>
       if (origin) origin.root.style.transform = 'translateX(' + offset + 'px)';
       if (target) target.root.style.transform = 'translateX(' + (offset + direction * width) + 'px)';
     };
-    window.herdrWriteBase64Chunk = (key, sequence, data, final) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final]);
-    window.herdrWrite = (key, data) => call(key, 'herdrWrite', [data]);
+    window.herdrWriteBase64Chunk = (key, sequence, data, final, traceCookie) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final, traceCookie]);
+    window.herdrWrite = (key, data, traceCookie) => call(key, 'herdrWrite', [data, traceCookie]);
+    window.herdrTraceRendered = (key, traceCookie) => call(key, 'herdrTraceRendered', [traceCookie]);
     window.herdrReset = key => call(key, 'herdrReset');
     window.herdrBeginOfflineTranscript = key => call(key, 'herdrBeginOfflineTranscript');
     window.herdrAppendOfflineTranscript = (key, data) => call(key, 'herdrAppendOfflineTranscript', [data]);

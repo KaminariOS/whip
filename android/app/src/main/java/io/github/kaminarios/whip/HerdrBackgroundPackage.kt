@@ -16,6 +16,7 @@ class HerdrBackgroundPackage : ReactPackage {
       HerdrSystemSettingsModule(reactContext),
       HerdrVolumeKeysModule(reactContext),
       ImageLibraryPickerModule(reactContext),
+      PerformanceTraceModule(reactContext),
       PrivateKeyFilePickerModule(reactContext),
     )
 
