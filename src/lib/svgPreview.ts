@@ -2,6 +2,7 @@ import type { Styles, XmlAST } from 'react-native-svg';
 
 const DISALLOWED_SVG_TAGS = new Set(['foreignobject', 'script']);
 const EMBEDDED_IMAGE_REFERENCE = /^data:image\/(?:gif|jpeg|jpg|png|webp);base64,/i;
+const IMPORTANT_PRIORITY = /\s*!important\s*$/i;
 const URL_REFERENCE = /url\(\s*(['"]?)(.*?)\1\s*\)/gi;
 
 export function sanitizeRemoteSvgAst(root: XmlAST): XmlAST {
@@ -60,7 +61,13 @@ function sanitizeProperties(properties: XmlAST['props']): void {
 
 function sanitizeStyle(style: Styles): void {
   for (const [name, value] of Object.entries(style)) {
-    if (hasExternalUrl(value)) delete style[name];
+    if (hasExternalUrl(value)) {
+      delete style[name];
+      continue;
+    }
+    // react-native-svg forwards CSS priority markers to native property parsers.
+    // Android's SVGLength parser treats the entire value as a number and throws.
+    style[name] = value.replace(IMPORTANT_PRIORITY, '');
   }
 }
 

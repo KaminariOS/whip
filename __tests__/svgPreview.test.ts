@@ -55,6 +55,25 @@ describe('remote SVG sanitization', () => {
     expect(root.children).toEqual([externalImage, interactiveRect]);
   });
 
+  it('removes CSS priority markers before native rendering', () => {
+    const rect = node('rect', {
+      style: {
+        fill: '#fff!important',
+        opacity: '0.5',
+        strokeWidth: '1.5px !important',
+      },
+    });
+    const root = node('svg', {}, [rect]);
+
+    sanitizeRemoteSvgAst(root);
+
+    expect(rect.props.style).toEqual({
+      fill: '#fff',
+      opacity: '0.5',
+      strokeWidth: '1.5px',
+    });
+  });
+
   it('rejects documents without an SVG root element', () => {
     expect(() => sanitizeRemoteSvgAst(node('html'))).toThrow('root must be an SVG');
   });
