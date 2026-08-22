@@ -54,7 +54,7 @@
 
         postInstall = ''
           wrapProgram $out/bin/whip-pair \
-            --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.openssh]}
+            --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.curl pkgs.openssh]}
         '';
 
         meta = {

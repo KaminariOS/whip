@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io, net::IpAddr};
+use std::{collections::HashSet, io, net::IpAddr, process::Command};
 
 use if_addrs::get_if_addrs;
 
@@ -29,8 +29,40 @@ pub fn discover_address_candidates() -> io::Result<Vec<AddressCandidate>> {
             address,
         });
     }
+    if let Some(address) = discover_public_address() {
+        if seen.insert(address) {
+            candidates.push(AddressCandidate {
+                label: "Public".into(),
+                interface: "ifconfig.me".into(),
+                address,
+            });
+        }
+    }
     candidates.sort_by_key(candidate_rank);
     Ok(candidates)
+}
+
+fn discover_public_address() -> Option<IpAddr> {
+    let output = Command::new("curl")
+        .args([
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "3",
+            "https://ifconfig.me/ip",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_public_address(&output.stdout)
+}
+
+fn parse_public_address(output: &[u8]) -> Option<IpAddr> {
+    let address = std::str::from_utf8(output).ok()?.trim().parse().ok()?;
+    is_usable("ifconfig.me", address).then_some(address)
 }
 
 pub fn select_address(candidates: &[AddressCandidate]) -> Result<AddressSelection, String> {
@@ -113,7 +145,8 @@ fn candidate_rank(candidate: &AddressCandidate) -> (u8, u8, String) {
         "Tailscale" => 0,
         "Wi-Fi" => 1,
         "Ethernet" => 2,
-        _ => 3,
+        "Public" => 3,
+        _ => 4,
     };
     let family_rank = if candidate.address.is_ipv4() { 0 } else { 1 };
     (network_rank, family_rank, candidate.interface.clone())
@@ -156,5 +189,18 @@ mod tests {
         assert!(!is_usable("docker0", "172.17.0.1".parse().unwrap()));
         assert!(!is_usable("wlan0", "169.254.1.2".parse().unwrap()));
         assert!(is_usable("wlan0", "192.168.1.2".parse().unwrap()));
+    }
+
+    #[test]
+    fn parses_public_ip_response() {
+        assert_eq!(
+            parse_public_address(b"203.0.113.10\n"),
+            Some("203.0.113.10".parse().unwrap())
+        );
+        assert_eq!(
+            parse_public_address(b"2001:db8::10\n"),
+            Some("2001:db8::10".parse().unwrap())
+        );
+        assert_eq!(parse_public_address(b"not an address\n"), None);
     }
 }

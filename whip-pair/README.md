@@ -150,7 +150,10 @@ nix run .#whip-pair -- inspect 'WP4:...'
 - The SSH server must use OpenSSH-compatible `authorized_keys`, support the
   `restrict` and `command` options, and read the current user's default
   `~/.ssh/authorized_keys` file.
+- The interactive network selector uses `curl` to offer the public IP reported
+  by `ifconfig.me` when available. Failure to fetch it does not block pairing.
 - Automatic host-key discovery invokes `ssh-keyscan`; the Nix app supplies it.
+  The Nix app also supplies `curl` for public-IP discovery.
 - The terminal QR uses error-correction level L to stay compact.
 - Whip's mobile scanner supports WP4. The `request` subcommand remains a
   protocol test client.
