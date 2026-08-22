@@ -265,16 +265,17 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       : arrayBufferToBase64(frame.bytes);
     const writes: string[] = [];
     if (encoded.length === 0) {
-      writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true);`);
+      writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true, ${serializedTraceCookie});`);
     } else {
       for (let offset = 0; offset < encoded.length; offset += FRAME_CHUNK_SIZE) {
         const chunk = encoded.slice(offset, offset + FRAME_CHUNK_SIZE);
         const final = offset + FRAME_CHUNK_SIZE >= encoded.length;
-        writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(chunk)}, ${final});`);
+        const finalTraceCookie = final ? `, ${serializedTraceCookie}` : '';
+        writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(chunk)}, ${final}${finalTraceCookie});`);
       }
     }
     // A frame can require multiple chunks, but it crosses into the WebView once.
-    inject(`${resetScript}${writes.join('')}window.herdrTraceRendered(${key}, ${serializedTraceCookie});`);
+    inject(`${resetScript}${writes.join('')}`);
   }, [inject]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {

@@ -48,6 +48,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   - [Pair with a QR code (experimental)](#pair-with-a-qr-code-experimental)
   - [Enter a host manually](#enter-a-host-manually)
 - [How it works](#how-it-works)
+- [Performance](#performance)
 - [Architecture](#architecture)
   - [Mobile app](#mobile-app)
   - [SSH transport](#ssh-transport)
@@ -225,6 +226,37 @@ Native screens read snapshots and live events from Herdr's local API sockets thr
 For an open, visible Herdr terminal, Whip periodically caches a bounded recent ANSI transcript in memory. If the terminal transport is connecting, disconnected, or in error, the renderer presents that transcript when available through a local virtual backend and permits navigation only; it does not run Herdr or an agent on the mobile device. Messages submitted through the native composer wait in an in-memory, per-terminal outbox and are retried in order after the live connection returns. The transcript and outbox are session fallbacks, not durable offline storage, and do not survive an app restart.
 
 An unknown server key requires explicit fingerprint approval before Whip stores it in the device-wide known-hosts list. A changed key is rejected until you investigate it and deliberately forget the old entry. See [SECURITY.md](SECURITY.md) for the current security posture and [PRIVACY.md](PRIVACY.md) for the data flow and on-device storage details.
+
+## Performance
+
+Whip's terminal latency is instrumented with correlated Android Perfetto slices
+from native input handling through confirmed WebView presentation. A release-build
+reference measurement on a Pixel 9 Pro connected to the `thinker` host produced
+the following baseline. Network conditions and display scheduling vary, so treat
+these as representative boundaries rather than universal benchmarks.
+
+| Stage | Average | Observed range |
+| --- | ---: | ---: |
+| App wait before entering native code | 0.05 ms | 0.04–0.06 ms |
+| Native/Rust validation, framing, and queueing | 0.43 ms | 0.26–0.54 ms |
+| Complete React Native input-to-native dispatch | 0.73 ms | 0.47–0.95 ms |
+| Decoded response delivery to renderer injection | 0.26 ms | Reference sample |
+| Renderer frame to confirmed visible | 46.03 ms | 33.86–56.95 ms |
+| SSH network and remote-host latency | 70–150 ms | Typical host range |
+
+The first three rows overlap and must not be added together. The result is that
+Whip's owned JavaScript, FFI, and Rust send path contributes less than 1 ms on a
+warm terminal; SSH/network and remote-host time dominates user-perceived input
+latency. The confirmed-visible interval is deliberately conservative: it covers
+WebView injection, xterm parsing, and two animation-frame boundaries, so it can
+include about one display frame after the text was first visible.
+
+Warm renderers and retained terminal bridges are important to this result. Whip
+bypasses asynchronous bridge readiness for an already-retained terminal, removing
+a previously measured 121–154 ms warm-input delay. Chunked binary frames also
+report presentation from the final xterm data write instead of queueing an empty
+follow-up write. See [Android terminal latency tracing](docs/android-performance-tracing.md)
+for the slice definitions, capture command, SQL analysis, and interpretation.
 
 ## Architecture
 

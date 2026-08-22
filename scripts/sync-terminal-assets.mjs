@@ -426,9 +426,6 @@ const terminalSessionHtml = `<!doctype html>
       pendingFrames.delete(sequence);
       window.herdrWriteBase64(encoded, pendingTraceCookie);
     };
-    window.herdrTraceRendered = traceCookie => {
-      terminal.write('', () => reportTraceRendered(traceCookie));
-    };
     window.herdrReset = () => {
       pendingFrames.clear();
       offlineTranscriptChunks = [];
@@ -1242,7 +1239,6 @@ const terminalHtml = `<!doctype html>
     };
     window.herdrWriteBase64Chunk = (key, sequence, data, final, traceCookie) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final, traceCookie]);
     window.herdrWrite = (key, data, traceCookie) => call(key, 'herdrWrite', [data, traceCookie]);
-    window.herdrTraceRendered = (key, traceCookie) => call(key, 'herdrTraceRendered', [traceCookie]);
     window.herdrReset = key => call(key, 'herdrReset');
     window.herdrBeginOfflineTranscript = key => call(key, 'herdrBeginOfflineTranscript');
     window.herdrAppendOfflineTranscript = (key, data) => call(key, 'herdrAppendOfflineTranscript', [data]);
