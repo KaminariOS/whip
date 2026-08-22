@@ -383,11 +383,64 @@ const terminalSessionHtml = `<!doctype html>
       resize();
       send({ type: 'font-size-change', fontSize });
     };
-    window.herdrScroll = (direction, lines) => {
-      const count = Math.max(1, Math.round(Number(lines) || 1));
-      if (localScrollback) terminal.scrollLines(direction === 'up' ? -count : count);
-      else send({ type: 'scroll', direction, lines: count });
+    const terminalMouseCaptured = () => terminal.modes.mouseTrackingMode !== 'none';
+    const terminalMouseCell = point => {
+      const screen = terminal.element?.querySelector('.xterm-screen');
+      if (!screen || !point) return null;
+      const bounds = screen.getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0) return null;
+      return {
+        col: Math.max(0, Math.min(terminal.cols - 1, Math.floor((point.clientX - bounds.left) / bounds.width * terminal.cols))),
+        row: Math.max(0, Math.min(terminal.rows - 1, Math.floor((point.clientY - bounds.top) / bounds.height * terminal.rows))),
+      };
     };
+    const dispatchTerminalMouse = (action, point) => {
+      if (!terminalMouseCaptured() || !terminal.element) return false;
+      const eventType = action === 'down' ? 'mousedown' : action === 'move' ? 'mousemove' : 'mouseup';
+      terminal.element.dispatchEvent(new MouseEvent(eventType, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: action === 'up' ? 0 : 1,
+        clientX: point.clientX,
+        clientY: point.clientY,
+      }));
+      return true;
+    };
+    const dispatchTerminalClick = point => {
+      if (!dispatchTerminalMouse('down', point)) return false;
+      dispatchTerminalMouse('up', point);
+      return true;
+    };
+    const dispatchTerminalWheel = (direction, count, point) => {
+      if (!terminal.element) return false;
+      if (terminal.buffer.active.type !== 'alternate' && terminal.modes.mouseTrackingMode === 'none') return false;
+      const bounds = terminal.element.getBoundingClientRect();
+      const clientX = Number.isFinite(point?.clientX) ? point.clientX : bounds.left + bounds.width / 2;
+      const clientY = Number.isFinite(point?.clientY) ? point.clientY : bounds.top + bounds.height / 2;
+      const deltaY = direction === 'up' ? -1 : 1;
+      for (let index = 0; index < count; index += 1) {
+        terminal.element.dispatchEvent(new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          deltaMode: WheelEvent.DOM_DELTA_LINE,
+          deltaY,
+        }));
+      }
+      return true;
+    };
+    const scrollTerminal = (direction, lines, point) => {
+      const count = Math.max(1, Math.round(Number(lines) || 1));
+      if (dispatchTerminalWheel(direction, count, point)) return;
+      if (localScrollback) terminal.scrollLines(direction === 'up' ? -count : count);
+      else {
+        const cell = terminalMouseCell(point);
+        send({ type: 'scroll', direction, lines: count, column: cell?.col, row: cell?.row });
+      }
+    };
+    window.herdrScroll = (direction, lines) => scrollTerminal(direction, lines);
     window.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
     window.herdrSubmit = data => {
       bufferedInput = '';
@@ -631,6 +684,12 @@ const terminalSessionHtml = `<!doctype html>
     installSelectionHandle(startHandle, 'start');
     installSelectionHandle(endHandle, 'end');
     terminal.onScroll(() => renderSelectionHandles());
+    terminal.buffer.onBufferChange(buffer => {
+      clearInteractiveSelection(true);
+      searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
+      send({ type: 'buffer-mode', alternate: buffer.type === 'alternate' });
+    });
+    send({ type: 'buffer-mode', alternate: terminal.buffer.active.type === 'alternate' });
     const wordRangeAt = (x, y) => {
       const cell = bufferCellAt(x, y);
       if (!cell) return null;
@@ -699,6 +758,12 @@ const terminalSessionHtml = `<!doctype html>
       touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false, selection: null };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
+        if (terminalMouseCaptured() && keyboardEnabled) {
+          touch.longPressed = true;
+          touch.mouseDragging = dispatchTerminalMouse('down', { clientX: touch.x, clientY: touch.y });
+          lastTap = null;
+          return;
+        }
         let selection = wordRangeAt(touch.x, touch.y);
         if (!selection && !keyboardEnabled) {
           const cell = bufferCellAt(touch.x, touch.y);
@@ -738,6 +803,15 @@ const terminalSessionHtml = `<!doctype html>
       }
       if (!touch || event.touches.length !== 1) return;
       const point = event.touches[0];
+      if (touch.mouseDragging) {
+        event.preventDefault();
+        event.stopPropagation();
+        dispatchTerminalMouse('move', point);
+        touch.lastX = point.clientX;
+        touch.lastY = point.clientY;
+        touch.moved = true;
+        return;
+      }
       if (touch.longPressed && !keyboardEnabled) {
         event.preventDefault();
         event.stopPropagation();
@@ -760,8 +834,7 @@ const terminalSessionHtml = `<!doctype html>
       touch.carry = total - lines;
       touch.lastY = point.clientY;
       if (lines !== 0) {
-        if (localScrollback) terminal.scrollLines(-lines);
-        else send({ type: 'scroll', direction: lines > 0 ? 'up' : 'down', lines: Math.abs(lines) });
+        scrollTerminal(lines > 0 ? 'up' : 'down', Math.abs(lines), point);
       }
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchend', event => {
@@ -780,6 +853,13 @@ const terminalSessionHtml = `<!doctype html>
       if (!touch) return;
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
       const point = event.changedTouches[0];
+      if (touch.mouseDragging) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (point) dispatchTerminalMouse('up', point);
+        touch = null;
+        return;
+      }
       if (touch.longPressed) {
         event.preventDefault();
         event.stopPropagation();
@@ -790,6 +870,7 @@ const terminalSessionHtml = `<!doctype html>
         event.stopPropagation();
         const link = urlAtPoint(point.clientX, point.clientY);
         if (link) send({ type: 'open-link', link });
+        else if (terminalMouseCaptured()) dispatchTerminalClick(point);
         else {
           clearInteractiveSelection(true);
         }
@@ -797,6 +878,14 @@ const terminalSessionHtml = `<!doctype html>
         return;
       }
       if (!touch.moved && !touch.longPressed && point) {
+        if (terminalMouseCaptured()) {
+          event.preventDefault();
+          event.stopPropagation();
+          dispatchTerminalClick(point);
+          lastTap = null;
+          touch = null;
+          return;
+        }
         terminal.focus();
         const now = { time: Date.now(), x: point.clientX, y: point.clientY };
         if (doubleTapAction !== 'none' && lastTap && now.time - lastTap.time <= doubleTapTimeoutMs && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) <= doubleTapDistancePx) {
@@ -812,6 +901,12 @@ const terminalSessionHtml = `<!doctype html>
       touch = null;
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchcancel', () => {
+      if (touch?.mouseDragging) {
+        dispatchTerminalMouse('up', {
+          clientX: touch.lastX ?? touch.x,
+          clientY: touch.lastY ?? touch.y,
+        });
+      }
       if (longPressTimer) clearTimeout(longPressTimer);
       longPressTimer = null;
       touch = null;

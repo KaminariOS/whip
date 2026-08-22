@@ -22,6 +22,9 @@ describe('private Herdr codec', () => {
     expect(bytes(attach('t1', true))).toEqual([5, 2, 116, 49, 1]);
     expect(bytes(resize(80, 24, 8, 16))).toEqual([3, 80, 24, 8, 16]);
     expect(bytes(scroll(true, 3))).toEqual([6, 0, 0, 3, 0, 0, 0]);
+    expect(bytes(scroll(false, 4, 12, 7))).toEqual([
+      6, 0, 1, 4, 1, 12, 1, 7, 0,
+    ]);
   });
 
   it('decodes terminal payloads into private terminal events', () => {

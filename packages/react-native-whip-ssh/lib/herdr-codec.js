@@ -162,14 +162,20 @@ export const attach = (terminalId, takeover) => payload(encoder => {
   encoder.boolean(takeover);
 });
 
-export const scroll = (up, lines) => payload(encoder => {
+export const scroll = (up, lines, column, row, modifiers = 0) => payload(encoder => {
   encoder.unsigned(6);
   encoder.unsigned(0);
   encoder.unsigned(up ? 0 : 1);
   encoder.unsigned(lines);
-  encoder.byte(0);
-  encoder.byte(0);
-  encoder.byte(0);
+  if (Number.isFinite(column)) {
+    encoder.byte(1);
+    encoder.unsigned(Math.max(0, Math.round(column)));
+  } else encoder.byte(0);
+  if (Number.isFinite(row)) {
+    encoder.byte(1);
+    encoder.unsigned(Math.max(0, Math.round(row)));
+  } else encoder.byte(0);
+  encoder.byte(modifiers);
 });
 
 export function decode(buffer, protocol) {

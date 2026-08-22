@@ -41,6 +41,7 @@ function bridgeClient(protocol = 17) {
     getRemoteHome: jest.fn(async () => '/home/herdr'),
     startHerdrBridge: jest.fn(async () => undefined),
     herdrBridgeResize: jest.fn(async () => undefined),
+    herdrBridgeScroll: jest.fn(async () => undefined),
     closeHerdrBridge: jest.fn(),
     closeAllHerdrBridges: jest.fn(),
     off: jest.fn(),
@@ -104,6 +105,24 @@ describe('terminal bridge channels', () => {
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
   });
 
+  test('forwards the touched terminal cell with attached-pane scrolling', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn());
+
+    await client.scrollTerminal('term-1', 'up', 3, 12, 7);
+
+    expect(native.herdrBridgeScroll).toHaveBeenCalledWith(
+      'term-1',
+      'up',
+      3,
+      12,
+      7,
+    );
+  });
+
   test('forwards protocol 20 terminal bells into the terminal renderer', async () => {
     const native = bridgeClient(20);
     connectWithPassword.mockResolvedValue(native);
@@ -124,5 +143,67 @@ describe('terminal bridge channels', () => {
       full: false,
       bytes: '\u0007\u0007\u0007',
     });
+  });
+
+  test('ignores Herdr UI mouse capture and forwards Kitty keyboard mode changes', async () => {
+    const native = bridgeClient(20);
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const onControl = jest.fn();
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn(), undefined, onControl);
+
+    const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
+    bridgeHandler({ type: 'mouse_capture', flag: true });
+    bridgeHandler({ type: 'kitty_keyboard_report_all', flag: true });
+
+    expect(onControl).toHaveBeenLastCalledWith({
+      type: 'protocol-state',
+      state: { kittyKeyboardReportAll: true },
+    });
+    expect(onControl).not.toHaveBeenCalledWith(expect.objectContaining({
+      state: expect.objectContaining({ mouseCapture: expect.anything() }),
+    }));
+  });
+
+  test('replays attached-pane protocol state when a renderer reattaches', async () => {
+    const native = bridgeClient(20);
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn(), undefined, jest.fn());
+
+    const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
+    bridgeHandler({ type: 'mouse_capture', flag: true });
+    bridgeHandler({ type: 'kitty_keyboard_report_all', flag: true });
+    await client.detachTerminal('term-1');
+
+    const onControl = jest.fn();
+    await client.openTerminal('term-1', jest.fn(), undefined, onControl);
+
+    expect(onControl).toHaveBeenCalledWith({
+      type: 'protocol-state',
+      state: { kittyKeyboardReportAll: true },
+    });
+    expect(native.startHerdrBridge).toHaveBeenCalledTimes(1);
+  });
+
+  test('forwards dedicated clipboard and title messages', async () => {
+    const native = bridgeClient(20);
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const onControl = jest.fn();
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn(), undefined, onControl);
+
+    const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
+    bridgeHandler({ type: 'clipboard', text: 'copied by opencode' });
+    bridgeHandler({ type: 'title', text: 'OpenCode' });
+
+    expect(onControl).toHaveBeenCalledWith({
+      type: 'clipboard-write',
+      text: 'copied by opencode',
+    });
+    expect(onControl).toHaveBeenCalledWith({ type: 'title', title: 'OpenCode' });
   });
 });

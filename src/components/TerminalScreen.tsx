@@ -13,6 +13,7 @@ import {
   type TerminalControlUsage,
 } from '../lib/terminalControls';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
+import type { TerminalProtocolState } from '../lib/terminalBridge';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
@@ -187,7 +188,7 @@ export function TerminalScreen({
   const { bottom: bottomSafeAreaInset, top: topSafeAreaInset } = useSafeAreaInsets();
   const session = activeTarget?.session || null;
   const terminalId = session?.terminalId || '';
-  const title = session?.title || '';
+  const sessionTitle = session?.title || '';
   const status = session?.status || 'connecting';
   const renderer = useRef<TerminalRendererHandle | null>(null);
   const activeTargetRef = useRef(activeTarget);
@@ -215,9 +216,15 @@ export function TerminalScreen({
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [terminalSelectionActive, setTerminalSelectionActive] = useState(false);
+  const [alternateScreen, setAlternateScreen] = useState(false);
+  const [reportedTitle, setReportedTitle] = useState('');
+  const [protocolState, setProtocolState] = useState<TerminalProtocolState>({
+    kittyKeyboardReportAll: false,
+  });
   const [scrollPosition, setScrollPosition] = useState(activeTarget?.scroll);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
-  const scrollThumb = terminalScrollThumb(scrollPosition);
+  const scrollThumb = alternateScreen ? null : terminalScrollThumb(scrollPosition);
+  const title = reportedTitle || sessionTitle;
   activeTargetRef.current = activeTarget;
 
   useEffect(() => {
@@ -226,6 +233,9 @@ export function TerminalScreen({
     setComposeOpen(false);
     setComposeExpanded(false);
     setTerminalSelectionActive(false);
+    setAlternateScreen(false);
+    setReportedTitle('');
+    setProtocolState({ kittyKeyboardReportAll: false });
     setHistoryOpen(false);
     setCtrl('off');
     setShift('off');
@@ -275,6 +285,7 @@ export function TerminalScreen({
       ctrlRef.current,
       altRef.current,
       shiftRef.current,
+      protocolState.kittyKeyboardReportAll,
     );
     if (ctrlRef.current === 'armed') setCtrl('off');
     if (shiftRef.current === 'armed') setShift('off');
@@ -850,6 +861,18 @@ export function TerminalScreen({
           onLinksScanned={links => onLinksScanned?.(links)}
           onOpenLink={link => onOpenLink?.(link)}
           onPaste={(_target, text) => onHistoryEntry(text)}
+          onBufferModeChange={(target, alternate) => {
+            if (target.key !== activeTarget?.key) return;
+            setAlternateScreen(alternate);
+            setTerminalSelectionActive(false);
+            setSearchResult({ count: 0, index: -1, invalid: false });
+          }}
+          onProtocolStateChange={(target, state) => {
+            if (target.key === activeTarget?.key) setProtocolState(state);
+          }}
+          onTitleChange={(target, nextTitle) => {
+            if (target.key === activeTarget?.key) setReportedTitle(nextTitle);
+          }}
           onSelectionStateChange={(target, active) => {
             if (target.key === activeTarget?.key) setTerminalSelectionActive(active);
           }}

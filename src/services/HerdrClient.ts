@@ -7,13 +7,14 @@ import { apiEvent, apiErrorMessage, apiRequestLine, eventsSubscribeRequest, Herd
 import { shellQuote } from '../lib/shell';
 import { parseRemoteGitDiff, parseRemoteGitRepository, parseRemoteGitStatus, remoteGitDiffCommand, remoteGitRepositoryCommand, remoteGitStatusCommand, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '../lib/remoteGit';
 import { parseRemoteHtmlPreviewStart, remoteHtmlPreviewPageUrl, remoteHtmlPreviewStartCommand, remoteHtmlPreviewStopCommand, type RemoteHtmlServerProcess } from '../lib/remoteHtmlPreview';
-import { type TerminalFrame } from '../lib/terminalBridge';
+import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
 import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
+type TerminalControlHandler = (event: TerminalControlEvent) => void;
 type ApiEventHandler = (event: HerdrApiEvent) => void;
 
 interface CachedApiSocketPath {
@@ -44,6 +45,7 @@ export function isUnavailableSshChannel(error: unknown): boolean {
 interface TerminalConnection {
   onFrame: TerminalFrameHandler;
   onClosed?: TerminalClosedHandler;
+  onControl?: TerminalControlHandler;
 }
 
 interface SshShellConnection extends TerminalConnection {
@@ -96,6 +98,7 @@ export class HerdrClient {
   private terminalSizes = new Map<string, TerminalSize>();
   private terminalBridges = new Set<string>();
   private terminalBridgeGenerations = new Map<string, number>();
+  private terminalProtocolStates = new Map<string, TerminalProtocolState>();
   private terminalBridgeSequence = 0;
   private eventClient: SSHClient | null = null;
   private eventSubscription: EventSubscription | null = null;
@@ -174,6 +177,7 @@ export class HerdrClient {
     this.terminalBridges.clear();
     this.terminalOpenings.clear();
     this.terminalBridgeGenerations.clear();
+    this.terminalProtocolStates.clear();
     previousClient?.off('Shell');
     if (previousClient) this.disconnectSsh(previousClient);
     for (const [localPort, tunnelClient] of this.localForwards) {
@@ -224,6 +228,7 @@ export class HerdrClient {
     this.terminalSizes.clear();
     this.terminalBridges.clear();
     this.terminalBridgeGenerations.clear();
+    this.terminalProtocolStates.clear();
     this.controlReconnect = null;
     this.localForwards.clear();
     this.remoteHtmlPreviews.clear();
@@ -357,12 +362,18 @@ export class HerdrClient {
     return `${uploadDirectory}/${filename}`;
   }
 
-  async openTerminal(terminalId: string, onFrame: TerminalFrameHandler, onClosed?: TerminalClosedHandler): Promise<void> {
+  async openTerminal(
+    terminalId: string,
+    onFrame: TerminalFrameHandler,
+    onClosed?: TerminalClosedHandler,
+    onControl?: TerminalControlHandler,
+  ): Promise<void> {
     if (isSshShellTerminalId(terminalId)) {
       const connection = this.sshShellConnections.get(terminalId);
       if (connection) {
         connection.onFrame = onFrame;
         connection.onClosed = onClosed;
+        connection.onControl = onControl;
         return;
       }
       const opening = this.terminalOpenings.get(terminalId);
@@ -372,6 +383,7 @@ export class HerdrClient {
         if (opened) {
           opened.onFrame = onFrame;
           opened.onClosed = onClosed;
+          opened.onControl = onControl;
         }
         return;
       }
@@ -385,7 +397,9 @@ export class HerdrClient {
       return;
     }
 
-    this.terminalConnections.set(terminalId, { onFrame, onClosed });
+    this.terminalConnections.set(terminalId, { onFrame, onClosed, onControl });
+    const protocolState = this.terminalProtocolStates.get(terminalId);
+    if (protocolState) onControl?.({ type: 'protocol-state', state: protocolState });
 
     const reconnecting = this.controlReconnect;
     if (reconnecting) await reconnecting;
@@ -436,12 +450,24 @@ export class HerdrClient {
     }
   }
 
-  async scrollTerminal(terminalId: string, direction: 'up' | 'down', lines: number): Promise<string> {
+  async scrollTerminal(
+    terminalId: string,
+    direction: 'up' | 'down',
+    lines: number,
+    column?: number,
+    row?: number,
+  ): Promise<string> {
     const opening = this.terminalOpenings.get(terminalId);
     if (opening) await opening;
     if (isSshShellTerminalId(terminalId)) return '';
     await this.ensureTerminalBridge(terminalId);
-    await this.requireClient().herdrBridgeScroll(terminalId, direction, Math.max(1, Math.round(lines)));
+    await this.requireClient().herdrBridgeScroll(
+      terminalId,
+      direction,
+      Math.max(1, Math.round(lines)),
+      column,
+      row,
+    );
     return '';
   }
 
@@ -453,6 +479,7 @@ export class HerdrClient {
     this.terminalConnections.delete(terminalId);
     this.terminalBridges.delete(terminalId);
     this.terminalBridgeGenerations.delete(terminalId);
+    this.terminalProtocolStates.delete(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -479,6 +506,7 @@ export class HerdrClient {
     this.terminalConnections.delete(terminalId);
     this.terminalBridges.delete(terminalId);
     this.terminalBridgeGenerations.delete(terminalId);
+    this.terminalProtocolStates.delete(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -511,6 +539,7 @@ export class HerdrClient {
     this.terminalSizes.delete(terminalId);
     this.terminalBridges.delete(terminalId);
     this.terminalBridgeGenerations.delete(terminalId);
+    this.terminalProtocolStates.delete(terminalId);
     this.client?.closeHerdrBridge(terminalId);
   }
 
@@ -522,6 +551,7 @@ export class HerdrClient {
     this.terminalOpenings.clear();
     this.terminalBridges.clear();
     this.terminalBridgeGenerations.clear();
+    this.terminalProtocolStates.clear();
     this.client?.closeAllHerdrBridges();
   }
 
@@ -1122,6 +1152,9 @@ export class HerdrClient {
     const server = await this.requireBridgeServer();
     const generation = ++this.terminalBridgeSequence;
     this.terminalBridgeGenerations.set(terminalId, generation);
+    this.updateTerminalProtocolState(terminalId, {
+      kittyKeyboardReportAll: false,
+    });
     try {
       await this.requireClient().startHerdrBridge(await this.clientSocketPath(), server.protocol, terminalId, true, size.columns, size.rows, size.cellWidthPx, size.cellHeightPx, event => this.handleHerdrBridgeEvent(terminalId, generation, event));
     } catch (error) {
@@ -1175,10 +1208,47 @@ export class HerdrClient {
       }
       return;
     }
+    if (event.type === 'mouse_capture') {
+      // Direct terminal attachments do not render the Herdr TUI. This flag also
+      // reflects Herdr's outer UI mouse setting, so it must not control Whip's
+      // terminal surface.
+      return;
+    }
+    if (event.type === 'kitty_keyboard_report_all') {
+      this.updateTerminalProtocolState(terminalId, { kittyKeyboardReportAll: event.flag === true });
+      return;
+    }
+    if (event.type === 'clipboard') {
+      this.terminalConnections.get(terminalId)?.onControl?.({
+        type: 'clipboard-write',
+        text: event.text || '',
+      });
+      return;
+    }
+    if (event.type === 'title') {
+      this.terminalConnections.get(terminalId)?.onControl?.({
+        type: 'title',
+        title: event.text || '',
+      });
+      return;
+    }
     if (event.type === 'closed') {
       this.terminalBridges.delete(terminalId);
       this.terminalBridgeGenerations.delete(terminalId);
+      this.terminalProtocolStates.delete(terminalId);
       this.terminalConnections.get(terminalId)?.onClosed?.(event.text || 'Herdr remote-client-bridge closed');
     }
+  }
+
+  private updateTerminalProtocolState(
+    terminalId: string,
+    update: Partial<TerminalProtocolState>,
+  ): void {
+    const current = this.terminalProtocolStates.get(terminalId) || {
+      kittyKeyboardReportAll: false,
+    };
+    const state = { ...current, ...update };
+    this.terminalProtocolStates.set(terminalId, state);
+    this.terminalConnections.get(terminalId)?.onControl?.({ type: 'protocol-state', state });
   }
 }

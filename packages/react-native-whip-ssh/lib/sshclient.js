@@ -272,8 +272,10 @@ class SSHClient extends BaseSSHClient {
     );
   }
 
-  herdrBridgeScroll(terminalId, direction, lines) {
-    return this._herdrBridge(terminalId).channel.write(scroll(direction === 'up', lines));
+  herdrBridgeScroll(terminalId, direction, lines, column, row, modifiers = 0) {
+    return this._herdrBridge(terminalId).channel.write(
+      scroll(direction === 'up', lines, column, row, modifiers),
+    );
   }
 
   closeHerdrBridge(terminalId) {

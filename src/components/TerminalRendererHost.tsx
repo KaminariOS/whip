@@ -18,7 +18,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
-import type { TerminalFrame } from '../lib/terminalBridge';
+import type { TerminalFrame, TerminalProtocolState } from '../lib/terminalBridge';
 import { arrayBufferToBase64 } from '../lib/base64';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import {
@@ -55,6 +55,7 @@ interface RendererEntry {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   fontPreference: number;
   fontSize: number;
+  protocolState: TerminalProtocolState;
 }
 
 export interface TerminalRendererHandle {
@@ -91,6 +92,9 @@ interface Props {
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
   onPaste: (target: TerminalRenderTarget, text: string) => void;
+  onBufferModeChange: (target: TerminalRenderTarget, alternate: boolean) => void;
+  onProtocolStateChange: (target: TerminalRenderTarget, state: TerminalProtocolState) => void;
+  onTitleChange: (target: TerminalRenderTarget, title: string) => void;
   onSelectionStateChange: (target: TerminalRenderTarget, active: boolean) => void;
   onStatus: (
     target: TerminalRenderTarget,
@@ -117,6 +121,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onLinksScanned,
   onOpenLink,
   onPaste,
+  onBufferModeChange,
+  onProtocolStateChange,
+  onTitleChange,
   onSelectionStateChange,
   onStatus,
   onError,
@@ -137,6 +144,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportLinks = useEffectEvent(onLinksScanned);
   const reportOpenLink = useEffectEvent(onOpenLink);
   const reportPaste = useEffectEvent(onPaste);
+  const reportBufferMode = useEffectEvent(onBufferModeChange);
+  const reportProtocolState = useEffectEvent(onProtocolStateChange);
+  const reportTitle = useEffectEvent(onTitleChange);
   const reportSelectionState = useEffectEvent(onSelectionStateChange);
   const reportStatus = useEffectEvent(onStatus);
   const reportError = useEffectEvent(onError);
@@ -271,6 +281,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       terminalId,
       frame => injectFrame(entry, frame),
       reason => scheduleReconnect(reason || 'Remote terminal closed'),
+      event => {
+        if (event.type === 'protocol-state') {
+          entry.protocolState = event.state;
+          reportProtocolState(entry.target, event.state);
+        } else if (event.type === 'clipboard-write') {
+          Clipboard.setString(event.text);
+        } else if (event.type === 'title') {
+          reportTitle(entry.target, event.title);
+        }
+      },
     ).then(() => {
       if (entries.current.get(entry.target.key) !== entry) return;
       const recoveryAttempt = entry.reconnectAttempt;
@@ -309,6 +329,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reconnectTimer: null,
         fontPreference: preferences.fontSize,
         fontSize: preferences.fontSize,
+        protocolState: {
+          kittyKeyboardReportAll: false,
+        },
       };
       entries.current.set(target.key, entry);
       if (hostReady.current) {
@@ -520,6 +543,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           entry.target.session.terminalId,
           message.direction,
           message.lines,
+          message.column,
+          message.row,
         );
       } catch (reason) {
         reportError(entry.target, String(reason));
@@ -530,6 +555,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         entry.fontSize = Math.max(8, Math.min(24, Math.round(fontSize)));
         reportFontSize(entry.target, entry.fontSize);
       }
+    } else if (message.type === 'buffer-mode') {
+      reportBufferMode(entry.target, message.alternate === true);
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(message.text || '');
     } else if (message.type === 'clipboard-read') {

@@ -19,7 +19,13 @@ export function resize(
 ): ArrayBuffer;
 export function detach(): ArrayBuffer;
 export function attach(terminalId: string, takeover: boolean): ArrayBuffer;
-export function scroll(up: boolean, lines: number): ArrayBuffer;
+export function scroll(
+  up: boolean,
+  lines: number,
+  column?: number,
+  row?: number,
+  modifiers?: number,
+): ArrayBuffer;
 
 export type HerdrMessage = {
   kind: string;

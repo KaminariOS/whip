@@ -112,9 +112,9 @@ describe('terminal keyboard controls', () => {
       resolve(__dirname, '../scripts/sync-terminal-assets.mjs'),
       'utf8',
     );
-    expect(assets).toContain(
-      'if (!touch.moved && !touch.longPressed && point) {\n        terminal.focus();',
-    );
+    expect(assets).toContain('if (!touch.moved && !touch.longPressed && point) {');
+    expect(assets).toContain('if (terminalMouseCaptured()) {');
+    expect(assets).toContain('terminal.focus();');
   });
 
   it('clears focused input when the app changes state without disabling keyboard mode', () => {

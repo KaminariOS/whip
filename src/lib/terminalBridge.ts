@@ -16,4 +16,13 @@ export interface TerminalClosed {
   reason?: string;
 }
 
+export interface TerminalProtocolState {
+  kittyKeyboardReportAll: boolean;
+}
+
+export type TerminalControlEvent =
+  | { type: 'protocol-state'; state: TerminalProtocolState }
+  | { type: 'clipboard-write'; text: string }
+  | { type: 'title'; title: string };
+
 export type TerminalBridgeEvent = TerminalFrame | TerminalClosed;

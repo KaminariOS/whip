@@ -121,6 +121,9 @@ export default class SSHClient extends BaseSSHClient {
     terminalId: string,
     direction: 'up' | 'down',
     lines: number,
+    column?: number,
+    row?: number,
+    modifiers?: number,
   ): Promise<void>;
   closeHerdrBridge(terminalId: string): void;
   closeAllHerdrBridges(): void;
