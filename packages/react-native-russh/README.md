@@ -136,7 +136,8 @@ await process.close();
 - Concurrent OpenSSH Unix-socket channels with raw or length-prefixed
   `ArrayBuffer` I/O (`u8`, `u16`, or `u32`, big- or little-endian)
 - Persistent exec channels with binary stdin/stdout
-- SFTP listing, mutation, upload, download, cancellation, and ranged serving
+- SFTP listing, mutation, recursive directory creation, directory or exact-path
+  transactional upload, download, cancellation, and ranged serving
 
 Only generic SSH and SFTP capabilities are exported from the package root.
 

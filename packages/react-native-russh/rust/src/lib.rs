@@ -918,7 +918,71 @@ async fn sftp_mutation(params: &Value, operation: &str) -> Result<Value, Transpo
     Ok(Value::Null)
 }
 
-async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportError> {
+async fn sftp_create_dir_all(params: &Value) -> Result<Value, TransportError> {
+    let (_, sftp) = sftp_for(params)?;
+    let remote_path = required_string(params, "path")?;
+    if remote_path.is_empty() {
+        return Err(TransportError::InvalidRequest(
+            "remote directory path must not be empty".to_owned(),
+        ));
+    }
+
+    let mut current = if remote_path.starts_with('/') {
+        "/".to_owned()
+    } else {
+        String::new()
+    };
+    for component in remote_path
+        .split('/')
+        .filter(|component| !component.is_empty())
+    {
+        if component == "." {
+            continue;
+        }
+        if !current.is_empty() && current != "/" {
+            current.push('/');
+        }
+        current.push_str(component);
+
+        match sftp.metadata(current.clone()).await {
+            Ok(metadata) if metadata.is_dir() => continue,
+            Ok(_) => {
+                return Err(TransportError::InvalidRequest(format!(
+                    "remote path component '{current}' is not a directory"
+                )));
+            }
+            Err(_) => {}
+        }
+
+        if let Err(create_error) = sftp.create_dir(current.clone()).await {
+            // Another client may have created the directory after metadata.
+            // Treat that race as success, but do not hide file collisions or
+            // the original server error.
+            match sftp.metadata(current.clone()).await {
+                Ok(metadata) if metadata.is_dir() => {}
+                Ok(_) => {
+                    return Err(TransportError::InvalidRequest(format!(
+                        "remote path component '{current}' is not a directory"
+                    )));
+                }
+                Err(_) => return Err(create_error.into()),
+            }
+        }
+    }
+
+    if current.is_empty() {
+        return Err(TransportError::InvalidRequest(
+            "remote directory path must contain a directory".to_owned(),
+        ));
+    }
+    Ok(Value::Null)
+}
+
+async fn sftp_transfer(
+    params: &Value,
+    upload: bool,
+    upload_to_exact_path: bool,
+) -> Result<Value, TransportError> {
     let (key, sftp) = sftp_for(params)?;
     let local = required_string(params, "localPath")?;
     let remote_path = required_string(params, "remotePath")?;
@@ -974,15 +1038,24 @@ async fn sftp_transfer(params: &Value, upload: bool) -> Result<Value, TransportE
         if upload {
             let source = fs::File::open(&local).await?;
             let total = source.metadata().await?.len();
-            let filename = std::path::Path::new(&local)
-                .file_name()
-                .and_then(|v| v.to_str())
-                .ok_or_else(|| {
-                    TransportError::InvalidRequest("local path has no filename".to_owned())
-                })?;
-            // Uploads intentionally interpret remotePath as a directory and
-            // preserve the local basename. Downloads interpret it as a file.
-            let destination_path = format!("{}/{}", remote_path.trim_end_matches('/'), filename);
+            let destination_path = if upload_to_exact_path {
+                if remote_path.is_empty() || remote_path.ends_with('/') {
+                    return Err(TransportError::InvalidRequest(
+                        "exact remote upload path must end with a filename".to_owned(),
+                    ));
+                }
+                remote_path.clone()
+            } else {
+                let filename = std::path::Path::new(&local)
+                    .file_name()
+                    .and_then(|v| v.to_str())
+                    .ok_or_else(|| {
+                        TransportError::InvalidRequest("local path has no filename".to_owned())
+                    })?;
+                // Directory uploads preserve the local basename. Downloads and
+                // exact-path uploads interpret remotePath as a file.
+                format!("{}/{}", remote_path.trim_end_matches('/'), filename)
+            };
             let transfer_id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
             let temp_path = format!("{destination_path}.russh-part-{transfer_id}");
             let destination = sftp.create(temp_path.clone()).await?;
@@ -2054,11 +2127,13 @@ async fn dispatch(request: Request) -> Result<Value, TransportError> {
             Ok(Value::Null)
         }
         "sftpMkdir" => sftp_mutation(&request.params, "mkdir").await,
+        "sftpCreateDirAll" => sftp_create_dir_all(&request.params).await,
         "sftpRm" => sftp_mutation(&request.params, "rm").await,
         "sftpRmdir" => sftp_mutation(&request.params, "rmdir").await,
         "sftpChmod" => sftp_mutation(&request.params, "chmod").await,
-        "sftpUpload" => sftp_transfer(&request.params, true).await,
-        "sftpDownload" => sftp_transfer(&request.params, false).await,
+        "sftpUpload" => sftp_transfer(&request.params, true, false).await,
+        "sftpUploadToPath" => sftp_transfer(&request.params, true, true).await,
+        "sftpDownload" => sftp_transfer(&request.params, false, false).await,
         "startSftpFileServer" => start_sftp_file_server(&request.params).await,
         "closeSftpFileServer" => {
             let key = required_string(&request.params, "key")?;
@@ -2789,8 +2864,13 @@ mod tests {
 
             live_call("connectSFTP", json!({"key": "live-main"})).await;
             live_call(
-                "sftpMkdir",
-                json!({"key": "live-main", "path": "/workspace/remote"}),
+                "sftpCreateDirAll",
+                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
+            )
+            .await;
+            live_call(
+                "sftpCreateDirAll",
+                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
             )
             .await;
             let client_dir = shared.join("client");
@@ -2804,37 +2884,56 @@ mod tests {
                 json!({
                     "key": "live-main",
                     "localPath": payload,
-                    "remotePath": "/workspace/remote",
+                    "remotePath": "/workspace/remote/nested",
                 }),
             )
             .await;
+            let mkdir_collision = dispatch(Request {
+                operation: "sftpCreateDirAll".to_owned(),
+                params: json!({
+                    "key": "live-main",
+                    "path": "/workspace/remote/nested/payload.txt/child",
+                }),
+            })
+            .await
+            .unwrap_err();
+            assert!(mkdir_collision.to_string().contains("is not a directory"));
             fs::write(&payload, b"sftp-live-replacement").await.unwrap();
             live_call(
-                "sftpUpload",
+                "sftpUploadToPath",
                 json!({
                     "key": "live-main",
                     "localPath": payload,
-                    "remotePath": "/workspace/remote",
+                    "remotePath": "/workspace/remote/nested/generated-name.txt",
+                }),
+            )
+            .await;
+            live_call(
+                "sftpUploadToPath",
+                json!({
+                    "key": "live-main",
+                    "localPath": payload,
+                    "remotePath": "/workspace/remote/nested/generated-name.txt",
                 }),
             )
             .await;
             live_call(
                 "sftpChmod",
-                json!({"key": "live-main", "path": "/workspace/remote/payload.txt", "permissions": 0o640}),
+                json!({"key": "live-main", "path": "/workspace/remote/nested/generated-name.txt", "permissions": 0o640}),
             )
             .await;
             live_call(
                 "sftpRename",
                 json!({
                     "key": "live-main",
-                    "oldPath": "/workspace/remote/payload.txt",
-                    "newPath": "/workspace/remote/renamed.txt",
+                    "oldPath": "/workspace/remote/nested/generated-name.txt",
+                    "newPath": "/workspace/remote/nested/renamed.txt",
                 }),
             )
             .await;
             let entries = live_call(
                 "sftpLs",
-                json!({"key": "live-main", "path": "/workspace/remote"}),
+                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
             )
             .await;
             assert!(entries.as_array().unwrap().iter().any(|entry| {
@@ -2843,11 +2942,15 @@ mod tests {
                     .unwrap_or_default()
                     .contains("renamed.txt")
             }));
+            assert!(!entries.as_array().unwrap().iter().any(|entry| {
+                let filename = entry["filename"].as_str().unwrap_or_default();
+                filename.contains("russh-part") || filename.contains("russh-backup")
+            }));
             let downloaded = live_call(
                 "sftpDownload",
                 json!({
                     "key": "live-main",
-                    "remotePath": "/workspace/remote/renamed.txt",
+                    "remotePath": "/workspace/remote/nested/renamed.txt",
                     "localPath": download_dir,
                 }),
             )
@@ -2861,7 +2964,7 @@ mod tests {
                 "startSftpFileServer",
                 json!({
                     "key": "live-main",
-                    "remotePath": "/workspace/remote/renamed.txt",
+                    "remotePath": "/workspace/remote/nested/renamed.txt",
                 }),
             )
             .await;

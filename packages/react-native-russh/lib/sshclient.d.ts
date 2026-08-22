@@ -408,6 +408,14 @@ export default class SSHClient {
      */
     sftpMkdir(path: string, callback?: CallbackFunction<void>): Promise<void>;
     /**
+     * Creates a directory and any missing parents on the remote server using SFTP.
+     * Existing directories are accepted.
+     * @param path - The full path of the directory to create.
+     * @param callback - An optional callback function to handle the result.
+     * @returns A promise that resolves when the directory tree exists.
+     */
+    sftpCreateDirAll(path: string, callback?: CallbackFunction<void>): Promise<void>;
+    /**
      * Removes (unlinks) a file from the remote server using SFTP.
      * @param path - The path of the file to remove.
      * @param callback - An optional callback function to handle the result or error.
@@ -432,11 +440,21 @@ export default class SSHClient {
     /**
      * Uploads a file from the local file system to the remote file system using SFTP.
      * @param localFilePath - The path of the file on the local file system.
-     * @param remoteFilePath - The path of the file on the remote file system.
+     * @param remoteDirectoryPath - The remote directory where the local basename will be uploaded.
      * @param callback - An optional callback function to be called after the upload is complete or an error occurs.
      * @returns A Promise that resolves when the upload is complete or rejects with an error.
      */
     sftpUpload(localFilePath: string, remoteDirectoryPath: string, callback?: CallbackFunction<void>): Promise<void>;
+    /**
+     * Uploads a local file to an exact remote file path using a temporary file
+     * and transactional promotion.
+     * @param localFilePath - The path of the file on the local file system.
+     * @param remoteFilePath - The exact destination path on the remote file system.
+     * @param callback - An optional callback function called after completion or failure.
+     * @returns A Promise that resolves when the upload is complete.
+     */
+    sftpUploadToPath(localFilePath: string, remoteFilePath: string, callback?: CallbackFunction<void>): Promise<void>;
+    private _sftpUpload;
     /**
      * Cancels the ongoing SFTP upload.
      */

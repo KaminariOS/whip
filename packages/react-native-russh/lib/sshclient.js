@@ -757,6 +757,27 @@ class SSHClient {
         }));
     }
     /**
+     * Creates a directory and any missing parents on the remote server using SFTP.
+     * Existing directories are accepted.
+     * @param path - The full path of the directory to create.
+     * @param callback - An optional callback function to handle the result.
+     * @returns A promise that resolves when the directory tree exists.
+     */
+    sftpCreateDirAll(path, callback) {
+        return this.checkSFTP(callback)
+            .then(() => new Promise((resolve, reject) => {
+            nativeClient.sftpCreateDirAll(path, this._key, (error) => {
+                if (callback) {
+                    callback(error);
+                }
+                if (error) {
+                    return reject(error);
+                }
+                resolve();
+            });
+        }));
+    }
+    /**
      * Removes (unlinks) a file from the remote server using SFTP.
      * @param path - The path of the file to remove.
      * @param callback - An optional callback function to handle the result or error.
@@ -825,6 +846,20 @@ class SSHClient {
      * @returns A Promise that resolves when the upload is complete or rejects with an error.
      */
     sftpUpload(localFilePath, remoteDirectoryPath, callback) {
+        return this._sftpUpload(localFilePath, remoteDirectoryPath, false, callback);
+    }
+    /**
+     * Uploads a local file to an exact remote file path using a temporary file
+     * and transactional promotion.
+     * @param localFilePath - The path of the file on the local file system.
+     * @param remoteFilePath - The exact destination path on the remote file system.
+     * @param callback - An optional callback function called after completion or failure.
+     * @returns A Promise that resolves when the upload is complete.
+     */
+    sftpUploadToPath(localFilePath, remoteFilePath, callback) {
+        return this._sftpUpload(localFilePath, remoteFilePath, true, callback);
+    }
+    _sftpUpload(localFilePath, remotePath, exactPath, callback) {
         // The native layer tracks a single cancel flag per client, so two concurrent
         // uploads on the same client would clobber each other's cancel state. Reject
         // a second upload while one is already running (review #13).
@@ -838,7 +873,8 @@ class SSHClient {
         return this.checkSFTP(callback)
             .then(() => new Promise((resolve, reject) => {
             ++this._counters.upload;
-            nativeClient.sftpUpload(localFilePath, remoteDirectoryPath, this._key, (error) => {
+            const upload = exactPath ? nativeClient.sftpUploadToPath : nativeClient.sftpUpload;
+            upload(localFilePath, remotePath, this._key, (error) => {
                 --this._counters.upload;
                 if (callback) {
                     callback(error);

@@ -284,6 +284,10 @@ const nativeClient = {
     finish(invokeAsync('sftpMkdir', { path, key }), callback);
   },
 
+  sftpCreateDirAll(path: string, key: string, callback: Callback) {
+    finish(invokeAsync('sftpCreateDirAll', { path, key }), callback);
+  },
+
   sftpRm(path: string, key: string, callback: Callback) {
     finish(invokeAsync('sftpRm', { path, key }), callback);
   },
@@ -302,6 +306,10 @@ const nativeClient = {
 
   sftpUpload(localPath: string, remoteDirectoryPath: string, key: string, callback: Callback) {
     finish(invokeAsync('sftpUpload', { localPath, remotePath: remoteDirectoryPath, key }), callback);
+  },
+
+  sftpUploadToPath(localPath: string, remotePath: string, key: string, callback: Callback) {
+    finish(invokeAsync('sftpUploadToPath', { localPath, remotePath, key }), callback);
   },
 
   sftpDownload(remotePath: string, localPath: string, key: string, callback: Callback) {

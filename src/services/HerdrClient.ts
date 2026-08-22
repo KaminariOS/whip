@@ -1,7 +1,7 @@
 import SSHClient, { type HerdrBridgeEvent, type LsResult, PtyType } from 'react-native-whip-ssh';
 
 import { normalizePrivateKey } from '../lib/privateKey';
-import { normalizeRemotePath, remoteEntryName, sortRemoteEntries } from '../lib/remoteFiles';
+import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
 import { uniqueRemoteAttachmentName } from '../lib/attachmentPaste';
 import { createSecureId } from '../lib/secureId';
 import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
@@ -357,43 +357,12 @@ export class HerdrClient {
     const home = await this.remoteHomeDirectory();
     const appDirectory = `${home}/.whip`;
     const uploadDirectory = `${appDirectory}/uploads`;
-    for (const directory of [appDirectory, uploadDirectory]) {
-      try {
-        await client.sftpMkdir(directory);
-      } catch {
-        // mkdir reports an error when the directory already exists. Listing it
-        // distinguishes that harmless case from a real permissions/path error.
-        await client.sftpLs(directory);
-      }
-    }
+    await client.sftpCreateDirAll(uploadDirectory);
     const uploadId = createSecureId('attachment');
-    const stagingDirectory = `${uploadDirectory}/.${uploadId}.upload`;
-    const stagingPath = `${stagingDirectory}/${sourceFilename}`;
     const remoteFilename = uniqueRemoteAttachmentName(sourceFilename, uploadId);
     const remotePath = `${uploadDirectory}/${remoteFilename}`;
-    let stagingCreated = false;
-    let promoted = false;
-    try {
-      await client.sftpMkdir(stagingDirectory);
-      stagingCreated = true;
-      // react-native-russh currently expects a remote directory here and
-      // appends the local basename. Rename afterward to the exact unique path.
-      await client.sftpUpload(localFilePath, stagingDirectory);
-      await client.sftpRename(stagingPath, remotePath);
-      promoted = true;
-      const entries = await client.sftpLs(uploadDirectory);
-      const uploaded = entries.find(entry => remoteEntryName(entry) === remoteFilename);
-      if (!uploaded || Boolean(uploaded.isDirectory)) {
-        throw new Error(`Uploaded attachment was not found at ${remotePath}`);
-      }
-      return remotePath;
-    } catch (error) {
-      if (promoted) await client.sftpRm(remotePath).catch(() => undefined);
-      else if (stagingCreated) await client.sftpRm(stagingPath).catch(() => undefined);
-      throw error;
-    } finally {
-      if (stagingCreated) await client.sftpRmdir(stagingDirectory).catch(() => undefined);
-    }
+    await client.sftpUploadToPath(localFilePath, remotePath);
+    return remotePath;
   }
 
   async openTerminal(
