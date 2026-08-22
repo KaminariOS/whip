@@ -1,5 +1,5 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { Check, ChevronLeft, ClipboardPaste, KeyRound, ScanLine, Sparkles, X } from 'lucide-react-native';
+import { Check, ChevronLeft, ClipboardPaste, Keyboard, KeyRound, ScanLine, Sparkles, X } from 'lucide-react-native';
 import SSHClient from 'react-native-whip-ssh';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Clipboard, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -15,7 +15,7 @@ import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
-import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -261,7 +261,14 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
           {working ? <ActivityIndicator color={colors.onPrimary} /> : <Icon as={ScanLine} className="text-primary-foreground" size={19} />}
           <Text>{pairing ? t('pairing.waiting') : t('pairing.scan')}</Text>
         </Button>
-        <Button className="mt-2" variant="ghost" disabled={working} onPress={onManual}>
+        <Button
+          className={cn('relative mt-3 h-12 overflow-hidden rounded-full', appGlassEnabled && 'border')}
+          style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+          variant={appGlassEnabled ? 'ghost' : 'outline'}
+          disabled={working}
+          onPress={hapticPress(onManual)}>
+          <GlassBackdrop shapeClassName="rounded-full" />
+          <Icon as={Keyboard} size={19} />
           <Text>{t('pairing.manual')}</Text>
         </Button>
       </ScrollView>
