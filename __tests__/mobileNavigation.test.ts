@@ -4,11 +4,14 @@ import {
   selectMobileTab,
 } from '../src/mobileNavigation';
 
-test('terminal exit returns to the last non-terminal destination', () => {
-  const herd = selectMobileTab(initialMobileNavigation, 'herd');
-  const terminal = selectMobileTab(herd, 'terminal');
-  expect(handleMobileBack(terminal)).toEqual({ handled: true, state: herd });
-});
+test.each(['hosts', 'herd', 'more'] as const)(
+  'terminal exit returns to herd after entering from %s',
+  previousTab => {
+    const previous = selectMobileTab(initialMobileNavigation, previousTab);
+    const terminal = selectMobileTab(previous, 'terminal');
+    expect(handleMobileBack(terminal).state.tab).toBe('herd');
+  },
+);
 
 test('back returns non-host roots to hosts and leaves host root to Android', () => {
   const herd = selectMobileTab(initialMobileNavigation, 'herd');

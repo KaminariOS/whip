@@ -22,7 +22,7 @@ export function handleMobileBack(state: MobileNavigationState): {
   state: MobileNavigationState;
 } {
   if (state.tab === 'terminal') {
-    return { handled: true, state: selectMobileTab(state, state.lastNonTerminalTab) };
+    return { handled: true, state: selectMobileTab(state, 'herd') };
   }
   if (state.tab !== 'hosts') return { handled: true, state: selectMobileTab(state, 'hosts') };
   return { handled: false, state };
