@@ -1069,9 +1069,12 @@ const terminalSessionHtml = `<!doctype html>
       pinch = null;
       lastTap = null;
     }, { capture: true });
+    const usesNativeWindowImeResize = /Android/i.test(navigator.userAgent);
     window.addEventListener('resize', resize);
-    window.visualViewport?.addEventListener('resize', resize);
-    window.visualViewport?.addEventListener('scroll', resize);
+    if (!usesNativeWindowImeResize) {
+      window.visualViewport?.addEventListener('resize', resize);
+      window.visualViewport?.addEventListener('scroll', resize);
+    }
     let readySent = false;
     const announceReady = () => {
       resize();
@@ -1111,13 +1114,16 @@ const terminalSessionScript = terminalSessionHtml
   .replaceAll("document.getElementById('", "root.querySelector('#")
   .replaceAll('window.herdr', 'api.herdr')
   .replace(
-    "window.visualViewport?.addEventListener('scroll', resize);",
-    `window.visualViewport?.addEventListener('scroll', resize);
+    "    window.visualViewport?.addEventListener('scroll', resize);\n    }",
+    `    window.visualViewport?.addEventListener('scroll', resize);
+    }
     api.herdrDispose = () => {
       disposed = true;
       window.removeEventListener('resize', resize);
-      window.visualViewport?.removeEventListener('resize', resize);
-      window.visualViewport?.removeEventListener('scroll', resize);
+      if (!usesNativeWindowImeResize) {
+        window.visualViewport?.removeEventListener('resize', resize);
+        window.visualViewport?.removeEventListener('scroll', resize);
+      }
       terminal.dispose();
     };`,
   );

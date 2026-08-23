@@ -1083,7 +1083,6 @@ export function TerminalScreen({
       accessibilityElementsHidden={!visible || !session}
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
-      renderToHardwareTextureAndroid={Platform.OS === 'android'}
       shouldRasterizeIOS={Platform.OS === 'ios'}
       className={cn(
         'flex-1 bg-transparent',
