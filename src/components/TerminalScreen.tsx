@@ -13,7 +13,8 @@ import {
   type TerminalControlId,
   type TerminalControlUsage,
 } from '../lib/terminalControls';
-import type { TerminalRenderTarget } from '../lib/terminalRenderer';
+import { OfflineTerminalBackend } from '../lib/offlineTerminalBackend';
+import { terminalScrollbackMode, type TerminalRenderTarget } from '../lib/terminalRenderer';
 import type { TerminalProtocolState } from '../lib/terminalBridge';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { beginTerminalInputTrace, endTerminalWriteTrace } from '../services/performanceTrace';
@@ -222,7 +223,7 @@ export function TerminalScreen({
   const queuedMessageSequenceRef = useRef(0);
   const queueFlushesRef = useRef(new Set<string>());
   const queueRetryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const terminalOutputCacheRef = useRef(new Map<string, string>());
+  const offlineBackendRef = useRef(new OfflineTerminalBackend());
   const flushQueuedTargetRef = useRef<(target: TerminalRenderTarget) => void>(() => {});
   const targetsRef = useRef(targets);
   const composeInputRef = useRef<TextInputHandle | null>(null);
@@ -243,7 +244,7 @@ export function TerminalScreen({
   const [composeText, setComposeText] = useState('');
   const [composeAttachments, setComposeAttachments] = useState<ComposeAttachment[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
-  const [cachedTerminalOutput, setCachedTerminalOutput] = useState('');
+  const [, setOfflineBackendRevision] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [keyboardEnabled, setKeyboardEnabled] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -295,13 +296,14 @@ export function TerminalScreen({
   const cacheTargetKind = activeTarget?.session.kind;
   const cacheTargetStatus = activeTarget?.session.status;
   const cacheLineLimit = preferences.scrollback;
+  const offlineSnapshot = offlineBackendRef.current.snapshot(cacheTargetKey);
 
   useEffect(() => {
-    if (!cacheTargetKey) {
-      setCachedTerminalOutput('');
-      return;
-    }
-    setCachedTerminalOutput(terminalOutputCacheRef.current.get(cacheTargetKey) || '');
+    offlineBackendRef.current.retain(new Set(targets.map(target => target.key)));
+  }, [targets]);
+
+  useEffect(() => {
+    if (!cacheTargetKey) return;
     if (
       !visible
       || !cacheTargetClient
@@ -317,8 +319,10 @@ export function TerminalScreen({
         const output = await cacheTargetClient.readPane(cacheTargetPaneId, cacheLineLimit);
         if (cancelled || !output) return;
         const transcript = terminalTranscript(output, cacheLineLimit);
-        terminalOutputCacheRef.current.set(cacheTargetKey, transcript);
-        if (activeTargetRef.current?.key === cacheTargetKey) setCachedTerminalOutput(transcript);
+        offlineBackendRef.current.updateTranscript(cacheTargetKey, transcript);
+        if (activeTargetRef.current?.key === cacheTargetKey) {
+          setOfflineBackendRevision(value => value + 1);
+        }
       } catch {
         // The existing cache remains readable when its refresh loses the network.
       } finally {
@@ -341,9 +345,18 @@ export function TerminalScreen({
     visible,
   ]);
 
+  const activeUsesOfflineScroll = Boolean(
+    activeTarget
+      && activeTarget.session.kind !== 'ssh'
+      && terminalScrollbackMode(activeTarget.session).offlineScrollback,
+  );
+  const activeTargetKey = activeTarget?.key || '';
+  const activeRemoteScroll = activeTarget?.scroll;
   useEffect(() => {
-    setScrollPosition(activeTarget?.scroll);
-  }, [activeTarget?.key, activeTarget?.scroll]);
+    setScrollPosition(activeUsesOfflineScroll && activeTargetKey
+      ? offlineBackendRef.current.snapshot(activeTargetKey).scroll
+      : activeRemoteScroll);
+  }, [activeRemoteScroll, activeTargetKey, activeUsesOfflineScroll]);
 
   const writeInput = async (
     data: string,
@@ -1095,7 +1108,8 @@ export function TerminalScreen({
           targets={targets}
           visible={visible}
           preferences={preferences}
-          offlineTranscript={cachedTerminalOutput}
+          offlineTranscript={offlineSnapshot.transcript}
+          offlineScroll={offlineSnapshot.scroll}
           swipe={swipe}
           onReady={() => setReady(true)}
           onInput={async (target, data) => {
@@ -1104,6 +1118,13 @@ export function TerminalScreen({
           onScroll={(target, direction, lines) => {
             if (target.key === activeTarget?.key) {
               setScrollPosition(current => moveTerminalScroll(current, direction, lines));
+            }
+          }}
+          onOfflineScroll={(target, scroll) => {
+            const next = offlineBackendRef.current.updateScroll(target.key, scroll);
+            if (target.key === activeTarget?.key) {
+              setOfflineBackendRevision(value => value + 1);
+              setScrollPosition(next.scroll);
             }
           }}
           onSearchResult={(count, index, invalid) => setSearchResult({ count, index, invalid })}

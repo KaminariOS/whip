@@ -273,6 +273,20 @@ const terminalSessionHtml = `<!doctype html>
     let offlineScrollback = false;
     let offlineTranscriptChunks = [];
     let offlineTranscriptVisible = false;
+    let lastReportedOfflineScroll = '';
+    const offlineScrollInfo = () => ({
+      offsetFromBottom: Math.max(0, terminal.buffer.active.baseY - terminal.buffer.active.viewportY),
+      maxOffsetFromBottom: Math.max(0, terminal.buffer.active.baseY),
+      viewportRows: Math.max(0, terminal.rows),
+    });
+    const reportOfflineScroll = () => {
+      if (!offlineScrollback) return;
+      const scroll = offlineScrollInfo();
+      const signature = scroll.offsetFromBottom + ':' + scroll.maxOffsetFromBottom + ':' + scroll.viewportRows;
+      if (signature === lastReportedOfflineScroll) return;
+      lastReportedOfflineScroll = signature;
+      send({ type: 'offline-scroll', ...scroll });
+    };
     installAndroidImeBridge(terminal, send, navigator.userAgent);
     const handleOfflineInput = data => {
       if (!offlineScrollback || typeof data !== 'string') return false;
@@ -323,7 +337,10 @@ const terminalSessionHtml = `<!doctype html>
       if (bufferedInput !== null) bufferedInput += data;
       else send({ type: 'input', data });
     });
-    terminal.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }));
+    terminal.onResize(({ cols, rows }) => {
+      send({ type: 'resize', cols, rows });
+      reportOfflineScroll();
+    });
     terminal.parser.registerOscHandler(52, data => {
       const separator = data.indexOf(';');
       const payload = separator >= 0 ? data.slice(separator + 1) : '';
@@ -390,6 +407,7 @@ const terminalSessionHtml = `<!doctype html>
       if (!offlineTranscriptVisible) return;
       offlineTranscriptVisible = false;
       offlineTranscriptChunks = [];
+      lastReportedOfflineScroll = '';
       clearOsc8Links();
       clearInteractiveSelection(false);
       // Queue RIS through xterm's parser so it cannot race a pending transcript.
@@ -430,6 +448,7 @@ const terminalSessionHtml = `<!doctype html>
       pendingFrames.clear();
       offlineTranscriptChunks = [];
       offlineTranscriptVisible = false;
+      lastReportedOfflineScroll = '';
       clearOsc8Links();
       terminal.reset();
       clearInteractiveSelection(false);
@@ -440,20 +459,26 @@ const terminalSessionHtml = `<!doctype html>
     window.herdrAppendOfflineTranscript = data => {
       if (typeof data === 'string') offlineTranscriptChunks.push(data);
     };
-    window.herdrCommitOfflineTranscript = () => {
+    window.herdrCommitOfflineTranscript = offsetFromBottom => {
       const transcript = offlineTranscriptChunks.join('');
       offlineTranscriptChunks = [];
       if (!transcript) return;
       pendingFrames.clear();
       offlineTranscriptVisible = true;
+      lastReportedOfflineScroll = '';
       clearOsc8Links();
       clearInteractiveSelection(false);
-      terminal.write('\u001bc' + transcript, () => terminal.scrollToBottom());
+      terminal.write('\u001bc' + transcript, () => {
+        const offset = Math.max(0, Math.round(Number(offsetFromBottom) || 0));
+        terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - offset));
+        reportOfflineScroll();
+      });
     };
     window.herdrHideOfflineTranscript = () => {
       offlineTranscriptChunks = [];
       if (!offlineTranscriptVisible) return;
       offlineTranscriptVisible = false;
+      lastReportedOfflineScroll = '';
       clearOsc8Links();
       clearInteractiveSelection(false);
       terminal.write('\u001bc');
@@ -466,6 +491,7 @@ const terminalSessionHtml = `<!doctype html>
       doubleTapAction = ['none', 'paste', 'tab', 'escape'].includes(options.doubleTapAction) ? options.doubleTapAction : 'tab';
       const nextOfflineScrollback = options.offlineScrollback === true;
       if (offlineScrollback && !nextOfflineScrollback) terminal.scrollToBottom();
+      if (!nextOfflineScrollback) lastReportedOfflineScroll = '';
       localScrollback = options.localScrollback === true;
       offlineScrollback = nextOfflineScrollback;
       if (doubleTapAction === 'none') lastTap = null;
@@ -801,7 +827,10 @@ const terminalSessionHtml = `<!doctype html>
     };
     installSelectionHandle(startHandle, 'start');
     installSelectionHandle(endHandle, 'end');
-    terminal.onScroll(() => renderSelectionHandles());
+    terminal.onScroll(() => {
+      renderSelectionHandles();
+      reportOfflineScroll();
+    });
     terminal.buffer.onBufferChange(buffer => {
       clearInteractiveSelection(true);
       searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
@@ -1242,7 +1271,7 @@ const terminalHtml = `<!doctype html>
     window.herdrReset = key => call(key, 'herdrReset');
     window.herdrBeginOfflineTranscript = key => call(key, 'herdrBeginOfflineTranscript');
     window.herdrAppendOfflineTranscript = (key, data) => call(key, 'herdrAppendOfflineTranscript', [data]);
-    window.herdrCommitOfflineTranscript = key => call(key, 'herdrCommitOfflineTranscript');
+    window.herdrCommitOfflineTranscript = (key, offsetFromBottom) => call(key, 'herdrCommitOfflineTranscript', [offsetFromBottom]);
     window.herdrHideOfflineTranscript = key => call(key, 'herdrHideOfflineTranscript');
     window.herdrOfflineInput = (key, data) => call(key, 'herdrOfflineInput', [data]);
     window.herdrConfigure = (key, options) => call(key, 'herdrConfigure', [options]);

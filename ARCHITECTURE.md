@@ -72,6 +72,7 @@ The renderer is responsible for ANSI color, alternate screen applications, curso
 - **Runtime registry:** one non-serializable `HerdrClient`, refresh coordinator, status history, and reconnect timer per live host.
 - **Herdr snapshots:** normalized workspaces, tabs, panes, agents, and server capabilities, isolated per live host.
 - **Terminal sessions:** ordered open terminals plus active `terminal_id` per live host; terminal WebViews stay mounted across tab and host changes.
+- **Virtual Herdr terminals:** in-memory cached ANSI snapshots and logical scroll state per terminal while its live transport is offline; xterm reports measured viewport geometry and remains responsible for rendering and gestures.
 - **Navigation:** native destinations and sheets; terminal navigation is separate from Herdr workspace/tab focus.
 
 Transport objects do not live in React component state. A service owns SSH/API lifetimes; React consumes serializable state and invokes typed actions.

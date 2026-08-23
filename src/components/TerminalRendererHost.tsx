@@ -41,6 +41,7 @@ import {
 } from '../services/performanceTrace';
 import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
+import type { PaneScrollInfo } from '../types';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
@@ -96,6 +97,7 @@ interface Props {
   visible: boolean;
   preferences: TerminalPreferences;
   offlineTranscript?: string;
+  offlineScroll?: PaneScrollInfo;
   swipe?: {
     direction: -1 | 1;
     offset: SharedValue<number>;
@@ -104,6 +106,7 @@ interface Props {
   onReady?: () => void;
   onInput: (target: TerminalRenderTarget, data: string) => void | Promise<void>;
   onScroll: (target: TerminalRenderTarget, direction: 'up' | 'down', lines: number) => void;
+  onOfflineScroll: (target: TerminalRenderTarget, scroll: PaneScrollInfo) => void;
   onSearchResult: (count: number, index: number, invalid: boolean) => void;
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
@@ -128,11 +131,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   visible,
   preferences,
   offlineTranscript = '',
+  offlineScroll,
   swipe,
   style,
   onReady,
   onInput,
   onScroll,
+  onOfflineScroll,
   onSearchResult,
   onLinksScanned,
   onOpenLink,
@@ -151,12 +156,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const activeKey = useRef<string | null>(null);
   const appState = useRef(AppState.currentState);
   const offlineTranscriptRef = useRef(offlineTranscript);
+  const offlineScrollRef = useRef(offlineScroll);
   activeKey.current = activeTarget?.key || null;
   offlineTranscriptRef.current = offlineTranscript;
+  offlineScrollRef.current = offlineScroll;
 
   const reportReady = useEffectEvent(() => onReady?.());
   const reportInput = useEffectEvent(onInput);
   const reportScroll = useEffectEvent(onScroll);
+  const reportOfflineScroll = useEffectEvent(onOfflineScroll);
   const reportSearch = useEffectEvent(onSearchResult);
   const reportLinks = useEffectEvent(onLinksScanned);
   const reportOpenLink = useEffectEvent(onOpenLink);
@@ -216,13 +224,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const syncOfflineTranscript = useCallback((
     targetKey: string,
     targetKind: TerminalRenderTarget['session']['kind'],
-    targetStatus: TerminalRenderTarget['session']['status'],
+    offlineScrollback: boolean,
     transcript: string,
+    scroll?: PaneScrollInfo,
   ) => {
     const key = JSON.stringify(targetKey);
     if (
       targetKind === 'ssh'
-      || targetStatus === 'connected'
+      || !offlineScrollback
       || !transcript
     ) {
       inject(`window.herdrHideOfflineTranscript(${key});`);
@@ -234,7 +243,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         transcript.slice(offset, offset + TRANSCRIPT_CHUNK_SIZE),
       )});`);
     }
-    inject(`window.herdrCommitOfflineTranscript(${key});`);
+    inject(`window.herdrCommitOfflineTranscript(${key}, ${scroll?.offset_from_bottom || 0});`);
   }, [inject]);
 
   const injectFrame = useCallback((
@@ -532,19 +541,25 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   const activeTranscriptKey = activeTarget?.key || '';
   const activeTranscriptKind = activeTarget?.session.kind || 'herdr';
-  const activeTranscriptStatus = activeTarget?.session.status || 'connecting';
+  // Connecting, disconnected, and error are all the same cached scrollback mode.
+  // Keying this effect on the mode prevents reconnect attempts from replaying the
+  // same transcript and snapping an offline reader back to the bottom.
+  const activeTranscriptOffline = activeTarget
+    ? terminalScrollbackMode(activeTarget.session).offlineScrollback
+    : false;
   useEffect(() => {
     if (!hostReady.current || !activeTranscriptKey) return;
     syncOfflineTranscript(
       activeTranscriptKey,
       activeTranscriptKind,
-      activeTranscriptStatus,
+      activeTranscriptOffline,
       offlineTranscript,
+      offlineScrollRef.current,
     );
   }, [
     activeTranscriptKey,
     activeTranscriptKind,
-    activeTranscriptStatus,
+    activeTranscriptOffline,
     offlineTranscript,
     syncOfflineTranscript,
   ]);
@@ -650,8 +665,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (entry) syncOfflineTranscript(
         entry.target.key,
         entry.target.session.kind,
-        entry.target.session.status,
+        terminalScrollbackMode(entry.target.session).offlineScrollback,
         offlineTranscriptRef.current,
+        offlineScrollRef.current,
       );
       reportReady();
       return;
@@ -718,6 +734,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       } catch (reason) {
         reportError(entry.target, String(reason));
       }
+    } else if (message.type === 'offline-scroll') {
+      if (
+        entry.target.session.kind === 'ssh'
+        || !terminalScrollbackMode(entry.target.session).offlineScrollback
+      ) return;
+      reportOfflineScroll(entry.target, {
+        offset_from_bottom: message.offsetFromBottom,
+        max_offset_from_bottom: message.maxOffsetFromBottom,
+        viewport_rows: message.viewportRows,
+      });
     } else if (message.type === 'terminal-click') {
       if (entry.target.session.status !== 'connected') return;
       try {
