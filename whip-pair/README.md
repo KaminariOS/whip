@@ -275,6 +275,6 @@ Commit those changes, then push a tag whose version matches `Cargo.toml`
 exactly:
 
 ```bash
-git tag whip-pair-v0.1.2
-git push origin whip-pair-v0.1.2
+git tag whip-pair-v0.1.3
+git push origin whip-pair-v0.1.3
 ```
