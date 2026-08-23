@@ -4,6 +4,7 @@ export interface TerminalSession {
   terminalId: string;
   paneId: string;
   title: string;
+  fontSize?: number;
   kind?: 'herdr' | 'ssh';
   status: TerminalSessionStatus;
   error?: string;
@@ -93,7 +94,7 @@ export function openTerminalSession(
 export function updateTerminalSession(
   state: TerminalSessionsState,
   terminalId: string,
-  update: Partial<Pick<TerminalSession, 'status' | 'error' | 'reconnectAttempt' | 'title' | 'paneId'>>,
+  update: Partial<Pick<TerminalSession, 'status' | 'error' | 'reconnectAttempt' | 'title' | 'paneId' | 'fontSize'>>,
 ): TerminalSessionsState {
   if (!state.sessions.some(session => session.terminalId === terminalId)) return state;
   return {

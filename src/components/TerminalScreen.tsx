@@ -72,6 +72,7 @@ interface Props {
   onOpenLink?: (link: string) => void;
   onLinksScanned?: (links: string[]) => void;
   onInteraction?: (target: TerminalRenderTarget) => void;
+  onFontSizeChange: (target: TerminalRenderTarget, fontSize: number) => void;
   onClose: () => void;
   onStatus: (
     target: TerminalRenderTarget,
@@ -207,6 +208,7 @@ export function TerminalScreen({
   onOpenLink,
   onLinksScanned,
   onInteraction,
+  onFontSizeChange,
   onClose,
   onStatus,
 }: Props) {
@@ -1172,6 +1174,7 @@ export function TerminalScreen({
           onTitleChange={(target, nextTitle) => {
             if (target.key === activeTarget?.key) setReportedTitle(nextTitle);
           }}
+          onFontSizeChange={onFontSizeChange}
           onSelectionStateChange={(target, active) => {
             if (target.key === activeTarget?.key) setTerminalSelectionActive(active);
           }}

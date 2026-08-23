@@ -1621,6 +1621,18 @@ function AppContent() {
     })));
   }, []);
 
+  const updateTerminalFontSize = useCallback((
+    sessionId: string,
+    terminalId: string,
+    fontSize: number,
+  ) => {
+    setLiveSessions(current => updateLiveHostTerminals(
+      current,
+      sessionId,
+      terminals => updateTerminalSession(terminals, terminalId, { fontSize }),
+    ));
+  }, []);
+
   const activeSession = getActiveLiveHostSession(liveSessions);
   const activeRuntime = activeSession ? runtimes.current.get(activeSession.id) : undefined;
   const activeClient = activeRuntime?.client;
@@ -2045,6 +2057,7 @@ function AppContent() {
             onActivateTerminal={activatePaneTerminal}
             onCloseTerminal={closeTerminal}
             onTerminalStatus={updateTerminalStatus}
+            onTerminalFontSizeChange={updateTerminalFontSize}
           />
         )}
         </NavigationBlurTarget>
@@ -2217,6 +2230,7 @@ function LiveSessionView({
   onActivateTerminal,
   onCloseTerminal,
   onTerminalStatus,
+  onTerminalFontSizeChange,
 }: {
   session: LiveHostSession;
   client: HerdrClient;
@@ -2238,6 +2252,7 @@ function LiveSessionView({
   onActivateTerminal: (sessionId: string, pane: PaneInfo) => void;
   onCloseTerminal: (sessionId: string, terminalId: string) => void;
   onTerminalStatus: (sessionId: string, terminalId: string, status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
+  onTerminalFontSizeChange: (sessionId: string, terminalId: string, fontSize: number) => void;
 }) {
   const sessionId = session.id;
   const refresh = useCallback(() => onRefresh(sessionId), [onRefresh, sessionId]);
@@ -2267,6 +2282,7 @@ function LiveSessionView({
       onActivateTerminal={activateTerminal}
       onCloseTerminal={closeTerminal}
       onTerminalStatus={onTerminalStatus}
+      onTerminalFontSizeChange={onTerminalFontSizeChange}
       terminalPreferences={terminalPreferences}
       terminalControlUsage={terminalControlUsage}
       terminalHistory={terminalHistory}

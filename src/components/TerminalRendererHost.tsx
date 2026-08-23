@@ -115,6 +115,7 @@ interface Props {
   onBufferModeChange: (target: TerminalRenderTarget, alternate: boolean) => void;
   onProtocolStateChange: (target: TerminalRenderTarget, state: TerminalProtocolState) => void;
   onTitleChange: (target: TerminalRenderTarget, title: string) => void;
+  onFontSizeChange: (target: TerminalRenderTarget, fontSize: number) => void;
   onSelectionStateChange: (target: TerminalRenderTarget, active: boolean) => void;
   onStatus: (
     target: TerminalRenderTarget,
@@ -146,6 +147,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onBufferModeChange,
   onProtocolStateChange,
   onTitleChange,
+  onFontSizeChange,
   onSelectionStateChange,
   onStatus,
   onError,
@@ -173,6 +175,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportBufferMode = useEffectEvent(onBufferModeChange);
   const reportProtocolState = useEffectEvent(onProtocolStateChange);
   const reportTitle = useEffectEvent(onTitleChange);
+  const reportFontSize = useEffectEvent(onFontSizeChange);
   const reportSelectionState = useEffectEvent(onSelectionStateChange);
   const reportStatus = useEffectEvent(onStatus);
   const reportError = useEffectEvent(onError);
@@ -391,7 +394,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reconnectAttempt: target.session.reconnectAttempt || 0,
         reconnectTimer: null,
         fontPreference: preferences.fontSize,
-        fontSize: preferences.fontSize,
+        fontSize: target.session.fontSize ?? preferences.fontSize,
         protocolState: {
           kittyKeyboardReportAll: false,
         },
@@ -575,6 +578,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (entry.fontPreference !== preferences.fontSize) {
         entry.fontPreference = preferences.fontSize;
         entry.fontSize = preferences.fontSize;
+        reportFontSize(entry.target, entry.fontSize);
       }
       if (hostReady.current) configureEntry(entry);
     }
@@ -770,6 +774,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const fontSize = Number(message.fontSize);
       if (Number.isFinite(fontSize)) {
         entry.fontSize = Math.max(8, Math.min(24, Math.round(fontSize)));
+        reportFontSize(entry.target, entry.fontSize);
       }
     } else if (message.type === 'buffer-mode') {
       reportBufferMode(entry.target, message.alternate === true);

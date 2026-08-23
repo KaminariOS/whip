@@ -9,6 +9,13 @@ interface PersistedTerminal {
   terminalId: string;
   paneId: string;
   title: string;
+  fontSize?: number;
+}
+
+function persistedFontSize(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(8, Math.min(24, Math.round(value)))
+    : undefined;
 }
 
 export async function loadPersistedTerminals(hostId: string, snapshot: HerdrSnapshot): Promise<TerminalSessionsState> {
@@ -19,7 +26,12 @@ export async function loadPersistedTerminals(hostId: string, snapshot: HerdrSnap
     const validIds = new Set(snapshot.panes.map(pane => pane.terminal_id));
     const sessions = (parsed.sessions || [])
       .filter(session => validIds.has(session.terminalId))
-      .map(session => ({ ...session, status: 'connecting' as const, reconnectAttempt: 0 }));
+      .map(session => ({
+        ...session,
+        fontSize: persistedFontSize(session.fontSize),
+        status: 'connecting' as const,
+        reconnectAttempt: 0,
+      }));
     const activeTerminalId = sessions.some(session => session.terminalId === parsed.activeTerminalId)
       ? parsed.activeTerminalId || null
       : sessions[0]?.terminalId || null;
@@ -39,6 +51,11 @@ export async function savePersistedTerminals(hostId: string, state: TerminalSess
     : sessions[0]?.terminalId ?? null;
   await AsyncStorage.setItem(`${PREFIX}${hostId}`, JSON.stringify({
     activeTerminalId,
-    sessions: sessions.map(({ terminalId, paneId, title }) => ({ terminalId, paneId, title })),
+    sessions: sessions.map(({ terminalId, paneId, title, fontSize }) => ({
+      terminalId,
+      paneId,
+      title,
+      fontSize: persistedFontSize(fontSize),
+    })),
   }));
 }

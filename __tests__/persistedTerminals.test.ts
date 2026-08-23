@@ -66,3 +66,44 @@ test('does not persist an ephemeral SSH fallback shell as a Herdr pane', async (
     JSON.stringify({ activeTerminalId: null, sessions: [] }),
   );
 });
+
+test('restores a pane font zoom across app restarts', async () => {
+  mockGetItem.mockResolvedValue(JSON.stringify({
+    activeTerminalId: 'term-grok',
+    sessions: [{
+      terminalId: 'term-grok',
+      paneId: 'p-grok',
+      title: 'grok',
+      fontSize: 10,
+    }],
+  }));
+
+  const restored = await loadPersistedTerminals('thinker', snapshot);
+
+  expect(restored.sessions.find(session => session.terminalId === 'term-grok')).toMatchObject({
+    fontSize: 10,
+  });
+});
+
+test('persists each pane font zoom with its restored terminal', async () => {
+  await savePersistedTerminals('thinker', {
+    activeTerminalId: 'term-grok',
+    sessions: [{
+      terminalId: 'term-grok',
+      paneId: 'p-grok',
+      title: 'grok',
+      fontSize: 9,
+      kind: 'herdr',
+      status: 'connected',
+      reconnectAttempt: 0,
+    }],
+  });
+
+  expect(mockSetItem).toHaveBeenCalledWith(
+    'herdr.terminal.sessions.v1.thinker',
+    JSON.stringify({
+      activeTerminalId: 'term-grok',
+      sessions: [{ terminalId: 'term-grok', paneId: 'p-grok', title: 'grok', fontSize: 9 }],
+    }),
+  );
+});

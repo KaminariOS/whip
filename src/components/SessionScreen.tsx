@@ -66,6 +66,7 @@ interface Props {
     error?: string,
     reconnectAttempt?: number,
   ) => void;
+  onTerminalFontSizeChange: (hostSessionId: string, terminalId: string, fontSize: number) => void;
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
@@ -111,6 +112,7 @@ export function SessionScreen({
   onActivateTerminal,
   onCloseTerminal,
   onTerminalStatus,
+  onTerminalFontSizeChange,
   terminalPreferences,
   terminalControlUsage,
   terminalHistory,
@@ -768,6 +770,9 @@ export function SessionScreen({
             onControlUse={onTerminalControlUse}
             onHistoryEntry={onTerminalHistoryEntry}
             onInteraction={registerInteraction}
+            onFontSizeChange={(target, fontSize) => {
+              onTerminalFontSizeChange(target.hostSessionId, target.session.terminalId, fontSize);
+            }}
             onClose={() => {
               if (activeTerminalSession) onCloseTerminal(activeTerminalSession.terminalId);
             }}
