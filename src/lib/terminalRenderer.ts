@@ -40,3 +40,11 @@ export function terminalScrollbackMode(
     offlineScrollback: session.status !== 'connected',
   };
 }
+
+export function directTerminalKeyboardEnabled(
+  status: TerminalSession['status'],
+  requested: boolean,
+  composerOpen: boolean,
+): boolean {
+  return status === 'connected' && requested && !composerOpen;
+}

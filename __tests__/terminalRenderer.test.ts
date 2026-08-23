@@ -1,4 +1,5 @@
 import {
+  directTerminalKeyboardEnabled,
   isOfflineTerminalNavigationInput,
   terminalScrollbackMode,
 } from '../src/lib/terminalRenderer';
@@ -39,4 +40,17 @@ describe('terminalScrollbackMode', () => {
       offlineScrollback: false,
     });
   });
+});
+
+describe('directTerminalKeyboardEnabled', () => {
+  it('enables direct input only for a connected terminal without the composer', () => {
+    expect(directTerminalKeyboardEnabled('connected', true, false)).toBe(true);
+    expect(directTerminalKeyboardEnabled('connected', false, false)).toBe(false);
+    expect(directTerminalKeyboardEnabled('connected', true, true)).toBe(false);
+  });
+
+  it.each(['connecting', 'disconnected', 'error'] as const)(
+    'disables direct input while %s',
+    status => expect(directTerminalKeyboardEnabled(status, true, false)).toBe(false),
+  );
 });

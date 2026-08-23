@@ -14,7 +14,11 @@ import {
   type TerminalControlUsage,
 } from '../lib/terminalControls';
 import { OfflineTerminalBackend } from '../lib/offlineTerminalBackend';
-import { terminalScrollbackMode, type TerminalRenderTarget } from '../lib/terminalRenderer';
+import {
+  directTerminalKeyboardEnabled,
+  terminalScrollbackMode,
+  type TerminalRenderTarget,
+} from '../lib/terminalRenderer';
 import type { TerminalProtocolState } from '../lib/terminalBridge';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { beginTerminalInputTrace, endTerminalWriteTrace } from '../services/performanceTrace';
@@ -261,6 +265,14 @@ export function TerminalScreen({
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
   const scrollThumb = alternateScreen ? null : terminalScrollThumb(scrollPosition);
   const title = reportedTitle || sessionTitle;
+  const directKeyboardEnabled = directTerminalKeyboardEnabled(
+    status,
+    keyboardEnabled,
+    composeOpen,
+  );
+  const composerKeyboardEnabled = composeOpen && keyboardEnabled;
+  const keyboardControlDisabled = status !== 'connected' && !composeOpen;
+  const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
   activeTargetRef.current = activeTarget;
   targetsRef.current = targets;
 
@@ -459,12 +471,20 @@ export function TerminalScreen({
   }, [composeOpen, ready, visible]);
 
   useEffect(() => {
+    if (status === 'connected' || composeOpen || !keyboardEnabled) return;
+    setKeyboardEnabled(false);
+    renderer.current?.setKeyboardEnabled(false);
+    renderer.current?.blur();
+    Keyboard.dismiss();
+  }, [composeOpen, keyboardEnabled, status]);
+
+  useEffect(() => {
     if (!ready) return;
-    renderer.current?.setKeyboardEnabled(keyboardEnabled);
-    if (!keyboardEnabled) {
+    renderer.current?.setKeyboardEnabled(directKeyboardEnabled);
+    if (!directKeyboardEnabled && !composerKeyboardEnabled) {
       Keyboard.dismiss();
     }
-  }, [activeTarget?.key, composeExpanded, composeOpen, keyboardEnabled, ready]);
+  }, [activeTarget?.key, composerKeyboardEnabled, directKeyboardEnabled, ready]);
 
   useEffect(() => {
     const dismissFocusedInput = () => {
@@ -732,8 +752,8 @@ export function TerminalScreen({
   const openCompose = () => {
     setSearchOpen(false);
     setHistoryOpen(false);
-    setKeyboardEnabled(true);
     setTerminalComposerOverlay(terminalId, true).catch(reason => setError(String(reason))).finally(() => {
+      setKeyboardEnabled(true);
       setComposeOpen(true);
     });
   };
@@ -868,20 +888,23 @@ export function TerminalScreen({
       return (
         <Button
           key={control}
-          accessibilityLabel={keyboardEnabled ? t('terminal.disableKeyboard') : t('terminal.enableKeyboard')}
-          accessibilityState={{ selected: keyboardEnabled }}
-          className={cn(TERMINAL_ICON_CONTROL_CLASS, keyboardEnabled && 'border-primary bg-primary/15')}
+          accessibilityLabel={keyboardControlSelected ? t('terminal.disableKeyboard') : t('terminal.enableKeyboard')}
+          accessibilityState={{ disabled: keyboardControlDisabled, selected: keyboardControlSelected }}
+          className={cn(TERMINAL_ICON_CONTROL_CLASS, keyboardControlSelected && 'border-primary bg-primary/15')}
+          disabled={keyboardControlDisabled}
           variant="secondary"
           onPress={() => {
             onControlUse(control);
             const enabled = !keyboardEnabled;
-            if (enabled) renderer.current?.setKeyboardEnabled(true);
+            if (enabled && status === 'connected' && !composeOpen) {
+              renderer.current?.setKeyboardEnabled(true);
+            }
             setKeyboardEnabled(enabled);
             if (enabled) {
               setTimeout(() => {
                 if (composeOpen) {
                   composeInputRef.current?.focus();
-                } else {
+                } else if (status === 'connected') {
                   renderer.current?.focus();
                 }
               }, 40);
@@ -891,7 +914,7 @@ export function TerminalScreen({
             }
           }}>
           <View className={TERMINAL_ICON_BOX_CLASS}>
-            <KeyboardIcon size={TERMINAL_ICON_SIZE} color={keyboardEnabled ? appColors.primary : appColors.text} />
+            <KeyboardIcon size={TERMINAL_ICON_SIZE} color={keyboardControlSelected ? appColors.primary : appColors.text} />
           </View>
         </Button>
       );
