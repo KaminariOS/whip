@@ -253,6 +253,7 @@ export function TerminalScreen({
   const [keyboardEnabled, setKeyboardEnabled] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const { inset: keyboardInset } = useKeyboardInset(controlsRef, {
+    enabled: keyboardEnabled,
     onVisibilityChange: setKeyboardVisible,
   });
   const [terminalSelectionActive, setTerminalSelectionActive] = useState(false);
@@ -1082,7 +1083,13 @@ export function TerminalScreen({
       accessibilityElementsHidden={!visible || !session}
       importantForAccessibility={visible && session ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible && session ? 'auto' : 'none'}
-      className={cn('flex-1 bg-transparent', (!visible || !session) && 'absolute inset-0 opacity-0')}>
+      renderToHardwareTextureAndroid={Platform.OS === 'android'}
+      shouldRasterizeIOS={Platform.OS === 'ios'}
+      className={cn(
+        'flex-1 bg-transparent',
+        !visible && session && 'absolute inset-0',
+        !session && 'absolute inset-0 opacity-0',
+      )}>
       {!compact && <TerminalBackground preferences={preferences} />}
       {!compact && (
         <View className="h-[30px] flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-3">

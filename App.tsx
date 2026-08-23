@@ -1849,7 +1849,7 @@ function AppContent() {
   return (
     <>
       <StatusBar
-        animated
+        animated={false}
         hidden={fullscreenVisible}
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={theme.canvas}
@@ -1874,7 +1874,7 @@ function AppContent() {
           <View
             importantForAccessibility={immersiveTerminal ? 'no-hide-descendants' : 'auto'}
             pointerEvents={immersiveTerminal ? 'none' : 'auto'}
-            style={immersiveTerminal ? styles.hiddenTab : styles.tabScreen}>
+            style={immersiveTerminal ? styles.hiddenTab : styles.navigationForeground}>
           <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
           <View
             importantForAccessibility={navigation.tab === 'hosts' ? 'auto' : 'no-hide-descendants'}
@@ -2163,6 +2163,10 @@ const styles = StyleSheet.create({
   },
   tabScreen: {
     flex: 1,
+  },
+  navigationForeground: {
+    flex: 1,
+    zIndex: 1,
   },
   hiddenTab: {
     position: 'absolute',

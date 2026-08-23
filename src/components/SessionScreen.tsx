@@ -588,7 +588,10 @@ export function SessionScreen({
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible ? 'auto' : 'none'}
-      className={cn('flex-1 bg-terminal-canvas', !visible && 'absolute inset-0 opacity-0')}>
+      style={!visible && terminalPreferences.fullscreen && safeAreaInsets.top > 0
+        ? { top: -safeAreaInsets.top }
+        : undefined}
+      className={cn('flex-1 bg-terminal-canvas', !visible && 'absolute inset-0')}>
       <TerminalBackground preferences={terminalPreferences} />
       <View className="absolute inset-x-0 top-0 z-30">
         <View className="h-[55px] flex-row border-b border-border bg-transparent">

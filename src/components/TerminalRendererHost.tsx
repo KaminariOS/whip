@@ -62,6 +62,7 @@ interface WebViewHandle {
 interface RendererEntry {
   target: TerminalRenderTarget;
   rendererReady: boolean;
+  sizeReady: boolean;
   controllerAttached: boolean;
   connecting: boolean;
   pendingFrames: Array<{ frame: TerminalFrame; traceCookie: number | null }>;
@@ -289,6 +290,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
     if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
+    // Opening the remote terminal before xterm has measured the WebView starts
+    // it at HerdrClient's 80x24 fallback and immediately sends a second resize.
+    // Wait for the configured renderer's first measured size instead.
+    if (!entry.rendererReady || !entry.sizeReady) return;
     if (entry.connecting || entry.controllerAttached) return;
     entry.connecting = true;
     entry.controllerAttached = true;
@@ -378,6 +383,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry = {
         target,
         rendererReady: false,
+        sizeReady: false,
         controllerAttached: false,
         connecting: false,
         pendingFrames: [],
@@ -591,8 +597,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   useEffect(() => {
     if (!hostReady.current) return;
-    if (!visible || !activeTarget) {
-      if (activeTarget) inject(`window.herdrBlur(${JSON.stringify(activeTarget.key)});`);
+    if (!activeTarget) return;
+    if (!visible) {
+      // Keep only the selected terminal presented and composited behind the
+      // foreground app screen. Other cached xterm sessions remain hidden.
+      inject(`window.herdrActivate(${JSON.stringify(activeTarget.key)}); window.herdrBlur(${JSON.stringify(activeTarget.key)});`);
       return;
     }
     if (!swipe || !previewTarget) {
@@ -679,6 +688,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const frames = entry.pendingFrames;
       entry.pendingFrames = [];
       for (const pending of frames) injectFrame(entry, pending.frame, pending.traceCookie);
+      connectEntry(entry);
       return;
     }
     if (message.type === 'input') {
@@ -711,7 +721,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     } else if (message.type === 'trace-rendered') {
       if (Number.isInteger(message.cookie)) terminalFrameRendered(message.cookie);
     } else if (message.type === 'resize') {
-      if (entry.target.session.status !== 'connected') return;
       if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
       entry.target.client.resizeTerminal(
         entry.target.session.terminalId,
@@ -720,6 +729,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         message.cellWidthPx,
         message.cellHeightPx,
       );
+      entry.sizeReady = true;
+      connectEntry(entry);
     } else if (message.type === 'scroll') {
       if (entry.target.session.status !== 'connected') return;
       reportScroll(entry.target, message.direction, message.lines);
