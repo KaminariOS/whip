@@ -131,6 +131,7 @@ export const zhHant: Record<string, string> = {
   'pairing.scan': '掃描配對 QR 碼',
   'pairing.scanCopy': '將相機對準主機上 whip-pair 顯示的 QR 碼。',
   'pairing.waiting': '正在等待主機核准…',
+  'pairing.verify': '驗證碼：{{code}}',
   'pairing.manual': '手動輸入主機',
   'pairing.chooseGlobalKey': '選擇全域金鑰',
   'pairing.invalidPublicKeyTitle': '沒有 SSH 公開金鑰',

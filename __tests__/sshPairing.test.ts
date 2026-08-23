@@ -2,6 +2,7 @@ import {
   isWhipPairingCode,
   normalizeOpenSshPublicKey,
   profileFromPairing,
+  publicKeyVerificationCode,
 } from '../src/lib/sshPairing';
 
 describe('SSH QR pairing helpers', () => {
@@ -29,6 +30,11 @@ describe('SSH QR pairing helpers', () => {
     expect(isWhipPairingCode(' WP4:BB8 ')).toBe(true);
     expect(isWhipPairingCode('WP3:BB8')).toBe(false);
     expect(isWhipPairingCode('https://example.com')).toBe(false);
+  });
+
+  it('derives the short verification code from the OpenSSH key fingerprint', async () => {
+    const publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti phone';
+    await expect(publicKeyVerificationCode(publicKey)).resolves.toBe('610-862');
   });
 
   it('creates a usable saved profile when the selected key has private material', () => {

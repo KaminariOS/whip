@@ -204,8 +204,10 @@ X11, and user startup commands. The forced command accepts one bounded JSON
 `EnrollmentRequest` on SSH stdin and relays it through a Unix socket in a
 mode-`0700` temporary directory to the visible `whip-pair` process.
 
-The parent process validates the submitted OpenSSH public key, displays its
-SHA-256 fingerprint, and asks the local user to approve it. On approval it
+The parent process validates the submitted OpenSSH public key and displays a
+six-digit verification code derived from its SHA-256 fingerprint. Whip shows
+the same code while it waits, so the user can compare the phone and host before
+approving. Approval is bounded by the invitation TTL. On approval the host
 appends the permanent key safely and idempotently, replies with an
 `EnrollmentResponse`, removes the temporary entry, and exits. Rejection leaves
 the one-shot invitation available until its TTL expires.
@@ -230,8 +232,9 @@ prompt.
   `authorized_keys` options are rejected, comments are preserved, and duplicate
   permanent keys are not appended.
 - The writer refuses symlink targets and files not owned by the current user,
-  locks updates, uses atomic replacement for removal, and creates `.ssh` and
-  `authorized_keys` with modes `0700` and `0600` when needed.
+  serializes every update through a stable adjacent lock file, uses atomic
+  replacement for removal, and creates `.ssh` and `authorized_keys` with modes
+  `0700` and `0600` when needed.
 
 ## Publishing
 

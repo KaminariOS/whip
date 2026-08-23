@@ -31,6 +31,7 @@ use crate::{
     protocol::{
         EnrollmentRequest, EnrollmentResponse, PairingPayload, decode_pairing_code,
         encode_pairing_code, fingerprint_public_key, validate_public_key,
+        verification_code_public_key,
     },
 };
 
@@ -232,20 +233,24 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
     if let Some(path) = args.code_output.as_deref() {
         write_secret_file(path, &code)?;
     }
+    let deadline = Instant::now() + Duration::from_secs(args.ttl);
     let expires_at = unix_seconds()? + args.ttl;
     print_pairing_screen(&selected, &payload, expires_at, &code, args.print_code)?;
 
-    let deadline = Instant::now() + Duration::from_secs(args.ttl);
     let shutdown = tokio::signal::ctrl_c();
     tokio::pin!(shutdown);
     let outcome = loop {
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
-                match handle_exchange(stream, &authorized_keys, args.yes, expires_at).await {
-                    Ok(ExchangeOutcome::Enrolled) => break Ok(()),
-                    Ok(ExchangeOutcome::Ignored) => continue,
-                    Err(error) => eprintln!("ignored pairing exchange: {error}"),
+                match timeout_at(
+                    deadline,
+                    handle_exchange(stream, &authorized_keys, args.yes, deadline),
+                ).await {
+                    Ok(Ok(ExchangeOutcome::Enrolled)) => break Ok(()),
+                    Ok(Ok(ExchangeOutcome::Ignored)) => continue,
+                    Ok(Err(error)) => eprintln!("ignored pairing exchange: {error}"),
+                    Err(_) => break Err(Error::Message("pairing code expired".into())),
                 }
             }
             _ = timeout_at(deadline, std::future::pending::<()>()) => {
@@ -279,7 +284,7 @@ async fn handle_exchange(
     stream: UnixStream,
     authorized_keys: &Path,
     assume_yes: bool,
-    expires_at: u64,
+    deadline: Instant,
 ) -> Result<ExchangeOutcome, Error> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -297,7 +302,7 @@ async fn handle_exchange(
             return Ok(ExchangeOutcome::Ignored);
         }
     };
-    if unix_seconds()? > expires_at {
+    if Instant::now() >= deadline {
         send_response(
             &mut writer,
             &EnrollmentResponse::error("expired", "pairing code expired"),
@@ -318,16 +323,35 @@ async fn handle_exchange(
         }
     };
     let fingerprint = fingerprint_public_key(&public_key);
+    let verification_code = verification_code_public_key(&public_key);
     let device_name = printable_device_name(&request.device_name);
     println!("\n{device_name} wants SSH access.");
-    println!("Key: {fingerprint}");
+    println!("Verify: {verification_code}");
 
     let approved = if assume_yes {
         true
     } else {
-        tokio::task::spawn_blocking(confirm_enrollment)
-            .await
-            .map_err(|error| Error::Message(format!("approval task failed: {error}")))??
+        if Instant::now() >= deadline {
+            send_expired_response(&mut writer).await?;
+            return Ok(ExchangeOutcome::Ignored);
+        }
+        let approval_deadline = deadline.into_std();
+        let approval = tokio::task::spawn_blocking(move || confirm_enrollment(approval_deadline));
+        let decision = match timeout_at(deadline, approval).await {
+            Ok(result) => result
+                .map_err(|error| Error::Message(format!("approval task failed: {error}")))??,
+            Err(_) => {
+                send_expired_response(&mut writer).await?;
+                return Ok(ExchangeOutcome::Ignored);
+            }
+        };
+        match decision {
+            Some(approved) => approved,
+            None => {
+                send_expired_response(&mut writer).await?;
+                return Ok(ExchangeOutcome::Ignored);
+            }
+        }
     };
     if !approved {
         send_response(
@@ -338,12 +362,8 @@ async fn handle_exchange(
         println!("Enrollment rejected.");
         return Ok(ExchangeOutcome::Ignored);
     }
-    if unix_seconds()? > expires_at {
-        send_response(
-            &mut writer,
-            &EnrollmentResponse::error("expired", "pairing code expired"),
-        )
-        .await?;
+    if Instant::now() >= deadline {
+        send_expired_response(&mut writer).await?;
         return Ok(ExchangeOutcome::Ignored);
     }
 
@@ -584,6 +604,14 @@ async fn send_response<W: AsyncWriteExt + Unpin>(
     Ok(())
 }
 
+async fn send_expired_response<W: AsyncWriteExt + Unpin>(writer: &mut W) -> Result<(), Error> {
+    send_response(
+        writer,
+        &EnrollmentResponse::error("expired", "pairing code expired"),
+    )
+    .await
+}
+
 fn temporary_private_key(seed: &[u8; 32]) -> PrivateKey {
     Ed25519Keypair::from_seed(seed).into()
 }
@@ -769,15 +797,46 @@ fn print_pairing_screen(
     Ok(())
 }
 
-fn confirm_enrollment() -> Result<bool, io::Error> {
-    print!("Allow this device? [y/N] ");
+fn confirm_enrollment(deadline: std::time::Instant) -> Result<Option<bool>, io::Error> {
+    if std::time::Instant::now() >= deadline {
+        return Ok(None);
+    }
+    print!("Approve? [y/N] ");
     io::stdout().flush()?;
+    let mut descriptor = libc::pollfd {
+        fd: libc::STDIN_FILENO,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            println!("\nPairing code expired.");
+            return Ok(None);
+        }
+        let timeout_ms = remaining.as_millis().min(i32::MAX as u128) as i32;
+        let ready = unsafe { libc::poll(&mut descriptor, 1, timeout_ms) };
+        if ready > 0 && descriptor.revents & libc::POLLIN != 0 {
+            break;
+        }
+        if ready > 0 {
+            return Ok(Some(false));
+        }
+        if ready == 0 {
+            println!("\nPairing code expired.");
+            return Ok(None);
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
-    Ok(matches!(
+    Ok(Some(matches!(
         answer.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
-    ))
+    )))
 }
 
 fn discover_ssh_fingerprint(host: &str, port: u16) -> Result<String, Error> {
@@ -992,5 +1051,10 @@ mod tests {
     fn advertised_host_rejects_empty_or_whitespace_values() {
         assert!(validate_advertised_host("").is_err());
         assert!(validate_advertised_host("ssh example.com").is_err());
+    }
+
+    #[test]
+    fn approval_does_not_prompt_after_its_deadline() {
+        assert_eq!(confirm_enrollment(std::time::Instant::now()).unwrap(), None);
     }
 }

@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
@@ -22,13 +23,8 @@ pub fn default_authorized_keys_path() -> io::Result<PathBuf> {
 }
 
 pub fn append_authorized_key(path: &Path, key_line: &str) -> io::Result<AppendOutcome> {
-    let parent = path.parent().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "authorized_keys has no parent")
-    })?;
-    if !parent.exists() {
-        fs::create_dir(parent)?;
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
-    }
+    ensure_parent(path)?;
+    let lock = acquire_mutation_lock(path)?;
 
     let mut options = OpenOptions::new();
     options
@@ -39,9 +35,8 @@ pub fn append_authorized_key(path: &Path, key_line: &str) -> io::Result<AppendOu
         .custom_flags(libc::O_NOFOLLOW);
     let mut file = options.open(path)?;
     validate_target(&file)?;
-    file.lock_exclusive()?;
     let result = append_locked(&mut file, key_line);
-    let unlock_result = FileExt::unlock(&file);
+    let unlock_result = FileExt::unlock(&lock);
     match result {
         Ok(outcome) => {
             unlock_result?;
@@ -56,12 +51,12 @@ pub fn remove_authorized_key(path: &Path, key_line: &str) -> io::Result<bool> {
     let parent = path.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "authorized_keys has no parent")
     })?;
+    let lock = acquire_mutation_lock(path)?;
     let mut file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW)
         .open(path)?;
     validate_target(&file)?;
-    file.lock_exclusive()?;
 
     let mut current = String::new();
     file.read_to_string(&mut current)?;
@@ -79,7 +74,7 @@ pub fn remove_authorized_key(path: &Path, key_line: &str) -> io::Result<bool> {
         }
     }
     if !removed {
-        FileExt::unlock(&file)?;
+        FileExt::unlock(&lock)?;
         return Ok(false);
     }
 
@@ -90,8 +85,48 @@ pub fn remove_authorized_key(path: &Path, key_line: &str) -> io::Result<bool> {
     replacement.as_file_mut().sync_all()?;
     replacement.persist(path).map_err(|error| error.error)?;
     File::open(parent)?.sync_all()?;
-    FileExt::unlock(&file)?;
+    FileExt::unlock(&lock)?;
     Ok(true)
+}
+
+fn ensure_parent(path: &Path) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "authorized_keys has no parent")
+    })?;
+    if !parent.exists() {
+        fs::create_dir(parent)?;
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+fn mutation_lock_path(path: &Path) -> io::Result<PathBuf> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "authorized_keys has no parent")
+    })?;
+    let file_name = path.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "authorized_keys has no file name",
+        )
+    })?;
+    let mut lock_name = OsString::from(".");
+    lock_name.push(file_name);
+    lock_name.push(".lock");
+    Ok(parent.join(lock_name))
+}
+
+fn acquire_mutation_lock(path: &Path) -> io::Result<File> {
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(mutation_lock_path(path)?)?;
+    validate_target(&lock)?;
+    lock.lock_exclusive()?;
+    Ok(lock)
 }
 
 fn validate_target(file: &File) -> io::Result<()> {
@@ -243,6 +278,21 @@ mod tests {
             fs::read_to_string(path).unwrap(),
             format!("# keep this comment\n{ECDSA_KEY} permanent\n")
         );
+    }
+
+    #[test]
+    fn keeps_one_stable_lock_file_across_target_replacements() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join(".ssh/authorized_keys");
+        let temporary = format!("{ED25519_KEY} temporary");
+        append_authorized_key(&path, &temporary).unwrap();
+        let lock_path = mutation_lock_path(&path).unwrap();
+        let original_lock_inode = fs::metadata(&lock_path).unwrap().ino();
+
+        remove_authorized_key(&path, &temporary).unwrap();
+        append_authorized_key(&path, ECDSA_KEY).unwrap();
+
+        assert_eq!(fs::metadata(lock_path).unwrap().ino(), original_lock_inode);
     }
 
     #[test]

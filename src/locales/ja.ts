@@ -131,6 +131,7 @@ export const ja = {
   'pairing.scan': 'ペアリング QR をスキャン',
   'pairing.scanCopy': 'ホストの whip-pair に表示された QR コードにカメラを向けてください。',
   'pairing.waiting': 'ホストの承認を待っています…',
+  'pairing.verify': '確認: {{code}}',
   'pairing.manual': 'ホストを手動入力',
   'pairing.chooseGlobalKey': 'グローバル鍵を選択',
   'pairing.invalidPublicKeyTitle': 'SSH 公開鍵がありません',

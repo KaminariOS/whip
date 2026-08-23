@@ -131,6 +131,7 @@ export const zhHans = {
   'pairing.scan': '扫描配对二维码',
   'pairing.scanCopy': '将相机对准主机上 whip-pair 显示的二维码。',
   'pairing.waiting': '正在等待主机批准…',
+  'pairing.verify': '验证码：{{code}}',
   'pairing.manual': '手动输入主机',
   'pairing.chooseGlobalKey': '选择全局密钥',
   'pairing.invalidPublicKeyTitle': '没有 SSH 公钥',

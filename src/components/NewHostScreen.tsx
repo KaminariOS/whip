@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import {
   isWhipPairingCode,
   normalizeOpenSshPublicKey,
+  publicKeyVerificationCode,
   type PairHostResult,
   type PairingKeySelection,
 } from '@/src/lib/sshPairing';
@@ -37,6 +38,7 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
   const [scannerOpen, setScannerOpen] = useState(false);
   const [working, setWorking] = useState(false);
   const [pairing, setPairing] = useState(false);
+  const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scanHandled = useRef(false);
 
@@ -46,10 +48,12 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
     try {
       const generated = await SSHClient.generateKeyPair('ed25519', '', 256, 'whip');
       const details = await SSHClient.getKeyDetails(generated.privateKey);
+      const publicKey = generated.publicKey || details.publicKey;
+      setVerificationCode(await publicKeyVerificationCode(publicKey));
       setSelectedKey({
         source: 'generated',
         label: t('pairing.generatedKey'),
-        publicKey: generated.publicKey || details.publicKey,
+        publicKey,
         privateKey: generated.privateKey,
         passphrase: '',
         fingerprint: details.fingerprint,
@@ -85,6 +89,7 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
     setError(null);
     try {
       const details = await SSHClient.getKeyDetails(key.secret, key.passphrase || undefined);
+      setVerificationCode(await publicKeyVerificationCode(details.publicKey));
       setSelectedKey({
         source: 'global',
         label: key.name,
@@ -108,6 +113,7 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
         Alert.alert(t('pairing.invalidPublicKeyTitle'), t('pairing.invalidPublicKeyCopy'));
         return;
       }
+      setVerificationCode(await publicKeyVerificationCode(publicKey));
       setSelectedKey({
         source: 'clipboard',
         label: t('pairing.clipboardKey'),
@@ -257,7 +263,13 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
 
         {error ? <Text accessibilityLiveRegion="polite" className="mt-4 text-sm leading-5 text-destructive">{error}</Text> : null}
 
-        <Button className="mt-7 h-12 rounded-full" disabled={!selectedKey || working} onPress={hapticPress(launchScanner)}>
+        {pairing && verificationCode ? (
+          <Text accessibilityLiveRegion="polite" className="mt-6 text-center font-mono text-2xl font-semibold tracking-wider">
+            {t('pairing.verify', { code: verificationCode })}
+          </Text>
+        ) : null}
+
+        <Button className={cn(pairing && verificationCode ? 'mt-4' : 'mt-7', 'h-12 rounded-full')} disabled={!selectedKey || working} onPress={hapticPress(launchScanner)}>
           {working ? <ActivityIndicator color={colors.onPrimary} /> : <Icon as={ScanLine} className="text-primary-foreground" size={19} />}
           <Text>{pairing ? t('pairing.waiting') : t('pairing.scan')}</Text>
         </Button>

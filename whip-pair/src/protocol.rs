@@ -297,6 +297,21 @@ pub fn fingerprint_public_key(key: &ValidatedPublicKey) -> String {
     key.public_key.fingerprint(HashAlg::Sha256).to_string()
 }
 
+pub fn verification_code_public_key(key: &ValidatedPublicKey) -> String {
+    let digest = key
+        .public_key
+        .fingerprint(HashAlg::Sha256)
+        .sha256()
+        .expect("SHA-256 fingerprints contain a SHA-256 digest");
+    verification_code(&digest)
+}
+
+fn verification_code(digest: &[u8; 32]) -> String {
+    let value = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) % 1_000_000;
+    let digits = format!("{value:06}");
+    format!("{}-{}", &digits[..3], &digits[3..])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,6 +403,22 @@ mod tests {
         let key = validate_public_key(&line).unwrap();
         assert_eq!(key.canonical_line(), line);
         assert!(fingerprint_public_key(&key).starts_with("SHA256:"));
+    }
+
+    #[test]
+    fn formats_a_six_digit_verification_code() {
+        let mut digest = [0_u8; 32];
+        digest[..4].copy_from_slice(&0x1234_5678_u32.to_be_bytes());
+        assert_eq!(verification_code(&digest), "419-896");
+    }
+
+    #[test]
+    fn verification_code_matches_the_phone_implementation() {
+        let key = validate_public_key(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti phone",
+        )
+        .unwrap();
+        assert_eq!(verification_code_public_key(&key), "610-862");
     }
 
     #[test]

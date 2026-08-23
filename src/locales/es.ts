@@ -131,6 +131,7 @@ export const es = {
   'pairing.scan': 'Escanear QR de emparejamiento',
   'pairing.scanCopy': 'Apunta la cámara al código QR que muestra whip-pair en el host.',
   'pairing.waiting': 'Esperando la aprobación del host…',
+  'pairing.verify': 'Verificar: {{code}}',
   'pairing.manual': 'Introducir host manualmente',
   'pairing.chooseGlobalKey': 'Elegir una clave global',
   'pairing.invalidPublicKeyTitle': 'No hay una clave pública SSH',
