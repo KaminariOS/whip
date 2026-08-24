@@ -1,6 +1,6 @@
 import { ArrowUp, Maximize2, PanelBottomOpen, PanelRightOpen, RefreshCw, SquareTerminal, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AnsiOutput } from './AnsiOutput';
@@ -8,6 +8,7 @@ import type { HerdrClient } from '@/src/services/HerdrClient';
 import { colors, useTheme } from '@/src/theme';
 import type { PaneInfo } from '@/src/types';
 import { hapticPress, IconButton, StatusBadge } from './app-ui';
+import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -26,12 +27,14 @@ export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }:
   const [command, setCommand] = useState('');
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
+  const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
   const read = () => pane && loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) }));
 
   useEffect(() => {
     if (!pane) {
       loadedPaneId.current = null;
+      setAppAlert(null);
       setCloseConfirmationOpen(false);
       return;
     }
@@ -39,13 +42,14 @@ export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }:
       loadedPaneId.current = pane.pane_id;
       setLabel(pane.label || '');
       setOutput('');
+      setAppAlert(null);
       setCloseConfirmationOpen(false);
     }
     loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) }));
   }, [client, pane, t]);
   if (!pane) return null;
 
-  const run = async (action: () => Promise<void>, close = false) => { setBusy(true); try { await action(); await onChanged(); if (close) onClose(); else await read(); } catch (error) { Alert.alert(t('herd.commandFailed'), String(error)); } finally { setBusy(false); } };
+  const run = async (action: () => Promise<void>, close = false) => { setBusy(true); try { await action(); await onChanged(); if (close) onClose(); else await read(); } catch (error) { setAppAlert({ title: t('herd.commandFailed'), message: String(error) }); } finally { setBusy(false); } };
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -74,6 +78,12 @@ export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }:
           setCloseConfirmationOpen(false);
           run(() => client.closePane(pane.pane_id), true);
         }}
+      />
+      <AppAlertPopup
+        message={appAlert?.message}
+        title={appAlert?.title || ''}
+        visible={appAlert !== null}
+        onClose={() => setAppAlert(null)}
       />
     </Modal>
   );

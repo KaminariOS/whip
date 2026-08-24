@@ -12,7 +12,6 @@ import {
 } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -60,6 +59,7 @@ import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
+import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassBackdrop, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
@@ -150,6 +150,7 @@ export function HerdScreen({
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [closeWorkspaceTarget, setCloseWorkspaceTarget] = useState<{
     hostId: string;
     workspace: WorkspaceInfo;
@@ -165,6 +166,10 @@ export function HerdScreen({
   } = useKeyboardInset(commandComposerRef, { enabled: Platform.OS === 'android' });
   const commandInputRef = useRef<TextInputHandle | null>(null);
   const workspaceCwdInputRef = useRef<TextInputHandle | null>(null);
+
+  const showHerdrError = useCallback((error: unknown) => {
+    setAppAlert({ title: t('herd.commandFailed'), message: String(error) });
+  }, [t]);
 
   const refreshFromPull = useCallback(async () => {
     if (pullRefreshing) return;
@@ -215,7 +220,7 @@ export function HerdScreen({
       await action();
       return true;
     } catch (error) {
-      Alert.alert(t('herd.commandFailed'), String(error));
+      showHerdrError(error);
       return false;
     } finally {
       setWorkspaceBusy(false);
@@ -283,7 +288,7 @@ export function HerdScreen({
     onOpenSpace(
       selectedQueue.id,
       selectedWorkspace.workspace_id,
-    ).catch(error => Alert.alert(t('herd.commandFailed'), String(error)));
+    ).catch(showHerdrError);
   };
 
   const openCommandRunner = () => {
@@ -323,13 +328,13 @@ export function HerdScreen({
         await onCloseTab(item.hostId, item.agent.tab_id);
         return true;
       } catch (error) {
-        Alert.alert(t('herd.commandFailed'), String(error));
+        showHerdrError(error);
         return false;
       } finally {
         setClosingTabKey(null);
       }
     },
-    [onCloseTab, t],
+    [onCloseTab, showHerdrError],
   );
 
   const sorted = useMemo(
@@ -696,6 +701,12 @@ export function HerdScreen({
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <AppAlertPopup
+        message={appAlert?.message}
+        title={appAlert?.title || ''}
+        visible={appAlert !== null}
+        onClose={() => setAppAlert(null)}
+      />
     </View>
   );
 }

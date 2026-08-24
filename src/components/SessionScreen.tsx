@@ -2,7 +2,6 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { BookOpen, ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   BackHandler,
   Linking,
@@ -53,6 +52,7 @@ import { sessionTabGlassStyle, sessionTabStatusColor, statusColor, useTheme } fr
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { AgentIdentityWarningSheet, type AgentIdentityWarning } from './AgentIdentityWarningSheet';
+import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { AppBackground } from './AppBackground';
 import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSheet';
 import { CodexIntegrationInstallSheet } from './CodexIntegrationInstallSheet';
@@ -167,6 +167,7 @@ export function SessionScreen({
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [terminalWidth, setTerminalWidth] = useState(0);
   const [tabSwipe, setTabSwipe] = useState<TerminalTabSwipe | null>(null);
   const [linkScanRequest, setLinkScanRequest] = useState(0);
@@ -222,6 +223,14 @@ export function SessionScreen({
   const codexIntegrationInstallingRef = useRef(false);
   const codexIntegrationInstallRequestRef = useRef(0);
   const terminalScreen = useRef<TerminalScreenHandle>(null);
+
+  const showAppAlert = useCallback((title: string, error: unknown) => {
+    setAppAlert({ title, message: String(error) });
+  }, []);
+
+  const showHerdrError = useCallback((error: unknown) => {
+    showAppAlert(t('herd.commandFailed'), error);
+  }, [showAppAlert, t]);
 
   useEffect(() => () => cancelAnimation(tabSwipeTranslateX), [tabSwipeTranslateX]);
 
@@ -370,6 +379,7 @@ export function SessionScreen({
     browserRequestRef.current += 1;
     setEditorMode(null);
     setEditingPaneId(null);
+    setAppAlert(null);
     setLinksOpen(false);
     setBrowserUrl(null);
     setBrowserCanGoBack(false);
@@ -575,7 +585,7 @@ export function SessionScreen({
       await onRefresh();
       return true;
     } catch (error) {
-      Alert.alert(t('herd.commandFailed'), String(error));
+      showHerdrError(error);
       return false;
     } finally {
       setBusy(false);
@@ -845,7 +855,7 @@ export function SessionScreen({
       setPendingIntegrationPaneId(paneId);
     } catch (error) {
       if (request === codexIntegrationInstallRequestRef.current) {
-        Alert.alert('Could not install Codex integration', String(error));
+        showAppAlert('Could not install Codex integration', error);
       }
     } finally {
       if (request === codexIntegrationInstallRequestRef.current) {
@@ -916,7 +926,7 @@ export function SessionScreen({
         promptCodexIntegrationInstall(paneId, integrationStatus);
       }
     } catch (error) {
-      Alert.alert('Could not check Codex integration', String(error));
+      showAppAlert('Could not check Codex integration', error);
     } finally {
       setBusy(false);
     }
@@ -1381,6 +1391,12 @@ export function SessionScreen({
           </View>
         </Modal>
       </View>
+      <AppAlertPopup
+        message={appAlert?.message}
+        title={appAlert?.title || ''}
+        visible={appAlert !== null}
+        onClose={() => setAppAlert(null)}
+      />
     </View>
   );
 }
