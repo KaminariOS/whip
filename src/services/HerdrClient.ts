@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrBridgeEvent, type LsResult, PtyType } from 'react-native-whip-ssh';
+import SSHClient, { type HerdrBridgeEvent, type HerdrEventStreamEvent, type LsResult, PtyType } from 'react-native-whip-ssh';
 
 import { normalizePrivateKey } from '../lib/privateKey';
 import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
@@ -723,24 +723,27 @@ export class HerdrClient {
       this.closeEventTransport();
       subscription.onClosed?.(reason);
     };
-    const onData = (data: string) => {
-      for (const message of decoder.push(data)) {
+    const onStreamEvent = (streamEvent: HerdrEventStreamEvent) => {
+      if (streamEvent.type === 'closed') {
+        const reason = streamEvent.reason;
+        close(typeof reason === 'string' && reason.trim()
+          ? `Herdr event bridge closed: ${reason}`
+          : 'Herdr event bridge closed');
+        return;
+      }
+      for (const message of decoder.push(streamEvent.data)) {
         const error = apiErrorMessage(message);
         const event = apiEvent(message);
         if (error) {
           close(error);
+          return;
         } else if (event) {
           subscription.onEvent(event);
-        } else if ((message as { herdr_android_bridge_closed?: boolean }).herdr_android_bridge_closed) {
-          const reason = (message as { reason?: unknown }).reason;
-          close(typeof reason === 'string' && reason.trim()
-            ? `Herdr event bridge closed: ${reason}`
-            : 'Herdr event bridge closed');
         }
       }
     };
     try {
-      await client.startHerdrEventStream(server.socket, onData);
+      await client.startHerdrEventStream(server.socket, onStreamEvent);
       if (generation !== this.eventGeneration || this.eventSubscription !== subscription) {
         client.closeHerdrEventStream();
         throw new Error('Herdr event stream closed during startup');

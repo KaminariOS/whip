@@ -327,15 +327,12 @@ class SSHClient extends BaseSSHClient {
     return this.openUnixSocketChannel(socketPath, event => {
       if (event.type === 'data') {
         const text = this._herdrEventDecode?.(event.bytes, true) || '';
-        if (text) this._herdrEventHandler?.(text);
+        if (text) this._herdrEventHandler?.({ type: 'data', data: text });
         return;
       }
       const tail = this._herdrEventDecode?.(new ArrayBuffer(0), false) || '';
-      if (tail) this._herdrEventHandler?.(tail);
-      this._herdrEventHandler?.(`${JSON.stringify({
-        herdr_android_bridge_closed: true,
-        reason: event.reason,
-      })}\n`);
+      if (tail) this._herdrEventHandler?.({ type: 'data', data: tail });
+      this._herdrEventHandler?.({ type: 'closed', reason: event.reason });
       this._herdrEventChannel = null;
       this._herdrEventDecode = null;
       this._activeStream.herdrEventStream = false;

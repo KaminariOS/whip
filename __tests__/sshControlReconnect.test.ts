@@ -1,4 +1,4 @@
-import SSHClient from 'react-native-whip-ssh';
+import SSHClient, { type HerdrEventStreamEvent } from 'react-native-whip-ssh';
 
 import { HerdrClient, isUnavailableSshChannel } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
@@ -43,7 +43,7 @@ function nativeClient(options: { output?: string; startError?: unknown } = {}) {
 }
 
 function streamingNativeClient() {
-  let eventHandler: ((data: string) => void) | null = null;
+  let eventHandler: ((event: HerdrEventStreamEvent) => void) | null = null;
   const client = {
     requestHerdrApi: jest.fn(async (_socketPath: string, requestLine: string) => {
       const request = JSON.parse(requestLine);
@@ -69,7 +69,7 @@ function streamingNativeClient() {
       return JSON.stringify({ id: request.id, result });
     }),
     getRemoteHome: jest.fn(async () => '/home/herdr'),
-    startHerdrEventStream: jest.fn(async (_socketPath: string, handler: (data: string) => void) => {
+    startHerdrEventStream: jest.fn(async (_socketPath: string, handler: (event: HerdrEventStreamEvent) => void) => {
       eventHandler = handler;
     }),
     writeHerdrEventStream: jest.fn(async () => undefined),
@@ -79,7 +79,8 @@ function streamingNativeClient() {
   } as unknown as SSHClient;
   return {
     client,
-    emitEventData: (data: string) => eventHandler?.(data),
+    emitEventData: (data: string) => eventHandler?.({ type: 'data', data }),
+    emitEventClosed: (reason?: string) => eventHandler?.({ type: 'closed', reason }),
   };
 }
 
@@ -142,7 +143,10 @@ describe('SSH control reconnects', () => {
       expect.stringContaining('"method":"events.subscribe"'),
     );
 
-    stale.emitEventData('{"herdr_android_bridge_closed":true}\n');
+    stale.emitEventClosed();
+    expect(onClosed).not.toHaveBeenCalled();
+
+    fresh.emitEventData('{"herdr_android_bridge_closed":true}\n');
     expect(onClosed).not.toHaveBeenCalled();
 
     fresh.emitEventData('{"event":"pane.agent_status_changed","data":{"pane_id":"pane-1"}}\n');
@@ -161,7 +165,7 @@ describe('SSH control reconnects', () => {
     await client.connect(profile);
     await client.initialSnapshot();
     await client.openEventStream([], jest.fn(), onClosed);
-    native.emitEventData('{"herdr_android_bridge_closed":true,"reason":"remote stream write failed: broken pipe"}\n');
+    native.emitEventClosed('remote stream write failed: broken pipe');
 
     expect(onClosed).toHaveBeenCalledWith(
       'Herdr event bridge closed: remote stream write failed: broken pipe',
