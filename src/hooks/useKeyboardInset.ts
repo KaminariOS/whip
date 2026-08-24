@@ -22,26 +22,18 @@ export function useKeyboardInset(
       return;
     }
 
-    let insetTimer: ReturnType<typeof setTimeout> | null = null;
     const show = Keyboard.addListener('keyboardDidShow', event => {
-      if (insetTimer) clearTimeout(insetTimer);
-      setInset(0);
       reportVisibility(true);
-      insetTimer = setTimeout(() => {
-        const keyboardTop = event.endCoordinates.screenY;
-        measuredViewRef.current?.measureInWindow((_x, y, _width, height) => {
-          setInset(Math.max(0, Math.ceil(y + height - keyboardTop)));
-        });
-      }, 50);
+      const keyboardTop = event.endCoordinates.screenY;
+      measuredViewRef.current?.measureInWindow((_x, y, _width, height) => {
+        setInset(Math.max(0, Math.ceil(y + height - keyboardTop)));
+      });
     });
     const hide = Keyboard.addListener('keyboardDidHide', () => {
-      if (insetTimer) clearTimeout(insetTimer);
-      insetTimer = null;
       setInset(0);
       reportVisibility(false);
     });
     return () => {
-      if (insetTimer) clearTimeout(insetTimer);
       show.remove();
       hide.remove();
     };

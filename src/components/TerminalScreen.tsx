@@ -673,7 +673,10 @@ export function TerminalScreen({
   }, [terminalId]);
 
   useEffect(() => {
-    if (!ready) return;
+    // On Android, changing the inset changes the WebView viewport and its own
+    // window resize listener fits xterm. Calling fit here as well produces a
+    // second visible resize after the keyboard has opened.
+    if (!ready || Platform.OS === 'android') return;
     const timer = setTimeout(() => {
       renderer.current?.fit();
     }, 40);
