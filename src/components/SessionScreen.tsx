@@ -39,7 +39,7 @@ import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalCon
 import { chatAgentForPane, openCodeSessionIdForPane, type ChatAgent } from '../lib/agentChatSession';
 import { codexChatAction, codexMissingIdentityAction, codexSessionIdForPane, type CodexIntegrationStatus } from '../lib/codexSession';
 import { composeTerminalSubmission } from '../lib/terminalSubmission';
-import type { AgentChatState } from '../agentChat';
+import { emptyTranscript, type AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
 import { codexTranscriptService } from '../services/CodexTranscriptService';
 import { openCodeTranscriptService } from '../services/OpenCodeTranscriptService';
@@ -405,7 +405,7 @@ export function SessionScreen({
         setChatAttachments([]);
       } else if (!sessionId && chatState?.status !== 'unavailable') {
         setChatKey(null);
-        setChatState({ sessionId: '', items: [], status: 'unavailable', error: 'This pane no longer reports a supported native agent session ID.' });
+        setChatState({ sessionId: '', transcript: emptyTranscript(''), status: 'unavailable', error: 'This pane no longer reports a supported native agent session ID.' });
         setChatAttachments([]);
       }
     }

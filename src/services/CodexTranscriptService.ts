@@ -1,4 +1,4 @@
-import type { AgentChatState } from '../agentChat';
+import { emptyTranscript, reconcileTranscript, type AgentChatState } from '../agentChat';
 import { CODEX_HISTORY_COMPLETE_RECORD } from '../lib/codexSession';
 import { CodexRolloutAdapter } from '../lib/codexRolloutAdapter';
 import { JsonlFramer } from '../lib/jsonlFramer';
@@ -129,10 +129,10 @@ export class CodexTranscriptService {
         transport,
         terminals: new Set(),
         listeners: new Set(),
-      state: { sessionId, items: [], status: 'loading' },
-      stream: null,
-      parseTrace: null,
-      retryTimer: null,
+        state: { sessionId, transcript: emptyTranscript(sessionId), status: 'loading' },
+        stream: null,
+        parseTrace: null,
+        retryTimer: null,
         generation: 0,
       };
       this.entries.set(key, entry);
@@ -168,23 +168,27 @@ export class CodexTranscriptService {
     oldStream?.close().catch(() => undefined);
     this.publish(entry, {
       ...entry.state,
-      status: rebuilding && entry.state.items.length ? 'stale' : 'loading',
+      status: rebuilding && entry.state.transcript.turns.length ? 'stale' : 'loading',
       error: rebuilding ? 'Reconnecting to the remote rollout…' : undefined,
     });
 
-    const staging = new CodexRolloutAdapter();
+    const staging = new CodexRolloutAdapter(entry.sessionId);
+    const publishSnapshot = () => {
+      const transcript = reconcileTranscript(entry.state.transcript, staging.snapshot());
+      this.publish(entry, { sessionId: entry.sessionId, transcript, status: 'live' });
+    };
     let historyComplete = false;
     const framer = new JsonlFramer<Record<string, unknown>>({
       onRecord: record => {
         if (record[CODEX_HISTORY_COMPLETE_RECORD] === true) {
           historyComplete = true;
           this.finishParseTrace(entry, generation);
-          this.publish(entry, { sessionId: entry.sessionId, items: staging.snapshot(), status: 'live' });
+          publishSnapshot();
           return;
         }
         staging.accept(record);
         if (historyComplete) {
-          this.publish(entry, { sessionId: entry.sessionId, items: staging.snapshot(), status: 'live' });
+          publishSnapshot();
         }
       },
       onMalformed: () => undefined,
@@ -194,7 +198,7 @@ export class CodexTranscriptService {
       if (generation !== entry.generation) return null;
       if (!path) {
         this.finishParseTrace(entry, generation);
-        this.publish(entry, { sessionId: entry.sessionId, items: [], status: 'unavailable', error: 'Codex has not created this rollout yet.' });
+        this.publish(entry, { sessionId: entry.sessionId, transcript: emptyTranscript(entry.sessionId), status: 'unavailable', error: 'Codex has not created this rollout yet.' });
         return null;
       }
       return entry.transport.openCodexRolloutStream(
@@ -236,7 +240,7 @@ export class CodexTranscriptService {
     if (!entry.terminals.size) return;
     this.publish(entry, {
       ...entry.state,
-      status: entry.state.items.length ? 'stale' : 'error',
+      status: entry.state.transcript.turns.length ? 'stale' : 'error',
       error: reason,
     });
     if (entry.retryTimer) return;

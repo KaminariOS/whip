@@ -32,6 +32,14 @@ function history(stream: ReturnType<typeof transport>['streams'][number], ...lin
   stream.onChunk(encoder.encode(`${lines.join('\n')}\n${JSON.stringify({ [CODEX_HISTORY_COMPLETE_RECORD]: true })}\n`));
 }
 
+function userTexts(service: CodexTranscriptService, key: string): string[] {
+  return service.getState(key)?.transcript.messages
+    .filter(message => message.role === 'user')
+    .flatMap(message => message.parts)
+    .filter(part => part.type === 'text')
+    .map(part => part.text) || [];
+}
+
 describe('Codex transcript RAM cache lifecycle', () => {
   test('first Chat reads once; Chat → Terminal → Chat reuses the stream and cache', async () => {
     const service = new CodexTranscriptService();
@@ -41,7 +49,7 @@ describe('Codex transcript RAM cache lifecycle', () => {
     await flush();
     history(remote.streams[0], record('first'));
     expect(service.hasCachedHistory(key)).toBe(true);
-    expect(service.getState(key)?.items).toHaveLength(1);
+    expect(service.getState(key)?.transcript.turns).toHaveLength(1);
     service.activate('host', 'terminal', firstId, remote.value);
     await flush();
     expect(remote.value.resolveCodexRollout).toHaveBeenCalledTimes(1);
@@ -55,7 +63,7 @@ describe('Codex transcript RAM cache lifecycle', () => {
     await flush();
     history(remote.streams[0]);
     expect(service.hasCachedHistory(key)).toBe(true);
-    expect(service.getState(key)?.items).toEqual([]);
+    expect(service.getState(key)?.transcript.messages).toEqual([]);
   });
 
   test('keeps receiving events while there are no visible Chat listeners', async () => {
@@ -65,7 +73,7 @@ describe('Codex transcript RAM cache lifecycle', () => {
     await flush();
     history(remote.streams[0], record('first'));
     remote.streams[0].onChunk(encoder.encode(`${record('while hidden')}\n`));
-    expect(service.getState(key)?.items).toHaveLength(2);
+    expect(service.getState(key)?.transcript.turns).toHaveLength(2);
   });
 
   test('changing native session ID closes old stream and binds isolated state', async () => {
@@ -80,7 +88,7 @@ describe('Codex transcript RAM cache lifecycle', () => {
     history(remote.streams[1], record('new'));
     expect(remote.streams[0].close).toHaveBeenCalled();
     expect(service.getState(oldKey)).toBeNull();
-    expect(service.getState(newKey)?.items).toEqual([expect.objectContaining({ text: 'new' })]);
+    expect(userTexts(service, newKey)).toEqual(['new']);
   });
 
   test('closing terminal cleans up its stream and RAM cache', async () => {
@@ -107,8 +115,28 @@ describe('Codex transcript RAM cache lifecycle', () => {
     service.reconnectHost('host');
     await flush();
     history(remote.streams[1], record('same'));
-    expect(service.getState(key)?.items).toHaveLength(1);
+    expect(service.getState(key)?.transcript.turns).toHaveLength(1);
     expect(service.getState(key)?.status).toBe('live');
+  });
+
+  test('reconciles streamed deltas incrementally after the initial snapshot', async () => {
+    const service = new CodexTranscriptService();
+    const remote = transport();
+    const key = service.activate('host', 'terminal', firstId, remote.value);
+    await flush();
+    history(remote.streams[0], record('first'));
+    const initial = service.getState(key)!.transcript;
+    const firstMessage = initial.messages[0];
+    const firstTurn = initial.turns[0];
+
+    remote.streams[0].onChunk(encoder.encode(`${record('second')}\n`));
+    const updated = service.getState(key)!.transcript;
+
+    expect(userTexts(service, key)).toEqual(['first', 'second']);
+    expect(updated.messages[0]).toBe(firstMessage);
+    expect(updated.turns[0]).toBe(firstTurn);
+    expect(updated.messages).not.toBe(initial.messages);
+    expect(updated.turns).not.toBe(initial.turns);
   });
 
   test('missing rollout returns unavailable without opening a stream', async () => {

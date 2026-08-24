@@ -14,7 +14,12 @@ import { parseRemoteGitDiff, parseRemoteGitRepository, parseRemoteGitStatus, rem
 import { parseRemoteHtmlPreviewStart, remoteHtmlPreviewPageUrl, remoteHtmlPreviewStartCommand, remoteHtmlPreviewStopCommand, type RemoteHtmlServerProcess } from '../lib/remoteHtmlPreview';
 import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
-import { openCodeTranscriptQuery } from '../lib/openCodeTranscript';
+import {
+  openCodeEventCursorCommand,
+  openCodeEventsCommand,
+  openCodeExportCommand,
+  parseOpenCodeEventCursor,
+} from '../lib/openCodeTranscript';
 import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 import {
@@ -394,7 +399,17 @@ export class HerdrClient {
   }
 
   async loadOpenCodeTranscript(sessionId: string): Promise<unknown> {
-    const output = await this.requireClient().execute(this.loginShellCommand(openCodeTranscriptQuery(sessionId)));
+    const output = await this.requireClient().execute(this.loginShellCommand(openCodeExportCommand(sessionId)));
+    return JSON.parse(output);
+  }
+
+  async loadOpenCodeEventCursor(sessionId: string): Promise<number> {
+    const output = await this.requireClient().execute(this.loginShellCommand(openCodeEventCursorCommand(sessionId)));
+    return parseOpenCodeEventCursor(JSON.parse(output));
+  }
+
+  async loadOpenCodeEvents(sessionId: string, afterSequence: number): Promise<unknown> {
+    const output = await this.requireClient().execute(this.loginShellCommand(openCodeEventsCommand(sessionId, afterSequence)));
     return JSON.parse(output);
   }
 

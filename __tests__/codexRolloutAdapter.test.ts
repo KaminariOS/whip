@@ -1,66 +1,63 @@
+import type { AgentTranscript, TranscriptPart } from '../src/agentChat';
 import { CodexRolloutAdapter } from '../src/lib/codexRolloutAdapter';
 
 const at = '2026-08-24T12:00:00.000Z';
 const line = (type: string, payload: Record<string, unknown>) => ({ timestamp: at, type, payload });
+const parts = (transcript: AgentTranscript): TranscriptPart[] => transcript.messages.flatMap(message => message.parts);
+const texts = (transcript: AgentTranscript, role: 'user' | 'assistant') => transcript.messages
+  .filter(message => message.role === role)
+  .flatMap(message => message.parts)
+  .filter(part => part.type === 'text')
+  .map(part => part.text);
 
 describe('Codex rollout adapter', () => {
-  test('normalizes current messages and removes overlapping event/response duplicates', () => {
-    const adapter = new CodexRolloutAdapter();
+  test('normalizes into the OpenCode transcript model and removes event/response duplicates', () => {
+    const adapter = new CodexRolloutAdapter('requested-thread');
     adapter.accept(line('session_meta', { id: 'thread', cwd: '/repo' }));
     adapter.accept(line('event_msg', { type: 'user_message', message: '你好 Codex' }));
     adapter.accept(line('response_item', { type: 'message', id: 'u1', role: 'user', content: [{ type: 'input_text', text: '你好 Codex' }] }));
     adapter.accept(line('event_msg', { type: 'agent_message', message: 'Done.' }));
     adapter.accept(line('response_item', { type: 'message', id: 'a1', role: 'assistant', content: [{ type: 'output_text', text: 'Done.' }] }));
-    expect(adapter.snapshot().filter(item => item.type === 'user-message')).toHaveLength(1);
-    expect(adapter.snapshot().filter(item => item.type === 'assistant-message')).toHaveLength(1);
+    const transcript = adapter.snapshot();
+    expect(transcript.sessionId).toBe('thread');
+    expect(transcript.info?.directory).toBe('/repo');
+    expect(texts(transcript, 'user')).toEqual(['你好 Codex']);
+    expect(texts(transcript, 'assistant')).toEqual(['Done.']);
+    expect(transcript.turns).toHaveLength(1);
   });
 
   test('does not expose synthetic user-role context from response items', () => {
     const adapter = new CodexRolloutAdapter();
     adapter.accept(line('response_item', {
-      type: 'message',
-      id: 'context',
-      role: 'user',
-      content: [{
-        type: 'input_text',
-        text: '# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nprivate context\n</INSTRUCTIONS>',
-      }],
+      type: 'message', id: 'context', role: 'user',
+      content: [{ type: 'input_text', text: '# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nprivate context\n</INSTRUCTIONS>' }],
     }));
     adapter.accept(line('response_item', {
-      type: 'message',
-      id: 'u1',
-      role: 'user',
+      type: 'message', id: 'u1', role: 'user',
       content: [{ type: 'input_text', text: 'Please fix the chat view' }],
     }));
-    adapter.accept(line('event_msg', {
-      type: 'user_message',
-      message: 'Please fix the chat view',
-    }));
+    adapter.accept(line('event_msg', { type: 'user_message', message: 'Please fix the chat view' }));
 
-    expect(adapter.snapshot()).toEqual([
-      expect.objectContaining({ type: 'user-message', text: 'Please fix the chat view' }),
-    ]);
+    expect(texts(adapter.snapshot(), 'user')).toEqual(['Please fix the chat view']);
   });
 
   test('keeps a first user response item when no matching event exists', () => {
     const adapter = new CodexRolloutAdapter();
     adapter.accept(line('response_item', {
-      type: 'message',
-      id: 'u1',
-      role: 'user',
+      type: 'message', id: 'u1', role: 'user',
       content: [{ type: 'input_text', text: 'Check gold and HYPE market structure' }],
     }));
 
-    expect(adapter.snapshot()).toEqual([
-      expect.objectContaining({ type: 'user-message', text: 'Check gold and HYPE market structure' }),
-    ]);
+    expect(texts(adapter.snapshot(), 'user')).toEqual(['Check gold and HYPE market structure']);
   });
 
   test('shows only explicit reasoning summaries, never raw chain-of-thought content', () => {
     const adapter = new CodexRolloutAdapter();
     adapter.accept(line('response_item', { type: 'reasoning', id: 'r1', summary: [{ type: 'summary_text', text: 'Checked the failure.' }], content: [{ type: 'reasoning_text', text: 'hidden chain' }] }));
     adapter.accept(line('event_msg', { type: 'agent_reasoning_raw_content', text: 'also hidden' }));
-    expect(adapter.snapshot()).toEqual([expect.objectContaining({ type: 'reasoning-summary', text: 'Checked the failure.' })]);
+    expect(parts(adapter.snapshot())).toEqual([
+      expect.objectContaining({ type: 'reasoning', text: 'Checked the failure.' }),
+    ]);
   });
 
   test('pairs command start, output, and completion', () => {
@@ -68,7 +65,12 @@ describe('Codex rollout adapter', () => {
     adapter.accept(line('event_msg', { type: 'exec_command_begin', call_id: 'c1', command: ['rg', 'TODO'], cwd: '/repo' }));
     adapter.accept(line('event_msg', { type: 'exec_command_output_delta', call_id: 'c1', chunk: 'Zm9vCg==' }));
     adapter.accept(line('event_msg', { type: 'exec_command_end', call_id: 'c1', command: ['rg', 'TODO'], cwd: '/repo', aggregated_output: 'foo\n', exit_code: 0, status: 'completed' }));
-    expect(adapter.snapshot()).toEqual([expect.objectContaining({ type: 'tool', toolKind: 'command', status: 'done', title: 'rg TODO', output: 'foo\n' })]);
+    expect(parts(adapter.snapshot())).toEqual([
+      expect.objectContaining({
+        type: 'tool', tool: 'exec_command',
+        state: expect.objectContaining({ status: 'completed', output: 'foo\n' }),
+      }),
+    ]);
   });
 
   test('normalizes file diffs, plans, generic tools, and ignores unknown future events', () => {
@@ -78,10 +80,10 @@ describe('Codex rollout adapter', () => {
     adapter.accept(line('event_msg', { type: 'plan_update', explanation: 'Implement safely', plan: [{ step: 'Add tests', status: 'completed' }] }));
     adapter.accept(line('response_item', { type: 'function_call', call_id: 'f1', name: 'future_tool', arguments: '{"x":1}' }));
     adapter.accept(line('event_msg', { type: 'future_unknown_event', arbitrary: true }));
-    expect(adapter.snapshot()).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'tool', toolKind: 'file', status: 'done' }),
+    expect(parts(adapter.snapshot())).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'tool', tool: 'apply_patch', state: expect.objectContaining({ status: 'completed' }) }),
       expect.objectContaining({ type: 'plan', text: expect.stringContaining('Add tests') }),
-      expect.objectContaining({ type: 'tool', toolKind: 'other', title: 'future_tool' }),
+      expect.objectContaining({ type: 'tool', tool: 'future_tool' }),
     ]));
   });
 });
