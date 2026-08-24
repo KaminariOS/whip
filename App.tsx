@@ -33,6 +33,7 @@ import { NewHostScreen } from './src/components/NewHostScreen';
 import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
+import { PairingSuccessPopup } from './src/components/PairingSuccessPopup';
 import { RemoteFileManager } from './src/components/RemoteFileManager';
 import { SessionScreen } from './src/components/SessionScreen';
 import { TrustHostSheet } from './src/components/TrustHostSheet';
@@ -351,6 +352,7 @@ function AppContent() {
   const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
   const [knownHostsOpen, setKnownHostsOpen] = useState(false);
   const [unknownHostChallenge, setUnknownHostChallenge] = useState<UnknownHostKeyChallenge | null>(null);
+  const [pairingSuccess, setPairingSuccess] = useState<PairHostResult | null>(null);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [knownHostsLoaded, setKnownHostsLoaded] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
@@ -1771,10 +1773,7 @@ function AppContent() {
     setCredentialRecovery(await credentialRecoveryStatus());
     setNewHostOpen(false);
     if (!key.privateKey) return;
-    Alert.alert(
-      t(result.alreadyPresent ? 'pairing.alreadyPairedTitle' : 'pairing.successTitle'),
-      t('pairing.successCopy', { user: result.sshUser, host: result.sshHost }),
-    );
+    setPairingSuccess(result);
   };
 
   const openHostEditor = async (host: HostProfile) => {
@@ -2497,6 +2496,10 @@ function AppContent() {
         challenge={unknownHostChallenge}
         onCancel={() => resolveUnknownHost(false)}
         onTrust={() => resolveUnknownHost(true)}
+      />
+      <PairingSuccessPopup
+        result={pairingSuccess}
+        onClose={() => setPairingSuccess(null)}
       />
       <AppAccessLock
         authenticating={appAccessAuthenticating}
