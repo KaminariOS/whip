@@ -21,7 +21,10 @@ import WebView from 'react-native-webview';
 import { orderByAgentStatusPriority, tabAgentStateChangeSequence } from '@/src/herdQueue';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { cn } from '@/src/lib/utils';
-import { serverFocusMatchesPendingPane } from '@/src/lib/terminalFocus';
+import {
+  serverFocusMatchesPendingPane,
+  shouldFollowServerTerminalFocus,
+} from '@/src/lib/terminalFocus';
 import { terminalWebLinkTarget } from '@/src/lib/terminalLinks';
 import {
   neighborTabIndex,
@@ -218,6 +221,10 @@ export function SessionScreen({
     session => session.terminalId === terminalState.activeTerminalId,
   );
   const activePane = snapshot.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);
+  const followServerFocus = shouldFollowServerTerminalFocus(
+    visible,
+    activePane?.pane_id || null,
+  );
   const chatVisible = Boolean(chatTerminalId && chatTerminalId === activeTerminalSession?.terminalId && chatState);
   const activeTarget = terminalTargets.find(target => (
     target.hostSessionId === hostSessionId
@@ -414,9 +421,10 @@ export function SessionScreen({
     if (selectedTab && selectedTab.tab_id !== tabId) setTabId(selectedTab.tab_id);
   }, [selectedTab, snapshot.tabs, snapshot.workspaces, tabId, workspace, workspaceId]);
 
-  // Herdr owns focus. Follow focus changes made by the native or another remote client.
+  // Follow server focus while hidden or before a usable local selection exists.
+  // Once visible, keep the selected terminal stable while startup focus events settle.
   useEffect(() => {
-    if (!serverWorkspaceId) return;
+    if (!followServerFocus || !serverWorkspaceId) return;
     if (!serverTabId) {
       pendingPaneFocus.current = null;
       setWorkspaceId(serverWorkspaceId);
@@ -426,7 +434,7 @@ export function SessionScreen({
     if (!serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)) return;
     setWorkspaceId(serverWorkspaceId);
     setTabId(serverTabId);
-  }, [serverPaneId, serverTabId, serverWorkspaceId]);
+  }, [followServerFocus, serverPaneId, serverTabId, serverWorkspaceId]);
 
   // Preserve an explicit terminal choice until Herdr confirms the same pane.
   useEffect(() => {
@@ -449,13 +457,13 @@ export function SessionScreen({
     if (pane) onActivateTerminal(pane);
   });
 
-  // A Herdr tab is a live terminal surface. Attach its server-focused pane immediately.
+  // Keep a hidden or uninitialized terminal aligned with the server-focused pane.
   useEffect(() => {
-    if (!visible || !serverPaneId) return;
+    if (!followServerFocus || !serverPaneId) return;
     if (!serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)) return;
     pendingPaneFocus.current = null;
     activateServerPane(serverPaneId);
-  }, [serverPaneId, visible]);
+  }, [followServerFocus, serverPaneId]);
 
   const run = async (action: () => Promise<void>): Promise<boolean> => {
     setBusy(true);

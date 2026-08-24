@@ -236,6 +236,17 @@ interface ConnectOptions {
   activateSession?: boolean;
   biometricVerified?: boolean;
   promptForUnknownHosts?: boolean;
+  traceStartupRestore?: boolean;
+}
+
+function withOptionalAppPerformanceTrace<Result>(
+  enabled: boolean,
+  name: string,
+  operation: () => Result | Promise<Result>,
+): Promise<Result> {
+  return enabled
+    ? withAppPerformanceTrace(name, operation)
+    : Promise.resolve().then(operation);
 }
 
 let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;
@@ -1390,6 +1401,7 @@ function AppContent() {
       activateSession = true,
       biometricVerified = false,
       promptForUnknownHosts = navigate,
+      traceStartupRestore = false,
     } = options;
     if (trackConnecting) {
       setConnecting(true);
@@ -1401,7 +1413,11 @@ function AppContent() {
     let runtime: LiveRuntime | null = null;
     let liveSessionOpened = false;
     try {
-      const jumpProfiles = await loadJumpHostConnectionProfiles(hostsRef.current, nextProfile);
+      const jumpProfiles = await withOptionalAppPerformanceTrace(
+        traceStartupRestore,
+        'Whip startup restore: jump credentials',
+        () => loadJumpHostConnectionProfiles(hostsRef.current, nextProfile),
+      );
       const jumpWithoutCredential = jumpProfiles.find(profile => !profile.secret);
       if (jumpWithoutCredential) {
         throw new Error(`${hostDisplayName(jumpWithoutCredential)} needs a saved SSH credential before it can be used as a jump host`);
@@ -1426,7 +1442,11 @@ function AppContent() {
       let trustedKeys = 0;
       while (true) {
         try {
-          await runtime.client.connect(nextProfile, jumpProfiles);
+          await withOptionalAppPerformanceTrace(
+            traceStartupRestore,
+            'Whip startup restore: SSH connect',
+            () => runtime!.client.connect(nextProfile, jumpProfiles),
+          );
           break;
         } catch (error) {
           const challenge = parseUnknownHostKey(error);
@@ -1441,8 +1461,16 @@ function AppContent() {
           trustedKeys += 1;
         }
       }
-      const initial = await runtime.client.initialSnapshot();
-      const restoredTerminals = await loadPersistedTerminals(nextProfile.id, initial);
+      const initial = await withOptionalAppPerformanceTrace(
+        traceStartupRestore,
+        'Whip startup restore: initial snapshot',
+        () => runtime!.client.initialSnapshot(),
+      );
+      const restoredTerminals = await withOptionalAppPerformanceTrace(
+        traceStartupRestore,
+        'Whip startup restore: terminal state',
+        () => loadPersistedTerminals(nextProfile.id, initial),
+      );
       if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
       // Publish only fully initialized transports. A failed first handshake is
@@ -1485,8 +1513,18 @@ function AppContent() {
       // the host transitions to `ready`.
       const connectedRuntime = runtime;
       try {
-        await ensureEventStream(sessionId, initial);
-        if (initial.server.running) await refreshHost(sessionId);
+        await withOptionalAppPerformanceTrace(
+          traceStartupRestore,
+          'Whip startup restore: event stream',
+          () => ensureEventStream(sessionId, initial),
+        );
+        if (initial.server.running) {
+          await withOptionalAppPerformanceTrace(
+            traceStartupRestore,
+            'Whip startup restore: reconciliation',
+            () => refreshHost(sessionId),
+          );
+        }
       } catch (error) {
         connectedRuntime.eventStatus = 'closed';
         scheduleEventReconnect(sessionId, error);
@@ -1540,7 +1578,10 @@ function AppContent() {
         return requiresBiometricForSavedKey(host, biometricForKeysRef.current);
       }
     });
-    const protectedKeyAccessGranted = !hasProtectedKey || await verifyBiometric();
+    const protectedKeyAccessGranted = !hasProtectedKey || await withAppPerformanceTrace(
+      'Whip startup restore: biometric',
+      verifyBiometric,
+    );
     await Promise.allSettled(persisted.hostIds.map(async hostId => {
       const host = hostsRef.current.find(item => item.id === hostId);
       if (!host) return;
@@ -1554,7 +1595,10 @@ function AppContent() {
       }
       if (protectedKey && !protectedKeyAccessGranted) return;
       try {
-        const profile = await loadConnectionProfile(host);
+        const profile = await withAppPerformanceTrace(
+          'Whip startup restore: credentials',
+          () => loadConnectionProfile(host),
+        );
         if (!profile.secret) return;
         await connect(profile, {
           persistProfile: false,
@@ -1562,6 +1606,7 @@ function AppContent() {
           trackConnecting: false,
           activateSession: hostId === persisted.activeHostId,
           biometricVerified: protectedKey,
+          traceStartupRestore: true,
         });
       } catch (error) {
         setConnectError(t('app.restoreHostError', { host: hostDisplayName(host), error: String(error) }));

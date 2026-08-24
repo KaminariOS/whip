@@ -29,6 +29,9 @@ Startup and application-work slices:
   credential-backup migration. Noncritical stores begin after the first tab.
 - `Whip startup restore live hosts`: reconnecting all persisted live hosts and
   restoring their snapshots and terminal state.
+- `Whip startup restore: <stage>`: overlapping per-host credential, jump-host,
+  SSH, initial-snapshot, terminal-state, event-stream, and reconciliation work;
+  biometric approval is traced once when required.
 - `Whip first tab mount: <tab>`: the first committed mount of each lazily loaded
   primary tab.
 - `Whip host snapshot refresh`: a complete coordinated host snapshot request and
