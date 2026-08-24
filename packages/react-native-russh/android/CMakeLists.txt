@@ -71,6 +71,7 @@ set_target_properties(my_rust_lib PROPERTIES IMPORTED_LOCATION ${MY_RUST_LIB})
 # Add ReactAndroid libraries, being careful to account for different versions.
 find_package(ReactAndroid REQUIRED CONFIG)
 find_library(LOGCAT log)
+find_library(ANDROID_LIB android)
 
 # REACTNATIVE_MERGED_SO seems to be only be set in a build.gradle.kt file,
 # which we don't use. Thus falling back to version number sniffing.
@@ -95,5 +96,6 @@ target_link_libraries(
   fbjni::fbjni
   ReactAndroid::jsi
   ${LOGCAT}
+  ${ANDROID_LIB}
   my_rust_lib
 )

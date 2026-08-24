@@ -34,8 +34,17 @@ import {
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import {
+  abandonTerminalInboundTrace,
+  beginAppPerformanceTrace,
   beginTerminalInputTrace,
+  endAppPerformanceTrace,
   endTerminalWriteTrace,
+  terminalInboundFrameVisible,
+  terminalInboundRendererReceived,
+  terminalInboundWebViewInjectionEnded,
+  terminalInboundWebViewInjectionStarted,
+  terminalInboundWebViewReceived,
+  terminalInboundXtermWritten,
   terminalFrameReceived,
   terminalFrameRendered,
 } from '../services/performanceTrace';
@@ -48,6 +57,8 @@ const FRAME_CHUNK_SIZE = 16_384;
 const TRANSCRIPT_CHUNK_SIZE = 16_384;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
+const TERMINAL_RENDER_DROP_ENABLED = __DEV__
+  && process.env.EXPO_PUBLIC_WHIP_TERMINAL_RENDER_DROP === '1';
 const TERMINAL_SOURCE = Platform.select({
   android: { uri: 'file:///android_asset/herdr-terminal.html' },
   ios: { uri: IOS_TERMINAL_ASSETS?.indexURL || 'about:blank' },
@@ -222,7 +233,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       fontSize: entry.fontSize,
       backgroundImageUri: null,
       ...scrollbackMode,
-    })});`);
+    })}); window.herdrSetRenderDrop(${JSON.stringify(entry.target.key)}, ${TERMINAL_RENDER_DROP_ENABLED});`);
   }, [inject, preferences]);
 
   const syncOfflineTranscript = useCallback((
@@ -255,6 +266,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     frame: TerminalFrame,
     traceCookie: number | null = terminalFrameReceived(entry.target.key),
   ) => {
+    const inboundTraceCookie = frame.inboundTraceCookie ?? null;
+    terminalInboundRendererReceived(inboundTraceCookie);
     if (!hostReady.current || !entry.rendererReady) {
       entry.pendingFrames.push({ frame, traceCookie });
       return;
@@ -264,13 +277,27 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     const reset = entry.resetOnNextFrame;
     if (reset) entry.resetOnNextFrame = false;
     const resetScript = reset ? `window.herdrReset(${key}); ` : '';
+    const serializedInboundTraceCookie = inboundTraceCookie === null
+      ? 'null'
+      : String(inboundTraceCookie);
+    const injectTracedFrame = (script: string) => {
+      terminalInboundWebViewInjectionStarted(inboundTraceCookie);
+      try {
+        inject(script);
+      } finally {
+        terminalInboundWebViewInjectionEnded(inboundTraceCookie);
+      }
+    };
     if (frame.encoding === 'utf8') {
-      if (typeof frame.bytes !== 'string') return;
-      inject(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)}, ${serializedTraceCookie});`);
+      if (typeof frame.bytes !== 'string') {
+        abandonTerminalInboundTrace(inboundTraceCookie);
+        return;
+      }
+      injectTracedFrame(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)}, ${serializedTraceCookie}, ${serializedInboundTraceCookie});`);
       return;
     }
     if (typeof frame.bytes === 'string' && typeof frame.final === 'boolean') {
-      inject(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}, ${serializedTraceCookie});`);
+      injectTracedFrame(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}, ${serializedTraceCookie}, ${serializedInboundTraceCookie});`);
       return;
     }
     const encoded = typeof frame.bytes === 'string'
@@ -278,17 +305,19 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       : arrayBufferToBase64(frame.bytes);
     const writes: string[] = [];
     if (encoded.length === 0) {
-      writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true, ${serializedTraceCookie});`);
+      writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true, ${serializedTraceCookie}, ${serializedInboundTraceCookie});`);
     } else {
       for (let offset = 0; offset < encoded.length; offset += FRAME_CHUNK_SIZE) {
         const chunk = encoded.slice(offset, offset + FRAME_CHUNK_SIZE);
         const final = offset + FRAME_CHUNK_SIZE >= encoded.length;
-        const finalTraceCookie = final ? `, ${serializedTraceCookie}` : '';
+        const finalTraceCookie = final
+          ? `, ${serializedTraceCookie}, ${serializedInboundTraceCookie}`
+          : '';
         writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(chunk)}, ${final}${finalTraceCookie});`);
       }
     }
     // A frame can require multiple chunks, but it crosses into the WebView once.
-    inject(`${resetScript}${writes.join('')}`);
+    injectTracedFrame(`${resetScript}${writes.join('')}`);
   }, [inject]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
@@ -685,6 +714,26 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportReady();
       return;
     }
+    if (message.type === 'trace-write-received') {
+      if (Number.isInteger(message.inboundCookie)) {
+        terminalInboundWebViewReceived(message.inboundCookie);
+      }
+      return;
+    }
+    if (message.type === 'trace-xterm-written') {
+      if (Number.isInteger(message.inboundCookie)) {
+        terminalInboundXtermWritten(message.inboundCookie);
+      }
+      return;
+    }
+    if (message.type === 'trace-rendered') {
+      if (Number.isInteger(message.inputCookie)) terminalFrameRendered(message.inputCookie);
+      else if (Number.isInteger(message.cookie)) terminalFrameRendered(message.cookie);
+      if (Number.isInteger(message.inboundCookie)) {
+        terminalInboundFrameVisible(message.inboundCookie);
+      }
+      return;
+    }
     const entry = typeof message.key === 'string' ? entries.current.get(message.key) : null;
     if (!entry) return;
     if (message.type === 'terminal-ready') {
@@ -722,19 +771,24 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         endTerminalWriteTrace(inputTrace, false);
         reportError(entry.target, String(reason));
       }
-    } else if (message.type === 'trace-rendered') {
-      if (Number.isInteger(message.cookie)) terminalFrameRendered(message.cookie);
     } else if (message.type === 'resize') {
-      if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
-      entry.target.client.resizeTerminal(
-        entry.target.session.terminalId,
-        message.cols,
-        message.rows,
-        message.cellWidthPx,
-        message.cellHeightPx,
+      const resizeTrace = beginAppPerformanceTrace(
+        `Whip terminal resize: ${message.source === 'fit' ? 'fit' : 'xterm'}`,
       );
-      entry.sizeReady = true;
-      connectEntry(entry);
+      try {
+        if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
+        entry.target.client.resizeTerminal(
+          entry.target.session.terminalId,
+          message.cols,
+          message.rows,
+          message.cellWidthPx,
+          message.cellHeightPx,
+        );
+        entry.sizeReady = true;
+        connectEntry(entry);
+      } finally {
+        endAppPerformanceTrace(resizeTrace);
+      }
     } else if (message.type === 'scroll') {
       if (entry.target.session.status !== 'connected') return;
       reportScroll(entry.target, message.direction, message.lines);

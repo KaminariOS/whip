@@ -9,6 +9,8 @@ export interface TerminalFrame {
   bytes: string | ArrayBuffer | ArrayBufferView;
   /** Present when a large base64 frame is already split into bridge-safe chunks. */
   final?: boolean;
+  /** Perfetto-only correlation cookie; absent when Android tracing is disabled. */
+  inboundTraceCookie?: number | null;
 }
 
 export interface TerminalClosed {

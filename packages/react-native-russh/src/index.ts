@@ -32,6 +32,16 @@ type RustResponse = {
 
 const listeners = new Map<string, Set<Listener>>();
 
+type WhipTerminalInboundTrace = {
+  jsReceived: () => number | null;
+};
+
+function terminalInboundTrace(): WhipTerminalInboundTrace | undefined {
+  return (globalThis as typeof globalThis & {
+    __whipTerminalInboundTrace?: WhipTerminalInboundTrace;
+  }).__whipTerminalInboundTrace;
+}
+
 function dispatchEvent(name: string, event: Record<string, unknown>): void {
   for (const listener of listeners.get(name) || []) listener(event);
 }
@@ -147,6 +157,7 @@ const eventSink: ReactNativeRusshEventSink = {
     channelId: string,
     bytes: ArrayBuffer,
   ): void {
+    const inboundTraceCookie = terminalInboundTrace()?.jsReceived() ?? null;
     dispatchEvent('UnixSocketChannel', {
       name: 'UnixSocketChannel',
       key,
@@ -154,6 +165,7 @@ const eventSink: ReactNativeRusshEventSink = {
         type: 'data',
         channelId,
         bytes,
+        inboundTraceCookie,
       },
     });
   },

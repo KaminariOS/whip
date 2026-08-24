@@ -10,6 +10,42 @@
 #include <thread>
 #include <utility>
 
+#if defined(__ANDROID__)
+#include <android/trace.h>
+#endif
+
+namespace {
+class AndroidTraceSection {
+public:
+  explicit AndroidTraceSection(const char *name) {
+#if defined(__ANDROID__)
+    enabled_ = ATrace_isEnabled();
+    if (enabled_) {
+      ATrace_beginSection(name);
+    }
+#else
+    (void)name;
+#endif
+  }
+
+  ~AndroidTraceSection() {
+#if defined(__ANDROID__)
+    if (enabled_) {
+      ATrace_endSection();
+    }
+#endif
+  }
+
+  AndroidTraceSection(const AndroidTraceSection &) = delete;
+  AndroidTraceSection &operator=(const AndroidTraceSection &) = delete;
+
+private:
+#if defined(__ANDROID__)
+  bool enabled_ = false;
+#endif
+};
+} // namespace
+
 namespace react = facebook::react;
 namespace jsi = facebook::jsi;
 
@@ -2087,6 +2123,10 @@ makeCallbackFunction( // uniffi::react_native_russh::cb::callbackinterfacereactn
         };
     // We'll then call that lambda from the callInvoker which will
     // look after calling it on the correct thread.
+    // Whip diagnostic patch: this generated method is the only boundary that
+    // can measure invokeBlocking's queue wait without changing RustBuffer
+    // ownership. Reapply this marker if UniFFI bindings are regenerated.
+    AndroidTraceSection trace("Whip terminal inbound native to JS");
     callInvoker->invokeBlocking(rt, jsLambda);
   };
   return callback;

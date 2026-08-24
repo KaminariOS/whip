@@ -26,10 +26,12 @@ mkdir -p "$(dirname "$output_path")"
 duration_ms="$((duration_seconds * 1000))"
 remote_path="/data/misc/perfetto-traces/whip-perfetto-trace"
 
-echo "Recording $duration_seconds seconds. Use Whip now: type and submit several short terminal commands."
+echo "Recording $duration_seconds seconds. For passive tracing, leave Whip untouched while the terminal produces continuous output."
 adb shell perfetto --txt -c - -o "$remote_path" <<EOF
 buffers: {
-  size_kb: 65536
+  # Continuous terminal output plus sched/gfx/WebView events can exceed 64 MiB
+  # in 30 seconds and silently discard the beginning of the reproduction.
+  size_kb: 196608
   fill_policy: RING_BUFFER
 }
 duration_ms: $duration_ms
@@ -81,4 +83,4 @@ EOF
 adb pull "$remote_path" "$output_path"
 adb shell rm "$remote_path"
 echo "Saved $output_path"
-echo "Open it at https://ui.perfetto.dev and search for: Whip startup or Whip terminal input to visible"
+echo "Open it at https://ui.perfetto.dev and search for: Whip terminal inbound"

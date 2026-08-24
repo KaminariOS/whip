@@ -62,8 +62,12 @@ function createUtf8Decoder() {
   };
 }
 
-function bridgeEvent(message, terminalId) {
-  const event = { type: message.kind, terminalId };
+function terminalInboundTrace() {
+  return globalThis.__whipTerminalInboundTrace;
+}
+
+function bridgeEvent(message, terminalId, inboundTraceCookie) {
+  const event = { type: message.kind, terminalId, inboundTraceCookie };
   if (message.kind === 'terminal') {
     Object.assign(event, {
       seq: message.sequence,
@@ -149,15 +153,24 @@ class SSHClient extends BaseSSHClient {
           return;
         }
         let message;
+        const inboundTraceCookie = Number.isInteger(event.inboundTraceCookie)
+          ? event.inboundTraceCookie
+          : null;
         try {
           message = decode(event.bytes, protocol);
         } catch (error) {
+          terminalInboundTrace()?.abandon(inboundTraceCookie);
           if (!settled) fail(error);
           else if (state.terminalId) {
             state.handler?.({ type: 'closed', terminalId: state.terminalId, text: String(error) });
           }
           state.channel?.close().catch(() => {});
           return;
+        }
+        if (message.kind === 'terminal' && settled && state.terminalId) {
+          terminalInboundTrace()?.decodeComplete(inboundTraceCookie);
+        } else {
+          terminalInboundTrace()?.abandon(inboundTraceCookie);
         }
         if (!settled) {
           if (message.kind !== 'welcome') return fail(new Error('Herdr bridge did not send Welcome first'));
@@ -172,7 +185,7 @@ class SSHClient extends BaseSSHClient {
           return;
         }
         if (!state.terminalId || message.kind === 'welcome') return;
-        state.handler?.(bridgeEvent(message, state.terminalId));
+        state.handler?.(bridgeEvent(message, state.terminalId, inboundTraceCookie));
         if (message.kind === 'closed') {
           state.closing = true;
           this._herdrBridges.delete(state.terminalId);

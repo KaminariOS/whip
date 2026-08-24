@@ -43,6 +43,53 @@ type Shells = RwLock<HashMap<String, mpsc::Sender<ShellCommand>>>;
 type SftpSessions = RwLock<HashMap<String, Arc<SftpSession>>>;
 type ExecChannels = RwLock<HashMap<(String, String), mpsc::Sender<StreamCommand>>>;
 type UnixSocketChannels = RwLock<HashMap<(String, String), UnixSocketChannelHandle>>;
+
+const TERMINAL_INBOUND_RUST_FRAME_DELIVERY: &CStr = unsafe {
+    CStr::from_bytes_with_nul_unchecked(b"Whip terminal inbound Rust frame delivery\0")
+};
+
+#[cfg(target_os = "android")]
+struct AndroidTraceSlice(bool);
+
+#[cfg(target_os = "android")]
+impl AndroidTraceSlice {
+    fn begin(name: &CStr) -> Self {
+        // Checking first avoids CString work and kernel trace writes when the
+        // app is not part of an active Perfetto/atrace capture.
+        let enabled = unsafe { ATrace_isEnabled() };
+        if enabled {
+            unsafe { ATrace_beginSection(name.as_ptr()) };
+        }
+        Self(enabled)
+    }
+}
+
+#[cfg(target_os = "android")]
+impl Drop for AndroidTraceSlice {
+    fn drop(&mut self) {
+        if self.0 {
+            unsafe { ATrace_endSection() };
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+#[link(name = "android")]
+unsafe extern "C" {
+    fn ATrace_isEnabled() -> bool;
+    fn ATrace_beginSection(section_name: *const c_char);
+    fn ATrace_endSection();
+}
+
+#[cfg(not(target_os = "android"))]
+struct AndroidTraceSlice;
+
+#[cfg(not(target_os = "android"))]
+impl AndroidTraceSlice {
+    fn begin(_name: &CStr) -> Self {
+        Self
+    }
+}
 type Forwards = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
 type SftpFileServers = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
 type Transfers = RwLock<HashMap<(String, &'static str), Arc<AtomicBool>>>;
@@ -1404,7 +1451,14 @@ async fn open_unix_socket_channel_with_framing(
                 } => match read {
                     Ok(None) => break ("remote Unix socket reached EOF".to_owned(), false),
                     Err(error) => break (format!("remote Unix-socket read failed: {error}"), false),
-                    Ok(Some(bytes)) => emit_unix_socket_channel_data(&key, &channel_id, bytes),
+                    Ok(Some(bytes)) => {
+                        // Starts immediately after a complete frame is available
+                        // and deliberately includes the synchronous event sink.
+                        let _trace = AndroidTraceSlice::begin(
+                            TERMINAL_INBOUND_RUST_FRAME_DELIVERY,
+                        );
+                        emit_unix_socket_channel_data(&key, &channel_id, bytes);
+                    },
                 },
                 command = receiver.recv() => match command {
                     Some(StreamCommand::Write(data)) => if let Err(error) = stream.write_all(&data).await {

@@ -29,6 +29,8 @@ export interface HerdrBridgeEvent {
   flag?: boolean;
   kind?: number;
   count?: number;
+  /** Perfetto-only correlation cookie; absent when Android tracing is disabled. */
+  inboundTraceCookie?: number | null;
 }
 
 export interface HerdrCommandStreamEvent {

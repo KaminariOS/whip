@@ -18,7 +18,16 @@ const PRE_NATIVE_WAIT = 'Whip terminal app pre-native wait';
 const NATIVE_ENQUEUE = 'Whip terminal native enqueue';
 const NATIVE_QUEUE_TO_RESPONSE = 'Whip terminal native queue to response';
 const NATIVE_RESPONSE_TO_RENDERER = 'Whip terminal native response to renderer';
+const INBOUND_FRAME_TO_VISIBLE = 'Whip terminal inbound frame to visible';
+const INBOUND_JS_RECEIVE = 'Whip terminal inbound JS receive';
+const INBOUND_JS_DECODE = 'Whip terminal inbound JS decode';
+const INBOUND_RENDERER_DISPATCH = 'Whip terminal inbound renderer dispatch';
+const INBOUND_WEBVIEW_INJECTION = 'Whip terminal inbound WebView injection';
+const INBOUND_WEBVIEW_DELIVERY = 'Whip terminal inbound WebView delivery';
+const INBOUND_XTERM_WRITE = 'Whip terminal inbound xterm write';
+const INBOUND_XTERM_TO_VISIBLE = 'Whip terminal inbound xterm to visible';
 const TRACE_TIMEOUT_MS = 10_000;
+const INBOUND_TRACE_DISABLED_POLL_MS = 1_000;
 
 export type AppPerformanceTrace = {
   name: string;
@@ -46,6 +55,16 @@ export type TerminalInputTrace = {
 const pendingByTarget = new Map<string, TerminalInputTrace[]>();
 const pendingByVisibleCookie = new Map<number, TerminalInputTrace>();
 
+type TerminalInboundTrace = {
+  cookie: number;
+  active: Set<string>;
+  timeout: ReturnType<typeof setTimeout>;
+};
+
+const pendingInboundTraces = new Map<number, TerminalInboundTrace>();
+let inboundTraceEnabled = false;
+let nextInboundTraceProbeAt = 0;
+
 function nextTraceCookie(): number {
   const cookie = nextCookie;
   nextCookie = nextCookie >= 0x7fffffff ? 1 : nextCookie + 1;
@@ -60,6 +79,131 @@ function beginAsyncEvent(name: string, cookie = nextTraceCookie()): number {
 function endAsyncEvent(name: string, cookie: number): void {
   performanceTrace?.endAsyncSection(name, cookie);
 }
+
+function beginInboundStage(trace: TerminalInboundTrace, name: string): void {
+  if (trace.active.has(name)) return;
+  trace.active.add(name);
+  beginAsyncEvent(name, trace.cookie);
+}
+
+function endInboundStage(trace: TerminalInboundTrace, name: string): void {
+  if (!trace.active.delete(name)) return;
+  endAsyncEvent(name, trace.cookie);
+}
+
+function finishTerminalInboundTrace(cookie: number): void {
+  const trace = pendingInboundTraces.get(cookie);
+  if (!trace) return;
+  for (const name of trace.active) endAsyncEvent(name, cookie);
+  trace.active.clear();
+  pendingInboundTraces.delete(cookie);
+  clearTimeout(trace.timeout);
+}
+
+/** First JS instruction reached by a typed UniFFI Unix-socket data callback. */
+export function terminalInboundJsReceived(): number | null {
+  if (Platform.OS !== 'android' || !performanceTrace) return null;
+  if (!inboundTraceEnabled) {
+    const now = Date.now();
+    if (now < nextInboundTraceProbeAt) return null;
+    nextInboundTraceProbeAt = now + INBOUND_TRACE_DISABLED_POLL_MS;
+  }
+  const cookie = nextTraceCookie();
+  if (!performanceTrace.beginAsyncSection(INBOUND_FRAME_TO_VISIBLE, cookie)) {
+    inboundTraceEnabled = false;
+    return null;
+  }
+  inboundTraceEnabled = true;
+  const trace = {
+    cookie,
+    active: new Set<string>([INBOUND_FRAME_TO_VISIBLE]),
+    timeout: undefined as unknown as ReturnType<typeof setTimeout>,
+  } satisfies TerminalInboundTrace;
+  pendingInboundTraces.set(cookie, trace);
+  beginInboundStage(trace, INBOUND_JS_RECEIVE);
+  endInboundStage(trace, INBOUND_JS_RECEIVE);
+  beginInboundStage(trace, INBOUND_JS_DECODE);
+  trace.timeout = setTimeout(() => finishTerminalInboundTrace(cookie), TRACE_TIMEOUT_MS);
+  return cookie;
+}
+
+/** Ends codec work and starts the synchronous dispatch toward the renderer. */
+export function terminalInboundDecodeComplete(cookie: number | null): void {
+  if (cookie === null) return;
+  const trace = pendingInboundTraces.get(cookie);
+  if (!trace) return;
+  endInboundStage(trace, INBOUND_JS_DECODE);
+  beginInboundStage(trace, INBOUND_RENDERER_DISPATCH);
+}
+
+/** Called at TerminalRendererHost's first instruction for the decoded frame. */
+export function terminalInboundRendererReceived(cookie: number | null): void {
+  if (cookie === null) return;
+  const trace = pendingInboundTraces.get(cookie);
+  if (trace) endInboundStage(trace, INBOUND_RENDERER_DISPATCH);
+}
+
+/** Starts the exact injectJavaScript call and the wait for WebView receipt. */
+export function terminalInboundWebViewInjectionStarted(cookie: number | null): void {
+  if (cookie === null) return;
+  const trace = pendingInboundTraces.get(cookie);
+  if (!trace) return;
+  beginInboundStage(trace, INBOUND_WEBVIEW_INJECTION);
+  beginInboundStage(trace, INBOUND_WEBVIEW_DELIVERY);
+}
+
+/** Ends the synchronous React Native WebView injection call. */
+export function terminalInboundWebViewInjectionEnded(cookie: number | null): void {
+  if (cookie === null) return;
+  const trace = pendingInboundTraces.get(cookie);
+  if (trace) endInboundStage(trace, INBOUND_WEBVIEW_INJECTION);
+}
+
+/** Acknowledges entry into herdrWrite/herdrWriteBase64Chunk inside WebView. */
+export function terminalInboundWebViewReceived(cookie: number): void {
+  const trace = pendingInboundTraces.get(cookie);
+  if (!trace) return;
+  endInboundStage(trace, INBOUND_WEBVIEW_DELIVERY);
+  beginInboundStage(trace, INBOUND_XTERM_WRITE);
+}
+
+/** Acknowledges xterm.write's completion callback inside WebView. */
+export function terminalInboundXtermWritten(cookie: number): void {
+  const trace = pendingInboundTraces.get(cookie);
+  if (!trace) return;
+  endInboundStage(trace, INBOUND_XTERM_WRITE);
+  beginInboundStage(trace, INBOUND_XTERM_TO_VISIBLE);
+}
+
+/** Ends after the existing pair of requestAnimationFrame callbacks. */
+export function terminalInboundFrameVisible(cookie: number): void {
+  const trace = pendingInboundTraces.get(cookie);
+  if (!trace) return;
+  endInboundStage(trace, INBOUND_XTERM_TO_VISIBLE);
+  finishTerminalInboundTrace(cookie);
+}
+
+/** Ends a trace for a non-terminal/control frame or a frame that cannot be delivered. */
+export function abandonTerminalInboundTrace(cookie: number | null): void {
+  if (cookie !== null) finishTerminalInboundTrace(cookie);
+}
+
+type TerminalInboundGlobal = typeof globalThis & {
+  __whipTerminalInboundTrace?: {
+    jsReceived: () => number | null;
+    decodeComplete: (cookie: number | null) => void;
+    abandon: (cookie: number | null) => void;
+  };
+};
+
+// react-native-russh and the private Herdr codec cannot import app services.
+// This no-op-when-absent hook preserves that dependency boundary while placing
+// the first JS marker at the generated UniFFI callback's immediate consumer.
+(globalThis as TerminalInboundGlobal).__whipTerminalInboundTrace = {
+  jsReceived: terminalInboundJsReceived,
+  decodeComplete: terminalInboundDecodeComplete,
+  abandon: abandonTerminalInboundTrace,
+};
 
 /** Starts an app-owned async slice that is emitted only during an Android trace. */
 export function beginAppPerformanceTrace(name: string): AppPerformanceTrace | null {

@@ -1344,6 +1344,7 @@ export class HerdrClient {
             full: Boolean(event.full),
             bytes: event.bytes as string | ArrayBufferView,
             final: event.final !== false,
+            inboundTraceCookie: event.inboundTraceCookie ?? null,
           });
         });
       }
