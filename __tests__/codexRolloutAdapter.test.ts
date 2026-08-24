@@ -67,7 +67,7 @@ describe('Codex rollout adapter', () => {
     adapter.accept(line('event_msg', { type: 'exec_command_end', call_id: 'c1', command: ['rg', 'TODO'], cwd: '/repo', aggregated_output: 'foo\n', exit_code: 0, status: 'completed' }));
     expect(parts(adapter.snapshot())).toEqual([
       expect.objectContaining({
-        type: 'tool', tool: 'exec_command',
+        type: 'tool', tool: 'shell',
         state: expect.objectContaining({ status: 'completed', output: 'foo\n' }),
       }),
     ]);
@@ -84,7 +84,7 @@ describe('Codex rollout adapter', () => {
 
     expect(parts(adapter.snapshot())).toEqual([
       expect.objectContaining({
-        id: 'tool:call_1', type: 'tool', tool: 'exec',
+        id: 'tool:call_1', type: 'tool', tool: 'shell',
         state: expect.objectContaining({ status: 'completed', output: 'clean' }),
       }),
     ]);
@@ -98,9 +98,96 @@ describe('Codex rollout adapter', () => {
     adapter.accept(line('response_item', { type: 'function_call', call_id: 'f1', name: 'future_tool', arguments: '{"x":1}' }));
     adapter.accept(line('event_msg', { type: 'future_unknown_event', arbitrary: true }));
     expect(parts(adapter.snapshot())).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'tool', tool: 'apply_patch', state: expect.objectContaining({ status: 'completed' }) }),
+      expect.objectContaining({ type: 'tool', tool: 'patch', state: expect.objectContaining({ status: 'completed' }) }),
       expect.objectContaining({ type: 'plan', text: expect.stringContaining('Add tests') }),
       expect.objectContaining({ type: 'tool', tool: 'future_tool' }),
     ]));
+  });
+
+  test('unwraps Codex exec orchestration into an OpenCode shell part', () => {
+    const adapter = new CodexRolloutAdapter();
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call', call_id: 'shell_1', name: 'exec',
+      input: 'const r = await tools.exec_command({cmd:"rg TODO src","workdir":"/repo"}); text(r);',
+    }));
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call_output', call_id: 'shell_1',
+      output: [
+        { type: 'input_text', text: 'Script completed\nWall time: 0.1 seconds\nOutput:\n' },
+        { type: 'input_text', text: JSON.stringify({ exit_code: 0, output: 'src/a.ts:1:TODO\n' }) },
+      ],
+    }));
+
+    expect(parts(adapter.snapshot())).toEqual([
+      expect.objectContaining({
+        id: 'tool:shell_1', type: 'tool', tool: 'shell',
+        state: expect.objectContaining({
+          status: 'completed',
+          input: { command: 'rg TODO src', cwd: '/repo' },
+          output: 'src/a.ts:1:TODO\n',
+          metadata: { exitCode: 0 },
+        }),
+      }),
+    ]);
+  });
+
+  test('joins Codex write_stdin updates into the originating shell part', () => {
+    const adapter = new CodexRolloutAdapter();
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call', call_id: 'shell_1', name: 'exec',
+      input: 'const r = await tools.exec_command({cmd:"npm test"}); text(r);',
+    }));
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call_output', call_id: 'shell_1',
+      output: [{ type: 'input_text', text: JSON.stringify({ session_id: 42, output: 'starting\n' }) }],
+    }));
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call', call_id: 'poll_1', name: 'exec',
+      input: 'const r = await tools.write_stdin({session_id:42,chars:""}); text(r);',
+    }));
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call_output', call_id: 'poll_1',
+      output: [{ type: 'input_text', text: JSON.stringify({ exit_code: 0, output: 'passed\n' }) }],
+    }));
+
+    const toolParts = parts(adapter.snapshot()).filter(part => part.type === 'tool');
+    expect(toolParts).toHaveLength(1);
+    expect(toolParts[0]).toEqual(expect.objectContaining({
+      id: 'tool:shell_1', type: 'tool', tool: 'shell',
+      state: expect.objectContaining({ status: 'completed', output: 'starting\npassed\n' }),
+    }));
+  });
+
+  test('converts Codex apply_patch source and turn diffs into OpenCode file metadata', () => {
+    const adapter = new CodexRolloutAdapter();
+    const patch = '*** Begin Patch\n*** Update File: src/a.ts\n@@\n-old\n+new\n*** End Patch';
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call', call_id: 'patch_1', name: 'exec',
+      input: `const patch = ${JSON.stringify(patch)}; const r = await tools.apply_patch(patch); text(r);`,
+    }));
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call_output', call_id: 'patch_1',
+      output: [{ type: 'input_text', text: '{}' }],
+    }));
+    adapter.accept(line('event_msg', {
+      type: 'turn_diff',
+      unified_diff: 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new',
+    }));
+
+    expect(parts(adapter.snapshot())).toEqual([
+      expect.objectContaining({
+        type: 'tool', tool: 'patch',
+        state: expect.objectContaining({
+          metadata: {
+            files: [expect.objectContaining({
+              filePath: 'src/a.ts', type: 'update', patch: '@@\n-old\n+new', additions: 1, deletions: 1,
+            })],
+          },
+        }),
+      }),
+    ]);
+    expect(adapter.snapshot().turns[0].diffs).toEqual([
+      expect.objectContaining({ file: 'src/a.ts', additions: 1, deletions: 1 }),
+    ]);
   });
 });

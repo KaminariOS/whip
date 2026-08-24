@@ -271,13 +271,39 @@ function convertHtml(value: string): string {
     );
 }
 
+function normalizeOpenCodeInlineMath(value: string): string {
+  const protectedMarkdown: string[] = [];
+  const protect = (match: string) => {
+    const token = `\uE004WHIP_MATH_CODE_${protectedMarkdown.length}\uE005`;
+    protectedMarkdown.push(match);
+    return token;
+  };
+  const withProtectedCode = value
+    .replace(/^( {0,3})(`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?^\1\2[ \t]*$|$)/gm, protect)
+    .replace(/(`+)(?!`)([^\n]*?)\1/g, protect);
+  const converted = withProtectedCode.replace(
+    /\\\(([^\n]*?)\\\)/g,
+    (match, latex: string, offset: number, source: string) => {
+      let precedingBackslashes = 0;
+      for (let index = offset - 1; index >= 0 && source[index] === '\\'; index -= 1) {
+        precedingBackslashes += 1;
+      }
+      return precedingBackslashes % 2 === 0 ? `$${latex}$` : match;
+    },
+  );
+  return converted.replace(
+    /\uE004WHIP_MATH_CODE_(\d+)\uE005/g,
+    (_match, index: string) => protectedMarkdown[Number(index)] ?? '',
+  );
+}
+
 /**
  * Normalizes prose HTML into the native GFM renderer used by chat and file
  * previews. Existing Markdown code spans/fences are protected so examples of
  * markup stay examples instead of becoming rendered elements.
  */
 export function normalizeRichTextMarkdown(value: string): string {
-  if (!HTML_TAG.test(value)) return value;
+  if (!HTML_TAG.test(value)) return normalizeOpenCodeInlineMath(value);
 
   const protectedMarkdown: string[] = [];
   const protect = (match: string) => {
@@ -289,8 +315,9 @@ export function normalizeRichTextMarkdown(value: string): string {
     .replace(/^( {0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\2[ \t]*$/gm, protect)
     .replace(/(`+)(?!`)([^\n]*?)\1/g, protect);
 
-  return convertHtml(withProtectedCode).replace(
+  const markdown = convertHtml(withProtectedCode).replace(
     /\uE000WHIP_CODE_(\d+)\uE001/g,
     (_match, index: string) => protectedMarkdown[Number(index)] ?? '',
   );
+  return normalizeOpenCodeInlineMath(markdown);
 }

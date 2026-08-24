@@ -3,6 +3,7 @@ import {
   timestamp,
   type AgentTranscript,
   type JsonObject,
+  type TranscriptFileDiff,
   type TranscriptMessage,
   type TranscriptPart,
   type TranscriptToolPart,
@@ -58,6 +59,205 @@ function input(value: unknown): JsonObject {
   return value === undefined ? {} : { value };
 }
 
+function canonicalToolName(value: string): string {
+  const name = value.toLowerCase();
+  if (/^(?:exec|exec_command|command_execution|local_shell_call|bash)$/.test(name)) return 'shell';
+  if (/^(?:apply_patch|turn_diff)$/.test(name)) return 'patch';
+  if (/^(?:web_search|web_search_call)$/.test(name)) return 'websearch';
+  if (name === 'update_plan') return 'todowrite';
+  return name || 'tool';
+}
+
+function decodedStringLiteral(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try { return JSON.parse(value) as string; } catch { return undefined; }
+}
+
+function objectString(source: string, key: string): string | undefined {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = source.match(new RegExp(`(?:["']?${escaped}["']?)\\s*:\\s*("(?:\\\\.|[^"\\\\])*")`, 's'));
+  return decodedStringLiteral(match?.[1]);
+}
+
+function objectNumber(source: string, key: string): number | undefined {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = source.match(new RegExp(`(?:["']?${escaped}["']?)\\s*:\\s*(-?\\d+)`));
+  return match ? Number(match[1]) : undefined;
+}
+
+function applyPatchSource(source: string): string | undefined {
+  const literals = source.match(/"(?:\\.|[^"\\])*"/gs) || [];
+  return literals.map(decodedStringLiteral).find(value => value?.startsWith('*** Begin Patch'));
+}
+
+function diffCounts(value: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of value.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
+function applyPatchFiles(value: string | undefined): JsonObject[] {
+  if (!value) return [];
+  const markers = [...value.matchAll(/^\*\*\* (Add|Update|Delete) File: (.+)$/gm)];
+  return markers.map((marker, index) => {
+    const operation = marker[1].toLowerCase();
+    const filePath = marker[2].trim();
+    const start = (marker.index || 0) + marker[0].length + 1;
+    const end = markers[index + 1]?.index ?? value.indexOf('*** End Patch', start);
+    const body = value.slice(start, end < 0 ? value.length : end).trimEnd();
+    const movePath = body.match(/^\*\*\* Move to: (.+)$/m)?.[1]?.trim();
+    const patch = body.replace(/^\*\*\* Move to: .+\n?/m, '');
+    const counts = diffCounts(patch);
+    return {
+      filePath,
+      relativePath: filePath,
+      type: movePath ? 'move' : operation,
+      ...(movePath ? { movePath } : {}),
+      ...(patch ? { patch } : {}),
+      ...counts,
+    };
+  });
+}
+
+function legacyChangeFiles(value: unknown): JsonObject[] {
+  const changes = object(value);
+  if (!changes) return [];
+  return Object.entries(changes).map(([filePath, entryValue]) => {
+    const entry = object(entryValue) || {};
+    const patch = string(entry.diff) || string(entry.patch);
+    const counts = diffCounts(patch || '');
+    return {
+      filePath,
+      relativePath: filePath,
+      type: string(entry.type) || 'update',
+      ...(patch ? { patch } : {}),
+      ...(string(entry.before) ? { before: string(entry.before) } : {}),
+      ...(string(entry.after) ? { after: string(entry.after) } : {}),
+      ...counts,
+    };
+  });
+}
+
+function unifiedDiffFiles(value: string | undefined): TranscriptFileDiff[] {
+  if (!value) return [];
+  const markers = [...value.matchAll(/^diff --git a\/(.+) b\/(.+)$/gm)];
+  if (!markers.length) {
+    const path = value.match(/^\+\+\+ (?:b\/)?(.+)$/m)?.[1]
+      || value.match(/^--- (?:a\/)?(.+)$/m)?.[1]
+      || 'Changes';
+    return [{ file: path, patch: value, ...diffCounts(value) }];
+  }
+  return markers.map((marker, index) => {
+    const start = marker.index || 0;
+    const end = markers[index + 1]?.index ?? value.length;
+    const patch = value.slice(start, end).trimEnd();
+    return { file: marker[2], patch, ...diffCounts(patch) };
+  });
+}
+
+interface TranslatedCodexTool {
+  tool: string;
+  input: JsonObject;
+  metadata?: JsonObject;
+  processId?: number;
+  continuation?: boolean;
+}
+
+function translateCodexTool(name: string, value: unknown): TranslatedCodexTool {
+  const direct = input(value);
+  if (name !== 'exec' || typeof value !== 'string') {
+    const tool = canonicalToolName(name);
+    if (tool === 'shell') {
+      const command = direct.command !== undefined
+        ? commandTitle(direct.command)
+        : direct.cmd !== undefined
+          ? commandTitle(direct.cmd)
+          : string(direct.raw);
+      return { tool, input: { ...direct, ...(command ? { command } : {}) } };
+    }
+    return { tool, input: direct };
+  }
+
+  const nested = sourceToolName(value);
+  if (nested === 'exec_command') {
+    const command = objectString(value, 'cmd');
+    const cwd = objectString(value, 'workdir');
+    return { tool: 'shell', input: { ...(command ? { command } : {}), ...(cwd ? { cwd } : {}) } };
+  }
+  if (nested === 'write_stdin') {
+    const processId = objectNumber(value, 'session_id');
+    const chars = objectString(value, 'chars');
+    return {
+      tool: 'shell',
+      input: chars ? { command: chars } : {},
+      processId,
+      continuation: true,
+    };
+  }
+  if (nested === 'apply_patch') {
+    const patch = applyPatchSource(value);
+    return { tool: 'patch', input: {}, metadata: { files: applyPatchFiles(patch) } };
+  }
+  if (nested === 'update_plan') return { tool: 'todowrite', input: {} };
+  if (nested === 'web__run') {
+    return { tool: 'websearch', input: { query: objectString(value, 'q') || 'Web search' } };
+  }
+  return { tool: canonicalToolName(nested || name), input: direct };
+}
+
+function sourceToolName(source: string): string | undefined {
+  return source.match(/await\s+tools\.([A-Za-z0-9_]+)\s*\(/)?.[1]
+    || source.match(/tools\.([A-Za-z0-9_]+)\s*\(/)?.[1];
+}
+
+interface CodexToolResult {
+  output?: string;
+  error?: string;
+  exitCode?: number;
+  processId?: number;
+  running: boolean;
+}
+
+function codexToolResult(value: unknown): CodexToolResult {
+  const texts = Array.isArray(value)
+    ? value.flatMap(entryValue => {
+      const entry = object(entryValue);
+      return string(entry?.text) ? [string(entry?.text)!] : [];
+    })
+    : [textContent(value)];
+  const joined = texts.filter(Boolean).join('');
+  for (const text of texts) {
+    try {
+      const result = object(JSON.parse(text));
+      if (!result) continue;
+      const exitCode = typeof result.exit_code === 'number' ? result.exit_code : undefined;
+      const processId = typeof result.session_id === 'number' ? result.session_id : undefined;
+      const output = string(result.output);
+      const failed = exitCode !== undefined && exitCode !== 0;
+      return {
+        output,
+        error: failed ? `Exited with code ${exitCode}` : undefined,
+        exitCode,
+        processId,
+        running: processId !== undefined && exitCode === undefined,
+      };
+    } catch { /* Not the structured result envelope. */ }
+  }
+  const failed = /(?:Script failed|Script error:)/.test(joined);
+  const output = joined
+    .replace(/^Script (?:completed|failed)\nWall time: [^\n]+\nOutput:\n/, '')
+    .trim();
+  return {
+    output: output && output !== '{}' ? output : undefined,
+    error: failed ? output || 'Tool failed' : undefined,
+    running: false,
+  };
+}
+
 function commandTitle(command: unknown): string {
   if (Array.isArray(command)) return command.filter(part => typeof part === 'string').join(' ');
   return string(command) || 'Command';
@@ -96,11 +296,17 @@ interface ToolLocation {
   partId: string;
 }
 
+interface PendingCodexTool extends TranslatedCodexTool {
+  targetId: string;
+}
+
 /** Codex rollout knowledge. React consumes only the OpenCode-shaped transcript. */
 export class CodexRolloutAdapter {
   private readonly messages: TranscriptMessage[] = [];
   private readonly messageIndexes = new Map<string, number>();
   private readonly tools = new Map<string, ToolLocation>();
+  private readonly pendingCodexTools = new Map<string, PendingCodexTool>();
+  private readonly processTools = new Map<number, string>();
   private readonly recentMessages = new Map<string, MessageSignature>();
   private sequence = 0;
   private sessionId = 'codex';
@@ -275,7 +481,9 @@ export class CodexRolloutAdapter {
         output: output ?? existing?.state.output,
         error: error ?? existing?.state.error,
         title: existing?.state.title,
-        metadata: metadata || existing?.state.metadata,
+        metadata: metadata || existing?.state.metadata
+          ? { ...(existing?.state.metadata || {}), ...(metadata || {}) }
+          : undefined,
         time: {
           start: existing?.state.time?.start ?? at,
           end: toolStatus === 'completed' || toolStatus === 'error' ? at : existing?.state.time?.end,
@@ -306,12 +514,12 @@ export class CodexRolloutAdapter {
     }
     if (type === 'command_execution') {
       const command = commandTitle(item.command);
-      this.tool(id, 'exec_command', finiteStatus(item.exit_code), { command }, string(item.aggregated_output), undefined, { exitCode: item.exit_code }, at);
+      this.tool(id, 'shell', finiteStatus(item.exit_code), { command }, string(item.aggregated_output), undefined, { exitCode: item.exit_code }, at);
       return;
     }
     if (type === 'function_call') {
-      const name = string(item.name) || 'tool';
-      this.tool(id, name, status(item.status, 'completed'), input(item.arguments), string(item.output), undefined, undefined, at);
+      const translated = translateCodexTool(string(item.name) || 'tool', item.arguments);
+      this.tool(id, translated.tool, status(item.status, 'completed'), translated.input, string(item.output), undefined, translated.metadata, at);
     }
   }
 
@@ -331,20 +539,63 @@ export class CodexRolloutAdapter {
     }
     if (type === 'local_shell_call') {
       const action = object(payload.action);
-      this.tool(callId, 'exec_command', status(payload.status, 'running'), action || {}, undefined, undefined, undefined, at);
+      const translated = translateCodexTool('shell', action || {});
+      this.tool(callId, translated.tool, status(payload.status, 'running'), translated.input, undefined, undefined, undefined, at);
       return;
     }
     if (type === 'function_call' || type === 'custom_tool_call' || type === 'tool_search_call') {
       const name = string(payload.name) || string(payload.execution) || 'tool';
       const raw = payload.arguments ?? payload.input;
-      this.tool(callId, name, status(payload.status, 'running'), input(raw), undefined, undefined, undefined, at);
+      const translated = translateCodexTool(name, raw);
+      const continuedId = translated.continuation && translated.processId !== undefined
+        ? this.processTools.get(translated.processId)
+        : undefined;
+      const targetId = continuedId || callId;
+      const location = this.tools.get(`tool:${targetId}`);
+      const message = location ? this.getMessage(location.messageId) : undefined;
+      const current = message?.parts.find((item): item is TranscriptToolPart => item.id === `tool:${targetId}` && item.type === 'tool');
+      this.pendingCodexTools.set(callId, { ...translated, targetId });
+      this.tool(
+        targetId,
+        translated.tool,
+        'running',
+        continuedId ? current?.state.input : translated.input,
+        current?.state.output,
+        undefined,
+        translated.metadata,
+        at,
+      );
       return;
     }
     if (type === 'function_call_output' || type === 'custom_tool_call_output') {
-      const location = this.tools.get(`tool:${callId}`);
+      const pending = this.pendingCodexTools.get(callId);
+      const targetId = pending?.targetId || callId;
+      const location = this.tools.get(`tool:${targetId}`);
       const message = location ? this.getMessage(location.messageId) : undefined;
-      const current = message?.parts.find((item): item is TranscriptToolPart => item.id === `tool:${callId}` && item.type === 'tool');
-      this.tool(callId, current?.tool || string(payload.name) || 'tool', 'completed', current?.state.input, textContent(payload.output), undefined, current?.state.metadata, at);
+      const current = message?.parts.find((item): item is TranscriptToolPart => item.id === `tool:${targetId}` && item.type === 'tool');
+      if (pending) {
+        const result = codexToolResult(payload.output);
+        if (result.processId !== undefined) this.processTools.set(result.processId, targetId);
+        const output = pending.continuation && result.output
+          ? [current?.state.output, result.output].filter(Boolean).join('')
+          : result.output;
+        this.tool(
+          targetId,
+          pending.tool,
+          result.error ? 'error' : result.running ? 'running' : 'completed',
+          current?.state.input || pending.input,
+          output,
+          result.error,
+          {
+            ...(pending.metadata || {}),
+            ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+          },
+          at,
+        );
+        this.pendingCodexTools.delete(callId);
+        return;
+      }
+      this.tool(targetId, canonicalToolName(current?.tool || string(payload.name) || 'tool'), 'completed', current?.state.input, textContent(payload.output), undefined, current?.state.metadata, at);
       return;
     }
     if (type === 'web_search_call') {
@@ -380,7 +631,7 @@ export class CodexRolloutAdapter {
       return;
     }
     if (type === 'exec_command_begin') {
-      this.tool(callId, 'exec_command', 'running', {
+      this.tool(callId, 'shell', 'running', {
         command: commandTitle(payload.command),
         ...(string(payload.cwd) ? { cwd: string(payload.cwd) } : {}),
       }, undefined, undefined, undefined, at);
@@ -391,23 +642,27 @@ export class CodexRolloutAdapter {
       const output = string(payload.aggregated_output)
         || [string(payload.stdout), string(payload.stderr)].filter(Boolean).join('\n');
       const exitCode = typeof payload.exit_code === 'number' ? payload.exit_code : undefined;
-      this.tool(callId, 'exec_command', status(payload.status, exitCode === 0 ? 'completed' : 'error'), {
+      this.tool(callId, 'shell', status(payload.status, exitCode === 0 ? 'completed' : 'error'), {
         command: commandTitle(payload.command),
         ...(string(payload.cwd) ? { cwd: string(payload.cwd) } : {}),
       }, output, exitCode && exitCode !== 0 ? `Exited with code ${exitCode}` : undefined, { exitCode }, at);
       return;
     }
     if (type === 'patch_apply_begin' || type === 'patch_apply_updated') {
-      this.tool(callId, 'apply_patch', 'running', { changes: payload.changes }, undefined, undefined, undefined, at);
+      this.tool(callId, 'patch', 'running', {}, undefined, undefined, { files: legacyChangeFiles(payload.changes) }, at);
       return;
     }
     if (type === 'patch_apply_end') {
       const output = [string(payload.stdout), string(payload.stderr)].filter(Boolean).join('\n');
-      this.tool(callId, 'apply_patch', payload.success === false ? 'error' : status(payload.status, 'completed'), { changes: payload.changes }, output, payload.success === false ? output || 'Patch failed' : undefined, undefined, at);
+      this.tool(callId, 'patch', payload.success === false ? 'error' : status(payload.status, 'completed'), {}, output, payload.success === false ? output || 'Patch failed' : undefined, { files: legacyChangeFiles(payload.changes) }, at);
       return;
     }
     if (type === 'turn_diff') {
-      this.tool(`diff:${this.sequence}`, 'turn_diff', 'completed', {}, undefined, undefined, { unifiedDiff: string(payload.unified_diff) }, at);
+      const files = unifiedDiffFiles(string(payload.unified_diff));
+      if (files.length) {
+        const message = this.assistantMessage(at);
+        message.summary = { ...(message.summary || { diffs: [] }), diffs: files };
+      }
       return;
     }
     if (type === 'mcp_tool_call_begin' || type === 'mcp_tool_call_end') {

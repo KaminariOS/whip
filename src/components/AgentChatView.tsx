@@ -29,10 +29,20 @@ import {
   type TextInput as TextInputHandle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 
 import type {
   AgentChatState,
   JsonObject,
+  TranscriptFileDiff,
   TranscriptFilePart,
   TranscriptMessage,
   TranscriptPart,
@@ -44,6 +54,8 @@ import type { ChatAgent } from '../lib/agentChatSession';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
 import { useTheme } from '../theme';
+import type { AgentStatus } from '../types';
+import { useReducedMotion } from './app-ui';
 import { MarkdownText } from './MarkdownText';
 import { ComposerInput, MessageComposer } from './MessageComposer';
 import type { TerminalComposerQueueItem } from './TerminalScreen';
@@ -53,6 +65,7 @@ import { Text } from './ui/text';
 interface Props {
   state: AgentChatState;
   agent: ChatAgent;
+  agentStatus: AgentStatus;
   attachments: readonly string[];
   draft: string;
   queue: readonly TerminalComposerQueueItem[];
@@ -65,8 +78,28 @@ interface Props {
   onSubmit: (text: string) => Promise<boolean>;
 }
 
-const TOOL_OUTPUT_SCROLL_STYLE = { maxHeight: 240 } as const;
-const TOOL_DIFF_SCROLL_STYLE = { maxHeight: 280 } as const;
+function ThinkingIndicator() {
+  const reduceMotion = useReducedMotion();
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    cancelAnimation(progress);
+    progress.value = 0;
+    if (reduceMotion) return;
+    progress.value = withRepeat(withSequence(
+      withTiming(1, { duration: 800, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0, { duration: 800, easing: Easing.inOut(Easing.quad) }),
+    ), -1);
+    return () => cancelAnimation(progress);
+  }, [progress, reduceMotion]);
+  const style = useAnimatedStyle(() => ({ opacity: reduceMotion ? 1 : 0.48 + (progress.value * 0.52) }), [reduceMotion]);
+  return (
+    <View accessibilityLiveRegion="polite" className="mt-3 min-h-5 flex-row items-center">
+      <Animated.View style={style}>
+        <Text className="text-[13px] font-medium leading-5 text-muted-foreground">Thinking</Text>
+      </Animated.View>
+    </View>
+  );
+}
 
 type ToolKind = 'command' | 'file' | 'mcp' | 'web' | 'other';
 
@@ -86,6 +119,10 @@ function stringValue(value: unknown): string | undefined {
     return joined || undefined;
   }
   return undefined;
+}
+
+function textValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function inputValue(input: JsonObject | undefined, keys: readonly string[]): string | undefined {
@@ -115,16 +152,23 @@ function primitiveArgs(input: JsonObject | undefined, omitted: readonly string[]
 }
 
 function toolKind(name: string): ToolKind {
-  if (/apply[_-]?patch|patch|edit|write|file|read/i.test(name)) return 'file';
-  if (/exec|bash|shell|command|terminal/i.test(name)) return 'command';
+  if (/^(?:apply[_-]?patch|patch|edit|write|file|read)$/i.test(name)) return 'file';
+  if (/^(?:exec|exec_command|bash|shell|command|terminal)$/i.test(name)) return 'command';
   if (/web|search|fetch|open_page/i.test(name)) return 'web';
   if (/mcp| · /.test(name)) return 'mcp';
   return 'other';
 }
 
+function normalizedToolName(value: string): string {
+  const name = value.toLowerCase();
+  if (/^(?:exec|exec_command|bash)$/.test(name)) return 'shell';
+  if (name === 'apply_patch') return 'patch';
+  return name;
+}
+
 function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   const input = item.state.input;
-  const name = item.tool;
+  const name = normalizedToolName(item.tool);
   const kind = toolKind(name);
   const command = inputValue(input, ['command', 'cmd']);
   const path = inputValue(input, ['filePath', 'file_path', 'path']);
@@ -170,7 +214,7 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
     };
   }
   return {
-    title: name === 'tool' ? (kind === 'mcp' ? 'MCP' : 'Tool') : name,
+    title: `Called ${name === 'tool' ? (kind === 'mcp' ? 'MCP' : 'tool') : name}`,
     subtitle: description || query || url || item.state.title,
     args: primitiveArgs(input, ['description', 'query', 'url', 'filePath', 'file_path', 'path', 'pattern', 'name']),
     kind,
@@ -183,22 +227,54 @@ function stringify(value: unknown): string | undefined {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
-function toolDiff(item: TranscriptToolPart): string | undefined {
-  const unified = stringValue(item.state.metadata?.unifiedDiff);
-  if (unified) return unified;
+function toolFileDiffs(item: TranscriptToolPart): TranscriptFileDiff[] {
+  const files = item.state.metadata?.files;
+  if (Array.isArray(files)) {
+    const parsed = files.flatMap(value => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+      const entry = value as JsonObject;
+      const file = stringValue(entry.relativePath) || stringValue(entry.filePath) || stringValue(entry.file);
+      if (!file) return [];
+      return [{
+        file,
+        patch: textValue(entry.patch) || textValue(entry.diff),
+        before: textValue(entry.before),
+        after: textValue(entry.after),
+        additions: typeof entry.additions === 'number' ? entry.additions : undefined,
+        deletions: typeof entry.deletions === 'number' ? entry.deletions : undefined,
+      }];
+    });
+    if (parsed.length) return parsed;
+  }
+  const unified = textValue(item.state.metadata?.unifiedDiff);
+  if (unified) return [{ file: 'Changes', patch: unified }];
   const fileDiff = item.state.metadata?.filediff;
   const fileDiffObject = fileDiff && typeof fileDiff === 'object' && !Array.isArray(fileDiff)
     ? fileDiff as JsonObject
     : undefined;
-  const patch = stringValue(fileDiffObject?.patch);
-  if (patch) return patch;
+  const patch = textValue(fileDiffObject?.patch);
+  if (fileDiffObject) {
+    const file = stringValue(fileDiffObject.file) || stringValue(fileDiffObject.path) || 'Changes';
+    return [{
+      file,
+      patch,
+      before: textValue(fileDiffObject.before),
+      after: textValue(fileDiffObject.after),
+      additions: typeof fileDiffObject.additions === 'number' ? fileDiffObject.additions : undefined,
+      deletions: typeof fileDiffObject.deletions === 'number' ? fileDiffObject.deletions : undefined,
+    }];
+  }
   const changes = item.state.input.changes;
-  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return undefined;
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return [];
   return Object.entries(changes as JsonObject).map(([path, value]) => {
     const entry = value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : undefined;
-    const diff = stringValue(entry?.diff) || stringValue(entry?.patch) || stringify(value) || '';
-    return diff ? `### ${path}\n\n${diff}` : path;
-  }).join('\n\n');
+    return {
+      file: path,
+      patch: textValue(entry?.diff) || textValue(entry?.patch) || stringify(value),
+      before: textValue(entry?.before),
+      after: textValue(entry?.after),
+    };
+  });
 }
 
 function diffChanges(diff: string | undefined): { additions: number; deletions: number } | null {
@@ -210,23 +286,6 @@ function diffChanges(diff: string | undefined): { additions: number; deletions: 
     if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
   }
   return additions || deletions ? { additions, deletions } : null;
-}
-
-function formattedInput(item: TranscriptToolPart, presentation: ToolPresentation): string | undefined {
-  if (presentation.kind !== 'mcp' && presentation.kind !== 'other') return undefined;
-  const omitted = new Set([
-    'command', 'cmd', 'description', 'query', 'url', 'filePath', 'file_path', 'path', 'pattern',
-    'name', 'oldString', 'old_string', 'newString', 'new_string', 'content', 'changes',
-  ]);
-  const rows = Object.entries(item.state.input).flatMap(([key, value]) => {
-    if (omitted.has(key)) return [];
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      return [`${key}: ${String(value)}`];
-    }
-    if (value === null || value === undefined) return [];
-    return [`${key}: ${stringify(value)}`];
-  });
-  return rows.length ? rows.join('\n') : undefined;
 }
 
 interface ToolDiagnostic {
@@ -268,19 +327,30 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
   const failed = item.state.status === 'error';
   const [expanded, setExpanded] = useState(failed);
   const presentation = toolPresentation(item);
-  const diff = toolDiff(item);
-  const changes = diffChanges(diff);
-  const input = formattedInput(item, presentation);
+  const name = normalizedToolName(item.tool);
+  const files = toolFileDiffs(item);
+  const diff = files.map(file => file.patch).filter(Boolean).join('\n');
+  const calculated = diffChanges(diff);
+  const changes = files.length
+    ? {
+      additions: files.reduce((total, file) => total + (file.additions || 0), 0) || calculated?.additions || 0,
+      deletions: files.reduce((total, file) => total + (file.deletions || 0), 0) || calculated?.deletions || 0,
+    }
+    : null;
   const shell = presentation.kind === 'command'
     ? [presentation.command ? `$ ${presentation.command}` : undefined, item.state.output].filter(Boolean).join('\n\n')
     : undefined;
+  const markdownOutput = /^(?:list|glob|grep|websearch)$/.test(name) ? item.state.output : undefined;
+  const writtenContent = name === 'write' ? textValue(item.state.input.content) : undefined;
   const error = item.state.error;
   const loaded = Array.isArray(item.state.metadata?.loaded)
     ? item.state.metadata.loaded.filter((value): value is string => typeof value === 'string')
     : [];
   const attachments = item.state.attachments || [];
   const diagnostics = toolDiagnostics(item);
-  const hasDetail = Boolean(shell || item.state.output || diff || input || error || loaded.length || attachments.length || diagnostics.length);
+  const hasDetail = Boolean(shell || files.length || markdownOutput || writtenContent || error || loaded.length || attachments.length || diagnostics.length);
+  const subtitle = presentation.subtitle
+    || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
   return (
     <Pressable
       accessibilityRole="button"
@@ -307,11 +377,11 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
           <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
             {presentation.title}
           </Text>
-          {presentation.subtitle && !isRunning(item) && (
+          {subtitle && !isRunning(item) && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
               <Text numberOfLines={1} className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground">
-                {presentation.subtitle}
+                {subtitle}
               </Text>
             </>
           )}
@@ -338,10 +408,10 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
       </View>
       {expanded && hasDetail && (
         <View className="mb-3 mt-1 gap-2">
-          {shell && <ToolCodeBlock text={shell} bordered />}
-          {diff && <ToolDiffBlock diff={diff} />}
-          {presentation.kind !== 'command' && item.state.output && <ToolCodeBlock text={item.state.output} />}
-          {input && <ToolCodeBlock text={input} muted />}
+          {shell && <ToolCodeBlock text={shell} bordered copyable />}
+          {files.map(file => <ToolFileDiffBlock key={file.file} file={file} />)}
+          {markdownOutput && <View className="border-l border-border py-1 pl-3"><MarkdownText content={markdownOutput} variant="transcript" /></View>}
+          {writtenContent && <ToolCodeBlock text={writtenContent} bordered copyable />}
           {error && <ToolCodeBlock text={error} error />}
           {diagnostics.length > 0 && (
             <View className="gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2">
@@ -393,19 +463,30 @@ function ToolCodeBlock({
   bordered = false,
   muted = false,
   error = false,
+  copyable = false,
 }: {
   text: string;
   bordered?: boolean;
   muted?: boolean;
   error?: boolean;
+  copyable?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
-    <View className={cn('overflow-hidden', bordered && 'rounded-md border border-border')}>
+    <View className={cn('relative overflow-hidden', bordered && 'rounded-md border border-border')}>
+      {copyable && (
+        <Pressable
+          accessibilityLabel="Copy tool output"
+          className="absolute right-1 top-1 z-10 size-7 items-center justify-center rounded-md bg-background/90"
+          onPress={() => Clipboard.setString(text)}
+        >
+          <Copy size={13} color={colors.textTertiary} />
+        </Pressable>
+      )}
       <ScrollView
-        nestedScrollEnabled
-        showsVerticalScrollIndicator={false}
-        style={TOOL_OUTPUT_SCROLL_STYLE}
-        contentContainerClassName={bordered ? 'px-3 py-2.5' : 'px-1 py-1'}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName={bordered ? 'min-w-full px-3 py-2.5 pr-10' : 'min-w-full px-1 py-1'}
       >
         <Text
           selectable
@@ -426,8 +507,8 @@ function ToolDiffBlock({ diff }: { diff: string }) {
   const { colors } = useTheme();
   const lines = diff.split('\n');
   return (
-    <View className="overflow-hidden border-t border-border pt-2">
-      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={TOOL_DIFF_SCROLL_STYLE} contentContainerClassName="px-1">
+    <View className="overflow-hidden">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="min-w-full px-1">
         <Text selectable className="font-mono text-[11px] leading-[17px] text-foreground">
           {lines.map((line, index) => (
             <Text
@@ -445,6 +526,33 @@ function ToolDiffBlock({ diff }: { diff: string }) {
           ))}
         </Text>
       </ScrollView>
+    </View>
+  );
+}
+
+function fileDiffText(file: TranscriptFileDiff): string | undefined {
+  if (file.patch) return file.patch;
+  if (file.before === undefined && file.after === undefined) return undefined;
+  const before = (file.before || '').split('\n').map(line => `-${line}`).join('\n');
+  const after = (file.after || '').split('\n').map(line => `+${line}`).join('\n');
+  return [`--- ${file.file}`, `+++ ${file.file}`, before, after].filter(Boolean).join('\n');
+}
+
+function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
+  const { colors } = useTheme();
+  const diff = fileDiffText(file);
+  const calculated = diffChanges(diff);
+  const additions = file.additions ?? calculated?.additions ?? 0;
+  const deletions = file.deletions ?? calculated?.deletions ?? 0;
+  return (
+    <View className="overflow-hidden rounded-md border border-border">
+      <View className="min-h-8 flex-row items-center gap-2 border-b border-border px-2.5 py-1.5">
+        <File size={13} color={colors.textTertiary} />
+        <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground">{file.file}</Text>
+        {additions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.done }}>+{additions}</Text>}
+        {deletions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.error }}>−{deletions}</Text>}
+      </View>
+      {diff && <View className="py-2"><ToolDiffBlock diff={diff} /></View>}
     </View>
   );
 }
@@ -518,14 +626,14 @@ function AssistantPart({ part, onLinkPress }: { part: TranscriptPart; onLinkPres
   const { colors } = useTheme();
   if (part.type === 'text') {
     if (!part.text.trim() || part.synthetic || part.ignored) return null;
-    return <View className="min-w-0 w-full"><MarkdownText content={part.text} onLinkPress={({ url }) => onLinkPress(url)} /></View>;
+    return <View className="min-w-0 w-full"><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'reasoning') {
     if (!part.text.trim()) return null;
     return (
       <View className="w-full border-l border-border pl-3 py-0.5">
         <Text className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Thinking</Text>
-        <MarkdownText content={part.text} onLinkPress={({ url }) => onLinkPress(url)} />
+        <MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} />
       </View>
     );
   }
@@ -540,7 +648,7 @@ function AssistantPart({ part, onLinkPress }: { part: TranscriptPart; onLinkPres
     );
   }
   if (part.type === 'plan') {
-    return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} onLinkPress={({ url }) => onLinkPress(url)} /></View>;
+    return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'notice') {
     return (
@@ -709,21 +817,38 @@ function TurnMeta({ turn }: { turn: TranscriptTurn }) {
 }
 
 function ChangedFiles({ turn }: { turn: TranscriptTurn }) {
+  const { colors } = useTheme();
+  const [expanded, setExpanded] = useState(false);
   if (!turn.diffs.length) return null;
   const additions = turn.diffs.reduce((total, diff) => total + (diff.additions || 0), 0);
   const deletions = turn.diffs.reduce((total, diff) => total + (diff.deletions || 0), 0);
   return (
     <View className="mt-2 border-t border-border pt-2">
-      <Text className="text-[11px] font-medium text-foreground">Changed {turn.diffs.length} file{turn.diffs.length === 1 ? '' : 's'}</Text>
-      <Text className="mt-0.5 font-mono text-[10px] text-muted-foreground">+{additions} −{deletions}</Text>
-      {turn.diffs.slice(0, 10).map(diff => <Text key={diff.file} numberOfLines={1} className="mt-1 font-mono text-[10px] text-muted-foreground">{diff.file}</Text>)}
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-8 flex-row items-center" onPress={() => setExpanded(value => !value)}>
+        <Text className="text-[11px] font-medium text-foreground">Changed {turn.diffs.length} file{turn.diffs.length === 1 ? '' : 's'}</Text>
+        <Text className="ml-2 font-mono text-[10px]" style={{ color: colors.done }}>+{additions}</Text>
+        <Text className="ml-1 font-mono text-[10px]" style={{ color: colors.error }}>−{deletions}</Text>
+        {expanded
+          ? <ChevronDown className="ml-auto" size={14} color={colors.textTertiary} />
+          : <ChevronRight className="ml-auto" size={14} color={colors.textTertiary} />}
+      </Pressable>
+      {expanded && <View className="mt-1 gap-2">{turn.diffs.map(diff => <ToolFileDiffBlock key={diff.file} file={diff} />)}</View>}
     </View>
   );
 }
 
-const TranscriptTurnView = memo(function TranscriptTurnRow({ turn, onLinkPress }: { turn: TranscriptTurn; onLinkPress: (url: string) => void }) {
+const TranscriptTurnView = memo(function TranscriptTurnRow({
+  turn,
+  working,
+  onLinkPress,
+}: {
+  turn: TranscriptTurn;
+  working: boolean;
+  onLinkPress: (url: string) => void;
+}) {
   const { colors } = useTheme();
   const parts = useMemo(() => groupParts(turn.assistants.flatMap(message => message.parts).filter(renderablePart)), [turn.assistants]);
+  const showThinking = working && turn.status !== 'error' && !parts.length;
   return (
     <View className="w-full">
       {turn.user && <UserPrompt message={turn.user} />}
@@ -731,9 +856,7 @@ const TranscriptTurnView = memo(function TranscriptTurnRow({ turn, onLinkPress }
         {parts.map(group => group.type === 'context'
           ? <ContextToolGroup key={group.id} tools={group.tools} />
           : <AssistantPart key={group.part.id} part={group.part} onLinkPress={onLinkPress} />)}
-        {turn.status === 'working' && !parts.length && (
-          <View className="flex-row items-center gap-2 py-1"><ActivityIndicator size={13} color={colors.textTertiary} /><Text className="text-[12px] text-muted-foreground">Thinking…</Text></View>
-        )}
+        {showThinking && <ThinkingIndicator />}
         {turn.assistants.flatMap(message => message.error ? [message.error] : []).map((error, index) => (
           <View key={`error:${index}`} className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{stringify(error) || 'Agent error'}</Text></View>
         ))}
@@ -747,6 +870,7 @@ const TranscriptTurnView = memo(function TranscriptTurnRow({ turn, onLinkPress }
 export function AgentChatView({
   state,
   agent,
+  agentStatus,
   attachments,
   draft,
   queue,
@@ -771,6 +895,7 @@ export function AgentChatView({
   const draftRef = useRef(draft);
   const { inset: keyboardInset } = useKeyboardInset(composerContainer, { enabled: Platform.OS === 'android' });
   const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
+  const agentWorking = agentStatus === 'working';
 
   useEffect(() => {
     if (draft === draftRef.current) return;
@@ -784,6 +909,10 @@ export function AgentChatView({
     if (turns.length > previousCount.current && atBottom) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
     previousCount.current = turns.length;
   }, [atBottom, turns.length]);
+
+  useEffect(() => {
+    if (agentWorking && atBottom) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
+  }, [agentWorking, atBottom]);
 
   const trackScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -828,11 +957,21 @@ export function AgentChatView({
           ref={list}
           data={turns}
           keyExtractor={turn => turn.id}
-          renderItem={({ item, index }) => <View className={index === 0 ? '' : 'mt-7'}><TranscriptTurnView turn={item} onLinkPress={openTranscriptLink} /></View>}
+          renderItem={({ item, index }) => (
+            <View className={index === 0 ? '' : 'mt-7'}>
+              <TranscriptTurnView
+                turn={item}
+                working={index === turns.length - 1 && (agentWorking || item.status === 'working')}
+                onLinkPress={openTranscriptLink}
+              />
+            </View>
+          )}
           contentContainerClassName="flex-grow px-4 pb-6 pt-4"
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={state.status === 'live' ? (
+          ListEmptyComponent={state.status === 'live' && agentWorking
+            ? <ThinkingIndicator />
+            : state.status === 'live' ? (
             <View className="flex-1 items-center justify-center px-8 py-20">
               <Text className="text-center text-[14px] font-semibold text-foreground">No conversation yet</Text>
               <Text className="mt-1 max-w-[280px] text-center text-[12px] leading-[18px] text-muted-foreground">Send a message below, or switch to the terminal to continue there.</Text>

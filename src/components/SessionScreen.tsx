@@ -1163,6 +1163,7 @@ export function SessionScreen({
               <AgentChatView
                 state={chatState}
                 agent={chatAgent}
+                agentStatus={activePane.agent_status}
                 attachments={chatAttachments}
                 draft={getComposerDraft(activePane.terminal_id)}
                 queue={composerQueues.get(activePane.terminal_id) || []}

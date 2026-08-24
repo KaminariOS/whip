@@ -43,6 +43,32 @@ describe('rich text markdown normalization', () => {
     expect(normalizeRichTextMarkdown(source)).toBe(source);
   });
 
+  test('converts OpenCode inline math delimiters for the native renderer', () => {
+    const source = String.raw`Euler's identity \(e^{i\pi} + 1 = 0\) is compact.`;
+    expect(normalizeRichTextMarkdown(source)).toBe(
+      String.raw`Euler's identity $e^{i\pi} + 1 = 0$ is compact.`,
+    );
+  });
+
+  test('does not convert OpenCode math delimiters inside code spans or fences', () => {
+    const source = 'Outside \\(x^2\\).\n\nInline: `\\(not_math\\)`\n\n```tex\n\\(also_not_math\\)\n```';
+    const expected = 'Outside $x^2$.\n\nInline: `\\(not_math\\)`\n\n```tex\n\\(also_not_math\\)\n```';
+    expect(normalizeRichTextMarkdown(source)).toBe(expected);
+  });
+
+  test('keeps escaped OpenCode math delimiters literal', () => {
+    const source = String.raw`Literal \\(not math\\), math \(x\).`;
+    expect(normalizeRichTextMarkdown(source)).toBe(
+      String.raw`Literal \\(not math\\), math $x$.`,
+    );
+  });
+
+  test('keeps math-like text in HTML code elements literal', () => {
+    expect(normalizeRichTextMarkdown(String.raw`<code>\(not_math\)</code> and \(x\)`)).toBe(
+      '`\\(not_math\\)` and $x$',
+    );
+  });
+
   test('does not crash on invalid numeric HTML entities', () => {
     expect(normalizeRichTextMarkdown('<p>Bad: &#999999999;</p>')).toBe(
       'Bad: &#999999999;',

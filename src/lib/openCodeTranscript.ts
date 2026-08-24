@@ -318,7 +318,8 @@ export function applyOpenCodeEvents(
   for (const rowValue of value) {
     const row = object(rowValue);
     const sequence = finite(row?.seq);
-    const eventType = string(row?.type);
+    const rawEventType = string(row?.type);
+    const eventType = rawEventType?.replace(/\.\d+$/, '');
     const data = decodedObject(row?.data);
     if (!row || sequence === undefined || !Number.isSafeInteger(sequence) || sequence <= cursor || !eventType || !data) {
       throw new Error('OpenCode returned invalid session events');

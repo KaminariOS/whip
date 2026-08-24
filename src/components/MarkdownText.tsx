@@ -14,9 +14,10 @@ interface Props {
   containerStyle?: ViewStyle | TextStyle;
   onLinkPress?: (link: { url: string }) => void;
   selectable?: boolean;
+  variant?: 'default' | 'transcript';
 }
 
-export function useWhipMarkdownStyle(): MarkdownStyle {
+export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): MarkdownStyle {
   const { colors } = useTheme();
   return useMemo<MarkdownStyle>(
     () => ({
@@ -167,8 +168,21 @@ export function useWhipMarkdownStyle(): MarkdownStyle {
         checkmarkColor: colors.onPrimary,
         checkedTextColor: colors.textSecondary,
       },
+      ...(variant === 'transcript' ? {
+        math: {
+          color: colors.text,
+          backgroundColor: 'transparent',
+          fontSize: 17,
+          padding: 4,
+          marginBottom: 10,
+          textAlign: 'center' as const,
+        },
+        inlineMath: {
+          color: colors.text,
+        },
+      } : {}),
     }),
-    [colors],
+    [colors, variant],
   );
 }
 
@@ -177,8 +191,9 @@ export function MarkdownText({
   containerStyle,
   onLinkPress,
   selectable = true,
+  variant = 'default',
 }: Props) {
-  const markdownStyle = useWhipMarkdownStyle();
+  const markdownStyle = useWhipMarkdownStyle(variant);
   const markdown = useMemo(() => normalizeRichTextMarkdown(content), [content]);
   return (
     <EnrichedMarkdownText
@@ -187,6 +202,7 @@ export function MarkdownText({
       flavor="github"
       markdown={markdown}
       markdownStyle={markdownStyle}
+      md4cFlags={{ latexMath: true }}
       onLinkPress={onLinkPress}
       selectable={selectable}
     />

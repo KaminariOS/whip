@@ -14,10 +14,10 @@ const initial = {
   messages: [user('msg_u1', 'First', 1), assistant('msg_a1', 'msg_u1', 'One', 2)],
 };
 const events = [
-  { seq: 3, type: 'message.updated', data: { sessionID: session, info: user('msg_u2', 'Second', 3).info } },
-  { seq: 4, type: 'message.part.updated', data: { sessionID: session, part: { ...user('msg_u2', 'Second', 3).parts[0], sessionID: session, messageID: 'msg_u2' }, time: 3 } },
-  { seq: 5, type: 'message.updated', data: { sessionID: session, info: assistant('msg_a2', 'msg_u2', 'Two', 4).info } },
-  { seq: 6, type: 'message.part.updated', data: { sessionID: session, part: { ...assistant('msg_a2', 'msg_u2', 'Two', 4).parts[0], sessionID: session, messageID: 'msg_a2' }, time: 4 } },
+  { seq: 3, type: 'message.updated.1', data: { sessionID: session, info: user('msg_u2', 'Second', 3).info } },
+  { seq: 4, type: 'message.part.updated.1', data: { sessionID: session, part: { ...user('msg_u2', 'Second', 3).parts[0], sessionID: session, messageID: 'msg_u2' }, time: 3 } },
+  { seq: 5, type: 'message.updated.1', data: { sessionID: session, info: assistant('msg_a2', 'msg_u2', 'Two', 4).info } },
+  { seq: 6, type: 'message.part.updated.1', data: { sessionID: session, part: { ...assistant('msg_a2', 'msg_u2', 'Two', 4).parts[0], sessionID: session, messageID: 'msg_a2' }, time: 4 } },
 ];
 
 async function flush(): Promise<void> {

@@ -266,6 +266,11 @@ export function projectTranscriptTurns(messages: readonly TranscriptMessage[]): 
     }
     latest = turn;
     turn.assistants.push(message);
+    if (message.summary?.diffs.length) {
+      const diffs = new Map(turn.diffs.map(diff => [diff.file, diff]));
+      for (const diff of message.summary.diffs) diffs.set(diff.file, diff);
+      turn.diffs = [...diffs.values()];
+    }
     turn.startedAt ??= message.createdAt;
     if (message.completedAt !== undefined) {
       turn.completedAt = Math.max(turn.completedAt || 0, message.completedAt);

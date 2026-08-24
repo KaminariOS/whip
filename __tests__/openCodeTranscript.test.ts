@@ -89,7 +89,7 @@ test('applies official durable OpenCode events incrementally, including removals
   const result = applyOpenCodeEvents(before, [
     {
       seq: 8,
-      type: 'message.part.updated',
+      type: 'message.part.updated.1',
       data: JSON.stringify({
         sessionID: 'ses_abc123', time: 1_700_000_000_400,
         part: {
@@ -100,7 +100,7 @@ test('applies official durable OpenCode events incrementally, including removals
     },
     {
       seq: 9,
-      type: 'message.part.removed',
+      type: 'message.part.removed.1',
       data: { sessionID: 'ses_abc123', messageID: 'msg_assistant', partID: 'prt_reasoning' },
     },
   ], 7);
