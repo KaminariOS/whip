@@ -1,10 +1,10 @@
+import { CircleAlert } from 'lucide-react-native';
 import { Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import type { ChatAgent } from '../lib/agentChatSession';
 import { useTheme } from '../theme';
-import { AgentBrandIcon } from './AgentBrandIcon';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -45,7 +45,7 @@ export function AgentIdentityWarningSheet({ onClose, warning }: Props) {
           style={{ paddingBottom: Math.max(16, bottom) }}>
           <View className="flex-row items-start px-1">
             <View className="size-11 items-center justify-center rounded-full bg-primary/15">
-              <AgentBrandIcon agent={warning?.agent || 'codex'} color={colors.primary} size={22} />
+              <CircleAlert color={colors.primary} size={22} />
             </View>
             <View className="min-w-0 flex-1 pl-3">
               <Text className="text-[19px] font-bold leading-6">{warning?.title}</Text>

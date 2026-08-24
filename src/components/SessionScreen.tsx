@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
+import { BookOpen, ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -65,7 +65,6 @@ import {
   type TerminalScreenHandle,
 } from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
-import { AgentBrandIcon } from './AgentBrandIcon';
 
 interface Props {
   hostSessionId: string;
@@ -982,7 +981,7 @@ export function SessionScreen({
                   ? <AnimatedAgentStatusGlyph status="working" color={colors.primary} size={Platform.OS === 'ios' ? 21 : 17} />
                   : chatVisible
                   ? <SquareTerminal size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />
-                  : <AgentBrandIcon agent={activeChatAgent} size={Platform.OS === 'ios' ? 23 : 19} color={colors.text} />}
+                  : <BookOpen size={Platform.OS === 'ios' ? 23 : 19} color={colors.text} />}
               </Button>
             )}
           </>
