@@ -126,9 +126,9 @@ function WorkspacePill({
         {aggregate ? (
           <Layers3 size={isIpad ? 19 : 15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
         ) : (
-          <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'max-w-[140px] text-[14px] leading-5', activeTextClass)}>{label}</Text>
+          <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'max-w-[160px] text-[17px] leading-6', activeTextClass)}>{label}</Text>
         )}
-        <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', isIpad && 'text-[11px] leading-5', activeTextClass)}>{count}</Text>
+        <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', isIpad && 'text-[13px] leading-6', activeTextClass)}>{count}</Text>
       </Button>
       {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className={cn('h-[42px] w-7 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'w-8')} disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={isIpad ? 18 : 14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
     </View>
