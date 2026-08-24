@@ -926,8 +926,6 @@ const terminalSessionHtml = `<!doctype html>
           touch.selection = selection;
           setInteractiveSelection(selection.start, selection.end);
           showToolbar(touch.x, touch.y);
-        } else if (!offlineScrollback) {
-          send({ type: 'clipboard-read' });
         }
       }, 420);
     }, { capture: true, passive: false });
