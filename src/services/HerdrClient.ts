@@ -42,6 +42,8 @@ type HerdrApiParams<Method extends HerdrApiMethod> = Extract<
   { method: Method }
 >['params'];
 
+export const CODEX_INTEGRATION_INSTALL_TIMEOUT_MS = 30_000;
+
 export { clearHerdrSocketPathCache } from './herdrSocketPathCache';
 
 export function isUnavailableSshChannel(error: unknown): boolean {
@@ -399,7 +401,20 @@ export class HerdrClient {
   /** Explicit user-approved host integration setup; never called during connect. */
   async installCodexIntegration(): Promise<void> {
     const command = `${shellQuote(this.requireProfile().herdrCommand.trim() || 'herdr')} integration install codex`;
-    await this.requireClient().execute(this.loginShellCommand(command));
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.requireClient().execute(this.loginShellCommand(command)),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error('Codex integration installation timed out after 30 seconds. It will not be retried automatically.')),
+            CODEX_INTEGRATION_INSTALL_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   /** Lazily check setup only after the user requests Chat. */

@@ -1,7 +1,7 @@
 import SSHClient from 'react-native-whip-ssh';
 
 import { codexChatAction, codexMissingIdentityAction, parseCodexIntegrationStatus } from '../src/lib/codexSession';
-import { HerdrClient } from '../src/services/HerdrClient';
+import { CODEX_INTEGRATION_INSTALL_TIMEOUT_MS, HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile, PaneInfo } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => ({
@@ -39,6 +39,33 @@ describe('Codex integration installation flow', () => {
     await client.installCodexIntegration();
     expect(native.execute).toHaveBeenCalledTimes(1);
     expect(jest.mocked(native.execute).mock.calls[0][0]).toContain('integration install codex');
+  });
+
+  test('times out a stalled install once without retrying it', async () => {
+    jest.useFakeTimers();
+    try {
+      const native = {
+        execute: jest.fn(() => new Promise<string>(() => undefined)),
+        off: jest.fn(),
+        disconnect: jest.fn(),
+      } as unknown as SSHClient;
+      jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
+      const client = new HerdrClient();
+      await client.connect(profile);
+
+      let installError: unknown;
+      const install = client.installCodexIntegration().catch(error => {
+        installError = error;
+      });
+      await jest.advanceTimersByTimeAsync(CODEX_INTEGRATION_INSTALL_TIMEOUT_MS);
+      await install;
+      expect(installError).toEqual(expect.objectContaining({
+        message: expect.stringContaining('timed out after 30 seconds'),
+      }));
+      expect(native.execute).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test.each([

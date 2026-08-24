@@ -1,5 +1,5 @@
 import { SquareTerminal, TriangleAlert } from 'lucide-react-native';
-import { ActivityIndicator, Modal, Pressable, View } from 'react-native';
+import { Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -17,7 +17,6 @@ type InstallableCodexIntegrationStatus = Extract<
 >;
 
 interface Props {
-  busy: boolean;
   onCancel: () => void;
   onInstall: () => void;
   status: InstallableCodexIntegrationStatus | null;
@@ -45,7 +44,7 @@ function promptCopy(status: InstallableCodexIntegrationStatus | null): {
   };
 }
 
-export function CodexIntegrationInstallSheet({ busy, onCancel, onInstall, status }: Props) {
+export function CodexIntegrationInstallSheet({ onCancel, onInstall, status }: Props) {
   const { bottom } = useSafeAreaInsets();
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -54,9 +53,7 @@ export function CodexIntegrationInstallSheet({ busy, onCancel, onInstall, status
   return (
     <Modal
       animationType="fade"
-      onRequestClose={() => {
-        if (!busy) onCancel();
-      }}
+      onRequestClose={onCancel}
       statusBarTranslucent
       transparent
       visible={status !== null}>
@@ -64,7 +61,6 @@ export function CodexIntegrationInstallSheet({ busy, onCancel, onInstall, status
         <Pressable
           accessibilityLabel={t('common.cancel')}
           className="absolute inset-0 bg-black/55"
-          disabled={busy}
           onPress={onCancel}
         />
         <GlassSurface
@@ -100,16 +96,13 @@ export function CodexIntegrationInstallSheet({ busy, onCancel, onInstall, status
           <View className="mt-5 flex-row gap-2.5">
             <Button
               className="h-12 flex-1 rounded-full"
-              disabled={busy}
               variant="secondary"
               onPress={hapticPress(onCancel)}>
               <Text>{t('common.cancel')}</Text>
             </Button>
             <Button
               className="h-12 flex-1 rounded-full"
-              disabled={busy}
               onPress={hapticPress(onInstall)}>
-              {busy ? <ActivityIndicator color={colors.onPrimary} size="small" /> : null}
               <Text>Install</Text>
             </Button>
           </View>

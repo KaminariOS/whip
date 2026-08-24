@@ -50,6 +50,7 @@ import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import { sessionTabGlassStyle, sessionTabStatusColor, statusColor, useTheme } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
+import { AgentIdentityWarningSheet, type AgentIdentityWarning } from './AgentIdentityWarningSheet';
 import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSheet';
 import { CodexIntegrationInstallSheet } from './CodexIntegrationInstallSheet';
 import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
@@ -174,6 +175,8 @@ export function SessionScreen({
   const [chatAttachments, setChatAttachments] = useState<string[]>([]);
   const [chatSending, setChatSending] = useState(false);
   const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<string | null>(null);
+  const [agentIdentityWarning, setAgentIdentityWarning] = useState<AgentIdentityWarning | null>(null);
+  const [codexIntegrationInstalling, setCodexIntegrationInstalling] = useState(false);
   const [codexIntegrationPrompt, setCodexIntegrationPrompt] = useState<{
     paneId: string;
     status: Extract<CodexIntegrationStatus, 'not-installed' | 'outdated' | 'needs-repair'>;
@@ -195,6 +198,8 @@ export function SessionScreen({
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
   const previousChatAgentStatus = useRef<PaneInfo['agent_status'] | undefined>(undefined);
+  const codexIntegrationInstallingRef = useRef(false);
+  const codexIntegrationInstallRequestRef = useRef(0);
 
   useEffect(() => () => cancelAnimation(tabSwipeTranslateX), [tabSwipeTranslateX]);
 
@@ -350,6 +355,10 @@ export function SessionScreen({
     setChatAttachments([]);
     setChatSending(false);
     setPendingIntegrationPaneId(null);
+    setAgentIdentityWarning(null);
+    codexIntegrationInstallRequestRef.current += 1;
+    codexIntegrationInstallingRef.current = false;
+    setCodexIntegrationInstalling(false);
     setCodexIntegrationPrompt(null);
   }, [hostSessionId]);
 
@@ -428,10 +437,11 @@ export function SessionScreen({
       setChatKey(key);
       setChatState(codexTranscriptService.getState(key));
     } else {
-      Alert.alert(
-        'Restart Codex to enable Chat',
-        'The Herdr Codex integration is installed, but this already-running Codex process has no native session identity. Restart Codex in this pane, then tap Chat again.',
-      );
+      setAgentIdentityWarning({
+        agent: 'codex',
+        title: 'Restart Codex to enable Chat',
+        message: 'The Herdr Codex integration is installed, but this already-running Codex process has no native session identity. Restart Codex in this pane, then tap Chat again.',
+      });
     }
   }, [client, hostSessionId, pendingIntegrationPaneId, snapshot.panes]);
 
@@ -739,18 +749,28 @@ export function SessionScreen({
   };
 
   const installCodexIntegration = async () => {
-    if (!codexIntegrationPrompt) return;
+    if (!codexIntegrationPrompt || codexIntegrationInstallingRef.current) return;
     const { paneId } = codexIntegrationPrompt;
-    setBusy(true);
+    const request = codexIntegrationInstallRequestRef.current + 1;
+    codexIntegrationInstallRequestRef.current = request;
+    codexIntegrationInstallingRef.current = true;
+    setCodexIntegrationPrompt(null);
+    setCodexIntegrationInstalling(true);
     try {
       await client.installCodexIntegration();
-      setCodexIntegrationPrompt(null);
+      if (request !== codexIntegrationInstallRequestRef.current) return;
       await onRefresh();
+      if (request !== codexIntegrationInstallRequestRef.current) return;
       setPendingIntegrationPaneId(paneId);
     } catch (error) {
-      Alert.alert('Could not install Codex integration', String(error));
+      if (request === codexIntegrationInstallRequestRef.current) {
+        Alert.alert('Could not install Codex integration', String(error));
+      }
     } finally {
-      setBusy(false);
+      if (request === codexIntegrationInstallRequestRef.current) {
+        codexIntegrationInstallingRef.current = false;
+        setCodexIntegrationInstalling(false);
+      }
     }
   };
 
@@ -760,10 +780,11 @@ export function SessionScreen({
     if (agent === 'opencode') {
       const sessionId = openCodeSessionIdForPane(activePane);
       if (!sessionId) {
-        Alert.alert(
-          'OpenCode identity unavailable',
-          'This OpenCode process has not reported a native session ID. Ensure the Herdr OpenCode integration is current, then restart OpenCode and try Chat again.',
-        );
+        setAgentIdentityWarning({
+          agent: 'opencode',
+          title: 'OpenCode identity unavailable',
+          message: 'This OpenCode process has not reported a native session ID. Ensure the Herdr OpenCode integration is current, then restart OpenCode and try Chat again.',
+        });
         return;
       }
       const key = openCodeTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
@@ -816,18 +837,14 @@ export function SessionScreen({
 
   const submitChat = async (text: string): Promise<boolean> => {
     if (!activePane || chatSending) return false;
-    const submission = composeTerminalSubmission(text, chatAttachments);
-    if (!submission.pasteEvents.length) return false;
+    if (!composeTerminalSubmission(text, chatAttachments).pasteEvents.length) return false;
     setChatSending(true);
     try {
-      await client.submitPastesToPane(activePane.pane_id, submission.pasteEvents);
-      onTerminalHistoryEntry(submission.historyEntry);
+      const queued = terminalScreen.current?.enqueueComposerMessage(text, chatAttachments) || false;
+      if (!queued) return false;
       setChatAttachments([]);
       onInteraction(activePane.tab_id);
       return true;
-    } catch (error) {
-      Alert.alert('Could not send message', String(error));
-      return false;
     } finally {
       setChatSending(false);
     }
@@ -1058,6 +1075,7 @@ export function SessionScreen({
                 agent={chatAgent}
                 attachments={chatAttachments}
                 draft={getComposerDraft(activePane.terminal_id)}
+                queue={composerQueues.get(activePane.terminal_id) || []}
                 sending={chatSending}
                 onOpenTerminal={closeAgentChat}
                 onAttach={openChatAttachments}
@@ -1127,12 +1145,13 @@ export function SessionScreen({
           }}
         />
         <CodexIntegrationInstallSheet
-          busy={busy}
           status={codexIntegrationPrompt?.status || null}
-          onCancel={() => {
-            if (!busy) setCodexIntegrationPrompt(null);
-          }}
+          onCancel={() => setCodexIntegrationPrompt(null)}
           onInstall={installCodexIntegration}
+        />
+        <AgentIdentityWarningSheet
+          warning={agentIdentityWarning}
+          onClose={() => setAgentIdentityWarning(null)}
         />
         <Modal
           animationType="slide"
