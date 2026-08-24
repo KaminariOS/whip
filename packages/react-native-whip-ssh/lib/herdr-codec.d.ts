@@ -9,6 +9,7 @@ export function hello(
   rows: number,
   cellWidth: number,
   cellHeight: number,
+  terminalAttachLaunchMode?: 1 | 2,
 ): ArrayBuffer;
 export function input(text: string): ArrayBuffer;
 export function resize(

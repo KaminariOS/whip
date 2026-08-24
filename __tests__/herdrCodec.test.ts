@@ -18,6 +18,9 @@ describe('private Herdr codec', () => {
     expect(bytes(hello(20, 80, 24, 8, 16))).toEqual([
       0, 20, 80, 24, 8, 16, 1, 0, 1,
     ]);
+    expect(bytes(hello(20, 80, 24, 8, 16, 2))).toEqual([
+      0, 20, 80, 24, 8, 16, 1, 0, 2,
+    ]);
     expect(bytes(input('hi'))).toEqual([1, 2, 104, 105]);
     expect(bytes(attach('t1', true))).toEqual([5, 2, 116, 49, 1]);
     expect(bytes(resize(80, 24, 8, 16))).toEqual([3, 80, 24, 8, 16]);
@@ -51,6 +54,9 @@ describe('private Herdr codec', () => {
   it('rejects unsupported protocol versions', () => {
     expect(() => hello(16, 80, 24, 8, 16)).toThrow(
       'client supports 17 through 20',
+    );
+    expect(() => hello(20, 80, 24, 8, 16, 3 as 1)).toThrow(
+      'unsupported Herdr terminal attach launch mode 3',
     );
   });
 });

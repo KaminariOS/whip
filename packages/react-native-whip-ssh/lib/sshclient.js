@@ -114,7 +114,15 @@ class SSHClient extends BaseSSHClient {
     return privateNativeClient().pairHost(code, publicKey, deviceName);
   }
 
-  async _openHerdrBridge(socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx) {
+  async _openHerdrBridge(
+    socketPath,
+    protocol,
+    columns,
+    rows,
+    cellWidthPx,
+    cellHeightPx,
+    terminalAttachLaunchMode = 1,
+  ) {
     let resolveWelcome;
     let rejectWelcome;
     let settled = false;
@@ -173,7 +181,14 @@ class SSHClient extends BaseSSHClient {
       },
     );
     try {
-      await state.channel.write(hello(protocol, columns, rows, cellWidthPx, cellHeightPx));
+      await state.channel.write(hello(
+        protocol,
+        columns,
+        rows,
+        cellWidthPx,
+        cellHeightPx,
+        terminalAttachLaunchMode,
+      ));
       let timer;
       try {
         await Promise.race([
@@ -219,6 +234,7 @@ class SSHClient extends BaseSSHClient {
     cellWidthPx,
     cellHeightPx,
     handler,
+    terminalAttachLaunchMode = 1,
     callback,
   ) {
     const active = this._herdrBridges.get(terminalId);
@@ -237,7 +253,13 @@ class SSHClient extends BaseSSHClient {
       }
       if (!state) {
         state = await this._openHerdrBridge(
-          socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx,
+          socketPath,
+          protocol,
+          columns,
+          rows,
+          cellWidthPx,
+          cellHeightPx,
+          terminalAttachLaunchMode,
         );
       }
       state.terminalId = terminalId;

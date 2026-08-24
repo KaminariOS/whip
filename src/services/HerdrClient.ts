@@ -4,7 +4,7 @@ import { normalizePrivateKey } from '../lib/privateKey';
 import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
 import { uniqueRemoteAttachmentName } from '../lib/attachmentPaste';
 import { createSecureId } from '../lib/secureId';
-import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
+import { assertHerdrProtocolCompatible, herdrTerminalAttachLaunchMode } from '../lib/herdrProtocol';
 import { errorCode } from '../lib/connectionErrors';
 import { apiEvent, apiErrorMessage, apiRequestLine, eventsSubscribeRequest, HerdrApiBridgeDecoder, type HerdrApiEvent, type HerdrApiMessage, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
@@ -1199,7 +1199,18 @@ export class HerdrClient {
       kittyKeyboardReportAll: false,
     });
     try {
-      await this.requireClient().startHerdrBridge(await this.clientSocketPath(), server.protocol, terminalId, true, size.columns, size.rows, size.cellWidthPx, size.cellHeightPx, event => this.handleHerdrBridgeEvent(terminalId, generation, event));
+      await this.requireClient().startHerdrBridge(
+        await this.clientSocketPath(),
+        server.protocol,
+        terminalId,
+        true,
+        size.columns,
+        size.rows,
+        size.cellWidthPx,
+        size.cellHeightPx,
+        event => this.handleHerdrBridgeEvent(terminalId, generation, event),
+        herdrTerminalAttachLaunchMode(server.version),
+      );
     } catch (error) {
       if (this.terminalBridgeGenerations.get(terminalId) === generation) {
         this.terminalBridgeGenerations.delete(terminalId);

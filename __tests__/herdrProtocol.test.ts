@@ -4,6 +4,7 @@ import {
   HERDR_PROTOCOL_VERSIONS,
   HERDR_PROTOCOL_VERSIONS_LABEL,
   HerdrProtocolMismatchError,
+  herdrTerminalAttachLaunchMode,
   isHerdrProtocolMismatch,
 } from '../src/lib/herdrProtocol';
 
@@ -30,5 +31,15 @@ describe('Herdr protocol compatibility', () => {
     }
     expect(isHerdrProtocolMismatch(error)).toBe(true);
     expect(isHerdrProtocolMismatch(new Error('connection lost'))).toBe(false);
+  });
+
+  test('uses the shifted terminal attach launch mode for Herdr 0.8.2 and newer', () => {
+    expect(herdrTerminalAttachLaunchMode('0.7.5')).toBe(1);
+    expect(herdrTerminalAttachLaunchMode('0.8.0')).toBe(1);
+    expect(herdrTerminalAttachLaunchMode('0.8.2')).toBe(2);
+    expect(herdrTerminalAttachLaunchMode('0.8.2-preview.1')).toBe(2);
+    expect(herdrTerminalAttachLaunchMode('0.9.0')).toBe(2);
+    expect(herdrTerminalAttachLaunchMode(undefined)).toBe(1);
+    expect(herdrTerminalAttachLaunchMode('development')).toBe(1);
   });
 });

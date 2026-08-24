@@ -28,12 +28,12 @@ const profile: ConnectionProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-function bridgeClient(protocol = 17) {
+function bridgeClient(protocol = 17, version = '0.7.4') {
   const requestHerdrApi = jest.fn(async (_socketPath: string, requestLine: string) => {
     const request = JSON.parse(requestLine);
     return JSON.stringify({
       id: request.id,
-      result: { type: 'pong', version: '0.7.4', protocol },
+      result: { type: 'pong', version, protocol },
     });
   });
   const native = {
@@ -172,6 +172,19 @@ describe('terminal bridge channels', () => {
       full: false,
       bytes: '\u0007\u0007\u0007',
     });
+  });
+
+  test('uses Herdr 0.8.2 terminal attach launch mode without changing the bridge handler position', async () => {
+    const native = bridgeClient(20, '0.8.2');
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await client.openTerminal('term-1', jest.fn());
+
+    const call = jest.mocked(native.startHerdrBridge).mock.calls[0];
+    expect(typeof call[8]).toBe('function');
+    expect(call[9]).toBe(2);
   });
 
   test('ignores Herdr UI mouse capture and forwards Kitty keyboard mode changes', async () => {

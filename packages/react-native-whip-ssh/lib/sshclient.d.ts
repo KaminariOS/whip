@@ -107,6 +107,7 @@ export default class SSHClient extends BaseSSHClient {
     cellWidthPx: number,
     cellHeightPx: number,
     handler: (event: HerdrBridgeEvent) => void,
+    terminalAttachLaunchMode?: 1 | 2,
     callback?: CallbackFunction<void>,
   ): Promise<void>;
   herdrBridgeInput(terminalId: string, text: string): Promise<void>;

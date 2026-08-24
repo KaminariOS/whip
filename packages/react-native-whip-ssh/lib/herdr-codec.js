@@ -126,8 +126,11 @@ function payload(encode) {
   return encoder.finish();
 }
 
-export function hello(protocol, columns, rows, cellWidth, cellHeight) {
+export function hello(protocol, columns, rows, cellWidth, cellHeight, terminalAttachLaunchMode = 1) {
   checkProtocol(protocol);
+  if (terminalAttachLaunchMode !== 1 && terminalAttachLaunchMode !== 2) {
+    throw new Error(`unsupported Herdr terminal attach launch mode ${terminalAttachLaunchMode}`);
+  }
   return payload(encoder => {
     encoder.unsigned(0);
     encoder.unsigned(protocol);
@@ -137,7 +140,7 @@ export function hello(protocol, columns, rows, cellWidth, cellHeight) {
     encoder.unsigned(cellHeight);
     encoder.unsigned(1); // TerminalAnsi
     encoder.unsigned(0); // Server keybindings
-    encoder.unsigned(1); // TerminalAttach
+    encoder.unsigned(terminalAttachLaunchMode);
   });
 }
 
