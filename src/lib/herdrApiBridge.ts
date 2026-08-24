@@ -1,4 +1,5 @@
 import type { AgentInfo, PaneInfo, PaneLayoutSnapshot, TabInfo, WorkspaceInfo } from '../types';
+import { decodeHerdrEvent, type HerdrEvent } from './herdrEvents';
 
 export interface HerdrApiRequest {
   id: string;
@@ -15,10 +16,7 @@ export interface HerdrApiMessage {
   data?: unknown;
 }
 
-export interface HerdrApiEvent {
-  event: string;
-  data: Record<string, unknown>;
-}
+export type HerdrApiEvent = HerdrEvent;
 
 export interface SessionSnapshot {
   version: string;
@@ -99,16 +97,10 @@ export function apiErrorMessage(message: HerdrApiMessage): string | null {
 /** Accepts Herdr's direct event envelope and the legacy wrapped event shape. */
 export function apiEvent(message: HerdrApiMessage): HerdrApiEvent | null {
   if (typeof message.event === 'string') {
-    return {
-      event: message.event,
-      data: isRecord(message.data) ? message.data : {},
-    };
+    return decodeHerdrEvent(message.event, message.data);
   }
   if (isRecord(message.event) && typeof message.event.event === 'string') {
-    return {
-      event: message.event.event,
-      data: isRecord(message.event.data) ? message.event.data : {},
-    };
+    return decodeHerdrEvent(message.event.event, message.event.data);
   }
   return null;
 }

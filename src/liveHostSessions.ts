@@ -1,5 +1,5 @@
 import type { TerminalSessionsState } from './terminalSessions';
-import { agentFromStatusEvent, agentStatusFromEvent } from './lib/agentStatusEvents';
+import { agentFromStatusEvent, type AgentStatusUpdate } from './lib/agentStatusEvents';
 import type {
   AgentStatus,
   HerdrSnapshot,
@@ -341,11 +341,8 @@ export function applyLiveHostAgentStatus(
   state: LiveHostSessionsState,
   sessionId: string,
   paneId: string,
-  data: Record<string, unknown>,
+  data: AgentStatusUpdate,
 ): LiveHostSessionsState {
-  const agentStatus = agentStatusFromEvent(data.agent_status);
-  if (!agentStatus) return state;
-
   return updateSession(state, sessionId, session => {
     const paneIndex = session.snapshot.panes.findIndex(pane => pane.pane_id === paneId);
     if (paneIndex < 0) return session;
@@ -353,14 +350,14 @@ export function applyLiveHostAgentStatus(
     const currentPane = session.snapshot.panes[paneIndex];
     const updatedPane = paneFromAgentStatusEvent(
       currentPane,
-      agentStatus,
+      data.agent_status,
       data,
     );
     const panes = [...session.snapshot.panes];
     panes[paneIndex] = updatedPane;
     const agents = session.snapshot.agents.map(agent => {
       if (agent.pane_id !== paneId) return agent;
-      return agentFromStatusEvent(agent, data) ?? agent;
+      return agentFromStatusEvent(agent, data);
     });
     const tabStatuses: AgentStatus[] = [];
     const workspaceStatuses: AgentStatus[] = [];
@@ -598,21 +595,14 @@ export function aggregateAgentStatus(statuses: AgentStatus[]): AgentStatus {
 function paneFromAgentStatusEvent(
   pane: PaneInfo,
   agentStatus: AgentStatus,
-  data: Record<string, unknown>,
+  data: AgentStatusUpdate,
 ): PaneInfo {
   const next = { ...pane, agent_status: agentStatus };
   for (const field of ['agent', 'title', 'display_agent', 'custom_status'] as const) {
-    if (typeof data[field] === 'string') next[field] = data[field];
+    const value = data[field];
+    if (value !== undefined) next[field] = value;
   }
-  if (
-    data.state_labels
-    && typeof data.state_labels === 'object'
-    && !Array.isArray(data.state_labels)
-    && Object.values(data.state_labels as Record<string, unknown>)
-      .every(value => typeof value === 'string')
-  ) {
-    next.state_labels = data.state_labels as Record<string, string>;
-  }
+  if (data.state_labels) next.state_labels = data.state_labels;
   return next;
 }
 

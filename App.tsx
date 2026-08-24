@@ -52,7 +52,6 @@ import {
   foregroundUsesBriefAlerts,
   agentFromStatusEvent,
   tabNameForAgent,
-  agentStatusFromEvent,
   previousVisibleAgentStatus,
   shouldNotifyAgentTransition,
 } from './src/lib/agentStatusEvents';
@@ -166,7 +165,7 @@ import {
 } from './src/terminalSessions';
 import { useTheme } from './src/theme';
 import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, KnownHost, PaneInfo } from './src/types';
-import type { HerdrApiEvent } from './src/lib/herdrApiBridge';
+import type { HerdrEvent } from './src/lib/herdrEvents';
 import { guiFontFamilies } from './src/lib/guiFonts';
 import { terminalFontFamily } from './src/lib/terminalFonts';
 import i18n, { languageForLocale } from './src/i18n';
@@ -606,36 +605,30 @@ function AppContent() {
     runtime.eventStatus = 'opening';
     await runtime.client.openEventStream(
       paneIds,
-      (event: HerdrApiEvent) => {
+      (event: HerdrEvent) => {
         if (runtimes.current.get(sessionId) !== runtime) return;
-        const workspaceId = typeof event.data.workspace_id === 'string' ? event.data.workspace_id : undefined;
-        const tabId = typeof event.data.tab_id === 'string' ? event.data.tab_id : undefined;
-        const paneId = typeof event.data.pane_id === 'string' ? event.data.pane_id : undefined;
         if (event.event === 'workspace.focused' || event.event === 'tab.focused' || event.event === 'pane.focused') {
+          const workspaceId = event.data.workspace_id;
+          const tabId = 'tab_id' in event.data ? event.data.tab_id : undefined;
+          const paneId = 'pane_id' in event.data ? event.data.pane_id : undefined;
           setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId, tabId, paneId }));
         }
         if (event.event === 'pane.updated') {
-          const pane = event.data.pane;
-          if (pane && typeof pane === 'object' && typeof (pane as PaneInfo).pane_id === 'string') {
-            setLiveSessions(current => applyLiveHostPaneUpdate(
-              current,
-              sessionId,
-              pane as PaneInfo,
-            ));
-          }
+          setLiveSessions(current => applyLiveHostPaneUpdate(
+            current,
+            sessionId,
+            event.data.pane,
+          ));
         }
         if (event.event === 'layout.updated') {
-          const layout = event.data.layout;
-          if (layout && typeof layout === 'object' && typeof (layout as { tab_id?: unknown }).tab_id === 'string') {
-            setLiveSessions(current => applyLiveHostLayoutUpdate(
-              current,
-              sessionId,
-              layout as HerdrSnapshot['layouts'][number],
-            ));
-          }
+          setLiveSessions(current => applyLiveHostLayoutUpdate(
+            current,
+            sessionId,
+            event.data.layout,
+          ));
         }
-        if (event.event === 'pane.agent_status_changed' && paneId) {
-          const agentStatus = agentStatusFromEvent(event.data.agent_status);
+        if (event.event === 'pane.agent_status_changed') {
+          const { pane_id: paneId, agent_status: agentStatus } = event.data;
           const session = findLiveHostSession(liveSessionsRef.current, sessionId);
           const currentAgent = session?.snapshot.agents.find(agent => agent.pane_id === paneId);
           const agent = currentAgent ? agentFromStatusEvent(currentAgent, event.data) : null;
@@ -648,8 +641,7 @@ function AppContent() {
             ? foregroundUsesBriefAlerts(AppState.currentState === 'active')
             : false;
           if (
-            agentStatus
-            && agent
+            agent
             && alertsEnabledRef.current
             && shouldNotifyAgentTransition(previous, agentStatus)
           ) {
@@ -660,17 +652,19 @@ function AppContent() {
             useBriefAlert ? 'brief' : 'persistent',
             persistentAlertDurationSecondsRef.current * 1_000).catch(() => undefined);
           }
-          if (agentStatus) {
-            recordNetworkDiagnostic('info', 'agent-status-event', {
-              sessionId,
-              paneId,
-              status: agentStatus,
-            });
-            runtime.previousStatuses?.set(paneId, agentStatus);
-          }
+          recordNetworkDiagnostic('info', 'agent-status-event', {
+            sessionId,
+            paneId,
+            status: agentStatus,
+          });
+          runtime.previousStatuses?.set(paneId, agentStatus);
           setLiveSessions(current => applyLiveHostAgentStatus(current, sessionId, paneId, event.data));
         }
-        runtime.eventRefresh.schedule(event.event);
+        runtime.eventRefresh.schedule(
+          event.event === 'protocol.invalid' || event.event === 'protocol.unknown'
+            ? event.data.raw_event
+            : event.event,
+        );
       },
       reason => {
         if (runtimes.current.get(sessionId) !== runtime) return;

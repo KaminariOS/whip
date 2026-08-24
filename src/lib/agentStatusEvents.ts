@@ -1,5 +1,15 @@
 import type { AgentInfo, AgentStatus, HerdrSnapshot, TabInfo } from '../types';
 
+export interface AgentStatusUpdate {
+  agent_status: AgentStatus;
+  agent?: string;
+  title?: string;
+  display_agent?: string;
+  custom_status?: string;
+  state_change_seq?: number;
+  state_labels?: Record<string, string>;
+}
+
 const AGENT_STATUSES = new Set<AgentStatus>([
   'idle',
   'working',
@@ -66,25 +76,16 @@ export function agentNotificationTitle(
 
 export function agentFromStatusEvent(
   current: AgentInfo,
-  data: Record<string, unknown>,
-): AgentInfo | null {
-  const agentStatus = agentStatusFromEvent(data.agent_status);
-  if (!agentStatus) return null;
-
-  const next = { ...current, agent_status: agentStatus };
+  data: AgentStatusUpdate,
+): AgentInfo {
+  const next = { ...current, agent_status: data.agent_status };
   for (const field of ['agent', 'title', 'display_agent', 'custom_status'] as const) {
-    if (typeof data[field] === 'string') next[field] = data[field];
+    const value = data[field];
+    if (value !== undefined) next[field] = value;
   }
-  if (typeof data.state_change_seq === 'number' && Number.isFinite(data.state_change_seq)) {
+  if (data.state_change_seq !== undefined) {
     next.state_change_seq = data.state_change_seq;
   }
-  if (isStringRecord(data.state_labels)) next.state_labels = data.state_labels;
+  if (data.state_labels) next.state_labels = data.state_labels;
   return next;
-}
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-  return Boolean(value)
-    && typeof value === 'object'
-    && !Array.isArray(value)
-    && Object.values(value as Record<string, unknown>).every(item => typeof item === 'string');
 }

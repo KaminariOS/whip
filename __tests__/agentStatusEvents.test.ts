@@ -84,7 +84,6 @@ describe('agent status events', () => {
       state_change_seq: 42,
       state_labels: { idle: 'Ready' },
     });
-    expect(agentFromStatusEvent(agent, { agent_status: 'invalid' })).toBeNull();
   });
 
   test('uses the tab name and agent name in notification titles', () => {

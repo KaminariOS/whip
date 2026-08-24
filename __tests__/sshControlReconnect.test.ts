@@ -149,10 +149,14 @@ describe('SSH control reconnects', () => {
     fresh.emitEventData('{"herdr_android_bridge_closed":true}\n');
     expect(onClosed).not.toHaveBeenCalled();
 
-    fresh.emitEventData('{"event":"pane.agent_status_changed","data":{"pane_id":"pane-1"}}\n');
+    fresh.emitEventData('{"event":"pane.agent_status_changed","data":{"workspace_id":"space-1","pane_id":"pane-1","agent_status":"done"}}\n');
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
       event: 'pane.agent_status_changed',
-      data: { pane_id: 'pane-1' },
+      data: {
+        workspace_id: 'space-1',
+        pane_id: 'pane-1',
+        agent_status: 'done',
+      },
     }));
   });
 

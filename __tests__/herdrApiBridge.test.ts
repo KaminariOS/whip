@@ -75,10 +75,57 @@ describe('Herdr API bridge', () => {
     });
     expect(apiEvent({
       subscription_id: 'focus',
-      event: { event: 'pane.focused', data: { pane_id: 'p2' } },
+      event: { event: 'pane.focused', data: { workspace_id: 'w1', pane_id: 'p2' } },
     })).toEqual({
       event: 'pane.focused',
-      data: { pane_id: 'p2' },
+      data: { workspace_id: 'w1', pane_id: 'p2' },
+    });
+  });
+
+  it('fully decodes nested domain objects at the bridge boundary', () => {
+    const pane = {
+      pane_id: 'p1',
+      terminal_id: 'terminal-1',
+      workspace_id: 'w1',
+      tab_id: 't1',
+      focused: true,
+      agent_status: 'working',
+      revision: 7,
+    };
+    expect(apiEvent({ event: 'pane.updated', data: { pane } })).toEqual({
+      event: 'pane.updated',
+      data: { pane },
+    });
+    expect(apiEvent({
+      event: 'pane.updated',
+      data: { pane: { pane_id: 'p1' } },
+    })).toEqual({
+      event: 'protocol.invalid',
+      data: {
+        raw_event: 'pane.updated',
+        reason: 'pane.terminal_id must be a string',
+      },
+    });
+    expect(apiEvent({
+      event: 'pane.updated',
+      data: { pane: { ...pane, custom_status: null } },
+    })).toEqual({
+      event: 'protocol.invalid',
+      data: {
+        raw_event: 'pane.updated',
+        reason: 'pane.custom_status must be a string',
+      },
+    });
+  });
+
+  it('distinguishes unknown events from malformed known events', () => {
+    expect(apiEvent({ event: 'future.created', data: {} })).toEqual({
+      event: 'protocol.unknown',
+      data: { raw_event: 'future.created' },
+    });
+    expect(apiEvent({ event: 'tab.focused', data: null })).toEqual({
+      event: 'protocol.invalid',
+      data: { raw_event: 'tab.focused', reason: 'event data must be an object' },
     });
   });
 });
