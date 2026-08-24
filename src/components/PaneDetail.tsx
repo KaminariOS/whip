@@ -8,6 +8,7 @@ import type { HerdrClient } from '@/src/services/HerdrClient';
 import { colors, useTheme } from '@/src/theme';
 import type { PaneInfo } from '@/src/types';
 import { hapticPress, IconButton, StatusBadge } from './app-ui';
+import { ConfirmationPopup } from './ConfirmationPopup';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -21,10 +22,27 @@ export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }:
   const { colors: theme } = useTheme();
   const { t } = useTranslation();
   const loadedPaneId = useRef<string | null>(null);
-  const [output, setOutput] = useState(''); const [command, setCommand] = useState(''); const [label, setLabel] = useState(''); const [busy, setBusy] = useState(false);
+  const [output, setOutput] = useState('');
+  const [command, setCommand] = useState('');
+  const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
   const read = () => pane && loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) }));
 
-  useEffect(() => { if (!pane) { loadedPaneId.current = null; return; } if (loadedPaneId.current !== pane.pane_id) { loadedPaneId.current = pane.pane_id; setLabel(pane.label || ''); setOutput(''); } loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) })); }, [client, pane, t]);
+  useEffect(() => {
+    if (!pane) {
+      loadedPaneId.current = null;
+      setCloseConfirmationOpen(false);
+      return;
+    }
+    if (loadedPaneId.current !== pane.pane_id) {
+      loadedPaneId.current = pane.pane_id;
+      setLabel(pane.label || '');
+      setOutput('');
+      setCloseConfirmationOpen(false);
+    }
+    loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) }));
+  }, [client, pane, t]);
   if (!pane) return null;
 
   const run = async (action: () => Promise<void>, close = false) => { setBusy(true); try { await action(); await onChanged(); if (close) onClose(); else await read(); } catch (error) { Alert.alert(t('herd.commandFailed'), String(error)); } finally { setBusy(false); } };
@@ -41,9 +59,22 @@ export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }:
           <View className="flex-1 overflow-hidden rounded-md bg-terminal-canvas">{output ? <AnsiOutput value={output} /> : <ActivityIndicator color={colors.acid} className="flex-1" />}</View>
           <View className="mt-2 flex-row gap-1">{[['ESC', 'esc'], ['CTRL+C', 'ctrl+c'], ['TAB', 'tab'], ['↑', 'up'], ['↓', 'down'], ['ENTER', 'enter']].map(([title, key]) => <Button className="h-[34px] flex-1 rounded-sm bg-terminal-surface px-1" key={title} variant="secondary" onPress={hapticPress(() => run(() => client.sendPaneKeys(pane.pane_id, [key])))}><Text className="font-mono text-[8px] text-terminal-text">{title}</Text></Button>)}</View>
           <View className="mt-2.5 min-h-[52px] flex-row items-center rounded-full border border-border bg-card py-1 pl-3.5 pr-1.5"><Input className="h-10 flex-1 border-0 bg-transparent px-0 shadow-none" value={command} onChangeText={setCommand} placeholder={t('pane.sendPlaceholder')} /><IconButton icon={ArrowUp} accessibilityLabel={t('pane.send')} disabled={!command.trim() || busy} selected={Boolean(command.trim())} onPress={() => run(async () => { await client.runInPane(pane.pane_id, command); setCommand(''); })} /></View>
-          <Button className="mt-2 rounded-full" variant="destructive" onPress={hapticPress(() => Alert.alert(t('pane.closeTitle'), pane.label || pane.pane_id, [{ text: t('common.cancel'), style: 'cancel' }, { text: t('common.close'), style: 'destructive', onPress: () => run(() => client.closePane(pane.pane_id), true) }]))}><Icon as={Trash2} size={17} color="#FFFFFF" /><Text>{t('pane.closePane')}</Text></Button>
+          <Button className="mt-2 rounded-full" variant="destructive" onPress={hapticPress(() => setCloseConfirmationOpen(true))}><Icon as={Trash2} size={17} color="#FFFFFF" /><Text>{t('pane.closePane')}</Text></Button>
         </View>
       </KeyboardAvoidingView>
+      <ConfirmationPopup
+        busy={busy}
+        confirmLabel={t('common.close')}
+        copy={pane.label || pane.pane_id}
+        icon={Trash2}
+        title={t('pane.closeTitle')}
+        visible={closeConfirmationOpen}
+        onCancel={() => setCloseConfirmationOpen(false)}
+        onConfirm={() => {
+          setCloseConfirmationOpen(false);
+          run(() => client.closePane(pane.pane_id), true);
+        }}
+      />
     </Modal>
   );
 }

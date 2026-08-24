@@ -18,6 +18,7 @@ import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedP
 import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview } from './CodePreview';
+import { ConfirmationPopup } from './ConfirmationPopup';
 import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidPreview } from './MermaidPreview';
@@ -75,6 +76,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ directoryPath: string; entry: LsResult } | null>(null);
+  const [discardAction, setDiscardAction] = useState<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [showHiddenFiles, setShowHiddenFiles] = useState(defaultRemoteFilePreferences.showHiddenFiles);
@@ -429,10 +432,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
       action();
       return;
     }
-    Alert.alert(t('files.discardTitle'), t('files.discardCopy'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('files.discard'), style: 'destructive', onPress: action },
-    ]);
+    setDiscardAction(() => action);
   };
 
   const updatePreview = (updates: Partial<FilePreview>) => {
@@ -521,18 +521,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
   };
 
   const confirmDeleteEntry = (entry: LsResult) => {
-    const name = remoteEntryName(entry);
-    const directoryPath = path;
-    Alert.alert(t('files.deleteTitle', { name }), t(entry.isDirectory ? 'files.deleteDirectoryCopy' : 'files.deleteFileCopy'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.delete'),
-        style: 'destructive',
-        onPress: () => {
-          deleteEntry(entry, directoryPath);
-        },
-      },
-    ]);
+    setDeleteTarget({ entry, directoryPath: path });
   };
 
   const previewLoading = preview && !preview.error && (preview.gitStatus ? !preview.gitDiff : preview.kind !== 'unsupported' && (isSftpStreamPreview(preview.kind) ? !preview.sftpFileServer : !preview.cached));
@@ -920,6 +909,38 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
           </View>
         ) : null}
       </View>
+      <ConfirmationPopup
+        confirmLabel={t('files.discard')}
+        copy={t('files.discardCopy')}
+        icon={Trash2}
+        title={t('files.discardTitle')}
+        visible={discardAction !== null}
+        onCancel={() => setDiscardAction(null)}
+        onConfirm={() => {
+          const action = discardAction;
+          setDiscardAction(null);
+          action?.();
+        }}
+      />
+      <ConfirmationPopup
+        confirmLabel={t('common.delete')}
+        copy={t(deleteTarget?.entry.isDirectory ? 'files.deleteDirectoryCopy' : 'files.deleteFileCopy')}
+        detail={deleteTarget
+          ? joinRemotePath(deleteTarget.directoryPath, remoteEntryName(deleteTarget.entry))
+          : undefined}
+        detailIcon={deleteTarget?.entry.isDirectory ? Folder : FileText}
+        icon={Trash2}
+        title={t('files.deleteTitle', {
+          name: deleteTarget ? remoteEntryName(deleteTarget.entry) : '',
+        })}
+        visible={deleteTarget !== null}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          const target = deleteTarget;
+          setDeleteTarget(null);
+          if (target) deleteEntry(target.entry, target.directoryPath);
+        }}
+      />
     </Modal>
   );
 }

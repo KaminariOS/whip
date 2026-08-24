@@ -40,6 +40,7 @@ import { removeAppBackgroundImage, selectAppBackgroundImage } from '@/src/servic
 import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
 import { hapticPress, IconButton } from './app-ui';
+import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -798,10 +799,14 @@ function TerminalHistoryManager({
   const { top, bottom } = useSafeAreaInsets();
   const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleteSelection, setDeleteSelection] = useState<readonly string[] | null>(null);
   const allSelected = entries.length > 0 && selected.size === entries.length;
 
   useEffect(() => {
-    if (!visible) setSelected(new Set());
+    if (!visible) {
+      setSelected(new Set());
+      setDeleteSelection(null);
+    }
   }, [visible]);
 
   useEffect(() => {
@@ -829,22 +834,7 @@ function TerminalHistoryManager({
 
   const confirmDelete = () => {
     if (selected.size === 0) return;
-    const selectedEntries = [...selected];
-    Alert.alert(
-      t('settings.deleteHistoryTitle'),
-      t('settings.deleteHistoryCopy', { count: selectedEntries.length }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: () => {
-            onDelete(selectedEntries);
-            setSelected(new Set());
-          },
-        },
-      ],
-    );
+    setDeleteSelection([...selected]);
   };
 
   return (
@@ -925,6 +915,19 @@ function TerminalHistoryManager({
           </Button>
         </View>
       </View>
+      <ConfirmationPopup
+        confirmLabel={t('common.delete')}
+        copy={t('settings.deleteHistoryCopy', { count: deleteSelection?.length || 0 })}
+        icon={Trash2}
+        title={t('settings.deleteHistoryTitle')}
+        visible={deleteSelection !== null}
+        onCancel={() => setDeleteSelection(null)}
+        onConfirm={() => {
+          if (deleteSelection) onDelete(deleteSelection);
+          setDeleteSelection(null);
+          setSelected(new Set());
+        }}
+      />
     </Modal>
   );
 }

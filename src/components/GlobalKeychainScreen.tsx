@@ -11,6 +11,7 @@ import { deleteGlobalSshKey, saveGlobalSshKey } from '@/src/services/globalSshKe
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader } from './app-ui';
+import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -36,6 +37,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
   const [keys, setKeys] = useState(initialKeys);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<GlobalSshKeyMaterial | null>(null);
   const [name, setName] = useState('');
   const [privateKey, setPrivateKey] = useState('');
   const [passphrase, setPassphrase] = useState('');
@@ -113,20 +115,21 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
     }
   };
   const confirmDelete = (key: GlobalSshKeyMaterial) => {
-    Alert.alert(t('keychain.deleteTitle', { name: key.name }), t('keychain.deleteCopy'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.remove'),
-        style: 'destructive',
-        onPress: () => {
-          setBusy(true);
-          deleteGlobalSshKey(keys, key.id)
-            .then(updateKeys)
-            .catch(error => Alert.alert(t('keychain.deleteError'), String(error)))
-            .finally(() => setBusy(false));
-        },
-      },
-    ]);
+    setDeleteTarget(key);
+  };
+
+  const deleteConfirmedKey = async () => {
+    if (!deleteTarget || busy) return;
+    setBusy(true);
+    try {
+      updateKeys(await deleteGlobalSshKey(keys, deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (error) {
+      setDeleteTarget(null);
+      Alert.alert(t('keychain.deleteError'), String(error));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -202,6 +205,18 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
           )}
         </View>
       </ScrollView>
+      <ConfirmationPopup
+        busy={busy}
+        confirmLabel={t('common.remove')}
+        copy={t('keychain.deleteCopy')}
+        detail={deleteTarget?.fingerprint}
+        detailIcon={KeyRound}
+        icon={Trash2}
+        title={t('keychain.deleteTitle', { name: deleteTarget?.name || '' })}
+        visible={deleteTarget !== null}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => { deleteConfirmedKey(); }}
+      />
     </View>
   );
 }

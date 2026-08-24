@@ -6,6 +6,7 @@ import {
   Play,
   Sparkles,
   SquareTerminal,
+  Trash2,
   X,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -59,6 +60,7 @@ import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
+import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassBackdrop, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
@@ -148,6 +150,10 @@ export function HerdScreen({
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [closeWorkspaceTarget, setCloseWorkspaceTarget] = useState<{
+    hostId: string;
+    workspace: WorkspaceInfo;
+  } | null>(null);
   const [closingTabKey, setClosingTabKey] = useState<string | null>(null);
   const [commandRunnerOpen, setCommandRunnerOpen] = useState(false);
   const [tabNameDraft, setTabNameDraft] = useState('');
@@ -256,19 +262,20 @@ export function HerdScreen({
 
   const confirmCloseWorkspace = (workspace: WorkspaceInfo) => {
     if (!selectedQueue) return;
-    Alert.alert(t('herd.closeWorkspaceTitle'), workspace.label || workspace.workspace_id, [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.close'),
-        style: 'destructive',
-        onPress: async () => {
-          if (await runWorkspaceAction(() => onCloseWorkspace(selectedQueue.id, workspace.workspace_id))
-              && workspace.workspace_id === selectedWorkspaceId) {
-            onWorkspaceFilterChange(selectedQueue.id, null);
-          }
-        },
-      },
-    ]);
+    setCloseWorkspaceTarget({ hostId: selectedQueue.id, workspace });
+  };
+
+  const closeConfirmedWorkspace = async () => {
+    if (!closeWorkspaceTarget || workspaceBusy) return;
+    const target = closeWorkspaceTarget;
+    const succeeded = await runWorkspaceAction(() => onCloseWorkspace(
+      target.hostId,
+      target.workspace.workspace_id,
+    ));
+    setCloseWorkspaceTarget(null);
+    if (succeeded && target.workspace.workspace_id === selectedWorkspaceId) {
+      onWorkspaceFilterChange(target.hostId, null);
+    }
   };
 
   const openSpace = () => {
@@ -561,6 +568,16 @@ export function HerdScreen({
             </View>
           )
         }
+      />
+      <ConfirmationPopup
+        busy={workspaceBusy}
+        confirmLabel={t('common.close')}
+        copy={closeWorkspaceTarget?.workspace.label || closeWorkspaceTarget?.workspace.workspace_id || ''}
+        icon={Trash2}
+        title={t('herd.closeWorkspaceTitle')}
+        visible={closeWorkspaceTarget !== null}
+        onCancel={() => setCloseWorkspaceTarget(null)}
+        onConfirm={() => { closeConfirmedWorkspace(); }}
       />
       <Modal
         animationType="fade"

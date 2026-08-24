@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { deleteKnownHost } from '@/src/services/knownHosts';
 import type { KnownHost } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader } from './app-ui';
+import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassSurface } from './GlassSurface';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -20,6 +21,7 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
   const { t } = useTranslation();
   const [hosts, setHosts] = useState(initialHosts);
   const [busy, setBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<KnownHost | null>(null);
 
   useEffect(() => { setHosts(initialHosts); }, [initialHosts]);
 
@@ -29,24 +31,21 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
   };
 
   const confirmDelete = (host: KnownHost) => {
-    Alert.alert(
-      t('knownHosts.deleteTitle', { host: displayHost(host) }),
-      t('knownHosts.deleteCopy'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.remove'),
-          style: 'destructive',
-          onPress: () => {
-            setBusy(true);
-            deleteKnownHost(hosts, host.id)
-              .then(updateHosts)
-              .catch(error => Alert.alert(t('knownHosts.deleteError'), String(error)))
-              .finally(() => setBusy(false));
-          },
-        },
-      ],
-    );
+    setDeleteTarget(host);
+  };
+
+  const deleteConfirmedHost = async () => {
+    if (!deleteTarget || busy) return;
+    setBusy(true);
+    try {
+      updateHosts(await deleteKnownHost(hosts, deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (error) {
+      setDeleteTarget(null);
+      Alert.alert(t('knownHosts.deleteError'), String(error));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -102,6 +101,18 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
           )}
         </View>
       </ScrollView>
+      <ConfirmationPopup
+        busy={busy}
+        confirmLabel={t('common.remove')}
+        copy={t('knownHosts.deleteCopy')}
+        detail={deleteTarget?.fingerprint}
+        detailIcon={Fingerprint}
+        icon={Trash2}
+        title={t('knownHosts.deleteTitle', { host: deleteTarget ? displayHost(deleteTarget) : '' })}
+        visible={deleteTarget !== null}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => { deleteConfirmedHost(); }}
+      />
     </View>
   );
 }
