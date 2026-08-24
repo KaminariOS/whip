@@ -1,6 +1,5 @@
 import { SquareTerminal, TriangleAlert, Wrench } from 'lucide-react-native';
 import { Modal, Pressable, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import type { CodexIntegrationStatus } from '../lib/codexSession';
@@ -44,7 +43,6 @@ function promptCopy(status: InstallableCodexIntegrationStatus | null): {
 }
 
 export function CodexIntegrationInstallSheet({ onCancel, onInstall, status }: Props) {
-  const { bottom } = useSafeAreaInsets();
   const { t } = useTranslation();
   const { colors } = useTheme();
   const copy = promptCopy(status);
@@ -56,7 +54,7 @@ export function CodexIntegrationInstallSheet({ onCancel, onInstall, status }: Pr
       statusBarTranslucent
       transparent
       visible={status !== null}>
-      <View className="flex-1 justify-end">
+      <View className="flex-1 items-center justify-center px-5">
         <Pressable
           accessibilityLabel={t('common.cancel')}
           className="absolute inset-0 bg-black/55"
@@ -64,9 +62,8 @@ export function CodexIntegrationInstallSheet({ onCancel, onInstall, status }: Pr
         />
         <GlassSurface
           accessibilityViewIsModal
-          className="rounded-t-[28px] border-t border-white/30 px-4 pt-5 dark:border-white/10"
-          style={{ paddingBottom: Math.max(16, bottom) }}>
-          <View className="flex-row items-start px-1">
+          className="w-full max-w-[380px] rounded-[24px] border border-white/30 p-5 dark:border-white/10">
+          <View className="flex-row items-start">
             <View className="size-11 items-center justify-center rounded-full bg-primary/15">
               <Wrench color={colors.primary} size={22} />
             </View>
