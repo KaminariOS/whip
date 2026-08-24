@@ -39,7 +39,6 @@ import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '@/src/li
 import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalControls';
 import { chatAgentForPane, openCodeSessionIdForPane, type ChatAgent } from '../lib/agentChatSession';
 import { codexChatAction, codexMissingIdentityAction, codexSessionIdForPane, type CodexIntegrationStatus } from '../lib/codexSession';
-import { composeTerminalSubmission } from '../lib/terminalSubmission';
 import { emptyTranscript, type AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
 import { codexTranscriptService } from '../services/CodexTranscriptService';
@@ -62,10 +61,9 @@ import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 import {
+  TERMINAL_CONTROL_BAR_HEIGHT,
   TerminalBackground,
   TerminalScreen,
-  type TerminalComposerQueueItem,
-  type TerminalScreenHandle,
 } from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
 import { useAppGlassEnabled } from './GlassSurface';
@@ -125,7 +123,17 @@ interface BrowserWebViewHandle {
   goBack: () => void;
 }
 
+interface OpenChatView {
+  agent: ChatAgent;
+  key: string | null;
+  state: AgentChatState;
+}
+
 const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
+
+function loadingChatState(sessionId: string): AgentChatState {
+  return { sessionId, transcript: emptyTranscript(sessionId), status: 'loading' };
+}
 
 export function SessionScreen({
   hostSessionId,
@@ -181,16 +189,7 @@ export function SessionScreen({
   const [browserLoading, setBrowserLoading] = useState(false);
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [attachmentTerminalId, setAttachmentTerminalId] = useState<string | null>(null);
-  const [attachmentTarget, setAttachmentTarget] = useState<'terminal' | 'chat'>('terminal');
-  const [chatTerminalId, setChatTerminalId] = useState<string | null>(null);
-  const [chatAgent, setChatAgent] = useState<ChatAgent | null>(null);
-  const [chatKey, setChatKey] = useState<string | null>(null);
-  const [chatState, setChatState] = useState<AgentChatState | null>(null);
-  const [chatAttachments, setChatAttachments] = useState<string[]>([]);
-  const [chatSending, setChatSending] = useState(false);
-  const [composerQueues, setComposerQueues] = useState(
-    () => new Map<string, readonly TerminalComposerQueueItem[]>(),
-  );
+  const [chatViews, setChatViews] = useState(() => new Map<string, OpenChatView>());
   const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<string | null>(null);
   const [agentIdentityWarning, setAgentIdentityWarning] = useState<AgentIdentityWarning | null>(null);
   const [codexIntegrationInstalling, setCodexIntegrationInstalling] = useState(false);
@@ -219,10 +218,10 @@ export function SessionScreen({
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
-  const previousChatAgentStatus = useRef<PaneInfo['agent_status'] | undefined>(undefined);
+  const previousChatAgentStatuses = useRef(new Map<string, PaneInfo['agent_status']>());
   const codexIntegrationInstallingRef = useRef(false);
   const codexIntegrationInstallRequestRef = useRef(0);
-  const terminalScreen = useRef<TerminalScreenHandle>(null);
+  const chatViewsRef = useRef(chatViews);
 
   const showAppAlert = useCallback((title: string, error: unknown) => {
     setAppAlert({ title, message: String(error) });
@@ -269,6 +268,9 @@ export function SessionScreen({
   );
   const activePane = snapshot.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);
   const activeChatAgent = chatAgentForPane(activePane);
+  const activeChatView = activeTerminalSession && activeChatAgent
+    ? chatViews.get(activeTerminalSession.terminalId) || null
+    : null;
   const codexChatLoading = activeChatAgent === 'codex' && (
     codexIntegrationInstalling
     || pendingIntegrationPaneId === activePane?.pane_id
@@ -278,7 +280,16 @@ export function SessionScreen({
     visible,
     activePane?.pane_id || null,
   );
-  const chatVisible = Boolean(chatTerminalId && chatTerminalId === activeTerminalSession?.terminalId && chatState);
+  const chatVisible = Boolean(activeChatView);
+  const chatViewIdentity = [...chatViews.entries()]
+    .map(([terminalId, view]) => `${terminalId}:${view.agent}:${view.key || ''}:${view.state.sessionId}:${view.state.status}`)
+    .sort()
+    .join('|');
+  const chatSubscriptionIdentity = [...chatViews.entries()]
+    .map(([terminalId, view]) => `${terminalId}:${view.agent}:${view.key || ''}`)
+    .sort()
+    .join('|');
+  chatViewsRef.current = chatViews;
   const activeTarget = terminalTargets.find(target => (
     target.hostSessionId === hostSessionId
       && target.session.terminalId === activeTerminalSession?.terminalId
@@ -386,12 +397,8 @@ export function SessionScreen({
     setBrowserLoading(false);
     setAttachmentsOpen(false);
     setPasteRequest(null);
-    setChatTerminalId(null);
-    setChatAgent(null);
-    setChatKey(null);
-    setChatState(null);
-    setChatAttachments([]);
-    setChatSending(false);
+    setChatViews(new Map());
+    previousChatAgentStatuses.current.clear();
     setPendingIntegrationPaneId(null);
     setAgentIdentityWarning(null);
     setCodexHistoryWarmup(null);
@@ -402,40 +409,76 @@ export function SessionScreen({
   }, [hostSessionId]);
 
   useEffect(() => {
-    codexTranscriptService.reconcileTerminals(hostSessionId, terminalState.sessions.map(session => session.terminalId));
-    openCodeTranscriptService.reconcileTerminals(hostSessionId, terminalState.sessions.map(session => session.terminalId));
+    const terminalIds = terminalState.sessions.map(session => session.terminalId);
+    const liveTerminalIds = new Set(terminalIds);
+    codexTranscriptService.reconcileTerminals(hostSessionId, terminalIds);
+    openCodeTranscriptService.reconcileTerminals(hostSessionId, terminalIds);
     for (const session of terminalState.sessions) {
       const pane = snapshot.panes.find(item => item.terminal_id === session.terminalId);
       codexTranscriptService.rebind(hostSessionId, session.terminalId, codexSessionIdForPane(pane), client);
     }
-    if (chatTerminalId) {
-      const pane = snapshot.panes.find(item => item.terminal_id === chatTerminalId);
+    const nextViews = new Map(chatViewsRef.current);
+    let changed = false;
+    for (const [terminalId, view] of nextViews) {
+      if (!liveTerminalIds.has(terminalId)) {
+        nextViews.delete(terminalId);
+        previousChatAgentStatuses.current.delete(terminalId);
+        changed = true;
+        continue;
+      }
+      const pane = snapshot.panes.find(item => item.terminal_id === terminalId);
       const nextAgent = chatAgentForPane(pane);
+      if (!nextAgent) {
+        nextViews.delete(terminalId);
+        previousChatAgentStatuses.current.delete(terminalId);
+        changed = true;
+        continue;
+      }
       const sessionId = nextAgent === 'codex'
         ? codexSessionIdForPane(pane)
-        : nextAgent === 'opencode'
-          ? openCodeSessionIdForPane(pane)
-          : null;
-      if (nextAgent && sessionId && (sessionId !== chatState?.sessionId || nextAgent !== chatAgent)) {
+        : openCodeSessionIdForPane(pane);
+      if (sessionId && (sessionId !== view.state.sessionId || nextAgent !== view.agent)) {
         const service = nextAgent === 'codex' ? codexTranscriptService : openCodeTranscriptService;
-        const key = service.activate(hostSessionId, chatTerminalId, sessionId, client);
-        setChatAgent(nextAgent);
-        setChatKey(key);
-        setChatState(service.getState(key));
-        setChatAttachments([]);
-      } else if (!sessionId && chatState?.status !== 'unavailable') {
-        setChatKey(null);
-        setChatState({ sessionId: '', transcript: emptyTranscript(''), status: 'unavailable', error: 'This pane no longer reports a supported native agent session ID.' });
-        setChatAttachments([]);
+        const key = service.activate(hostSessionId, terminalId, sessionId, client);
+        nextViews.set(terminalId, {
+          agent: nextAgent,
+          key,
+          state: service.getState(key) || loadingChatState(sessionId),
+        });
+        changed = true;
+      } else if (!sessionId && view.state.status !== 'unavailable') {
+        nextViews.set(terminalId, {
+          agent: nextAgent,
+          key: null,
+          state: {
+            sessionId: '',
+            transcript: emptyTranscript(''),
+            status: 'unavailable',
+            error: 'This pane no longer reports a supported native agent session ID.',
+          },
+        });
+        changed = true;
       }
     }
-  }, [chatAgent, chatState?.sessionId, chatState?.status, chatTerminalId, client, hostSessionId, snapshot.panes, terminalState.sessions]);
+    if (changed) setChatViews(nextViews);
+  }, [chatViewIdentity, client, hostSessionId, snapshot.panes, terminalState.sessions]);
 
   useEffect(() => {
-    if (!chatKey || !chatAgent) return undefined;
-    return (chatAgent === 'codex' ? codexTranscriptService : openCodeTranscriptService)
-      .subscribe(chatKey, setChatState);
-  }, [chatAgent, chatKey]);
+    const subscriptions = [...chatViewsRef.current.entries()].flatMap(([terminalId, view]) => {
+      if (!view.key) return [];
+      const service = view.agent === 'codex' ? codexTranscriptService : openCodeTranscriptService;
+      return [service.subscribe(view.key, state => {
+        setChatViews(current => {
+          const active = current.get(terminalId);
+          if (!active || active.key !== view.key || active.state === state) return current;
+          const next = new Map(current);
+          next.set(terminalId, { ...active, state });
+          return next;
+        });
+      })];
+    });
+    return () => subscriptions.forEach(unsubscribe => unsubscribe());
+  }, [chatSubscriptionIdentity]);
 
   useEffect(() => {
     if (!codexHistoryWarmup) return undefined;
@@ -445,15 +488,15 @@ export function SessionScreen({
       setCodexHistoryWarmup(current => current?.key === key ? null : current);
       const pane = snapshot.panes.find(item => item.terminal_id === terminalId);
       const stillMatches = codexSessionIdForPane(pane) === sessionId;
-      const stillActive = activeTerminalSession?.terminalId === terminalId;
-      if ((state.status === 'live' || state.status === 'stale') && stillMatches && stillActive) {
-        setChatTerminalId(terminalId);
-        setChatAgent('codex');
-        setChatKey(key);
-        setChatState(state);
+      if ((state.status === 'live' || state.status === 'stale') && stillMatches) {
+        setChatViews(current => {
+          const next = new Map(current);
+          next.set(terminalId, { agent: 'codex', key, state });
+          return next;
+        });
         return;
       }
-      if (state.status === 'unavailable' && stillMatches && stillActive) {
+      if (state.status === 'unavailable' && stillMatches) {
         setAgentIdentityWarning({
           agent: 'codex',
           title: 'Codex history unavailable',
@@ -461,34 +504,28 @@ export function SessionScreen({
         });
       }
     });
-  }, [activeTerminalSession?.terminalId, codexHistoryWarmup, snapshot.panes]);
-
-  useEffect(() => {
-    if (chatTerminalId && chatTerminalId !== activeTerminalSession?.terminalId) {
-      setChatTerminalId(null);
-      setChatAgent(null);
-      setChatKey(null);
-      setChatState(null);
-      setChatAttachments([]);
-    }
-  }, [activeTerminalSession?.terminalId, chatTerminalId]);
+  }, [codexHistoryWarmup, snapshot.panes]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state !== 'active') return;
       codexTranscriptService.reconnectHost(hostSessionId);
-      if (chatAgent === 'opencode' && chatKey) openCodeTranscriptService.refresh(chatKey);
+      for (const view of chatViewsRef.current.values()) {
+        if (view.agent === 'opencode' && view.key) openCodeTranscriptService.refresh(view.key);
+      }
     });
     return () => subscription.remove();
-  }, [chatAgent, chatKey, hostSessionId]);
+  }, [hostSessionId]);
 
   useEffect(() => {
-    const previous = previousChatAgentStatus.current;
-    previousChatAgentStatus.current = activePane?.agent_status;
-    if (chatAgent === 'opencode' && chatKey && previous && previous !== 'idle' && activePane?.agent_status === 'idle') {
-      openCodeTranscriptService.refresh(chatKey);
+    const terminalId = activeTerminalSession?.terminalId;
+    if (!terminalId) return;
+    const previous = previousChatAgentStatuses.current.get(terminalId);
+    if (activePane?.agent_status) previousChatAgentStatuses.current.set(terminalId, activePane.agent_status);
+    if (activeChatView?.agent === 'opencode' && activeChatView.key && previous && previous !== 'idle' && activePane?.agent_status === 'idle') {
+      openCodeTranscriptService.refresh(activeChatView.key);
     }
-  }, [activePane?.agent_status, chatAgent, chatKey]);
+  }, [activeChatView?.agent, activeChatView?.key, activePane?.agent_status, activeTerminalSession?.terminalId]);
 
   useEffect(() => {
     if (!pendingIntegrationPaneId) return;
@@ -498,10 +535,15 @@ export function SessionScreen({
     if (pane && sessionId) {
       const key = codexTranscriptService.activate(hostSessionId, pane.terminal_id, sessionId, client);
       if (codexTranscriptService.hasCachedHistory(key)) {
-        setChatTerminalId(pane.terminal_id);
-        setChatAgent('codex');
-        setChatKey(key);
-        setChatState(codexTranscriptService.getState(key));
+        setChatViews(current => {
+          const next = new Map(current);
+          next.set(pane.terminal_id, {
+            agent: 'codex',
+            key,
+            state: codexTranscriptService.getState(key) || loadingChatState(sessionId),
+          });
+          return next;
+        });
       } else {
         setCodexHistoryWarmup({ key, sessionId, terminalId: pane.terminal_id });
       }
@@ -791,7 +833,7 @@ export function SessionScreen({
   const openChatFile = (target: TranscriptFileLinkTarget) => {
     if (!activeTerminalSession || !activePane) return;
     const activeWorkspace = snapshot.workspaces.find(item => item.workspace_id === activePane.workspace_id);
-    const directory = chatState?.transcript.info?.directory
+    const directory = activeChatView?.state.transcript.info?.directory
       || activePane.foreground_cwd
       || activePane.cwd
       || activeWorkspace?.worktree?.checkout_path;
@@ -804,33 +846,28 @@ export function SessionScreen({
   const openAttachments = () => {
     if (!activeTerminalSession || activeTerminalSession.status !== 'connected') return;
     setAttachmentTerminalId(activeTerminalSession.terminalId);
-    setAttachmentTarget('terminal');
     setAttachmentsOpen(true);
   };
 
-  const openChatAttachments = () => {
-    if (!activeTerminalSession || activeTerminalSession.status !== 'connected') return;
-    setAttachmentTerminalId(activeTerminalSession.terminalId);
-    setAttachmentTarget('chat');
-    setAttachmentsOpen(true);
-  };
-
-  const closeAgentChat = useCallback(() => {
-    setChatTerminalId(null);
-    setChatAgent(null);
-    setChatKey(null);
-    setChatState(null);
-    setChatAttachments([]);
-  }, []);
+  const closeActiveChat = useCallback(() => {
+    const terminalId = activeTerminalSession?.terminalId;
+    if (!terminalId) return;
+    setChatViews(current => {
+      if (!current.has(terminalId)) return current;
+      const next = new Map(current);
+      next.delete(terminalId);
+      return next;
+    });
+  }, [activeTerminalSession?.terminalId]);
 
   useEffect(() => {
     if (!visible || !chatVisible) return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      closeAgentChat();
+      closeActiveChat();
       return true;
     });
     return () => subscription.remove();
-  }, [chatVisible, closeAgentChat, visible]);
+  }, [chatVisible, closeActiveChat, visible]);
 
   const promptCodexIntegrationInstall = (
     paneId: string,
@@ -879,10 +916,15 @@ export function SessionScreen({
         return;
       }
       const key = openCodeTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
-      setChatTerminalId(activeTerminalSession.terminalId);
-      setChatAgent('opencode');
-      setChatKey(key);
-      setChatState(openCodeTranscriptService.getState(key));
+      setChatViews(current => {
+        const next = new Map(current);
+        next.set(activeTerminalSession.terminalId, {
+          agent: 'opencode',
+          key,
+          state: openCodeTranscriptService.getState(key) || loadingChatState(sessionId),
+        });
+        return next;
+      });
       return;
     }
     if (agent !== 'codex') return;
@@ -894,10 +936,15 @@ export function SessionScreen({
         setCodexHistoryWarmup({ key, sessionId, terminalId: activeTerminalSession.terminalId });
         return;
       }
-      setChatTerminalId(activeTerminalSession.terminalId);
-      setChatAgent('codex');
-      setChatKey(key);
-      setChatState(codexTranscriptService.getState(key));
+      setChatViews(current => {
+        const next = new Map(current);
+        next.set(activeTerminalSession.terminalId, {
+          agent: 'codex',
+          key,
+          state: codexTranscriptService.getState(key) || loadingChatState(sessionId),
+        });
+        return next;
+      });
       return;
     }
     if (action !== 'setup') return;
@@ -929,21 +976,6 @@ export function SessionScreen({
       showAppAlert('Could not check Codex integration', error);
     } finally {
       setBusy(false);
-    }
-  };
-
-  const submitChat = async (text: string): Promise<boolean> => {
-    if (!activePane || chatSending) return false;
-    if (!composeTerminalSubmission(text, chatAttachments).pasteEvents.length) return false;
-    setChatSending(true);
-    try {
-      const queued = terminalScreen.current?.enqueueComposerMessage(text, chatAttachments) || false;
-      if (!queued) return false;
-      setChatAttachments([]);
-      onInteraction(activePane.tab_id);
-      return true;
-    } finally {
-      setChatSending(false);
     }
   };
 
@@ -1083,7 +1115,8 @@ export function SessionScreen({
           <View
             accessibilityElementsHidden
             pointerEvents="none"
-            className="absolute inset-0 z-10 bg-background">
+            className="absolute inset-x-0 top-0 z-10 bg-background"
+            style={{ bottom: TERMINAL_CONTROL_BAR_HEIGHT + safeAreaInsets.bottom }}>
             {appGlassEnabled ? (
               <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
             ) : null}
@@ -1096,7 +1129,6 @@ export function SessionScreen({
             activeTerminalSwipeStyle,
           ]}>
           <TerminalScreen
-            ref={terminalScreen}
             activeTarget={activeTarget}
             previewTarget={previewTarget}
             targets={terminalTargets}
@@ -1104,7 +1136,7 @@ export function SessionScreen({
             topOverlayInset={topOverlayInset}
             latencyMs={latencyMs}
             latencyWarningActive={latencyWarningActive}
-            visible={visible && Boolean(activeTarget) && !chatVisible}
+            visible={visible && Boolean(activeTarget)}
             swipe={tabSwipe && previewTarget
               ? { direction: tabSwipe.direction, offset: tabSwipeTranslateX }
               : null}
@@ -1114,14 +1146,6 @@ export function SessionScreen({
             historyEntries={terminalHistory}
             getComposerDraft={getComposerDraft}
             onComposerDraftChange={onComposerDraftChange}
-            onComposerQueueChange={(terminalId, messages) => {
-              setComposerQueues(current => {
-                const next = new Map(current);
-                if (messages.length) next.set(terminalId, messages);
-                else next.delete(terminalId);
-                return next;
-              });
-            }}
             linkScanRequest={linkScanRequest}
             pasteRequest={pasteRequest && pasteRequest.terminalId === activeTerminalSession?.terminalId
               ? {
@@ -1139,10 +1163,13 @@ export function SessionScreen({
                 ? codexIntegrationInstalling
                   ? 'Installing Codex integration'
                   : 'Loading Codex history'
-                : `Open ${activeChatAgent === 'opencode' ? 'OpenCode' : 'Codex'} Chat view`,
+                : chatVisible
+                  ? 'Open Terminal view'
+                  : `Open ${activeChatAgent === 'opencode' ? 'OpenCode' : 'Codex'} Chat view`,
+              active: chatVisible,
               disabled: busy || codexChatLoading || !activeTerminalSession,
               loading: codexChatLoading,
-              onPress: hapticPress(openAgentChat),
+              onPress: hapticPress(chatVisible ? closeActiveChat : openAgentChat),
             } : undefined}
             onOpenLink={link => {
               if (terminalPreferences.openLinksInApp) setLinksOpen(true);
@@ -1172,27 +1199,18 @@ export function SessionScreen({
             }}
           />
         </Animated.View>
-        {chatVisible && chatState && chatAgent && activePane && (
+        {activeChatView && activePane && (
           <View
-            className="absolute inset-0 z-20"
+            className="absolute inset-x-0 z-20"
             style={{
-              paddingTop: topOverlayInset,
-              paddingBottom: safeAreaInsets.bottom,
+              top: topOverlayInset,
+              bottom: TERMINAL_CONTROL_BAR_HEIGHT + safeAreaInsets.bottom,
             }}>
             <AgentChatView
-              state={chatState}
-              agent={chatAgent}
+              state={activeChatView.state}
+              agent={activeChatView.agent}
               agentStatus={activePane.agent_status}
-              attachments={chatAttachments}
-              draft={getComposerDraft(activePane.terminal_id)}
-              queue={composerQueues.get(activePane.terminal_id) || []}
-              sending={chatSending}
-              onOpenTerminal={closeAgentChat}
-              onAttach={openChatAttachments}
-              onDraftChange={value => onComposerDraftChange(activePane.terminal_id, value)}
               onOpenFile={openChatFile}
-              onRemoveAttachment={path => setChatAttachments(current => current.filter(item => item !== path))}
-              onSubmit={submitChat}
             />
           </View>
         )}
@@ -1240,18 +1258,13 @@ export function SessionScreen({
               attachment.dispose();
               return;
             }
-            if (attachmentTarget === 'chat') {
-              setChatAttachments(current => [...current, attachment.remotePath]);
-              attachment.dispose();
-            } else {
-              setPasteRequest(current => ({
-                id: (current?.id || 0) + 1,
-                terminalId: attachmentTerminalId,
-                text: attachment.remotePath,
-                previewUri: attachment.previewUri,
-                dispose: attachment.dispose,
-              }));
-            }
+            setPasteRequest(current => ({
+              id: (current?.id || 0) + 1,
+              terminalId: attachmentTerminalId,
+              text: attachment.remotePath,
+              previewUri: attachment.previewUri,
+              dispose: attachment.dispose,
+            }));
           }}
         />
         <CodexIntegrationInstallSheet

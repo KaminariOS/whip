@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useEffectEvent, useImperativeHandle, useRef, useState } from 'react';
 import { Portal } from '@rn-primitives/portal';
-import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, BookOpen, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, BookOpen, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, MessageCircle, Minimize2, Option, Paperclip, Search, Send, SquareTerminal, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
 import { ActivityIndicator, AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -81,6 +81,7 @@ interface Props {
   onRequestLinks?: () => void;
   chatControl?: {
     accessibilityLabel: string;
+    active: boolean;
     disabled: boolean;
     loading: boolean;
     onPress: () => void;
@@ -155,7 +156,7 @@ const TERMINAL_ICON_CONTROL_CLASS = 'h-9 w-11 items-center justify-center rounde
 const TERMINAL_TEXT_CONTROL_CLASS = 'h-9 min-w-11 items-center justify-center rounded-sm border border-border bg-card/70 px-2.5 py-0 active:bg-card/80';
 const TERMINAL_ICON_BOX_CLASS = 'size-5 items-center justify-center';
 const TERMINAL_ICON_SIZE = 18;
-const TERMINAL_CONTROL_BAR_HEIGHT = 50;
+export const TERMINAL_CONTROL_BAR_HEIGHT = 50;
 const TERMINAL_CONTROL_LABEL_STYLE = {
   includeFontPadding: false,
   textAlignVertical: 'center',
@@ -1141,8 +1142,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
         <Button
           key={control}
           accessibilityLabel={chatControl.accessibilityLabel}
-          accessibilityState={{ busy: chatControl.loading, disabled: chatControl.disabled }}
-          className={TERMINAL_ICON_CONTROL_CLASS}
+          accessibilityState={{ busy: chatControl.loading, disabled: chatControl.disabled, selected: chatControl.active }}
+          className={cn(TERMINAL_ICON_CONTROL_CLASS, chatControl.active && 'border-primary bg-primary/15')}
           disabled={chatControl.disabled}
           variant="secondary"
           onPress={() => {
@@ -1152,7 +1153,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           <View className={TERMINAL_ICON_BOX_CLASS}>
             {chatControl.loading
               ? <ActivityIndicator color={appColors.primary} size="small" />
-              : <BookOpen size={TERMINAL_ICON_SIZE} color={appColors.text} />}
+              : chatControl.active
+                ? <SquareTerminal size={TERMINAL_ICON_SIZE} color={appColors.primary} />
+                : <BookOpen size={TERMINAL_ICON_SIZE} color={appColors.text} />}
           </View>
         </Button>
       );

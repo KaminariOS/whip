@@ -112,14 +112,14 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 
 ### Use Chat View
 
-Chat View is currently available for active OpenCode and Codex panes. Tap the book icon beside the terminal tabs to replace the terminal with a full-screen, native transcript; use the composer's close button to return to the same warm terminal.
+Chat View is currently available for active OpenCode and Codex panes. Tap the book icon in the bottom terminal controls to replace that terminal with a full-screen, native transcript; tap the same control again to return to the same warm terminal. Each open terminal remembers its own Terminal or Chat View when you switch between panes.
 
 - Read a normalized, OpenCode-style conversation instead of terminal scrollback, including user prompts, Markdown responses, plans, reasoning, live **Thinking** state, token and timing metadata, attachments, and images.
 - Inspect expandable tool activity without duplicate shell rows. Related read, list, and search operations are grouped; shell commands, output, diagnostics, and changed-file diffs remain available on demand.
 - Render GitHub-flavored Markdown, monospaced inline and fenced code, clickable remote file references, and inline or display math on Android and iOS.
 - Load the existing history once, then follow new Codex rollout records or official OpenCode durable events incrementally. Whip reads the locally installed agents through the existing SSH connection; it does not require a hosted chat relay.
-- Continue the conversation with the same native composer used by Terminal. Draft text, attachments, and the per-tab send queue stay shared when switching between Chat View and Terminal View.
-- Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and experimental glass mode are enabled, Chat View applies the same translucent material to its composer and floating controls while keeping the transcript legible.
+- Keep using the terminal control strip in Chat View. Its Compose control opens the same native composer, draft, attachments, and per-tab send queue used by Terminal; closing the composer leaves Chat View open.
+- Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and experimental glass mode are enabled, Chat View applies the same translucent material while keeping the transcript legible.
 
 ### Work in terminals
 
