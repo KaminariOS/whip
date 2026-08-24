@@ -50,6 +50,7 @@ import {
 } from './src/lib/connectionErrors';
 import { resolveColorScheme } from './src/lib/appearance';
 import { biometricResumeAction } from './src/lib/appAccess';
+import { shouldEnableAppGlass } from './src/lib/appGlass';
 import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from './src/lib/biometricSecurity';
 import {
   foregroundUsesBriefAlerts,
@@ -2231,7 +2232,7 @@ function AppContent() {
       {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
       <GlassProvider
         blurTarget={navigationBlurTargetRef}
-        enabled={appGlassEnabled && Boolean(appBackgroundImageUri)}>
+        enabled={shouldEnableAppGlass(appGlassEnabled, appBackgroundImageUri)}>
       <View className="flex-1 bg-background">
         <NavigationBlurTarget ref={navigationBlurTargetRef} style={styles.navigationBlurTarget}>
           {/* Keep these screens mounted: rebuilding Herd's populated native tree made
@@ -2398,6 +2399,8 @@ function AppContent() {
             client={activeRuntime.client}
             visible={terminalVisible}
             terminalTargets={terminalTargets}
+            appBackgroundImageUri={appBackgroundImageUri}
+            appBackgroundDimming={appBackgroundDimming}
             terminalPreferences={terminalPreferences}
             terminalControlUsage={terminalControlUsage}
             terminalHistory={terminalHistory}
@@ -2589,6 +2592,8 @@ function LiveSessionView({
   client,
   visible,
   terminalTargets,
+  appBackgroundImageUri,
+  appBackgroundDimming,
   terminalPreferences,
   terminalControlUsage,
   terminalHistory,
@@ -2611,6 +2616,8 @@ function LiveSessionView({
   client: HerdrClient;
   visible: boolean;
   terminalTargets: readonly TerminalRenderTarget[];
+  appBackgroundImageUri: string | null;
+  appBackgroundDimming: number;
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
@@ -2652,6 +2659,8 @@ function LiveSessionView({
       client={client}
       terminalState={session.terminals}
       terminalTargets={terminalTargets}
+      appBackgroundImageUri={appBackgroundImageUri}
+      appBackgroundDimming={appBackgroundDimming}
       latencyMs={session.status === 'ready' ? session.sync.latencyMs : null}
       latencyWarningActive={session.status === 'ready' && session.sync.latencyWarning.active}
       onRefresh={refresh}

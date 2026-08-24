@@ -38,6 +38,9 @@ export function GlassBackdrop({
   // Native Liquid Glass is the primary surface on supported Apple devices.
   // The app glass preference only controls the legacy blur fallback.
   const renderLiquidGlass = enabled && isLiquidGlassSupported;
+  // Android deliberately uses a plain View instead of BlurTargetView at the app
+  // root. Native blur captures caused release tab-switch stalls, so Android glass
+  // stays translucent-only unless that architecture is revisited and profiled.
   const renderNativeBlur = Platform.OS !== 'android';
   if (!enabled && !renderLiquidGlass) {
     return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface }]} />;

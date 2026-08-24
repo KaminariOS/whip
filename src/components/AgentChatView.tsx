@@ -51,6 +51,7 @@ import type {
 } from '../agentChat';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import type { ChatAgent } from '../lib/agentChatSession';
+import { appGlassBackgroundClassName, appGlassModalPresentation } from '../lib/appGlass';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
 import { appGlassControlStyle, useTheme } from '../theme';
@@ -945,7 +946,9 @@ export function AgentChatView({
   }, [onOpenFile, state.transcript.info?.directory]);
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-background" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {state.status !== 'live' && (
         <View className="flex-row items-center gap-2 px-4 py-3">
           {state.status === 'loading' ? <ActivityIndicator size="small" color={colors.primary} /> : <CircleAlert size={14} color={colors.textSecondary} />}
@@ -1017,8 +1020,15 @@ export function AgentChatView({
         </View>
       )}
       {composerExpanded && (
-        <Modal animationType="slide" onRequestClose={() => setComposerExpanded(false)} statusBarTranslucent visible>
-          <View className="flex-1 bg-background" style={{ paddingTop: safeAreaInsets.top, paddingBottom: safeAreaInsets.bottom }}>
+        <Modal
+          {...appGlassModalPresentation(appGlassEnabled, Platform.OS)}
+          animationType="slide"
+          onRequestClose={() => setComposerExpanded(false)}
+          statusBarTranslucent
+          visible>
+          <View
+            className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
+            style={{ paddingTop: safeAreaInsets.top, paddingBottom: safeAreaInsets.bottom }}>
             <GlassSurface className="h-14 flex-row items-center gap-2 border-b border-white/30 px-2 dark:border-white/10">
               <Button accessibilityLabel="Collapse composer" className="size-10 rounded-full px-0" variant="ghost" onPress={() => setComposerExpanded(false)}><Minimize2 size={19} color={colors.text} /></Button>
               <View className="min-w-0 flex-1"><Text className="text-[13px] font-bold text-foreground">New {agentName} message</Text><Text className="text-[9px] text-muted-foreground">{attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? '' : 's'}` : `${text.length.toLocaleString()} characters`}</Text></View>

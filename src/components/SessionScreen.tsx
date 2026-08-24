@@ -1,9 +1,10 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { BookOpen, ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
   AppState,
+  BackHandler,
   Linking,
   Modal,
   PanResponder,
@@ -52,6 +53,7 @@ import { sessionTabGlassStyle, sessionTabStatusColor, statusColor, useTheme } fr
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { AgentIdentityWarningSheet, type AgentIdentityWarning } from './AgentIdentityWarningSheet';
+import { AppBackground } from './AppBackground';
 import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSheet';
 import { CodexIntegrationInstallSheet } from './CodexIntegrationInstallSheet';
 import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
@@ -66,6 +68,7 @@ import {
   type TerminalScreenHandle,
 } from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
+import { useAppGlassEnabled } from './GlassSurface';
 
 interface Props {
   hostSessionId: string;
@@ -74,6 +77,8 @@ interface Props {
   client: HerdrClient;
   terminalState: TerminalSessionsState;
   terminalTargets: readonly TerminalRenderTarget[];
+  appBackgroundImageUri: string | null;
+  appBackgroundDimming: number;
   latencyMs: number | null;
   latencyWarningActive: boolean;
   onRefresh: () => Promise<void>;
@@ -129,6 +134,8 @@ export function SessionScreen({
   client,
   terminalState,
   terminalTargets,
+  appBackgroundImageUri,
+  appBackgroundDimming,
   latencyMs,
   latencyWarningActive,
   onRefresh,
@@ -150,6 +157,7 @@ export function SessionScreen({
 }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const appGlassEnabled = useAppGlassEnabled();
   const safeAreaInsets = useSafeAreaInsets();
   const isIpad = Platform.OS === 'ios' && Platform.isPad;
   const focusedWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
@@ -233,6 +241,7 @@ export function SessionScreen({
     ? selectedTab?.label || selectedTab?.tab_id
     : workspace?.label || workspace?.workspace_id;
   const panes = snapshot.panes.filter(item => item.tab_id === selectedTab?.tab_id);
+  const topOverlayInset = 55 + (selectedTab && panes.length > 1 ? 37 : 0);
   const serverWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const serverTab = snapshot.tabs.find(item => (
     item.workspace_id === serverWorkspace?.workspace_id
@@ -796,13 +805,22 @@ export function SessionScreen({
     setAttachmentsOpen(true);
   };
 
-  const closeAgentChat = () => {
+  const closeAgentChat = useCallback(() => {
     setChatTerminalId(null);
     setChatAgent(null);
     setChatKey(null);
     setChatState(null);
     setChatAttachments([]);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!visible || !chatVisible) return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeAgentChat();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [chatVisible, closeAgentChat, visible]);
 
   const promptCodexIntegrationInstall = (
     paneId: string,
@@ -1076,6 +1094,16 @@ export function SessionScreen({
           terminalWidthRef.current = event.nativeEvent.layout.width;
           setTerminalWidth(event.nativeEvent.layout.width);
         }}>
+        {chatVisible && (
+          <View
+            accessibilityElementsHidden
+            pointerEvents="none"
+            className="absolute inset-0 z-10 bg-background">
+            {appGlassEnabled ? (
+              <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
+            ) : null}
+          </View>
+        )}
         <Animated.View
           pointerEvents="box-none"
           style={[
@@ -1088,7 +1116,7 @@ export function SessionScreen({
             previewTarget={previewTarget}
             targets={terminalTargets}
             compact
-            topOverlayInset={55 + (selectedTab && panes.length > 1 ? 37 : 0)}
+            topOverlayInset={topOverlayInset}
             latencyMs={latencyMs}
             latencyWarningActive={latencyWarningActive}
             visible={visible && Boolean(activeTarget) && !chatVisible}
@@ -1150,33 +1178,28 @@ export function SessionScreen({
           />
         </Animated.View>
         {chatVisible && chatState && chatAgent && activePane && (
-          <Modal
-            animationType="fade"
-            onRequestClose={closeAgentChat}
-            statusBarTranslucent
-            visible>
-            <View
-              className="flex-1 bg-background"
-              style={{
-                paddingBottom: safeAreaInsets.bottom,
-              }}>
-              <AgentChatView
-                state={chatState}
-                agent={chatAgent}
-                agentStatus={activePane.agent_status}
-                attachments={chatAttachments}
-                draft={getComposerDraft(activePane.terminal_id)}
-                queue={composerQueues.get(activePane.terminal_id) || []}
-                sending={chatSending}
-                onOpenTerminal={closeAgentChat}
-                onAttach={openChatAttachments}
-                onDraftChange={value => onComposerDraftChange(activePane.terminal_id, value)}
-                onOpenFile={openChatFile}
-                onRemoveAttachment={path => setChatAttachments(current => current.filter(item => item !== path))}
-                onSubmit={submitChat}
-              />
-            </View>
-          </Modal>
+          <View
+            className="absolute inset-0 z-20"
+            style={{
+              paddingTop: topOverlayInset,
+              paddingBottom: safeAreaInsets.bottom,
+            }}>
+            <AgentChatView
+              state={chatState}
+              agent={chatAgent}
+              agentStatus={activePane.agent_status}
+              attachments={chatAttachments}
+              draft={getComposerDraft(activePane.terminal_id)}
+              queue={composerQueues.get(activePane.terminal_id) || []}
+              sending={chatSending}
+              onOpenTerminal={closeAgentChat}
+              onAttach={openChatAttachments}
+              onDraftChange={value => onComposerDraftChange(activePane.terminal_id, value)}
+              onOpenFile={openChatFile}
+              onRemoveAttachment={path => setChatAttachments(current => current.filter(item => item !== path))}
+              onSubmit={submitChat}
+            />
+          </View>
         )}
         {tabSwipe
           && (!tabSwipe.targetTerminalId
