@@ -16,8 +16,13 @@ import {
 
 const SAVE_INTERVAL_MS = 2_000;
 
-export function useRemoteScrollProgress(identity: RemoteContentIdentity) {
+export function useRemoteScrollProgress(
+  identity: RemoteContentIdentity,
+  initialOffset?: { x?: number; y?: number },
+) {
   const { fileSize, hostId, modificationDate, remotePath } = identity;
+  const initialOffsetX = initialOffset?.x;
+  const initialOffsetY = initialOffset?.y;
   const scrollRef = useRef<ScrollView>(null);
   const latestRef = useRef<RemoteTextProgress | null>(null);
   const pendingRestoreRef = useRef<RemoteTextProgress | null>(null);
@@ -61,17 +66,28 @@ export function useRemoteScrollProgress(identity: RemoteContentIdentity) {
     pendingRestoreRef.current = null;
     contentSizeRef.current = { width: 0, height: 0 };
     lastSavedAtRef.current = 0;
-    loadRemoteContentProgress(effectIdentity).then(progress => {
-      if (!active || progress?.kind !== 'text') return;
-      pendingRestoreRef.current = progress;
+    if (initialOffsetX !== undefined || initialOffsetY !== undefined) {
+      pendingRestoreRef.current = {
+        kind: 'text',
+        offsetX: initialOffsetX || 0,
+        offsetY: initialOffsetY || 0,
+        contentWidth: 0,
+        contentHeight: 0,
+      };
       restore();
-    });
+    } else {
+      loadRemoteContentProgress(effectIdentity).then(progress => {
+        if (!active || progress?.kind !== 'text') return;
+        pendingRestoreRef.current = progress;
+        restore();
+      });
+    }
     return () => {
       active = false;
       const progress = latestRef.current;
       if (progress) saveRemoteContentProgress(effectIdentity, progress).catch(() => undefined);
     };
-  }, [fileSize, hostId, modificationDate, persist, remotePath, restore]);
+  }, [fileSize, hostId, initialOffsetX, initialOffsetY, modificationDate, persist, remotePath, restore]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {

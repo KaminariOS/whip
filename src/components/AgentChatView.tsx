@@ -1,10 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
   ChevronRight,
   CircleAlert,
   Copy,
+  ExternalLink,
   File,
   Minimize2,
   Paperclip,
@@ -15,6 +16,7 @@ import {
   ActivityIndicator,
   Clipboard,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -39,6 +41,7 @@ import type {
 } from '../agentChat';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import type { ChatAgent } from '../lib/agentChatSession';
+import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
 import { useTheme } from '../theme';
 import { MarkdownText } from './MarkdownText';
@@ -57,6 +60,7 @@ interface Props {
   onOpenTerminal: () => void;
   onAttach: () => void;
   onDraftChange: (value: string) => void;
+  onOpenFile: (target: TranscriptFileLinkTarget) => void;
   onRemoveAttachment: (path: string) => void;
   onSubmit: (text: string) => Promise<boolean>;
 }
@@ -71,6 +75,7 @@ interface ToolPresentation {
   subtitle?: string;
   args: string[];
   command?: string;
+  href?: string;
   kind: ToolKind;
 }
 
@@ -150,6 +155,17 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
       title: url ? 'Fetch' : 'Web search',
       subtitle: url || query || item.state.title,
       args: primitiveArgs(input, ['url', 'query', 'queries', 'pattern']),
+      href: url,
+      kind,
+    };
+  }
+  if (name === 'task') {
+    const agent = inputValue(input, ['subagent_type', 'agent']) || 'Agent';
+    const background = input.background === true ? ['background'] : [];
+    return {
+      title: agent.charAt(0).toUpperCase() + agent.slice(1),
+      subtitle: description || item.state.title,
+      args: background,
       kind,
     };
   }
@@ -213,6 +229,36 @@ function formattedInput(item: TranscriptToolPart, presentation: ToolPresentation
   return rows.length ? rows.join('\n') : undefined;
 }
 
+interface ToolDiagnostic {
+  file: string;
+  line?: number;
+  character?: number;
+  message: string;
+}
+
+function toolDiagnostics(item: TranscriptToolPart): ToolDiagnostic[] {
+  const value = item.state.metadata?.diagnostics;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.entries(value as JsonObject).flatMap(([file, entries]) => {
+    if (!Array.isArray(entries)) return [];
+    return entries.flatMap(entryValue => {
+      if (!entryValue || typeof entryValue !== 'object' || Array.isArray(entryValue)) return [];
+      const entry = entryValue as JsonObject;
+      if (entry.severity !== undefined && entry.severity !== 1) return [];
+      const range = entry.range && typeof entry.range === 'object' && !Array.isArray(entry.range) ? entry.range as JsonObject : undefined;
+      const start = range?.start && typeof range.start === 'object' && !Array.isArray(range.start) ? range.start as JsonObject : undefined;
+      const message = stringValue(entry.message);
+      if (!message) return [];
+      return [{
+        file,
+        line: typeof start?.line === 'number' ? start.line + 1 : undefined,
+        character: typeof start?.character === 'number' ? start.character + 1 : undefined,
+        message,
+      }];
+    });
+  }).slice(0, 3);
+}
+
 function isRunning(item: TranscriptToolPart): boolean {
   return item.state.status === 'pending' || item.state.status === 'running';
 }
@@ -229,14 +275,22 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
     ? [presentation.command ? `$ ${presentation.command}` : undefined, item.state.output].filter(Boolean).join('\n\n')
     : undefined;
   const error = item.state.error;
-  const hasDetail = Boolean(shell || item.state.output || diff || input || error);
+  const loaded = Array.isArray(item.state.metadata?.loaded)
+    ? item.state.metadata.loaded.filter((value): value is string => typeof value === 'string')
+    : [];
+  const attachments = item.state.attachments || [];
+  const diagnostics = toolDiagnostics(item);
+  const hasDetail = Boolean(shell || item.state.output || diff || input || error || loaded.length || attachments.length || diagnostics.length);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ expanded }}
-      disabled={!hasDetail}
+      disabled={!hasDetail && !presentation.href}
       className={cn('w-full overflow-hidden', failed && 'rounded-md bg-destructive/10 px-2')}
-      onPress={() => setExpanded(value => !value)}
+      onPress={() => {
+        if (hasDetail) setExpanded(value => !value);
+        else if (presentation.href) Linking.openURL(presentation.href).catch(() => undefined);
+      }}
     >
       <View className="min-h-7 flex-row items-center py-1">
         {isRunning(item) && (
@@ -273,6 +327,11 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
             <Text className="font-mono text-[11px] leading-5" style={{ color: colors.error }}>−{changes.deletions}</Text>
           </View>
         )}
+        {presentation.href && !isRunning(item) && (
+          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" onPress={event => { event.stopPropagation(); Linking.openURL(presentation.href!).catch(() => undefined); }}>
+            <ExternalLink size={14} color={colors.textTertiary} />
+          </Pressable>
+        )}
         {hasDetail && (expanded
           ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} />
           : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />)}
@@ -284,9 +343,48 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
           {presentation.kind !== 'command' && item.state.output && <ToolCodeBlock text={item.state.output} />}
           {input && <ToolCodeBlock text={input} muted />}
           {error && <ToolCodeBlock text={error} error />}
+          {diagnostics.length > 0 && (
+            <View className="gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2">
+              {diagnostics.map(diagnostic => (
+                <View key={`${diagnostic.file}:${diagnostic.line}:${diagnostic.message}`} className="flex-row gap-2">
+                  <Text className="shrink-0 font-mono text-[9px] text-destructive">{filename(diagnostic.file)}{diagnostic.line ? `:${diagnostic.line}${diagnostic.character ? `:${diagnostic.character}` : ''}` : ''}</Text>
+                  <Text selectable className="min-w-0 flex-1 text-[10px] leading-4 text-destructive">{diagnostic.message}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {loaded.map(path => <Text key={path} numberOfLines={1} className="px-1 font-mono text-[10px] text-muted-foreground">Loaded {path}</Text>)}
+          {attachments.length > 0 && <ToolAttachments files={attachments} />}
         </View>
       )}
     </Pressable>
+  );
+}
+
+function ToolAttachments({ files }: { files: readonly TranscriptFilePart[] }) {
+  const { colors } = useTheme();
+  const [preview, setPreview] = useState<TranscriptFilePart | null>(null);
+  return (
+    <>
+      <View className="flex-row flex-wrap gap-2 px-1">
+        {files.map(file => file.mime?.startsWith('image/') && file.url ? (
+          <Pressable key={file.id} accessibilityLabel={`Preview ${file.filename || 'tool image'}`} className="overflow-hidden rounded-md bg-muted" onPress={() => setPreview(file)}>
+            <Image className="h-20 w-28" resizeMode="cover" source={{ uri: file.url }} />
+          </Pressable>
+        ) : (
+          <View key={file.id} className="flex-row items-center gap-1.5 rounded-md bg-muted px-2 py-1.5">
+            <File size={12} color={colors.textSecondary} />
+            <Text numberOfLines={1} className="max-w-[220px] font-mono text-[9px] text-muted-foreground">{file.filename || file.mime || 'Tool attachment'}</Text>
+          </View>
+        ))}
+      </View>
+      <Modal animationType="fade" onRequestClose={() => setPreview(null)} statusBarTranslucent transparent visible={Boolean(preview)}>
+        <View className="flex-1 bg-black/95">
+          <Pressable accessibilityLabel="Close image preview" className="absolute right-4 top-12 z-10 size-11 items-center justify-center rounded-full bg-white/15" onPress={() => setPreview(null)}><X size={21} color="white" /></Pressable>
+          {preview?.url && <Image className="flex-1" resizeMode="contain" source={{ uri: preview.url }} />}
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -352,7 +450,17 @@ function ToolDiffBlock({ diff }: { diff: string }) {
 }
 
 function isContextTool(part: TranscriptPart): part is TranscriptToolPart {
-  return part.type === 'tool' && /^(?:read|list|ls|glob|grep|codesearch)$/i.test(part.tool);
+  return part.type === 'tool' && /^(?:read|list|glob|grep)$/i.test(part.tool);
+}
+
+function contextSummary(tools: readonly TranscriptToolPart[]): string {
+  const counts = [
+    ['read', tools.filter(tool => tool.tool === 'read').length],
+    ['search', tools.filter(tool => /^(?:glob|grep)$/i.test(tool.tool)).length],
+    ['list', tools.filter(tool => tool.tool === 'list').length],
+  ] as const;
+  const labels = counts.flatMap(([label, count]) => count ? [`${count} ${label}${count === 1 ? '' : 's'}`] : []);
+  return labels.length ? labels.join(' · ') : `${tools.length} operation${tools.length === 1 ? '' : 's'}`;
 }
 
 function ContextToolGroup({ tools }: { tools: TranscriptToolPart[] }) {
@@ -365,8 +473,8 @@ function ContextToolGroup({ tools }: { tools: TranscriptToolPart[] }) {
       <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-8 flex-row items-center py-1" onPress={() => setExpanded(value => !value)}>
         {running && <ActivityIndicator className="mr-2" size={13} color={colors.textTertiary} />}
         {failed && !running && <CircleAlert className="mr-2" size={14} color={colors.error} />}
-        <Text className="text-[13px] font-medium text-foreground">Explored</Text>
-        <Text className="ml-1.5 text-[12px] text-muted-foreground">{tools.length} operations</Text>
+        <Text className="text-[13px] font-medium text-foreground">{running ? 'Gathering context' : 'Gathered context'}</Text>
+        <Text numberOfLines={1} className="ml-1.5 min-w-0 shrink text-[12px] text-muted-foreground">{contextSummary(tools)}</Text>
         {expanded ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} /> : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />}
       </Pressable>
       {expanded && <View className="ml-3 border-l border-border pl-3">{tools.map(tool => <ToolCard key={tool.id} item={tool} />)}</View>}
@@ -396,18 +504,28 @@ function groupParts(parts: readonly TranscriptPart[]): PartGroup[] {
   return groups;
 }
 
-function AssistantPart({ part }: { part: TranscriptPart }) {
+function renderablePart(part: TranscriptPart): boolean {
+  if (part.type === 'text' || part.type === 'reasoning') return Boolean(part.text.trim()) && !('synthetic' in part && (part.synthetic || part.ignored));
+  if (part.type === 'tool') {
+    if (part.tool === 'todowrite') return false;
+    if (part.tool === 'question' && isRunning(part)) return false;
+    return true;
+  }
+  return part.type === 'compaction' || part.type === 'plan' || part.type === 'notice' || part.type === 'subtask';
+}
+
+function AssistantPart({ part, onLinkPress }: { part: TranscriptPart; onLinkPress: (url: string) => void }) {
   const { colors } = useTheme();
   if (part.type === 'text') {
     if (!part.text.trim() || part.synthetic || part.ignored) return null;
-    return <View className="min-w-0 w-full"><MarkdownText content={part.text} onLinkPress={({ url }) => { if (/^(?:https?:|mailto:|tel:)/i.test(url)) Linking.openURL(url).catch(() => undefined); }} /></View>;
+    return <View className="min-w-0 w-full"><MarkdownText content={part.text} onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'reasoning') {
     if (!part.text.trim()) return null;
     return (
       <View className="w-full border-l border-border pl-3 py-0.5">
         <Text className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Thinking</Text>
-        <Text selectable className="text-[13px] leading-5 text-muted-foreground">{part.text}</Text>
+        <MarkdownText content={part.text} onLinkPress={({ url }) => onLinkPress(url)} />
       </View>
     );
   }
@@ -422,7 +540,7 @@ function AssistantPart({ part }: { part: TranscriptPart }) {
     );
   }
   if (part.type === 'plan') {
-    return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} /></View>;
+    return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'notice') {
     return (
@@ -450,6 +568,48 @@ function userFiles(message: TranscriptMessage | undefined): TranscriptFilePart[]
   return message?.parts.filter((part): part is TranscriptFilePart => part.type === 'file') || [];
 }
 
+function sourceRange(part: TranscriptPart): { start: number; end: number } | null {
+  if (part.type !== 'file' && part.type !== 'agent') return null;
+  const source = part.source;
+  if (!source) return null;
+  const range = part.type === 'file' && source.text && typeof source.text === 'object' && !Array.isArray(source.text)
+    ? source.text as JsonObject
+    : source;
+  const start = range.start;
+  const end = range.end;
+  return typeof start === 'number' && typeof end === 'number' && start >= 0 && end > start ? { start, end } : null;
+}
+
+function isInlineFile(part: TranscriptFilePart): boolean {
+  return sourceRange(part) !== null && !part.url?.startsWith('data:');
+}
+
+function PromptText({ message, text }: { message: TranscriptMessage; text: string }) {
+  const refs = message.parts.flatMap(part => {
+    const range = sourceRange(part);
+    return range && range.start < text.length
+      ? [{ ...range, end: Math.min(range.end, text.length), type: part.type }]
+      : [];
+  }).sort((left, right) => left.start - right.start);
+  if (!refs.length) return <Text selectable className="text-[14px] leading-[20px] text-foreground">{text}</Text>;
+  const segments: Array<{ text: string; highlighted?: boolean }> = [];
+  let cursor = 0;
+  for (const ref of refs) {
+    if (ref.start < cursor) continue;
+    if (ref.start > cursor) segments.push({ text: text.slice(cursor, ref.start) });
+    segments.push({ text: text.slice(ref.start, ref.end), highlighted: true });
+    cursor = ref.end;
+  }
+  if (cursor < text.length) segments.push({ text: text.slice(cursor) });
+  return (
+    <Text selectable className="text-[14px] leading-[20px] text-foreground">
+      {segments.map((segment, index) => (
+        <Text key={`${index}:${segment.text}`} className={segment.highlighted ? 'font-semibold text-primary' : ''}>{segment.text}</Text>
+      ))}
+    </Text>
+  );
+}
+
 function formatTime(value: number | undefined): string | undefined {
   if (value === undefined) return undefined;
   try { return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return undefined; }
@@ -463,8 +623,10 @@ function formatDuration(start: number | undefined, end: number | undefined): str
 
 function UserPrompt({ message }: { message: TranscriptMessage }) {
   const { colors } = useTheme();
+  const [copied, setCopied] = useState(false);
+  const [preview, setPreview] = useState<TranscriptFilePart | null>(null);
   const text = visibleUserText(message);
-  const files = userFiles(message);
+  const files = userFiles(message).filter(file => !isInlineFile(file));
   const agents = message.parts.filter(part => part.type === 'agent');
   if (!text && !files.length && !agents.length) return null;
   const meta = [message.agent, message.modelId, formatTime(message.createdAt)].filter(Boolean).join(' · ');
@@ -472,20 +634,35 @@ function UserPrompt({ message }: { message: TranscriptMessage }) {
     <View className="ml-9 items-end">
       {files.length > 0 && (
         <View className="mb-1.5 flex-row flex-wrap justify-end gap-1.5">
-          {files.map(file => (
+          {files.map(file => file.mime?.startsWith('image/') && file.url ? (
+            <Pressable key={file.id} accessibilityLabel={`Preview ${file.filename || 'image'}`} className="overflow-hidden rounded-lg bg-muted" onPress={() => setPreview(file)}>
+              <Image className="h-24 w-32" resizeMode="cover" source={{ uri: file.url }} />
+            </Pressable>
+          ) : (
             <View key={file.id} className="flex-row items-center gap-1.5 rounded-md bg-muted px-2 py-1.5">
               <File size={12} color={colors.textSecondary} />
-              <Text numberOfLines={1} className="max-w-[220px] font-mono text-[9px] text-muted-foreground">{file.filename || file.mime || 'Attachment'}</Text>
+              <View className="min-w-0"><Text numberOfLines={1} className="max-w-[220px] font-mono text-[9px] text-muted-foreground">{file.filename || file.mime || 'Attachment'}</Text>{file.mime && <Text className="mt-0.5 text-[8px] uppercase text-muted-foreground">{file.mime}</Text>}</View>
             </View>
           ))}
         </View>
       )}
       {text && (
         <Pressable accessibilityLabel="Copy prompt" className="max-w-[86%] rounded-xl bg-muted px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
-          <Text selectable className="text-[14px] leading-[20px] text-foreground">{text}</Text>
+          <PromptText message={message} text={text} />
         </Pressable>
       )}
-      {meta && <Text className="mt-1 px-1 text-[9px] text-muted-foreground">{meta}</Text>}
+      {(meta || text) && (
+        <View className="mt-1 flex-row items-center gap-1 px-1">
+          {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
+          {text && <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={() => { Clipboard.setString(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>}
+        </View>
+      )}
+      <Modal animationType="fade" onRequestClose={() => setPreview(null)} statusBarTranslucent transparent visible={Boolean(preview)}>
+        <View className="flex-1 bg-black/95">
+          <Pressable accessibilityLabel="Close image preview" className="absolute right-4 top-12 z-10 size-11 items-center justify-center rounded-full bg-white/15" onPress={() => setPreview(null)}><X size={21} color="white" /></Pressable>
+          {preview?.url && <Image className="flex-1" resizeMode="contain" source={{ uri: preview.url }} />}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -544,16 +721,16 @@ function ChangedFiles({ turn }: { turn: TranscriptTurn }) {
   );
 }
 
-const TranscriptTurnView = memo(function TranscriptTurnRow({ turn }: { turn: TranscriptTurn }) {
+const TranscriptTurnView = memo(function TranscriptTurnRow({ turn, onLinkPress }: { turn: TranscriptTurn; onLinkPress: (url: string) => void }) {
   const { colors } = useTheme();
-  const parts = useMemo(() => groupParts(turn.assistants.flatMap(message => message.parts)), [turn.assistants]);
+  const parts = useMemo(() => groupParts(turn.assistants.flatMap(message => message.parts).filter(renderablePart)), [turn.assistants]);
   return (
     <View className="w-full">
       {turn.user && <UserPrompt message={turn.user} />}
       <View className={cn('w-full gap-3', turn.user && 'mt-3')}>
         {parts.map(group => group.type === 'context'
           ? <ContextToolGroup key={group.id} tools={group.tools} />
-          : <AssistantPart key={group.part.id} part={group.part} />)}
+          : <AssistantPart key={group.part.id} part={group.part} onLinkPress={onLinkPress} />)}
         {turn.status === 'working' && !parts.length && (
           <View className="flex-row items-center gap-2 py-1"><ActivityIndicator size={13} color={colors.textTertiary} /><Text className="text-[12px] text-muted-foreground">Thinking…</Text></View>
         )}
@@ -577,6 +754,7 @@ export function AgentChatView({
   onOpenTerminal,
   onAttach,
   onDraftChange,
+  onOpenFile,
   onRemoveAttachment,
   onSubmit,
 }: Props) {
@@ -626,6 +804,14 @@ export function AgentChatView({
     setText(value);
     onDraftChange(value);
   };
+  const openTranscriptLink = useCallback((url: string) => {
+    const file = transcriptFileLinkTarget(url, state.transcript.info?.directory);
+    if (file) {
+      onOpenFile(file);
+      return;
+    }
+    if (/^(?:https?:|mailto:|tel:)/i.test(url)) Linking.openURL(url).catch(() => undefined);
+  }, [onOpenFile, state.transcript.info?.directory]);
 
   return (
     <KeyboardAvoidingView className="flex-1 bg-background" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -642,7 +828,7 @@ export function AgentChatView({
           ref={list}
           data={turns}
           keyExtractor={turn => turn.id}
-          renderItem={({ item, index }) => <View className={index === 0 ? '' : 'mt-7'}><TranscriptTurnView turn={item} /></View>}
+          renderItem={({ item, index }) => <View className={index === 0 ? '' : 'mt-7'}><TranscriptTurnView turn={item} onLinkPress={openTranscriptLink} /></View>}
           contentContainerClassName="flex-grow px-4 pb-6 pt-4"
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"

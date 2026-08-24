@@ -1,7 +1,7 @@
 import type { LsResult } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, AppState, FlatList, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +38,8 @@ interface Props {
   client: HerdrClient;
   hostId: string;
   initialPath: string;
+  initialFilePath?: string;
+  initialLine?: number;
   onPathChange: (path: string) => void;
   onClose: () => void;
 }
@@ -56,6 +58,7 @@ interface FilePreview {
   htmlRevision: number;
   gitDiff: RemoteGitDiff | null;
   gitStatus: RemoteGitStatusEntry | null;
+  initialLine?: number;
 }
 
 const remoteFileSortFields: RemoteFileSortField[] = ['name', 'modified', 'size'];
@@ -67,7 +70,7 @@ const remoteGitTreeIndentStyles = Array.from({ length: 16 }, (_, depth) => ({
   paddingLeft: 8 + depth * 16,
 }));
 
-export function RemoteFileManager({ visible, client, hostId, initialPath, onPathChange, onClose }: Props) {
+export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onClose }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
@@ -180,13 +183,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
   );
 
   useEffect(() => {
-    if (visible) loadDirectory(initialPath);
+    if (visible && !initialFilePath) loadDirectory(initialPath);
     else {
       requestRef.current += 1;
       gitRequestRef.current += 1;
       replacePreview(null);
     }
-  }, [initialPath, loadDirectory, replacePreview, visible]);
+  }, [initialFilePath, initialPath, loadDirectory, replacePreview, visible]);
 
   useEffect(
     () => () => {
@@ -332,7 +335,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
     }
   };
 
-  const openEntry = async (entry: LsResult, directoryPath = path) => {
+  const openEntry = async (entry: LsResult, directoryPath = path, targetLine?: number) => {
     const name = remoteEntryName(entry);
     const entryPath = joinRemotePath(directoryPath, name);
     if (entry.isDirectory) {
@@ -356,6 +359,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
       htmlRevision: 0,
       gitDiff: null,
       gitStatus: null,
+      initialLine: targetLine,
     };
     replacePreview(loadingPreview);
     if (kind === 'unsupported') return;
@@ -402,16 +406,39 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
     }
   };
 
-  const openRemotePath = async (remotePath: string) => {
+  const openRemotePath = async (remotePath: string, targetLine?: number) => {
     const request = ++requestRef.current;
     const directory = parentRemotePath(remotePath);
     const filename = remotePath.slice(remotePath.lastIndexOf('/') + 1);
     const listing = await client.listRemoteDirectory(directory);
     if (request !== requestRef.current) return;
+    pathRef.current = listing.path;
+    setPath(listing.path);
+    setEntries(listing.entries);
+    onPathChangeRef.current(listing.path);
     const entry = listing.entries.find(candidate => remoteEntryName(candidate) === filename);
     if (!entry) throw new Error(`Remote file not found: ${remotePath}`);
-    await openEntry(entry, listing.path);
+    await openEntry(entry, listing.path, targetLine);
   };
+
+  const openInitialFile = useEffectEvent(async (remotePath: string, targetLine?: number) => {
+    await openRemotePath(remotePath, targetLine);
+  });
+
+  useEffect(() => {
+    if (!visible || !initialFilePath) return;
+    let active = true;
+    setBusy(true);
+    setError(null);
+    openInitialFile(initialFilePath, initialLine).catch(reason => {
+      if (active) setError(String(reason));
+    }).finally(() => {
+      if (active) setBusy(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [initialFilePath, initialLine, visible]);
 
   const dismissNow = () => {
     requestRef.current += 1;
@@ -597,7 +624,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
               <FileErrorState
                 error={preview.error}
                 title={t('files.openFailed')}
-                onRetry={() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry))}
+                onRetry={() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry, parentRemotePath(preview.path), preview.initialLine))}
               />
             ) : previewLoading ? (
               <FileLoadingState label={t('files.opening')} />
@@ -662,9 +689,9 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, onPath
             ) : preview.kind === 'html' && preview.htmlPreview ? (
               <HtmlPreview filename={remoteEntryName(preview.entry)} revision={preview.htmlRevision} uri={preview.htmlPreview.url} />
             ) : preview.kind === 'code' ? (
-              <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} progressIdentity={previewProgressIdentity!} />
+              <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} initialLine={preview.initialLine} progressIdentity={previewProgressIdentity!} />
             ) : (
-              <RemoteTextPreview content={preview.content || ''} progressIdentity={previewProgressIdentity!} />
+              <RemoteTextPreview content={preview.content || ''} initialLine={preview.initialLine} progressIdentity={previewProgressIdentity!} />
             )}
           </>
         ) : (

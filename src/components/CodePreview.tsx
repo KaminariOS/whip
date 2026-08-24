@@ -29,6 +29,7 @@ const MIN_GUTTER_WIDTH = 46;
 interface PreviewProps {
   content: string;
   filename: string;
+  initialLine?: number;
   progressIdentity: RemoteContentIdentity;
 }
 
@@ -70,8 +71,11 @@ function HighlightedCode({
   );
 }
 
-export function CodePreview({ content, filename, progressIdentity }: PreviewProps) {
-  const scrollProgress = useRemoteScrollProgress(progressIdentity);
+export function CodePreview({ content, filename, initialLine, progressIdentity }: PreviewProps) {
+  const scrollProgress = useRemoteScrollProgress(
+    progressIdentity,
+    initialLine ? { y: CODE_PADDING + Math.max(0, initialLine - 1) * CODE_LINE_HEIGHT } : undefined,
+  );
   return (
     <ScrollView
       {...scrollProgress}

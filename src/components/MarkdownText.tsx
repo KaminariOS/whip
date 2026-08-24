@@ -120,7 +120,6 @@ export function useWhipMarkdownStyle(): MarkdownStyle {
         color: colors.text,
         backgroundColor: colors.surfaceRaised,
         borderColor: colors.divider,
-        fontFamily: guiFontFamilies.mono,
         fontSize: 12,
       },
       codeBlock: {

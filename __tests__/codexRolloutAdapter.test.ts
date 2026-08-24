@@ -73,6 +73,23 @@ describe('Codex rollout adapter', () => {
     ]);
   });
 
+  test('uses call_id to merge a custom exec call and its output into one shell row', () => {
+    const adapter = new CodexRolloutAdapter();
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call', id: 'ctc_1', call_id: 'call_1', name: 'exec', input: { cmd: 'git status' },
+    }));
+    adapter.accept(line('response_item', {
+      type: 'custom_tool_call_output', id: 'ctco_1', call_id: 'call_1', output: 'clean',
+    }));
+
+    expect(parts(adapter.snapshot())).toEqual([
+      expect.objectContaining({
+        id: 'tool:call_1', type: 'tool', tool: 'exec',
+        state: expect.objectContaining({ status: 'completed', output: 'clean' }),
+      }),
+    ]);
+  });
+
   test('normalizes file diffs, plans, generic tools, and ignores unknown future events', () => {
     const adapter = new CodexRolloutAdapter();
     adapter.accept(line('event_msg', { type: 'patch_apply_begin', call_id: 'p1', changes: { 'src/a.ts': { diff: '@@ -1 +1 @@' } } }));

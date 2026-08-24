@@ -26,6 +26,7 @@ import {
   shouldFollowServerTerminalFocus,
 } from '@/src/lib/terminalFocus';
 import { terminalWebLinkTarget } from '@/src/lib/terminalLinks';
+import { resolveTranscriptFilePath, type TranscriptFileLinkTarget } from '@/src/lib/transcriptLinks';
 import {
   neighborTabIndex,
   shouldCommitTerminalTabSwipe,
@@ -90,7 +91,7 @@ interface Props {
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
-  onOpenFiles: (terminalId: string) => void;
+  onOpenFiles: (terminalId: string, target?: TranscriptFileLinkTarget) => void;
   getComposerDraft: (terminalId: string) => string;
   onComposerDraftChange: (terminalId: string, value: string) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
@@ -768,6 +769,19 @@ export function SessionScreen({
     if (activeTerminalSession) onOpenFiles(activeTerminalSession.terminalId);
   };
 
+  const openChatFile = (target: TranscriptFileLinkTarget) => {
+    if (!activeTerminalSession || !activePane) return;
+    const activeWorkspace = snapshot.workspaces.find(item => item.workspace_id === activePane.workspace_id);
+    const directory = chatState?.transcript.info?.directory
+      || activePane.foreground_cwd
+      || activePane.cwd
+      || activeWorkspace?.worktree?.checkout_path;
+    onOpenFiles(activeTerminalSession.terminalId, {
+      ...target,
+      path: resolveTranscriptFilePath(target.path, directory || undefined),
+    });
+  };
+
   const openAttachments = () => {
     if (!activeTerminalSession || activeTerminalSession.status !== 'connected') return;
     setAttachmentTerminalId(activeTerminalSession.terminalId);
@@ -1156,6 +1170,7 @@ export function SessionScreen({
                 onOpenTerminal={closeAgentChat}
                 onAttach={openChatAttachments}
                 onDraftChange={value => onComposerDraftChange(activePane.terminal_id, value)}
+                onOpenFile={openChatFile}
                 onRemoveAttachment={path => setChatAttachments(current => current.filter(item => item !== path))}
                 onSubmit={submitChat}
               />

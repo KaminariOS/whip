@@ -317,30 +317,30 @@ export class CodexRolloutAdapter {
 
   private acceptResponse(payload: JsonObject, at?: number): void {
     const type = string(payload.type) || '';
-    const id = string(payload.id) || string(payload.call_id) || `${this.sequence}`;
+    const itemId = string(payload.id) || `${this.sequence}`;
+    const callId = string(payload.call_id) || itemId;
     if (type === 'message') {
       const content = textContent(payload.content);
-      if (payload.role === 'assistant') this.assistantText(content, id, at, payload.phase === 'commentary');
-      if (payload.role === 'user') this.userMessage(content, id, at);
+      if (payload.role === 'assistant') this.assistantText(content, itemId, at, payload.phase === 'commentary');
+      if (payload.role === 'user') this.userMessage(content, itemId, at);
       return;
     }
     if (type === 'reasoning') {
-      this.assistantText(textContent(payload.summary), id, at, true);
+      this.assistantText(textContent(payload.summary), itemId, at, true);
       return;
     }
     if (type === 'local_shell_call') {
       const action = object(payload.action);
-      this.tool(id, 'exec_command', status(payload.status, 'running'), action || {}, undefined, undefined, undefined, at);
+      this.tool(callId, 'exec_command', status(payload.status, 'running'), action || {}, undefined, undefined, undefined, at);
       return;
     }
     if (type === 'function_call' || type === 'custom_tool_call' || type === 'tool_search_call') {
       const name = string(payload.name) || string(payload.execution) || 'tool';
       const raw = payload.arguments ?? payload.input;
-      this.tool(id, name, status(payload.status, 'running'), input(raw), undefined, undefined, undefined, at);
+      this.tool(callId, name, status(payload.status, 'running'), input(raw), undefined, undefined, undefined, at);
       return;
     }
     if (type === 'function_call_output' || type === 'custom_tool_call_output') {
-      const callId = string(payload.call_id) || id;
       const location = this.tools.get(`tool:${callId}`);
       const message = location ? this.getMessage(location.messageId) : undefined;
       const current = message?.parts.find((item): item is TranscriptToolPart => item.id === `tool:${callId}` && item.type === 'tool');
@@ -349,7 +349,7 @@ export class CodexRolloutAdapter {
     }
     if (type === 'web_search_call') {
       const action = object(payload.action) || {};
-      this.tool(id, 'websearch', status(payload.status, 'running'), action, undefined, undefined, undefined, at);
+      this.tool(callId, 'websearch', status(payload.status, 'running'), action, undefined, undefined, undefined, at);
     }
   }
 

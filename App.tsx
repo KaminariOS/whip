@@ -61,6 +61,8 @@ import {
 import { isHerdrProtocolMismatch } from './src/lib/herdrProtocol';
 import { shouldRefreshLiveHost } from './src/lib/liveHostHeartbeat';
 import { allSettledWithConcurrency } from './src/lib/promisePool';
+import { parentRemotePath } from './src/lib/remoteFiles';
+import type { TranscriptFileLinkTarget } from './src/lib/transcriptLinks';
 import {
   nextReconnect,
   shouldRestartReconnect,
@@ -254,6 +256,8 @@ interface RemoteFilesRequest {
   id: number;
   hostSessionId: string;
   initialPath: string;
+  initialFilePath?: string;
+  initialLine?: number;
   pathKey: string;
 }
 
@@ -2040,7 +2044,7 @@ function AppContent() {
     await Promise.all(sessionIds.map(refreshHost));
   };
 
-  const openRemoteFiles = useCallback((sessionId: string, terminalId: string) => {
+  const openRemoteFiles = useCallback((sessionId: string, terminalId: string, target?: TranscriptFileLinkTarget) => {
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
     const pane = session?.snapshot.panes.find(item => item.terminal_id === terminalId);
     if (!session || !pane) return;
@@ -2051,11 +2055,14 @@ function AppContent() {
     setRemoteFilesRequest({
       id: ++remoteFilesRequestIdRef.current,
       hostSessionId: sessionId,
-      initialPath: remoteFilePathsRef.current.get(pathKey)
-        || pane.foreground_cwd
-        || pane.cwd
-        || workspace?.worktree?.checkout_path
-        || '~',
+      initialPath: target
+        ? parentRemotePath(target.path)
+        : remoteFilePathsRef.current.get(pathKey)
+          || pane.foreground_cwd
+          || pane.cwd
+          || workspace?.worktree?.checkout_path
+          || '~',
+      ...(target ? { initialFilePath: target.path, initialLine: target.line } : {}),
       pathKey,
     });
   }, []);
@@ -2503,6 +2510,8 @@ function AppContent() {
           client={remoteFilesRuntime.client}
           hostId={remoteFilesRequest.hostSessionId}
           initialPath={remoteFilesRequest.initialPath}
+          initialFilePath={remoteFilesRequest.initialFilePath}
+          initialLine={remoteFilesRequest.initialLine}
           visible
           onPathChange={path => remoteFilePathsRef.current.set(remoteFilesRequest.pathKey, path)}
           onClose={() => setRemoteFilesRequest(current => (
@@ -2605,7 +2614,7 @@ function LiveSessionView({
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
-  onOpenFiles: (sessionId: string, terminalId: string) => void;
+  onOpenFiles: (sessionId: string, terminalId: string, target?: TranscriptFileLinkTarget) => void;
   getTerminalComposerDraft: (sessionId: string, terminalId: string) => string;
   onTerminalComposerDraftChange: (sessionId: string, terminalId: string, value: string) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
@@ -2625,7 +2634,7 @@ function LiveSessionView({
   const openPane = useCallback((pane: PaneInfo) => onOpenPane(sessionId, pane), [onOpenPane, sessionId]);
   const activateTerminal = useCallback((pane: PaneInfo) => onActivateTerminal(sessionId, pane), [onActivateTerminal, sessionId]);
   const closeTerminal = useCallback((terminalId: string) => onCloseTerminal(sessionId, terminalId), [onCloseTerminal, sessionId]);
-  const openFiles = useCallback((terminalId: string) => onOpenFiles(sessionId, terminalId), [onOpenFiles, sessionId]);
+  const openFiles = useCallback((terminalId: string, target?: TranscriptFileLinkTarget) => onOpenFiles(sessionId, terminalId, target), [onOpenFiles, sessionId]);
   const getComposerDraft = useCallback(
     (terminalId: string) => getTerminalComposerDraft(sessionId, terminalId),
     [getTerminalComposerDraft, sessionId],
