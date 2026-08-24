@@ -30,4 +30,5 @@ test('reads every startup value through one AsyncStorage bridge call', async () 
   expect(snapshot.knownHosts).toBe('value:herdr.known-hosts.v1');
   expect(snapshot.liveHosts).toBe('value:herdr.live.hosts.v1');
   expect(snapshot.terminalHistory).toBe('value:herdr.terminal.history.v1');
+  expect(snapshot.herdrSocketPaths).toBe('value:herdr.api-socket-paths.v1');
 });

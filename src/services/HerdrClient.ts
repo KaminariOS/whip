@@ -14,8 +14,14 @@ import { parseRemoteGitDiff, parseRemoteGitRepository, parseRemoteGitStatus, rem
 import { parseRemoteHtmlPreviewStart, remoteHtmlPreviewPageUrl, remoteHtmlPreviewStartCommand, remoteHtmlPreviewStopCommand, type RemoteHtmlServerProcess } from '../lib/remoteHtmlPreview';
 import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
+import { openCodeTranscriptQuery } from '../lib/openCodeTranscript';
 import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
+import {
+  cachedHerdrSocketPath,
+  forgetHerdrSocketPath,
+  rememberHerdrSocketPath,
+} from './herdrSocketPathCache';
 import {
   withAppPerformanceTrace,
   terminalNativeResponseDelivered,
@@ -36,25 +42,7 @@ type HerdrApiParams<Method extends HerdrApiMethod> = Extract<
   { method: Method }
 >['params'];
 
-interface CachedApiSocketPath {
-  fingerprint: string;
-  socketPath: string;
-}
-
-const apiSocketPathCache = new Map<string, CachedApiSocketPath>();
-
-function apiSocketPathFingerprint(profile: ConnectionProfile): string {
-  return [profile.host.trim(), profile.port.trim(), profile.username.trim(), profile.sessionName.trim()].join('\n');
-}
-
-function cachedApiSocketPath(profile: ConnectionProfile): string | null {
-  const cached = apiSocketPathCache.get(profile.id);
-  return cached?.fingerprint === apiSocketPathFingerprint(profile) ? cached.socketPath : null;
-}
-
-export function clearHerdrSocketPathCache(): void {
-  apiSocketPathCache.clear();
-}
+export { clearHerdrSocketPathCache } from './herdrSocketPathCache';
 
 export function isUnavailableSshChannel(error: unknown): boolean {
   const code = errorCode(error);
@@ -155,7 +143,7 @@ export class HerdrClient {
       this.profile = profile;
       this.jumpProfiles = jumpProfiles;
       this.apiServer = null;
-      this.resolvedApiSocketPath = profile.herdrSocketPath?.trim() ? null : cachedApiSocketPath(profile);
+      this.resolvedApiSocketPath = profile.herdrSocketPath?.trim() ? null : cachedHerdrSocketPath(profile);
       this.resolvedApiSocketPathFromCache = Boolean(this.resolvedApiSocketPath);
       this.remoteHome = null;
     })();
@@ -199,7 +187,7 @@ export class HerdrClient {
     this.client = nextClient;
     this.profile = profile;
     this.apiServer = null;
-    this.resolvedApiSocketPath = profile.herdrSocketPath?.trim() ? null : cachedApiSocketPath(profile);
+    this.resolvedApiSocketPath = profile.herdrSocketPath?.trim() ? null : cachedHerdrSocketPath(profile);
     this.resolvedApiSocketPathFromCache = Boolean(this.resolvedApiSocketPath);
     this.remoteHome = null;
     const retainedTerminalIds = [...this.terminalBridges];
@@ -401,6 +389,11 @@ export class HerdrClient {
       else onClosed(event.reason);
     });
     return { close: () => channel!.close() };
+  }
+
+  async loadOpenCodeTranscript(sessionId: string): Promise<unknown> {
+    const output = await this.requireClient().execute(this.loginShellCommand(openCodeTranscriptQuery(sessionId)));
+    return JSON.parse(output);
   }
 
   /** Explicit user-approved host integration setup; never called during connect. */
@@ -1069,20 +1062,14 @@ export class HerdrClient {
     const socketPath = `${dataDir}/herdr.sock`;
     this.resolvedApiSocketPath = socketPath;
     this.resolvedApiSocketPathFromCache = false;
-    apiSocketPathCache.set(profile.id, {
-      fingerprint: apiSocketPathFingerprint(profile),
-      socketPath,
-    });
+    rememberHerdrSocketPath(profile, socketPath);
     return socketPath;
   }
 
   private invalidateCachedApiSocketPath(): void {
     if (!this.resolvedApiSocketPathFromCache) return;
     const profile = this.requireProfile();
-    const cached = apiSocketPathCache.get(profile.id);
-    if (cached?.socketPath === this.resolvedApiSocketPath) {
-      apiSocketPathCache.delete(profile.id);
-    }
+    if (this.resolvedApiSocketPath) forgetHerdrSocketPath(profile, this.resolvedApiSocketPath);
     this.resolvedApiSocketPath = null;
     this.resolvedApiSocketPathFromCache = false;
     this.remoteHome = null;

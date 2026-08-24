@@ -15,6 +15,47 @@ describe('Codex rollout adapter', () => {
     expect(adapter.snapshot().filter(item => item.type === 'assistant-message')).toHaveLength(1);
   });
 
+  test('does not expose synthetic user-role context from response items', () => {
+    const adapter = new CodexRolloutAdapter();
+    adapter.accept(line('response_item', {
+      type: 'message',
+      id: 'context',
+      role: 'user',
+      content: [{
+        type: 'input_text',
+        text: '# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nprivate context\n</INSTRUCTIONS>',
+      }],
+    }));
+    adapter.accept(line('response_item', {
+      type: 'message',
+      id: 'u1',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'Please fix the chat view' }],
+    }));
+    adapter.accept(line('event_msg', {
+      type: 'user_message',
+      message: 'Please fix the chat view',
+    }));
+
+    expect(adapter.snapshot()).toEqual([
+      expect.objectContaining({ type: 'user-message', text: 'Please fix the chat view' }),
+    ]);
+  });
+
+  test('keeps a first user response item when no matching event exists', () => {
+    const adapter = new CodexRolloutAdapter();
+    adapter.accept(line('response_item', {
+      type: 'message',
+      id: 'u1',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'Check gold and HYPE market structure' }],
+    }));
+
+    expect(adapter.snapshot()).toEqual([
+      expect.objectContaining({ type: 'user-message', text: 'Check gold and HYPE market structure' }),
+    ]);
+  });
+
   test('shows only explicit reasoning summaries, never raw chain-of-thought content', () => {
     const adapter = new CodexRolloutAdapter();
     adapter.accept(line('response_item', { type: 'reasoning', id: 'r1', summary: [{ type: 'summary_text', text: 'Checked the failure.' }], content: [{ type: 'reasoning_text', text: 'hidden chain' }] }));

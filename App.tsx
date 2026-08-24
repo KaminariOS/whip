@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  memo,
   useMemo,
   useRef,
   useState,
@@ -57,6 +58,7 @@ import {
 } from './src/lib/agentStatusEvents';
 import { isHerdrProtocolMismatch } from './src/lib/herdrProtocol';
 import { shouldRefreshLiveHost } from './src/lib/liveHostHeartbeat';
+import { allSettledWithConcurrency } from './src/lib/promisePool';
 import {
   nextReconnect,
   shouldRestartReconnect,
@@ -171,6 +173,10 @@ import {
 } from './src/services/persistedLiveHosts';
 import { readStartupStorage, type StartupStorageSnapshot } from './src/services/startupStorage';
 import {
+  hydrateHerdrSocketPathCache,
+  loadHerdrSocketPathCache,
+} from './src/services/herdrSocketPathStorage';
+import {
   closeTerminalSession,
   openSshShellSession,
   openTerminalSession,
@@ -200,6 +206,26 @@ const LIVE_HOST_RECONCILE_MS = 120_000;
 const LIVE_HOST_RECONNECT_COOLDOWN_MS = 30_000;
 const NETWORK_CHANGE_DEBOUNCE_MS = 750;
 const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;
+const BACKGROUND_HOST_RESTORE_CONCURRENCY = 2;
+
+const StableStatusBar = memo(function AppStatusBar({
+  backgroundColor,
+  hidden,
+  isDark,
+}: {
+  backgroundColor: string;
+  hidden: boolean;
+  isDark: boolean;
+}) {
+  return (
+    <StatusBar
+      animated={false}
+      hidden={hidden}
+      barStyle={isDark ? 'light-content' : 'dark-content'}
+      backgroundColor={backgroundColor}
+    />
+  );
+});
 
 interface LiveRuntime {
   client: HerdrClient;
@@ -559,6 +585,11 @@ function AppContent() {
           ? terminalHistoryFromStorage(snapshot.terminalHistory)
           : loadTerminalHistory()
       )).catch(() => []),
+      withAppPerformanceTrace('Whip startup store: socket paths', () => (
+        snapshot && !useFallback
+          ? hydrateHerdrSocketPathCache(snapshot.herdrSocketPaths)
+          : loadHerdrSocketPathCache()
+      )).catch(() => undefined),
     ]).then(([nextKnownHosts, persistedLiveHosts, nextTerminalHistory]) => {
       setKnownHosts(nextKnownHosts);
       knownHostsRef.current = nextKnownHosts;
@@ -1614,7 +1645,7 @@ function AppContent() {
         'Whip startup restore: biometric',
         verifyBiometric,
       );
-      await Promise.allSettled(persisted.hostIds.map(async hostId => {
+      const restoreHost = async (hostId: string) => {
         const host = hostsRef.current.find(item => item.id === hostId);
         if (!host) return;
         let protectedKey = requiresBiometricForSavedKey(host, biometricForKeysRef.current);
@@ -1652,14 +1683,39 @@ function AppContent() {
             error: message,
           }));
         }
-      }));
+      };
+      const validHostIds = persistedHosts.map(host => host.id);
+      const activeHostId = persisted.activeHostId && validHostIds.includes(persisted.activeHostId)
+        ? persisted.activeHostId
+        : null;
+      let activeTerminalReopened = false;
+      if (activeHostId) {
+        await withAppPerformanceTrace(
+          'Whip startup restore: active host',
+          () => restoreHost(activeHostId),
+        );
+        setLiveSessions(current => selectLiveHostSession(current, activeHostId));
+        if (reopenTerminalOnLaunch && restoredTerminalHostIdsRef.current.has(activeHostId)) {
+          setNavigation(current => selectMobileTab(current, 'terminal'));
+          activeTerminalReopened = true;
+        }
+      }
+      const backgroundHostIds = validHostIds.filter(hostId => hostId !== activeHostId);
+      await withAppPerformanceTrace(
+        'Whip startup restore: background hosts',
+        () => allSettledWithConcurrency(
+          backgroundHostIds,
+          BACKGROUND_HOST_RESTORE_CONCURRENCY,
+          restoreHost,
+        ),
+      );
       if (persisted.activeHostId) {
         setLiveSessions(current => {
           const active = current.sessions.find(session => session.hostId === persisted.activeHostId);
           return active ? selectLiveHostSession(current, active.id) : current;
         });
       }
-      if (reopenTerminalOnLaunch) {
+      if (reopenTerminalOnLaunch && !activeTerminalReopened) {
         const terminalHostId = persisted.activeHostId && restoredTerminalHostIdsRef.current.has(persisted.activeHostId)
           ? persisted.activeHostId
           : [...persisted.hostIds].reverse().find(hostId => restoredTerminalHostIdsRef.current.has(hostId));
@@ -2135,11 +2191,10 @@ function AppContent() {
 
   return (
     <>
-      <StatusBar
-        animated={false}
+      <StableStatusBar
         hidden={fullscreenVisible}
-        barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={theme.canvas}
+        isDark={isDark}
       />
       <SafeAreaView
         className="flex-1 bg-background"

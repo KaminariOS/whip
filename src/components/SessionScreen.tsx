@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronLeft, Globe2, MessageCircle, Plus, SquareTerminal, X } from 'lucide-react-native';
+import { ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -36,11 +36,13 @@ import {
 import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
 import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '@/src/lib/volumeKeys';
 import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalControls';
-import { codexChatAction, codexMissingIdentityAction, codexSessionIdForPane, isCodexPane, type CodexIntegrationStatus } from '../lib/codexSession';
+import { chatAgentForPane, openCodeSessionIdForPane, type ChatAgent } from '../lib/agentChatSession';
+import { codexChatAction, codexMissingIdentityAction, codexSessionIdForPane, type CodexIntegrationStatus } from '../lib/codexSession';
 import { composeTerminalSubmission } from '../lib/terminalSubmission';
 import type { AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
 import { codexTranscriptService } from '../services/CodexTranscriptService';
+import { openCodeTranscriptService } from '../services/OpenCodeTranscriptService';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
@@ -49,6 +51,7 @@ import { sessionTabGlassStyle, sessionTabStatusColor, statusColor, useTheme } fr
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { AttachmentPasteSheet, type PastedAttachment } from './AttachmentPasteSheet';
+import { CodexIntegrationInstallSheet } from './CodexIntegrationInstallSheet';
 import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -56,6 +59,7 @@ import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 import { TerminalBackground, TerminalScreen } from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
+import { AgentBrandIcon } from './AgentBrandIcon';
 
 interface Props {
   hostSessionId: string;
@@ -164,11 +168,16 @@ export function SessionScreen({
   const [attachmentTerminalId, setAttachmentTerminalId] = useState<string | null>(null);
   const [attachmentTarget, setAttachmentTarget] = useState<'terminal' | 'chat'>('terminal');
   const [chatTerminalId, setChatTerminalId] = useState<string | null>(null);
+  const [chatAgent, setChatAgent] = useState<ChatAgent | null>(null);
   const [chatKey, setChatKey] = useState<string | null>(null);
   const [chatState, setChatState] = useState<AgentChatState | null>(null);
   const [chatAttachments, setChatAttachments] = useState<string[]>([]);
   const [chatSending, setChatSending] = useState(false);
   const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<string | null>(null);
+  const [codexIntegrationPrompt, setCodexIntegrationPrompt] = useState<{
+    paneId: string;
+    status: Extract<CodexIntegrationStatus, 'not-installed' | 'outdated' | 'needs-repair'>;
+  } | null>(null);
   const [pasteRequest, setPasteRequest] = useState<{
     id: number;
     terminalId: string;
@@ -185,6 +194,7 @@ export function SessionScreen({
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
+  const previousChatAgentStatus = useRef<PaneInfo['agent_status'] | undefined>(undefined);
 
   useEffect(() => () => cancelAnimation(tabSwipeTranslateX), [tabSwipeTranslateX]);
 
@@ -221,6 +231,7 @@ export function SessionScreen({
     session => session.terminalId === terminalState.activeTerminalId,
   );
   const activePane = snapshot.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);
+  const activeChatAgent = chatAgentForPane(activePane);
   const followServerFocus = shouldFollowServerTerminalFocus(
     visible,
     activePane?.pane_id || null,
@@ -333,43 +344,55 @@ export function SessionScreen({
     setAttachmentsOpen(false);
     setPasteRequest(null);
     setChatTerminalId(null);
+    setChatAgent(null);
     setChatKey(null);
     setChatState(null);
     setChatAttachments([]);
     setChatSending(false);
     setPendingIntegrationPaneId(null);
+    setCodexIntegrationPrompt(null);
   }, [hostSessionId]);
 
   useEffect(() => {
     codexTranscriptService.reconcileTerminals(hostSessionId, terminalState.sessions.map(session => session.terminalId));
+    openCodeTranscriptService.reconcileTerminals(hostSessionId, terminalState.sessions.map(session => session.terminalId));
     for (const session of terminalState.sessions) {
       const pane = snapshot.panes.find(item => item.terminal_id === session.terminalId);
       codexTranscriptService.rebind(hostSessionId, session.terminalId, codexSessionIdForPane(pane), client);
     }
     if (chatTerminalId) {
       const pane = snapshot.panes.find(item => item.terminal_id === chatTerminalId);
-      const sessionId = codexSessionIdForPane(pane);
-      if (sessionId && sessionId !== chatState?.sessionId) {
-        const key = codexTranscriptService.activate(hostSessionId, chatTerminalId, sessionId, client);
+      const nextAgent = chatAgentForPane(pane);
+      const sessionId = nextAgent === 'codex'
+        ? codexSessionIdForPane(pane)
+        : nextAgent === 'opencode'
+          ? openCodeSessionIdForPane(pane)
+          : null;
+      if (nextAgent && sessionId && (sessionId !== chatState?.sessionId || nextAgent !== chatAgent)) {
+        const service = nextAgent === 'codex' ? codexTranscriptService : openCodeTranscriptService;
+        const key = service.activate(hostSessionId, chatTerminalId, sessionId, client);
+        setChatAgent(nextAgent);
         setChatKey(key);
-        setChatState(codexTranscriptService.getState(key));
+        setChatState(service.getState(key));
         setChatAttachments([]);
       } else if (!sessionId && chatState?.status !== 'unavailable') {
         setChatKey(null);
-        setChatState({ sessionId: '', items: [], status: 'unavailable', error: 'This pane no longer reports a native Codex session ID.' });
+        setChatState({ sessionId: '', items: [], status: 'unavailable', error: 'This pane no longer reports a supported native agent session ID.' });
         setChatAttachments([]);
       }
     }
-  }, [chatState?.sessionId, chatState?.status, chatTerminalId, client, hostSessionId, snapshot.panes, terminalState.sessions]);
+  }, [chatAgent, chatState?.sessionId, chatState?.status, chatTerminalId, client, hostSessionId, snapshot.panes, terminalState.sessions]);
 
   useEffect(() => {
-    if (!chatKey) return undefined;
-    return codexTranscriptService.subscribe(chatKey, setChatState);
-  }, [chatKey]);
+    if (!chatKey || !chatAgent) return undefined;
+    return (chatAgent === 'codex' ? codexTranscriptService : openCodeTranscriptService)
+      .subscribe(chatKey, setChatState);
+  }, [chatAgent, chatKey]);
 
   useEffect(() => {
     if (chatTerminalId && chatTerminalId !== activeTerminalSession?.terminalId) {
       setChatTerminalId(null);
+      setChatAgent(null);
       setChatKey(null);
       setChatState(null);
       setChatAttachments([]);
@@ -378,10 +401,20 @@ export function SessionScreen({
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') codexTranscriptService.reconnectHost(hostSessionId);
+      if (state !== 'active') return;
+      codexTranscriptService.reconnectHost(hostSessionId);
+      if (chatAgent === 'opencode' && chatKey) openCodeTranscriptService.refresh(chatKey);
     });
     return () => subscription.remove();
-  }, [hostSessionId]);
+  }, [chatAgent, chatKey, hostSessionId]);
+
+  useEffect(() => {
+    const previous = previousChatAgentStatus.current;
+    previousChatAgentStatus.current = activePane?.agent_status;
+    if (chatAgent === 'opencode' && chatKey && previous && previous !== 'idle' && activePane?.agent_status === 'idle') {
+      openCodeTranscriptService.refresh(chatKey);
+    }
+  }, [activePane?.agent_status, chatAgent, chatKey]);
 
   useEffect(() => {
     if (!pendingIntegrationPaneId) return;
@@ -391,6 +424,7 @@ export function SessionScreen({
     if (pane && sessionId) {
       const key = codexTranscriptService.activate(hostSessionId, pane.terminal_id, sessionId, client);
       setChatTerminalId(pane.terminal_id);
+      setChatAgent('codex');
       setChatKey(key);
       setChatState(codexTranscriptService.getState(key));
     } else {
@@ -689,8 +723,9 @@ export function SessionScreen({
     setAttachmentsOpen(true);
   };
 
-  const closeCodexChat = () => {
+  const closeAgentChat = () => {
     setChatTerminalId(null);
+    setChatAgent(null);
     setChatKey(null);
     setChatState(null);
     setChatAttachments([]);
@@ -700,42 +735,51 @@ export function SessionScreen({
     paneId: string,
     status: Extract<CodexIntegrationStatus, 'not-installed' | 'outdated' | 'needs-repair'>,
   ) => {
-    let heading = 'Install Herdr Codex integration?';
-    let stateExplanation = 'Whip needs Herdr’s native Codex session identity.';
-    if (status === 'outdated') {
-      heading = 'Update Herdr Codex integration?';
-      stateExplanation = 'The installed Herdr Codex integration is outdated.';
-    } else if (status === 'needs-repair') {
-      heading = 'Repair Herdr Codex integration?';
-      stateExplanation = 'The installed Herdr Codex integration needs repair.';
-    }
-    Alert.alert(
-      heading,
-      `${stateExplanation} Whip will run:\n\nherdr integration install codex\n\non this remote host for your user. The running Codex process may need to be restarted before Chat is available.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Install',
-          onPress: () => {
-            setBusy(true);
-            client.installCodexIntegration()
-              .then(onRefresh)
-              .then(() => setPendingIntegrationPaneId(paneId))
-              .catch(error => Alert.alert('Could not install Codex integration', String(error)))
-              .finally(() => setBusy(false));
-          },
-        },
-      ],
-    );
+    setCodexIntegrationPrompt({ paneId, status });
   };
 
-  const openCodexChat = async () => {
+  const installCodexIntegration = async () => {
+    if (!codexIntegrationPrompt) return;
+    const { paneId } = codexIntegrationPrompt;
+    setBusy(true);
+    try {
+      await client.installCodexIntegration();
+      setCodexIntegrationPrompt(null);
+      await onRefresh();
+      setPendingIntegrationPaneId(paneId);
+    } catch (error) {
+      Alert.alert('Could not install Codex integration', String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openAgentChat = async () => {
     if (!activePane || !activeTerminalSession) return;
+    const agent = chatAgentForPane(activePane);
+    if (agent === 'opencode') {
+      const sessionId = openCodeSessionIdForPane(activePane);
+      if (!sessionId) {
+        Alert.alert(
+          'OpenCode identity unavailable',
+          'This OpenCode process has not reported a native session ID. Ensure the Herdr OpenCode integration is current, then restart OpenCode and try Chat again.',
+        );
+        return;
+      }
+      const key = openCodeTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
+      setChatTerminalId(activeTerminalSession.terminalId);
+      setChatAgent('opencode');
+      setChatKey(key);
+      setChatState(openCodeTranscriptService.getState(key));
+      return;
+    }
+    if (agent !== 'codex') return;
     const action = codexChatAction(activePane);
     if (action === 'open') {
       const sessionId = codexSessionIdForPane(activePane)!;
       const key = codexTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
       setChatTerminalId(activeTerminalSession.terminalId);
+      setChatAgent('codex');
       setChatKey(key);
       setChatState(codexTranscriptService.getState(key));
       return;
@@ -843,17 +887,17 @@ export function SessionScreen({
               onPress={hapticPress(() => setEditorMode('tab'))}>
               <Plus size={Platform.OS === 'ios' ? 23 : 16} color={colors.text} />
             </Button>
-            {isCodexPane(activePane) && (
+            {activeChatAgent && (
               <Button
-                accessibilityLabel={chatVisible ? 'Open Terminal view' : 'Open Codex Chat view'}
+                accessibilityLabel={chatVisible ? 'Open Terminal view' : `Open ${activeChatAgent === 'opencode' ? 'OpenCode' : 'Codex'} Chat view`}
                 className={cn('h-[55px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-11')}
                 disabled={busy || !activeTerminalSession}
                 size="content"
                 variant="ghost"
-                onPress={hapticPress(chatVisible ? closeCodexChat : openCodexChat)}>
+                onPress={hapticPress(chatVisible ? closeAgentChat : openAgentChat)}>
                 {chatVisible
                   ? <SquareTerminal size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />
-                  : <MessageCircle size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />}
+                  : <AgentBrandIcon agent={activeChatAgent} size={Platform.OS === 'ios' ? 23 : 19} color={colors.text} />}
               </Button>
             )}
           </>
@@ -998,21 +1042,31 @@ export function SessionScreen({
             }}
           />
         </Animated.View>
-        {chatVisible && chatState && activePane && (
-          <View
-            className="absolute inset-x-0 bottom-0 z-20"
-            style={{ top: 55 + (selectedTab && panes.length > 1 ? 37 : 0) }}>
-            <AgentChatView
-              state={chatState}
-              agentStatus={activePane.agent_status}
-              attachments={chatAttachments}
-              sending={chatSending}
-              onOpenTerminal={closeCodexChat}
-              onAttach={openChatAttachments}
-              onRemoveAttachment={path => setChatAttachments(current => current.filter(item => item !== path))}
-              onSubmit={submitChat}
-            />
-          </View>
+        {chatVisible && chatState && chatAgent && activePane && (
+          <Modal
+            animationType="fade"
+            onRequestClose={closeAgentChat}
+            statusBarTranslucent
+            visible>
+            <View
+              className="flex-1 bg-background"
+              style={{
+                paddingBottom: safeAreaInsets.bottom,
+              }}>
+              <AgentChatView
+                state={chatState}
+                agent={chatAgent}
+                attachments={chatAttachments}
+                draft={getComposerDraft(activePane.terminal_id)}
+                sending={chatSending}
+                onOpenTerminal={closeAgentChat}
+                onAttach={openChatAttachments}
+                onDraftChange={value => onComposerDraftChange(activePane.terminal_id, value)}
+                onRemoveAttachment={path => setChatAttachments(current => current.filter(item => item !== path))}
+                onSubmit={submitChat}
+              />
+            </View>
+          </Modal>
         )}
         {tabSwipe
           && (!tabSwipe.targetTerminalId
@@ -1071,6 +1125,14 @@ export function SessionScreen({
               }));
             }
           }}
+        />
+        <CodexIntegrationInstallSheet
+          busy={busy}
+          status={codexIntegrationPrompt?.status || null}
+          onCancel={() => {
+            if (!busy) setCodexIntegrationPrompt(null);
+          }}
+          onInstall={installCodexIntegration}
         />
         <Modal
           animationType="slide"

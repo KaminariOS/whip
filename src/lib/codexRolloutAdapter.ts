@@ -32,6 +32,14 @@ function textContent(value: unknown): string {
   }
 }
 
+function isInjectedUserContext(value: string): boolean {
+  const text = value.trimStart();
+  return (
+    /^# AGENTS\.md instructions for [^\n]+\n\n<INSTRUCTIONS>/i.test(text)
+    || /^<environment_context>[\s\S]*<\/environment_context>$/i.test(text)
+  );
+}
+
 function detail(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'string') return value;
@@ -146,8 +154,14 @@ export class CodexRolloutAdapter {
     const type = string(payload.type) || '';
     const id = string(payload.id) || string(payload.call_id) || `${this.sequence}`;
     if (type === 'message') {
-      const role = payload.role === 'user' ? 'user' : payload.role === 'assistant' ? 'assistant' : null;
-      if (role) this.message(role, textContent(payload.content), `response:${id}`, timestamp);
+      const content = textContent(payload.content);
+      if (payload.role === 'assistant') this.message('assistant', content, `response:${id}`, timestamp);
+      // Some rollout versions do not emit an event_msg for the first user turn.
+      // Keep genuine response-item turns, while rejecting the injected context
+      // that Codex also records with a user role.
+      if (payload.role === 'user' && !isInjectedUserContext(content)) {
+        this.message('user', content, `response:${id}`, timestamp);
+      }
       return;
     }
     if (type === 'reasoning') {

@@ -6,6 +6,7 @@ import {
   LEGACY_DEVICE_PREFERENCES_KEYS,
 } from './devicePreferences';
 import { KNOWN_HOSTS_STORAGE_KEY } from './knownHosts';
+import { HERDR_SOCKET_PATH_CACHE_KEY } from './herdrSocketPathStorage';
 import { LIVE_HOSTS_KEY } from './persistedLiveHosts';
 import { TERMINAL_HISTORY_STORAGE_KEY } from './terminalHistory';
 
@@ -17,6 +18,7 @@ export const STARTUP_STORAGE_KEYS = [
   KNOWN_HOSTS_STORAGE_KEY,
   LIVE_HOSTS_KEY,
   TERMINAL_HISTORY_STORAGE_KEY,
+  HERDR_SOCKET_PATH_CACHE_KEY,
 ] as const;
 
 export type StartupStorageSnapshot = {
@@ -27,6 +29,7 @@ export type StartupStorageSnapshot = {
   knownHosts: string | null;
   liveHosts: string | null;
   terminalHistory: string | null;
+  herdrSocketPaths: string | null;
 };
 
 /** Reads every startup AsyncStorage value through a single native bridge call. */
@@ -42,5 +45,6 @@ export async function readStartupStorage(): Promise<StartupStorageSnapshot> {
     knownHosts: value(KNOWN_HOSTS_STORAGE_KEY),
     liveHosts: value(LIVE_HOSTS_KEY),
     terminalHistory: value(TERMINAL_HISTORY_STORAGE_KEY),
+    herdrSocketPaths: value(HERDR_SOCKET_PATH_CACHE_KEY),
   };
 }

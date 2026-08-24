@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Portal } from '@rn-primitives/portal';
-import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
 import { AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,6 +37,7 @@ import {
   TerminalRendererHost,
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
+import { ComposerInput, MessageComposer } from './MessageComposer';
 import { useReducedMotion } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -141,18 +142,6 @@ const TERMINAL_CONTROL_LABEL_STYLE = {
   textAlignVertical: 'center',
 } as const;
 const MAX_RECONNECT_ATTEMPTS = 5;
-
-type ComposerInputProps = Omit<React.ComponentProps<typeof Input>, 'defaultValue' | 'value'> & {
-  initialValue: string;
-};
-
-function ComposerInput({ initialValue, ...props }: ComposerInputProps) {
-  // React Native sends `defaultValue` to Android as the native text prop. Keep
-  // it stable for this mounted input so partial IME results are never written
-  // back over the keyboard's active composing span.
-  const nativeInitialValue = useRef(initialValue).current;
-  return <Input {...props} defaultValue={nativeInitialValue} />;
-}
 
 export function TerminalBackground({ preferences }: { preferences: TerminalPreferences }) {
   if (!preferences.backgroundImageUri) return null;
@@ -520,6 +509,15 @@ export function TerminalScreen({
     }
     const enteredVisibility = !wasVisible.current;
     wasVisible.current = true;
+    if (enteredVisibility && terminalId) {
+      const nextComposeText = getComposerDraft(terminalId);
+      if (nextComposeText !== composeTextRef.current) {
+        composeTextRef.current = nextComposeText;
+        setComposeText(nextComposeText);
+        composeInputRef.current?.setNativeProps({ text: nextComposeText });
+        composeInputRef.current?.setSelection(nextComposeText.length, nextComposeText.length);
+      }
+    }
     if (enteredVisibility && !composeOpen) {
       renderer.current?.blur();
       Keyboard.dismiss();
@@ -528,7 +526,7 @@ export function TerminalScreen({
       renderer.current?.fit();
     }, 40);
     return () => clearTimeout(timer);
-  }, [composeOpen, ready, visible]);
+  }, [composeOpen, getComposerDraft, ready, terminalId, visible]);
 
   useEffect(() => {
     if (status === 'connected' || composeOpen || !keyboardEnabled) return;
@@ -1321,67 +1319,51 @@ export function TerminalScreen({
               style={{
                 bottom: TERMINAL_CONTROL_BAR_HEIGHT + bottomSafeAreaInset + keyboardInset,
               }}>
-              <View className="flex-row items-end gap-2">
-                <View className="gap-1.5">
-                  <Button
-                    accessibilityLabel={t('terminal.attach')}
-                    className="size-10 rounded-full bg-terminal-surface px-0"
-                    variant="secondary"
-                    onPress={onRequestAttachment}>
-                    <Paperclip size={18} color={colors.text} />
-                  </Button>
-                  <Button
-                    accessibilityLabel={t('terminal.expandComposer')}
-                    className="size-10 rounded-full bg-terminal-surface px-0"
-                    variant="secondary"
-                    onPress={expandCompose}>
-                    <Maximize2 size={17} color={colors.text} />
-                  </Button>
-                </View>
-                <View className="min-w-0 flex-1 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas">
-                  <QueuedMessagesStrip
-                    messages={queuedMessages}
-                    label={t('terminal.outbox')}
-                    queuedLabel={t('terminal.queued')}
-                    sendingLabel={t('terminal.sending')}
-                    unqueueLabel={t('terminal.unqueue')}
-                    onUnqueue={unqueueComposeMessage}
-                  />
-                  <ComposeAttachmentsStrip
-                    attachments={composeAttachments}
-                    removeLabel={t('terminal.removeAttachment')}
-                    onRemove={removeComposeAttachment}
-                  />
-                  <ComposerInput
-                    ref={composeInputRef}
-                    initialValue={composeText}
-                    autoFocus={keyboardEnabled}
-                    showSoftInputOnFocus={keyboardEnabled}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                    onChangeText={updateComposeText}
-                    placeholder={t('terminal.composePlaceholder')}
-                    placeholderTextColor={colors.muted}
-                    className="h-[76px] rounded-none border-0 bg-transparent px-3 py-2 font-mono text-[12px] leading-[17px] text-terminal-text"
-                  />
-                </View>
-                <View className="gap-1.5">
-                  <Button
-                    accessibilityLabel={t('terminal.sendBufferedInput')}
-                    className="size-10 rounded-full bg-white px-0"
-                    onPress={submitCompose}>
-                    <Send size={17} color={colors.ink} />
-                  </Button>
-                  <Button
-                    accessibilityLabel={t('terminal.closeCompose')}
-                    className="size-10 rounded-full bg-terminal-surface px-0"
-                    variant="secondary"
-                    onPress={closeCompose}>
-                    <X size={17} color={colors.text} />
-                  </Button>
-                </View>
-              </View>
+              <MessageComposer
+                initialValue={composeText}
+                inputRef={composeInputRef}
+                autoFocus={keyboardEnabled}
+                showSoftInputOnFocus={keyboardEnabled}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                onChangeText={updateComposeText}
+                placeholder={t('terminal.composePlaceholder')}
+                placeholderTextColor={colors.muted}
+                inputClassName="h-[76px] px-4 py-3 font-mono text-[12px] leading-[17px] text-terminal-text"
+                surfaceClassName="rounded-[38px] border-terminal-divider bg-terminal-canvas"
+                actions={{
+                  actionClassName: 'bg-terminal-surface',
+                  actionColor: colors.text,
+                  attachLabel: t('terminal.attach'),
+                  closeLabel: t('terminal.closeCompose'),
+                  expandLabel: t('terminal.expandComposer'),
+                  onAttach: () => onRequestAttachment?.(),
+                  onClose: closeCompose,
+                  onExpand: expandCompose,
+                  onSend: submitCompose,
+                  sendClassName: 'bg-white',
+                  sendColor: colors.ink,
+                  sendLabel: t('terminal.sendBufferedInput'),
+                }}
+                beforeInput={(
+                  <>
+                    <QueuedMessagesStrip
+                      messages={queuedMessages}
+                      label={t('terminal.outbox')}
+                      queuedLabel={t('terminal.queued')}
+                      sendingLabel={t('terminal.sending')}
+                      unqueueLabel={t('terminal.unqueue')}
+                      onUnqueue={unqueueComposeMessage}
+                    />
+                    <ComposeAttachmentsStrip
+                      attachments={composeAttachments}
+                      removeLabel={t('terminal.removeAttachment')}
+                      onRemove={removeComposeAttachment}
+                    />
+                  </>
+                )}
+              />
             </View>
           </View>
         </Portal>
