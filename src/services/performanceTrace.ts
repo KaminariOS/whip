@@ -20,6 +20,12 @@ const NATIVE_QUEUE_TO_RESPONSE = 'Whip terminal native queue to response';
 const NATIVE_RESPONSE_TO_RENDERER = 'Whip terminal native response to renderer';
 const TRACE_TIMEOUT_MS = 10_000;
 
+export type AppPerformanceTrace = {
+  name: string;
+  cookie: number;
+  ended: boolean;
+};
+
 export type TerminalInputTrace = {
   targetKey: string;
   writeCookie: number;
@@ -53,6 +59,21 @@ function beginAsyncEvent(name: string, cookie = nextTraceCookie()): number {
 
 function endAsyncEvent(name: string, cookie: number): void {
   performanceTrace?.endAsyncSection(name, cookie);
+}
+
+/** Starts an app-owned async slice that is emitted only during an Android trace. */
+export function beginAppPerformanceTrace(name: string): AppPerformanceTrace | null {
+  if (Platform.OS !== 'android' || !performanceTrace) return null;
+  const cookie = nextTraceCookie();
+  if (!performanceTrace.beginAsyncSection(name, cookie)) return null;
+  return { name, cookie, ended: false };
+}
+
+/** Ends an app-owned async slice. Repeated calls are intentionally harmless. */
+export function endAppPerformanceTrace(trace: AppPerformanceTrace | null): void {
+  if (!trace || trace.ended) return;
+  trace.ended = true;
+  performanceTrace?.endAsyncSection(trace.name, trace.cookie);
 }
 
 function endWrite(trace: TerminalInputTrace, _result: 'ok' | 'error' | 'timeout'): void {

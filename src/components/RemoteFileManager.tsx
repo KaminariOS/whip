@@ -975,6 +975,8 @@ function SwipeableRemoteFileRow({ children, deleting, disabled, name, onDelete }
     width: Math.max(0, -translateX.value),
   }));
 
+  useEffect(() => () => cancelAnimation(translateX), [translateX]);
+
   const settle = (open: boolean) => {
     openRef.current = open;
     setActionsOpen(open);

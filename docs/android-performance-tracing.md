@@ -16,6 +16,23 @@ whose output is immediate (for example, `printf ok`). Open the resulting
 
 The app-defined slices divide perceived latency into these intervals:
 
+Startup and application-work slices:
+
+- `Whip startup to first tab`: storage hydration through the first selected tab's
+  committed mount.
+- `Whip startup storage hydration`: the five persisted stores required to leave
+  the loading screen.
+- `Whip startup restore live hosts`: reconnecting all persisted live hosts and
+  restoring their snapshots and terminal state.
+- `Whip first tab mount: <tab>`: the first committed mount of each lazily loaded
+  primary tab.
+- `Whip host snapshot refresh`: a complete coordinated host snapshot request and
+  application pass.
+- `Whip transcript initial parse`: resolving, streaming, and normalizing the
+  initial Codex rollout history.
+
+Terminal interaction slices:
+
 - `Whip terminal input to native dispatch`: React Native handling through creation
   of the Rust/SSH write promise. This is local app overhead and does not await the
   transport operation.
@@ -41,8 +58,8 @@ The app-defined slices divide perceived latency into these intervals:
 
 In the Perfetto SQL editor, load
 `scripts/analyze-android-perfetto.sql` for completed sample counts, timeout counts,
-and average/min/max values. Ten-second timeout sentinel slices are not included in
-the latency statistics. The capture also includes Android FrameTimeline data for
+and average/min/max values for both startup and terminal work. Ten-second timeout
+sentinel slices are not included in the terminal latency statistics. The capture also includes Android FrameTimeline data for
 checking missed application and SurfaceFlinger frames around slow samples.
 If the local write and frame-to-visible slices are each around one display frame
 or less while input-to-first-frame is near the measured 70–150 ms host RTT, the

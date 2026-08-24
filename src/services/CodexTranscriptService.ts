@@ -2,6 +2,11 @@ import type { AgentChatState } from '../agentChat';
 import { CODEX_HISTORY_COMPLETE_RECORD } from '../lib/codexSession';
 import { CodexRolloutAdapter } from '../lib/codexRolloutAdapter';
 import { JsonlFramer } from '../lib/jsonlFramer';
+import {
+  beginAppPerformanceTrace,
+  endAppPerformanceTrace,
+  type AppPerformanceTrace,
+} from './performanceTrace';
 
 export interface CodexTranscriptStream {
   close: () => Promise<void>;
@@ -27,6 +32,7 @@ interface TranscriptEntry {
   listeners: Set<Listener>;
   state: AgentChatState;
   stream: CodexTranscriptStream | null;
+  parseTrace: { generation: number; trace: AppPerformanceTrace } | null;
   retryTimer: ReturnType<typeof setTimeout> | null;
   generation: number;
 }
@@ -118,9 +124,10 @@ export class CodexTranscriptService {
         transport,
         terminals: new Set(),
         listeners: new Set(),
-        state: { sessionId, items: [], status: 'loading' },
-        stream: null,
-        retryTimer: null,
+      state: { sessionId, items: [], status: 'loading' },
+      stream: null,
+      parseTrace: null,
+      retryTimer: null,
         generation: 0,
       };
       this.entries.set(key, entry);
@@ -146,6 +153,9 @@ export class CodexTranscriptService {
 
   private start(entry: TranscriptEntry, rebuilding: boolean): void {
     const generation = ++entry.generation;
+    this.finishParseTrace(entry);
+    const parseTrace = beginAppPerformanceTrace('Whip transcript initial parse');
+    entry.parseTrace = parseTrace ? { generation, trace: parseTrace } : null;
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
     entry.retryTimer = null;
     const oldStream = entry.stream;
@@ -163,6 +173,7 @@ export class CodexTranscriptService {
       onRecord: record => {
         if (record[CODEX_HISTORY_COMPLETE_RECORD] === true) {
           historyComplete = true;
+          this.finishParseTrace(entry, generation);
           this.publish(entry, { sessionId: entry.sessionId, items: staging.snapshot(), status: 'live' });
           return;
         }
@@ -177,6 +188,7 @@ export class CodexTranscriptService {
     entry.transport.resolveCodexRollout(entry.sessionId).then(path => {
       if (generation !== entry.generation) return null;
       if (!path) {
+        this.finishParseTrace(entry, generation);
         this.publish(entry, { sessionId: entry.sessionId, items: [], status: 'unavailable', error: 'Codex has not created this rollout yet.' });
         return null;
       }
@@ -188,6 +200,7 @@ export class CodexTranscriptService {
         reason => {
           if (generation !== entry.generation) return;
           framer.end();
+          this.finishParseTrace(entry, generation);
           entry.stream = null;
           this.scheduleRetry(entry, reason || 'Transcript stream closed');
         },
@@ -200,8 +213,18 @@ export class CodexTranscriptService {
       }
       entry.stream = stream;
     }).catch(error => {
-      if (generation === entry.generation) this.scheduleRetry(entry, String(error));
+      if (generation === entry.generation) {
+        this.finishParseTrace(entry, generation);
+        this.scheduleRetry(entry, String(error));
+      }
     });
+  }
+
+  private finishParseTrace(entry: TranscriptEntry, generation?: number): void {
+    const pending = entry.parseTrace;
+    if (!pending || (generation !== undefined && pending.generation !== generation)) return;
+    entry.parseTrace = null;
+    endAppPerformanceTrace(pending.trace);
   }
 
   private scheduleRetry(entry: TranscriptEntry, reason: string): void {
@@ -225,6 +248,7 @@ export class CodexTranscriptService {
 
   private disposeEntry(entry: TranscriptEntry): void {
     entry.generation += 1;
+    this.finishParseTrace(entry);
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
     entry.retryTimer = null;
     const stream = entry.stream;

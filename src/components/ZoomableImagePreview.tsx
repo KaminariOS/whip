@@ -53,6 +53,12 @@ export function ZoomableImagePreview({ accessibilityLabel, uri }: Props) {
   const scale = useSharedValue(MIN_IMAGE_ZOOM);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
+
+  useEffect(() => () => {
+    cancelAnimation(scale);
+    cancelAnimation(translateX);
+    cancelAnimation(translateY);
+  }, [scale, translateX, translateY]);
   const liveTransformRef = useRef<ImageTransform>({
     scale: MIN_IMAGE_ZOOM,
     x: 0,

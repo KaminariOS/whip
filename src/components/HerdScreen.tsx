@@ -744,6 +744,11 @@ const AgentRow = memo(
       width: Math.max(0, -translateX.value),
     }));
 
+    useEffect(() => () => {
+      cancelAnimation(translateX);
+      cancelAnimation(rowHeight);
+    }, [rowHeight, translateX]);
+
     const restore = () => {
       translateX.value = withSpring(0, DEFAULT_SPRING_CONFIG);
     };

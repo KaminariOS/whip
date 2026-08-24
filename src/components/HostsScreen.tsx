@@ -1,5 +1,5 @@
 import { AlertCircle, Bot, Ellipsis, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -249,6 +249,8 @@ function SwipeableHostRow({
   const actionRevealStyle = useAnimatedStyle(() => ({
     width: Math.max(0, -translateX.value),
   }));
+
+  useEffect(() => () => cancelAnimation(translateX), [translateX]);
 
   const settle = (open: boolean) => {
     openRef.current = open;

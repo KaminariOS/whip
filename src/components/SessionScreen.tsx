@@ -183,6 +183,8 @@ export function SessionScreen({
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
 
+  useEffect(() => () => cancelAnimation(tabSwipeTranslateX), [tabSwipeTranslateX]);
+
   const workspace = snapshot.workspaces.find(item => item.workspace_id === workspaceId) || focusedWorkspace;
   const tabs = orderByAgentStatusPriority(
     snapshot.tabs.filter(item => item.workspace_id === workspace?.workspace_id),

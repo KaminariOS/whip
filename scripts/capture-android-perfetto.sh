@@ -81,4 +81,4 @@ EOF
 adb pull "$remote_path" "$output_path"
 adb shell rm "$remote_path"
 echo "Saved $output_path"
-echo "Open it at https://ui.perfetto.dev and search for: Whip terminal input to visible"
+echo "Open it at https://ui.perfetto.dev and search for: Whip startup or Whip terminal input to visible"

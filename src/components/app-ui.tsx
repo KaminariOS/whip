@@ -229,8 +229,9 @@ export function StatusBadge({ status, label, agentStatus = false, showIndicator 
 }
 
 export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: string; color: string; size?: number }) {
-  const { motion, style, reduceMotion } = useStatusMotion(status);
-  const bloomStyle = useStatusBloom(status, reduceMotion);
+  const animationsEnabled = useContext(AgentStatusAnimationContext);
+  const { motion, style, reduceMotion } = useStatusMotion(status, true, true, animationsEnabled);
+  const bloomStyle = useStatusBloom(status, reduceMotion, animationsEnabled);
 
   if (motion === 'spin') {
     const iconSize = Math.max(11, size);
@@ -269,7 +270,7 @@ export function AnimatedAgentStatusGlyph({
   const animationsEnabled = useContext(AgentStatusAnimationContext);
   const spins = status === 'working' || status === 'running';
   const frame = useAgentSpinnerFrame(animationsEnabled && spins && !reduceMotion);
-  const { style } = useStatusMotion(status, false, false);
+  const { style } = useStatusMotion(status, false, false, animationsEnabled);
   const glyphBoxSize = size + 4;
   return (
     <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
@@ -320,7 +321,8 @@ export function AgentStatusMedallion({
   glyphSize?: number;
 }) {
   const reduceMotion = useReducedMotion();
-  const bloomStyle = useConnectedHostBloom(connected, reduceMotion);
+  const animationsEnabled = useContext(AgentStatusAnimationContext);
+  const bloomStyle = useConnectedHostBloom(connected, reduceMotion, animationsEnabled);
   const bloomSize = size + 4;
   const glyph = () => IconComponent
     ? <IconComponent color={color} size={glyphSize} strokeWidth={2.25} />
@@ -408,7 +410,12 @@ export function AnimatedEntrance({ children, delay = 0, className }: { children:
   );
 }
 
-function useStatusMotion(status: string, rotateSpinning = true, scalePulsing = true) {
+function useStatusMotion(
+  status: string,
+  rotateSpinning = true,
+  scalePulsing = true,
+  animationsEnabled = true,
+) {
   const motion = statusMotionKind(status);
   const reduceMotion = useReducedMotion();
   const progress = useSharedValue(0);
@@ -416,7 +423,7 @@ function useStatusMotion(status: string, rotateSpinning = true, scalePulsing = t
   useEffect(() => {
     cancelAnimation(progress);
     progress.value = 0;
-    if (reduceMotion || motion === 'static' || (motion === 'spin' && !rotateSpinning)) return;
+    if (!animationsEnabled || reduceMotion || motion === 'static' || (motion === 'spin' && !rotateSpinning)) return;
 
     progress.value = motion === 'spin'
       ? withRepeat(withTiming(1, {
@@ -428,7 +435,7 @@ function useStatusMotion(status: string, rotateSpinning = true, scalePulsing = t
           withTiming(0, { duration: 700, easing: Easing.inOut(Easing.quad) }),
         ), -1);
     return () => cancelAnimation(progress);
-  }, [motion, progress, reduceMotion, rotateSpinning]);
+  }, [animationsEnabled, motion, progress, reduceMotion, rotateSpinning]);
 
   const style = useAnimatedStyle(() => {
     if (motion === 'spin' && rotateSpinning) {
@@ -460,52 +467,52 @@ export function useReducedMotion() {
   return useContext(ReducedMotionContext);
 }
 
-function useStatusBloom(status: string, reduceMotion: boolean) {
+function useStatusBloom(status: string, reduceMotion: boolean, animationsEnabled: boolean) {
   const progress = useSharedValue(0);
   const breathes = ['done', 'connected', 'active'].includes(status);
 
   useEffect(() => {
     cancelAnimation(progress);
     progress.value = 0;
-    if (!breathes || reduceMotion) return;
+    if (!animationsEnabled || !breathes || reduceMotion) return;
 
     progress.value = withRepeat(withSequence(
       withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
       withTiming(0, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
     ), -1);
     return () => cancelAnimation(progress);
-  }, [breathes, progress, reduceMotion]);
+  }, [animationsEnabled, breathes, progress, reduceMotion]);
 
   return useAnimatedStyle(() => {
-    if (!breathes || reduceMotion) {
+    if (!animationsEnabled || !breathes || reduceMotion) {
       return { opacity: 0.62, transform: [{ scale: 1 }] };
     }
     return {
       opacity: 0.42 + (progress.value * 0.4),
       transform: [{ scale: 0.78 + (progress.value * 0.3) }],
     };
-  }, [breathes, reduceMotion]);
+  }, [animationsEnabled, breathes, reduceMotion]);
 }
 
-function useConnectedHostBloom(connected: boolean, reduceMotion: boolean) {
+function useConnectedHostBloom(connected: boolean, reduceMotion: boolean, animationsEnabled: boolean) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
     cancelAnimation(progress);
     progress.value = 0;
-    if (!connected || reduceMotion) return;
+    if (!animationsEnabled || !connected || reduceMotion) return;
 
     progress.value = withRepeat(withSequence(
       withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
       withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
     ), -1);
     return () => cancelAnimation(progress);
-  }, [connected, progress, reduceMotion]);
+  }, [animationsEnabled, connected, progress, reduceMotion]);
 
   return useAnimatedStyle(() => ({
-    opacity: reduceMotion ? 0.62 : 0.32 + (progress.value * 0.5),
-    transform: [{ scale: reduceMotion ? 1 : 0.9 + (progress.value * 0.16) }],
-  }), [reduceMotion]);
+    opacity: !animationsEnabled || reduceMotion ? 0.62 : 0.32 + (progress.value * 0.5),
+    transform: [{ scale: !animationsEnabled || reduceMotion ? 1 : 0.9 + (progress.value * 0.16) }],
+  }), [animationsEnabled, reduceMotion]);
 }
 
 function statusBloomStyle(color: string, size: number) {
