@@ -26,15 +26,30 @@ interface StoredCredential {
   passphrase?: string;
 }
 
+export const CREDENTIAL_BACKUP_MIGRATION_KEY = 'herdr.credentials.backup-migration';
+export const CREDENTIAL_BACKUP_MIGRATION_VERSION = '1';
+let credentialBackupMigration: Promise<void> | null = null;
+
 export async function loadHostProfiles(): Promise<HostProfile[]> {
-  const stored = await AsyncStorage.getItem(HOSTS_STORAGE_KEY);
+  const entries = await AsyncStorage.multiGet([HOSTS_STORAGE_KEY, LEGACY_PROFILE_KEY]);
+  const values = new Map(entries);
+  const hosts = await loadHostProfilesFromStorage(
+    values.get(HOSTS_STORAGE_KEY) ?? null,
+    values.get(LEGACY_PROFILE_KEY) ?? null,
+  );
+  scheduleCredentialBackupMigration(hosts);
+  return hosts;
+}
+
+/** Parses current host metadata without touching Keychain or credential backups. */
+export async function loadHostProfilesFromStorage(
+  stored: string | null,
+  legacyValue: string | null,
+): Promise<HostProfile[]> {
   if (stored !== null) {
-    const hosts = parseHosts(stored);
-    await migrateStoredCredentialBackups(hosts);
-    return hosts;
+    return parseHosts(stored);
   }
 
-  const legacyValue = await AsyncStorage.getItem(LEGACY_PROFILE_KEY);
   const legacy = migrateLegacyProfile(legacyValue);
   if (!legacy) return [];
 
@@ -48,6 +63,33 @@ export async function loadHostProfiles(): Promise<HostProfile[]> {
     await writeCredential(migrated);
   }
   return [host];
+}
+
+/** Runs the one-time backup migration without delaying host metadata rendering. */
+export function scheduleCredentialBackupMigration(hosts: readonly HostProfile[]): void {
+  if (credentialBackupMigration) return;
+  const operation = migrateCredentialBackupsIfNeeded(hosts).catch(() => undefined);
+  credentialBackupMigration = operation;
+  operation.finally(() => {
+    if (credentialBackupMigration === operation) credentialBackupMigration = null;
+  }).catch(() => undefined);
+}
+
+export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfile[]): Promise<void> {
+  if (await AsyncStorage.getItem(CREDENTIAL_BACKUP_MIGRATION_KEY) === CREDENTIAL_BACKUP_MIGRATION_VERSION) return;
+  let complete = true;
+  for (const host of hosts) {
+    try {
+      const credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
+      const secrets = parseCredential(credential ? credential.password : null);
+      if (secrets.secret) await ensureCredentialBackup(host.id, secrets);
+    } catch {
+      complete = false;
+    }
+  }
+  if (complete) {
+    await AsyncStorage.setItem(CREDENTIAL_BACKUP_MIGRATION_KEY, CREDENTIAL_BACKUP_MIGRATION_VERSION);
+  }
 }
 
 export async function loadConnectionProfile(host: HostProfile): Promise<ConnectionProfile> {
@@ -122,18 +164,6 @@ async function writeCredential(profile: ConnectionProfile): Promise<void> {
     secret: profile.secret,
     passphrase: profile.passphrase,
   });
-}
-
-async function migrateStoredCredentialBackups(hosts: HostProfile[]): Promise<void> {
-  for (const host of hosts) {
-    try {
-      const credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
-      const secrets = parseCredential(credential ? credential.password : null);
-      if (secrets.secret) await ensureCredentialBackup(host.id, secrets);
-    } catch {
-      // Local credentials remain usable even when Block Store is unavailable.
-    }
-  }
 }
 
 function parseCredential(value: string | null): Required<StoredCredential> {

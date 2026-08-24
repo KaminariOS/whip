@@ -23,8 +23,8 @@ import {
   removeTerminalBackgroundImage,
 } from './terminalBackground';
 
-const DEVICE_PREFERENCES_KEY = 'herdr.device.preferences.v3';
-const LEGACY_DEVICE_PREFERENCES_KEYS = [
+export const DEVICE_PREFERENCES_KEY = 'herdr.device.preferences.v3';
+export const LEGACY_DEVICE_PREFERENCES_KEYS = [
   'herdr.device.preferences.v2',
   'herdr.device.preferences.v1',
 ];
@@ -115,11 +115,23 @@ export const defaultDevicePreferences: DevicePreferences = {
 
 export async function loadDevicePreferences(): Promise<DevicePreferences> {
   const current = await AsyncStorage.getItem(DEVICE_PREFERENCES_KEY);
-  if (current) return migrateDevicePreferences(parseDevicePreferences(current));
+  if (current) return devicePreferencesFromStorage(current, []);
+  const legacyValues: Array<string | null> = [];
   for (const key of LEGACY_DEVICE_PREFERENCES_KEYS) {
     const value = await AsyncStorage.getItem(key);
-    if (value) return migrateDevicePreferences(parseDevicePreferences(value, true));
+    legacyValues.push(value);
+    if (value) break;
   }
+  return devicePreferencesFromStorage(null, legacyValues);
+}
+
+export async function devicePreferencesFromStorage(
+  current: string | null,
+  legacyValues: readonly (string | null)[],
+): Promise<DevicePreferences> {
+  if (current) return migrateDevicePreferences(parseDevicePreferences(current));
+  const legacy = legacyValues.find((value): value is string => Boolean(value));
+  if (legacy) return migrateDevicePreferences(parseDevicePreferences(legacy, true));
   return defaultDevicePreferences;
 }
 

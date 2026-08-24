@@ -20,8 +20,13 @@ Startup and application-work slices:
 
 - `Whip startup to first tab`: storage hydration through the first selected tab's
   committed mount.
-- `Whip startup storage hydration`: the five persisted stores required to leave
-  the loading screen.
+- `Whip startup storage hydration`: the shared multi-get plus host metadata and
+  preferences required to leave the loading screen.
+- `Whip startup store: multi-get`: the single AsyncStorage bridge call that
+  fetches every startup key.
+- `Whip startup store: <store>`: parsing or applying hosts, preferences, known
+  hosts, live-host IDs, terminal history, credential status, or the versioned
+  credential-backup migration. Noncritical stores begin after the first tab.
 - `Whip startup restore live hosts`: reconnecting all persisted live hosts and
   restoring their snapshots and terminal state.
 - `Whip first tab mount: <tab>`: the first committed mount of each lazily loaded

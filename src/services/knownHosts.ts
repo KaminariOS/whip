@@ -20,6 +20,10 @@ let knownHostsMutation = Promise.resolve();
 
 export async function loadKnownHosts(): Promise<KnownHost[]> {
   const value = await AsyncStorage.getItem(KNOWN_HOSTS_STORAGE_KEY);
+  return knownHostsFromStorage(value);
+}
+
+export function knownHostsFromStorage(value: string | null): KnownHost[] {
   const hosts = parseKnownHosts(value);
   configureNativeKnownHosts(hosts);
   return hosts;

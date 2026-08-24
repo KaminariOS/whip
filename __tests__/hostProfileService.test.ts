@@ -2,19 +2,29 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
 
 import { toHostProfile } from '../src/lib/hostProfiles';
-import { deleteHostProfile, saveConnectionProfile } from '../src/services/hostProfiles';
-import { backupCredential, removeCredentialBackup } from '../src/services/credentialVault';
+import {
+  CREDENTIAL_BACKUP_MIGRATION_KEY,
+  CREDENTIAL_BACKUP_MIGRATION_VERSION,
+  deleteHostProfile,
+  loadHostProfilesFromStorage,
+  migrateCredentialBackupsIfNeeded,
+  saveConnectionProfile,
+} from '../src/services/hostProfiles';
+import { backupCredential, ensureCredentialBackup, removeCredentialBackup } from '../src/services/credentialVault';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
+    getItem: jest.fn(() => Promise.resolve(null)),
     setItem: jest.fn(() => Promise.resolve()),
   },
 }));
 
 jest.mock('react-native-keychain', () => ({
   ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WhenUnlockedThisDeviceOnly' },
+  STORAGE_TYPE: { AES_GCM_NO_AUTH: 'KeystoreAESGCM_NoAuth' },
+  getGenericPassword: jest.fn(() => Promise.resolve(false)),
   resetGenericPassword: jest.fn(() => Promise.resolve(true)),
   setGenericPassword: jest.fn(() => Promise.resolve(true)),
 }));
@@ -40,6 +50,45 @@ const profile: ConnectionProfile = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+test('returns current host metadata without touching Keychain', async () => {
+  const hostProfile = toHostProfile(profile);
+  const stored = JSON.stringify([hostProfile]);
+
+  await expect(loadHostProfilesFromStorage(stored, null)).resolves.toEqual([hostProfile]);
+  expect(Keychain.getGenericPassword).not.toHaveBeenCalled();
+});
+
+test('runs credential backup migration once per recorded version', async () => {
+  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(null);
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({
+    service: 'host',
+    storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH,
+    username: profile.username,
+    password: JSON.stringify({ secret: 'PRIVATE KEY', passphrase: 'phrase' }),
+  });
+
+  await migrateCredentialBackupsIfNeeded([toHostProfile(profile)]);
+
+  expect(ensureCredentialBackup).toHaveBeenCalledWith('host-1', {
+    secret: 'PRIVATE KEY',
+    passphrase: 'phrase',
+  });
+  expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+    CREDENTIAL_BACKUP_MIGRATION_KEY,
+    CREDENTIAL_BACKUP_MIGRATION_VERSION,
+  );
+
+  jest.clearAllMocks();
+  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(CREDENTIAL_BACKUP_MIGRATION_VERSION);
+  await migrateCredentialBackupsIfNeeded([toHostProfile(profile)]);
+  expect(Keychain.getGenericPassword).not.toHaveBeenCalled();
+  expect(ensureCredentialBackup).not.toHaveBeenCalled();
+});
 
 test('always stores a provided credential', async () => {
   const withKey = {

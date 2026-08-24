@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const LIVE_HOSTS_KEY = 'herdr.live.hosts.v1';
+export const LIVE_HOSTS_KEY = 'herdr.live.hosts.v1';
 
 export interface PersistedLiveHosts {
   hostIds: string[];
@@ -9,6 +9,10 @@ export interface PersistedLiveHosts {
 
 export async function loadPersistedLiveHosts(): Promise<PersistedLiveHosts> {
   const value = await AsyncStorage.getItem(LIVE_HOSTS_KEY);
+  return persistedLiveHostsFromStorage(value);
+}
+
+export function persistedLiveHostsFromStorage(value: string | null): PersistedLiveHosts {
   if (!value) return { hostIds: [], activeHostId: null };
   try {
     const parsed = JSON.parse(value) as Partial<PersistedLiveHosts>;

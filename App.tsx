@@ -120,9 +120,11 @@ import { authenticateAppAccess } from './src/services/appAuthentication';
 import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
 import {
   defaultDevicePreferences,
+  devicePreferencesFromStorage,
   loadDevicePreferences,
   saveDevicePreferences,
   type AppearancePreference,
+  type DevicePreferences,
   type LanguagePreference,
   type TerminalPreferences,
 } from './src/services/devicePreferences';
@@ -132,8 +134,10 @@ import {
   deleteHostProfile,
   loadConnectionProfile,
   loadHostProfiles,
+  loadHostProfilesFromStorage,
   loadJumpHostConnectionProfiles,
   markHostDisconnected,
+  migrateCredentialBackupsIfNeeded,
   saveConnectionProfile,
 } from './src/services/hostProfiles';
 import {
@@ -144,6 +148,7 @@ import {
 import { loadGlobalSshKeys, unlockGlobalSshKeychain } from './src/services/globalSshKeychain';
 import {
   hostKeyErrorHost,
+  knownHostsFromStorage,
   loadKnownHosts,
   parseUnknownHostKey,
   trustKnownHost,
@@ -153,15 +158,18 @@ import { loadPersistedTerminals, savePersistedTerminals } from './src/services/p
 import {
   beginAppPerformanceTrace,
   endAppPerformanceTrace,
+  withAppPerformanceTrace,
   type AppPerformanceTrace,
 } from './src/services/performanceTrace';
-import { loadTerminalHistory, saveTerminalHistory } from './src/services/terminalHistory';
+import { loadTerminalHistory, saveTerminalHistory, terminalHistoryFromStorage } from './src/services/terminalHistory';
 import { configureTerminalVolumeKeys } from './src/services/volumeKeys';
 import {
   loadPersistedLiveHosts,
+  persistedLiveHostsFromStorage,
   savePersistedLiveHosts,
   type PersistedLiveHosts,
 } from './src/services/persistedLiveHosts';
+import { readStartupStorage, type StartupStorageSnapshot } from './src/services/startupStorage';
 import {
   closeTerminalSession,
   openSshShellSession,
@@ -279,6 +287,10 @@ function AppContent() {
   const restoreStarted = useRef(false);
   const startupTraceRef = useRef<AppPerformanceTrace | null>(null);
   const tabMountTracesRef = useRef(new Map<AppTab, AppPerformanceTrace>());
+  const deferredStartupStorageRef = useRef<StartupStorageSnapshot | null>(null);
+  const deferredStartupFallbackRef = useRef(false);
+  const deferredStartupHydrationStartedRef = useRef(false);
+  const credentialMigrationStartedRef = useRef(false);
   const alertsEnabledRef = useRef(true);
   const persistentAlertDurationSecondsRef = useRef(defaultDevicePreferences.persistentAlertDurationSeconds);
   const ttsEnabledRef = useRef(false);
@@ -344,6 +356,32 @@ function AppContent() {
   });
   const reportHostProfilesLoadError = useEffectEvent((error: unknown) => {
     setConnectError(t('app.loadHostsError', { error: String(error) }));
+  });
+  const applyStartupPreferences = useEffectEvent((preferences: DevicePreferences) => {
+    setAlertsEnabled(preferences.alertsEnabled);
+    setPersistentAlertDurationSeconds(preferences.persistentAlertDurationSeconds);
+    setTtsEnabled(preferences.ttsEnabled);
+    biometricForKeysRef.current = preferences.biometricForKeys;
+    setBiometricForKeys(preferences.biometricForKeys);
+    biometricOnResumeRef.current = preferences.biometricOnResume;
+    setBiometricOnResume(preferences.biometricOnResume);
+    setAppearance(preferences.appearance);
+    setFullscreenApp(preferences.fullscreenApp);
+    setAppBackgroundImageUri(preferences.appBackgroundImageUri);
+    setAppBackgroundDimming(preferences.appBackgroundDimming);
+    setAppGlassEnabled(preferences.appGlassEnabled);
+    setSshQrPairingEnabled(preferences.sshQrPairingEnabled);
+    setLanguage(preferences.language);
+    setKeepScreenOn(preferences.keepScreenOn);
+    setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
+    setAgentCommand(preferences.agentCommand);
+    applyAppearance(preferences.appearance);
+    setTerminalPreferences(preferences.terminal);
+    setTerminalControlUsage(preferences.terminalControlUsage);
+    setNavigation(current => selectMobileTab(
+      current,
+      preferences.lastTab === 'terminal' ? 'hosts' : preferences.lastTab,
+    ));
   });
   const resolvedLanguage = language === 'system' ? languageForLocale(locales[0]) : language;
 
@@ -416,73 +454,50 @@ function AppContent() {
   useEffect(() => {
     startupTraceRef.current = beginAppPerformanceTrace('Whip startup to first tab');
     const storageTrace = beginAppPerformanceTrace('Whip startup storage hydration');
-    const profilesPromise = loadHostProfiles()
-      .then(async value => {
-        setHosts(value);
-        setCredentialRecovery(await credentialRecoveryStatus());
-      })
-      .catch(reportHostProfilesLoadError)
-      .finally(() => setProfilesLoaded(true));
     loadGlobalSshKeys().then(setGlobalSshKeys).catch(() => undefined);
-    const knownHostsPromise = loadKnownHosts()
-      .then(setKnownHosts)
-      .catch(() => undefined)
-      .finally(() => setKnownHostsLoaded(true));
     prepareAlerts().catch(() => undefined);
-    const preferencesPromise = loadDevicePreferences()
-      .then(preferences => {
-        setAlertsEnabled(preferences.alertsEnabled);
-        setPersistentAlertDurationSeconds(preferences.persistentAlertDurationSeconds);
-        setTtsEnabled(preferences.ttsEnabled);
-        biometricForKeysRef.current = preferences.biometricForKeys;
-        setBiometricForKeys(preferences.biometricForKeys);
-        biometricOnResumeRef.current = preferences.biometricOnResume;
-        setBiometricOnResume(preferences.biometricOnResume);
-        setAppearance(preferences.appearance);
-        setFullscreenApp(preferences.fullscreenApp);
-        setAppBackgroundImageUri(preferences.appBackgroundImageUri);
-        setAppBackgroundDimming(preferences.appBackgroundDimming);
-        setAppGlassEnabled(preferences.appGlassEnabled);
-        setSshQrPairingEnabled(preferences.sshQrPairingEnabled);
-        setLanguage(preferences.language);
-        setKeepScreenOn(preferences.keepScreenOn);
-        setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
-        setAgentCommand(preferences.agentCommand);
-        applyAppearance(preferences.appearance);
-        setTerminalPreferences(preferences.terminal);
-        setTerminalControlUsage(preferences.terminalControlUsage);
-        setNavigation(current => selectMobileTab(
-          current,
-          preferences.lastTab === 'terminal' ? 'hosts' : preferences.lastTab,
-        ));
-      })
-      .finally(() => {
-        preferencesLoadedRef.current = true;
-        setPreferencesLoaded(true);
-      });
-    const liveHostsPromise = loadPersistedLiveHosts()
-      .then(value => {
-        persistedLiveHostsRef.current = value;
-      })
-      .finally(() => setLiveHostsLoaded(true));
-    const terminalHistoryPromise = loadTerminalHistory()
-      .then(setTerminalHistory)
-      .catch(() => undefined)
-      .finally(() => setTerminalHistoryLoaded(true));
-    Promise.allSettled([
-      profilesPromise,
-      knownHostsPromise,
-      preferencesPromise,
-      liveHostsPromise,
-      terminalHistoryPromise,
-    ]).finally(() => endAppPerformanceTrace(storageTrace));
+
+    const hydrateCriticalStartupStorage = async () => {
+      let snapshot: StartupStorageSnapshot | null = null;
+      try {
+        snapshot = await withAppPerformanceTrace(
+          'Whip startup store: multi-get',
+          readStartupStorage,
+        );
+        deferredStartupStorageRef.current = snapshot;
+      } catch {
+        deferredStartupFallbackRef.current = true;
+      }
+
+      const [nextHosts, preferences] = await Promise.all([
+        withAppPerformanceTrace('Whip startup store: hosts', () => (
+          snapshot
+            ? loadHostProfilesFromStorage(snapshot.hosts, snapshot.legacyHost)
+            : loadHostProfiles()
+        )).catch(error => {
+          reportHostProfilesLoadError(error);
+          return [];
+        }),
+        withAppPerformanceTrace('Whip startup store: preferences', () => (
+          snapshot
+            ? devicePreferencesFromStorage(snapshot.preferences, snapshot.legacyPreferences)
+            : loadDevicePreferences()
+        )).catch(() => defaultDevicePreferences),
+      ]);
+
+      setHosts(nextHosts);
+      setProfilesLoaded(true);
+      applyStartupPreferences(preferences);
+      preferencesLoadedRef.current = true;
+      setPreferencesLoaded(true);
+    };
+
+    hydrateCriticalStartupStorage()
+      .finally(() => endAppPerformanceTrace(storageTrace));
   }, []);
 
   const appReady = profilesLoaded
-    && preferencesLoaded
-    && liveHostsLoaded
-    && knownHostsLoaded
-    && terminalHistoryLoaded;
+    && preferencesLoaded;
 
   useEffect(() => {
     if (!appReady || mountedTabs.has(navigation.tab)) return;
@@ -508,6 +523,53 @@ function AppContent() {
       startupTraceRef.current = null;
     }
   }, [mountedTabs]);
+
+  useEffect(() => {
+    if (mountedTabs.size === 0 || deferredStartupHydrationStartedRef.current) return;
+    deferredStartupHydrationStartedRef.current = true;
+    const snapshot = deferredStartupStorageRef.current;
+    deferredStartupStorageRef.current = null;
+    const useFallback = deferredStartupFallbackRef.current;
+
+    Promise.all([
+      withAppPerformanceTrace('Whip startup store: known hosts', () => (
+        snapshot && !useFallback
+          ? knownHostsFromStorage(snapshot.knownHosts)
+          : loadKnownHosts()
+      )).catch(() => []),
+      withAppPerformanceTrace('Whip startup store: live hosts', () => (
+        snapshot && !useFallback
+          ? persistedLiveHostsFromStorage(snapshot.liveHosts)
+          : loadPersistedLiveHosts()
+      )).catch(() => ({ hostIds: [], activeHostId: null })),
+      withAppPerformanceTrace('Whip startup store: terminal history', () => (
+        snapshot && !useFallback
+          ? terminalHistoryFromStorage(snapshot.terminalHistory)
+          : loadTerminalHistory()
+      )).catch(() => []),
+    ]).then(([nextKnownHosts, persistedLiveHosts, nextTerminalHistory]) => {
+      setKnownHosts(nextKnownHosts);
+      knownHostsRef.current = nextKnownHosts;
+      persistedLiveHostsRef.current = persistedLiveHosts;
+      setTerminalHistory(nextTerminalHistory);
+    }).finally(() => {
+      setKnownHostsLoaded(true);
+      setLiveHostsLoaded(true);
+      setTerminalHistoryLoaded(true);
+    });
+
+    withAppPerformanceTrace('Whip startup store: credential status', credentialRecoveryStatus)
+      .then(setCredentialRecovery)
+      .catch(() => undefined);
+  }, [mountedTabs]);
+
+  useEffect(() => {
+    if (!liveHostRestoreComplete || mountedTabs.size === 0 || credentialMigrationStartedRef.current) return;
+    credentialMigrationStartedRef.current = true;
+    withAppPerformanceTrace('Whip startup store: credential backups', () => (
+      migrateCredentialBackupsIfNeeded(hostsRef.current)
+    )).catch(() => undefined);
+  }, [liveHostRestoreComplete, mountedTabs]);
 
   useEffect(() => () => {
     endAppPerformanceTrace(startupTraceRef.current);

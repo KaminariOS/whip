@@ -76,6 +76,18 @@ export function endAppPerformanceTrace(trace: AppPerformanceTrace | null): void 
   performanceTrace?.endAsyncSection(trace.name, trace.cookie);
 }
 
+export async function withAppPerformanceTrace<Result>(
+  name: string,
+  operation: () => Result | Promise<Result>,
+): Promise<Result> {
+  const trace = beginAppPerformanceTrace(name);
+  try {
+    return await operation();
+  } finally {
+    endAppPerformanceTrace(trace);
+  }
+}
+
 function endWrite(trace: TerminalInputTrace, _result: 'ok' | 'error' | 'timeout'): void {
   if (trace.writeEnded) return;
   trace.writeEnded = true;
