@@ -1,0 +1,15 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.kaminarios.whip'
+version = '1.0.0'
+
+android {
+  namespace "io.github.kaminarios.whip.spinner"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}

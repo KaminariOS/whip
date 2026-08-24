@@ -1,0 +1,6 @@
+{
+  "name": "whip-native-spinner",
+  "version": "1.0.0",
+  "description": "Whip's platform-rendered agent status spinner",
+  "license": "AGPL-3.0-or-later"
+}

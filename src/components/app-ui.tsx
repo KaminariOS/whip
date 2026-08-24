@@ -5,7 +5,6 @@ import {
   useContext,
   useEffect,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import {
@@ -31,57 +30,20 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import {
-  AGENT_SPINNER_FRAMES,
   agentStatusGlyph,
   statusMotionKind,
   statusTone,
 } from '@/src/lib/statusMotion';
 import { appGlassControlStyle, colorWithAlpha, useTheme } from '@/src/theme';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { NativeAgentSpinner } from './NativeAgentSpinner';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 const ReducedMotionContext = createContext(false);
 const AgentStatusAnimationContext = createContext(true);
-const AGENT_SPINNER_INTERVAL_MS = 125;
-const AGENT_SPINNER_VIEW_BOX_SIZE = 24;
-const AGENT_SPINNER_ORBIT_RADIUS = 9.5;
-const AGENT_SPINNER_DOT_RADIUS = 2;
-const AGENT_SPINNER_TRAIL_OPACITIES = [1, 0.72, 0.5, 0.32, 0.16] as const;
-const agentSpinnerListeners = new Set<() => void>();
-let agentSpinnerFrame = 0;
-let agentSpinnerInterval: ReturnType<typeof setInterval> | null = null;
-
-function subscribeAgentSpinner(listener: () => void) {
-  agentSpinnerListeners.add(listener);
-  if (!agentSpinnerInterval) {
-    agentSpinnerInterval = setInterval(() => {
-      agentSpinnerFrame = (agentSpinnerFrame + 1) % AGENT_SPINNER_FRAMES.length;
-      for (const notify of agentSpinnerListeners) notify();
-    }, AGENT_SPINNER_INTERVAL_MS);
-  }
-  return () => {
-    agentSpinnerListeners.delete(listener);
-    if (agentSpinnerListeners.size === 0 && agentSpinnerInterval) {
-      clearInterval(agentSpinnerInterval);
-      agentSpinnerInterval = null;
-      agentSpinnerFrame = 0;
-    }
-  };
-}
-
-function subscribeStaticSpinner() {
-  return () => undefined;
-}
-
-function getAgentSpinnerFrame() {
-  return agentSpinnerFrame;
-}
-
-function getStaticSpinnerFrame() {
-  return 0;
-}
+const AGENT_SPINNER_ROTATION_MS = 700;
 
 export function ReducedMotionProvider({ children }: { children: ReactNode }) {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -269,13 +231,17 @@ export function AnimatedAgentStatusGlyph({
   const reduceMotion = useReducedMotion();
   const animationsEnabled = useContext(AgentStatusAnimationContext);
   const spins = status === 'working' || status === 'running';
-  const frame = useAgentSpinnerFrame(animationsEnabled && spins && !reduceMotion);
   const { style } = useStatusMotion(status, false, false, animationsEnabled);
   const glyphBoxSize = size + 4;
   return (
     <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
       {spins ? (
-        <CircularAgentSpinner frame={frame} color={color} size={size} />
+        <NativeAgentSpinner
+          color={color}
+          durationMs={AGENT_SPINNER_ROTATION_MS}
+          enabled={animationsEnabled && !reduceMotion}
+          size={size}
+        />
       ) : status === 'blocked' ? (
         <BlockedAgentStatusGlyph color={color} size={size * 1.1} />
       ) : (
@@ -287,7 +253,7 @@ export function AnimatedAgentStatusGlyph({
             { color, fontSize: size, lineHeight: glyphBoxSize },
           ]}
         >
-          {agentStatusGlyph(status, frame)}
+          {agentStatusGlyph(status)}
         </Text>
       )}
     </Animated.View>
@@ -351,31 +317,6 @@ export function AgentStatusMedallion({
         {glyph()}
       </GlassSurface>
     </View>
-  );
-}
-
-function CircularAgentSpinner({ frame, color, size }: { frame: number; color: string; size: number }) {
-  const frameCount = AGENT_SPINNER_FRAMES.length;
-  const activeFrame = ((frame % frameCount) + frameCount) % frameCount;
-  const center = AGENT_SPINNER_VIEW_BOX_SIZE / 2;
-
-  return (
-    <Svg width={size} height={size} viewBox={`0 0 ${AGENT_SPINNER_VIEW_BOX_SIZE} ${AGENT_SPINNER_VIEW_BOX_SIZE}`}>
-      {AGENT_SPINNER_TRAIL_OPACITIES.map((opacity, trailIndex) => {
-        const dotIndex = (activeFrame - trailIndex + frameCount) % frameCount;
-        const angle = (dotIndex / frameCount) * Math.PI * 2 - Math.PI / 2;
-        return (
-          <Circle
-            key={trailIndex}
-            cx={center + Math.cos(angle) * AGENT_SPINNER_ORBIT_RADIUS}
-            cy={center + Math.sin(angle) * AGENT_SPINNER_ORBIT_RADIUS}
-            r={AGENT_SPINNER_DOT_RADIUS}
-            fill={color}
-            opacity={opacity}
-          />
-        );
-      })}
-    </Svg>
   );
 }
 
@@ -453,14 +394,6 @@ function useStatusMotion(
     return { opacity: 1, transform: [{ scale: 1 }] };
   }, [motion, rotateSpinning, scalePulsing]);
   return { motion, style, reduceMotion };
-}
-
-function useAgentSpinnerFrame(enabled: boolean) {
-  return useSyncExternalStore(
-    enabled ? subscribeAgentSpinner : subscribeStaticSpinner,
-    enabled ? getAgentSpinnerFrame : getStaticSpinnerFrame,
-    getStaticSpinnerFrame,
-  );
 }
 
 export function useReducedMotion() {
