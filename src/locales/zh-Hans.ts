@@ -518,6 +518,8 @@ export const zhHans = {
   'terminal.connecting': '连接端子',
   'terminal.reconnecting': '重新连接终端',
   'terminal.failed': '终端连接失败',
+  'terminal.highLatency': '高延迟',
+  'terminal.highLatencyA11y': '高延迟，{{value}} 毫秒',
   'terminal.opening': '开盘 {{title}}',
   'terminal.attempt': '尝试 {{attempt}} 或 {{total}}',
   'terminal.retry': '立即重试',

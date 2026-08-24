@@ -518,6 +518,8 @@ export const es = {
   'terminal.connecting': 'Conectando terminal',
   'terminal.reconnecting': 'Reconectando terminal',
   'terminal.failed': 'Falló la conexión del terminal',
+  'terminal.highLatency': 'Latencia alta',
+  'terminal.highLatencyA11y': 'Latencia alta, {{value}} milisegundos',
   'terminal.opening': 'Abriendo {{title}}',
   'terminal.attempt': 'Intento {{attempt}} de {{total}}',
   'terminal.retry': 'Reintentar ahora',

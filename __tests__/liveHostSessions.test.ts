@@ -23,6 +23,7 @@ import {
   updateLiveHostConnection,
   updateLiveHostTerminals,
 } from '../src/liveHostSessions';
+import { initialLatencyWarningState } from '../src/lib/latencyWarning';
 import { openTerminalSession } from '../src/terminalSessions';
 import type {
   HerdrSnapshot,
@@ -245,7 +246,29 @@ describe('live host session state', () => {
       error: null,
       lastSyncedAt: '2026-02-02T00:00:00.000Z',
       latencyMs: 18,
+      latencyWarning: initialLatencyWarningState,
     });
+  });
+
+  test('tracks repeated latency samples so sustained high latency can warn', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
+    const first = applyLiveHostLatency(connected, 'live-1', 200);
+    const second = applyLiveHostLatency(first, 'live-1', 200);
+
+    expect(findLiveHostSession(first, 'live-1')?.sync.latencyWarning.active).toBe(false);
+    expect(findLiveHostSession(second, 'live-1')?.sync.latencyWarning.active).toBe(true);
+  });
+
+  test('clears the latency warning when the host connection is lost', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
+    const first = applyLiveHostLatency(connected, 'live-1', 250);
+    const warned = applyLiveHostLatency(first, 'live-1', 250);
+    const reconnecting = updateLiveHostConnection(warned, 'live-1', { status: 'reconnecting' });
+
+    expect(findLiveHostSession(reconnecting, 'live-1')?.sync.latencyWarning)
+      .toBe(initialLatencyWarningState);
   });
 
   test('ignores latency samples for disconnected hosts', () => {

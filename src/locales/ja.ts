@@ -518,6 +518,8 @@ export const ja = {
   'terminal.connecting': '接続端子',
   'terminal.reconnecting': '端末を再接続しています',
   'terminal.failed': '端末接続に失敗しました',
+  'terminal.highLatency': '高レイテンシ',
+  'terminal.highLatencyA11y': '高レイテンシ、{{value}}ミリ秒',
   'terminal.opening': '{{title}} を開きます',
   'terminal.attempt': '{{total}} の {{attempt}} を試行します',
   'terminal.retry': '今すぐ再試行してください',

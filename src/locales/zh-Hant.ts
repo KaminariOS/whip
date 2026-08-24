@@ -518,6 +518,8 @@ export const zhHant: Record<string, string> = {
   'terminal.connecting': '正在連線終端機',
   'terminal.reconnecting': '正在重新連線終端機',
   'terminal.failed': '終端機連線失敗',
+  'terminal.highLatency': '高延遲',
+  'terminal.highLatencyA11y': '高延遲，{{value}} 毫秒',
   'terminal.opening': '正在開啟 {{title}}',
   'terminal.attempt': '第 {{attempt}} 次，共 {{total}} 次',
   'terminal.retry': '立即重試',

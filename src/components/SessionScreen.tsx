@@ -55,6 +55,8 @@ interface Props {
   client: HerdrClient;
   terminalState: TerminalSessionsState;
   terminalTargets: readonly TerminalRenderTarget[];
+  latencyMs: number | null;
+  latencyWarningActive: boolean;
   onRefresh: () => Promise<void>;
   onOpenPane: (pane: PaneInfo) => void;
   onActivateTerminal: (pane: PaneInfo) => void;
@@ -108,6 +110,8 @@ export function SessionScreen({
   client,
   terminalState,
   terminalTargets,
+  latencyMs,
+  latencyWarningActive,
   onRefresh,
   onActivateTerminal,
   onCloseTerminal,
@@ -738,6 +742,8 @@ export function SessionScreen({
             targets={terminalTargets}
             compact
             topOverlayInset={55 + (selectedTab && panes.length > 1 ? 37 : 0)}
+            latencyMs={latencyMs}
+            latencyWarningActive={latencyWarningActive}
             visible={visible && Boolean(activeTarget)}
             swipe={tabSwipe && previewTarget
               ? { direction: tabSwipe.direction, offset: tabSwipeTranslateX }

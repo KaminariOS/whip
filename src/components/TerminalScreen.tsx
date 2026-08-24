@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Portal } from '@rn-primitives/portal';
-import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, Undo2, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
 import { AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
-import type { SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -36,6 +36,7 @@ import {
   TerminalRendererHost,
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
+import { useReducedMotion } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -51,6 +52,8 @@ interface Props {
   historyEntries: readonly string[];
   compact?: boolean;
   topOverlayInset?: number;
+  latencyMs?: number | null;
+  latencyWarningActive?: boolean;
   swipe?: {
     direction: -1 | 1;
     offset: SharedValue<number>;
@@ -172,6 +175,53 @@ export function TerminalBackground({ preferences }: { preferences: TerminalPrefe
   );
 }
 
+function TerminalLatencyWarning({
+  latencyMs,
+  top,
+  visible,
+}: {
+  latencyMs: number | null;
+  top: number;
+  visible: boolean;
+}) {
+  const { t } = useTranslation();
+  const reduceMotion = useReducedMotion();
+  const progress = useSharedValue(visible ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(visible ? 1 : 0, {
+      duration: reduceMotion ? 0 : 120,
+    });
+  }, [progress, reduceMotion, visible]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: (1 - progress.value) * -4 }],
+  }));
+  const value = latencyMs ?? 0;
+
+  return (
+    <Animated.View
+      accessibilityElementsHidden={!visible}
+      accessibilityLabel={t('terminal.highLatencyA11y', { value })}
+      accessibilityLiveRegion="polite"
+      accessibilityRole="alert"
+      accessible={visible}
+      importantForAccessibility={visible ? 'yes' : 'no-hide-descendants'}
+      pointerEvents="none"
+      className="absolute inset-x-0 z-20 h-9 flex-row items-center gap-2 border-b border-terminal-warning/60 bg-terminal-panel/95 px-3"
+      style={[{ top }, animatedStyle]}>
+      <TriangleAlert color={colors.warning} size={15} strokeWidth={2.25} />
+      <Text numberOfLines={1} className="flex-1 text-[11px] font-semibold text-terminal-warning">
+        {t('terminal.highLatency')}
+      </Text>
+      <Text className="font-mono text-[11px] font-semibold text-terminal-warning">
+        {value} ms
+      </Text>
+    </Animated.View>
+  );
+}
+
 function useTerminalModifierState() {
   const [value, setValue] = useState<TerminalModifierState>('off');
   const valueRef = useRef<TerminalModifierState>('off');
@@ -195,6 +245,8 @@ export function TerminalScreen({
   historyEntries,
   compact = false,
   topOverlayInset = 0,
+  latencyMs = null,
+  latencyWarningActive = false,
   swipe,
   terminalPanHandlers,
   onControlUse,
@@ -1204,6 +1256,17 @@ export function TerminalScreen({
           </View>
         )}
       </View>
+      <TerminalLatencyWarning
+        latencyMs={latencyMs}
+        top={topOverlayInset}
+        visible={Boolean(
+          session
+          && status === 'connected'
+          && latencyWarningActive
+          && latencyMs !== null
+          && !searchOpen
+        )}
+      />
       {session && status !== 'connected' && (
         <View
           pointerEvents="box-none"

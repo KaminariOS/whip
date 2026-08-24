@@ -2271,6 +2271,8 @@ function LiveSessionView({
       client={client}
       terminalState={session.terminals}
       terminalTargets={terminalTargets}
+      latencyMs={session.status === 'connected' ? session.sync.latencyMs : null}
+      latencyWarningActive={session.status === 'connected' && session.sync.latencyWarning.active}
       onRefresh={refresh}
       onOpenPane={openPane}
       onActivateTerminal={activateTerminal}

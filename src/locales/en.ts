@@ -532,6 +532,8 @@ export const en = {
   'terminal.connecting': 'Connecting terminal',
   'terminal.reconnecting': 'Reconnecting terminal',
   'terminal.failed': 'Terminal connection failed',
+  'terminal.highLatency': 'High latency',
+  'terminal.highLatencyA11y': 'High latency, {{value}} milliseconds',
   'terminal.opening': 'Opening {{title}}',
   'terminal.attempt': 'Attempt {{attempt}} of {{total}}',
   'terminal.retry': 'Retry now',

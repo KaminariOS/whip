@@ -1,5 +1,10 @@
 import type { TerminalSessionsState } from './terminalSessions';
 import { agentFromStatusEvent, type AgentStatusUpdate } from './lib/agentStatusEvents';
+import {
+  initialLatencyWarningState,
+  nextLatencyWarningState,
+  type LatencyWarningState,
+} from './lib/latencyWarning';
 import type {
   AgentStatus,
   HerdrSnapshot,
@@ -33,6 +38,7 @@ export interface LiveHostSyncState {
   lastSyncedAt: string | null;
   /** Latest successful Android-to-host network round trip. */
   latencyMs: number | null;
+  latencyWarning: LatencyWarningState;
 }
 
 export interface LiveHostSession {
@@ -108,6 +114,7 @@ export function createLiveHostSession(
       error: null,
       lastSyncedAt: null,
       latencyMs: null,
+      latencyWarning: initialLatencyWarningState,
     },
     selection: {
       workspaceId: null,
@@ -211,8 +218,12 @@ export function updateLiveHostConnection(
       status: update.status,
       connectionError,
       reconnectAttempt,
-      sync: losesFreshness && session.sync.status === 'synced'
-        ? { ...session.sync, status: 'stale' }
+      sync: losesFreshness
+        ? {
+            ...session.sync,
+            status: session.sync.status === 'synced' ? 'stale' : session.sync.status,
+            latencyWarning: initialLatencyWarningState,
+          }
         : session.sync,
     };
   });
@@ -226,12 +237,17 @@ export function applyLiveHostLatency(
 ): LiveHostSessionsState {
   if (!Number.isFinite(latencyMs) || latencyMs <= 0) return state;
   return updateSession(state, sessionId, session => {
-    if (session.status !== 'connected' || session.sync.latencyMs === latencyMs) return session;
+    if (session.status !== 'connected') return session;
+    const latencyWarning = nextLatencyWarningState(session.sync.latencyWarning, latencyMs);
+    if (session.sync.latencyMs === latencyMs && latencyWarning === session.sync.latencyWarning) {
+      return session;
+    }
     return {
       ...session,
       sync: {
         ...session.sync,
         latencyMs,
+        latencyWarning,
       },
     };
   });
@@ -280,6 +296,7 @@ export function applyLiveHostSnapshot(
         error: null,
         lastSyncedAt: syncedAt,
         latencyMs,
+        latencyWarning: nextLatencyWarningState(session.sync.latencyWarning, latencyMs),
       },
     };
   });
