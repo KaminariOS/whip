@@ -534,6 +534,8 @@ export const es = {
   'attachments.file': 'Archivo',
   'attachments.clipboard': 'Portapapeles',
   'attachments.uploading': 'Subiendo archivo adjunto…',
+  'attachments.cancelling': 'Cancelando la subida…',
+  'attachments.cancel': 'Cancelar subida',
   'attachments.failedTitle': 'No se pudo adjuntar el archivo',
   'files.title': 'Archivos remotos',
   'files.remote': 'SFTP · DIRECTORIO DE TERMINALES ACTUAL',

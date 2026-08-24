@@ -534,6 +534,8 @@ export const zhHant: Record<string, string> = {
   'attachments.file': '檔案',
   'attachments.clipboard': '剪貼簿',
   'attachments.uploading': '正在上傳附件…',
+  'attachments.cancelling': '正在取消上傳…',
+  'attachments.cancel': '取消上傳',
   'attachments.failedTitle': '無法附加檔案',
   'files.title': '遠端檔案',
   'files.remote': 'SFTP · 目前終端機目錄',

@@ -549,6 +549,8 @@ export const en = {
   'attachments.file': 'File',
   'attachments.clipboard': 'Clipboard',
   'attachments.uploading': 'Uploading attachment…',
+  'attachments.cancelling': 'Cancelling upload…',
+  'attachments.cancel': 'Cancel upload',
   'attachments.failedTitle': 'Could not attach file',
 
   'files.title': 'Remote files',

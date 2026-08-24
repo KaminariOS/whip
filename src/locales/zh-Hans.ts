@@ -534,6 +534,8 @@ export const zhHans = {
   'attachments.file': '文件',
   'attachments.clipboard': '剪贴板',
   'attachments.uploading': '正在上传附件...',
+  'attachments.cancelling': '正在取消上传...',
+  'attachments.cancel': '取消上传',
   'attachments.failedTitle': '无法附加文件',
   'files.title': '远程文件',
   'files.remote': 'SFTP · 当前终端目录',

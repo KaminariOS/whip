@@ -1,12 +1,12 @@
 import { Camera, Clipboard, FileUp, Image as ImageIcon, Paperclip, X } from 'lucide-react-native';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import type { AttachmentSource } from '../services/attachmentPaste';
 import { hasClipboardAttachment, pickLocalAttachment } from '../services/attachmentPaste';
-import type { HerdrClient } from '../services/HerdrClient';
+import { isTerminalAttachmentUploadCancelled, type HerdrClient } from '../services/HerdrClient';
 import { useTheme } from '../theme';
 import { hapticPress } from './app-ui';
 import { Button } from './ui/button';
@@ -25,12 +25,48 @@ export interface PastedAttachment {
   dispose: () => void;
 }
 
+interface SelectionOperation {
+  cancelled: boolean;
+  uploading: boolean;
+  client: HerdrClient;
+}
+
+type UploadState = 'idle' | 'uploading' | 'cancelling';
+
 export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
-  const [busy, setBusy] = useState(false);
+  const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [clipboardAvailable, setClipboardAvailable] = useState(false);
+  const activeOperation = useRef<SelectionOperation | null>(null);
+  const mounted = useRef(true);
+
+  const cancelActiveOperation = useCallback((close: boolean) => {
+    const operation = activeOperation.current;
+    if (operation && !operation.cancelled) {
+      operation.cancelled = true;
+      if (operation.uploading) operation.client.cancelTerminalAttachmentUpload();
+      if (mounted.current) setUploadState('cancelling');
+    }
+    if (close) onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const operation = activeOperation.current;
+      if (operation && !operation.cancelled) {
+        operation.cancelled = true;
+        if (operation.uploading) operation.client.cancelTerminalAttachmentUpload();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!visible) cancelActiveOperation(false);
+  }, [cancelActiveOperation, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -43,12 +79,24 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
   }, [visible]);
 
   const select = async (source: AttachmentSource) => {
-    setBusy(true);
+    if (activeOperation.current) return;
+    const operation: SelectionOperation = {
+      cancelled: false,
+      uploading: false,
+      client,
+    };
+    activeOperation.current = operation;
+    setUploadState('uploading');
     let attachment: Awaited<ReturnType<typeof pickLocalAttachment>> = null;
     try {
       attachment = await pickLocalAttachment(source);
-      if (!attachment) return;
+      if (!attachment || operation.cancelled || activeOperation.current !== operation) return;
+      operation.uploading = true;
       const remotePath = await client.uploadTerminalAttachment(attachment.nativePath);
+      operation.uploading = false;
+      if (operation.cancelled || activeOperation.current !== operation) return;
+      activeOperation.current = null;
+      if (mounted.current) setUploadState('idle');
       onPaste({
         remotePath,
         previewUri: attachment.previewUri,
@@ -57,22 +105,35 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
       attachment = null;
       onClose();
     } catch (reason) {
-      Alert.alert(t('attachments.failedTitle'), String(reason));
+      operation.uploading = false;
+      if (
+        !operation.cancelled
+        && activeOperation.current === operation
+        && !isTerminalAttachmentUploadCancelled(reason)
+      ) {
+        Alert.alert(t('attachments.failedTitle'), String(reason));
+      }
     } finally {
       attachment?.dispose();
-      setBusy(false);
+      if (activeOperation.current === operation) {
+        activeOperation.current = null;
+        if (mounted.current) setUploadState('idle');
+      }
     }
   };
+
+  const busy = uploadState !== 'idle';
+  const close = () => cancelActiveOperation(true);
 
   return (
     <Modal
       animationType="fade"
-      onRequestClose={() => { if (!busy) onClose(); }}
+      onRequestClose={close}
       statusBarTranslucent
       transparent
       visible={visible}>
       <View className="flex-1 justify-end bg-black/50">
-        <Pressable accessibilityLabel={t('attachments.close')} className="flex-1" disabled={busy} onPress={onClose} />
+        <Pressable accessibilityLabel={busy ? t('attachments.cancel') : t('attachments.close')} className="flex-1" onPress={close} />
         <View className="rounded-t-3xl bg-background px-4 pt-3" style={{ paddingBottom: Math.max(16, safeAreaInsets.bottom) }}>
           <View className="mb-2 flex-row items-center">
             <View className="size-10 items-center justify-center rounded-full bg-muted">
@@ -82,14 +143,24 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
               <Text className="text-[17px] font-bold text-foreground">{t('attachments.title')}</Text>
               <Text className="text-[11px] text-muted-foreground">{t('attachments.copy')}</Text>
             </View>
-            <Button accessibilityLabel={t('attachments.close')} className="size-10 rounded-full px-0" disabled={busy} variant="ghost" onPress={onClose}>
+            <Button accessibilityLabel={busy ? t('attachments.cancel') : t('attachments.close')} className="size-10 rounded-full px-0" variant="ghost" onPress={close}>
               <X size={19} color={colors.text} />
             </Button>
           </View>
           {busy ? (
             <View className="h-44 items-center justify-center gap-3">
               <ActivityIndicator color={colors.primary} />
-              <Text className="text-[12px] text-muted-foreground">{t('attachments.uploading')}</Text>
+              <Text className="text-[12px] text-muted-foreground">
+                {t(uploadState === 'cancelling' ? 'attachments.cancelling' : 'attachments.uploading')}
+              </Text>
+              <Button
+                accessibilityLabel={t('attachments.cancel')}
+                className="mt-1 min-w-40"
+                disabled={uploadState === 'cancelling'}
+                variant="outline"
+                onPress={() => cancelActiveOperation(false)}>
+                <Text>{t('attachments.cancel')}</Text>
+              </Button>
             </View>
           ) : (
             <View>

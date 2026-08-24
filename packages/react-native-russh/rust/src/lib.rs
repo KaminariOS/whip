@@ -11,6 +11,7 @@ uniffi::setup_scaffolding!();
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
+use std::future::Future;
 use std::io::SeekFrom;
 use std::panic::AssertUnwindSafe;
 use std::sync::{
@@ -28,7 +29,7 @@ use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tokio::{
     fs,
     io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader},
@@ -44,9 +45,8 @@ type SftpSessions = RwLock<HashMap<String, Arc<SftpSession>>>;
 type ExecChannels = RwLock<HashMap<(String, String), mpsc::Sender<StreamCommand>>>;
 type UnixSocketChannels = RwLock<HashMap<(String, String), UnixSocketChannelHandle>>;
 
-const TERMINAL_INBOUND_RUST_FRAME_DELIVERY: &CStr = unsafe {
-    CStr::from_bytes_with_nul_unchecked(b"Whip terminal inbound Rust frame delivery\0")
-};
+const TERMINAL_INBOUND_RUST_FRAME_DELIVERY: &CStr = c"Whip terminal inbound Rust frame delivery";
+const TERMINAL_INBOUND_RUST_FRAME_RECEIVED: &CStr = c"Whip terminal inbound Rust frame received";
 
 #[cfg(target_os = "android")]
 struct AndroidTraceSlice(bool);
@@ -92,7 +92,7 @@ impl AndroidTraceSlice {
 }
 type Forwards = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
 type SftpFileServers = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
-type Transfers = RwLock<HashMap<(String, &'static str), Arc<AtomicBool>>>;
+type Transfers = RwLock<HashMap<(String, &'static str), watch::Sender<bool>>>;
 
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 static SESSIONS: OnceLock<Sessions> = OnceLock::new();
@@ -111,6 +111,8 @@ static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(1);
 static LIFECYCLE_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 const CONTROL_QUEUE_CAPACITY: usize = 256;
+const INBOUND_DELIVERY_QUEUE_CAPACITY: usize = 64;
+const INBOUND_DELIVERY_BYTE_CAPACITY: usize = 8 * 1024 * 1024;
 const HOST_LATENCY_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const EXECUTE_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 const SFTP_HTTP_HEADER_LIMIT: usize = 16 * 1024;
@@ -352,6 +354,11 @@ enum StreamCommand {
 struct UnixSocketChannelHandle {
     sender: mpsc::Sender<StreamCommand>,
     framing: Option<LengthFormat>,
+}
+
+struct OwnedInboundFrame {
+    bytes: Vec<u8>,
+    _byte_permit: OwnedSemaphorePermit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1028,6 +1035,69 @@ async fn sftp_create_dir_all(params: &Value) -> Result<Value, TransportError> {
     Ok(Value::Null)
 }
 
+fn transfer_cancelled(direction: &str) -> TransportError {
+    TransportError::InvalidRequest(format!("SFTP {direction} cancelled"))
+}
+
+async fn wait_for_transfer_cancel(cancel: &mut watch::Receiver<bool>) {
+    loop {
+        if *cancel.borrow_and_update() {
+            return;
+        }
+        if cancel.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+async fn cancellable_transfer_io<T, E, F>(
+    cancel: &mut watch::Receiver<bool>,
+    direction: &str,
+    future: F,
+) -> Result<T, TransportError>
+where
+    F: Future<Output = Result<T, E>>,
+    TransportError: From<E>,
+{
+    tokio::select! {
+        biased;
+        _ = wait_for_transfer_cancel(cancel) => Err(transfer_cancelled(direction)),
+        result = future => result.map_err(TransportError::from),
+    }
+}
+
+async fn copy_sftp_stream(
+    mut source: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
+    mut destination: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
+    total: u64,
+    key: &str,
+    direction: &str,
+    event: &str,
+    cancel: &mut watch::Receiver<bool>,
+) -> Result<(), TransportError> {
+    let mut copied = 0u64;
+    let mut last_percent = None;
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        let count = cancellable_transfer_io(cancel, direction, source.read(&mut buffer)).await?;
+        if count == 0 {
+            break;
+        }
+        cancellable_transfer_io(cancel, direction, destination.write_all(&buffer[..count])).await?;
+        copied += count as u64;
+        let percent = copied.saturating_mul(100).checked_div(total).unwrap_or(100);
+        if last_percent != Some(percent) {
+            emit_event(json!({ "name": event, "key": key, "value": percent.to_string() }));
+            last_percent = Some(percent);
+        }
+    }
+    cancellable_transfer_io(cancel, direction, destination.shutdown()).await?;
+    if last_percent != Some(100) {
+        emit_event(json!({ "name": event, "key": key, "value": "100" }));
+    }
+    Ok(())
+}
+
 async fn sftp_transfer(
     params: &Value,
     upload: bool,
@@ -1042,7 +1112,7 @@ async fn sftp_transfer(
     } else {
         "DownloadProgress"
     };
-    let cancel = Arc::new(AtomicBool::new(false));
+    let (cancel_sender, mut cancel) = watch::channel(false);
     {
         let mut active = transfers().write();
         if active.contains_key(&(key.clone(), direction)) {
@@ -1050,41 +1120,9 @@ async fn sftp_transfer(
                 "an SFTP {direction} is already active for this connection"
             )));
         }
-        active.insert((key.clone(), direction), cancel.clone());
+        active.insert((key.clone(), direction), cancel_sender);
     }
     let result: Result<String, TransportError> = async {
-        let copy = async |mut source: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
-                          mut destination: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
-                          total: u64|
-               -> Result<(), TransportError> {
-            let mut copied = 0u64;
-            let mut last_percent = None;
-            let mut buffer = vec![0u8; 64 * 1024];
-            loop {
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(TransportError::InvalidRequest(format!(
-                        "SFTP {direction} cancelled"
-                    )));
-                }
-                let count = source.read(&mut buffer).await?;
-                if count == 0 {
-                    break;
-                }
-                destination.write_all(&buffer[..count]).await?;
-                copied += count as u64;
-                let percent = copied.saturating_mul(100).checked_div(total).unwrap_or(100);
-                if last_percent != Some(percent) {
-                    emit_event(json!({ "name": event, "key": key, "value": percent.to_string() }));
-                    last_percent = Some(percent);
-                }
-            }
-            destination.shutdown().await?;
-            if last_percent != Some(100) {
-                emit_event(json!({ "name": event, "key": key, "value": "100" }));
-            }
-            Ok(())
-        };
-
         if upload {
             let source = fs::File::open(&local).await?;
             let total = source.metadata().await?.len();
@@ -1109,19 +1147,41 @@ async fn sftp_transfer(
             let transfer_id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
             let temp_path = format!("{destination_path}.russh-part-{transfer_id}");
             let destination = sftp.create(temp_path.clone()).await?;
-            let copied = copy(Box::new(source), Box::new(destination), total).await;
+            let copied = copy_sftp_stream(
+                Box::new(source),
+                Box::new(destination),
+                total,
+                &key,
+                direction,
+                event,
+                &mut cancel,
+            )
+            .await;
             if let Err(error) = copied {
                 let _ = sftp.remove_file(temp_path).await;
                 return Err(error);
+            }
+            if *cancel.borrow() {
+                let _ = sftp.remove_file(temp_path).await;
+                return Err(transfer_cancelled(direction));
             }
             // Standard SFTP rename does not replace existing files on every
             // server. Preserve the prior file until the complete upload exists,
             // and restore it if the final rename fails.
             let backup_path = format!("{destination_path}.russh-backup-{transfer_id}");
             let had_prior_file = sftp.metadata(destination_path.clone()).await.is_ok();
+            if *cancel.borrow() {
+                let _ = sftp.remove_file(temp_path).await;
+                return Err(transfer_cancelled(direction));
+            }
             if had_prior_file {
                 sftp.rename(destination_path.clone(), backup_path.clone())
                     .await?;
+                if *cancel.borrow() {
+                    let _ = sftp.rename(backup_path, destination_path).await;
+                    let _ = sftp.remove_file(temp_path).await;
+                    return Err(transfer_cancelled(direction));
+                }
             }
             if let Err(error) = sftp
                 .rename(temp_path.clone(), destination_path.clone())
@@ -1132,6 +1192,13 @@ async fn sftp_transfer(
                     let _ = sftp.rename(backup_path, destination_path).await;
                 }
                 return Err(error.into());
+            }
+            if *cancel.borrow() {
+                let _ = sftp.remove_file(destination_path.clone()).await;
+                if had_prior_file {
+                    let _ = sftp.rename(backup_path, destination_path).await;
+                }
+                return Err(transfer_cancelled(direction));
             }
             if had_prior_file {
                 let _ = sftp.remove_file(backup_path).await;
@@ -1152,10 +1219,23 @@ async fn sftp_transfer(
                 NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
             );
             let destination = fs::File::create(&temp_path).await?;
-            let copied = copy(Box::new(source), Box::new(destination), total).await;
+            let copied = copy_sftp_stream(
+                Box::new(source),
+                Box::new(destination),
+                total,
+                &key,
+                direction,
+                event,
+                &mut cancel,
+            )
+            .await;
             if let Err(error) = copied {
                 let _ = fs::remove_file(temp_path).await;
                 return Err(error);
+            }
+            if *cancel.borrow() {
+                let _ = fs::remove_file(temp_path).await;
+                return Err(transfer_cancelled(direction));
             }
             if let Err(error) = fs::rename(&temp_path, &destination_path).await {
                 let _ = fs::remove_file(temp_path).await;
@@ -1386,6 +1466,130 @@ impl LengthPrefixedFrameReader {
     }
 }
 
+async fn enqueue_unix_socket_frame(
+    sender: &mpsc::Sender<OwnedInboundFrame>,
+    byte_budget: &Arc<Semaphore>,
+    bytes: Vec<u8>,
+) -> Result<(), TransportError> {
+    // A frame larger than the byte budget reserves the whole budget. This
+    // permits the configured maximum frame size while ensuring that no other
+    // completed frame can queue behind it.
+    let byte_permits = bytes.len().clamp(1, INBOUND_DELIVERY_BYTE_CAPACITY) as u32;
+    let byte_permit = byte_budget
+        .clone()
+        .acquire_many_owned(byte_permits)
+        .await
+        .map_err(|_| {
+            TransportError::ChannelUnavailable(
+                "Unix-socket inbound delivery queue closed".to_owned(),
+            )
+        })?;
+    sender
+        .send(OwnedInboundFrame {
+            bytes,
+            _byte_permit: byte_permit,
+        })
+        .await
+        .map_err(|_| {
+            TransportError::ChannelUnavailable(
+                "Unix-socket inbound delivery worker stopped".to_owned(),
+            )
+        })
+}
+
+async fn read_unix_socket_frames<R>(
+    mut socket_reader: R,
+    framing: Option<LengthFormat>,
+    max_frame_bytes: usize,
+    sender: mpsc::Sender<OwnedInboundFrame>,
+    byte_budget: Arc<Semaphore>,
+) -> (String, bool)
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut buffer = vec![0u8; 32 * 1024];
+    let mut framed_reader =
+        framing.map(|format| LengthPrefixedFrameReader::new(format, max_frame_bytes));
+    loop {
+        let read = match &mut framed_reader {
+            Some(frame_reader) => frame_reader.read_frame(&mut socket_reader).await,
+            None => match socket_reader.read(&mut buffer).await {
+                Ok(0) => Ok(None),
+                Ok(count) => Ok(Some(buffer[..count].to_vec())),
+                Err(error) => Err(error.into()),
+            },
+        };
+        match read {
+            Ok(None) => return ("remote Unix socket reached EOF".to_owned(), false),
+            Err(error) => {
+                return (format!("remote Unix-socket read failed: {error}"), false);
+            }
+            Ok(Some(bytes)) => {
+                // A synchronous ATrace slice must not cross the queue's await:
+                // Tokio may resume this task on another OS thread.
+                {
+                    let _trace = AndroidTraceSlice::begin(TERMINAL_INBOUND_RUST_FRAME_RECEIVED);
+                }
+                if let Err(error) = enqueue_unix_socket_frame(&sender, &byte_budget, bytes).await {
+                    return (
+                        format!("remote Unix-socket delivery failed: {error}"),
+                        false,
+                    );
+                }
+            }
+        }
+    }
+}
+
+async fn write_unix_socket_commands<W>(
+    mut writer: W,
+    mut receiver: mpsc::Receiver<StreamCommand>,
+) -> (String, bool)
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    loop {
+        match receiver.recv().await {
+            Some(StreamCommand::Write(data)) => {
+                if let Err(error) = writer.write_all(&data).await {
+                    return (format!("remote Unix-socket write failed: {error}"), false);
+                }
+            }
+            Some(StreamCommand::Close) => {
+                return ("Unix-socket channel closed by client".to_owned(), true);
+            }
+            None => {
+                return ("Unix-socket channel control queue closed".to_owned(), true);
+            }
+        }
+    }
+}
+
+async fn deliver_unix_socket_frames(
+    key: Arc<str>,
+    channel_id: Arc<str>,
+    mut receiver: mpsc::Receiver<OwnedInboundFrame>,
+) -> Result<(), String> {
+    while let Some(frame) = receiver.recv().await {
+        let OwnedInboundFrame {
+            bytes,
+            _byte_permit: byte_permit,
+        } = frame;
+        let key = Arc::clone(&key);
+        let channel_id = Arc::clone(&channel_id);
+        tokio::task::spawn_blocking(move || {
+            // The owned frame and its byte-budget permit remain alive until
+            // invokeBlocking has returned, preserving RustBuffer lifetime.
+            let _byte_permit = byte_permit;
+            let _trace = AndroidTraceSlice::begin(TERMINAL_INBOUND_RUST_FRAME_DELIVERY);
+            emit_unix_socket_channel_data(&key, &channel_id, bytes);
+        })
+        .await
+        .map_err(|error| format!("Unix-socket inbound delivery worker failed: {error}"))?;
+    }
+    Ok(())
+}
+
 async fn open_unix_socket_channel_with_framing(
     params: &Value,
     framing: Option<LengthFormat>,
@@ -1415,7 +1619,7 @@ async fn open_unix_socket_channel_with_framing(
         .and_then(Value::as_u64)
         .unwrap_or(32 * 1024 * 1024)
         .clamp(1, 128 * 1024 * 1024) as usize;
-    let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
+    let (sender, receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
     {
         let mut channels = unix_socket_channels().write();
         if channels.contains_key(&map_key) {
@@ -1433,41 +1637,42 @@ async fn open_unix_socket_channel_with_framing(
     }
 
     tokio::spawn(async move {
-        let mut stream = channel.into_stream();
-        let mut buffer = vec![0u8; 32 * 1024];
-        let mut framed_reader =
-            framing.map(|format| LengthPrefixedFrameReader::new(format, max_frame_bytes));
-        let (reason, closed_by_client) = loop {
-            tokio::select! {
-                read = async {
-                    match &mut framed_reader {
-                        Some(reader) => reader.read_frame(&mut stream).await,
-                        None => match stream.read(&mut buffer).await {
-                            Ok(0) => Ok(None),
-                            Ok(count) => Ok(Some(buffer[..count].to_vec())),
-                            Err(error) => Err(error.into()),
-                        },
-                    }
-                } => match read {
-                    Ok(None) => break ("remote Unix socket reached EOF".to_owned(), false),
-                    Err(error) => break (format!("remote Unix-socket read failed: {error}"), false),
-                    Ok(Some(bytes)) => {
-                        // Starts immediately after a complete frame is available
-                        // and deliberately includes the synchronous event sink.
-                        let _trace = AndroidTraceSlice::begin(
-                            TERMINAL_INBOUND_RUST_FRAME_DELIVERY,
-                        );
-                        emit_unix_socket_channel_data(&key, &channel_id, bytes);
-                    },
-                },
-                command = receiver.recv() => match command {
-                    Some(StreamCommand::Write(data)) => if let Err(error) = stream.write_all(&data).await {
-                        break (format!("remote Unix-socket write failed: {error}"), false);
-                    },
-                    Some(StreamCommand::Close) => break ("Unix-socket channel closed by client".to_owned(), true),
-                    None => break ("Unix-socket channel control queue closed".to_owned(), true),
+        let (socket_reader, socket_writer) = tokio::io::split(channel.into_stream());
+        let (delivery_sender, delivery_receiver) = mpsc::channel(INBOUND_DELIVERY_QUEUE_CAPACITY);
+        let delivery_byte_budget = Arc::new(Semaphore::new(INBOUND_DELIVERY_BYTE_CAPACITY));
+        let mut read_task = tokio::spawn(read_unix_socket_frames(
+            socket_reader,
+            framing,
+            max_frame_bytes,
+            delivery_sender,
+            delivery_byte_budget,
+        ));
+        let mut write_task = tokio::spawn(write_unix_socket_commands(socket_writer, receiver));
+        let delivery_task = tokio::spawn(deliver_unix_socket_frames(
+            Arc::<str>::from(key.as_str()),
+            Arc::<str>::from(channel_id.as_str()),
+            delivery_receiver,
+        ));
+
+        // A blocked JS callback can stop only delivery. Reads backpressure at
+        // the bounded queue, while control writes continue on their own task.
+        let (reason, closed_by_client) = tokio::select! {
+            result = &mut read_task => {
+                write_task.abort();
+                let _ = write_task.await;
+                match result {
+                    Ok(outcome) => outcome,
+                    Err(error) => (format!("Unix-socket reader task failed: {error}"), false),
                 }
-            }
+            },
+            result = &mut write_task => {
+                read_task.abort();
+                let _ = read_task.await;
+                match result {
+                    Ok(outcome) => outcome,
+                    Err(error) => (format!("Unix-socket writer task failed: {error}"), false),
+                }
+            },
         };
         let should_remove = unix_socket_channels()
             .read()
@@ -1476,6 +1681,14 @@ async fn open_unix_socket_channel_with_framing(
         if should_remove {
             unix_socket_channels().write().remove(&map_key);
         }
+        // Dropping/aborting the reader closes delivery_sender. Drain all owned
+        // frames before reporting closure so data and close ordering is stable.
+        let delivery_reason = match delivery_task.await {
+            Ok(Ok(())) => None,
+            Ok(Err(error)) => Some(error),
+            Err(error) => Some(format!("Unix-socket delivery task failed: {error}")),
+        };
+        let reason = delivery_reason.unwrap_or(reason);
         emit_event(json!({
             "name": "UnixSocketChannel",
             "key": key,
@@ -2063,10 +2276,10 @@ async fn disconnect_key(key: String) {
         }
     }
     if let Some(cancel) = transfers().read().get(&(key.clone(), "upload")) {
-        cancel.store(true, Ordering::Relaxed);
+        let _ = cancel.send(true);
     }
     if let Some(cancel) = transfers().read().get(&(key.clone(), "download")) {
-        cancel.store(true, Ordering::Relaxed);
+        let _ = cancel.send(true);
     }
     if let Some(sender) = shells().write().remove(&key) {
         let _ = sender.try_send(ShellCommand::Close);
@@ -2208,7 +2421,7 @@ async fn dispatch(request: Request) -> Result<Value, TransportError> {
                 "download"
             };
             if let Some(cancel) = transfers().read().get(&(key, direction)) {
-                cancel.store(true, Ordering::Relaxed);
+                let _ = cancel.send(true);
             }
             Ok(Value::Null)
         }
@@ -2612,6 +2825,50 @@ mod tests {
     }
 
     #[test]
+    fn blocked_transfer_io_cancels_promptly_and_does_not_poison_the_next_transfer() {
+        runtime().unwrap().block_on(async {
+            let (blocked_destination, _blocked_reader) = tokio::io::duplex(1);
+            let (cancel_sender, mut cancel) = watch::channel(false);
+            let transfer = tokio::spawn(async move {
+                copy_sftp_stream(
+                    Box::new(std::io::Cursor::new(vec![7u8; 64 * 1024])),
+                    Box::new(blocked_destination),
+                    64 * 1024,
+                    "test-client",
+                    "upload",
+                    "UploadProgress",
+                    &mut cancel,
+                )
+                .await
+            });
+
+            // The one-byte duplex capacity leaves write_all blocked in the
+            // middle of its first chunk until cancellation wins the select.
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            cancel_sender.send(true).unwrap();
+            let error = tokio::time::timeout(Duration::from_millis(100), transfer)
+                .await
+                .expect("cancelled transfer should settle promptly")
+                .unwrap()
+                .unwrap_err();
+            assert!(error.to_string().contains("cancelled"));
+
+            let (_next_cancel_sender, mut next_cancel) = watch::channel(false);
+            copy_sftp_stream(
+                Box::new(std::io::Cursor::new(b"next upload".to_vec())),
+                Box::new(tokio::io::sink()),
+                11,
+                "test-client",
+                "upload",
+                "UploadProgress",
+                &mut next_cancel,
+            )
+            .await
+            .expect("a later transfer should still succeed");
+        });
+    }
+
+    #[test]
     fn parses_file_preview_get_head_and_single_ranges() {
         assert_eq!(
             parse_sftp_http_request(
@@ -2768,6 +3025,59 @@ mod tests {
                 reader.read_frame(&mut input).await.unwrap(),
                 Some(b"abc".to_vec()),
             );
+        });
+    }
+
+    #[test]
+    fn outbound_writes_continue_when_inbound_delivery_is_backpressured() {
+        runtime().unwrap().block_on(async {
+            let (socket, mut remote) = tokio::io::duplex(1024);
+            let (socket_reader, socket_writer) = tokio::io::split(socket);
+            let (delivery_sender, delivery_receiver) = mpsc::channel(1);
+            let byte_budget = Arc::new(Semaphore::new(1));
+            let held_permit = byte_budget
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("test byte budget should be open");
+            delivery_sender
+                .send(OwnedInboundFrame {
+                    bytes: vec![0],
+                    _byte_permit: held_permit,
+                })
+                .await
+                .unwrap();
+
+            let read_task = tokio::spawn(read_unix_socket_frames(
+                socket_reader,
+                Some(LengthFormat::U32Le),
+                1024,
+                delivery_sender,
+                byte_budget,
+            ));
+            remote.write_all(b"\x03\0\0\0abc").await.unwrap();
+
+            let (control_sender, control_receiver) = mpsc::channel(1);
+            let write_task =
+                tokio::spawn(write_unix_socket_commands(socket_writer, control_receiver));
+            control_sender
+                .send(StreamCommand::Write(b"out".to_vec()))
+                .await
+                .unwrap();
+            let mut output = [0; 3];
+            tokio::time::timeout(Duration::from_millis(100), remote.read_exact(&mut output))
+                .await
+                .expect("outbound write must not wait for inbound delivery")
+                .unwrap();
+            assert_eq!(&output, b"out");
+
+            control_sender.send(StreamCommand::Close).await.unwrap();
+            assert_eq!(
+                write_task.await.unwrap(),
+                ("Unix-socket channel closed by client".to_owned(), true),
+            );
+            read_task.abort();
+            drop(delivery_receiver);
         });
     }
 
@@ -3070,7 +3380,12 @@ mod tests {
                 tokio::task::yield_now().await;
             }
             live_call("sftpCancelUpload", json!({"key": "live-main"})).await;
-            let transfer_error = transfer.await.unwrap().unwrap_err().to_string();
+            let transfer_error = tokio::time::timeout(Duration::from_secs(1), transfer)
+                .await
+                .expect("cancelled upload should settle promptly")
+                .unwrap()
+                .unwrap_err()
+                .to_string();
             assert!(transfer_error.contains("cancelled"));
             let entries = live_call(
                 "sftpLs",
@@ -3078,10 +3393,25 @@ mod tests {
             )
             .await;
             assert!(!entries.as_array().unwrap().iter().any(|entry| {
-                entry["filename"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .contains("russh-part")
+                let filename = entry["filename"].as_str().unwrap_or_default();
+                filename == "cancel.bin" || filename.contains("russh-part")
+            }));
+            live_call(
+                "sftpUploadToPath",
+                json!({
+                    "key": "live-main",
+                    "localPath": payload,
+                    "remotePath": "/workspace/remote/after-cancel.txt",
+                }),
+            )
+            .await;
+            let entries = live_call(
+                "sftpLs",
+                json!({"key": "live-main", "path": "/workspace/remote"}),
+            )
+            .await;
+            assert!(entries.as_array().unwrap().iter().any(|entry| {
+                entry["filename"].as_str() == Some("after-cancel.txt")
             }));
 
             let forward_port = live_call(

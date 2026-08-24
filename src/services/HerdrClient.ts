@@ -100,6 +100,25 @@ export interface RemoteSftpFileServerHandle {
   localPort: number;
 }
 
+export class TerminalAttachmentUploadCancelledError extends Error {
+  constructor() {
+    super('Attachment upload cancelled');
+    this.name = 'TerminalAttachmentUploadCancelledError';
+  }
+}
+
+export function isTerminalAttachmentUploadCancelled(error: unknown): boolean {
+  return error instanceof TerminalAttachmentUploadCancelledError;
+}
+
+interface TerminalAttachmentUpload {
+  client: SSHClient;
+  cancelled: boolean;
+  cancellation: Promise<void>;
+  signalCancellation: () => void;
+  transferStarted: boolean;
+}
+
 interface RemoteHtmlPreviewProcess extends RemoteHtmlServerProcess {
   client: SSHClient;
 }
@@ -138,6 +157,8 @@ export class HerdrClient {
   private remoteHtmlPreviews = new Map<number, RemoteHtmlPreviewProcess>();
   private remoteHtmlPreviewSequence = 0;
   private remoteSftpFileServers = new Map<number, SSHClient>();
+  private activeSftpUpload: object | null = null;
+  private terminalAttachmentUpload: TerminalAttachmentUpload | null = null;
 
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
     const port = Number(profile.port);
@@ -353,8 +374,14 @@ export class HerdrClient {
     return this.requireClient().sftpDownload(path, localDirectoryPath);
   }
 
-  uploadRemoteFile(localFilePath: string, remoteDirectoryPath: string): Promise<void> {
-    return this.requireClient().sftpUpload(localFilePath, remoteDirectoryPath);
+  async uploadRemoteFile(localFilePath: string, remoteDirectoryPath: string): Promise<void> {
+    const upload = {};
+    this.reserveSftpUpload(upload);
+    try {
+      await this.requireClient().sftpUpload(localFilePath, remoteDirectoryPath);
+    } finally {
+      if (this.activeSftpUpload === upload) this.activeSftpUpload = null;
+    }
   }
 
   deleteRemoteEntry(path: string, isDirectory: boolean): Promise<void> {
@@ -362,19 +389,80 @@ export class HerdrClient {
     return isDirectory ? client.sftpRmdir(path) : client.sftpRm(path);
   }
 
+  private reserveSftpUpload(upload: object): void {
+    if (this.activeSftpUpload) {
+      throw new Error('An SFTP upload is already in progress for this client');
+    }
+    this.activeSftpUpload = upload;
+  }
+
+  private throwIfAttachmentUploadCancelled(upload: TerminalAttachmentUpload): void {
+    if (upload.cancelled) throw new TerminalAttachmentUploadCancelledError();
+  }
+
+  private waitForAttachmentUploadSetup<T>(
+    upload: TerminalAttachmentUpload,
+    setup: Promise<T>,
+  ): Promise<T> {
+    return Promise.race([
+      setup,
+      upload.cancellation.then(() => {
+        throw new TerminalAttachmentUploadCancelledError();
+      }),
+    ]);
+  }
+
   async uploadTerminalAttachment(localFilePath: string): Promise<string> {
     const client = this.requireClient();
-    const sourceFilename = localFilePath.replace(/\\/g, '/').split('/').pop();
-    if (!sourceFilename) throw new Error('The selected attachment has no filename');
-    const home = await this.remoteHomeDirectory();
-    const appDirectory = `${home}/.whip`;
-    const uploadDirectory = `${appDirectory}/uploads`;
-    await client.sftpCreateDirAll(uploadDirectory);
-    const uploadId = createSecureId('attachment');
-    const remoteFilename = uniqueRemoteAttachmentName(sourceFilename, uploadId);
-    const remotePath = `${uploadDirectory}/${remoteFilename}`;
-    await client.sftpUploadToPath(localFilePath, remotePath);
-    return remotePath;
+    let signalCancellation!: () => void;
+    const upload: TerminalAttachmentUpload = {
+      client,
+      cancelled: false,
+      cancellation: new Promise(resolve => { signalCancellation = resolve; }),
+      signalCancellation: () => signalCancellation(),
+      transferStarted: false,
+    };
+    this.reserveSftpUpload(upload);
+    this.terminalAttachmentUpload = upload;
+    try {
+      const sourceFilename = localFilePath.replace(/\\/g, '/').split('/').pop();
+      if (!sourceFilename) throw new Error('The selected attachment has no filename');
+      const home = await this.waitForAttachmentUploadSetup(upload, this.remoteHomeDirectory());
+      this.throwIfAttachmentUploadCancelled(upload);
+      const appDirectory = `${home}/.whip`;
+      const uploadDirectory = `${appDirectory}/uploads`;
+      await this.waitForAttachmentUploadSetup(
+        upload,
+        client.sftpCreateDirAll(uploadDirectory),
+      );
+      this.throwIfAttachmentUploadCancelled(upload);
+      const uploadId = createSecureId('attachment');
+      const remoteFilename = uniqueRemoteAttachmentName(sourceFilename, uploadId);
+      const remotePath = `${uploadDirectory}/${remoteFilename}`;
+      upload.transferStarted = true;
+      await client.sftpUploadToPath(localFilePath, remotePath);
+      upload.transferStarted = false;
+      if (upload.cancelled) {
+        await client.sftpRm(remotePath).catch(() => undefined);
+        throw new TerminalAttachmentUploadCancelledError();
+      }
+      return remotePath;
+    } catch (error) {
+      if (upload.cancelled) throw new TerminalAttachmentUploadCancelledError();
+      throw error;
+    } finally {
+      upload.transferStarted = false;
+      if (this.terminalAttachmentUpload === upload) this.terminalAttachmentUpload = null;
+      if (this.activeSftpUpload === upload) this.activeSftpUpload = null;
+    }
+  }
+
+  cancelTerminalAttachmentUpload(): void {
+    const upload = this.terminalAttachmentUpload;
+    if (!upload || upload.cancelled) return;
+    upload.cancelled = true;
+    upload.signalCancellation();
+    if (upload.transferStarted) upload.client.sftpCancelUpload();
   }
 
   /** Resolve only the rollout whose filename contains Herdr's exact native Codex ID. */

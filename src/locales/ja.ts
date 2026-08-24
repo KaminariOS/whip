@@ -534,6 +534,8 @@ export const ja = {
   'attachments.file': 'ファイル',
   'attachments.clipboard': 'クリップボード',
   'attachments.uploading': '添付ファイルをアップロードしています…',
+  'attachments.cancelling': 'アップロードをキャンセルしています…',
+  'attachments.cancel': 'アップロードをキャンセル',
   'attachments.failedTitle': 'ファイルを添付できませんでした',
   'files.title': 'リモート ファイル',
   'files.remote': 'SFTP · 現在のターミナル ディレクトリ',
