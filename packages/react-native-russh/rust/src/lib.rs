@@ -64,6 +64,7 @@ static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(1);
 static LIFECYCLE_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 const CONTROL_QUEUE_CAPACITY: usize = 256;
+const HOST_LATENCY_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const EXECUTE_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 const SFTP_HTTP_HEADER_LIMIT: usize = 16 * 1024;
 const SFTP_HTTP_PIPELINE_DEPTH: usize = 8;
@@ -739,9 +740,11 @@ async fn latency(params: &Value) -> Result<Value, TransportError> {
         .cloned()
         .ok_or(TransportError::UnknownClient)?;
     let start = Instant::now();
-    let mut channel = session.handle.channel_open_session().await?;
-    channel.exec(true, "true").await?;
-    while channel.wait().await.is_some() {}
+    tokio::time::timeout(HOST_LATENCY_PROBE_TIMEOUT, session.handle.send_ping())
+        .await
+        .map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::TimedOut, "SSH latency probe timed out")
+        })??;
     Ok(json!(start.elapsed().as_secs_f64() * 1000.0))
 }
 

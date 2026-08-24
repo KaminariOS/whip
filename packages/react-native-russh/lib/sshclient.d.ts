@@ -368,7 +368,7 @@ export default class SSHClient {
     startSftpFileServer(remotePath: string): Promise<{ localPort: number; token: string }>;
     /** Closes a loopback SFTP file server previously returned by startSftpFileServer. */
     closeSftpFileServer(localPort: number): Promise<void>;
-    /** Measures device-to-host network RTT without SSH authentication. */
+    /** Measures device-to-host RTT with an SSH protocol ping/pong. */
     measureHostLatency(): Promise<number>;
     getRemoteHome(): Promise<string>;
     /**

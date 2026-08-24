@@ -222,6 +222,7 @@ export function updateLiveHostConnection(
         ? {
             ...session.sync,
             status: session.sync.status === 'synced' ? 'stale' : session.sync.status,
+            latencyMs: null,
             latencyWarning: initialLatencyWarningState,
           }
         : session.sync,
@@ -248,6 +249,35 @@ export function applyLiveHostLatency(
         ...session.sync,
         latencyMs,
         latencyWarning,
+      },
+    };
+  });
+}
+
+/**
+ * Discard a latency sample after its transport probe fails. Keeping the last
+ * successful value would make an unreachable host look both current and fast.
+ */
+export function invalidateLiveHostLatency(
+  state: LiveHostSessionsState,
+  sessionId: string,
+): LiveHostSessionsState {
+  return updateSession(state, sessionId, session => {
+    const syncStatus = session.sync.status === 'synced' ? 'stale' : session.sync.status;
+    if (
+      session.sync.latencyMs === null
+      && session.sync.latencyWarning === initialLatencyWarningState
+      && syncStatus === session.sync.status
+    ) {
+      return session;
+    }
+    return {
+      ...session,
+      sync: {
+        ...session.sync,
+        status: syncStatus,
+        latencyMs: null,
+        latencyWarning: initialLatencyWarningState,
       },
     };
   });

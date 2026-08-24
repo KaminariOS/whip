@@ -85,6 +85,7 @@ import {
   createEventRefreshScheduler,
   type EventRefreshScheduler,
 } from './src/lib/eventRefreshScheduler';
+import { nextHostLivenessFailure } from './src/lib/hostLiveness';
 import {
   applyLiveHostAgentStatus,
   applyLiveHostFocus,
@@ -100,6 +101,7 @@ import {
   failLiveHostSync,
   findLiveHostSession,
   getActiveLiveHostSession,
+  invalidateLiveHostLatency,
   openLiveHostSession,
   preferredWorkspacePane,
   replaceLiveHostTerminals,
@@ -199,6 +201,7 @@ interface LiveRuntime {
   eventReconnectTimer: ReturnType<typeof setTimeout> | null;
   eventRefresh: EventRefreshScheduler;
   latencyFailureActive: boolean;
+  latencyFailures: number;
 }
 
 interface SnapshotMeasurement {
@@ -259,6 +262,10 @@ function AppContent() {
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const latencyPingsInFlight = useRef(new Map<string, LiveRuntime>());
+  const probeLiveHostRef = useRef<(
+    sessionId: string,
+    reconnectImmediately?: boolean,
+  ) => void>(() => undefined);
   const navigationBlurTargetRef = useRef<View | null>(null);
   const hostsRef = useRef<HostProfile[]>([]);
   const knownHostsRef = useRef<KnownHost[]>([]);
@@ -676,6 +683,7 @@ function AppContent() {
           reason: networkErrorMessage(cause),
         });
         scheduleEventReconnect(sessionId, cause);
+        probeLiveHostRef.current(sessionId, true);
       },
     );
     if (runtimes.current.get(sessionId) !== runtime) return;
@@ -752,6 +760,8 @@ function AppContent() {
         });
         await runtime.client.reconnectControl(runtime.profile);
         runtime.reconnectAttempts = 0;
+        runtime.latencyFailures = 0;
+        runtime.latencyFailureActive = false;
         setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
         const refreshed = await refreshHostSnapshot(sessionId);
         if (refreshed) {
@@ -783,6 +793,7 @@ function AppContent() {
       eventReconnectAttempts: 0,
       eventReconnectTimer: null,
       latencyFailureActive: false,
+      latencyFailures: 0,
       eventRefresh: createEventRefreshScheduler(() => {
         refreshHost(sessionId).catch(() => undefined);
       }),
@@ -793,6 +804,7 @@ function AppContent() {
         // Measure device-to-host network RTT separately from the much larger
         // SSH/Herdr snapshot operation so control-plane work cannot inflate it.
         const latencyMs = await runtime.client.measureLatency().then(value => {
+          runtime.latencyFailures = 0;
           if (runtime.latencyFailureActive) {
             runtime.latencyFailureActive = false;
             recordNetworkDiagnostic('info', 'latency-probe-recovered', {
@@ -946,25 +958,63 @@ function AppContent() {
     }
   });
 
-  const measureVisibleHostLatencies = useEffectEvent(() => {
+  const probeLiveHost = (
+    sessionId: string,
+    reconnectImmediately = false,
+  ) => {
     if (AppState.currentState !== 'active') return;
-    for (const session of liveSessionsRef.current.sessions) {
-      if (session.status !== 'connected') continue;
-      const runtime = runtimes.current.get(session.id);
-      if (!runtime || latencyPingsInFlight.current.get(session.id) === runtime) continue;
+    const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+    if (session?.status !== 'connected') return;
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime || latencyPingsInFlight.current.get(sessionId) === runtime) return;
 
-      latencyPingsInFlight.current.set(session.id, runtime);
-      runtime.client.measureLatency()
-        .then(latencyMs => {
-          if (runtimes.current.get(session.id) !== runtime) return;
-          setLiveSessions(current => applyLiveHostLatency(current, session.id, latencyMs));
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (latencyPingsInFlight.current.get(session.id) === runtime) {
-            latencyPingsInFlight.current.delete(session.id);
-          }
-        });
+    latencyPingsInFlight.current.set(sessionId, runtime);
+    runtime.client.measureLatency()
+      .then(latencyMs => {
+        if (runtimes.current.get(sessionId) !== runtime) return;
+        runtime.latencyFailures = 0;
+        if (runtime.latencyFailureActive) {
+          runtime.latencyFailureActive = false;
+          recordNetworkDiagnostic('info', 'latency-probe-recovered', {
+            sessionId,
+            latencyMs,
+          });
+        }
+        setLiveSessions(current => applyLiveHostLatency(current, sessionId, latencyMs));
+      })
+      .catch(error => {
+        if (runtimes.current.get(sessionId) !== runtime) return;
+        const decision = nextHostLivenessFailure(
+          runtime.latencyFailures,
+          reconnectImmediately,
+        );
+        runtime.latencyFailures = decision.failures;
+        setLiveSessions(current => invalidateLiveHostLatency(current, sessionId));
+        if (!runtime.latencyFailureActive) {
+          runtime.latencyFailureActive = true;
+          recordNetworkDiagnostic('warn', 'latency-probe-failed', {
+            sessionId,
+            failures: decision.failures,
+            error: networkErrorMessage(error),
+          });
+        }
+        if (decision.reconnect) scheduleReconnect(sessionId, error);
+      })
+      .finally(() => {
+        if (latencyPingsInFlight.current.get(sessionId) === runtime) {
+          latencyPingsInFlight.current.delete(sessionId);
+        }
+      });
+  };
+  probeLiveHostRef.current = probeLiveHost;
+
+  const measureConnectedHostLatencies = useEffectEvent((
+    reconnectImmediately = false,
+  ) => {
+    for (const session of liveSessionsRef.current.sessions) {
+      if (session.status === 'connected') {
+        probeLiveHost(session.id, reconnectImmediately);
+      }
     }
   });
 
@@ -1091,11 +1141,15 @@ function AppContent() {
       previousState = state;
       if (state === 'active') {
         restartLiveConnections('app-resume');
-        resumeLiveConnections(false);
+        measureConnectedHostLatencies(true);
+        resumeLiveConnections(true);
       }
     });
     const heartbeat = setInterval(() => {
-      if (AppState.currentState === 'active') resumeLiveConnections(false);
+      if (AppState.currentState === 'active') {
+        measureConnectedHostLatencies();
+        resumeLiveConnections(false);
+      }
     }, LIVE_HOST_HEALTHCHECK_MS);
     const reconciliation = setInterval(() => {
       if (AppState.currentState === 'active') resumeLiveConnections(true);
@@ -1127,8 +1181,8 @@ function AppContent() {
 
   useEffect(() => {
     if (navigation.tab !== 'hosts' || appAccessLocked) return;
-    measureVisibleHostLatencies();
-    const interval = setInterval(measureVisibleHostLatencies, VISIBLE_HOST_LATENCY_POLL_MS);
+    measureConnectedHostLatencies();
+    const interval = setInterval(measureConnectedHostLatencies, VISIBLE_HOST_LATENCY_POLL_MS);
     return () => clearInterval(interval);
   }, [appAccessLocked, navigation.tab]);
 

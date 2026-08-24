@@ -13,6 +13,7 @@ import {
   failLiveHostSync,
   findLiveHostSession,
   getActiveLiveHostSession,
+  invalidateLiveHostLatency,
   openLiveHostSession,
   preferredWorkspacePane,
   selectLiveHost,
@@ -260,6 +261,28 @@ describe('live host session state', () => {
     expect(findLiveHostSession(second, 'live-1')?.sync.latencyWarning.active).toBe(true);
   });
 
+  test('invalidates a stale successful latency after a liveness failure', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
+    const request = beginLiveHostSync(connected, 'live-1');
+    const synced = applyLiveHostSnapshot(
+      request.state,
+      'live-1',
+      request.generation,
+      snapshot('savior'),
+      '2026-02-02T00:00:00.000Z',
+      15,
+    );
+
+    const invalidated = invalidateLiveHostLatency(synced, 'live-1');
+
+    expect(findLiveHostSession(invalidated, 'live-1')?.sync).toMatchObject({
+      status: 'stale',
+      latencyMs: null,
+      latencyWarning: initialLatencyWarningState,
+    });
+  });
+
   test('clears the latency warning when the host connection is lost', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
@@ -267,8 +290,10 @@ describe('live host session state', () => {
     const warned = applyLiveHostLatency(first, 'live-1', 250);
     const reconnecting = updateLiveHostConnection(warned, 'live-1', { status: 'reconnecting' });
 
-    expect(findLiveHostSession(reconnecting, 'live-1')?.sync.latencyWarning)
-      .toBe(initialLatencyWarningState);
+    expect(findLiveHostSession(reconnecting, 'live-1')?.sync).toMatchObject({
+      latencyMs: null,
+      latencyWarning: initialLatencyWarningState,
+    });
   });
 
   test('ignores latency samples for disconnected hosts', () => {
