@@ -24,6 +24,7 @@ import { AppBackground } from './src/components/AppBackground';
 import { AppAccessLock } from './src/components/AppAccessLock';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
+import { DeleteHostConfirmationPopup } from './src/components/DeleteHostConfirmationPopup';
 import { HerdScreen } from './src/components/HerdScreen';
 import { GlobalKeychainScreen } from './src/components/GlobalKeychainScreen';
 import { GlassProvider } from './src/components/GlassSurface';
@@ -361,6 +362,8 @@ function AppContent() {
   const [liveHostRestoreComplete, setLiveHostRestoreComplete] = useState(false);
   const [connectingHostIds, setConnectingHostIds] = useState<ReadonlySet<string>>(() => new Set());
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [deleteHostTarget, setDeleteHostTarget] = useState<HostProfile | null>(null);
+  const [deleteHostBusy, setDeleteHostBusy] = useState(false);
   const [liveSessions, setLiveSessions] = useState(emptyLiveHostSessions);
   const [navigation, setNavigation] = useState(initialMobileNavigation);
   const [mountedTabs, setMountedTabs] = useState<ReadonlySet<AppTab>>(() => new Set());
@@ -1870,25 +1873,28 @@ function AppContent() {
   };
 
   const confirmDeleteHost = (target: HostProfile) => {
-    Alert.alert(t('app.deleteHostTitle'), t('app.deleteHostCopy', { host: hostDisplayName(target) }), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.delete'),
-        style: 'destructive',
-        onPress: () => {
-          const live = liveSessionsRef.current.sessions.find(session => session.hostId === target.id);
-          if (live) closeLiveHost(live.id, false);
-          deleteHostProfile(hosts, target.id)
-            .then(async next => {
-              setHosts(next);
-              setCredentialRecovery(await credentialRecoveryStatus());
-              setEditorProfile(null);
-              setConnectError(null);
-            })
-            .catch(error => setConnectError(t('app.deleteHostError', { error: String(error) })));
-        },
-      },
-    ]);
+    setDeleteHostTarget(target);
+  };
+
+  const deleteConfirmedHost = async () => {
+    if (!deleteHostTarget || deleteHostBusy) return;
+    const target = deleteHostTarget;
+    setDeleteHostBusy(true);
+    const live = liveSessionsRef.current.sessions.find(session => session.hostId === target.id);
+    if (live) closeLiveHost(live.id, false);
+    try {
+      const next = await deleteHostProfile(hostsRef.current, target.id);
+      setHosts(next);
+      setCredentialRecovery(await credentialRecoveryStatus());
+      setEditorProfile(null);
+      setConnectError(null);
+      setDeleteHostTarget(null);
+    } catch (error) {
+      setDeleteHostTarget(null);
+      setConnectError(t('app.deleteHostError', { error: String(error) }));
+    } finally {
+      setDeleteHostBusy(false);
+    }
   };
 
   const activatePaneTerminal = useCallback((sessionId: string, pane: PaneInfo) => {
@@ -2508,6 +2514,12 @@ function AppContent() {
         challenge={unknownHostChallenge}
         onCancel={() => resolveUnknownHost(false)}
         onTrust={() => resolveUnknownHost(true)}
+      />
+      <DeleteHostConfirmationPopup
+        busy={deleteHostBusy}
+        host={deleteHostTarget}
+        onCancel={() => setDeleteHostTarget(null)}
+        onDelete={() => { deleteConfirmedHost(); }}
       />
       <PairingSuccessPopup
         result={pairingSuccess}
