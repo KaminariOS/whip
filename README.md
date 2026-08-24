@@ -28,7 +28,7 @@
 
 Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
 
-The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints and exposes their live Herdr state, **Herd** merges connected agents into a scoped attention queue, **Terminal** keeps open pane sessions within reach, and **More** holds security, notification, appearance, and terminal preferences.
+The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints and exposes their live Herdr state, **Herd** merges connected agents into a scoped attention queue, **Terminal** keeps open pane sessions and their full-screen Chat View within reach, and **More** holds security, notification, appearance, and terminal preferences.
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
@@ -37,6 +37,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 - [Preview](#preview)
 - [What you can do](#what-you-can-do)
   - [Supervise Herdr](#supervise-herdr)
+  - [Use Chat View](#use-chat-view)
   - [Work in terminals](#work-in-terminals)
   - [Move files and attachments](#move-files-and-attachments)
   - [Connect securely](#connect-securely)
@@ -108,6 +109,17 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 - Create, focus, rename, split, zoom, inspect, and close space resources, including swipe-to-close Herd tabs.
 - Launch agents and chat through a native multiline composer with mobile keyboard, dictation, selection, and suggestion support.
 - Run editable commands from the Herd screen and reuse the same persistent input history available in the terminal.
+
+### Use Chat View
+
+Chat View is currently available for active OpenCode and Codex panes. Tap the book icon beside the terminal tabs to replace the terminal with a full-screen, native transcript; use the composer's close button to return to the same warm terminal.
+
+- Read a normalized, OpenCode-style conversation instead of terminal scrollback, including user prompts, Markdown responses, plans, reasoning, live **Thinking** state, token and timing metadata, attachments, and images.
+- Inspect expandable tool activity without duplicate shell rows. Related read, list, and search operations are grouped; shell commands, output, diagnostics, and changed-file diffs remain available on demand.
+- Render GitHub-flavored Markdown, monospaced inline and fenced code, clickable remote file references, and inline or display math on Android and iOS.
+- Load the existing history once, then follow new Codex rollout records or official OpenCode durable events incrementally. Whip reads the locally installed agents through the existing SSH connection; it does not require a hosted chat relay.
+- Continue the conversation with the same native composer used by Terminal. Draft text, attachments, and the per-tab send queue stay shared when switching between Chat View and Terminal View.
+- Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and experimental glass mode are enabled, Chat View applies the same translucent material to its composer and floating controls while keeping the transcript legible.
 
 ### Work in terminals
 
@@ -222,6 +234,8 @@ Whip accepts Herdr releases that report protocols 17 through 20 and rejects othe
 Whip connects from the mobile device to the configured SSH host, either directly or through its saved jump-host chain. There is no Whip-operated relay service, and Herdr remains bound to the host as usual. Strict known-host verification applies to every hop.
 
 Native screens read snapshots and live events from Herdr's local API sockets through the authenticated SSH connection. Actions use the same structured API, while each open pane terminal uses Herdr's client-protocol socket for live input, resize, scroll, and render frames. The remote file manager and terminal attachments use SFTP on that connection. Links found in terminal scrollback open directly when they are public; loopback and private-network addresses are forwarded through SSH first.
+
+Chat View does not derive conversations from terminal pixels or scrollback. For OpenCode, Whip takes an initial snapshot with the official `opencode export` command and then requests only newer durable session events through the official database query interface. For Codex, it resolves the rollout matching Herdr's exact native session ID, reads the initial JSONL snapshot, and follows appended records. Both sources are adapted into one transcript model on the device, so the native renderer and shared composer behave consistently without adding a Whip service to the host.
 
 For an open, visible Herdr terminal, Whip periodically caches a bounded recent ANSI transcript in memory. If the terminal transport is connecting, disconnected, or in error, a local virtual backend owns that transcript and its per-terminal logical scroll position while the renderer presents it read-only; it does not run Herdr or an agent on the mobile device. Messages submitted through the native composer wait in an in-memory, per-terminal outbox and are retried in order after the live connection returns. The transcript, scroll position, and outbox are session fallbacks, not durable offline storage, and do not survive an app restart.
 
