@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useEffectEvent, useImperativeHandle, useRef, useState } from 'react';
 import { Portal } from '@rn-primitives/portal';
 import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
 import { AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
@@ -65,6 +65,10 @@ interface Props {
   onHistoryEntry: (entry: string) => void;
   getComposerDraft: (terminalId: string) => string;
   onComposerDraftChange: (terminalId: string, value: string) => void;
+  onComposerQueueChange?: (
+    terminalId: string,
+    messages: readonly TerminalComposerQueueItem[],
+  ) => void;
   linkScanRequest?: number;
   pasteRequest?: {
     id: number;
@@ -86,6 +90,17 @@ interface Props {
     error?: string,
     reconnectAttempt?: number,
   ) => void;
+}
+
+export interface TerminalComposerQueueItem {
+  id: number;
+  historyEntry: string;
+  sending: boolean;
+  error: string | null;
+}
+
+export interface TerminalScreenHandle {
+  enqueueComposerMessage: (text: string, attachmentPaths: readonly string[]) => boolean;
 }
 
 type TerminalKeyDefinition = readonly [label: string, input: string, face: 'text' | 'symbol'];
@@ -228,7 +243,7 @@ function useTerminalModifierState() {
   return [value, valueRef, update] as const;
 }
 
-export function TerminalScreen({
+export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function TerminalScreenComponent({
   activeTarget,
   previewTarget,
   targets,
@@ -246,6 +261,7 @@ export function TerminalScreen({
   onHistoryEntry,
   getComposerDraft,
   onComposerDraftChange,
+  onComposerQueueChange,
   linkScanRequest = 0,
   pasteRequest,
   onRequestAttachment,
@@ -257,7 +273,7 @@ export function TerminalScreen({
   onFontSizeChange,
   onClose,
   onStatus,
-}: Props) {
+}: Props, ref) {
   const { colors: appColors } = useTheme();
   const { t } = useTranslation();
   const { bottom: bottomSafeAreaInset, top: topSafeAreaInset } = useSafeAreaInsets();
@@ -277,6 +293,7 @@ export function TerminalScreen({
   const queueRetryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const offlineBackendRef = useRef(new OfflineTerminalBackend());
   const flushQueuedTargetRef = useRef<(target: TerminalRenderTarget) => void>(() => {});
+  const enqueueComposerMessageRef = useRef<(text: string, attachmentPaths: readonly string[]) => boolean>(() => false);
   const targetsRef = useRef(targets);
   const composeInputRef = useRef<TextInputHandle | null>(null);
   const composeTextRef = useRef('');
@@ -324,6 +341,12 @@ export function TerminalScreen({
   const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
   activeTargetRef.current = activeTarget;
   targetsRef.current = targets;
+
+  useImperativeHandle(ref, () => ({
+    enqueueComposerMessage: (text, attachmentPaths) => (
+      enqueueComposerMessageRef.current(text, attachmentPaths)
+    ),
+  }), []);
 
   useEffect(() => {
     const nextComposeText = terminalId ? getComposerDraft(terminalId) : '';
@@ -604,7 +627,19 @@ export function TerminalScreen({
     if (messages.length) queuedMessagesByTargetRef.current.set(targetKey, messages);
     else queuedMessagesByTargetRef.current.delete(targetKey);
     if (activeTargetRef.current?.key === targetKey) setQueuedMessages(messages);
-  }, []);
+    const target = targetsRef.current.find(item => item.key === targetKey);
+    if (target) {
+      onComposerQueueChange?.(
+        target.session.terminalId,
+        messages.map(({ id, historyEntry, sending, error: queueError }) => ({
+          id,
+          historyEntry,
+          sending,
+          error: queueError,
+        })),
+      );
+    }
+  }, [onComposerQueueChange]);
 
   const scheduleQueuedRetry = useCallback((targetKey: string, attempts: number) => {
     if (queueRetryTimersRef.current.has(targetKey)) return;
@@ -830,22 +865,23 @@ export function TerminalScreen({
     if (keyboardEnabled) setTimeout(() => composeInputRef.current?.focus(), 80);
   };
 
-  const submitCompose = () => {
+  const enqueueComposeMessage = (
+    text: string,
+    attachments: ComposeAttachment[],
+  ): boolean => {
     const target = activeTargetRef.current;
     if (target) onInteraction?.(target);
-    const attachmentPaths = composeAttachmentsRef.current.map(attachment => attachment.remotePath);
-    const submission = composeTerminalSubmission(composeTextRef.current, attachmentPaths);
-    if (!submission.historyEntry) {
-      sendInput(ENTER_INPUT);
-      return;
-    }
-    if (!target) return;
+    const submission = composeTerminalSubmission(
+      text,
+      attachments.map(attachment => attachment.remotePath),
+    );
+    if (!submission.historyEntry || !target) return false;
     const message: QueuedComposerMessage = {
       id: ++queuedMessageSequenceRef.current,
-      text: composeTextRef.current,
+      text,
       pasteEvents: submission.pasteEvents,
       historyEntry: submission.historyEntry,
-      attachments: composeAttachmentsRef.current,
+      attachments,
       sending: false,
       attempts: 0,
       error: null,
@@ -854,14 +890,38 @@ export function TerminalScreen({
       ...(queuedMessagesByTargetRef.current.get(target.key) || []),
       message,
     ]);
+    flushQueuedTargetRef.current(target);
+    return true;
+  };
+
+  enqueueComposerMessageRef.current = (text, attachmentPaths) => enqueueComposeMessage(
+    text,
+    attachmentPaths.map((remotePath, index) => ({
+      id: -(index + 1),
+      remotePath,
+      previewUri: null,
+      dispose: () => {},
+    })),
+  );
+
+  const submitCompose = () => {
+    if (!composeTerminalSubmission(
+      composeTextRef.current,
+      composeAttachmentsRef.current.map(attachment => attachment.remotePath),
+    ).historyEntry) {
+      sendInput(ENTER_INPUT);
+      return;
+    }
+    if (!enqueueComposeMessage(composeTextRef.current, composeAttachmentsRef.current)) return;
     composeTextRef.current = '';
     setComposeText('');
     if (terminalId) onComposerDraftChange(terminalId, '');
     composeInputRef.current?.clear();
-    composeAttachmentsByTargetRef.current.delete(target.key);
+    if (activeTargetRef.current) {
+      composeAttachmentsByTargetRef.current.delete(activeTargetRef.current.key);
+    }
     composeAttachmentsRef.current = [];
     setComposeAttachments([]);
-    flushQueuedTargetRef.current(target);
   };
 
   const unqueueComposeMessage = (id: number) => {
@@ -1526,7 +1586,7 @@ export function TerminalScreen({
       </Modal>
     </View>
   );
-}
+});
 
 interface QueuedComposerMessage {
   id: number;

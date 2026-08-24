@@ -17,6 +17,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -31,6 +32,7 @@ import { cn } from '../lib/utils';
 import { useTheme } from '../theme';
 import { MarkdownText } from './MarkdownText';
 import { ComposerInput, MessageComposer } from './MessageComposer';
+import type { TerminalComposerQueueItem } from './TerminalScreen';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -39,6 +41,7 @@ interface Props {
   agent: ChatAgent;
   attachments: readonly string[];
   draft: string;
+  queue: readonly TerminalComposerQueueItem[];
   sending: boolean;
   onOpenTerminal: () => void;
   onAttach: () => void;
@@ -265,6 +268,7 @@ export function AgentChatView({
   agent,
   attachments,
   draft,
+  queue,
   sending,
   onOpenTerminal,
   onAttach,
@@ -423,10 +427,13 @@ export function AgentChatView({
               sending,
             }}
             beforeInput={(
-              <ChatAttachmentsStrip
-                attachments={attachments}
-                onRemoveAttachment={onRemoveAttachment}
-              />
+              <>
+                <ChatQueueStrip messages={queue} />
+                <ChatAttachmentsStrip
+                  attachments={attachments}
+                  onRemoveAttachment={onRemoveAttachment}
+                />
+              </>
             )}
           />
         </View>
@@ -485,6 +492,7 @@ export function AgentChatView({
               expanded
               onRemoveAttachment={onRemoveAttachment}
             />
+            <ChatQueueStrip messages={queue} expanded />
             <ComposerInput
               ref={composerInput}
               initialValue={text}
@@ -513,6 +521,43 @@ export function AgentChatView({
         </Modal>
       )}
     </KeyboardAvoidingView>
+  );
+}
+
+function ChatQueueStrip({
+  messages,
+  expanded = false,
+}: {
+  messages: readonly TerminalComposerQueueItem[];
+  expanded?: boolean;
+}) {
+  if (!messages.length) return null;
+  return (
+    <View className={expanded ? 'border-b border-border px-3 py-3' : 'border-b border-border px-2.5 py-2'}>
+      <Text className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+        Outbox · {messages.length}
+      </Text>
+      <ScrollView
+        horizontal
+        keyboardShouldPersistTaps="always"
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="gap-2"
+      >
+        {messages.map(message => (
+          <View
+            key={message.id}
+            className="h-11 w-52 justify-center rounded-md border border-border bg-muted px-2.5"
+          >
+            <Text numberOfLines={1} className="text-[10px] text-foreground">
+              {message.historyEntry}
+            </Text>
+            <Text className="text-[8px] text-muted-foreground">
+              {message.sending ? 'Sending' : message.error ? 'Retrying' : 'Queued until connected'}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 

@@ -58,7 +58,12 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
-import { TerminalBackground, TerminalScreen } from './TerminalScreen';
+import {
+  TerminalBackground,
+  TerminalScreen,
+  type TerminalComposerQueueItem,
+  type TerminalScreenHandle,
+} from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
 import { AgentBrandIcon } from './AgentBrandIcon';
 
@@ -174,6 +179,9 @@ export function SessionScreen({
   const [chatState, setChatState] = useState<AgentChatState | null>(null);
   const [chatAttachments, setChatAttachments] = useState<string[]>([]);
   const [chatSending, setChatSending] = useState(false);
+  const [composerQueues, setComposerQueues] = useState(
+    () => new Map<string, readonly TerminalComposerQueueItem[]>(),
+  );
   const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<string | null>(null);
   const [agentIdentityWarning, setAgentIdentityWarning] = useState<AgentIdentityWarning | null>(null);
   const [codexIntegrationInstalling, setCodexIntegrationInstalling] = useState(false);
@@ -200,6 +208,7 @@ export function SessionScreen({
   const previousChatAgentStatus = useRef<PaneInfo['agent_status'] | undefined>(undefined);
   const codexIntegrationInstallingRef = useRef(false);
   const codexIntegrationInstallRequestRef = useRef(0);
+  const terminalScreen = useRef<TerminalScreenHandle>(null);
 
   useEffect(() => () => cancelAnimation(tabSwipeTranslateX), [tabSwipeTranslateX]);
 
@@ -1002,6 +1011,7 @@ export function SessionScreen({
             activeTerminalSwipeStyle,
           ]}>
           <TerminalScreen
+            ref={terminalScreen}
             activeTarget={activeTarget}
             previewTarget={previewTarget}
             targets={terminalTargets}
@@ -1019,6 +1029,14 @@ export function SessionScreen({
             historyEntries={terminalHistory}
             getComposerDraft={getComposerDraft}
             onComposerDraftChange={onComposerDraftChange}
+            onComposerQueueChange={(terminalId, messages) => {
+              setComposerQueues(current => {
+                const next = new Map(current);
+                if (messages.length) next.set(terminalId, messages);
+                else next.delete(terminalId);
+                return next;
+              });
+            }}
             linkScanRequest={linkScanRequest}
             pasteRequest={pasteRequest && pasteRequest.terminalId === activeTerminalSession?.terminalId
               ? {
