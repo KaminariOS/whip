@@ -65,6 +65,34 @@ Terminal sessions are identified by `terminal_id`, remain mounted while the user
 
 The renderer is responsible for ANSI color, alternate screen applications, cursor modes, bracketed paste, resize, selection, scrollback, clipboard, and mobile special keys. It does not interpret Herdr management state.
 
+### Native Codex chat projection
+
+Codex panes can expose two presentations of the same live process. The existing
+Herdr terminal stream continues to feed the mounted xterm Terminal View. After
+the user explicitly opens Chat, Whip uses the pane's Herdr `agent_session` ID to
+resolve that exact Codex rollout over the existing authenticated SSH connection:
+
+```text
+Herdr terminal stream              Codex rollout JSONL
+        |                                  |
+        v                                  v
+  Terminal View                      Codex adapter
+                                            |
+                                            v
+                                normalized AgentChatItem[]
+                                            |
+                                            v
+                                    Native Chat View
+```
+
+The transcript is lazy-loaded on first Chat use, normalized and cached only in
+RAM, and followed while its associated terminal session remains open—even when
+Terminal View is in front. The remote rollout remains authoritative; reconnects
+rebuild normalized state from it. Whip does not persist complete transcripts,
+infer identity from cwd/titles/timestamps, parse ANSI into messages, or create a
+second Codex process. Chat composer submissions return to the same Herdr pane
+and PTY used by the mounted terminal.
+
 ## React Native state ownership
 
 - **Server profiles:** persistent metadata, keyed credentials, last-used state.
@@ -119,6 +147,7 @@ Implemented:
 - persistent Hosts, Herd, Terminal, and More navigation adapted to Android and iOS conventions;
 - a live-host rail plus nested Herdr workspace/tab/pane navigation;
 - multiple mounted, switchable terminal sessions per host with bounded reconnect backoff and same-host restoration;
+- lazy native Codex Chat projection from exact Herdr session identity and remote rollout JSONL, with RAM-only caching and live following;
 - serialized snapshot refresh, stale-response rejection, event resubscription, and bounded control reconnect without tearing down healthy terminal clients;
 - typed binary terminal frames through UniFFI/JSI, batched at the WebView boundary;
 - terminal search, clipboard and OSC 52 writes, selection handles, long-press selection/paste, remote viewport swipes, and configurable gestures;

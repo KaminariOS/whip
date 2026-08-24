@@ -9,7 +9,7 @@ export function shouldRefreshLiveHost(
     return false;
   if (reconcile) return true;
   return (
-    session.status !== 'connected' ||
+    session.status !== 'ready' ||
     session.sync.status !== 'synced' ||
     !eventStreamOpen
   );

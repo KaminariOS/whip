@@ -120,13 +120,16 @@ describe('live host session state', () => {
     expect(aggregateAgentStatus(['done', 'blocked'])).toBe('blocked');
   });
 
-  test('does not refresh a host until its initial SSH connection is ready', () => {
+  test('does not refresh a host until its initial SSH connection is established', () => {
     const connecting = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const session = findLiveHostSession(connecting, 'live-1');
 
     expect(canRefreshLiveHostSession(session)).toBe(false);
     expect(canRefreshLiveHostSession(
       findLiveHostSession(updateLiveHostConnection(connecting, 'live-1', { status: 'connected' }), 'live-1'),
+    )).toBe(true);
+    expect(canRefreshLiveHostSession(
+      findLiveHostSession(updateLiveHostConnection(connecting, 'live-1', { status: 'ready' }), 'live-1'),
     )).toBe(true);
     expect(canRefreshLiveHostSession(
       findLiveHostSession(updateLiveHostConnection(connecting, 'live-1', { status: 'reconnecting' }), 'live-1'),
@@ -166,8 +169,8 @@ describe('live host session state', () => {
   test('tracks connection and reconnect status per host and marks old snapshots stale', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const synced = syncSnapshot(opened, 'live-1', snapshot('savior'));
-    const connected = updateLiveHostConnection(synced, 'live-1', { status: 'connected' });
-    const reconnecting = updateLiveHostConnection(connected, 'live-1', {
+    const ready = updateLiveHostConnection(synced, 'live-1', { status: 'ready' });
+    const reconnecting = updateLiveHostConnection(ready, 'live-1', {
       status: 'reconnecting',
       error: 'connection lost',
       reconnectAttempt: 2,
@@ -213,7 +216,8 @@ describe('live host session state', () => {
 
   test('tracks the latest successful control-channel latency for each host', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
-    const request = beginLiveHostSync(opened, 'live-1');
+    const ready = updateLiveHostConnection(opened, 'live-1', { status: 'ready' });
+    const request = beginLiveHostSync(ready, 'live-1');
     const synced = applyLiveHostSnapshot(
       request.state,
       'live-1',
@@ -228,8 +232,8 @@ describe('live host session state', () => {
 
   test('updates latency independently without changing snapshot sync metadata', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
-    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
-    const request = beginLiveHostSync(connected, 'live-1');
+    const ready = updateLiveHostConnection(opened, 'live-1', { status: 'ready' });
+    const request = beginLiveHostSync(ready, 'live-1');
     const synced = applyLiveHostSnapshot(
       request.state,
       'live-1',
@@ -253,8 +257,8 @@ describe('live host session state', () => {
 
   test('tracks repeated latency samples so sustained high latency can warn', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
-    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
-    const first = applyLiveHostLatency(connected, 'live-1', 200);
+    const ready = updateLiveHostConnection(opened, 'live-1', { status: 'ready' });
+    const first = applyLiveHostLatency(ready, 'live-1', 200);
     const second = applyLiveHostLatency(first, 'live-1', 200);
 
     expect(findLiveHostSession(first, 'live-1')?.sync.latencyWarning.active).toBe(false);
@@ -263,8 +267,8 @@ describe('live host session state', () => {
 
   test('invalidates a stale successful latency after a liveness failure', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
-    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
-    const request = beginLiveHostSync(connected, 'live-1');
+    const ready = updateLiveHostConnection(opened, 'live-1', { status: 'ready' });
+    const request = beginLiveHostSync(ready, 'live-1');
     const synced = applyLiveHostSnapshot(
       request.state,
       'live-1',
@@ -285,8 +289,8 @@ describe('live host session state', () => {
 
   test('clears the latency warning when the host connection is lost', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
-    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
-    const first = applyLiveHostLatency(connected, 'live-1', 250);
+    const ready = updateLiveHostConnection(opened, 'live-1', { status: 'ready' });
+    const first = applyLiveHostLatency(ready, 'live-1', 250);
     const warned = applyLiveHostLatency(first, 'live-1', 250);
     const reconnecting = updateLiveHostConnection(warned, 'live-1', { status: 'reconnecting' });
 
@@ -296,9 +300,11 @@ describe('live host session state', () => {
     });
   });
 
-  test('ignores latency samples for disconnected hosts', () => {
+  test('ignores latency samples until connected hosts are hydrated', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const connected = updateLiveHostConnection(opened, 'live-1', { status: 'connected' });
     expect(applyLiveHostLatency(opened, 'live-1', 18)).toBe(opened);
+    expect(applyLiveHostLatency(connected, 'live-1', 18)).toBe(connected);
   });
 
   test('derives workspace, tab, and pane selection from each snapshot', () => {

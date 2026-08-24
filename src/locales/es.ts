@@ -662,6 +662,7 @@ export const es = {
   'status.unknown': 'Desconocido',
   'status.connecting': 'Conectando',
   'status.connected': 'Conectado',
+  'status.ready': 'Listo',
   'status.reconnecting': 'Reconectando',
   'status.disconnected': 'Desconectado',
   'status.error': 'Error',

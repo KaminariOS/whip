@@ -18,6 +18,7 @@ import type {
 export type LiveHostConnectionStatus =
   | 'connecting'
   | 'connected'
+  | 'ready'
   | 'reconnecting'
   | 'disconnected'
   | 'error';
@@ -204,11 +205,15 @@ export function updateLiveHostConnection(
   return updateSession(state, sessionId, session => {
     const connectionError = update.error !== undefined
       ? update.error
-      : update.status === 'connected' || update.status === 'connecting'
+      : update.status === 'ready'
+        || update.status === 'connected'
+        || update.status === 'connecting'
         ? null
         : session.connectionError;
     const reconnectAttempt = update.reconnectAttempt
-      ?? (update.status === 'connected' ? 0 : session.reconnectAttempt);
+      ?? (update.status === 'ready' || update.status === 'connected'
+        ? 0
+        : session.reconnectAttempt);
     const losesFreshness = update.status === 'reconnecting'
       || update.status === 'disconnected'
       || update.status === 'error';
@@ -238,7 +243,7 @@ export function applyLiveHostLatency(
 ): LiveHostSessionsState {
   if (!Number.isFinite(latencyMs) || latencyMs <= 0) return state;
   return updateSession(state, sessionId, session => {
-    if (session.status !== 'connected') return session;
+    if (session.status !== 'ready') return session;
     const latencyWarning = nextLatencyWarningState(session.sync.latencyWarning, latencyMs);
     if (session.sync.latencyMs === latencyMs && latencyWarning === session.sync.latencyWarning) {
       return session;
@@ -316,6 +321,7 @@ export function applyLiveHostSnapshot(
 ): LiveHostSessionsState {
   return updateSession(state, sessionId, session => {
     if (session.sync.generation !== generation) return session;
+    const readyLatencyMs = session.status === 'ready' ? latencyMs : null;
     return {
       ...session,
       snapshot,
@@ -325,8 +331,8 @@ export function applyLiveHostSnapshot(
         generation,
         error: null,
         lastSyncedAt: syncedAt,
-        latencyMs,
-        latencyWarning: nextLatencyWarningState(session.sync.latencyWarning, latencyMs),
+        latencyMs: readyLatencyMs,
+        latencyWarning: nextLatencyWarningState(session.sync.latencyWarning, readyLatencyMs),
       },
     };
   });

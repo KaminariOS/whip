@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrBridgeEvent, type HerdrEventStreamEvent, type LsResult, PtyType } from 'react-native-whip-ssh';
+import SSHClient, { type HerdrBridgeEvent, type HerdrEventStreamEvent, type LsResult, type OpenSSHExecChannel, PtyType } from 'react-native-whip-ssh';
 
 import { normalizePrivateKey } from '../lib/privateKey';
 import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
@@ -8,6 +8,8 @@ import { assertHerdrProtocolCompatible, herdrTerminalAttachLaunchMode, type Herd
 import { errorCode } from '../lib/connectionErrors';
 import { apiEvent, apiErrorMessage, apiRequestLine, eventsSubscribeRequest, HerdrApiBridgeDecoder, type HerdrApiEvent, type HerdrApiMessage, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
+import { codexRolloutFindCommand, codexRolloutStreamCommand, isValidCodexSessionId, parseCodexIntegrationStatus, parseCodexRolloutResolution, type CodexIntegrationStatus } from '../lib/codexSession';
+import type { CodexTranscriptStream } from './CodexTranscriptService';
 import { parseRemoteGitDiff, parseRemoteGitRepository, parseRemoteGitStatus, remoteGitDiffCommand, remoteGitRepositoryCommand, remoteGitStatusCommand, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '../lib/remoteGit';
 import { parseRemoteHtmlPreviewStart, remoteHtmlPreviewPageUrl, remoteHtmlPreviewStartCommand, remoteHtmlPreviewStopCommand, type RemoteHtmlServerProcess } from '../lib/remoteHtmlPreview';
 import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
@@ -377,6 +379,40 @@ export class HerdrClient {
     const remotePath = `${uploadDirectory}/${remoteFilename}`;
     await client.sftpUploadToPath(localFilePath, remotePath);
     return remotePath;
+  }
+
+  /** Resolve only the rollout whose filename contains Herdr's exact native Codex ID. */
+  async resolveCodexRollout(sessionId: string, codexHome?: string): Promise<string | null> {
+    if (!isValidCodexSessionId(sessionId)) throw new Error('Invalid Codex session ID');
+    const home = codexHome || `${await this.remoteHomeDirectory()}/.codex`;
+    const output = await this.requireClient().execute(codexRolloutFindCommand(home, sessionId));
+    return parseCodexRolloutResolution(output, sessionId);
+  }
+
+  async openCodexRolloutStream(
+    path: string,
+    onChunk: (chunk: ArrayBuffer | ArrayBufferView) => void,
+    onClosed: (reason?: string) => void,
+  ): Promise<CodexTranscriptStream> {
+    let channel: OpenSSHExecChannel | null = null;
+    channel = await this.requireClient().openExecChannel(codexRolloutStreamCommand(path), event => {
+      if (event.type === 'data') onChunk(event.bytes);
+      else onClosed(event.reason);
+    });
+    return { close: () => channel!.close() };
+  }
+
+  /** Explicit user-approved host integration setup; never called during connect. */
+  async installCodexIntegration(): Promise<void> {
+    const command = `${shellQuote(this.requireProfile().herdrCommand.trim() || 'herdr')} integration install codex`;
+    await this.requireClient().execute(this.loginShellCommand(command));
+  }
+
+  /** Lazily check setup only after the user requests Chat. */
+  async codexIntegrationStatus(): Promise<CodexIntegrationStatus> {
+    const command = `${shellQuote(this.requireProfile().herdrCommand.trim() || 'herdr')} integration status`;
+    const output = await this.requireClient().execute(this.loginShellCommand(command));
+    return parseCodexIntegrationStatus(output);
   }
 
   async openTerminal(
@@ -777,7 +813,7 @@ export class HerdrClient {
     client?.closeHerdrEventStream();
   }
 
-  /** Measure device-to-host RTT without including SSH or snapshot work. */
+  /** Measure an SSH protocol ping/pong RTT without remote process startup. */
   async measureLatency(): Promise<number> {
     const latencyMs = await this.requireClient().measureHostLatency();
     if (!Number.isFinite(latencyMs) || latencyMs <= 0) {

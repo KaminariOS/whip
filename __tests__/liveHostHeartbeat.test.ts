@@ -3,7 +3,7 @@ import { initialLatencyWarningState } from '../src/lib/latencyWarning';
 import type { LiveHostSession } from '../src/liveHostSessions';
 
 function state(
-  status: LiveHostSession['status'] = 'connected',
+  status: LiveHostSession['status'] = 'ready',
   syncStatus: LiveHostSession['sync']['status'] = 'synced',
 ): Pick<LiveHostSession, 'status' | 'sync'> {
   return {
@@ -39,5 +39,9 @@ describe('live host heartbeat', () => {
     expect(
       shouldRefreshLiveHost(state('connecting', 'idle'), false, true),
     ).toBe(false);
+  });
+
+  it('keeps transport-connected hosts refreshing until hydration marks them ready', () => {
+    expect(shouldRefreshLiveHost(state('connected'), true, false)).toBe(true);
   });
 });

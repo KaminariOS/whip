@@ -702,7 +702,7 @@ function AppContent() {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) return;
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-    if (session?.status === 'connected') recordHostDisconnect(sessionId);
+    if (session?.status === 'connected' || session?.status === 'ready') recordHostDisconnect(sessionId);
     if (isHerdrProtocolMismatch(cause)) {
       clearReconnect(runtime);
       recordNetworkDiagnostic('error', 'control-reconnect-protocol-mismatch', {
@@ -803,26 +803,29 @@ function AppContent() {
         setLiveSessions(current => beginLiveHostSync(current, sessionId).state);
         // Measure device-to-host network RTT separately from the much larger
         // SSH/Herdr snapshot operation so control-plane work cannot inflate it.
-        const latencyMs = await runtime.client.measureLatency().then(value => {
-          runtime.latencyFailures = 0;
-          if (runtime.latencyFailureActive) {
-            runtime.latencyFailureActive = false;
-            recordNetworkDiagnostic('info', 'latency-probe-recovered', {
-              sessionId,
-              latencyMs: value,
-            });
-          }
-          return value;
-        }).catch(error => {
-          if (!runtime.latencyFailureActive) {
-            runtime.latencyFailureActive = true;
-            recordNetworkDiagnostic('warn', 'latency-probe-failed', {
-              sessionId,
-              error: networkErrorMessage(error),
-            });
-          }
-          return null;
-        });
+        const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+        const latencyMs = session?.status === 'ready'
+          ? await runtime.client.measureLatency().then(value => {
+              runtime.latencyFailures = 0;
+              if (runtime.latencyFailureActive) {
+                runtime.latencyFailureActive = false;
+                recordNetworkDiagnostic('info', 'latency-probe-recovered', {
+                  sessionId,
+                  latencyMs: value,
+                });
+              }
+              return value;
+            }).catch(error => {
+              if (!runtime.latencyFailureActive) {
+                runtime.latencyFailureActive = true;
+                recordNetworkDiagnostic('warn', 'latency-probe-failed', {
+                  sessionId,
+                  error: networkErrorMessage(error),
+                });
+              }
+              return null;
+            })
+          : null;
         const snapshot = await runtime.client.snapshot();
         return { snapshot, latencyMs };
       },
@@ -892,7 +895,7 @@ function AppContent() {
       clearReconnect(runtime);
       runtime.reconnectAttempts = 0;
       setConnectError(null);
-      setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
+      setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'ready' }));
       try {
         await ensureEventStream(sessionId, result.value.snapshot);
       } catch (error) {
@@ -964,7 +967,7 @@ function AppContent() {
   ) => {
     if (AppState.currentState !== 'active') return;
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-    if (session?.status !== 'connected') return;
+    if (session?.status !== 'ready') return;
     const runtime = runtimes.current.get(sessionId);
     if (!runtime || latencyPingsInFlight.current.get(sessionId) === runtime) return;
 
@@ -1012,7 +1015,7 @@ function AppContent() {
     reconnectImmediately = false,
   ) => {
     for (const session of liveSessionsRef.current.sessions) {
-      if (session.status === 'connected') {
+      if (session.status === 'ready') {
         probeLiveHost(session.id, reconnectImmediately);
       }
     }
@@ -1351,19 +1354,28 @@ function AppContent() {
         }
       }
 
-      // The initial snapshot is sufficient to render the destination. Open the
-      // event stream after navigation so neither another SSH channel nor local
-      // storage delays the visible connection.
+      // The initial snapshot is sufficient to render the destination. Keep the
+      // host in the transport-only `connected` state while event-stream setup
+      // and the initial reconciliation settle. The restored snapshot and
+      // terminal state are then hydrated, and latency polling can start after
+      // the host transitions to `ready`.
       const connectedRuntime = runtime;
-      ensureEventStream(sessionId, initial)
-        .then(() => {
-          if (initial.server.running) return refreshHost(sessionId);
-          return undefined;
-        })
-        .catch(error => {
-          connectedRuntime.eventStatus = 'closed';
-          scheduleEventReconnect(sessionId, error);
-        });
+      try {
+        await ensureEventStream(sessionId, initial);
+        if (initial.server.running) await refreshHost(sessionId);
+      } catch (error) {
+        connectedRuntime.eventStatus = 'closed';
+        scheduleEventReconnect(sessionId, error);
+      } finally {
+        if (runtimes.current.get(sessionId) === connectedRuntime) {
+          setLiveSessions(current => {
+            const session = findLiveHostSession(current, sessionId);
+            return session?.status === 'connected'
+              ? updateLiveHostConnection(current, sessionId, { status: 'ready' })
+              : current;
+          });
+        }
+      }
       return true;
     } catch (error) {
       setConnectError(t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
@@ -1944,11 +1956,11 @@ function AppContent() {
               hosts={hosts}
               activeHostId={activeSession?.hostId || null}
               connectedHostIds={liveSessions.sessions
-                .filter(session => session.status === 'connected')
+                .filter(session => session.status === 'connected' || session.status === 'ready')
                 .map(session => session.hostId)}
               latencyMsByHostId={Object.fromEntries(liveSessions.sessions.map(session => [
                 session.hostId,
-                session.status === 'connected' ? session.sync.latencyMs : null,
+                session.status === 'ready' ? session.sync.latencyMs : null,
               ]))}
               runtimeByHostId={Object.fromEntries(liveSessions.sessions.map(session => [
                 session.hostId,
@@ -2325,8 +2337,8 @@ function LiveSessionView({
       client={client}
       terminalState={session.terminals}
       terminalTargets={terminalTargets}
-      latencyMs={session.status === 'connected' ? session.sync.latencyMs : null}
-      latencyWarningActive={session.status === 'connected' && session.sync.latencyWarning.active}
+      latencyMs={session.status === 'ready' ? session.sync.latencyMs : null}
+      latencyWarningActive={session.status === 'ready' && session.sync.latencyWarning.active}
       onRefresh={refresh}
       onOpenPane={openPane}
       onActivateTerminal={activateTerminal}

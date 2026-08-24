@@ -662,6 +662,7 @@ export const ja = {
   'status.unknown': '不明',
   'status.connecting': '接続中',
   'status.connected': '接続されました',
+  'status.ready': '準備完了',
   'status.reconnecting': '再接続中',
   'status.disconnected': '切断されました',
   'status.error': 'エラー',

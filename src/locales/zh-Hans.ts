@@ -662,6 +662,7 @@ export const zhHans = {
   'status.unknown': '未知',
   'status.connecting': '连接中',
   'status.connected': '已连接',
+  'status.ready': '已就绪',
   'status.reconnecting': '重新连接',
   'status.disconnected': '已断开连接',
   'status.error': '错误',

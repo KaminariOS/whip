@@ -1,7 +1,3 @@
-import {
-  EnrichedMarkdownText,
-  type MarkdownStyle,
-} from 'react-native-enriched-markdown';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -16,7 +12,7 @@ import { parentRemotePath, remoteEntryName, remotePreviewKind } from '@/src/lib/
 import type { HerdrClient } from '@/src/services/HerdrClient';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { cacheRemoteFile, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
-import { useTheme } from '@/src/theme';
+import { MarkdownText } from './MarkdownText';
 
 interface Props {
   client: HerdrClient;
@@ -30,72 +26,9 @@ const MAX_REMOTE_MARKDOWN_IMAGES = 24;
 const MAX_REMOTE_MARKDOWN_IMAGE_BYTES = 50 * 1024 * 1024;
 
 export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath, progressIdentity }: Props) {
-  const { colors } = useTheme();
   const { t } = useTranslation();
   const [localImages, setLocalImages] = useState<Record<string, string>>({});
   const scrollProgress = useRemoteScrollProgress(progressIdentity);
-  const markdownStyle = useMemo<MarkdownStyle>(() => ({
-    paragraph: { color: colors.text, fontSize: 14, lineHeight: 22, marginBottom: 12 },
-    h1: { color: colors.text, fontSize: 26, lineHeight: 32, marginBottom: 14 },
-    h2: { color: colors.text, fontSize: 22, lineHeight: 28, marginBottom: 12 },
-    h3: { color: colors.text, fontSize: 18, lineHeight: 24, marginBottom: 10 },
-    h4: { color: colors.text, fontSize: 16, lineHeight: 22, marginBottom: 8 },
-    h5: { color: colors.text, fontSize: 14, lineHeight: 20, marginBottom: 8 },
-    h6: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: 8 },
-    blockquote: {
-      color: colors.textSecondary,
-      borderColor: colors.primary,
-      borderWidth: 2,
-      gapWidth: 12,
-      backgroundColor: colors.surface,
-      marginBottom: 12,
-    },
-    list: {
-      color: colors.text,
-      bulletColor: colors.primary,
-      markerColor: colors.primary,
-      fontSize: 14,
-      lineHeight: 22,
-      marginBottom: 8,
-    },
-    link: { color: colors.link, underline: true },
-    code: {
-      color: colors.text,
-      backgroundColor: colors.surfaceRaised,
-      borderColor: colors.divider,
-      fontFamily: 'monospace',
-      fontSize: 12,
-    },
-    codeBlock: {
-      color: colors.text,
-      backgroundColor: colors.sidebar,
-      borderColor: colors.divider,
-      borderRadius: 8,
-      borderWidth: 1,
-      fontFamily: 'monospace',
-      fontSize: 12,
-      lineHeight: 18,
-      padding: 12,
-      marginBottom: 14,
-    },
-    thematicBreak: { color: colors.divider, height: 1, marginBottom: 14, marginTop: 4 },
-    table: {
-      color: colors.text,
-      borderColor: colors.divider,
-      headerBackgroundColor: colors.surfaceRaised,
-      headerTextColor: colors.text,
-      rowEvenBackgroundColor: colors.surface,
-      rowOddBackgroundColor: colors.canvas,
-      fontSize: 13,
-    },
-    taskList: {
-      checkedColor: colors.primary,
-      borderColor: colors.divider,
-      checkmarkColor: colors.onPrimary,
-      checkedTextColor: colors.textSecondary,
-    },
-  }), [colors]);
-
   useEffect(() => {
     let disposed = false;
     const cachedFiles: CachedRemoteFile[] = [];
@@ -159,13 +92,10 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
 
   return (
     <ScrollView {...scrollProgress} className="flex-1 bg-background" contentContainerStyle={styles.scrollContent}>
-      <EnrichedMarkdownText
+      <MarkdownText
+        content={renderedContent}
         containerStyle={styles.markdown}
-        flavor="github"
-        markdown={renderedContent}
-        markdownStyle={markdownStyle}
         onLinkPress={openLink}
-        selectable
       />
     </ScrollView>
   );

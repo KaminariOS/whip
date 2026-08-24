@@ -15,7 +15,7 @@ import { Text } from './ui/text';
 export interface LiveSessionRailItem {
   hostId: string;
   label: string;
-  status: 'connecting' | 'connected' | 'reconnecting' | 'error';
+  status: 'connecting' | 'connected' | 'ready' | 'reconnecting' | 'error';
   agentStatus: AgentStatus;
   terminalCount: number;
 }
@@ -84,8 +84,8 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
 }
 
 function sessionStatusColor(session: LiveSessionRailItem, colors: ThemeColors): string {
-  if (session.status === 'connected') return agentStatusColor(session.agentStatus, colors);
-  if (session.status === 'connecting' || session.status === 'reconnecting') return colors.working;
+  if (session.status === 'ready') return agentStatusColor(session.agentStatus, colors);
+  if (session.status === 'connecting' || session.status === 'connected' || session.status === 'reconnecting') return colors.working;
   return colors.blocked;
 }
 
@@ -93,5 +93,6 @@ function aggregateConnectionStatus(sessions: LiveSessionRailItem[]): LiveSession
   if (sessions.some(session => session.status === 'error')) return 'error';
   if (sessions.some(session => session.status === 'reconnecting')) return 'reconnecting';
   if (sessions.some(session => session.status === 'connecting')) return 'connecting';
-  return 'connected';
+  if (sessions.some(session => session.status === 'connected')) return 'connected';
+  return 'ready';
 }

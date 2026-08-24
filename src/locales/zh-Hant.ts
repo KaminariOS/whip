@@ -662,6 +662,7 @@ export const zhHant: Record<string, string> = {
   'status.unknown': '未知',
   'status.connecting': '連線中',
   'status.connected': '已連線',
+  'status.ready': '已就緒',
   'status.reconnecting': '重新連線中',
   'status.disconnected': '已中斷連線',
   'status.error': '錯誤',

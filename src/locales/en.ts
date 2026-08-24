@@ -679,6 +679,7 @@ export const en = {
   'status.unknown': 'Unknown',
   'status.connecting': 'Connecting',
   'status.connected': 'Connected',
+  'status.ready': 'Ready',
   'status.reconnecting': 'Reconnecting',
   'status.disconnected': 'Disconnected',
   'status.error': 'Error',
