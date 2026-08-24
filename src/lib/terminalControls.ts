@@ -7,6 +7,7 @@ export const defaultTerminalControlOrder = [
   'paste',
   'history',
   'compose',
+  'chat',
   'attach',
   'files',
   'links',
@@ -16,7 +17,6 @@ export const defaultTerminalControlOrder = [
   'down',
   'enter',
   'slash',
-  'hyphen',
   'pipe',
   'tilde',
   'end',
@@ -24,7 +24,6 @@ export const defaultTerminalControlOrder = [
   'page-down',
   'alt',
   'find',
-  'shift-tab',
   'home',
 ] as const;
 

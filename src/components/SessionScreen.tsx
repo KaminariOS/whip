@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
-import { BookOpen, ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
+import { ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   AppState,
@@ -1001,31 +1001,6 @@ export function SessionScreen({
               onPress={hapticPress(() => setEditorMode('tab'))}>
               <Plus size={Platform.OS === 'ios' ? 23 : 16} color={colors.text} />
             </Button>
-            {activeChatAgent && (
-              <Button
-                accessibilityLabel={codexChatLoading
-                  ? codexIntegrationInstalling
-                    ? 'Installing Codex integration'
-                    : 'Loading Codex history'
-                  : chatVisible
-                    ? 'Open Terminal view'
-                    : `Open ${activeChatAgent === 'opencode' ? 'OpenCode' : 'Codex'} Chat view`}
-                accessibilityState={{
-                  busy: codexChatLoading,
-                  disabled: busy || codexChatLoading || !activeTerminalSession,
-                }}
-                className={cn('h-[55px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-11')}
-                disabled={busy || codexChatLoading || !activeTerminalSession}
-                size="content"
-                variant="ghost"
-                onPress={hapticPress(chatVisible ? closeAgentChat : openAgentChat)}>
-                {codexChatLoading
-                  ? <AnimatedAgentStatusGlyph status="working" color={colors.primary} size={Platform.OS === 'ios' ? 21 : 17} />
-                  : chatVisible
-                  ? <SquareTerminal size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />
-                  : <BookOpen size={Platform.OS === 'ios' ? 23 : 19} color={colors.text} />}
-              </Button>
-            )}
           </>
         ) : activeTerminalSession?.kind === 'ssh' ? (
           <>
@@ -1159,6 +1134,16 @@ export function SessionScreen({
             onRequestAttachment={openAttachments}
             onRequestFiles={openFileManager}
             onRequestLinks={scanTerminalLinks}
+            chatControl={activeChatAgent ? {
+              accessibilityLabel: codexChatLoading
+                ? codexIntegrationInstalling
+                  ? 'Installing Codex integration'
+                  : 'Loading Codex history'
+                : `Open ${activeChatAgent === 'opencode' ? 'OpenCode' : 'Codex'} Chat view`,
+              disabled: busy || codexChatLoading || !activeTerminalSession,
+              loading: codexChatLoading,
+              onPress: hapticPress(openAgentChat),
+            } : undefined}
             onOpenLink={link => {
               if (terminalPreferences.openLinksInApp) setLinksOpen(true);
               openTerminalLink(link);

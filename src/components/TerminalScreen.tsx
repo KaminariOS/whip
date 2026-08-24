@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useEffectEvent, useImperativeHandle, useRef, useState } from 'react';
 import { Portal } from '@rn-primitives/portal';
-import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
-import { AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, BookOpen, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
+import { ActivityIndicator, AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -79,6 +79,12 @@ interface Props {
   onRequestAttachment?: () => void;
   onRequestFiles?: () => void;
   onRequestLinks?: () => void;
+  chatControl?: {
+    accessibilityLabel: string;
+    disabled: boolean;
+    loading: boolean;
+    onPress: () => void;
+  };
   onOpenLink?: (link: string) => void;
   onLinksScanned?: (links: string[]) => void;
   onInteraction?: (target: TerminalRenderTarget) => void;
@@ -116,13 +122,11 @@ const TERMINAL_KEYS: Partial<Record<TerminalControlId, TerminalKeyDefinition>> =
   down: ['↓', '\u001b[B', 'symbol'],
   enter: ['ENTER', ENTER_INPUT, 'text'],
   slash: ['/', '/', 'symbol'],
-  hyphen: ['-', '-', 'symbol'],
   pipe: ['|', '|', 'symbol'],
   tilde: ['~', '~', 'symbol'],
   end: ['END', '\u001b[F', 'text'],
   'page-up': ['PG↑', '\u001b[5~', 'text'],
   'page-down': ['PG↓', '\u001b[6~', 'text'],
-  'shift-tab': ['⇧TAB', '\u001b[Z', 'text'],
   home: ['HOME', '\u001b[H', 'text'],
 };
 
@@ -267,6 +271,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   onRequestAttachment,
   onRequestFiles,
   onRequestLinks,
+  chatControl,
   onOpenLink,
   onLinksScanned,
   onInteraction,
@@ -1126,6 +1131,28 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           }}>
           <View className={TERMINAL_ICON_BOX_CLASS}>
             <MessageCircle size={TERMINAL_ICON_SIZE} color={appColors.text} />
+          </View>
+        </Button>
+      );
+    }
+    if (control === 'chat') {
+      if (!chatControl) return null;
+      return (
+        <Button
+          key={control}
+          accessibilityLabel={chatControl.accessibilityLabel}
+          accessibilityState={{ busy: chatControl.loading, disabled: chatControl.disabled }}
+          className={TERMINAL_ICON_CONTROL_CLASS}
+          disabled={chatControl.disabled}
+          variant="secondary"
+          onPress={() => {
+            onControlUse(control);
+            chatControl.onPress();
+          }}>
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            {chatControl.loading
+              ? <ActivityIndicator color={appColors.primary} size="small" />
+              : <BookOpen size={TERMINAL_ICON_SIZE} color={appColors.text} />}
           </View>
         </Button>
       );

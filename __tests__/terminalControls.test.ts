@@ -6,12 +6,14 @@ import {
 } from '../src/lib/terminalControls';
 
 test('starts with common controls and keeps secondary navigation at the right end', () => {
-  expect(defaultTerminalControlOrder.slice(0, 14)).toEqual([
+  expect(defaultTerminalControlOrder.slice(0, 15)).toEqual([
     'keyboard', 'ctrl', 'shift', 'esc', 'tab', 'paste', 'history', 'compose',
-    'attach', 'files', 'links', 'up', 'left', 'right',
+    'chat', 'attach', 'files', 'links', 'up', 'left', 'right',
   ]);
-  expect(defaultTerminalControlOrder.slice(-4)).toEqual(['alt', 'find', 'shift-tab', 'home']);
+  expect(defaultTerminalControlOrder.slice(-4)).toEqual(['page-down', 'alt', 'find', 'home']);
   expect(defaultTerminalControlOrder).not.toContain('ctrl-c');
+  expect(defaultTerminalControlOrder).not.toContain('hyphen');
+  expect(defaultTerminalControlOrder).not.toContain('shift-tab');
 });
 
 test('orders frequently used terminal controls first and keeps stable ties', () => {
