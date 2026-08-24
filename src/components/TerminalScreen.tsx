@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Portal } from '@rn-primitives/portal';
-import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, History, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, Maximize2, MessageCircle, Minimize2, Option, Paperclip, Search, Send, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
 import { AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -73,6 +73,7 @@ interface Props {
   };
   onRequestAttachment?: () => void;
   onRequestFiles?: () => void;
+  onRequestLinks?: () => void;
   onOpenLink?: (link: string) => void;
   onLinksScanned?: (links: string[]) => void;
   onInteraction?: (target: TerminalRenderTarget) => void;
@@ -258,6 +259,7 @@ export function TerminalScreen({
   pasteRequest,
   onRequestAttachment,
   onRequestFiles,
+  onRequestLinks,
   onOpenLink,
   onLinksScanned,
   onInteraction,
@@ -1069,6 +1071,24 @@ export function TerminalScreen({
           }}>
           <View className={TERMINAL_ICON_BOX_CLASS}>
             <FolderOpen size={TERMINAL_ICON_SIZE} color={appColors.text} />
+          </View>
+        </Button>
+      );
+    }
+    if (control === 'links') {
+      return (
+        <Button
+          key={control}
+          accessibilityLabel={t('terminal.scanLinks')}
+          className={TERMINAL_ICON_CONTROL_CLASS}
+          disabled={status !== 'connected'}
+          variant="secondary"
+          onPress={() => {
+            onControlUse(control);
+            onRequestLinks?.();
+          }}>
+          <View className={TERMINAL_ICON_BOX_CLASS}>
+            <Globe2 size={TERMINAL_ICON_SIZE} color={appColors.text} />
           </View>
         </Button>
       );

@@ -9,6 +9,7 @@ export const defaultTerminalControlOrder = [
   'compose',
   'attach',
   'files',
+  'links',
   'up',
   'left',
   'right',

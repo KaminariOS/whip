@@ -1,8 +1,9 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
+import { ChevronLeft, Globe2, MessageCircle, Plus, SquareTerminal, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Linking,
   Modal,
   PanResponder,
@@ -32,7 +33,11 @@ import {
 import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
 import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '@/src/lib/volumeKeys';
 import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalControls';
+import { codexChatAction, codexMissingIdentityAction, codexSessionIdForPane, isCodexPane, type CodexIntegrationStatus } from '../lib/codexSession';
+import { composeTerminalSubmission } from '../lib/terminalSubmission';
+import type { AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
+import { codexTranscriptService } from '../services/CodexTranscriptService';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
@@ -47,6 +52,7 @@ import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 import { TerminalBackground, TerminalScreen } from './TerminalScreen';
+import { AgentChatView } from './AgentChatView';
 
 interface Props {
   hostSessionId: string;
@@ -153,6 +159,13 @@ export function SessionScreen({
   const [browserLoading, setBrowserLoading] = useState(false);
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [attachmentTerminalId, setAttachmentTerminalId] = useState<string | null>(null);
+  const [attachmentTarget, setAttachmentTarget] = useState<'terminal' | 'chat'>('terminal');
+  const [chatTerminalId, setChatTerminalId] = useState<string | null>(null);
+  const [chatKey, setChatKey] = useState<string | null>(null);
+  const [chatState, setChatState] = useState<AgentChatState | null>(null);
+  const [chatAttachments, setChatAttachments] = useState<string[]>([]);
+  const [chatSending, setChatSending] = useState(false);
+  const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<string | null>(null);
   const [pasteRequest, setPasteRequest] = useState<{
     id: number;
     terminalId: string;
@@ -202,6 +215,8 @@ export function SessionScreen({
   const activeTerminalSession = terminalState.sessions.find(
     session => session.terminalId === terminalState.activeTerminalId,
   );
+  const activePane = snapshot.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);
+  const chatVisible = Boolean(chatTerminalId && chatTerminalId === activeTerminalSession?.terminalId && chatState);
   const activeTarget = terminalTargets.find(target => (
     target.hostSessionId === hostSessionId
       && target.session.terminalId === activeTerminalSession?.terminalId
@@ -308,7 +323,74 @@ export function SessionScreen({
     setBrowserLoading(false);
     setAttachmentsOpen(false);
     setPasteRequest(null);
+    setChatTerminalId(null);
+    setChatKey(null);
+    setChatState(null);
+    setChatAttachments([]);
+    setChatSending(false);
+    setPendingIntegrationPaneId(null);
   }, [hostSessionId]);
+
+  useEffect(() => {
+    codexTranscriptService.reconcileTerminals(hostSessionId, terminalState.sessions.map(session => session.terminalId));
+    for (const session of terminalState.sessions) {
+      const pane = snapshot.panes.find(item => item.terminal_id === session.terminalId);
+      codexTranscriptService.rebind(hostSessionId, session.terminalId, codexSessionIdForPane(pane), client);
+    }
+    if (chatTerminalId) {
+      const pane = snapshot.panes.find(item => item.terminal_id === chatTerminalId);
+      const sessionId = codexSessionIdForPane(pane);
+      if (sessionId && sessionId !== chatState?.sessionId) {
+        const key = codexTranscriptService.activate(hostSessionId, chatTerminalId, sessionId, client);
+        setChatKey(key);
+        setChatState(codexTranscriptService.getState(key));
+        setChatAttachments([]);
+      } else if (!sessionId && chatState?.status !== 'unavailable') {
+        setChatKey(null);
+        setChatState({ sessionId: '', items: [], status: 'unavailable', error: 'This pane no longer reports a native Codex session ID.' });
+        setChatAttachments([]);
+      }
+    }
+  }, [chatState?.sessionId, chatState?.status, chatTerminalId, client, hostSessionId, snapshot.panes, terminalState.sessions]);
+
+  useEffect(() => {
+    if (!chatKey) return undefined;
+    return codexTranscriptService.subscribe(chatKey, setChatState);
+  }, [chatKey]);
+
+  useEffect(() => {
+    if (chatTerminalId && chatTerminalId !== activeTerminalSession?.terminalId) {
+      setChatTerminalId(null);
+      setChatKey(null);
+      setChatState(null);
+      setChatAttachments([]);
+    }
+  }, [activeTerminalSession?.terminalId, chatTerminalId]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') codexTranscriptService.reconnectHost(hostSessionId);
+    });
+    return () => subscription.remove();
+  }, [hostSessionId]);
+
+  useEffect(() => {
+    if (!pendingIntegrationPaneId) return;
+    const pane = snapshot.panes.find(item => item.pane_id === pendingIntegrationPaneId);
+    setPendingIntegrationPaneId(null);
+    const sessionId = codexSessionIdForPane(pane);
+    if (pane && sessionId) {
+      const key = codexTranscriptService.activate(hostSessionId, pane.terminal_id, sessionId, client);
+      setChatTerminalId(pane.terminal_id);
+      setChatKey(key);
+      setChatState(codexTranscriptService.getState(key));
+    } else {
+      Alert.alert(
+        'Restart Codex to enable Chat',
+        'The Herdr Codex integration is installed, but this already-running Codex process has no native session identity. Restart Codex in this pane, then tap Chat again.',
+      );
+    }
+  }, [client, hostSessionId, pendingIntegrationPaneId, snapshot.panes]);
 
   useEffect(() => {
     const pending = pendingFocus.current;
@@ -352,12 +434,12 @@ export function SessionScreen({
       return;
     }
     const activeSession = terminalState.sessions.find(item => item.terminalId === terminalState.activeTerminalId);
-    const activePane = snapshot.panes.find(item => item.pane_id === activeSession?.paneId);
-    if (!activePane || activePane.pane_id === lastActivePaneId.current) return;
-    lastActivePaneId.current = activePane.pane_id;
-    pendingPaneFocus.current = activePane.pane_id;
-    setWorkspaceId(activePane.workspace_id);
-    setTabId(activePane.tab_id);
+    const activeSessionPane = snapshot.panes.find(item => item.pane_id === activeSession?.paneId);
+    if (!activeSessionPane || activeSessionPane.pane_id === lastActivePaneId.current) return;
+    lastActivePaneId.current = activeSessionPane.pane_id;
+    pendingPaneFocus.current = activeSessionPane.pane_id;
+    setWorkspaceId(activeSessionPane.workspace_id);
+    setTabId(activeSessionPane.tab_id);
   }, [snapshot.panes, terminalState.activeTerminalId, terminalState.sessions, visible]);
 
   const activateServerPane = useEffectEvent((paneId: string) => {
@@ -586,7 +668,115 @@ export function SessionScreen({
   const openAttachments = () => {
     if (!activeTerminalSession || activeTerminalSession.status !== 'connected') return;
     setAttachmentTerminalId(activeTerminalSession.terminalId);
+    setAttachmentTarget('terminal');
     setAttachmentsOpen(true);
+  };
+
+  const openChatAttachments = () => {
+    if (!activeTerminalSession || activeTerminalSession.status !== 'connected') return;
+    setAttachmentTerminalId(activeTerminalSession.terminalId);
+    setAttachmentTarget('chat');
+    setAttachmentsOpen(true);
+  };
+
+  const closeCodexChat = () => {
+    setChatTerminalId(null);
+    setChatKey(null);
+    setChatState(null);
+    setChatAttachments([]);
+  };
+
+  const promptCodexIntegrationInstall = (
+    paneId: string,
+    status: Extract<CodexIntegrationStatus, 'not-installed' | 'outdated' | 'needs-repair'>,
+  ) => {
+    let heading = 'Install Herdr Codex integration?';
+    let stateExplanation = 'Whip needs Herdr’s native Codex session identity.';
+    if (status === 'outdated') {
+      heading = 'Update Herdr Codex integration?';
+      stateExplanation = 'The installed Herdr Codex integration is outdated.';
+    } else if (status === 'needs-repair') {
+      heading = 'Repair Herdr Codex integration?';
+      stateExplanation = 'The installed Herdr Codex integration needs repair.';
+    }
+    Alert.alert(
+      heading,
+      `${stateExplanation} Whip will run:\n\nherdr integration install codex\n\non this remote host for your user. The running Codex process may need to be restarted before Chat is available.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Install',
+          onPress: () => {
+            setBusy(true);
+            client.installCodexIntegration()
+              .then(onRefresh)
+              .then(() => setPendingIntegrationPaneId(paneId))
+              .catch(error => Alert.alert('Could not install Codex integration', String(error)))
+              .finally(() => setBusy(false));
+          },
+        },
+      ],
+    );
+  };
+
+  const openCodexChat = async () => {
+    if (!activePane || !activeTerminalSession) return;
+    const action = codexChatAction(activePane);
+    if (action === 'open') {
+      const sessionId = codexSessionIdForPane(activePane)!;
+      const key = codexTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
+      setChatTerminalId(activeTerminalSession.terminalId);
+      setChatKey(key);
+      setChatState(codexTranscriptService.getState(key));
+      return;
+    }
+    if (action !== 'setup') return;
+    const paneId = activePane.pane_id;
+    setBusy(true);
+    try {
+      const integrationStatus = await client.codexIntegrationStatus();
+      const missingIdentityAction = codexMissingIdentityAction(integrationStatus);
+      if (missingIdentityAction === 'diagnose') {
+        Alert.alert(
+          'Codex identity unavailable',
+          'The Herdr Codex integration is installed, but this process did not report a native session ID. If Codex was started after the integration was installed, restarting again will not help. Check the Herdr Codex hook and its host dependencies, then tap Chat again.',
+        );
+      } else if (missingIdentityAction === 'unknown') {
+        Alert.alert(
+          'Could not verify Codex integration',
+          'Whip could not read the Codex row from `herdr integration status`. No changes were made on the remote host.',
+        );
+      } else if (
+        integrationStatus === 'not-installed'
+        || integrationStatus === 'outdated'
+        || integrationStatus === 'needs-repair'
+      ) {
+        promptCodexIntegrationInstall(paneId, integrationStatus);
+      }
+    } catch (error) {
+      Alert.alert('Could not check Codex integration', String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitChat = async (text: string): Promise<boolean> => {
+    if (!activePane || chatSending) return false;
+    const submission = composeTerminalSubmission(text, chatAttachments);
+    if (!submission.pasteEvents.length) return false;
+    setChatSending(true);
+    try {
+      await client.submitPastesToPane(activePane.pane_id, submission.pasteEvents);
+      onTerminalHistoryEntry(submission.historyEntry);
+      setChatAttachments([]);
+      onInteraction(activePane.tab_id);
+      return true;
+    } catch (error) {
+      Alert.alert('Could not send message', String(error));
+      return false;
+    } finally {
+      setChatSending(false);
+    }
   };
 
   return (
@@ -643,15 +833,19 @@ export function SessionScreen({
               onPress={hapticPress(() => setEditorMode('tab'))}>
               <Plus size={Platform.OS === 'ios' ? 23 : 16} color={colors.text} />
             </Button>
-            <Button
-              accessibilityLabel={t('terminal.scanLinks')}
-              className={cn('h-[55px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-11')}
-              disabled={!activeTerminalSession || activeTerminalSession.status !== 'connected'}
-              size="content"
-              variant="ghost"
-              onPress={hapticPress(scanTerminalLinks)}>
-              <Globe2 size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />
-            </Button>
+            {isCodexPane(activePane) && (
+              <Button
+                accessibilityLabel={chatVisible ? 'Open Terminal view' : 'Open Codex Chat view'}
+                className={cn('h-[55px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-11')}
+                disabled={busy || !activeTerminalSession}
+                size="content"
+                variant="ghost"
+                onPress={hapticPress(chatVisible ? closeCodexChat : openCodexChat)}>
+                {chatVisible
+                  ? <SquareTerminal size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />
+                  : <MessageCircle size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />}
+              </Button>
+            )}
           </>
         ) : activeTerminalSession?.kind === 'ssh' ? (
           <>
@@ -744,7 +938,7 @@ export function SessionScreen({
             topOverlayInset={55 + (selectedTab && panes.length > 1 ? 37 : 0)}
             latencyMs={latencyMs}
             latencyWarningActive={latencyWarningActive}
-            visible={visible && Boolean(activeTarget)}
+            visible={visible && Boolean(activeTarget) && !chatVisible}
             swipe={tabSwipe && previewTarget
               ? { direction: tabSwipe.direction, offset: tabSwipeTranslateX }
               : null}
@@ -765,6 +959,7 @@ export function SessionScreen({
               : undefined}
             onRequestAttachment={openAttachments}
             onRequestFiles={openFileManager}
+            onRequestLinks={scanTerminalLinks}
             onOpenLink={link => {
               if (terminalPreferences.openLinksInApp) setLinksOpen(true);
               openTerminalLink(link);
@@ -793,6 +988,22 @@ export function SessionScreen({
             }}
           />
         </Animated.View>
+        {chatVisible && chatState && activePane && (
+          <View
+            className="absolute inset-x-0 bottom-0 z-20"
+            style={{ top: 55 + (selectedTab && panes.length > 1 ? 37 : 0) }}>
+            <AgentChatView
+              state={chatState}
+              agentStatus={activePane.agent_status}
+              attachments={chatAttachments}
+              sending={chatSending}
+              onOpenTerminal={closeCodexChat}
+              onAttach={openChatAttachments}
+              onRemoveAttachment={path => setChatAttachments(current => current.filter(item => item !== path))}
+              onSubmit={submitChat}
+            />
+          </View>
+        )}
         {tabSwipe
           && (!tabSwipe.targetTerminalId
             || !terminalState.sessions.some(session => session.terminalId === tabSwipe.targetTerminalId))
@@ -837,13 +1048,18 @@ export function SessionScreen({
               attachment.dispose();
               return;
             }
-            setPasteRequest(current => ({
-              id: (current?.id || 0) + 1,
-              terminalId: attachmentTerminalId,
-              text: attachment.remotePath,
-              previewUri: attachment.previewUri,
-              dispose: attachment.dispose,
-            }));
+            if (attachmentTarget === 'chat') {
+              setChatAttachments(current => [...current, attachment.remotePath]);
+              attachment.dispose();
+            } else {
+              setPasteRequest(current => ({
+                id: (current?.id || 0) + 1,
+                terminalId: attachmentTerminalId,
+                text: attachment.remotePath,
+                previewUri: attachment.previewUri,
+                dispose: attachment.dispose,
+              }));
+            }
           }}
         />
         <Modal
