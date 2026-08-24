@@ -15,6 +15,22 @@ export const initialLatencyWarningState: LatencyWarningState = {
 };
 
 /**
+ * Keep recovery hysteresis in state without rendering a contradictory warning
+ * for a reading that is already healthy.
+ */
+export function shouldDisplayLatencyWarning(
+  active: boolean,
+  latencyMs: number | null,
+): boolean {
+  return Boolean(
+    active
+    && latencyMs !== null
+    && Number.isFinite(latencyMs)
+    && latencyMs > HIGH_LATENCY_RECOVERY_MS,
+  );
+}
+
+/**
  * Requires sustained high latency to show the warning and sustained recovery
  * to hide it. The gap between the two thresholds prevents boundary jitter.
  */

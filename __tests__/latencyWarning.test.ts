@@ -1,6 +1,7 @@
 import {
   initialLatencyWarningState,
   nextLatencyWarningState,
+  shouldDisplayLatencyWarning,
 } from '../src/lib/latencyWarning';
 
 describe('latency warning hysteresis', () => {
@@ -34,5 +35,12 @@ describe('latency warning hysteresis', () => {
     const pending = nextLatencyWarningState(initialLatencyWarningState, 220);
 
     expect(nextLatencyWarningState(pending, null)).toBe(initialLatencyWarningState);
+  });
+
+  test('does not display a latched warning with a healthy current reading', () => {
+    expect(shouldDisplayLatencyWarning(true, 5)).toBe(false);
+    expect(shouldDisplayLatencyWarning(true, 150)).toBe(false);
+    expect(shouldDisplayLatencyWarning(true, 175)).toBe(true);
+    expect(shouldDisplayLatencyWarning(false, 500)).toBe(false);
   });
 });

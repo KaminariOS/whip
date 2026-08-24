@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
+import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
 import { cn } from '@/src/lib/utils';
 import {
   orderTerminalControls,
@@ -1262,8 +1263,7 @@ export function TerminalScreen({
         visible={Boolean(
           session
           && status === 'connected'
-          && latencyWarningActive
-          && latencyMs !== null
+          && shouldDisplayLatencyWarning(latencyWarningActive, latencyMs)
           && !searchOpen
         )}
       />
