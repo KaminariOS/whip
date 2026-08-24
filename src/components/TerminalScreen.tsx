@@ -297,6 +297,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const targetsRef = useRef(targets);
   const composeInputRef = useRef<TextInputHandle | null>(null);
   const composeTextRef = useRef('');
+  const keyboardEnabledBeforeComposeRef = useRef<boolean | null>(null);
   const wasVisible = useRef(visible);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -342,6 +343,18 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   activeTargetRef.current = activeTarget;
   targetsRef.current = targets;
 
+  const restoreKeyboardAfterCompose = useCallback(() => {
+    const previouslyEnabled = keyboardEnabledBeforeComposeRef.current;
+    if (previouslyEnabled === null) return;
+    keyboardEnabledBeforeComposeRef.current = null;
+    setKeyboardEnabled(previouslyEnabled);
+    if (!previouslyEnabled) {
+      renderer.current?.setKeyboardEnabled(false);
+      renderer.current?.blur();
+      Keyboard.dismiss();
+    }
+  }, []);
+
   useImperativeHandle(ref, () => ({
     enqueueComposerMessage: (text, attachmentPaths) => (
       enqueueComposerMessageRef.current(text, attachmentPaths)
@@ -363,6 +376,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     setError(null);
     setSearchOpen(false);
     setComposeOpen(false);
+    restoreKeyboardAfterCompose();
     setComposeExpanded(false);
     setTerminalSelectionActive(false);
     setAlternateScreen(false);
@@ -372,7 +386,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     setCtrl('off');
     setShift('off');
     setAlt('off');
-  }, [activeTarget?.key, getComposerDraft, setAlt, setCtrl, setShift, terminalId]);
+  }, [activeTarget?.key, getComposerDraft, restoreKeyboardAfterCompose, setAlt, setCtrl, setShift, terminalId]);
 
   const cacheTargetKey = activeTarget?.key || '';
   const cacheTargetClient = activeTarget?.client || null;
@@ -751,12 +765,15 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
 
   useEffect(() => {
     if (!visible) {
-      if (composeOpen) setComposeOpen(false);
+      if (composeOpen) {
+        setComposeOpen(false);
+        restoreKeyboardAfterCompose();
+      }
       setComposeExpanded(false);
       setHistoryOpen(false);
     }
     setTerminalComposerOverlay(terminalId, visible && composeOpen).catch(() => {});
-  }, [composeOpen, terminalId, visible]);
+  }, [composeOpen, restoreKeyboardAfterCompose, terminalId, visible]);
 
   useEffect(() => () => {
     setTerminalComposerOverlay(terminalId, false).catch(() => {});
@@ -842,6 +859,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     await closeComposerKeyboard();
     setComposeExpanded(false);
     setComposeOpen(false);
+    restoreKeyboardAfterCompose();
     await setTerminalComposerOverlay(terminalId, false).catch(reason => setError(String(reason)));
   };
 
@@ -849,6 +867,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     setSearchOpen(false);
     setHistoryOpen(false);
     setTerminalComposerOverlay(terminalId, true).catch(reason => setError(String(reason))).finally(() => {
+      keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
       setKeyboardEnabled(true);
       setComposeOpen(true);
     });
