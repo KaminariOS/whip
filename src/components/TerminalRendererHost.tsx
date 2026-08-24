@@ -19,6 +19,11 @@ import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import type { TerminalFrame, TerminalProtocolState } from '../lib/terminalBridge';
+import {
+  TerminalArbitration,
+  type TerminalDimensions,
+  type TerminalInputActivity,
+} from '../lib/terminalArbitration';
 import { arrayBufferToBase64 } from '../lib/base64';
 import {
   isOfflineTerminalNavigationInput,
@@ -83,7 +88,11 @@ interface RendererEntry {
   fontPreference: number;
   fontSize: number;
   protocolState: TerminalProtocolState;
-  inputTail: Promise<void>;
+  arbitration: TerminalArbitration;
+  writableWaiters: Array<{
+    resolve: () => void;
+    reject: (reason: Error) => void;
+  }>;
 }
 
 export interface TerminalRendererHandle {
@@ -99,7 +108,11 @@ export interface TerminalRendererHandle {
   scroll: (direction: 'up' | 'down', lines: number) => void;
   search: (query: string, caseSensitive: boolean, regex: boolean, direction: number) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
-  submitPastes: (target: TerminalRenderTarget, parts: readonly string[]) => Promise<void>;
+  submitPastes: (
+    target: TerminalRenderTarget,
+    parts: readonly string[],
+    newUserInput?: boolean,
+  ) => Promise<void>;
 }
 
 interface Props {
@@ -204,6 +217,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     entry.reconnectTimer = null;
     entry.controllerAttached = false;
     entry.connecting = false;
+    for (const waiter of entry.writableWaiters.splice(0)) {
+      waiter.reject(new Error('Terminal renderer was disposed'));
+    }
     entries.current.delete(key);
     const terminalId = entry.target.session.terminalId;
     if (closeBridge) {
@@ -322,6 +338,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
     if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
+    if (entry.arbitration.state.yielded) return;
     // Opening the remote terminal before xterm has measured the WebView starts
     // it at HerdrClient's 80x24 fallback and immediately sends a second resize.
     // Wait for the configured renderer's first measured size instead.
@@ -339,11 +356,31 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportStatus(entry.target, 'connecting', undefined, entry.reconnectAttempt);
       }
     }
-    const scheduleReconnect = (reason: string) => {
+    const scheduleReconnect = (reason: string, displacement: boolean) => {
       if (entries.current.get(entry.target.key) !== entry) return;
       entry.connecting = false;
       entry.controllerAttached = false;
       if (AppState.currentState !== 'active') return;
+      if (
+        displacement
+        && entry.target.session.kind !== 'ssh'
+        && entry.arbitration.recordDisplacement()
+      ) {
+        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+        entry.reconnectTimer = null;
+        recordNetworkDiagnostic('info', 'terminal-reconnect-yielded', {
+          sessionId: entry.target.hostSessionId,
+          terminalId,
+          inputGeneration: entry.arbitration.state.inputGeneration,
+          displacements: entry.arbitration.state.consecutiveDisplacements,
+          reason: networkErrorMessage(reason),
+        });
+        // There is no passive terminal status. Keep the cached surface usable
+        // so its next real input can reclaim ownership through this host.
+        reportStatus(entry.target, 'connected', undefined, 0);
+        entry.target.client.releaseTerminal(terminalId).catch(() => undefined);
+        return;
+      }
       const nextAttempt = entry.reconnectAttempt + 1;
       if (nextAttempt > MAX_RECONNECT_ATTEMPTS) {
         recordNetworkDiagnostic('error', 'terminal-reconnect-exhausted', {
@@ -353,6 +390,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           reason: networkErrorMessage(reason),
         });
         reportStatus(entry.target, 'error', reason, entry.reconnectAttempt);
+        for (const waiter of entry.writableWaiters.splice(0)) {
+          waiter.reject(new Error(reason));
+        }
         return;
       }
       entry.reconnectAttempt = nextAttempt;
@@ -367,14 +407,17 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportStatus(entry.target, 'disconnected', reason, nextAttempt);
       if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
       entry.reconnectTimer = setTimeout(
-        () => connectEntry(entry),
+        () => {
+          entry.reconnectTimer = null;
+          connectEntry(entry);
+        },
         delayMs,
       );
     };
     client.openTerminal(
       terminalId,
       frame => injectFrame(entry, frame),
-      reason => scheduleReconnect(reason || 'Remote terminal closed'),
+      reason => scheduleReconnect(reason || 'Remote terminal closed', true),
       event => {
         if (event.type === 'protocol-state') {
           entry.protocolState = event.state;
@@ -387,10 +430,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       },
     ).then(() => {
       if (entries.current.get(entry.target.key) !== entry) return;
+      if (!entry.controllerAttached) return;
       const recoveryAttempt = entry.reconnectAttempt;
       entry.connecting = false;
       entry.reconnectAttempt = 0;
       reportStatus(entry.target, 'connected', undefined, 0);
+      for (const waiter of entry.writableWaiters.splice(0)) waiter.resolve();
       if (recoveryAttempt > 0) {
         recordNetworkDiagnostic('info', 'terminal-reconnect-recovered', {
           sessionId: entry.target.hostSessionId,
@@ -404,7 +449,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.connecting = false;
       entry.controllerAttached = false;
       reportError(entry.target, message);
-      scheduleReconnect(message);
+      scheduleReconnect(message, false);
     });
   }, [injectFrame, preferences.pauseResizeInBackground]);
 
@@ -427,7 +472,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         protocolState: {
           kittyKeyboardReportAll: false,
         },
-        inputTail: Promise.resolve(),
+        arbitration: new TerminalArbitration(),
+        writableWaiters: [],
       };
       entries.current.set(target.key, entry);
       if (hostReady.current) {
@@ -447,13 +493,54 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     inject(`window.${method}(${[JSON.stringify(key), ...args.map(value => JSON.stringify(value))].join(', ')});`);
   }, [inject]);
 
+  const waitForWritable = useCallback((entry: RendererEntry): Promise<void> => {
+    const terminalId = entry.target.session.terminalId;
+    if (
+      entry.controllerAttached
+      && !entry.connecting
+      && entry.target.client.isTerminalBridgeRetained(terminalId)
+    ) return Promise.resolve();
+    const pending = new Promise<void>((resolve, reject) => {
+      entry.writableWaiters.push({ resolve, reject });
+    });
+    connectEntry(entry);
+    return pending;
+  }, [connectEntry]);
+
   const enqueueInput = useCallback((
     entry: RendererEntry,
     operation: () => void | Promise<void>,
-  ) => {
-    const pending = entry.inputTail.then(operation, operation);
-    entry.inputTail = pending.catch(() => undefined);
-    return pending;
+    newUserInput = true,
+  ) => entry.arbitration.queueUserInput({
+    newUserInput,
+    onActivity: () => {
+      if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+      entry.reconnectTimer = null;
+      entry.reconnectAttempt = 0;
+      connectEntry(entry);
+    },
+    prepare: async (activity: TerminalInputActivity, dimensions: TerminalDimensions | null) => {
+      await waitForWritable(entry);
+      if (!activity.reclaimRequired || !dimensions) return;
+      await entry.target.client.resizeTerminal(
+        entry.target.session.terminalId,
+        dimensions.columns,
+        dimensions.rows,
+        dimensions.cellWidthPx,
+        dimensions.cellHeightPx,
+      );
+    },
+    send: operation,
+  }), [connectEntry, waitForWritable]);
+
+  const reportQueuedInput = useCallback((entry: RendererEntry, data: string) => {
+    const target = entry.target.session.status === 'connected'
+      ? entry.target
+      : {
+          ...entry.target,
+          session: { ...entry.target.session, status: 'connected' as const },
+        };
+    return reportInput(target, data);
   }, []);
 
   useImperativeHandle(forwardedRef, () => ({
@@ -468,19 +555,29 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     input: data => {
       const key = activeKey.current;
       const entry = key ? entries.current.get(key) : null;
+      if (!entry) return false;
       if (
-        !entry
-        || entry.target.session.status === 'connected'
-        || !isOfflineTerminalNavigationInput(data)
-      ) return false;
-      activeCall('herdrOfflineInput', [data]);
+        entry.target.session.status !== 'connected'
+        && !entry.arbitration.state.yielded
+        && entry.arbitration.state.consecutiveDisplacements === 0
+        && isOfflineTerminalNavigationInput(data)
+      ) {
+        activeCall('herdrOfflineInput', [data]);
+        return true;
+      }
+      enqueueInput(entry, () => reportQueuedInput(entry, data)).catch(
+        reason => reportError(entry.target, String(reason)),
+      );
       return true;
     },
     paste: data => {
       const key = activeKey.current;
       const entry = key ? entries.current.get(key) : null;
       if (!entry) return;
-      if (entry.target.session.status !== 'connected') return;
+      if (
+        entry.target.session.status !== 'connected'
+        && entry.target.session.kind === 'ssh'
+      ) return;
       if (entry.target.session.kind === 'ssh') {
         activeCall('herdrPaste', [data]);
         return;
@@ -499,6 +596,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.controllerAttached = false;
       entry.connecting = false;
       entry.reconnectAttempt = 0;
+      entry.arbitration.resumeManually();
       entry.target.client.closeTerminal(entry.target.session.terminalId);
       recordNetworkDiagnostic('info', 'terminal-manual-retry', {
         sessionId: entry.target.hostSessionId,
@@ -517,10 +615,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (enabled) webView.current?.requestFocus();
       activeCall('herdrSetKeyboardEnabled', [enabled]);
     },
-    submitPastes: (target, parts) => {
+    submitPastes: (target, parts, newUserInput = true) => {
       const entry = ensureEntry(target);
       if (!entry) return Promise.reject(new Error('Terminal is not available'));
-      if (entry.target.session.status !== 'connected') {
+      if (
+        entry.target.session.status !== 'connected'
+        && entry.target.session.kind === 'ssh'
+      ) {
         return Promise.reject(new Error('Terminal is offline and read-only'));
       }
       if (entry.target.session.kind === 'ssh') {
@@ -536,13 +637,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         );
         endTerminalWriteTrace(inputTrace, true);
         return submission;
-      }).catch(reason => {
+      }, newUserInput).catch(reason => {
         endTerminalWriteTrace(inputTrace, false);
         reportError(entry.target, String(reason));
         throw reason;
       });
     },
-  }), [activeCall, connectEntry, enqueueInput, ensureEntry, inject]);
+  }), [activeCall, connectEntry, enqueueInput, ensureEntry, inject, reportQueuedInput]);
 
   useEffect(() => {
     const valid = new Map(targets.map(target => [target.key, target]));
@@ -745,10 +846,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       return;
     }
     if (message.type === 'input') {
-      if (entry.target.session.status !== 'connected') return;
-      await enqueueInput(entry, () => reportInput(entry.target, message.data));
+      await enqueueInput(entry, () => reportQueuedInput(entry, message.data));
     } else if (message.type === 'buffered-submit') {
-      if (entry.target.session.status !== 'connected') return;
       const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
       try {
         const pastedParts = Array.isArray(message.parts)
@@ -776,21 +875,32 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         `Whip terminal resize: ${message.source === 'fit' ? 'fit' : 'xterm'}`,
       );
       try {
-        if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
-        entry.target.client.resizeTerminal(
-          entry.target.session.terminalId,
-          message.cols,
-          message.rows,
-          message.cellWidthPx,
-          message.cellHeightPx,
-        );
+        const dimensions = {
+          columns: message.cols,
+          rows: message.rows,
+          cellWidthPx: message.cellWidthPx,
+          cellHeightPx: message.cellHeightPx,
+        };
+        entry.arbitration.cacheDimensions(dimensions);
         entry.sizeReady = true;
+        if (!entry.arbitration.shouldSendResize()) return;
+        if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
+        await entry.target.client.resizeTerminal(
+          entry.target.session.terminalId,
+          dimensions.columns,
+          dimensions.rows,
+          dimensions.cellWidthPx,
+          dimensions.cellHeightPx,
+        );
         connectEntry(entry);
       } finally {
         endAppPerformanceTrace(resizeTrace);
       }
     } else if (message.type === 'scroll') {
-      if (entry.target.session.status !== 'connected') return;
+      if (
+        entry.target.session.status !== 'connected'
+        || entry.arbitration.state.yielded
+      ) return;
       reportScroll(entry.target, message.direction, message.lines);
       try {
         await entry.target.client.scrollTerminal(
@@ -814,13 +924,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         viewport_rows: message.viewportRows,
       });
     } else if (message.type === 'terminal-click') {
-      if (entry.target.session.status !== 'connected') return;
       try {
-        await entry.target.client.clickTerminal(
+        await enqueueInput(entry, () => entry.target.client.clickTerminal(
           entry.target.session.terminalId,
           message.column,
           message.row,
-        );
+        ));
       } catch (reason) {
         reportError(entry.target, String(reason));
       }
@@ -835,7 +944,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(message.text || '');
     } else if (message.type === 'clipboard-read') {
-      if (entry.target.session.status !== 'connected') return;
+      if (
+        entry.target.session.status !== 'connected'
+        && entry.target.session.kind === 'ssh'
+      ) return;
       const value = await Clipboard.getString();
       if (value) {
         if (entry.target.session.kind === 'ssh') {

@@ -635,7 +635,7 @@ export class HerdrClient {
     );
   }
 
-  resizeTerminal(terminalId: string, columns: number, rows: number, cellWidthPx = 0, cellHeightPx = 0): void {
+  async resizeTerminal(terminalId: string, columns: number, rows: number, cellWidthPx = 0, cellHeightPx = 0): Promise<void> {
     const size = {
       columns: Math.max(20, columns),
       rows: Math.max(8, rows),
@@ -649,9 +649,13 @@ export class HerdrClient {
       return;
     }
     if (this.terminalBridges.has(terminalId)) {
-      this.requireClient()
-        .herdrBridgeResize(terminalId, size.columns, size.rows, size.cellWidthPx, size.cellHeightPx)
-        .catch(() => {});
+      await this.requireClient().herdrBridgeResize(
+        terminalId,
+        size.columns,
+        size.rows,
+        size.cellWidthPx,
+        size.cellHeightPx,
+      );
     }
   }
 

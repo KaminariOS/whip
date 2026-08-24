@@ -499,8 +499,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const sendInput = async (
     data: string,
     target: TerminalRenderTarget | null = activeTargetRef.current,
+    fromRenderer = false,
   ) => {
     if (!target) return false;
+    if (
+      !fromRenderer
+      && target.key === activeTargetRef.current?.key
+      && renderer.current?.input(data)
+    ) return true;
     if (target.key !== activeTargetRef.current?.key) return writeInput(data, target, false);
     const value = applyTerminalModifiers(
       data,
@@ -686,7 +692,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
         ];
         publishQueuedMessages(targetKey, sendingQueue);
         try {
-          await terminalRenderer.submitPastes(target, message.pasteEvents);
+          await terminalRenderer.submitPastes(
+            target,
+            message.pasteEvents,
+            message.attempts === 0,
+          );
           if (target.key === activeTargetRef.current?.key) setError(null);
         } catch (reason) {
           const current = queuedMessagesByTargetRef.current.get(targetKey) || [];
@@ -1299,7 +1309,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           swipe={swipe}
           onReady={() => setReady(true)}
           onInput={async (target, data) => {
-            await sendInput(data, target);
+            await sendInput(data, target, true);
           }}
           onScroll={(target, direction, lines) => {
             if (target.key === activeTarget?.key) {
