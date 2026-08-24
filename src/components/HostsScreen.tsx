@@ -116,6 +116,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                     <SwipeableHostRow
                       key={host.id}
                       connected={connected}
+                      connecting={connecting}
                       displayName={displayName}
                       onConnect={() => onConnect(host)}
                       onDelete={() => onDelete(host)}
@@ -125,7 +126,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                           <Button
                             accessibilityLabel={t('hosts.connectTo', { host: displayName })}
                             className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
-                            disabled={connectingHostIdSet.size > 0}
+                            disabled={connecting}
                             size="content"
                             variant="ghost"
                             onPress={hapticPress(() => {
@@ -228,6 +229,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
 function SwipeableHostRow({
   children,
   connected,
+  connecting,
   displayName,
   onConnect,
   onDelete,
@@ -235,6 +237,7 @@ function SwipeableHostRow({
 }: {
   children: (controls: { actionsOpen: boolean; closeActions: () => void }) => React.ReactNode;
   connected: boolean;
+  connecting: boolean;
   displayName: string;
   onConnect: () => void;
   onDelete: () => void;
@@ -292,6 +295,7 @@ function SwipeableHostRow({
             className={connected
               ? 'h-full w-[76px] flex-col gap-1 rounded-l-lg rounded-r-none bg-warning'
               : 'h-full w-[76px] flex-col gap-1 rounded-l-lg rounded-r-none bg-primary'}
+            disabled={connecting}
             size="content"
             onPress={hapticPress(() => runAction(connected ? onDisconnect : onConnect))}>
             <Icon as={connected ? LogOut : LogIn} className={connected ? 'text-black' : 'text-primary-foreground'} size={19} />

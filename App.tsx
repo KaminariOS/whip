@@ -359,8 +359,7 @@ function AppContent() {
   const [liveHostsLoaded, setLiveHostsLoaded] = useState(false);
   const [terminalHistoryLoaded, setTerminalHistoryLoaded] = useState(false);
   const [liveHostRestoreComplete, setLiveHostRestoreComplete] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [connectingHostId, setConnectingHostId] = useState<string | null>(null);
+  const [connectingHostIds, setConnectingHostIds] = useState<ReadonlySet<string>>(() => new Set());
   const [connectError, setConnectError] = useState<string | null>(null);
   const [liveSessions, setLiveSessions] = useState(emptyLiveHostSessions);
   const [navigation, setNavigation] = useState(initialMobileNavigation);
@@ -1424,6 +1423,16 @@ function AppContent() {
     });
   }, []);
 
+  const trackHostConnection = (hostId: string, isConnecting: boolean) => {
+    setConnectingHostIds(current => {
+      if (current.has(hostId) === isConnecting) return current;
+      const next = new Set(current);
+      if (isConnecting) next.add(hostId);
+      else next.delete(hostId);
+      return next;
+    });
+  };
+
   const connect = async (
     nextProfile: ConnectionProfile,
     options: ConnectOptions = {},
@@ -1439,8 +1448,7 @@ function AppContent() {
       traceStartupRestore = false,
     } = options;
     if (trackConnecting) {
-      setConnecting(true);
-      setConnectingHostId(nextProfile.id);
+      trackHostConnection(nextProfile.id, true);
     }
     setConnectError(null);
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === nextProfile.id);
@@ -1612,8 +1620,7 @@ function AppContent() {
       return false;
     } finally {
       if (trackConnecting) {
-        setConnecting(false);
-        setConnectingHostId(null);
+        trackHostConnection(nextProfile.id, false);
       }
     }
   };
@@ -1837,7 +1844,7 @@ function AppContent() {
       return;
     }
     setConnectError(null);
-    setConnectingHostId(host.id);
+    trackHostConnection(host.id, true);
     try {
       let nextProfile = await loadConnectionProfile(host);
       if (!nextProfile.secret && credentialRecovery.state === 'locked') {
@@ -1849,11 +1856,16 @@ function AppContent() {
         setConnectError(t('app.enterCredential'));
         return;
       }
-      await connect(nextProfile, { persistProfile: false });
+      await connect(nextProfile, {
+        persistProfile: false,
+        // connectSavedHost owns this host's busy state while it also loads or
+        // restores credentials before opening the transport.
+        trackConnecting: false,
+      });
     } catch (error) {
       setConnectError(String(error));
     } finally {
-      setConnectingHostId(null);
+      trackHostConnection(host.id, false);
     }
   };
 
@@ -2240,7 +2252,7 @@ function AppContent() {
                 ...liveSessions.sessions
                   .filter(session => session.status === 'connecting')
                   .map(session => session.hostId),
-                ...(connectingHostId ? [connectingHostId] : []),
+                ...connectingHostIds,
               ]}
               error={connectError}
               credentialRecovery={credentialRecovery}
@@ -2429,7 +2441,7 @@ function AppContent() {
               key={editorProfile.id}
               initialProfile={editorProfile}
               hosts={hosts}
-              connecting={connecting}
+              connecting={connectingHostIds.has(editorProfile.id)}
               error={connectError}
               onCancel={() => {
                 setEditorProfile(null);
