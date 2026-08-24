@@ -1,5 +1,20 @@
+import type {
+  AgentInfo as ApiAgentInfo,
+  AgentSessionInfo as ApiAgentSessionInfo,
+  AgentStatus as ApiAgentStatus,
+  PaneInfo as ApiPaneInfo,
+  PaneLayoutPane as ApiPaneLayoutPane,
+  PaneLayoutRect as ApiPaneLayoutRect,
+  PaneLayoutSnapshot as ApiPaneLayoutSnapshot,
+  PaneLayoutSplit as ApiPaneLayoutSplit,
+  PaneScrollInfo as ApiPaneScrollInfo,
+  SessionSnapshot as ApiSessionSnapshot,
+  TabInfo as ApiTabInfo,
+  WorkspaceInfo as ApiWorkspaceInfo,
+} from './generated/herdrApi';
+
 export type AuthMode = 'password' | 'key';
-export type AgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
+export type AgentStatus = ApiAgentStatus;
 
 export interface HostProfile {
   id: string;
@@ -47,126 +62,16 @@ export interface KnownHost {
   createdAt: string;
 }
 
-export interface AgentInfo {
-  terminal_id: string;
-  name?: string;
-  agent?: string;
-  title?: string;
-  terminal_title?: string;
-  terminal_title_stripped?: string;
-  display_agent?: string;
-  custom_status?: string;
-  agent_status: AgentStatus;
-  workspace_id: string;
-  tab_id: string;
-  pane_id: string;
-  focused: boolean;
-  cwd?: string;
-  foreground_cwd?: string;
-  screen_detection_skipped?: boolean;
-  tokens?: Record<string, string>;
-  agent_session?: AgentSessionInfo;
-  launch_pending?: boolean;
-  interactive_ready?: boolean;
-  state_change_seq?: number;
-  revision: number;
-  state_labels?: Record<string, string>;
-}
-
-export interface WorkspaceInfo {
-  workspace_id: string;
-  number: number;
-  label: string;
-  focused: boolean;
-  pane_count: number;
-  tab_count: number;
-  active_tab_id: string;
-  agent_status: AgentStatus;
-  tokens?: Record<string, string>;
-  worktree?: {
-    repo_key?: string;
-    repo_name: string;
-    repo_root?: string;
-    checkout_path: string;
-    is_linked_worktree: boolean;
-  };
-}
-
-export interface TabInfo {
-  tab_id: string;
-  workspace_id: string;
-  number: number;
-  label: string;
-  focused: boolean;
-  pane_count: number;
-  agent_status: AgentStatus;
-}
-
-export interface PaneInfo {
-  pane_id: string;
-  terminal_id: string;
-  workspace_id: string;
-  tab_id: string;
-  focused: boolean;
-  cwd?: string;
-  foreground_cwd?: string;
-  label?: string;
-  agent?: string;
-  title?: string;
-  terminal_title?: string;
-  terminal_title_stripped?: string;
-  display_agent?: string;
-  agent_status: AgentStatus;
-  custom_status?: string;
-  state_labels?: Record<string, string>;
-  tokens?: Record<string, string>;
-  agent_session?: AgentSessionInfo;
-  scroll?: PaneScrollInfo;
-  revision: number;
-}
-
-export interface AgentSessionInfo {
-  source: string;
-  agent: string;
-  kind: string;
-  value: string;
-}
-
-export interface PaneScrollInfo {
-  offset_from_bottom: number;
-  max_offset_from_bottom: number;
-  viewport_rows: number;
-}
-
-export interface PaneLayoutRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface PaneLayoutPane {
-  pane_id: string;
-  focused: boolean;
-  rect: PaneLayoutRect;
-}
-
-export interface PaneLayoutSplit {
-  id: string;
-  direction: 'right' | 'down';
-  ratio: number;
-  rect: PaneLayoutRect;
-}
-
-export interface PaneLayoutSnapshot {
-  workspace_id: string;
-  tab_id: string;
-  zoomed: boolean;
-  area: PaneLayoutRect;
-  focused_pane_id: string;
-  panes: PaneLayoutPane[];
-  splits: PaneLayoutSplit[];
-}
+export type AgentInfo = ApiAgentInfo;
+export type WorkspaceInfo = ApiWorkspaceInfo;
+export type TabInfo = ApiTabInfo;
+export type PaneInfo = ApiPaneInfo;
+export type AgentSessionInfo = ApiAgentSessionInfo;
+export type PaneScrollInfo = ApiPaneScrollInfo;
+export type PaneLayoutRect = ApiPaneLayoutRect;
+export type PaneLayoutPane = ApiPaneLayoutPane;
+export type PaneLayoutSplit = ApiPaneLayoutSplit;
+export type PaneLayoutSnapshot = ApiPaneLayoutSnapshot;
 
 export interface ServerInfo {
   running: boolean;
@@ -176,7 +81,11 @@ export interface ServerInfo {
   socket?: string;
 }
 
-export interface HerdrSnapshot {
+export interface HerdrSnapshot
+  extends Pick<
+    ApiSessionSnapshot,
+    'agents' | 'workspaces' | 'tabs' | 'panes' | 'layouts'
+  > {
   server: ServerInfo;
   focused_workspace_id: string | null;
   focused_tab_id: string | null;

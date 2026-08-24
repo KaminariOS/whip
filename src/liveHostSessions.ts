@@ -598,7 +598,7 @@ function paneFromAgentStatusEvent(
   data: AgentStatusUpdate,
 ): PaneInfo {
   const next = { ...pane, agent_status: agentStatus };
-  for (const field of ['agent', 'title', 'display_agent', 'custom_status'] as const) {
+  for (const field of ['agent', 'title', 'display_agent'] as const) {
     const value = data[field];
     if (value !== undefined) next[field] = value;
   }

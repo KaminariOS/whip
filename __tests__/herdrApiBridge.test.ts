@@ -39,10 +39,11 @@ describe('Herdr API bridge', () => {
   });
 
   it('subscribes to lifecycle and per-pane agent changes without duplicates', () => {
-    const request = eventsSubscribeRequest(['w1:p2', 'w1:p1', 'w1:p2']);
+    const request = eventsSubscribeRequest(20, ['w1:p2', 'w1:p1', 'w1:p2']);
     const subscriptions = request.params.subscriptions as Array<Record<string, string>>;
     expect(subscriptions).toContainEqual({ type: 'workspace.updated' });
     expect(subscriptions).toContainEqual({ type: 'workspace.metadata_updated' });
+    expect(subscriptions).toContainEqual({ type: 'workspace.reordered' });
     expect(subscriptions).toContainEqual({ type: 'pane.created' });
     expect(subscriptions).toContainEqual({ type: 'pane.updated' });
     expect(subscriptions).toContainEqual({ type: 'layout.updated' });
@@ -50,6 +51,9 @@ describe('Herdr API bridge', () => {
       { type: 'pane.agent_status_changed', pane_id: 'w1:p1' },
       { type: 'pane.agent_status_changed', pane_id: 'w1:p2' },
     ]);
+    expect(eventsSubscribeRequest(17, []).params.subscriptions).not.toContainEqual({
+      type: 'workspace.reordered',
+    });
   });
 
   it('decodes fragmented JSON and ignores shell noise', () => {
@@ -62,7 +66,7 @@ describe('Herdr API bridge', () => {
 
   it('extracts bridge errors', () => {
     expect(apiErrorMessage({ error: { code: 'bad_request', message: 'No session' } })).toBe('No session');
-    expect(apiErrorMessage({ id: 'ok', result: {} })).toBeNull();
+    expect(apiErrorMessage({ id: 'ok', result: { type: 'ok' } })).toBeNull();
   });
 
   it('decodes direct and legacy-wrapped focus events', () => {
@@ -108,17 +112,41 @@ describe('Herdr API bridge', () => {
     });
     expect(apiEvent({
       event: 'pane.updated',
-      data: { pane: { ...pane, custom_status: null } },
+      data: {
+        pane: {
+          ...pane,
+          agent_session: {
+            source: 'codex',
+            agent: 'codex',
+            kind: 'future',
+            value: 'session-1',
+          },
+        },
+      },
     })).toEqual({
       event: 'protocol.invalid',
       data: {
         raw_event: 'pane.updated',
-        reason: 'pane.custom_status must be a string',
+        reason: 'pane.agent_session.kind must be id or path',
       },
     });
   });
 
   it('distinguishes unknown events from malformed known events', () => {
+    expect(apiEvent({
+      event: 'workspace.reordered',
+      data: { workspace_ids: [], workspaces: [] },
+    })).toEqual({
+      event: 'workspace.reordered',
+      data: { workspace_ids: [], workspaces: [] },
+    });
+    expect(apiEvent({
+      event: 'pane.output_changed',
+      data: { workspace_id: 'w1', pane_id: 'p1', revision: 8 },
+    })).toEqual({
+      event: 'pane.output_changed',
+      data: { workspace_id: 'w1', pane_id: 'p1', revision: 8 },
+    });
     expect(apiEvent({ event: 'future.created', data: {} })).toEqual({
       event: 'protocol.unknown',
       data: { raw_event: 'future.created' },

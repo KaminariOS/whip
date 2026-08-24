@@ -1,7 +1,10 @@
+import type { SupportedHerdrProtocol } from '../generated/herdrApi';
+
 /** Wire protocols implemented by the bundled Android Herdr bridge codec. */
-export const HERDR_PROTOCOL_VERSIONS = [17, 18, 19, 20] as const;
+export const HERDR_PROTOCOL_VERSIONS = [17, 18, 19, 20] as const satisfies readonly SupportedHerdrProtocol[];
 export const HERDR_PROTOCOL_VERSION = HERDR_PROTOCOL_VERSIONS.at(-1)!;
 export const HERDR_PROTOCOL_VERSIONS_LABEL = `${HERDR_PROTOCOL_VERSIONS[0]}–${HERDR_PROTOCOL_VERSION}`;
+export type HerdrProtocolVersion = typeof HERDR_PROTOCOL_VERSIONS[number];
 
 export type HerdrTerminalAttachLaunchMode = 1 | 2;
 
@@ -28,7 +31,7 @@ export class HerdrProtocolMismatchError extends Error {
 export function assertHerdrProtocolCompatible(
   protocol: number | undefined,
   serverCompatible = true,
-): asserts protocol is number {
+): asserts protocol is HerdrProtocolVersion {
   if (
     !serverCompatible
     || protocol === undefined

@@ -1,5 +1,6 @@
 import type { AgentStatusUpdate } from './agentStatusEvents';
 import { agentStatusFromEvent } from './agentStatusEvents';
+import type { EventData, WorktreeInfo } from '../generated/herdrApi';
 import type {
   AgentSessionInfo,
   PaneInfo,
@@ -10,85 +11,29 @@ import type {
   WorkspaceInfo,
 } from '../types';
 
-type Event<Name extends string, Data> = { event: Name; data: Data };
+type DotEventName<Name extends string> =
+  Name extends `${infer Scope}_${infer EventName}` ? `${Scope}.${EventName}` : Name;
 
-interface WorktreeInfo {
-  branch?: string;
-  is_bare: boolean;
-  is_detached: boolean;
-  is_linked_worktree: boolean;
-  is_prunable: boolean;
-  label: string;
-  open_workspace_id?: string;
-  path: string;
-}
+type DecodedEventData<Data extends { type: string }> = {
+  [Key in keyof Omit<Data, 'type'>]: Exclude<Omit<Data, 'type'>[Key], null>;
+};
 
-export interface PaneAgentStatusChangedData extends AgentStatusUpdate {
-  pane_id: string;
-  workspace_id: string;
-}
+type OfficialHerdrEvent<Data extends { type: string } = EventData> =
+  Data extends EventData
+    ? { event: DotEventName<Data['type']>; data: DecodedEventData<Data> }
+    : never;
+
+export type PaneAgentStatusChangedData = Extract<
+  OfficialHerdrEvent,
+  { event: 'pane.agent_status_changed' }
+>['data'];
 
 export type HerdrEvent =
-  | Event<
-      'workspace.created' | 'workspace.updated' | 'workspace.metadata_updated',
-      { workspace: WorkspaceInfo }
-    >
-  | Event<'workspace.closed', { workspace_id: string; workspace?: WorkspaceInfo }>
-  | Event<'workspace.renamed', { workspace_id: string; label: string }>
-  | Event<'workspace.moved', {
-      workspace_id: string;
-      insert_index: number;
-      workspaces: WorkspaceInfo[];
-    }>
-  | Event<'workspace.focused', { workspace_id: string }>
-  | Event<'worktree.created', { workspace: WorkspaceInfo; worktree: WorktreeInfo }>
-  | Event<'worktree.opened', {
-      workspace: WorkspaceInfo;
-      worktree: WorktreeInfo;
-      already_open: boolean;
-    }>
-  | Event<'worktree.removed', {
-      workspace_id: string;
-      workspace?: WorkspaceInfo;
-      worktree: WorktreeInfo;
-      forced: boolean;
-    }>
-  | Event<'tab.created', { tab: TabInfo }>
-  | Event<'tab.closed', { workspace_id: string; tab_id: string }>
-  | Event<'tab.renamed', { workspace_id: string; tab_id: string; label: string }>
-  | Event<'tab.moved', {
-      workspace_id: string;
-      tab_id: string;
-      insert_index: number;
-      tabs: TabInfo[];
-    }>
-  | Event<'tab.focused', { workspace_id: string; tab_id: string }>
-  | Event<'pane.created' | 'pane.updated', { pane: PaneInfo }>
-  | Event<'pane.closed' | 'pane.focused' | 'pane.exited', {
-      workspace_id: string;
-      pane_id: string;
-    }>
-  | Event<'pane.moved', {
-      previous_pane_id: string;
-      previous_workspace_id: string;
-      previous_tab_id: string;
-      pane: PaneInfo;
-      created_workspace?: WorkspaceInfo;
-      created_tab?: TabInfo;
-      closed_workspace_id?: string;
-      closed_tab_id?: string;
-    }>
-  | Event<'pane.agent_detected', {
-      workspace_id: string;
-      pane_id: string;
-      agent?: string;
-      released: boolean;
-      final_status?: AgentStatusUpdate['agent_status'];
-    }>
-  | Event<'pane.agent_status_changed', PaneAgentStatusChangedData>
-  | Event<'layout.updated', { layout: PaneLayoutSnapshot }>
+  | OfficialHerdrEvent
   | Event<'protocol.unknown', { raw_event: string }>
   | Event<'protocol.invalid', { raw_event: string; reason: string }>;
+
+type Event<Name extends string, Data> = { event: Name; data: Data };
 
 const EVENT_NAMES = new Set<Exclude<HerdrEvent['event'], `protocol.${string}`>>([
   'workspace.created',
@@ -97,6 +42,7 @@ const EVENT_NAMES = new Set<Exclude<HerdrEvent['event'], `protocol.${string}`>>(
   'workspace.closed',
   'workspace.renamed',
   'workspace.moved',
+  'workspace.reordered',
   'workspace.focused',
   'worktree.created',
   'worktree.opened',
@@ -112,6 +58,7 @@ const EVENT_NAMES = new Set<Exclude<HerdrEvent['event'], `protocol.${string}`>>(
   'pane.focused',
   'pane.exited',
   'pane.moved',
+  'pane.output_changed',
   'pane.agent_detected',
   'pane.agent_status_changed',
   'layout.updated',
@@ -154,6 +101,15 @@ export function decodeHerdrEvent(rawEvent: string, value: unknown): HerdrEvent {
             workspace_id: nonEmptyString(data.workspace_id, 'workspace_id'),
             insert_index: nonNegativeNumber(data.insert_index, 'insert_index'),
             workspaces: array(data.workspaces, 'workspaces', workspace),
+          },
+        };
+      case 'workspace.reordered':
+        return {
+          event,
+          data: {
+            workspace_ids: array(data.workspace_ids, 'workspace_ids', nonEmptyString),
+            workspaces: array(data.workspaces, 'workspaces', workspace),
+            ...optionalString(data, 'before_workspace_id'),
           },
         };
       case 'workspace.focused':
@@ -242,6 +198,15 @@ export function decodeHerdrEvent(rawEvent: string, value: unknown): HerdrEvent {
             ...optionalString(data, 'closed_tab_id'),
           },
         };
+      case 'pane.output_changed':
+        return {
+          event,
+          data: {
+            workspace_id: nonEmptyString(data.workspace_id, 'workspace_id'),
+            pane_id: nonEmptyString(data.pane_id, 'pane_id'),
+            revision: nonNegativeNumber(data.revision, 'revision'),
+          },
+        };
       case 'pane.agent_detected':
         return {
           event,
@@ -308,9 +273,9 @@ function workspace(value: unknown, label = 'workspace'): WorkspaceInfo {
 function workspaceWorktree(value: unknown, label = 'worktree'): NonNullable<WorkspaceInfo['worktree']> {
   const item = record(value, label);
   return {
-    ...optionalString(item, 'repo_key', label),
+    repo_key: nonEmptyString(item.repo_key, `${label}.repo_key`),
     repo_name: nonEmptyString(item.repo_name, `${label}.repo_name`),
-    ...optionalString(item, 'repo_root', label),
+    repo_root: nonEmptyString(item.repo_root, `${label}.repo_root`),
     checkout_path: nonEmptyString(item.checkout_path, `${label}.checkout_path`),
     is_linked_worktree: boolean(item.is_linked_worktree, `${label}.is_linked_worktree`),
   };
@@ -360,7 +325,6 @@ function pane(value: unknown, label = 'pane'): PaneInfo {
     ...optionalString(item, 'terminal_title_stripped', label),
     ...optionalString(item, 'display_agent', label),
     agent_status: agentStatus(item.agent_status, `${label}.agent_status`),
-    ...optionalString(item, 'custom_status', label),
     ...optionalStringRecord(item, 'state_labels', label),
     ...optionalStringRecord(item, 'tokens', label),
     ...optionalDecoded(item, 'agent_session', agentSession, label),
@@ -374,7 +338,7 @@ function agentSession(value: unknown, label = 'agent_session'): AgentSessionInfo
   return {
     source: nonEmptyString(item.source, `${label}.source`),
     agent: nonEmptyString(item.agent, `${label}.agent`),
-    kind: nonEmptyString(item.kind, `${label}.kind`),
+    kind: agentSessionKind(item.kind, `${label}.kind`),
     value: string(item.value, `${label}.value`),
   };
 }
@@ -444,10 +408,13 @@ function paneAgentStatusChanged(data: Record<string, unknown>): PaneAgentStatusC
     ...optionalString(data, 'agent'),
     ...optionalString(data, 'title'),
     ...optionalString(data, 'display_agent'),
-    ...optionalString(data, 'custom_status'),
-    ...optionalNumber(data, 'state_change_seq'),
     ...optionalStringRecord(data, 'state_labels'),
   };
+}
+
+function agentSessionKind(value: unknown, label: string): AgentSessionInfo['kind'] {
+  if (value !== 'id' && value !== 'path') fail(`${label} must be id or path`);
+  return value;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -524,13 +491,6 @@ function optionalString<Key extends string>(
 function optionalBoolean(item: Record<string, unknown>, key: string): boolean | undefined {
   const value = item[key];
   return value === undefined ? undefined : boolean(value, key);
-}
-
-function optionalNumber<Key extends string>(
-  item: Record<string, unknown>,
-  key: Key,
-): Partial<Record<Key, number>> {
-  return optionalDecoded(item, key, finiteNumber);
 }
 
 function optionalAgentStatus<Key extends string>(

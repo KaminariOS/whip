@@ -1,14 +1,15 @@
+import type { EventData } from '../generated/herdrApi';
 import type { AgentInfo, AgentStatus, HerdrSnapshot, TabInfo } from '../types';
 
-export interface AgentStatusUpdate {
-  agent_status: AgentStatus;
-  agent?: string;
-  title?: string;
-  display_agent?: string;
-  custom_status?: string;
-  state_change_seq?: number;
-  state_labels?: Record<string, string>;
-}
+type PaneAgentStatusChangedEvent = Extract<
+  EventData,
+  { type: 'pane_agent_status_changed' }
+>;
+
+export type AgentStatusUpdate = Omit<
+  PaneAgentStatusChangedEvent,
+  'type' | 'pane_id' | 'workspace_id'
+>;
 
 const AGENT_STATUSES = new Set<AgentStatus>([
   'idle',
@@ -79,12 +80,9 @@ export function agentFromStatusEvent(
   data: AgentStatusUpdate,
 ): AgentInfo {
   const next = { ...current, agent_status: data.agent_status };
-  for (const field of ['agent', 'title', 'display_agent', 'custom_status'] as const) {
+  for (const field of ['agent', 'title', 'display_agent'] as const) {
     const value = data[field];
     if (value !== undefined) next[field] = value;
-  }
-  if (data.state_change_seq !== undefined) {
-    next.state_change_seq = data.state_change_seq;
   }
   if (data.state_labels) next.state_labels = data.state_labels;
   return next;

@@ -1645,7 +1645,7 @@ function AppContent() {
           session: terminal,
           scroll: session.snapshot.panes.find(
             pane => pane.terminal_id === terminal.terminalId,
-          )?.scroll,
+          )?.scroll ?? undefined,
         }));
       }),
     [liveSessions.sessions],

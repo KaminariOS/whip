@@ -55,6 +55,7 @@ Run the checks relevant to your change. Before requesting review, the full valid
 ```bash
 npx expo-doctor
 npx tsc --noEmit
+npm run check:herdr-api
 npm run lint
 npm test -- --runInBand
 npm run bundle:ios

@@ -4,7 +4,7 @@ import { normalizePrivateKey } from '../lib/privateKey';
 import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
 import { uniqueRemoteAttachmentName } from '../lib/attachmentPaste';
 import { createSecureId } from '../lib/secureId';
-import { assertHerdrProtocolCompatible, herdrTerminalAttachLaunchMode } from '../lib/herdrProtocol';
+import { assertHerdrProtocolCompatible, herdrTerminalAttachLaunchMode, type HerdrProtocolVersion } from '../lib/herdrProtocol';
 import { errorCode } from '../lib/connectionErrors';
 import { apiEvent, apiErrorMessage, apiRequestLine, eventsSubscribeRequest, HerdrApiBridgeDecoder, type HerdrApiEvent, type HerdrApiMessage, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
@@ -27,6 +27,11 @@ type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
 type TerminalControlHandler = (event: TerminalControlEvent) => void;
 type ApiEventHandler = (event: HerdrApiEvent) => void;
+type HerdrApiMethod = HerdrApiRequest['method'];
+type HerdrApiParams<Method extends HerdrApiMethod> = Extract<
+  HerdrApiRequest,
+  { method: Method }
+>['params'];
 
 interface CachedApiSocketPath {
   fingerprint: string;
@@ -749,7 +754,10 @@ export class HerdrClient {
         throw new Error('Herdr event stream closed during startup');
       }
       this.eventClient = client;
-      await client.writeHerdrEventStream(apiRequestLine(eventsSubscribeRequest(subscription.paneIds)));
+      await client.writeHerdrEventStream(apiRequestLine(eventsSubscribeRequest(
+        server.protocol,
+        subscription.paneIds,
+      )));
     } catch (error) {
       if (this.eventClient === client) this.eventClient = null;
       client.closeHerdrEventStream();
@@ -912,7 +920,7 @@ export class HerdrClient {
     await this.apiRequest('pane.send_input', {
       pane_id: paneId,
       text,
-      keys,
+      keys: [...keys],
     });
   }
 
@@ -937,7 +945,13 @@ export class HerdrClient {
     await this.apiRequest('pane.send_keys', { pane_id: paneId, keys });
   }
 
-  private async apiFocus<T>(method: string, params: Record<string, unknown>): Promise<T> {
+  private async apiFocus<
+    T,
+    Method extends HerdrApiMethod = HerdrApiMethod,
+  >(
+    method: Method,
+    params: HerdrApiParams<Method>,
+  ): Promise<T> {
     const reconnecting = this.controlReconnect;
     if (reconnecting) await reconnecting;
     try {
@@ -949,12 +963,19 @@ export class HerdrClient {
     }
   }
 
-  private async apiRequest<T = unknown>(method: string, params: Record<string, unknown> = {}, socketPath?: string): Promise<T> {
-    const request: HerdrApiRequest = {
+  private async apiRequest<
+    T = unknown,
+    Method extends HerdrApiMethod = HerdrApiMethod,
+  >(
+    method: Method,
+    params: HerdrApiParams<Method>,
+    socketPath?: string,
+  ): Promise<T> {
+    const request = {
       id: `android_${++this.apiSequence}`,
       method,
       params,
-    };
+    } as HerdrApiRequest;
     const response = await this.requireClient().requestHerdrApi(socketPath ?? (await this.apiSocketPath()), apiRequestLine(request));
     let message: HerdrApiMessage;
     try {
@@ -1223,14 +1244,14 @@ export class HerdrClient {
     this.terminalBridges.add(terminalId);
   }
 
-  private async requireBridgeServer(): Promise<ServerInfo & { protocol: number }> {
+  private async requireBridgeServer(): Promise<ServerInfo & { protocol: HerdrProtocolVersion }> {
     const server = this.apiServer || (await this.probeServer());
     this.apiServer = server;
     if (!server.running || typeof server.protocol !== 'number') {
       throw new Error('Herdr server protocol is unavailable');
     }
     assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
-    return server as ServerInfo & { protocol: number };
+    return server as ServerInfo & { protocol: HerdrProtocolVersion };
   }
 
   private handleHerdrBridgeEvent(terminalId: string, generation: number, event: HerdrBridgeEvent): void {

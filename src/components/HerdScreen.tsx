@@ -728,7 +728,6 @@ const AgentRow = memo(
     const primaryLabel = showSpace ? item.primaryLabel : item.tabLabel;
     const stateLabel =
       agent.state_labels?.[agent.agent_status] ||
-      agent.custom_status ||
       agent.agent_status;
     const tone = statusColor(agent.agent_status, colors);
     const context = [

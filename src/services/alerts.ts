@@ -82,7 +82,7 @@ export async function alertAgent(
     needsYou: name => i18n.t('alerts.needsYou', { name }),
     finished: name => i18n.t('alerts.finished', { name }),
   });
-  const body = agent.title || agent.custom_status || i18n.t('alerts.agentState', { status: agent.agent_status });
+  const body = agent.title || i18n.t('alerts.agentState', { status: agent.agent_status });
 
   pendingAgentAlertCounts.set(targetKey, (pendingAgentAlertCounts.get(targetKey) ?? 0) + 1);
   try {

@@ -1,40 +1,27 @@
-import type { AgentInfo, PaneInfo, PaneLayoutSnapshot, TabInfo, WorkspaceInfo } from '../types';
+import type {
+  ErrorResponse,
+  Request,
+  RequestForProtocol,
+  ResponseResult,
+  SessionSnapshot,
+  Subscription,
+  SupportedHerdrProtocol,
+  SuccessResponse,
+} from '../generated/herdrApi';
 import { decodeHerdrEvent, type HerdrEvent } from './herdrEvents';
 
-export interface HerdrApiRequest {
-  id: string;
-  method: string;
-  params: Record<string, unknown>;
-}
+export type HerdrApiRequest = Request;
 
-export interface HerdrApiMessage {
-  id?: string;
-  result?: unknown;
-  error?: { code?: string; message?: string; details?: unknown };
+export type HerdrApiMessage = Partial<SuccessResponse> & Partial<ErrorResponse> & {
   subscription_id?: string;
   event?: unknown;
   data?: unknown;
-}
+};
 
 export type HerdrApiEvent = HerdrEvent;
 
-export interface SessionSnapshot {
-  version: string;
-  protocol: number;
-  focused_workspace_id?: string;
-  focused_tab_id?: string;
-  focused_pane_id?: string;
-  workspaces: WorkspaceInfo[];
-  tabs: TabInfo[];
-  panes: PaneInfo[];
-  layouts: PaneLayoutSnapshot[];
-  agents: AgentInfo[];
-}
-
-export interface SessionSnapshotResult {
-  type: 'session_snapshot';
-  snapshot: SessionSnapshot;
-}
+export type SessionSnapshotResult = Extract<ResponseResult, { type: 'session_snapshot' }>;
+export type { SessionSnapshot };
 
 const LIFECYCLE_SUBSCRIPTIONS = [
   'workspace.created',
@@ -42,6 +29,7 @@ const LIFECYCLE_SUBSCRIPTIONS = [
   'workspace.metadata_updated',
   'workspace.renamed',
   'workspace.moved',
+  'workspace.reordered',
   'workspace.closed',
   'workspace.focused',
   'worktree.created',
@@ -60,29 +48,35 @@ const LIFECYCLE_SUBSCRIPTIONS = [
   'pane.exited',
   'pane.agent_detected',
   'layout.updated',
-] as const;
+] as const satisfies ReadonlyArray<Subscription['type']>;
 
-export function sessionSnapshotRequest(id = 'android_snapshot'): HerdrApiRequest {
+export function sessionSnapshotRequest(
+  id = 'android_snapshot',
+): Extract<HerdrApiRequest, { method: 'session.snapshot' }> {
   return { id, method: 'session.snapshot', params: {} };
 }
 
 export function eventsSubscribeRequest(
+  protocol: SupportedHerdrProtocol,
   paneIds: string[],
   id = 'android_events',
-): HerdrApiRequest {
+): Extract<RequestForProtocol<typeof protocol>, { method: 'events.subscribe' }> {
+  const lifecycleSubscriptions = protocol === 17
+    ? LIFECYCLE_SUBSCRIPTIONS.filter(type => type !== 'workspace.reordered')
+    : LIFECYCLE_SUBSCRIPTIONS;
   return {
     id,
     method: 'events.subscribe',
     params: {
       subscriptions: [
-        ...LIFECYCLE_SUBSCRIPTIONS.map(type => ({ type })),
+        ...lifecycleSubscriptions.map(type => ({ type })),
         ...[...new Set(paneIds)].sort().map(pane_id => ({
-          type: 'pane.agent_status_changed',
+          type: 'pane.agent_status_changed' as const,
           pane_id,
         })),
       ],
     },
-  };
+  } as Extract<RequestForProtocol<typeof protocol>, { method: 'events.subscribe' }>;
 }
 
 export function apiRequestLine(request: HerdrApiRequest): string {
