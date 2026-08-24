@@ -51,52 +51,146 @@ interface Props {
 }
 
 type ToolItem = Extract<AgentChatItem, { type: 'tool' }>;
+const TOOL_OUTPUT_SCROLL_STYLE = { maxHeight: 240 } as const;
+const TOOL_DIFF_SCROLL_STYLE = { maxHeight: 280 } as const;
 
-function toolDetailLabel(detail: string | undefined): string | undefined {
-  if (!detail) return undefined;
+type ToolInput = Record<string, unknown>;
+
+interface ToolPresentation {
+  title: string;
+  subtitle?: string;
+  args: string[];
+  command?: string;
+  input?: ToolInput;
+  rawInput?: string;
+}
+
+function parseToolInput(detail: string | undefined): { input?: ToolInput; raw?: string } {
+  if (!detail) return {};
   try {
     const value = JSON.parse(detail) as Record<string, unknown>;
-    for (const key of ['description', 'query', 'url', 'filePath', 'path', 'pattern', 'name', 'command', 'cmd']) {
-      const candidate = value[key];
-      if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-      if (Array.isArray(candidate)) {
-        const command = candidate.filter(part => typeof part === 'string').join(' ');
-        if (command) return command;
-      }
-    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) return { input: value };
   } catch {
-    const line = detail.trim().split('\n', 1)[0];
-    if (line && !line.startsWith('{') && !line.startsWith('[')) return line;
+    return { raw: detail.trim() || undefined };
+  }
+  return {};
+}
+
+function stringValue(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    const joined = value.filter(part => typeof part === 'string').join(' ');
+    return joined || undefined;
   }
   return undefined;
 }
 
-function toolPresentation(item: ToolItem): { title: string; subtitle?: string } {
-  const detail = toolDetailLabel(item.detail);
+function inputValue(input: ToolInput | undefined, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = stringValue(input?.[key]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function filename(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  return path.replace(/\/+$/, '').split('/').pop() || path;
+}
+
+function primitiveArgs(input: ToolInput | undefined, omitted: readonly string[]): string[] {
+  if (!input) return [];
+  const skip = new Set(omitted);
+  return Object.entries(input).flatMap(([key, value]) => {
+    if (skip.has(key)) return [];
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      const text = String(value).trim();
+      return text ? [`${key}=${text}`] : [];
+    }
+    return [];
+  }).slice(0, 2);
+}
+
+function toolPresentation(item: ToolItem): ToolPresentation {
+  const { input, raw } = parseToolInput(item.detail) || {};
+  const command = inputValue(input, ['command', 'cmd']);
+  const path = inputValue(input, ['filePath', 'path']);
+  const query = inputValue(input, ['query', 'pattern']);
+  const url = inputValue(input, ['url']);
+  const description = inputValue(input, ['description', 'name']);
   if (item.toolKind === 'command') {
     const genericCommand = /^(?:command|exec|shell|bash)$/i.test(item.title);
     return {
-      title: item.status === 'running' ? 'Running' : item.status === 'failed' ? 'Command failed' : 'Ran',
-      subtitle: genericCommand ? detail : item.title,
+      title: 'Shell',
+      subtitle: command || (genericCommand ? undefined : item.title),
+      args: [],
+      command: command || (genericCommand ? undefined : item.title),
+      input,
+      rawInput: raw,
     };
   }
   if (item.toolKind === 'file') {
+    const name = item.title.toLowerCase();
+    const title = /\bread\b/.test(name)
+      ? 'Read'
+      : /\bwrite\b/.test(name)
+        ? 'Write'
+        : /patch|file changes|turn diff|apply/.test(name)
+          ? 'Patch'
+          : 'Edit';
     return {
-      title: item.status === 'running' ? 'Editing files' : item.status === 'failed' ? 'Edit failed' : 'Edited files',
-      subtitle: item.title === 'File changes' ? detail : item.title,
+      title,
+      subtitle: filename(path) || (!/^(?:file changes|turn diff)$/i.test(item.title) ? item.title : undefined),
+      args: primitiveArgs(input, ['filePath', 'path', 'oldString', 'newString', 'content']),
+      input,
+      rawInput: raw,
     };
   }
   if (item.toolKind === 'web') {
     return {
-      title: item.status === 'running' ? 'Searching web' : item.status === 'failed' ? 'Search failed' : 'Searched web',
-      subtitle: item.title === 'Web search' ? detail : item.title,
+      title: url ? 'Fetch' : 'Web search',
+      subtitle: url || query || (!/^web search$/i.test(item.title) ? item.title : undefined),
+      args: primitiveArgs(input, ['url', 'query', 'queries', 'pattern']),
+      input,
+      rawInput: raw,
     };
   }
-  const name = item.title === 'Tool' ? 'tool' : item.title;
   return {
-    title: item.status === 'running' ? `Calling ${name}` : item.status === 'failed' ? `${name} failed` : `Called ${name}`,
-    subtitle: detail,
+    title: item.title === 'Tool' ? (item.toolKind === 'mcp' ? 'MCP' : 'Tool') : item.title,
+    subtitle: description || query || url,
+    args: primitiveArgs(input, ['description', 'query', 'url', 'filePath', 'path', 'pattern', 'name']),
+    input,
+    rawInput: raw,
   };
+}
+
+function diffChanges(diff: string | undefined): { additions: number; deletions: number } | null {
+  if (!diff) return null;
+  let additions = 0;
+  let deletions = 0;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+  }
+  return additions || deletions ? { additions, deletions } : null;
+}
+
+function formattedInput(presentation: ToolPresentation): string | undefined {
+  if (presentation.rawInput) return presentation.rawInput;
+  if (!presentation.input) return undefined;
+  const omitted = new Set([
+    'command', 'cmd', 'description', 'query', 'url', 'filePath', 'path', 'pattern',
+    'name', 'oldString', 'newString', 'content',
+  ]);
+  const rows = Object.entries(presentation.input).flatMap(([key, value]) => {
+    if (omitted.has(key)) return [];
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return [`${key}: ${String(value)}`];
+    }
+    if (value === null || value === undefined) return [];
+    try { return [`${key}: ${JSON.stringify(value)}`]; } catch { return []; }
+  });
+  return rows.length ? rows.join('\n') : undefined;
 }
 
 function chatItemSpacing(items: readonly AgentChatItem[], index: number): string {
@@ -116,84 +210,156 @@ function ToolCard({
 }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(item.status === 'failed');
-  const hasDetail = Boolean(item.detail || item.output || item.diff);
   const presentation = toolPresentation(item);
+  const changes = diffChanges(item.diff);
+  const input = item.toolKind === 'mcp' || item.toolKind === 'other'
+    ? formattedInput(presentation)
+    : undefined;
+  const shell = item.toolKind === 'command'
+    ? [presentation.command ? `$ ${presentation.command}` : undefined, item.output].filter(Boolean).join('\n\n')
+    : undefined;
+  const hasDetail = Boolean(shell || item.output || item.diff || input);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ expanded }}
       disabled={!hasDetail}
-      className="w-full overflow-hidden"
+      className={cn(
+        'w-full overflow-hidden',
+        item.status === 'failed' && 'rounded-md bg-destructive/10 px-2',
+      )}
       onPress={() => setExpanded(value => !value)}
     >
-      <View className="h-8 flex-row items-center">
+      <View className="min-h-7 flex-row items-center py-1">
         {item.status === 'running' && (
-          <View className="mr-2 size-4 items-center justify-center">
-            <ActivityIndicator size={14} color={colors.textTertiary} />
+          <View className="mr-1.5 size-4 items-center justify-center">
+            <ActivityIndicator size={13} color={colors.textTertiary} />
           </View>
         )}
         {item.status === 'failed' && (
-          <View className="mr-2 size-4 items-center justify-center">
+          <View className="mr-1.5 size-4 items-center justify-center">
             <CircleAlert size={14} color={colors.error} />
           </View>
         )}
-        <Text
-          numberOfLines={1}
-          className={cn(
-            'shrink-0 text-[13px] font-medium leading-5 text-foreground',
-            item.status === 'failed' && 'text-destructive',
-          )}
-        >
-          {presentation.title}
-        </Text>
-        {presentation.subtitle && (
+        <View className="min-w-0 shrink flex-row items-center gap-1.5">
           <Text
             numberOfLines={1}
-            className="ml-2 min-w-0 flex-1 text-[13px] leading-5 text-muted-foreground"
+            className="shrink-0 text-[13px] font-medium leading-5 text-foreground"
           >
-            {presentation.subtitle}
+            {presentation.title}
           </Text>
+          {presentation.subtitle && item.status !== 'running' && (
+            <>
+              <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
+              <Text
+                numberOfLines={1}
+                className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground"
+              >
+                {presentation.subtitle}
+              </Text>
+            </>
+          )}
+          {item.status !== 'running' && presentation.args.map(arg => (
+            <Text
+              key={arg}
+              numberOfLines={1}
+              className="shrink text-[12px] leading-5 text-muted-foreground"
+            >
+              {arg}
+            </Text>
+          ))}
+        </View>
+        {changes && item.status !== 'running' && (
+          <View className="ml-2 shrink-0 flex-row gap-1.5">
+            <Text className="font-mono text-[11px] leading-5" style={{ color: colors.done }}>
+              +{changes.additions}
+            </Text>
+            <Text className="font-mono text-[11px] leading-5" style={{ color: colors.error }}>
+              −{changes.deletions}
+            </Text>
+          </View>
         )}
         {hasDetail &&
           (expanded ? (
-            <ChevronDown size={15} color={colors.textTertiary} />
+            <ChevronDown className="ml-1" size={15} color={colors.textTertiary} />
           ) : (
-            <ChevronRight size={15} color={colors.textTertiary} />
+            <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />
           ))}
       </View>
       {expanded && hasDetail && (
-        <View className="mb-3 mt-1 gap-3">
-          {item.detail && (
-            <Text
-              selectable
-              className="px-1 font-mono text-[11px] leading-[17px] text-muted-foreground"
-            >
-              {item.detail}
-            </Text>
-          )}
-          {item.output && (
-            <View className="overflow-hidden rounded-md border border-border px-3 py-2.5">
-              <Text
-                selectable
-                className="font-mono text-[11px] leading-[17px] text-foreground"
-              >
-                {item.output}
-              </Text>
-            </View>
-          )}
+        <View className="mb-3 mt-1 gap-2">
+          {shell && <ToolCodeBlock text={shell} bordered />}
           {item.diff && (
-            <View className="overflow-hidden rounded-md border border-border px-3 py-2.5">
-              <Text
-                selectable
-                className="font-mono text-[11px] leading-[17px] text-foreground"
-              >
-                {item.diff}
-              </Text>
-            </View>
+            <ToolDiffBlock diff={item.diff} />
           )}
+          {item.toolKind !== 'command' && item.output && <ToolCodeBlock text={item.output} />}
+          {input && <ToolCodeBlock text={input} muted />}
         </View>
       )}
     </Pressable>
+  );
+}
+
+function ToolCodeBlock({
+  text,
+  bordered = false,
+  muted = false,
+}: {
+  text: string;
+  bordered?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <View className={cn('overflow-hidden', bordered && 'rounded-md border border-border')}>
+      <ScrollView
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}
+        style={TOOL_OUTPUT_SCROLL_STYLE}
+        contentContainerClassName={bordered ? 'px-3 py-2.5' : 'px-1 py-1'}
+      >
+        <Text
+          selectable
+          className={cn(
+            'font-mono text-[11px] leading-[17px] text-foreground',
+            muted && 'text-muted-foreground',
+          )}
+        >
+          {text}
+        </Text>
+      </ScrollView>
+    </View>
+  );
+}
+
+function ToolDiffBlock({ diff }: { diff: string }) {
+  const { colors } = useTheme();
+  const lines = diff.split('\n');
+  return (
+    <View className="overflow-hidden border-t border-border pt-2">
+      <ScrollView
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}
+        style={TOOL_DIFF_SCROLL_STYLE}
+        contentContainerClassName="px-1"
+      >
+        <Text selectable className="font-mono text-[11px] leading-[17px] text-foreground">
+          {lines.map((line, index) => (
+            <Text
+              key={`${index}:${line}`}
+              style={{
+                color: line.startsWith('+') && !line.startsWith('+++')
+                  ? colors.done
+                  : line.startsWith('-') && !line.startsWith('---')
+                    ? colors.error
+                    : colors.text,
+              }}
+            >
+              {line}{index < lines.length - 1 ? '\n' : ''}
+            </Text>
+          ))}
+        </Text>
+      </ScrollView>
+    </View>
   );
 }
 
