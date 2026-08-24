@@ -26,7 +26,7 @@ import { Text } from './ui/text';
 
 interface Props {
   hosts: HostProfile[];
-  connectingHostId: string | null;
+  connectingHostIds?: string[];
   error: string | null;
   activeHostId?: string | null;
   connectedHostIds?: string[];
@@ -42,9 +42,10 @@ interface Props {
   onUnlockCredentials: () => Promise<boolean>;
 }
 
-export function HostsScreen({ hosts, connectingHostId, error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
+export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const connectingHostIdSet = new Set(connectingHostIds);
   const connectedHostIdSet = new Set(connectedHostIds);
   const hostsById = new Map(hosts.map(host => [host.id, host]));
   const orderedHosts = orderByConnectionAndAgentStatusPriority(
@@ -102,7 +103,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
               <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('hosts.count', { count: hosts.length })}</Text>
               <View className="gap-3">
                 {orderedHosts.map(host => {
-                  const connecting = connectingHostId === host.id;
+                  const connecting = connectingHostIdSet.has(host.id);
                   const active = activeHostId === host.id;
                   const connected = connectedHostIdSet.has(host.id);
                   const state = connecting ? 'working' : connected ? 'done' : 'idle';
@@ -124,7 +125,7 @@ export function HostsScreen({ hosts, connectingHostId, error, activeHostId, conn
                           <Button
                             accessibilityLabel={t('hosts.connectTo', { host: displayName })}
                             className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
-                            disabled={Boolean(connectingHostId)}
+                            disabled={connectingHostIdSet.size > 0}
                             size="content"
                             variant="ghost"
                             onPress={hapticPress(() => {

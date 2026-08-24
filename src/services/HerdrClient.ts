@@ -17,6 +17,7 @@ import { isSshShellTerminalId } from '../terminalSessions';
 import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 import {
+  withAppPerformanceTrace,
   terminalNativeResponseDelivered,
   terminalNativeResponseReceived,
   terminalNativePreflightStarted,
@@ -667,9 +668,12 @@ export class HerdrClient {
    * and delays the offline Herd recovery screen.
    */
   async initialSnapshot(): Promise<HerdrSnapshot> {
-    let socket = await this.apiSocketPath();
+    let socket = await withAppPerformanceTrace(
+      'Whip initial snapshot: socket path',
+      () => this.apiSocketPath(),
+    );
     try {
-      return await this.requestSessionSnapshot(socket);
+      return await this.requestSessionSnapshot(socket, true);
     } catch (error) {
       if (!isUnavailableSshChannel(error)) throw error;
     }
@@ -679,11 +683,14 @@ export class HerdrClient {
     // treating the Herdr socket as unavailable.
     if (this.resolvedApiSocketPathFromCache) {
       this.invalidateCachedApiSocketPath();
-      socket = await this.apiSocketPath();
+      socket = await withAppPerformanceTrace(
+        'Whip initial snapshot: socket path',
+        () => this.apiSocketPath(),
+      );
     }
 
     try {
-      return await this.requestSessionSnapshot(socket);
+      return await this.requestSessionSnapshot(socket, true);
     } catch (error) {
       if (!isUnavailableSshChannel(error)) throw error;
       this.apiServer = null;
@@ -691,32 +698,38 @@ export class HerdrClient {
     }
   }
 
-  private async requestSessionSnapshot(socket: string): Promise<HerdrSnapshot> {
-    const result = await this.apiRequest<SessionSnapshotResult>('session.snapshot', {}, socket);
-    if (!result || result.type !== 'session_snapshot' || !result.snapshot) {
-      throw new Error('Herdr API socket did not return a session snapshot');
-    }
-    const snapshot = result.snapshot;
-    assertHerdrProtocolCompatible(snapshot.protocol);
-    const server: ServerInfo = {
-      running: true,
-      version: snapshot.version,
-      protocol: snapshot.protocol,
-      compatible: true,
-      socket,
+  private async requestSessionSnapshot(socket: string, traceInitialSnapshot = false): Promise<HerdrSnapshot> {
+    const tracePrefix = traceInitialSnapshot ? 'Whip initial snapshot' : undefined;
+    const result = await this.apiRequest<SessionSnapshotResult>('session.snapshot', {}, socket, tracePrefix);
+    const normalize = (): HerdrSnapshot => {
+      if (!result || result.type !== 'session_snapshot' || !result.snapshot) {
+        throw new Error('Herdr API socket did not return a session snapshot');
+      }
+      const snapshot = result.snapshot;
+      assertHerdrProtocolCompatible(snapshot.protocol);
+      const server: ServerInfo = {
+        running: true,
+        version: snapshot.version,
+        protocol: snapshot.protocol,
+        compatible: true,
+        socket,
+      };
+      this.apiServer = server;
+      return {
+        server,
+        focused_workspace_id: snapshot.focused_workspace_id ?? null,
+        focused_tab_id: snapshot.focused_tab_id ?? null,
+        focused_pane_id: snapshot.focused_pane_id ?? null,
+        agents: snapshot.agents,
+        workspaces: snapshot.workspaces,
+        tabs: snapshot.tabs,
+        panes: snapshot.panes,
+        layouts: snapshot.layouts ?? [],
+      };
     };
-    this.apiServer = server;
-    return {
-      server,
-      focused_workspace_id: snapshot.focused_workspace_id ?? null,
-      focused_tab_id: snapshot.focused_tab_id ?? null,
-      focused_pane_id: snapshot.focused_pane_id ?? null,
-      agents: snapshot.agents,
-      workspaces: snapshot.workspaces,
-      tabs: snapshot.tabs,
-      panes: snapshot.panes,
-      layouts: snapshot.layouts ?? [],
-    };
+    return tracePrefix
+      ? withAppPerformanceTrace(`${tracePrefix}: normalize`, normalize)
+      : normalize();
   }
 
   private offlineSnapshot(server: ServerInfo): HerdrSnapshot {
@@ -1006,25 +1019,35 @@ export class HerdrClient {
     method: Method,
     params: HerdrApiParams<Method>,
     socketPath?: string,
+    performanceTracePrefix?: string,
   ): Promise<T> {
     const request = {
       id: `android_${++this.apiSequence}`,
       method,
       params,
     } as HerdrApiRequest;
-    const response = await this.requireClient().requestHerdrApi(socketPath ?? (await this.apiSocketPath()), apiRequestLine(request));
-    let message: HerdrApiMessage;
-    try {
-      message = JSON.parse(response) as HerdrApiMessage;
-    } catch {
-      throw new Error('Herdr API returned invalid JSON');
-    }
-    const error = apiErrorMessage(message);
-    if (error) throw new Error(error);
-    if (!Object.prototype.hasOwnProperty.call(message, 'result')) {
-      throw new Error('Herdr API response did not include a result');
-    }
-    return message.result as T;
+    const socket = socketPath ?? (await this.apiSocketPath());
+    const requestApi = () => this.requireClient().requestHerdrApi(socket, apiRequestLine(request));
+    const response = performanceTracePrefix
+      ? await withAppPerformanceTrace(`${performanceTracePrefix}: API round trip`, requestApi)
+      : await requestApi();
+    const decode = (): T => {
+      let message: HerdrApiMessage;
+      try {
+        message = JSON.parse(response) as HerdrApiMessage;
+      } catch {
+        throw new Error('Herdr API returned invalid JSON');
+      }
+      const error = apiErrorMessage(message);
+      if (error) throw new Error(error);
+      if (!Object.prototype.hasOwnProperty.call(message, 'result')) {
+        throw new Error('Herdr API response did not include a result');
+      }
+      return message.result as T;
+    };
+    return performanceTracePrefix
+      ? withAppPerformanceTrace(`${performanceTracePrefix}: decode response`, decode)
+      : decode();
   }
 
   /** Server startup is the only operation that needs the remote login environment. */

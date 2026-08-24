@@ -234,6 +234,7 @@ interface ConnectOptions {
   navigate?: boolean;
   trackConnecting?: boolean;
   activateSession?: boolean;
+  reuseConnectingSession?: boolean;
   biometricVerified?: boolean;
   promptForUnknownHosts?: boolean;
   traceStartupRestore?: boolean;
@@ -1399,6 +1400,7 @@ function AppContent() {
       navigate = true,
       trackConnecting = true,
       activateSession = true,
+      reuseConnectingSession = false,
       biometricVerified = false,
       promptForUnknownHosts = navigate,
       traceStartupRestore = false,
@@ -1409,7 +1411,12 @@ function AppContent() {
     }
     setConnectError(null);
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === nextProfile.id);
-    if (existing) closeLiveHost(existing.id);
+    const reusingConnectingSession = Boolean(
+      reuseConnectingSession
+      && existing?.status === 'connecting'
+      && !runtimes.current.has(existing.id),
+    );
+    if (existing && !reusingConnectingSession) closeLiveHost(existing.id);
     let runtime: LiveRuntime | null = null;
     let liveSessionOpened = false;
     try {
@@ -1506,44 +1513,60 @@ function AppContent() {
         }
       }
 
-      // The initial snapshot is sufficient to render the destination. Keep the
-      // host in the transport-only `connected` state while event-stream setup
-      // and the initial reconciliation settle. The restored snapshot and
-      // terminal state are then hydrated, and latency polling can start after
-      // the host transitions to `ready`.
+      // The initial snapshot is sufficient to render the destination. Settle
+      // event delivery and reconcile the subscription gap in the background so
+      // neither operation blocks restored-host usability or startup completion.
       const connectedRuntime = runtime;
-      try {
-        await withOptionalAppPerformanceTrace(
-          traceStartupRestore,
-          'Whip startup restore: event stream',
-          () => ensureEventStream(sessionId, initial),
-        );
-        if (initial.server.running) {
-          await withOptionalAppPerformanceTrace(
-            traceStartupRestore,
-            'Whip startup restore: reconciliation',
-            () => refreshHost(sessionId),
-          );
-        }
-      } catch (error) {
-        connectedRuntime.eventStatus = 'closed';
-        scheduleEventReconnect(sessionId, error);
-      } finally {
-        if (runtimes.current.get(sessionId) === connectedRuntime) {
-          setLiveSessions(current => {
-            const session = findLiveHostSession(current, sessionId);
-            return session?.status === 'connected'
-              ? updateLiveHostConnection(current, sessionId, { status: 'ready' })
-              : current;
-          });
-        }
-      }
+      withOptionalAppPerformanceTrace(
+        traceStartupRestore,
+        'Whip startup restore: background settle',
+        async () => {
+          try {
+            await withOptionalAppPerformanceTrace(
+              traceStartupRestore,
+              'Whip startup restore: event stream',
+              () => ensureEventStream(sessionId, initial),
+            );
+            if (initial.server.running) {
+              await withOptionalAppPerformanceTrace(
+                traceStartupRestore,
+                'Whip startup restore: reconciliation',
+                () => refreshHost(sessionId),
+              );
+            }
+          } catch (error) {
+            connectedRuntime.eventStatus = 'closed';
+            scheduleEventReconnect(sessionId, error);
+          } finally {
+            if (runtimes.current.get(sessionId) === connectedRuntime) {
+              setLiveSessions(current => {
+                const session = findLiveHostSession(current, sessionId);
+                return session?.status === 'connected'
+                  ? updateLiveHostConnection(current, sessionId, { status: 'ready' })
+                  : current;
+              });
+            }
+          }
+        },
+      ).catch(error => {
+        recordNetworkDiagnostic('warn', 'startup-host-settle-failed', {
+          sessionId,
+          error: networkErrorMessage(error),
+        });
+      });
       return true;
     } catch (error) {
-      setConnectError(t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
+      const message = t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
         host: hostKeyErrorHost(error) || hostDisplayName(nextProfile),
         ...connectionErrorContext(error),
-      }));
+      });
+      setConnectError(message);
+      if (reuseConnectingSession) {
+        setLiveSessions(current => updateLiveHostConnection(current, nextProfile.id, {
+          status: 'error',
+          error: message,
+        }));
+      }
       if (runtime) {
         if (liveSessionOpened) {
           scheduleReconnect(nextProfile.id, error);
@@ -1566,70 +1589,88 @@ function AppContent() {
     const trace = beginAppPerformanceTrace('Whip startup restore live hosts');
     try {
       const persisted = persistedLiveHostsRef.current;
-    const persistedHosts = persisted.hostIds
-      .map(hostId => hostsRef.current.find(item => item.id === hostId))
-      .filter((host): host is HostProfile => Boolean(host));
-    const hasProtectedKey = persistedHosts.some(host => {
-      try {
-        return [host, ...resolveJumpHostChain(hostsRef.current, host)].some(candidate => (
-          requiresBiometricForSavedKey(candidate, biometricForKeysRef.current)
-        ));
-      } catch {
-        return requiresBiometricForSavedKey(host, biometricForKeysRef.current);
-      }
-    });
-    const protectedKeyAccessGranted = !hasProtectedKey || await withAppPerformanceTrace(
-      'Whip startup restore: biometric',
-      verifyBiometric,
-    );
-    await Promise.allSettled(persisted.hostIds.map(async hostId => {
-      const host = hostsRef.current.find(item => item.id === hostId);
-      if (!host) return;
-      let protectedKey = requiresBiometricForSavedKey(host, biometricForKeysRef.current);
-      try {
-        protectedKey = [host, ...resolveJumpHostChain(hostsRef.current, host)].some(candidate => (
-          requiresBiometricForSavedKey(candidate, biometricForKeysRef.current)
-        ));
-      } catch {
-        // The normal connect path reports a missing or cyclic jump-host configuration.
-      }
-      if (protectedKey && !protectedKeyAccessGranted) return;
-      try {
-        const profile = await withAppPerformanceTrace(
-          'Whip startup restore: credentials',
-          () => loadConnectionProfile(host),
-        );
-        if (!profile.secret) return;
-        await connect(profile, {
-          persistProfile: false,
-          navigate: false,
-          trackConnecting: false,
-          activateSession: hostId === persisted.activeHostId,
-          biometricVerified: protectedKey,
-          traceStartupRestore: true,
-        });
-      } catch (error) {
-        setConnectError(t('app.restoreHostError', { host: hostDisplayName(host), error: String(error) }));
-      }
-    }));
-    if (persisted.activeHostId) {
+      const persistedHosts = persisted.hostIds
+        .map(hostId => hostsRef.current.find(item => item.id === hostId))
+        .filter((host): host is HostProfile => Boolean(host));
       setLiveSessions(current => {
-        const active = current.sessions.find(session => session.hostId === persisted.activeHostId);
-        return active ? selectLiveHostSession(current, active.id) : current;
+        let next = current;
+        for (const host of persistedHosts) {
+          next = openLiveHostSession(next, host, host.id, false);
+        }
+        return persisted.activeHostId
+          ? selectLiveHostSession(next, persisted.activeHostId)
+          : next;
       });
-    }
-    if (reopenTerminalOnLaunch) {
-      const terminalHostId = persisted.activeHostId && restoredTerminalHostIdsRef.current.has(persisted.activeHostId)
-        ? persisted.activeHostId
-        : [...persisted.hostIds].reverse().find(hostId => restoredTerminalHostIdsRef.current.has(hostId));
-      if (terminalHostId) {
+      const hasProtectedKey = persistedHosts.some(host => {
+        try {
+          return [host, ...resolveJumpHostChain(hostsRef.current, host)].some(candidate => (
+            requiresBiometricForSavedKey(candidate, biometricForKeysRef.current)
+          ));
+        } catch {
+          return requiresBiometricForSavedKey(host, biometricForKeysRef.current);
+        }
+      });
+      const protectedKeyAccessGranted = !hasProtectedKey || await withAppPerformanceTrace(
+        'Whip startup restore: biometric',
+        verifyBiometric,
+      );
+      await Promise.allSettled(persisted.hostIds.map(async hostId => {
+        const host = hostsRef.current.find(item => item.id === hostId);
+        if (!host) return;
+        let protectedKey = requiresBiometricForSavedKey(host, biometricForKeysRef.current);
+        try {
+          protectedKey = [host, ...resolveJumpHostChain(hostsRef.current, host)].some(candidate => (
+            requiresBiometricForSavedKey(candidate, biometricForKeysRef.current)
+          ));
+        } catch {
+          // The normal connect path reports a missing or cyclic jump-host configuration.
+        }
+        if (protectedKey && !protectedKeyAccessGranted) {
+          setLiveSessions(current => closeLiveHostSession(current, hostId));
+          return;
+        }
+        try {
+          const profile = await withAppPerformanceTrace(
+            'Whip startup restore: credentials',
+            () => loadConnectionProfile(host),
+          );
+          if (!profile.secret) throw new Error('Saved SSH credential is unavailable');
+          await connect(profile, {
+            persistProfile: false,
+            navigate: false,
+            trackConnecting: false,
+            activateSession: hostId === persisted.activeHostId,
+            reuseConnectingSession: true,
+            biometricVerified: protectedKey,
+            traceStartupRestore: true,
+          });
+        } catch (error) {
+          const message = t('app.restoreHostError', { host: hostDisplayName(host), error: String(error) });
+          setConnectError(message);
+          setLiveSessions(current => updateLiveHostConnection(current, hostId, {
+            status: 'error',
+            error: message,
+          }));
+        }
+      }));
+      if (persisted.activeHostId) {
         setLiveSessions(current => {
-          const terminalHost = current.sessions.find(session => session.hostId === terminalHostId);
-          return terminalHost ? selectLiveHostSession(current, terminalHost.id) : current;
+          const active = current.sessions.find(session => session.hostId === persisted.activeHostId);
+          return active ? selectLiveHostSession(current, active.id) : current;
         });
-        setNavigation(current => selectMobileTab(current, 'terminal'));
       }
-    }
+      if (reopenTerminalOnLaunch) {
+        const terminalHostId = persisted.activeHostId && restoredTerminalHostIdsRef.current.has(persisted.activeHostId)
+          ? persisted.activeHostId
+          : [...persisted.hostIds].reverse().find(hostId => restoredTerminalHostIdsRef.current.has(hostId));
+        if (terminalHostId) {
+          setLiveSessions(current => {
+            const terminalHost = current.sessions.find(session => session.hostId === terminalHostId);
+            return terminalHost ? selectLiveHostSession(current, terminalHost.id) : current;
+          });
+          setNavigation(current => selectMobileTab(current, 'terminal'));
+        }
+      }
       setLiveHostRestoreComplete(true);
     } finally {
       endAppPerformanceTrace(trace);
@@ -2141,7 +2182,12 @@ function AppContent() {
                 session.hostId,
                 hostRuntimeSummary(session.snapshot),
               ]))}
-              connectingHostId={connectingHostId}
+              connectingHostIds={[
+                ...liveSessions.sessions
+                  .filter(session => session.status === 'connecting')
+                  .map(session => session.hostId),
+                ...(connectingHostId ? [connectingHostId] : []),
+              ]}
               error={connectError}
               credentialRecovery={credentialRecovery}
               credentialRecoveryBusy={credentialRecoveryBusy}
