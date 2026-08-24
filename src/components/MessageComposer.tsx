@@ -8,6 +8,8 @@ import {
 } from 'react-native';
 
 import { cn } from '../lib/utils';
+import { appGlassControlStyle, useTheme } from '../theme';
+import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
@@ -44,6 +46,7 @@ interface MessageComposerProps extends ComposerInputProps {
   };
   beforeInput?: ReactNode;
   className?: string;
+  glass?: boolean;
   inputClassName?: string;
   inputRef?: Ref<TextInputHandle>;
   surfaceClassName?: string;
@@ -54,44 +57,66 @@ export function MessageComposer({
   actions,
   beforeInput,
   className,
+  glass = false,
   inputClassName,
   inputRef,
   surfaceClassName,
   ...inputProps
 }: MessageComposerProps) {
+  const { colors } = useTheme();
+  const actionStyle = glass ? appGlassControlStyle(false, colors) : undefined;
+  const surfaceContent = (
+    <>
+      {beforeInput}
+      <ComposerInput
+        {...inputProps}
+        ref={inputRef}
+        className={cn('rounded-none border-0 bg-transparent shadow-none', inputClassName)}
+      />
+    </>
+  );
   return (
     <View className={cn('min-w-0 flex-row items-end gap-2', className)}>
       <View className="gap-1.5">
         <Button
           accessibilityLabel={actions.attachLabel}
-          className={cn('size-10 rounded-full px-0', actions.actionClassName)}
-          variant="secondary"
+          className={cn('size-10 rounded-full px-0', glass && 'border', actions.actionClassName)}
+          style={actionStyle}
+          variant={glass ? 'ghost' : 'secondary'}
           onPress={actions.onAttach}
         >
           <Paperclip size={18} color={actions.actionColor} />
         </Button>
         <Button
           accessibilityLabel={actions.expandLabel}
-          className={cn('size-10 rounded-full px-0', actions.actionClassName)}
-          variant="secondary"
+          className={cn('size-10 rounded-full px-0', glass && 'border', actions.actionClassName)}
+          style={actionStyle}
+          variant={glass ? 'ghost' : 'secondary'}
           onPress={actions.onExpand}
         >
           <Maximize2 size={17} color={actions.actionColor} />
         </Button>
       </View>
-      <View
-        className={cn(
-          'min-w-0 flex-1 overflow-hidden rounded-[38px] border border-border bg-card',
-          surfaceClassName,
-        )}
-      >
-        {beforeInput}
-        <ComposerInput
-          {...inputProps}
-          ref={inputRef}
-          className={cn('rounded-none border-0 bg-transparent shadow-none', inputClassName)}
-        />
-      </View>
+      {glass ? (
+        <GlassSurface
+          className={cn(
+            'min-w-0 flex-1 overflow-hidden rounded-[38px] border border-white/30 dark:border-white/10',
+            surfaceClassName,
+          )}
+          intensity={44}
+        >
+          {surfaceContent}
+        </GlassSurface>
+      ) : (
+        <View
+          className={cn(
+            'min-w-0 flex-1 overflow-hidden rounded-[38px] border border-border bg-card',
+            surfaceClassName,
+          )}
+        >
+          {surfaceContent}
+        </View>
+      )}
       <View className="gap-1.5">
         <Button
           accessibilityLabel={actions.sendLabel}
@@ -107,8 +132,9 @@ export function MessageComposer({
         </Button>
         <Button
           accessibilityLabel={actions.closeLabel}
-          className={cn('size-10 rounded-full px-0', actions.actionClassName)}
-          variant="secondary"
+          className={cn('size-10 rounded-full px-0', glass && 'border', actions.actionClassName)}
+          style={actionStyle}
+          variant={glass ? 'ghost' : 'secondary'}
           onPress={actions.onClose}
         >
           <X size={17} color={actions.actionColor} />

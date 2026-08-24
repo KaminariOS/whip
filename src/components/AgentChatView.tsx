@@ -53,9 +53,10 @@ import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import type { ChatAgent } from '../lib/agentChatSession';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
-import { useTheme } from '../theme';
+import { appGlassControlStyle, useTheme } from '../theme';
 import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
 import { ComposerInput, MessageComposer } from './MessageComposer';
 import type { TerminalComposerQueueItem } from './TerminalScreen';
@@ -883,6 +884,7 @@ export function AgentChatView({
   onSubmit,
 }: Props) {
   const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const safeAreaInsets = useSafeAreaInsets();
   const [text, setText] = useState(draft);
   const [atBottom, setAtBottom] = useState(true);
@@ -981,13 +983,18 @@ export function AgentChatView({
           scrollEventThrottle={80}
         />
         {!atBottom && (
-          <Button accessibilityLabel="Jump to latest" className="absolute bottom-3 right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg" variant="secondary" onPress={() => list.current?.scrollToEnd({ animated: true })}>
+          <Button
+            accessibilityLabel="Jump to latest"
+            className={cn('absolute bottom-3 right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg', appGlassEnabled && 'border')}
+            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+            variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            onPress={() => list.current?.scrollToEnd({ animated: true })}>
             <ChevronDown size={15} color={colors.text} /><Text className="text-[10px] font-semibold">Latest</Text>
           </Button>
         )}
       </View>
       {!composerExpanded && (
-        <View ref={composerContainer} collapsable={false} className="relative z-10 bg-background px-3 pb-2 pt-2" style={keyboardInset > 0 ? { transform: [{ translateY: -keyboardInset }] } : undefined}>
+        <View ref={composerContainer} collapsable={false} className="relative z-10 bg-transparent px-3 pb-2 pt-2" style={keyboardInset > 0 ? { transform: [{ translateY: -keyboardInset }] } : undefined}>
           <MessageComposer
             initialValue={text}
             inputRef={composerInput}
@@ -997,10 +1004,11 @@ export function AgentChatView({
             placeholder={`Message ${agentName}…`}
             placeholderTextColor={colors.textTertiary}
             numberOfLines={3}
+            glass={appGlassEnabled}
             inputClassName="h-[76px] px-4 py-3 text-[13px] leading-[19px] dark:bg-transparent"
-            surfaceClassName="rounded-[38px] bg-card"
+            surfaceClassName="rounded-[38px]"
             actions={{
-              actionClassName: 'bg-muted', actionColor: colors.text, attachLabel: 'Attach file', closeLabel: 'Close chat composer', expandLabel: 'Expand composer',
+              actionClassName: appGlassEnabled ? undefined : 'bg-muted', actionColor: colors.text, attachLabel: 'Attach file', closeLabel: 'Close chat composer', expandLabel: 'Expand composer',
               onAttach, onClose: onOpenTerminal, onExpand: () => setComposerExpanded(true), onSend: submit,
               sendColor: colors.onPrimary, sendDisabled: sending || (!text.trim() && !attachments.length), sendLabel: 'Send message', sending,
             }}
@@ -1011,20 +1019,20 @@ export function AgentChatView({
       {composerExpanded && (
         <Modal animationType="slide" onRequestClose={() => setComposerExpanded(false)} statusBarTranslucent visible>
           <View className="flex-1 bg-background" style={{ paddingTop: safeAreaInsets.top, paddingBottom: safeAreaInsets.bottom }}>
-            <View className="h-14 flex-row items-center gap-2 border-b border-border bg-card px-2">
+            <GlassSurface className="h-14 flex-row items-center gap-2 border-b border-white/30 px-2 dark:border-white/10">
               <Button accessibilityLabel="Collapse composer" className="size-10 rounded-full px-0" variant="ghost" onPress={() => setComposerExpanded(false)}><Minimize2 size={19} color={colors.text} /></Button>
               <View className="min-w-0 flex-1"><Text className="text-[13px] font-bold text-foreground">New {agentName} message</Text><Text className="text-[9px] text-muted-foreground">{attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? '' : 's'}` : `${text.length.toLocaleString()} characters`}</Text></View>
               <Button accessibilityLabel="Send message" className="h-10 flex-row gap-2 rounded-full px-4" disabled={sending || (!text.trim() && !attachments.length)} onPress={submit}>
                 {sending ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Send size={16} color={colors.onPrimary} />}<Text className="text-[11px] font-bold text-primary-foreground">SEND</Text>
               </Button>
-            </View>
+            </GlassSurface>
             <ChatAttachmentsStrip attachments={attachments} expanded onRemoveAttachment={onRemoveAttachment} />
             <ChatQueueStrip messages={queue} expanded />
             <ComposerInput ref={composerInput} initialValue={text} autoFocus multiline textAlignVertical="top" onChangeText={updateText} placeholder={`Message ${agentName}…`} placeholderTextColor={colors.textTertiary} className="h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent px-4 py-4 text-[15px] leading-[22px] shadow-none" />
-            <View className="h-14 flex-row items-center border-t border-border bg-card px-2">
+            <GlassSurface className="h-14 flex-row items-center border-t border-white/30 px-2 dark:border-white/10">
               <Button accessibilityLabel="Attach file" className="size-10 rounded-full px-0" variant="ghost" onPress={onAttach}><Paperclip size={19} color={colors.text} /></Button>
               <Text className="ml-auto px-2 text-[9px] text-muted-foreground">{text.length.toLocaleString()} characters</Text>
-            </View>
+            </GlassSurface>
           </View>
         </Modal>
       )}
