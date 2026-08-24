@@ -185,6 +185,11 @@ export function SessionScreen({
   const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<string | null>(null);
   const [agentIdentityWarning, setAgentIdentityWarning] = useState<AgentIdentityWarning | null>(null);
   const [codexIntegrationInstalling, setCodexIntegrationInstalling] = useState(false);
+  const [codexHistoryWarmup, setCodexHistoryWarmup] = useState<{
+    key: string;
+    sessionId: string;
+    terminalId: string;
+  } | null>(null);
   const [codexIntegrationPrompt, setCodexIntegrationPrompt] = useState<{
     paneId: string;
     status: Extract<CodexIntegrationStatus, 'not-installed' | 'outdated' | 'needs-repair'>;
@@ -246,6 +251,11 @@ export function SessionScreen({
   );
   const activePane = snapshot.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);
   const activeChatAgent = chatAgentForPane(activePane);
+  const codexChatLoading = activeChatAgent === 'codex' && (
+    codexIntegrationInstalling
+    || pendingIntegrationPaneId === activePane?.pane_id
+    || codexHistoryWarmup?.terminalId === activeTerminalSession?.terminalId
+  );
   const followServerFocus = shouldFollowServerTerminalFocus(
     visible,
     activePane?.pane_id || null,
@@ -365,6 +375,7 @@ export function SessionScreen({
     setChatSending(false);
     setPendingIntegrationPaneId(null);
     setAgentIdentityWarning(null);
+    setCodexHistoryWarmup(null);
     codexIntegrationInstallRequestRef.current += 1;
     codexIntegrationInstallingRef.current = false;
     setCodexIntegrationInstalling(false);
@@ -408,6 +419,32 @@ export function SessionScreen({
   }, [chatAgent, chatKey]);
 
   useEffect(() => {
+    if (!codexHistoryWarmup) return undefined;
+    const { key, sessionId, terminalId } = codexHistoryWarmup;
+    return codexTranscriptService.subscribe(key, state => {
+      if (state.status === 'loading' || state.status === 'error') return;
+      setCodexHistoryWarmup(current => current?.key === key ? null : current);
+      const pane = snapshot.panes.find(item => item.terminal_id === terminalId);
+      const stillMatches = codexSessionIdForPane(pane) === sessionId;
+      const stillActive = activeTerminalSession?.terminalId === terminalId;
+      if ((state.status === 'live' || state.status === 'stale') && stillMatches && stillActive) {
+        setChatTerminalId(terminalId);
+        setChatAgent('codex');
+        setChatKey(key);
+        setChatState(state);
+        return;
+      }
+      if (state.status === 'unavailable' && stillMatches && stillActive) {
+        setAgentIdentityWarning({
+          agent: 'codex',
+          title: 'Codex history unavailable',
+          message: state.error || 'Codex has not created a local rollout history for this session yet.',
+        });
+      }
+    });
+  }, [activeTerminalSession?.terminalId, codexHistoryWarmup, snapshot.panes]);
+
+  useEffect(() => {
     if (chatTerminalId && chatTerminalId !== activeTerminalSession?.terminalId) {
       setChatTerminalId(null);
       setChatAgent(null);
@@ -441,10 +478,14 @@ export function SessionScreen({
     const sessionId = codexSessionIdForPane(pane);
     if (pane && sessionId) {
       const key = codexTranscriptService.activate(hostSessionId, pane.terminal_id, sessionId, client);
-      setChatTerminalId(pane.terminal_id);
-      setChatAgent('codex');
-      setChatKey(key);
-      setChatState(codexTranscriptService.getState(key));
+      if (codexTranscriptService.hasCachedHistory(key)) {
+        setChatTerminalId(pane.terminal_id);
+        setChatAgent('codex');
+        setChatKey(key);
+        setChatState(codexTranscriptService.getState(key));
+      } else {
+        setCodexHistoryWarmup({ key, sessionId, terminalId: pane.terminal_id });
+      }
     } else {
       setAgentIdentityWarning({
         agent: 'codex',
@@ -808,6 +849,10 @@ export function SessionScreen({
     if (action === 'open') {
       const sessionId = codexSessionIdForPane(activePane)!;
       const key = codexTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
+      if (!codexTranscriptService.hasCachedHistory(key)) {
+        setCodexHistoryWarmup({ key, sessionId, terminalId: activeTerminalSession.terminalId });
+        return;
+      }
       setChatTerminalId(activeTerminalSession.terminalId);
       setChatAgent('codex');
       setChatKey(key);
@@ -821,15 +866,17 @@ export function SessionScreen({
       const integrationStatus = await client.codexIntegrationStatus();
       const missingIdentityAction = codexMissingIdentityAction(integrationStatus);
       if (missingIdentityAction === 'diagnose') {
-        Alert.alert(
-          'Codex identity unavailable',
-          'The Herdr Codex integration is installed, but this process did not report a native session ID. If Codex was started after the integration was installed, restarting again will not help. Check the Herdr Codex hook and its host dependencies, then tap Chat again.',
-        );
+        setAgentIdentityWarning({
+          agent: 'codex',
+          title: 'Codex identity unavailable',
+          message: 'The Herdr Codex integration is installed, but this process did not report a native session ID. If Codex was started after the integration was installed, restarting again will not help. Check the Herdr Codex hook and its host dependencies, then tap Chat again.',
+        });
       } else if (missingIdentityAction === 'unknown') {
-        Alert.alert(
-          'Could not verify Codex integration',
-          'Whip could not read the Codex row from `herdr integration status`. No changes were made on the remote host.',
-        );
+        setAgentIdentityWarning({
+          agent: 'codex',
+          title: 'Could not verify Codex integration',
+          message: 'Whip could not read the Codex row from `herdr integration status`. No changes were made on the remote host.',
+        });
       } else if (
         integrationStatus === 'not-installed'
         || integrationStatus === 'outdated'
@@ -915,13 +962,25 @@ export function SessionScreen({
             </Button>
             {activeChatAgent && (
               <Button
-                accessibilityLabel={chatVisible ? 'Open Terminal view' : `Open ${activeChatAgent === 'opencode' ? 'OpenCode' : 'Codex'} Chat view`}
+                accessibilityLabel={codexChatLoading
+                  ? codexIntegrationInstalling
+                    ? 'Installing Codex integration'
+                    : 'Loading Codex history'
+                  : chatVisible
+                    ? 'Open Terminal view'
+                    : `Open ${activeChatAgent === 'opencode' ? 'OpenCode' : 'Codex'} Chat view`}
+                accessibilityState={{
+                  busy: codexChatLoading,
+                  disabled: busy || codexChatLoading || !activeTerminalSession,
+                }}
                 className={cn('h-[55px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-11')}
-                disabled={busy || !activeTerminalSession}
+                disabled={busy || codexChatLoading || !activeTerminalSession}
                 size="content"
                 variant="ghost"
                 onPress={hapticPress(chatVisible ? closeAgentChat : openAgentChat)}>
-                {chatVisible
+                {codexChatLoading
+                  ? <AnimatedAgentStatusGlyph status="working" color={colors.primary} size={Platform.OS === 'ios' ? 21 : 17} />
+                  : chatVisible
                   ? <SquareTerminal size={Platform.OS === 'ios' ? 23 : 18} color={colors.text} />
                   : <AgentBrandIcon agent={activeChatAgent} size={Platform.OS === 'ios' ? 23 : 19} color={colors.text} />}
               </Button>

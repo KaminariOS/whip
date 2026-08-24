@@ -37,13 +37,25 @@ describe('Codex transcript RAM cache lifecycle', () => {
     const service = new CodexTranscriptService();
     const remote = transport();
     const key = service.activate('host', 'terminal', firstId, remote.value);
+    expect(service.hasCachedHistory(key)).toBe(false);
     await flush();
     history(remote.streams[0], record('first'));
+    expect(service.hasCachedHistory(key)).toBe(true);
     expect(service.getState(key)?.items).toHaveLength(1);
     service.activate('host', 'terminal', firstId, remote.value);
     await flush();
     expect(remote.value.resolveCodexRollout).toHaveBeenCalledTimes(1);
     expect(remote.value.openCodexRolloutStream).toHaveBeenCalledTimes(1);
+  });
+
+  test('treats a completed empty history as cached', async () => {
+    const service = new CodexTranscriptService();
+    const remote = transport();
+    const key = service.activate('host', 'terminal', firstId, remote.value);
+    await flush();
+    history(remote.streams[0]);
+    expect(service.hasCachedHistory(key)).toBe(true);
+    expect(service.getState(key)?.items).toEqual([]);
   });
 
   test('keeps receiving events while there are no visible Chat listeners', async () => {
@@ -90,6 +102,7 @@ describe('Codex transcript RAM cache lifecycle', () => {
     history(remote.streams[0], record('same'));
     remote.streams[0].onClosed('network lost');
     expect(service.getState(key)?.status).toBe('stale');
+    expect(service.hasCachedHistory(key)).toBe(true);
     expect(terminalConnection.close).not.toHaveBeenCalled();
     service.reconnectHost('host');
     await flush();

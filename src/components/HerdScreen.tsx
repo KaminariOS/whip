@@ -54,11 +54,13 @@ import {
   shouldCloseHerdTabSwipe,
 } from '@/src/lib/herdTabSwipeActions';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
+import { chatAgentForPane } from '@/src/lib/agentChatSession';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
-import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
+import { AgentBrandIcon } from './AgentBrandIcon';
+import { AgentStatusMedallion, AnimatedAgentStatusGlyph, hapticPress, StatusBadge } from './app-ui';
 import { GlassBackdrop, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
@@ -723,6 +725,7 @@ const AgentRow = memo(
     const closingRef = useRef(closing);
     const committingRef = useRef(false);
     closingRef.current = closing;
+    const chatAgent = chatAgentForPane(agent);
     const agentLabel =
       agent.display_agent || agent.name || agent.agent || 'agent';
     const primaryLabel = showSpace ? item.primaryLabel : item.tabLabel;
@@ -732,7 +735,7 @@ const AgentRow = memo(
     const tone = statusColor(agent.agent_status, colors);
     const context = [
       ...(showHost ? [item.hostLabel] : []),
-      agentLabel,
+      ...(chatAgent ? [] : [agentLabel]),
       ...(agent.focused ? [t('herd.focused')] : []),
     ].join(' · ');
 
@@ -882,7 +885,13 @@ const AgentRow = memo(
                 glyphSize={18}
                 size={40}
                 status={agent.agent_status}
-              />
+              >
+                {chatAgent
+                  ? agent.agent_status === 'working'
+                    ? <AnimatedAgentStatusGlyph status={agent.agent_status} color={tone} size={18} />
+                    : <AgentBrandIcon agent={chatAgent} color={tone} size={20} />
+                  : null}
+              </AgentStatusMedallion>
               <View className="min-w-0 flex-1">
                 <View className="flex-row items-center gap-2">
                   <Text
@@ -906,12 +915,14 @@ const AgentRow = memo(
                     agent.cwd ||
                     t('herd.untitledTask')}
                 </Text>
-                <Text
-                  className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70"
-                  numberOfLines={1}
-                >
-                  {context}
-                </Text>
+                {context ? (
+                  <Text
+                    className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70"
+                    numberOfLines={1}
+                  >
+                    {context}
+                  </Text>
+                ) : null}
               </View>
               <Icon as={ChevronRight} size={18} color={colors.textTertiary} />
             </Button>

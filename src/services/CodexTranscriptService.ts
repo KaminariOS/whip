@@ -80,6 +80,11 @@ export class CodexTranscriptService {
     return this.entries.get(key)?.state || null;
   }
 
+  hasCachedHistory(key: string): boolean {
+    const state = this.entries.get(key)?.state;
+    return state?.status === 'live' || state?.status === 'stale';
+  }
+
   closeTerminal(hostSessionId: string, terminalId: string): void {
     const terminal = terminalKey(hostSessionId, terminalId);
     this.activatedTerminals.delete(terminal);

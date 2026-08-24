@@ -275,6 +275,7 @@ export function AgentStatusMedallion({
   color,
   connected = false,
   icon: IconComponent,
+  children,
   size = 44,
   glyphSize = 24,
 }: {
@@ -283,6 +284,7 @@ export function AgentStatusMedallion({
   color: string;
   connected?: boolean;
   icon?: LucideIcon;
+  children?: ReactNode;
   size?: number;
   glyphSize?: number;
 }) {
@@ -290,9 +292,9 @@ export function AgentStatusMedallion({
   const animationsEnabled = useContext(AgentStatusAnimationContext);
   const bloomStyle = useConnectedHostBloom(connected, reduceMotion, animationsEnabled);
   const bloomSize = size + 4;
-  const glyph = () => IconComponent
+  const glyph = () => children || (IconComponent
     ? <IconComponent color={color} size={glyphSize} strokeWidth={2.25} />
-    : <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />;
+    : <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />);
   return (
     <View
       accessible
