@@ -1209,7 +1209,7 @@ export class HerdrClient {
         size.cellWidthPx,
         size.cellHeightPx,
         event => this.handleHerdrBridgeEvent(terminalId, generation, event),
-        herdrTerminalAttachLaunchMode(server.version),
+        herdrTerminalAttachLaunchMode(server.protocol),
       );
     } catch (error) {
       if (this.terminalBridgeGenerations.get(terminalId) === generation) {

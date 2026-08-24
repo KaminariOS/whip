@@ -28,12 +28,12 @@ const profile: ConnectionProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-function bridgeClient(protocol = 17, version = '0.7.4') {
+function bridgeClient(protocol = 17) {
   const requestHerdrApi = jest.fn(async (_socketPath: string, requestLine: string) => {
     const request = JSON.parse(requestLine);
     return JSON.stringify({
       id: request.id,
-      result: { type: 'pong', version, protocol },
+      result: { type: 'pong', version: 'test', protocol },
     });
   });
   const native = {
@@ -174,8 +174,8 @@ describe('terminal bridge channels', () => {
     });
   });
 
-  test('uses Herdr 0.8.2 terminal attach launch mode without changing the bridge handler position', async () => {
-    const native = bridgeClient(20, '0.8.2');
+  test('uses the published protocol 20 terminal attach mode without changing the bridge handler position', async () => {
+    const native = bridgeClient(20);
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
