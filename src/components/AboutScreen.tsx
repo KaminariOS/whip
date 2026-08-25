@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, ExternalLink, Share2 } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, Scale, Share2 } from 'lucide-react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
@@ -28,7 +28,7 @@ export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
 const ABOUT_EXPAND_DURATION = 340;
 const ABOUT_COLLAPSE_DURATION = 260;
 
-export function AboutSection() {
+export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [contentMounted, setContentMounted] = useState(false);
   const [contentMeasured, setContentMeasured] = useState(false);
@@ -220,6 +220,24 @@ export function AboutSection() {
               </Button>
             ) : null}
           </View>
+
+          <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.legal')}</Text>
+          <Button
+            accessibilityLabel={t('about.openLicenses')}
+            className="min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-3 dark:border-white/10"
+            size="content"
+            variant="ghost"
+            onPress={hapticPress(onOpenLicenses)}>
+            <GlassBackdrop shapeClassName="rounded-lg" />
+            <View className="size-10 items-center justify-center rounded-full bg-primary/10">
+              <Icon as={Scale} className="text-primary" size={20} />
+            </View>
+            <View className="min-w-0 flex-1">
+              <Text className="text-[15px] font-semibold leading-5">{t('licenses.title')}</Text>
+              <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.licensesCopy')}</Text>
+            </View>
+            <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
+          </Button>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>
           <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">

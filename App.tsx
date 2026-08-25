@@ -31,6 +31,7 @@ import { GlobalKeychainScreen } from './src/components/GlobalKeychainScreen';
 import { GlassProvider } from './src/components/GlassSurface';
 import { HostsScreen } from './src/components/HostsScreen';
 import { KnownHostsScreen } from './src/components/KnownHostsScreen';
+import { LicensesScreen } from './src/components/LicensesScreen';
 import { NewHostScreen } from './src/components/NewHostScreen';
 import type { LiveSessionRailItem } from './src/components/LiveSessionRail';
 import { MoreScreen } from './src/components/MoreScreen';
@@ -399,6 +400,7 @@ function AppContent() {
   const [unlockedGlobalKeys, setUnlockedGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
   const [knownHostsOpen, setKnownHostsOpen] = useState(false);
+  const [licensesOpen, setLicensesOpen] = useState(false);
   const [unknownHostChallenge, setUnknownHostChallenge] = useState<UnknownHostKeyChallenge | null>(null);
   const [pairingSuccess, setPairingSuccess] = useState<PairHostResult | null>(null);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
@@ -1449,6 +1451,10 @@ function AppContent() {
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (licensesOpen) {
+        setLicensesOpen(false);
+        return true;
+      }
       if (knownHostsOpen) {
         setKnownHostsOpen(false);
         return true;
@@ -1476,7 +1482,7 @@ function AppContent() {
       return result.handled;
     });
     return () => subscription.remove();
-  }, [editorProfile, knownHostsOpen, navigation, newHostOpen, selectedPaneId, unlockedGlobalKeys]);
+  }, [editorProfile, knownHostsOpen, licensesOpen, navigation, newHostOpen, selectedPaneId, unlockedGlobalKeys]);
 
   const selectTab = (tab: AppTab) => setNavigation(current => selectMobileTab(current, tab));
 
@@ -2458,6 +2464,7 @@ function AppContent() {
               onBiometricOnResumeChange={value => { updateBiometricOnResume(value).catch(() => undefined); }}
               onManageGlobalKeychain={() => { openGlobalKeychain().catch(() => undefined); }}
               onManageKnownHosts={() => setKnownHostsOpen(true)}
+              onOpenLicenses={() => setLicensesOpen(true)}
               onAppearanceChange={updateAppearance}
               onFullscreenAppChange={setFullscreenApp}
               onAppBackgroundImageChange={setAppBackgroundImageUri}
@@ -2511,7 +2518,7 @@ function AppContent() {
         )}
         </NavigationBlurTarget>
 
-        {!immersiveTerminal && !editorProfile && !newHostOpen && unlockedGlobalKeys === null && !knownHostsOpen && (
+        {!immersiveTerminal && !editorProfile && !newHostOpen && unlockedGlobalKeys === null && !knownHostsOpen && !licensesOpen && (
           <BottomNavigation activeTab={navigation.tab} blurTarget={navigationBlurTargetRef} onSelect={selectTab} />
         )}
 
@@ -2577,6 +2584,13 @@ function AppContent() {
               }}
               onClose={() => setKnownHostsOpen(false)}
             />
+          </View>
+        )}
+
+        {licensesOpen && (
+          <View className="absolute inset-0 z-60 bg-background">
+            <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
+            <LicensesScreen onClose={() => setLicensesOpen(false)} />
           </View>
         )}
       </View>

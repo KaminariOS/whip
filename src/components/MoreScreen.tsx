@@ -7,7 +7,9 @@ import { SettingsDetailsProvider, SettingsSection, type SettingsSectionProps } f
 import { GlassSurface } from './GlassSurface';
 import { Text } from './ui/text';
 
-type Props = SettingsSectionProps;
+type Props = SettingsSectionProps & {
+  onOpenLicenses: () => void;
+};
 
 export function MoreScreen(props: Props) {
   const { t } = useTranslation();
@@ -17,7 +19,7 @@ export function MoreScreen(props: Props) {
         <GlassSurface className="border-b border-white/30 px-5 py-5 dark:border-white/10">
           <Text className="text-[22px] font-semibold leading-7">{t('nav.more')}</Text>
         </GlassSurface>
-        <AboutSection />
+        <AboutSection onOpenLicenses={props.onOpenLicenses} />
         <SettingsSection
         alertsEnabled={props.alertsEnabled}
         persistentAlertDurationSeconds={props.persistentAlertDurationSeconds}
