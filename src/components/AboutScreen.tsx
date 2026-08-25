@@ -137,7 +137,8 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
           <View className="flex-row gap-2.5">
             <Button
               accessibilityRole="link"
-              className="h-auto min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              className="min-h-[76px] min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              size="content"
               variant="outline"
               onPress={hapticPress(openReleases)}>
               <GlassBackdrop shapeClassName="rounded-lg" />
@@ -163,7 +164,8 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
           <View className="mt-2.5 flex-row gap-2.5">
             <Button
               accessibilityRole="link"
-              className="h-auto min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              className="min-h-[76px] min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              size="content"
               variant="outline"
               onPress={hapticPress(openXProfile)}>
               <GlassBackdrop shapeClassName="rounded-lg" />
@@ -180,7 +182,8 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
           <View className="mt-2.5 flex-row gap-2.5">
             <Button
               accessibilityRole="link"
-              className="h-auto min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              className="min-h-[76px] min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              size="content"
               variant="outline"
               onPress={hapticPress(openHerdrWebsite)}>
               <GlassBackdrop shapeClassName="rounded-lg" />
