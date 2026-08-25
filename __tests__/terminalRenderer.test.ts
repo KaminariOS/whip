@@ -1,6 +1,7 @@
 import {
   directTerminalKeyboardEnabled,
   isOfflineTerminalNavigationInput,
+  terminalResizeForcesNativeDispatch,
   terminalScrollbackMode,
 } from '../src/lib/terminalRenderer';
 
@@ -53,4 +54,11 @@ describe('directTerminalKeyboardEnabled', () => {
     'disables direct input while %s',
     status => expect(directTerminalKeyboardEnabled(status, true, false)).toBe(false),
   );
+});
+
+describe('terminalResizeForcesNativeDispatch', () => {
+  it('keeps fit as a redraw signal when the dimensions are unchanged', () => {
+    expect(terminalResizeForcesNativeDispatch('fit')).toBe(true);
+    expect(terminalResizeForcesNativeDispatch('xterm')).toBe(false);
+  });
 });

@@ -38,6 +38,7 @@ const RESIZE_TO_FIRST_FRAME = 'Whip terminal resize to first frame';
 const RESIZE_FRAME_TO_VISIBLE = 'Whip terminal resize frame to visible';
 const RESIZE_TO_VISIBLE = 'Whip terminal resize to visible';
 const RESIZE_SUPERSEDED = 'Whip terminal resize superseded';
+const RESIZE_DEDUPLICATED = 'Whip terminal resize deduplicated';
 const TRACE_TIMEOUT_MS = 10_000;
 const INBOUND_TRACE_DISABLED_POLL_MS = 1_000;
 
@@ -485,6 +486,14 @@ export function terminalResizeSuperseded(trace: TerminalResizeTrace | null): voi
   if (!trace || trace.ended) return;
   const cookie = beginAsyncEvent(RESIZE_SUPERSEDED);
   endAsyncEvent(RESIZE_SUPERSEDED, cookie);
+  finishTerminalResizeTrace(trace);
+}
+
+/** Marks an exact-size request skipped because the same tuple was already dispatched. */
+export function terminalResizeDeduplicated(trace: TerminalResizeTrace | null): void {
+  if (!trace || trace.ended) return;
+  const cookie = beginAsyncEvent(RESIZE_DEDUPLICATED);
+  endAsyncEvent(RESIZE_DEDUPLICATED, cookie);
   finishTerminalResizeTrace(trace);
 }
 

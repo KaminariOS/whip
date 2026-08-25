@@ -23,6 +23,7 @@ import {
   terminalRendererBecameReady,
   terminalRendererEntryReached,
   terminalRendererSizeBecameReady,
+  terminalResizeDeduplicated,
   terminalResizeFrameReceived,
   terminalResizeFrameRendered,
   terminalResizeNativeDispatchEnded,
@@ -153,5 +154,26 @@ describe('terminal performance tracing', () => {
       expect.stringMatching(/^Whip terminal resize event: #\d+ fit 100x32 cell=8x16 local-fit=1\.25ms webview-queue=2\.5ms$/),
       expect.any(Number),
     );
+  });
+
+  test('closes a duplicate resize without starting native or response spans', () => {
+    const trace = beginTerminalResizeTrace('terminal-resize', 'xterm', 100, 32, 8, 16);
+    terminalResizeWaitStarted(trace);
+
+    terminalResizeDeduplicated(trace);
+
+    expect(mockBeginAsyncSection).toHaveBeenCalledWith(
+      'Whip terminal resize deduplicated',
+      expect.any(Number),
+    );
+    expect(mockEndAsyncSection).toHaveBeenCalledWith(
+      'Whip terminal resize wait for writable',
+      expect.any(Number),
+    );
+    expect(mockBeginAsyncSection).not.toHaveBeenCalledWith(
+      'Whip terminal resize native dispatch',
+      expect.any(Number),
+    );
+    terminalResizeRequestHandled(trace);
   });
 });

@@ -116,8 +116,12 @@ Resize interaction slices:
   two values to this slice when investigating the decision-to-attempt interval.
 - `Whip terminal resize: fit` and `Whip terminal resize: xterm`: preserve the two
   existing sources and span the complete React Native handling of each request.
-  Comparing their count and chronological detail markers exposes
-  `fit -> xterm -> fit -> ...` bursts.
+  A resize synchronously emitted by xterm while Whip is already running
+  `fit.fit()` is suppressed because the following `fit` message carries the
+  same dimensions plus cell size and local-fit timing. Genuine xterm-driven
+  resizes outside that fit call remain visible. Comparing the remaining counts
+  and chronological detail markers exposes distinct `fit -> xterm -> fit -> ...`
+  bursts.
 - `Whip terminal resize wait for writable`: starts as `HerdrClient` receives the
   resize. On a retained bridge it ends immediately before native dispatch. On a
   cold bridge it remains open across channel open, Hello/Welcome, and Attach, and
@@ -139,6 +143,13 @@ Resize interaction slices:
   replaced by newer dimensions before any native Resize was dispatched. Compare
   request/source samples, superseded count, and native-dispatch samples to decide
   whether first activation sent redundant resizes or merely calculated them.
+- `Whip terminal resize deduplicated`: instant marker for a request whose full
+  normalized tuple (`columns`, `rows`, cell width, and cell height) exactly
+  matches the last resize already dispatched for that terminal. It ends the
+  request without a native call. Fit requests explicitly bypass this filter
+  because presenting/refitting a terminal also acts as a remote redraw signal,
+  even if the tuple is unchanged. Ownership/takeover reassertion also bypasses
+  the filter so arbitration semantics do not change.
 
 Resize-to-frame correlation is FIFO per renderer because the Herdr terminal
 protocol has no resize request ID or acknowledgement. Capture an otherwise idle

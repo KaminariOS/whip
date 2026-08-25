@@ -40,6 +40,7 @@ WHERE (
       'Whip terminal resize frame to visible',
       'Whip terminal resize to visible',
       'Whip terminal resize superseded',
+      'Whip terminal resize deduplicated',
       'Whip Herdr terminal initial resize'
     )
   )

@@ -37,6 +37,7 @@ import {
   terminalNativePreflightStarted,
   terminalNativeWriteQueued,
   terminalNativeWriteStarted,
+  terminalResizeDeduplicated,
   terminalResizeNativeDispatchEnded,
   terminalResizeNativeDispatchStarted,
   terminalResizeSuperseded,
@@ -97,6 +98,16 @@ const DEFAULT_TERMINAL_SIZE: TerminalSize = {
   cellHeightPx: 0,
 };
 
+function terminalSizesEqual(left: TerminalSize | undefined, right: TerminalSize): boolean {
+  return Boolean(
+    left
+    && left.columns === right.columns
+    && left.rows === right.rows
+    && left.cellWidthPx === right.cellWidthPx
+    && left.cellHeightPx === right.cellHeightPx,
+  );
+}
+
 export interface RemoteHtmlPreviewHandle {
   url: string;
   displayUrl: string;
@@ -146,6 +157,7 @@ export class HerdrClient {
   private sshShellConnections = new Map<string, SshShellConnection>();
   private terminalOpenings = new Map<string, Promise<void>>();
   private terminalSizes = new Map<string, TerminalSize>();
+  private terminalDispatchedSizes = new Map<string, TerminalSize>();
   private terminalBridges = new Set<string>();
   private terminalBridgeGenerations = new Map<string, number>();
   private terminalProtocolStates = new Map<string, TerminalProtocolState>();
@@ -655,6 +667,7 @@ export class HerdrClient {
     cellWidthPx = 0,
     cellHeightPx = 0,
     performanceTrace: TerminalResizeTrace | null = null,
+    forceDispatch = false,
   ): Promise<void> {
     const size = {
       columns: Math.max(20, columns),
@@ -666,17 +679,33 @@ export class HerdrClient {
     terminalResizeWaitStarted(performanceTrace);
     const sshShell = this.sshShellConnections.get(terminalId);
     if (sshShell) {
+      const previousSize = this.terminalDispatchedSizes.get(terminalId);
+      if (!forceDispatch && terminalSizesEqual(previousSize, size)) {
+        terminalResizeDeduplicated(performanceTrace);
+        return;
+      }
+      this.terminalDispatchedSizes.set(terminalId, size);
       terminalResizeNativeDispatchStarted(performanceTrace);
       try {
         sshShell.client.resizeShell(size.columns, size.rows);
         terminalResizeNativeDispatchEnded(performanceTrace, true);
       } catch (error) {
+        if (this.terminalDispatchedSizes.get(terminalId) === size) {
+          if (previousSize) this.terminalDispatchedSizes.set(terminalId, previousSize);
+          else this.terminalDispatchedSizes.delete(terminalId);
+        }
         terminalResizeNativeDispatchEnded(performanceTrace, false);
         throw error;
       }
       return;
     }
     if (this.terminalBridges.has(terminalId)) {
+      const previousSize = this.terminalDispatchedSizes.get(terminalId);
+      if (!forceDispatch && terminalSizesEqual(previousSize, size)) {
+        terminalResizeDeduplicated(performanceTrace);
+        return;
+      }
+      this.terminalDispatchedSizes.set(terminalId, size);
       terminalResizeNativeDispatchStarted(performanceTrace);
       try {
         await this.requireClient().herdrBridgeResize(
@@ -688,6 +717,10 @@ export class HerdrClient {
         );
         terminalResizeNativeDispatchEnded(performanceTrace, true);
       } catch (error) {
+        if (this.terminalDispatchedSizes.get(terminalId) === size) {
+          if (previousSize) this.terminalDispatchedSizes.set(terminalId, previousSize);
+          else this.terminalDispatchedSizes.delete(terminalId);
+        }
         terminalResizeNativeDispatchEnded(performanceTrace, false);
         throw error;
       }
@@ -1396,6 +1429,7 @@ export class HerdrClient {
       await client.startShell(PtyType.XTERM);
       const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
       client.resizeShell(size.columns, size.rows);
+      this.terminalDispatchedSizes.set(terminalId, size);
     } catch (error) {
       this.closeSshShell(terminalId);
       throw error;
@@ -1406,6 +1440,7 @@ export class HerdrClient {
     const connection = this.sshShellConnections.get(terminalId);
     if (!connection) return;
     this.sshShellConnections.delete(terminalId);
+    this.terminalDispatchedSizes.delete(terminalId);
     connection.client.off('Shell');
     connection.client.closeShell();
     this.disconnectSsh(connection.client);
@@ -1434,6 +1469,8 @@ export class HerdrClient {
     const uncorrelatedNativeDispatchTrace = resizeTrace
       ? null
       : beginAppPerformanceTrace('Whip terminal resize native dispatch');
+    const previousSize = this.terminalDispatchedSizes.get(terminalId);
+    this.terminalDispatchedSizes.set(terminalId, size);
     terminalResizeNativeDispatchStarted(resizeTrace);
     try {
       await this.requireClient().herdrBridgeResize(
@@ -1445,6 +1482,10 @@ export class HerdrClient {
       );
       terminalResizeNativeDispatchEnded(resizeTrace, true);
     } catch (error) {
+      if (this.terminalDispatchedSizes.get(terminalId) === size) {
+        if (previousSize) this.terminalDispatchedSizes.set(terminalId, previousSize);
+        else this.terminalDispatchedSizes.delete(terminalId);
+      }
       terminalResizeNativeDispatchEnded(resizeTrace, false);
       throw error;
     } finally {
@@ -1576,6 +1617,7 @@ export class HerdrClient {
   private clearTerminalBridgeState(terminalId: string): void {
     abandonTerminalResizeTrace(this.pendingTerminalResizeTraces.get(terminalId) || null);
     this.pendingTerminalResizeTraces.delete(terminalId);
+    this.terminalDispatchedSizes.delete(terminalId);
     this.terminalBridges.delete(terminalId);
     this.terminalBridgeGenerations.delete(terminalId);
     this.terminalProtocolStates.delete(terminalId);
@@ -1586,6 +1628,7 @@ export class HerdrClient {
       abandonTerminalResizeTrace(trace);
     }
     this.pendingTerminalResizeTraces.clear();
+    this.terminalDispatchedSizes.clear();
     this.terminalBridges.clear();
     this.terminalBridgeGenerations.clear();
     this.terminalProtocolStates.clear();

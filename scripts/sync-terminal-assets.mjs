@@ -329,6 +329,7 @@ const terminalSessionHtml = `<!doctype html>
       return false;
     });
     let bufferedInput = null;
+    let fitResizeInProgress = false;
     terminal.onData(data => {
       if (offlineScrollback) {
         handleOfflineInput(data);
@@ -338,7 +339,9 @@ const terminalSessionHtml = `<!doctype html>
       else send({ type: 'input', data });
     });
     terminal.onResize(({ cols, rows }) => {
-      send({ type: 'resize', source: 'xterm', cols, rows, requestedAtEpochMs: Date.now() });
+      if (!fitResizeInProgress) {
+        send({ type: 'resize', source: 'xterm', cols, rows, requestedAtEpochMs: Date.now() });
+      }
       reportOfflineScroll();
     });
     terminal.parser.registerOscHandler(52, data => {
@@ -701,7 +704,12 @@ const terminalSessionHtml = `<!doctype html>
     };
     const resize = () => {
       const fitStartedAt = performance.now();
-      fit.fit();
+      fitResizeInProgress = true;
+      try {
+        fit.fit();
+      } finally {
+        fitResizeInProgress = false;
+      }
       const screen = terminal.element?.querySelector('.xterm-screen');
       const rect = screen?.getBoundingClientRect();
       const scale = window.devicePixelRatio || 1;

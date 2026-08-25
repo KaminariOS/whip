@@ -3,6 +3,7 @@ import SSHClient from 'react-native-whip-ssh';
 import { HerdrClient } from '../src/services/HerdrClient';
 import {
   terminalNativeWriteQueued,
+  terminalResizeDeduplicated,
   terminalResizeSuperseded,
   type TerminalInputTrace,
   type TerminalResizeTrace,
@@ -22,11 +23,13 @@ jest.mock('../src/services/performanceTrace', () => ({
   terminalNativePreflightStarted: jest.fn(),
   terminalNativeWriteStarted: jest.fn(),
   terminalNativeWriteQueued: jest.fn(),
+  terminalResizeDeduplicated: jest.fn(),
   terminalResizeSuperseded: jest.fn(),
 }));
 
 const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
 const nativeWriteQueued = jest.mocked(terminalNativeWriteQueued);
+const resizeDeduplicated = jest.mocked(terminalResizeDeduplicated);
 const resizeSuperseded = jest.mocked(terminalResizeSuperseded);
 
 const profile: ConnectionProfile = {
@@ -71,6 +74,7 @@ describe('terminal bridge channels', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
     nativeWriteQueued.mockReset();
+    resizeDeduplicated.mockReset();
     resizeSuperseded.mockReset();
   });
 
@@ -181,6 +185,54 @@ describe('terminal bridge channels', () => {
 
     resolveBridge();
     await opening;
+  });
+
+  test('skips an exact duplicate size after a retained bridge already dispatched it', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const duplicateTrace = { targetKey: 'duplicate' } as TerminalResizeTrace;
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn());
+    jest.mocked(native.herdrBridgeResize).mockClear();
+
+    await client.resizeTerminal('term-1', 100, 30, 8, 16);
+    await client.resizeTerminal('term-1', 100, 30, 8, 16, duplicateTrace);
+
+    expect(native.herdrBridgeResize).toHaveBeenCalledTimes(1);
+    expect(resizeDeduplicated).toHaveBeenCalledWith(duplicateTrace);
+  });
+
+  test('force-dispatches an exact duplicate when reclaiming terminal ownership', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn());
+    jest.mocked(native.herdrBridgeResize).mockClear();
+
+    await client.resizeTerminal('term-1', 100, 30, 8, 16);
+    await client.resizeTerminal('term-1', 100, 30, 8, 16, null, true);
+
+    expect(native.herdrBridgeResize).toHaveBeenCalledTimes(2);
+    expect(resizeDeduplicated).not.toHaveBeenCalled();
+  });
+
+  test('retries the same size after a native resize dispatch fails', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn());
+    jest.mocked(native.herdrBridgeResize).mockClear();
+    jest.mocked(native.herdrBridgeResize)
+      .mockRejectedValueOnce(new Error('resize failed'));
+
+    await expect(client.resizeTerminal('term-1', 100, 30, 8, 16))
+      .rejects.toThrow('resize failed');
+    await client.resizeTerminal('term-1', 100, 30, 8, 16);
+
+    expect(native.herdrBridgeResize).toHaveBeenCalledTimes(2);
   });
 
   test('forwards the touched terminal cell with attached-pane scrolling', async () => {

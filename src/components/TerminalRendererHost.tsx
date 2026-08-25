@@ -27,6 +27,7 @@ import {
 import { arrayBufferToBase64 } from '../lib/base64';
 import {
   isOfflineTerminalNavigationInput,
+  terminalResizeForcesNativeDispatch,
   terminalScrollbackMode,
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
@@ -570,6 +571,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           dimensions.rows,
           dimensions.cellWidthPx,
           dimensions.cellHeightPx,
+          null,
+          // Reassert ownership even when the geometry tuple is unchanged.
+          true,
         );
       },
       send: operation,
@@ -971,6 +975,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           dimensions.cellWidthPx,
           dimensions.cellHeightPx,
           resizeTrace,
+          // A fit is also a redraw/reflow signal after presenting a terminal,
+          // even when its geometry tuple matches the last native resize.
+          terminalResizeForcesNativeDispatch(source),
         );
         connectEntry(entry);
       } finally {
