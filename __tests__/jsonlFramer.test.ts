@@ -5,9 +5,11 @@ const encoder = new TextEncoder();
 describe('incremental JSONL framing', () => {
   test('handles multiple records in one SSH chunk', () => {
     const records: unknown[] = [];
-    const framer = new JsonlFramer({ onRecord: record => records.push(record) });
+    const consumed: number[] = [];
+    const framer = new JsonlFramer({ onRecord: (record, metadata) => { records.push(record); consumed.push(metadata.consumedBytes); } });
     framer.push(encoder.encode('{"a":1}\n{"b":2}\n'));
     expect(records).toEqual([{ a: 1 }, { b: 2 }]);
+    expect(consumed).toEqual([8, 8]);
   });
 
   test('handles one record across chunks', () => {
@@ -28,6 +30,21 @@ describe('incremental JSONL framing', () => {
     expect(records).toEqual([{ message: '你好，世界' }]);
   });
 
+  test('counts original UTF-8 bytes rather than JavaScript string length', () => {
+    const source = '{"message":"你好"}\n';
+    const metadata: Array<{ rawLine: string; consumedBytes: number }> = [];
+    const framer = new JsonlFramer({ onRecord: (_record, value) => metadata.push(value) });
+    framer.push(encoder.encode(source));
+    expect(metadata).toEqual([{ rawLine: '{"message":"你好"}', consumedBytes: encoder.encode(source).byteLength }]);
+  });
+
+  test('includes CRLF bytes while excluding CR from rawLine', () => {
+    const metadata: Array<{ rawLine: string; consumedBytes: number }> = [];
+    const framer = new JsonlFramer({ onRecord: (_record, value) => metadata.push(value) });
+    framer.push(encoder.encode('{"a":1}\r\n'));
+    expect(metadata).toEqual([{ rawLine: '{"a":1}', consumedBytes: 9 }]);
+  });
+
   test('keeps an incomplete trailing line unparsed', () => {
     const records: unknown[] = [];
     const framer = new JsonlFramer({ onRecord: record => records.push(record) });
@@ -36,12 +53,28 @@ describe('incremental JSONL framing', () => {
     expect(records).toEqual([]);
   });
 
+  test('reconnect can replay an incomplete record from the committed cursor', () => {
+    const first: unknown[] = [];
+    const interrupted = new JsonlFramer({ onRecord: record => first.push(record) });
+    interrupted.push(encoder.encode('{"partial":"你'));
+    interrupted.end();
+    expect(first).toEqual([]);
+
+    const replayed: unknown[] = [];
+    const resumed = new JsonlFramer({ onRecord: record => replayed.push(record) });
+    resumed.push(encoder.encode('{"partial":"你好"}\n'));
+    expect(replayed).toEqual([{ partial: '你好' }]);
+  });
+
   test('skips malformed and unknown JSON records without terminating', () => {
     const records: unknown[] = [];
-    const malformed: string[] = [];
-    const framer = new JsonlFramer({ onRecord: record => records.push(record), onMalformed: line => malformed.push(line) });
+    const malformed: Array<[string, number]> = [];
+    const framer = new JsonlFramer({
+      onRecord: record => records.push(record),
+      onMalformed: (line, _error, metadata) => malformed.push([line, metadata.consumedBytes]),
+    });
     framer.push(encoder.encode('not-json\n{"type":"future_record","payload":{}}\n'));
-    expect(malformed).toEqual(['not-json']);
+    expect(malformed).toEqual([['not-json', 9]]);
     expect(records).toEqual([{ type: 'future_record', payload: {} }]);
   });
 });

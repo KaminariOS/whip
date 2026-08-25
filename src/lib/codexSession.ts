@@ -73,16 +73,26 @@ export function parseCodexRolloutResolution(output: string, sessionId: string): 
   return exact[0];
 }
 
-export const CODEX_HISTORY_COMPLETE_RECORD = '__whip_codex_history_complete__';
-
-export function codexRolloutStreamCommand(path: string): string {
+export function codexRolloutMetadataCommand(path: string): string {
   const quotedPath = shellQuote(path);
-  const marker = shellQuote(JSON.stringify({ [CODEX_HISTORY_COMPLETE_RECORD]: true }));
-  const script = [
-    `size=$(wc -c < ${quotedPath}) || exit 1`,
-    `head -c "$size" ${quotedPath} || exit 1`,
-    `printf '\n%s\n' ${marker}`,
-    `exec tail -c "+$((size + 1))" -F ${quotedPath}`,
-  ].join('\n');
-  return `exec /bin/sh -c ${shellQuote(script)}`;
+  return `stat -c '%d:%i %s' ${quotedPath} 2>/dev/null || stat -f '%d:%i %z' ${quotedPath}`;
+}
+
+export interface CodexRolloutMetadata {
+  fileId: string;
+  size: number;
+}
+
+export function parseCodexRolloutMetadata(output: string): CodexRolloutMetadata {
+  const match = output.trim().match(/^(\d+:\d+)\s+(\d+)$/);
+  if (!match) throw new Error('Codex returned invalid rollout metadata');
+  const size = Number(match[2]);
+  if (!Number.isSafeInteger(size)) throw new Error('Codex returned invalid rollout metadata');
+  return { fileId: match[1], size };
+}
+
+/** Streams only raw rollout bytes, starting immediately after the committed byte cursor. */
+export function codexRolloutStreamCommand(path: string, startOffset = 0): string {
+  if (!Number.isSafeInteger(startOffset) || startOffset < 0) throw new Error('Invalid Codex rollout cursor');
+  return `exec tail -c ${shellQuote(`+${startOffset + 1}`)} -F ${shellQuote(path)}`;
 }

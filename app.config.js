@@ -31,6 +31,10 @@ module.exports = ({ config }) => {
 
   return {
     ...config,
+    plugins: [
+      ...(config.plugins || []),
+      ...((config.plugins || []).includes('expo-sqlite') ? [] : ['expo-sqlite']),
+    ],
     extra: {
       ...config.extra,
       ...(gitCommit ? { gitCommit } : {}),

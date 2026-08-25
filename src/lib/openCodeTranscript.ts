@@ -321,9 +321,12 @@ export function applyOpenCodeEvents(
     const rawEventType = string(row?.type);
     const eventType = rawEventType?.replace(/\.\d+$/, '');
     const data = decodedObject(row?.data);
-    if (!row || sequence === undefined || !Number.isSafeInteger(sequence) || sequence <= cursor || !eventType || !data) {
+    if (!row || sequence === undefined || !Number.isSafeInteger(sequence) || !eventType || !data) {
       throw new Error('OpenCode returned invalid session events');
     }
+    // A crash can leave the durable cache one commit behind or cause a remote
+    // event query to replay its boundary row. Already-applied rows are harmless.
+    if (sequence <= cursor) continue;
     cursor = sequence;
 
     if (eventType === 'session.created' || eventType === 'session.updated') {
@@ -352,7 +355,7 @@ export function applyOpenCodeEvents(
       const next = rawPart ? part(rawPart, 0) : null;
       if (!messageId || !next) continue;
       const messageIndex = messages.findIndex(item => item.id === messageId);
-      if (messageIndex < 0) continue;
+      if (messageIndex < 0) throw new Error('OpenCode part event references a missing message');
       const current = messages[messageIndex];
       const nextParts = [...current.parts];
       const partIndex = nextParts.findIndex(item => item.id === next.id);

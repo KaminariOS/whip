@@ -1,14 +1,21 @@
 /* eslint-disable no-bitwise -- UTF-8 framing decodes byte-level bit fields. */
 
 export interface JsonlFramerHandlers<T> {
-  onRecord: (record: T) => void;
-  onMalformed?: (line: string, error: unknown) => void;
+  onRecord: (record: T, metadata: JsonlRecordMetadata) => void;
+  onMalformed?: (line: string, error: unknown, metadata: JsonlRecordMetadata) => void;
+  onBlank?: (metadata: JsonlRecordMetadata) => void;
+}
+
+export interface JsonlRecordMetadata {
+  /** JSON text without the trailing LF or optional CR. */
+  rawLine: string;
+  /** Original wire bytes for this physical line, including CRLF/LF. */
+  consumedBytes: number;
 }
 
 /** Frames newline-delimited JSON from arbitrary SSH binary chunks. */
 export class JsonlFramer<T = unknown> {
-  private buffered = '';
-  private pendingUtf8: number[] = [];
+  private buffered = new Uint8Array();
 
   constructor(private readonly handlers: JsonlFramerHandlers<T>) {}
 
@@ -16,39 +23,43 @@ export class JsonlFramer<T = unknown> {
     const bytes = chunk instanceof ArrayBuffer
       ? new Uint8Array(chunk)
       : new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    this.buffered += this.decodeUtf8(bytes, false);
+    if (bytes.byteLength) {
+      const joined = new Uint8Array(this.buffered.byteLength + bytes.byteLength);
+      joined.set(this.buffered);
+      joined.set(bytes, this.buffered.byteLength);
+      this.buffered = joined;
+    }
     this.drain();
   }
 
   end(): void {
-    this.buffered += this.decodeUtf8(new Uint8Array(), true);
     this.drain();
     // An unterminated final line may still be in the middle of an SSH write.
-    this.buffered = '';
+    this.buffered = new Uint8Array();
   }
 
   private drain(): void {
-    let newline = this.buffered.indexOf('\n');
+    let newline = this.buffered.indexOf(0x0a);
     while (newline >= 0) {
-      const line = this.buffered.slice(0, newline).replace(/\r$/, '');
+      const consumedBytes = newline + 1;
+      let lineBytes = this.buffered.slice(0, newline);
+      if (lineBytes[lineBytes.byteLength - 1] === 0x0d) lineBytes = lineBytes.slice(0, -1);
+      const line = this.decodeUtf8(lineBytes);
       this.buffered = this.buffered.slice(newline + 1);
+      const metadata = { rawLine: line, consumedBytes };
       if (line.trim()) {
         try {
-          this.handlers.onRecord(JSON.parse(line) as T);
+          this.handlers.onRecord(JSON.parse(line) as T, metadata);
         } catch (error) {
-          this.handlers.onMalformed?.(line, error);
+          this.handlers.onMalformed?.(line, error, metadata);
         }
-      }
-      newline = this.buffered.indexOf('\n');
+      } else this.handlers.onBlank?.(metadata);
+      newline = this.buffered.indexOf(0x0a);
     }
   }
 
-  /** Hermes does not currently expose TextDecoder, so retain incomplete code points here. */
-  private decodeUtf8(chunk: Uint8Array, final: boolean): string {
-    const bytes = this.pendingUtf8.length
-      ? Uint8Array.from([...this.pendingUtf8, ...chunk])
-      : chunk;
-    this.pendingUtf8 = [];
+  /** Hermes does not currently expose TextDecoder, so decode complete line bytes here. */
+  private decodeUtf8(bytes: Uint8Array): string {
     let output = '';
     let index = 0;
     while (index < bytes.length) {
@@ -68,8 +79,7 @@ export class JsonlFramer<T = unknown> {
         continue;
       }
       if (index + length > bytes.length) {
-        if (!final) this.pendingUtf8 = Array.from(bytes.slice(index));
-        else output += '\ufffd';
+        output += '\ufffd';
         break;
       }
       const continuation = Array.from(bytes.slice(index + 1, index + length));

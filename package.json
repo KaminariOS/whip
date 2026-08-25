@@ -52,6 +52,7 @@
     "expo-localization": "~57.0.1",
     "expo-notifications": "~57.0.14",
     "expo-speech": "~57.0.1",
+    "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "expo-video": "~57.0.2",
     "expo-web-browser": "~57.0.2",

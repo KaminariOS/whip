@@ -9,7 +9,7 @@ import { assertHerdrProtocolCompatible, herdrTerminalAttachLaunchMode, type Herd
 import { errorCode } from '../lib/connectionErrors';
 import { apiEvent, apiErrorMessage, apiRequestLine, eventsSubscribeRequest, HerdrApiBridgeDecoder, type HerdrApiEvent, type HerdrApiMessage, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
-import { codexRolloutFindCommand, codexRolloutStreamCommand, isValidCodexSessionId, parseCodexIntegrationStatus, parseCodexRolloutResolution, type CodexIntegrationStatus } from '../lib/codexSession';
+import { codexRolloutFindCommand, codexRolloutMetadataCommand, codexRolloutStreamCommand, isValidCodexSessionId, parseCodexIntegrationStatus, parseCodexRolloutMetadata, parseCodexRolloutResolution, type CodexIntegrationStatus, type CodexRolloutMetadata } from '../lib/codexSession';
 import type { CodexTranscriptStream } from './CodexTranscriptService';
 import { parseRemoteGitDiff, parseRemoteGitRepository, parseRemoteGitStatus, remoteGitDiffCommand, remoteGitRepositoryCommand, remoteGitStatusCommand, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '../lib/remoteGit';
 import { parseRemoteHtmlPreviewStart, remoteHtmlPreviewPageUrl, remoteHtmlPreviewStartCommand, remoteHtmlPreviewStopCommand, type RemoteHtmlServerProcess } from '../lib/remoteHtmlPreview';
@@ -497,15 +497,21 @@ export class HerdrClient {
 
   async openCodexRolloutStream(
     path: string,
+    startOffset: number,
     onChunk: (chunk: ArrayBuffer | ArrayBufferView) => void,
     onClosed: (reason?: string) => void,
   ): Promise<CodexTranscriptStream> {
     let channel: OpenSSHExecChannel | null = null;
-    channel = await this.requireClient().openExecChannel(codexRolloutStreamCommand(path), event => {
+    channel = await this.requireClient().openExecChannel(codexRolloutStreamCommand(path, startOffset), event => {
       if (event.type === 'data') onChunk(event.bytes);
       else onClosed(event.reason);
     });
     return { close: () => channel!.close() };
+  }
+
+  async loadCodexRolloutMetadata(path: string): Promise<CodexRolloutMetadata> {
+    const output = await this.requireClient().execute(codexRolloutMetadataCommand(path));
+    return parseCodexRolloutMetadata(output);
   }
 
   async loadOpenCodeTranscript(sessionId: string): Promise<unknown> {

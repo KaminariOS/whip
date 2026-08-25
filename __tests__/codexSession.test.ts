@@ -1,4 +1,11 @@
-import { codexChatAction, codexRolloutFindCommand, codexSessionIdForPane, parseCodexRolloutResolution } from '../src/lib/codexSession';
+import {
+  codexChatAction,
+  codexRolloutFindCommand,
+  codexRolloutStreamCommand,
+  codexSessionIdForPane,
+  parseCodexRolloutMetadata,
+  parseCodexRolloutResolution,
+} from '../src/lib/codexSession';
 import type { PaneInfo } from '../src/types';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
@@ -35,6 +42,19 @@ describe('Codex native session matching', () => {
 
   test('missing rollout is a clean unavailable result', () => {
     expect(parseCodexRolloutResolution('', firstId)).toBeNull();
+  });
+
+  test('resume command starts after the committed byte cursor without reading earlier bytes', () => {
+    const command = codexRolloutStreamCommand('/rollout.jsonl', 123);
+    expect(command).toContain('tail -c');
+    expect(command).toContain('+124');
+    expect(command).not.toContain('head -c');
+    expect(() => codexRolloutStreamCommand('/rollout.jsonl', -1)).toThrow('cursor');
+  });
+
+  test('validates remote rollout byte sizes', () => {
+    expect(parseCodexRolloutMetadata('12:34 456\n')).toEqual({ fileId: '12:34', size: 456 });
+    expect(() => parseCodexRolloutMetadata('missing')).toThrow('invalid rollout metadata');
   });
 
   test('non-Codex panes never request setup', () => {

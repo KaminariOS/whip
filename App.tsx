@@ -56,6 +56,7 @@ import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from './src/
 import {
   foregroundUsesBriefAlerts,
   agentFromStatusEvent,
+  isAgentAlertingStatus,
   tabNameForAgent,
   previousVisibleAgentStatus,
   shouldNotifyAgentTransition,
@@ -123,9 +124,16 @@ import {
   initialMobileNavigation,
   selectMobileTab,
 } from './src/mobileNavigation';
-import { alertAgent, dismissAgentAlerts, dismissAgentAlertsForTab, prepareAlerts } from './src/services/alerts';
+import {
+  alertAgent,
+  dismissAgentAlerts,
+  dismissAgentAlertsForPane,
+  dismissAgentAlertsForTab,
+  prepareAlerts,
+} from './src/services/alerts';
 import { authenticateAppAccess } from './src/services/appAuthentication';
 import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
+import { deleteAgentChatCachesForHost } from './src/services/agentChatCache';
 import {
   defaultDevicePreferences,
   devicePreferencesFromStorage,
@@ -861,6 +869,9 @@ function AppContent() {
           const useBriefAlert = agent
             ? foregroundUsesBriefAlerts(AppState.currentState === 'active')
             : false;
+          if (!isAgentAlertingStatus(agentStatus)) {
+            dismissAgentAlertsForPane(sessionId, paneId).catch(() => undefined);
+          }
           if (
             agent
             && alertsEnabledRef.current
@@ -1063,8 +1074,12 @@ function AppContent() {
           });
         }
         const visibleSnapshot = findLiveHostSession(liveSessionsRef.current, sessionId)?.snapshot;
-        if (alertsEnabledRef.current && runtime.previousStatuses) {
-          for (const agent of snapshot.agents) {
+        for (const agent of snapshot.agents) {
+          if (!isAgentAlertingStatus(agent.agent_status)) {
+            dismissAgentAlertsForPane(sessionId, agent.pane_id).catch(() => undefined);
+            continue;
+          }
+          if (alertsEnabledRef.current && runtime.previousStatuses) {
             const previous = previousVisibleAgentStatus(
               visibleSnapshot,
               agent.pane_id,
@@ -1955,6 +1970,7 @@ function AppContent() {
     const live = liveSessionsRef.current.sessions.find(session => session.hostId === target.id);
     if (live) closeLiveHost(live.id, false);
     try {
+      await deleteAgentChatCachesForHost(target.id);
       const next = await deleteHostProfile(hostsRef.current, target.id);
       setHosts(next);
       setCredentialRecovery(await credentialRecoveryStatus());
@@ -2720,6 +2736,7 @@ function LiveSessionView({
 
   return (
     <SessionScreen
+      hostProfileId={session.hostId}
       hostSessionId={sessionId}
       visible={visible}
       snapshot={session.snapshot}

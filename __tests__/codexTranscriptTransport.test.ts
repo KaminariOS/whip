@@ -52,7 +52,7 @@ describe('HerdrClient Codex transcript transport', () => {
     await client.connect(profile);
     const chunks: ArrayBuffer[] = [];
     const closed = jest.fn();
-    const stream = await client.openCodexRolloutStream(`/home/me/.codex/sessions/rollout-${id}.jsonl`, chunk => chunks.push(chunk as ArrayBuffer), closed);
+    const stream = await client.openCodexRolloutStream(`/home/me/.codex/sessions/rollout-${id}.jsonl`, 123, chunk => chunks.push(chunk as ArrayBuffer), closed);
     const bytes = new Uint8Array([1, 2, 3]).buffer;
     handler!({ type: 'data', channelId: 'exec-1', bytes });
     handler!({ type: 'closed', channelId: 'exec-1', reason: 'network', closedByClient: false });
@@ -60,5 +60,17 @@ describe('HerdrClient Codex transcript transport', () => {
     expect(closed).toHaveBeenCalledWith('network');
     await stream.close();
     expect(channel.close).toHaveBeenCalled();
+    expect(native.openExecChannel).toHaveBeenCalledWith(expect.stringContaining("'+124'"), expect.any(Function));
+  });
+
+  test('loads the remote byte size used to validate a persisted cursor', async () => {
+    const native = {
+      execute: jest.fn(async () => '12:34 456\n'), off: jest.fn(), disconnect: jest.fn(),
+    } as unknown as SSHClient;
+    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await expect(client.loadCodexRolloutMetadata('/rollout.jsonl')).resolves.toEqual({ fileId: '12:34', size: 456 });
+    expect(native.execute).toHaveBeenCalledWith(expect.stringContaining('stat -c'));
   });
 });
