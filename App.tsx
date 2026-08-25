@@ -26,6 +26,7 @@ import { AppAccessLock } from './src/components/AppAccessLock';
 import { ConnectionScreen } from './src/components/ConnectionScreen';
 import { ConnectRequiredScreen } from './src/components/ConnectRequiredScreen';
 import { DeleteHostConfirmationPopup } from './src/components/DeleteHostConfirmationPopup';
+import { FullScreenOverlay } from './src/components/FullScreenOverlay';
 import { HerdScreen } from './src/components/HerdScreen';
 import { GlobalKeychainScreen } from './src/components/GlobalKeychainScreen';
 import { GlassProvider } from './src/components/GlassSurface';
@@ -2574,7 +2575,7 @@ function AppContent() {
         )}
 
         {knownHostsOpen && (
-          <View className="absolute inset-0 z-60 bg-background">
+          <FullScreenOverlay>
             <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
             <KnownHostsScreen
               initialHosts={knownHosts}
@@ -2584,14 +2585,14 @@ function AppContent() {
               }}
               onClose={() => setKnownHostsOpen(false)}
             />
-          </View>
+          </FullScreenOverlay>
         )}
 
         {licensesOpen && (
-          <View className="absolute inset-0 z-60 bg-background">
+          <FullScreenOverlay>
             <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
             <LicensesScreen onClose={() => setLicensesOpen(false)} />
-          </View>
+          </FullScreenOverlay>
         )}
       </View>
 
