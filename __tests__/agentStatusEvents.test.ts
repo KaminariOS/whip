@@ -3,6 +3,7 @@ import {
   agentFromStatusEvent,
   agentNotificationTitle,
   agentStatusFromEvent,
+  isAgentAlertingStatus,
   previousVisibleAgentStatus,
   shouldNotifyAgentTransition,
   tabNameForAgent,
@@ -28,6 +29,10 @@ describe('agent status events', () => {
   });
 
   test('treats public idle as already seen and done as completion', () => {
+    expect(isAgentAlertingStatus('blocked')).toBe(true);
+    expect(isAgentAlertingStatus('done')).toBe(true);
+    expect(isAgentAlertingStatus('working')).toBe(false);
+    expect(isAgentAlertingStatus('idle')).toBe(false);
     expect(shouldNotifyAgentTransition('working', 'idle')).toBe(false);
     expect(shouldNotifyAgentTransition('working', 'done')).toBe(true);
     expect(shouldNotifyAgentTransition('idle', 'idle')).toBe(false);

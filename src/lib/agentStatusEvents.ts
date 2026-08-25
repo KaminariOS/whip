@@ -32,7 +32,11 @@ export function shouldNotifyAgentTransition(
   if (!previous || previous === next) return false;
   // Herdr projects an unseen Idle detector state as Done. A public Idle state
   // is already seen, so clients should not reconstruct completion from it.
-  return next === 'blocked' || next === 'done';
+  return isAgentAlertingStatus(next);
+}
+
+export function isAgentAlertingStatus(status: AgentStatus): boolean {
+  return status === 'blocked' || status === 'done';
 }
 
 /**

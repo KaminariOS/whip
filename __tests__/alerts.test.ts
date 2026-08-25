@@ -36,7 +36,12 @@ import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 
 import type { AgentInfo } from '../src/types';
-import { alertAgent, dismissAgentAlerts, dismissAgentAlertsForTab } from '../src/services/alerts';
+import {
+  alertAgent,
+  dismissAgentAlerts,
+  dismissAgentAlertsForPane,
+  dismissAgentAlertsForTab,
+} from '../src/services/alerts';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from '../src/services/backgroundMonitoring';
 
 const agent: AgentInfo = {
@@ -214,4 +219,47 @@ test('cancels a matching tab alert that finishes scheduling during interaction',
   await pendingAlert;
 
   expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('late-tab-notification');
+});
+
+test('dismisses only the resolved pane alert when a tab has multiple agents', async () => {
+  await dismissAgentAlerts();
+  jest.clearAllMocks();
+  jest.mocked(Notifications.scheduleNotificationAsync)
+    .mockResolvedValueOnce('pane-1-notification')
+    .mockResolvedValueOnce('pane-2-notification');
+
+  await alertAgent(agent, false, { hostId: 'host-1', paneId: 'pane-1' }, 'work', 'brief');
+  await alertAgent(
+    { ...agent, pane_id: 'pane-2' },
+    false,
+    { hostId: 'host-1', paneId: 'pane-2' },
+    'work',
+    'brief',
+  );
+  jest.mocked(Notifications.dismissNotificationAsync).mockClear();
+
+  await dismissAgentAlertsForPane('host-1', 'pane-1');
+
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('pane-1-notification');
+  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalledWith('pane-2-notification');
+  await dismissAgentAlerts();
+});
+
+test('prevents a resolved pane alert from posting after speech finishes', async () => {
+  await dismissAgentAlerts();
+  jest.clearAllMocks();
+  const pendingAlert = alertAgent(agent, true, {
+    hostId: 'host-1',
+    paneId: agent.pane_id,
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const options = jest.mocked(Speech.speak).mock.calls[0][1];
+  await dismissAgentAlertsForPane('host-1', agent.pane_id);
+  options?.onStopped?.();
+  await pendingAlert;
+
+  expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
+  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
 });
