@@ -1,4 +1,4 @@
-import { ArrowRight, Check, ChevronDown, ChevronLeft, ClipboardPaste, Copy, FileUp, KeyRound, Network, Sparkles, Trash2, X } from 'lucide-react-native';
+import { ArrowRight, Check, ChevronDown, ChevronLeft, ClipboardPaste, FileUp, KeyRound, Network, Sparkles, Trash2, X } from 'lucide-react-native';
 import SSHClient from 'react-native-whip-ssh';
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
@@ -22,6 +22,7 @@ import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
+import { SshKeyCopySheet } from './SshKeyCopySheet';
 
 interface Props {
   initialProfile: ConnectionProfile;
@@ -424,28 +425,29 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
   const { t } = useTranslation();
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
+  if (hasKey) {
+    return (
+      <SshKeyCopySheet
+        visible={visible}
+        onClose={onClose}
+        onCopyPrivate={onCopyPrivate}
+        onCopyPublic={onCopyPublic}
+      />
+    );
+  }
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View className="flex-1 justify-end">
         <Pressable accessibilityLabel={t('connection.closeKeyActions')} className="absolute inset-0 bg-black/55" onPress={onClose} />
         <GlassSurface accessibilityViewIsModal className="rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
-          <Text className="px-2 text-lg font-semibold">{hasKey ? t('connection.copySshKey') : t('connection.addPrivateKey')}</Text>
+          <Text className="px-2 text-lg font-semibold">{t('connection.addPrivateKey')}</Text>
           <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">
-            {hasKey ? t('connection.copyWhich') : t('connection.chooseAddMethod')}
+            {t('connection.chooseAddMethod')}
           </Text>
-          {hasKey ? (
-            <>
-              <KeyAction icon={Copy} label={t('connection.copyPrivate')} onPress={onCopyPrivate} />
-              <KeyAction icon={KeyRound} label={t('connection.copyPublic')} onPress={onCopyPublic} />
-            </>
-          ) : (
-            <>
-              {onGlobalKeychain ? <KeyAction icon={KeyRound} label={t('keychain.useGlobal')} onPress={onGlobalKeychain} /> : null}
-              <KeyAction icon={ClipboardPaste} label={t('connection.pasteClipboard')} onPress={onPaste} />
-              <KeyAction icon={FileUp} label={t('connection.selectFile')} onPress={onSelectFile} />
-              <KeyAction icon={Sparkles} label={t('connection.generateNew')} onPress={onGenerate} />
-            </>
-          )}
+          {onGlobalKeychain ? <KeyAction icon={KeyRound} label={t('keychain.useGlobal')} onPress={onGlobalKeychain} /> : null}
+          <KeyAction icon={ClipboardPaste} label={t('connection.pasteClipboard')} onPress={onPaste} />
+          <KeyAction icon={FileUp} label={t('connection.selectFile')} onPress={onSelectFile} />
+          <KeyAction icon={Sparkles} label={t('connection.generateNew')} onPress={onGenerate} />
           <Button
             className={cn('mt-2 rounded-full', appGlassEnabled && 'border')}
             style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}

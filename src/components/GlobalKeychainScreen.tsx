@@ -1,7 +1,7 @@
 import SSHClient from 'react-native-whip-ssh';
 import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Plus, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Alert, Clipboard, NativeModules, ScrollView, View } from 'react-native';
+import { Alert, Clipboard, NativeModules, Platform, Pressable, ScrollView, ToastAndroid, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
@@ -17,6 +17,7 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
+import { SshKeyCopySheet } from './SshKeyCopySheet';
 
 interface Props {
   initialKeys: GlobalSshKeyMaterial[];
@@ -38,6 +39,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<GlobalSshKeyMaterial | null>(null);
+  const [copyTarget, setCopyTarget] = useState<GlobalSshKeyMaterial | null>(null);
   const [name, setName] = useState('');
   const [privateKey, setPrivateKey] = useState('');
   const [passphrase, setPassphrase] = useState('');
@@ -118,6 +120,36 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
     setDeleteTarget(key);
   };
 
+  const copied = (label: string) => {
+    setCopyTarget(null);
+    if (Platform.OS === 'android') ToastAndroid.show(t('connection.copied', { label }), ToastAndroid.SHORT);
+    else Alert.alert(t('connection.copied', { label }));
+  };
+
+  const copyPrivateKey = () => {
+    if (!copyTarget) return;
+    Clipboard.setString(copyTarget.secret);
+    copied(t('connection.privateKey'));
+  };
+
+  const copyPublicKey = async () => {
+    if (!copyTarget) return;
+    try {
+      const details = await SSHClient.getKeyDetails(
+        normalizePrivateKey(copyTarget.secret),
+        copyTarget.passphrase || undefined,
+      );
+      Clipboard.setString(details.publicKey);
+      copied(t('connection.publicKey'));
+    } catch (error) {
+      setCopyTarget(null);
+      Alert.alert(
+        t('connection.copyPublicError'),
+        t(privateKeyErrorTranslationKey(error)),
+      );
+    }
+  };
+
   const deleteConfirmedKey = async () => {
     if (!deleteTarget || busy) return;
     setBusy(true);
@@ -192,12 +224,19 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
             <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
               {keys.map((key, index) => (
                 <View key={key.id} className={index ? 'min-h-[76px] flex-row items-center border-t border-border p-3.5' : 'min-h-[76px] flex-row items-center p-3.5'}>
-                  <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={KeyRound} className="text-primary" size={18} /></View>
-                  <View className="ml-3 min-w-0 flex-1">
-                    <Text className="text-[15px] font-semibold" numberOfLines={1}>{key.name}</Text>
-                    <Text className="mt-0.5 font-mono text-[11px] text-muted-foreground" ellipsizeMode="middle" numberOfLines={1}>{key.fingerprint}</Text>
-                    <Text className="mt-0.5 text-[11px] text-muted-foreground">{key.keyType}</Text>
-                  </View>
+                  <Pressable
+                    accessibilityLabel={t('connection.keyA11y', { fingerprint: key.fingerprint, keyType: key.keyType })}
+                    accessibilityRole="button"
+                    className="min-w-0 flex-1 flex-row items-center"
+                    disabled={busy}
+                    onPress={hapticPress(() => setCopyTarget(key))}>
+                    <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={KeyRound} className="text-primary" size={18} /></View>
+                    <View className="ml-3 min-w-0 flex-1">
+                      <Text className="text-[15px] font-semibold" numberOfLines={1}>{key.name}</Text>
+                      <Text className="mt-0.5 font-mono text-[11px] text-muted-foreground" ellipsizeMode="middle" numberOfLines={1}>{key.fingerprint}</Text>
+                      <Text className="mt-0.5 text-[11px] text-muted-foreground">{key.keyType}</Text>
+                    </View>
+                  </Pressable>
                   <IconButton icon={Trash2} accessibilityLabel={t('keychain.remove', { name: key.name })} className="ml-2 size-10" disabled={busy} onPress={hapticPress(() => confirmDelete(key))} />
                 </View>
               ))}
@@ -205,6 +244,12 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
           )}
         </View>
       </ScrollView>
+      <SshKeyCopySheet
+        visible={copyTarget !== null}
+        onClose={() => setCopyTarget(null)}
+        onCopyPrivate={copyPrivateKey}
+        onCopyPublic={copyPublicKey}
+      />
       <ConfirmationPopup
         busy={busy}
         confirmLabel={t('common.remove')}
