@@ -12,6 +12,10 @@ Capture a trace with one authorized Android device connected:
 nix develop -c scripts/capture-android-perfetto.sh 20
 ```
 
+For a repeatable physical-device capture that injects cold/warm input, rotates
+the phone, analyzes both paths, and publishes a GitHub Actions summary, see
+[Android terminal latency action](android-performance-action.md).
+
 For passive inbound tracing, start continuous output in a real or disposable
 Herdr terminal and leave the phone untouched:
 

@@ -1,0 +1,172 @@
+name: Record Android terminal latency
+
+on:
+  workflow_dispatch:
+    inputs:
+      cold_tab:
+        description: Existing remote tab not yet visited during this connection
+        required: true
+        type: string
+      comparison_tab:
+        description: Visible tab used to switch away before the warm return
+        required: true
+        type: string
+      settle_seconds:
+        description: Seconds to keep the SSH/Herdr connection alive before capture
+        required: true
+        default: '180'
+        type: string
+      duration_seconds:
+        description: Perfetto capture duration (12-60 seconds)
+        required: true
+        default: '20'
+        type: string
+      rotate:
+        description: Rotate after cold and warm input
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-terminal-perfetto-device
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Physical Android Perfetto capture
+    runs-on: [self-hosted, linux, android-perfetto]
+    timeout-minutes: 45
+    environment: google-play
+    env:
+      NODE_ENV: production
+      TRACE_DIR: ${{ github.workspace }}/artifacts/perfetto/ci-${{ github.run_id }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate workflow inputs and device
+        env:
+          SETTLE_SECONDS: ${{ inputs.settle_seconds }}
+          DURATION_SECONDS: ${{ inputs.duration_seconds }}
+        run: |
+          if [[ ! "$SETTLE_SECONDS" =~ ^[0-9]+$ ]] || (( SETTLE_SECONDS > 1800 )); then
+            echo 'settle_seconds must be an integer from 0 to 1800' >&2
+            exit 2
+          fi
+          if [[ ! "$DURATION_SECONDS" =~ ^[0-9]+$ ]] || (( DURATION_SECONDS < 12 || DURATION_SECONDS > 60 )); then
+            echo 'duration_seconds must be an integer from 12 to 60' >&2
+            exit 2
+          fi
+          nix develop -c adb devices -l
+          device_count="$(nix develop -c adb devices | awk 'NR > 1 && $2 == "device" { count += 1 } END { print count + 0 }')"
+          test "$device_count" = 1
+
+      - name: Install JavaScript dependencies
+        run: nix develop -c npm ci --include=dev
+
+      - name: Build Android Rust static libraries
+        run: nix develop -c bash scripts/build-android-rust.sh
+
+      - name: Prepare upload signing
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          for name in ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_UPLOAD_KEYSTORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required google-play environment secret: $name" >&2
+              exit 1
+            fi
+          done
+          mkdir -p "$RUNNER_TEMP/whip-signing"
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/whip-signing/upload-keystore.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/whip-signing/upload-keystore.jks" \
+            "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" \
+            "$ANDROID_UPLOAD_KEY_ALIAS" \
+            "$ANDROID_UPLOAD_KEY_PASSWORD" \
+            > "$RUNNER_TEMP/whip-signing/upload-keystore.properties"
+          chmod 600 "$RUNNER_TEMP/whip-signing/"*
+
+      - name: Build arm64 release APK
+        env:
+          WHIP_UPLOAD_KEYSTORE_PROPERTIES: ${{ runner.temp }}/whip-signing/upload-keystore.properties
+        run: >-
+          nix develop -c android/gradlew -p android :app:assembleRelease
+          -PreactNativeArchitectures=arm64-v8a
+          --no-daemon
+
+      - name: Install in place and age the connection
+        env:
+          SETTLE_SECONDS: ${{ inputs.settle_seconds }}
+        run: |
+          nix develop -c adb install -r android/app/build/outputs/apk/release/app-release.apk
+          nix develop -c adb shell input keyevent WAKEUP
+          nix develop -c adb shell wm dismiss-keyguard
+          nix develop -c adb shell am start -n io.github.kaminarios.whip/.MainActivity
+          echo "Leaving the restored SSH/Herdr connection alive for $SETTLE_SECONDS seconds"
+          sleep "$SETTLE_SECONDS"
+
+      - name: Record cold and warm terminal input
+        env:
+          COLD_TAB: ${{ inputs.cold_tab }}
+          COMPARISON_TAB: ${{ inputs.comparison_tab }}
+          DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          ROTATE: ${{ inputs.rotate }}
+        run: |
+          mkdir -p "$TRACE_DIR"
+          nix develop -c scripts/record-android-terminal-perfetto.sh \
+            "$COLD_TAB" \
+            "$COMPARISON_TAB" \
+            "$DURATION_SECONDS" \
+            "$TRACE_DIR/terminal-input.perfetto-trace" \
+            "$ROTATE"
+
+      - name: Analyze and render latency waterfall
+        run: |
+          trace_processor="$RUNNER_TEMP/trace_processor_shell"
+          curl -fsSL \
+            https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v57.2/linux-amd64/trace_processor_shell \
+            -o "$trace_processor"
+          printf '%s  %s\n' \
+            55ba613fc6d4f71df81eee2dbfc293020063655c241b3e314bff75345b802684 \
+            "$trace_processor" | sha256sum --check
+          chmod +x "$trace_processor"
+          "$trace_processor" query \
+            -f scripts/analyze-android-terminal-input.sql \
+            "$TRACE_DIR/terminal-input.perfetto-trace" \
+            > "$TRACE_DIR/terminal-input.csv"
+          "$trace_processor" query \
+            -f scripts/analyze-android-terminal-resize.sql \
+            "$TRACE_DIR/terminal-input.perfetto-trace" \
+            > "$TRACE_DIR/terminal-resize.csv"
+          "$trace_processor" query \
+            -f scripts/analyze-android-terminal-resize-events.sql \
+            "$TRACE_DIR/terminal-input.perfetto-trace" \
+            > "$TRACE_DIR/terminal-resize-events.csv"
+          nix develop -c node scripts/render-android-terminal-latency.mjs \
+            "$TRACE_DIR/terminal-input.csv" \
+            "$TRACE_DIR/terminal-resize.csv" \
+            "$TRACE_DIR/terminal-resize-events.csv" \
+            > "$TRACE_DIR/terminal-input.md"
+          cat "$TRACE_DIR/terminal-input.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Perfetto trace and reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: android-terminal-perfetto-${{ github.run_id }}
+          path: ${{ env.TRACE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
+
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/whip-signing/upload-keystore.jks" "$RUNNER_TEMP/whip-signing/upload-keystore.properties"
