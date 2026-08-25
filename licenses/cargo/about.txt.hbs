@@ -1,0 +1,18 @@
+Whip Rust dependency licenses
+
+This notice contains direct production dependencies from the selected Rust package.
+Development, build, and transitive dependencies are not included.
+
+{{#each licenses}}
+================================================================================
+{{{name}}} ({{{id}}})
+
+Used by:
+{{#each used_by}}
+- {{{crate.name}}} {{{crate.version}}}
+{{/each}}
+
+--------------------------------------------------------------------------------
+{{{text}}}
+
+{{/each}}

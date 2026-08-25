@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const reportPath = resolve(root, 'build/npm-direct-licenses.json');
+const noticesPath = resolve(root, 'build/npm-direct-license-notices.json');
 const unknownLicenseValues = new Set(['', 'n/a', 'none', 'unknown', 'unlicensed']);
 
 const noticeSources = [
@@ -61,9 +62,18 @@ const noticeSources = [
   },
 ];
 
+const npmLicenseSourceOverrides = new Map([
+  ['@react-native-community/slider', 'licenses/npm/react-native-slider-MIT.txt'],
+  ['@ubjs/core', 'node_modules/uniffi-bindgen-react-native/LICENSE'],
+  ['@xterm/addon-serialize', 'node_modules/@xterm/xterm/LICENSE'],
+  ['react-native-russh', 'LICENSE'],
+  ['react-native-whip-ssh', 'LICENSE'],
+]);
+
 const packageJson = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
 const report = await generateLicenseReport();
 await validateReport(report, packageJson.dependencies ?? {});
+await writeDirectDependencyNotices(await createDirectDependencyNotices(report));
 await validateNoticeRegistry();
 await validateNoticeSources(report);
 
@@ -71,6 +81,7 @@ console.log(
   `Checked ${report.length} direct production dependencies and ${noticeSources.length} bundled license notices.`,
 );
 console.log(`Wrote ${relativePath(reportPath)}.`);
+console.log(`Wrote ${relativePath(noticesPath)}.`);
 
 async function generateLicenseReport() {
   const executable = resolve(root, 'node_modules/license-report/index.js');
@@ -132,6 +143,55 @@ async function validateReport(report, dependencies) {
       throw new Error(`Missing installed version for ${entry.name}`);
     }
   }
+}
+
+async function createDirectDependencyNotices(report) {
+  const notices = [];
+  for (const entry of report) {
+    const packageDirectory = resolve(root, 'node_modules', entry.name);
+    const dependencyPackage = JSON.parse(
+      await readFile(resolve(packageDirectory, 'package.json'), 'utf8'),
+    );
+    const sourceUrl = normalizeRepositoryUrl(
+      dependencyPackage.repository?.url || dependencyPackage.repository || dependencyPackage.homepage,
+    );
+    const licenseSource = await resolveLicenseSource(entry.name, packageDirectory);
+    const licenseText = await readFile(licenseSource, 'utf8');
+    notices.push({
+      category: 'npm',
+      licenseName: entry.licenseType,
+      licenseText: `${licenseText.trim()}\n`,
+      name: entry.name,
+      sourceUrl,
+      version: entry.installedVersion,
+    });
+  }
+  return notices;
+}
+
+async function resolveLicenseSource(packageName, packageDirectory) {
+  const override = npmLicenseSourceOverrides.get(packageName);
+  if (override) return resolve(root, override);
+
+  const candidates = (await readdir(packageDirectory))
+    .filter(name => /^(licen[cs]e|copying|notice)(\..*)?$/i.test(name))
+    .sort();
+  if (candidates.length === 0) {
+    throw new Error(`No bundled license file found for direct dependency ${packageName}`);
+  }
+  return resolve(packageDirectory, candidates[0]);
+}
+
+async function writeDirectDependencyNotices(notices) {
+  await writeFile(noticesPath, `${JSON.stringify(notices, null, 2)}\n`);
+}
+
+function normalizeRepositoryUrl(repository) {
+  if (typeof repository !== 'string') return '';
+  return repository
+    .replace(/^git\+/, '')
+    .replace(/^git:\/\/github\.com\//, 'https://github.com/')
+    .replace(/\.git$/, '');
 }
 
 async function validateNoticeRegistry() {

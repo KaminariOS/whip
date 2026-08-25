@@ -1,5 +1,8 @@
+import { GENERATED_OPEN_SOURCE_LICENSES } from './generated';
+
 export interface OpenSourceLicenseNotice {
   id: string;
+  category?: 'npm' | 'cargo';
   projectName: string;
   sourceUrl: string;
   attribution: string;
@@ -91,4 +94,5 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     copyright: 'Copyright (c) 2026 Lucide Icons and Contributors\nCopyright (c) 2013-present Cole Bemis',
     licenseAsset: require('../../assets/licenses/lucide-ISC-and-Feather-MIT.txt'),
   },
+  ...GENERATED_OPEN_SOURCE_LICENSES,
 ];
