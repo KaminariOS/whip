@@ -1,5 +1,5 @@
 import { Plus, Server, X } from 'lucide-react-native';
-import { ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { compareAgentStatusPriority } from '@/src/herdQueue';
@@ -53,6 +53,7 @@ export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onN
 function HostPill({ session, active, onSelect, onClose }: { session: LiveSessionRailItem; active: boolean; onSelect: () => void; onClose?: () => void }) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
+  const isIpad = Platform.OS === 'ios' && Platform.isPad;
   const activeTextClass = active
     ? appGlassEnabled
       ? 'text-primary'
@@ -72,7 +73,7 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
       <Button accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: session.agentStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onSelect)}>
         <AnimatedAgentStatusGlyph status={session.agentStatus} color={sessionStatusColor(session, colors)} size={12} />
         {session.hostId ? (
-          <Text className={cn('max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', activeTextClass)} numberOfLines={1}>{session.label}</Text>
+          <Text className={cn('max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', isIpad && 'max-w-[160px] text-[17px] leading-6', activeTextClass)} numberOfLines={1}>{session.label}</Text>
         ) : (
           <Server size={15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
         )}
