@@ -43,6 +43,7 @@ import { emptyTranscript, type AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
 import { codexTranscriptService } from '../services/CodexTranscriptService';
 import { openCodeTranscriptService } from '../services/OpenCodeTranscriptService';
+import { terminalTabSelectionStarted } from '../services/performanceTrace';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
@@ -635,10 +636,11 @@ export function SessionScreen({
   };
 
   const chooseTab = (item: TabInfo) => {
-    setWorkspaceId(item.workspace_id);
-    setTabId(item.tab_id);
     const nextPanes = snapshot.panes.filter(pane => pane.tab_id === item.tab_id);
     const nextPane = nextPanes.find(pane => pane.focused) || nextPanes[0];
+    if (nextPane) terminalTabSelectionStarted(nextPane.terminal_id);
+    setWorkspaceId(item.workspace_id);
+    setTabId(item.tab_id);
     if (nextPane) onActivateTerminal(nextPane);
     run(async () => {
       if (item.workspace_id !== workspace?.workspace_id) await client.focusWorkspace(item.workspace_id);
@@ -763,6 +765,7 @@ export function SessionScreen({
   }, [tabSwipeTranslateX, visible]);
 
   const choosePane = (pane: PaneInfo) => {
+    terminalTabSelectionStarted(pane.terminal_id);
     onActivateTerminal(pane);
     run(() => client.focusPane(pane.pane_id));
   };

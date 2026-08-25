@@ -40,8 +40,12 @@ import type { TerminalPreferences } from '../services/devicePreferences';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import {
   abandonTerminalInboundTrace,
-  beginAppPerformanceTrace,
+  abandonTerminalRendererReadinessTrace,
+  abandonTerminalResizeTrace,
+  beginTerminalColdInputWait,
   beginTerminalInputTrace,
+  beginTerminalRendererReadinessTrace,
+  beginTerminalResizeTrace,
   endAppPerformanceTrace,
   endTerminalWriteTrace,
   terminalInboundFrameVisible,
@@ -52,7 +56,16 @@ import {
   terminalInboundXtermWritten,
   terminalFrameReceived,
   terminalFrameRendered,
+  terminalRendererBecameReady,
+  terminalRendererEntryReached,
+  terminalRendererSizeBecameReady,
+  terminalResizeFrameReceived,
+  terminalResizeFrameRendered,
+  terminalResizeRequestHandled,
+  terminalResizeRequestReady,
   withTerminalWriteTrace,
+  type AppPerformanceTrace,
+  type TerminalRendererReadinessTrace,
 } from '../services/performanceTrace';
 import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
@@ -82,7 +95,11 @@ interface RendererEntry {
   sizeReady: boolean;
   controllerAttached: boolean;
   connecting: boolean;
-  pendingFrames: Array<{ frame: TerminalFrame; traceCookie: number | null }>;
+  pendingFrames: Array<{
+    frame: TerminalFrame;
+    inputTraceCookie: number | null;
+    resizeTraceCookie: number | null;
+  }>;
   resetOnNextFrame: boolean;
   reconnectAttempt: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
@@ -94,6 +111,7 @@ interface RendererEntry {
     resolve: () => void;
     reject: (reason: Error) => void;
   }>;
+  readinessTrace: TerminalRendererReadinessTrace | null;
 }
 
 export interface TerminalRendererHandle {
@@ -214,6 +232,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     entry: RendererEntry,
     closeBridge: boolean,
   ) => {
+    abandonTerminalRendererReadinessTrace(entry.readinessTrace);
+    entry.readinessTrace = null;
     if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
     entry.reconnectTimer = null;
     entry.controllerAttached = false;
@@ -281,16 +301,22 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const injectFrame = useCallback((
     entry: RendererEntry,
     frame: TerminalFrame,
-    traceCookie: number | null = terminalFrameReceived(entry.target.key),
+    inputTraceCookie: number | null = terminalFrameReceived(entry.target.key),
+    resizeTraceCookie: number | null = terminalResizeFrameReceived(entry.target.key),
   ) => {
     const inboundTraceCookie = frame.inboundTraceCookie ?? null;
     terminalInboundRendererReceived(inboundTraceCookie);
     if (!hostReady.current || !entry.rendererReady) {
-      entry.pendingFrames.push({ frame, traceCookie });
+      entry.pendingFrames.push({ frame, inputTraceCookie, resizeTraceCookie });
       return;
     }
     const key = JSON.stringify(entry.target.key);
-    const serializedTraceCookie = traceCookie === null ? 'null' : String(traceCookie);
+    const serializedInputTraceCookie = inputTraceCookie === null
+      ? 'null'
+      : String(inputTraceCookie);
+    const serializedResizeTraceCookie = resizeTraceCookie === null
+      ? 'null'
+      : String(resizeTraceCookie);
     const reset = entry.resetOnNextFrame;
     if (reset) entry.resetOnNextFrame = false;
     const resetScript = reset ? `window.herdrReset(${key}); ` : '';
@@ -310,11 +336,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         abandonTerminalInboundTrace(inboundTraceCookie);
         return;
       }
-      injectTracedFrame(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)}, ${serializedTraceCookie}, ${serializedInboundTraceCookie});`);
+      injectTracedFrame(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)}, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
       return;
     }
     if (typeof frame.bytes === 'string' && typeof frame.final === 'boolean') {
-      injectTracedFrame(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}, ${serializedTraceCookie}, ${serializedInboundTraceCookie});`);
+      injectTracedFrame(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
       return;
     }
     const encoded = typeof frame.bytes === 'string'
@@ -322,13 +348,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       : arrayBufferToBase64(frame.bytes);
     const writes: string[] = [];
     if (encoded.length === 0) {
-      writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true, ${serializedTraceCookie}, ${serializedInboundTraceCookie});`);
+      writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
     } else {
       for (let offset = 0; offset < encoded.length; offset += FRAME_CHUNK_SIZE) {
         const chunk = encoded.slice(offset, offset + FRAME_CHUNK_SIZE);
         const final = offset + FRAME_CHUNK_SIZE >= encoded.length;
         const finalTraceCookie = final
-          ? `, ${serializedTraceCookie}, ${serializedInboundTraceCookie}`
+          ? `, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie}`
           : '';
         writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(chunk)}, ${final}${finalTraceCookie});`);
       }
@@ -458,6 +484,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (!target) return null;
     let entry = touchTerminalRendererEntry(entries.current, target.key);
     if (!entry) {
+      const readinessTrace = beginTerminalRendererReadinessTrace();
       entry = {
         target,
         rendererReady: false,
@@ -475,6 +502,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         },
         arbitration: new TerminalArbitration(),
         writableWaiters: [],
+        readinessTrace,
       };
       entries.current.set(target.key, entry);
       if (hostReady.current) {
@@ -484,6 +512,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     } else {
       entry.target = target;
     }
+    terminalRendererEntryReached(target.session.terminalId);
     connectEntry(entry);
     return entry;
   }, [configureEntry, connectEntry, inject, preferences.fontSize]);
@@ -512,27 +541,40 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     entry: RendererEntry,
     operation: () => void | Promise<void>,
     newUserInput = true,
-  ) => entry.arbitration.queueUserInput({
-    newUserInput,
-    onActivity: () => {
-      if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-      entry.reconnectTimer = null;
-      entry.reconnectAttempt = 0;
-      connectEntry(entry);
-    },
-    prepare: async (activity: TerminalInputActivity, dimensions: TerminalDimensions | null) => {
-      await waitForWritable(entry);
-      if (!activity.reclaimRequired || !dimensions) return;
-      await entry.target.client.resizeTerminal(
-        entry.target.session.terminalId,
-        dimensions.columns,
-        dimensions.rows,
-        dimensions.cellWidthPx,
-        dimensions.cellHeightPx,
-      );
-    },
-    send: operation,
-  }), [connectEntry, waitForWritable]);
+  ) => {
+    const terminalId = entry.target.session.terminalId;
+    const writable = entry.controllerAttached
+      && !entry.connecting
+      && entry.target.client.isTerminalBridgeRetained(terminalId);
+    const coldWaitTrace: AppPerformanceTrace | null = writable
+      ? null
+      : beginTerminalColdInputWait();
+    return entry.arbitration.queueUserInput({
+      newUserInput,
+      onActivity: () => {
+        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+        entry.reconnectTimer = null;
+        entry.reconnectAttempt = 0;
+        connectEntry(entry);
+      },
+      prepare: async (activity: TerminalInputActivity, dimensions: TerminalDimensions | null) => {
+        try {
+          await waitForWritable(entry);
+        } finally {
+          endAppPerformanceTrace(coldWaitTrace);
+        }
+        if (!activity.reclaimRequired || !dimensions) return;
+        await entry.target.client.resizeTerminal(
+          entry.target.session.terminalId,
+          dimensions.columns,
+          dimensions.rows,
+          dimensions.cellWidthPx,
+          dimensions.cellHeightPx,
+        );
+      },
+      send: operation,
+    }).finally(() => endAppPerformanceTrace(coldWaitTrace));
+  }, [connectEntry, waitForWritable]);
 
   const reportQueuedInput = useCallback((entry: RendererEntry, data: string) => {
     const target = entry.target.session.status === 'connected'
@@ -830,6 +872,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (message.type === 'trace-rendered') {
       if (Number.isInteger(message.inputCookie)) terminalFrameRendered(message.inputCookie);
       else if (Number.isInteger(message.cookie)) terminalFrameRendered(message.cookie);
+      if (Number.isInteger(message.resizeCookie)) {
+        terminalResizeFrameRendered(message.resizeCookie);
+      }
       if (Number.isInteger(message.inboundCookie)) {
         terminalInboundFrameVisible(message.inboundCookie);
       }
@@ -839,9 +884,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (!entry) return;
     if (message.type === 'terminal-ready') {
       entry.rendererReady = true;
+      terminalRendererBecameReady(entry.readinessTrace);
       const frames = entry.pendingFrames;
       entry.pendingFrames = [];
-      for (const pending of frames) injectFrame(entry, pending.frame, pending.traceCookie);
+      for (const pending of frames) injectFrame(
+        entry,
+        pending.frame,
+        pending.inputTraceCookie,
+        pending.resizeTraceCookie,
+      );
       connectEntry(entry);
       return;
     }
@@ -879,8 +930,18 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportError(entry.target, String(reason));
       }
     } else if (message.type === 'resize') {
-      const resizeTrace = beginAppPerformanceTrace(
-        `Whip terminal resize: ${message.source === 'fit' ? 'fit' : 'xterm'}`,
+      const source = message.source === 'fit' ? 'fit' : 'xterm';
+      const resizeTrace = beginTerminalResizeTrace(
+        entry.target.key,
+        source,
+        message.cols,
+        message.rows,
+        message.cellWidthPx || 0,
+        message.cellHeightPx || 0,
+        message.localFitMs,
+        Number.isFinite(message.requestedAtEpochMs)
+          ? Date.now() - message.requestedAtEpochMs
+          : undefined,
       );
       try {
         const dimensions = {
@@ -891,18 +952,30 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         };
         entry.arbitration.cacheDimensions(dimensions);
         entry.sizeReady = true;
-        if (!entry.arbitration.shouldSendResize()) return;
-        if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
+        terminalRendererSizeBecameReady(entry.readinessTrace);
+        if (!entry.arbitration.shouldSendResize()) {
+          terminalResizeRequestReady(resizeTrace);
+          abandonTerminalResizeTrace(resizeTrace);
+          return;
+        }
+        if (preferences.pauseResizeInBackground && appState.current !== 'active') {
+          terminalResizeRequestReady(resizeTrace);
+          abandonTerminalResizeTrace(resizeTrace);
+          return;
+        }
+        terminalResizeRequestReady(resizeTrace);
         await entry.target.client.resizeTerminal(
           entry.target.session.terminalId,
           dimensions.columns,
           dimensions.rows,
           dimensions.cellWidthPx,
           dimensions.cellHeightPx,
+          resizeTrace,
         );
         connectEntry(entry);
       } finally {
-        endAppPerformanceTrace(resizeTrace);
+        terminalResizeRequestReady(resizeTrace);
+        terminalResizeRequestHandled(resizeTrace);
       }
     } else if (message.type === 'scroll') {
       if (

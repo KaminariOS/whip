@@ -28,13 +28,21 @@ import {
   rememberHerdrSocketPath,
 } from './herdrSocketPathCache';
 import {
+  abandonTerminalResizeTrace,
+  beginAppPerformanceTrace,
+  endAppPerformanceTrace,
   withAppPerformanceTrace,
   terminalNativeResponseDelivered,
   terminalNativeResponseReceived,
   terminalNativePreflightStarted,
   terminalNativeWriteQueued,
   terminalNativeWriteStarted,
+  terminalResizeNativeDispatchEnded,
+  terminalResizeNativeDispatchStarted,
+  terminalResizeSuperseded,
+  terminalResizeWaitStarted,
   type TerminalInputTrace,
+  type TerminalResizeTrace,
 } from './performanceTrace';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
@@ -142,6 +150,7 @@ export class HerdrClient {
   private terminalBridgeGenerations = new Map<string, number>();
   private terminalProtocolStates = new Map<string, TerminalProtocolState>();
   private terminalInputTraces = new Map<string, TerminalInputTrace[]>();
+  private pendingTerminalResizeTraces = new Map<string, TerminalResizeTrace>();
   private terminalBridgeSequence = 0;
   private eventClient: SSHClient | null = null;
   private eventSubscription: EventSubscription | null = null;
@@ -232,7 +241,7 @@ export class HerdrClient {
     // preserving each terminal's frame and close callbacks.
     for (const terminalId of retainedTerminalIds) {
       try {
-        await this.attachTerminal(terminalId);
+        await this.attachTerminal(terminalId, true);
       } catch (error) {
         this.terminalConnections.get(terminalId)?.onClosed?.(`Terminal reattach failed: ${String(error)}`);
       }
@@ -575,12 +584,17 @@ export class HerdrClient {
       return;
     }
 
-    const task = this.attachTerminal(terminalId);
+    const coldAttach = !this.terminalBridges.has(terminalId);
+    const bridgeAttachTrace = coldAttach
+      ? beginAppPerformanceTrace('Whip terminal bridge attach')
+      : null;
+    const task = this.attachTerminal(terminalId, coldAttach);
     this.terminalOpenings.set(terminalId, task);
     try {
       await task;
     } finally {
       this.terminalOpenings.delete(terminalId);
+      endAppPerformanceTrace(bridgeAttachTrace);
     }
   }
 
@@ -634,7 +648,14 @@ export class HerdrClient {
     );
   }
 
-  async resizeTerminal(terminalId: string, columns: number, rows: number, cellWidthPx = 0, cellHeightPx = 0): Promise<void> {
+  async resizeTerminal(
+    terminalId: string,
+    columns: number,
+    rows: number,
+    cellWidthPx = 0,
+    cellHeightPx = 0,
+    performanceTrace: TerminalResizeTrace | null = null,
+  ): Promise<void> {
     const size = {
       columns: Math.max(20, columns),
       rows: Math.max(8, rows),
@@ -642,19 +663,43 @@ export class HerdrClient {
       cellHeightPx: Math.max(0, Math.round(cellHeightPx)),
     };
     this.terminalSizes.set(terminalId, size);
+    terminalResizeWaitStarted(performanceTrace);
     const sshShell = this.sshShellConnections.get(terminalId);
     if (sshShell) {
-      sshShell.client.resizeShell(size.columns, size.rows);
+      terminalResizeNativeDispatchStarted(performanceTrace);
+      try {
+        sshShell.client.resizeShell(size.columns, size.rows);
+        terminalResizeNativeDispatchEnded(performanceTrace, true);
+      } catch (error) {
+        terminalResizeNativeDispatchEnded(performanceTrace, false);
+        throw error;
+      }
       return;
     }
     if (this.terminalBridges.has(terminalId)) {
-      await this.requireClient().herdrBridgeResize(
-        terminalId,
-        size.columns,
-        size.rows,
-        size.cellWidthPx,
-        size.cellHeightPx,
-      );
+      terminalResizeNativeDispatchStarted(performanceTrace);
+      try {
+        await this.requireClient().herdrBridgeResize(
+          terminalId,
+          size.columns,
+          size.rows,
+          size.cellWidthPx,
+          size.cellHeightPx,
+        );
+        terminalResizeNativeDispatchEnded(performanceTrace, true);
+      } catch (error) {
+        terminalResizeNativeDispatchEnded(performanceTrace, false);
+        throw error;
+      }
+      return;
+    }
+    if (performanceTrace) {
+      if (this.terminalOpenings.has(terminalId)) {
+        terminalResizeSuperseded(performanceTrace);
+        return;
+      }
+      terminalResizeSuperseded(this.pendingTerminalResizeTraces.get(terminalId) || null);
+      this.pendingTerminalResizeTraces.set(terminalId, performanceTrace);
     }
   }
 
@@ -1372,10 +1417,40 @@ export class HerdrClient {
     return connection;
   }
 
-  private async attachTerminal(terminalId: string): Promise<void> {
+  private async attachTerminal(terminalId: string, coldAttach: boolean): Promise<void> {
     const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
-    await this.ensureTerminalBridge(terminalId, size);
-    await this.requireClient().herdrBridgeResize(terminalId, size.columns, size.rows, size.cellWidthPx, size.cellHeightPx);
+    const resizeTrace = this.pendingTerminalResizeTraces.get(terminalId) || null;
+    try {
+      await this.ensureTerminalBridge(terminalId, size);
+    } catch (error) {
+      this.pendingTerminalResizeTraces.delete(terminalId);
+      abandonTerminalResizeTrace(resizeTrace);
+      throw error;
+    }
+    this.pendingTerminalResizeTraces.delete(terminalId);
+    const initialResizeTrace = coldAttach
+      ? beginAppPerformanceTrace('Whip Herdr terminal initial resize')
+      : null;
+    const uncorrelatedNativeDispatchTrace = resizeTrace
+      ? null
+      : beginAppPerformanceTrace('Whip terminal resize native dispatch');
+    terminalResizeNativeDispatchStarted(resizeTrace);
+    try {
+      await this.requireClient().herdrBridgeResize(
+        terminalId,
+        size.columns,
+        size.rows,
+        size.cellWidthPx,
+        size.cellHeightPx,
+      );
+      terminalResizeNativeDispatchEnded(resizeTrace, true);
+    } catch (error) {
+      terminalResizeNativeDispatchEnded(resizeTrace, false);
+      throw error;
+    } finally {
+      endAppPerformanceTrace(uncorrelatedNativeDispatchTrace);
+      endAppPerformanceTrace(initialResizeTrace);
+    }
   }
 
   private async ensureTerminalBridge(terminalId: string, requestedSize?: TerminalSize): Promise<void> {
@@ -1499,12 +1574,18 @@ export class HerdrClient {
   }
 
   private clearTerminalBridgeState(terminalId: string): void {
+    abandonTerminalResizeTrace(this.pendingTerminalResizeTraces.get(terminalId) || null);
+    this.pendingTerminalResizeTraces.delete(terminalId);
     this.terminalBridges.delete(terminalId);
     this.terminalBridgeGenerations.delete(terminalId);
     this.terminalProtocolStates.delete(terminalId);
   }
 
   private clearAllTerminalBridgeState(): void {
+    for (const trace of this.pendingTerminalResizeTraces.values()) {
+      abandonTerminalResizeTrace(trace);
+    }
+    this.pendingTerminalResizeTraces.clear();
     this.terminalBridges.clear();
     this.terminalBridgeGenerations.clear();
     this.terminalProtocolStates.clear();

@@ -49,6 +49,39 @@ Startup and application-work slices:
 
 Terminal interaction slices:
 
+- `Whip terminal tab selection to renderer entry`: starts immediately before
+  `SessionScreen.chooseTab()` or `choosePane()` publishes the selected terminal
+  into React state and ends when `TerminalRendererHost.ensureEntry()` reaches
+  that terminal. It is
+  present on cold and warm selections and isolates selection/state propagation
+  from renderer and bridge work.
+- `Whip terminal renderer readiness`: cold-only; starts when a previously unseen
+  `RendererEntry` is created and ends only after both `terminal-ready` and the
+  first usable size message have arrived.
+- `Whip terminal xterm creation`: cold-only; entry creation through the embedded
+  terminal's `terminal-ready` message. It includes the terminal asset's font-ready
+  wait (or its 1.5-second fallback), xterm/addon construction, `terminal.open()`,
+  and the WebView-to-React Native ready callback.
+- `Whip terminal initial size measurement`: cold-only; entry creation through the
+  first fit/xterm size received by `TerminalRendererHost`.
+- `Whip terminal bridge attach`: cold-only; starts immediately before
+  `HerdrClient.openTerminal()` begins its unretained `attachTerminal()` task and
+  ends when that task settles after the initial resize enqueue.
+- `Whip Herdr bridge channel open`: cold-only; the native
+  `openLengthPrefixedUnixSocketChannel()` call, including the SSH streamlocal
+  channel open, until the channel is ready.
+- `Whip Herdr bridge hello to welcome`: cold-only; starts before enqueueing Herdr
+  Hello and ends when a valid Welcome is decoded (or negotiation fails).
+- `Whip Herdr terminal attach`: cold-only; the Herdr Attach frame's local/native
+  enqueue. The protocol has no Attach acknowledgement, so remote Attach handling
+  remains combined with the following initial-frame/initial-resize intervals.
+- `Whip Herdr terminal initial resize`: cold-only; the explicit Resize enqueue
+  performed after the cold bridge has completed Attach.
+- `Whip terminal cold input to writable`: cold-only per input; starts at
+  `TerminalRendererHost.enqueueInput()` when the entry is not writable and ends
+  immediately after `waitForWritable()` resolves, before takeover resize or input
+  send. Multiple characters typed during the same cold wait produce multiple
+  correlated samples, including their input-queue ordering delay.
 - `Whip terminal input to native dispatch`: React Native handling through creation
   of the Rust/SSH write promise. This is local app overhead and does not await the
   transport operation.
@@ -71,6 +104,46 @@ Terminal interaction slices:
 - `Whip terminal frame to visible`: React Native frame handling, WebView injection,
   xterm parsing, and two animation-frame boundaries.
 - `Whip terminal input to visible`: the complete measured user-visible path.
+
+Resize interaction slices:
+
+- `Whip terminal resize request`: every cold or warm resize message, from entry
+  into the React Native `TerminalRendererHost` handler until immediately before
+  Whip attempts the resize or deliberately filters it. The matching instant-sized
+  `Whip terminal resize event: #<n> <source> <cols>x<rows> ...` marker carries the
+  capture-local sequence, source, dimensions, cell pixels, WebView-to-host queue
+  delay, and (for `fit`) the measured local `fit.fit()` duration. Add the latter
+  two values to this slice when investigating the decision-to-attempt interval.
+- `Whip terminal resize: fit` and `Whip terminal resize: xterm`: preserve the two
+  existing sources and span the complete React Native handling of each request.
+  Comparing their count and chronological detail markers exposes
+  `fit -> xterm -> fit -> ...` bursts.
+- `Whip terminal resize wait for writable`: starts as `HerdrClient` receives the
+  resize. On a retained bridge it ends immediately before native dispatch. On a
+  cold bridge it remains open across channel open, Hello/Welcome, and Attach, and
+  ends immediately before the post-Attach initial Resize dispatch.
+- `Whip terminal resize native dispatch`: the call into `resizeShell()` or
+  `herdrBridgeResize()` through completion of its native enqueue promise.
+- `Whip terminal resize to first frame`: starts immediately before the native
+  resize call and ends when the first later terminal frame reaches the renderer.
+  It intentionally combines native enqueue, SSH/network time, remote PTY resize
+  processing, and inbound decode because Herdr has no resize acknowledgement.
+- `Whip terminal resize frame to visible`: first renderer-bound response frame
+  through WebView delivery, xterm parsing, and the existing two
+  `requestAnimationFrame` callbacks.
+- `Whip terminal resize to visible`: native resize call through the same visible
+  acknowledgement. Together with request/local-fit/queue/writable-wait slices it
+  gives the total perceived resize path without counting superseded requests as
+  native sends.
+- `Whip terminal resize superseded`: instant marker for a cold resize request
+  replaced by newer dimensions before any native Resize was dispatched. Compare
+  request/source samples, superseded count, and native-dispatch samples to decide
+  whether first activation sent redundant resizes or merely calculated them.
+
+Resize-to-frame correlation is FIFO per renderer because the Herdr terminal
+protocol has no resize request ID or acknowledgement. Capture an otherwise idle
+terminal when attributing a returned frame to a particular resize; unsolicited
+output can end the response slice early, just as it can for input tracing.
 
 Passive inbound terminal slices (these do not require an input event):
 
@@ -99,8 +172,6 @@ Passive inbound terminal slices (these do not require an input event):
   existing `requestAnimationFrame` boundaries.
 - `Whip terminal inbound frame to visible`: the correlated end-to-end JS/WebView
   span. Its cookie is carried with the frame without copying terminal bytes.
-- `Whip terminal resize: fit` and `Whip terminal resize: xterm`: count the two
-  resize message sources so redundant fit/onResize cycles are visible.
 - `Whip exec inbound Rust chunk received`: an instant-sized slice immediately
   after a persistent SSH exec channel reads a chunk. Codex transcript streams
   use this path rather than the terminal Unix-socket path.
@@ -138,10 +209,42 @@ but acknowledges the trace without calling `xterm.write()`. The switch is false
 by default and is ignored in release builds. Rebuild without the variable for
 normal rendering.
 
-In the Perfetto SQL editor, load
-`scripts/analyze-android-perfetto.sql` for completed sample counts, timeout counts,
-and average/min/max values for both startup and terminal work. Ten-second timeout
-sentinel slices are not included in the terminal latency statistics. The capture also includes Android FrameTimeline data for
+## Cold-versus-warm reproduction
+
+1. Connect to a host and leave the SSH/Herdr connection alive.
+2. Ensure several remote tabs already exist. Pick one Whip has never visited
+   during this connection; do not create a new tab.
+3. Start a 20-second capture:
+
+   ```bash
+   nix develop -c scripts/capture-android-perfetto.sh 20
+   ```
+
+4. Open the untouched existing tab, immediately type `aaaaa`, and immediately
+   rotate the device, change the available terminal size, or trigger Whip's fit
+   path. Wait until the terminal is clearly live.
+5. Switch away and return to the same tab, type `bbbbb`, and repeat the same
+   resize operation before the capture ends.
+
+To write to a fixed output path for repeatable analysis:
+
+```bash
+nix develop -c scripts/capture-android-perfetto.sh 20 artifacts/perfetto/cold-warm.perfetto-trace
+```
+
+Open the trace at <https://ui.perfetto.dev>, open **Query (SQL)**, and paste the
+contents of `scripts/analyze-android-perfetto.sql`. With an installed Perfetto
+`trace_processor_shell`, the equivalent command is:
+
+```bash
+trace_processor_shell -q scripts/analyze-android-perfetto.sql artifacts/perfetto/cold-warm.perfetto-trace
+```
+
+The SQL reports samples, timeout and capture-incomplete counts, p50, p95,
+average, minimum, and maximum for terminal/cold-open/resize phases, followed by
+a chronological resize-event ledger containing source and dimensions.
+Ten-second timeout sentinel slices are excluded from latency percentiles and
+counted separately. The capture also includes Android FrameTimeline data for
 checking missed application and SurfaceFlinger frames around slow samples.
 If the local write and frame-to-visible slices are each around one display frame
 or less while input-to-first-frame is near the measured 70–150 ms host RTT, the

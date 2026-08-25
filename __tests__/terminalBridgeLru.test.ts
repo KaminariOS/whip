@@ -3,7 +3,9 @@ import SSHClient from 'react-native-whip-ssh';
 import { HerdrClient } from '../src/services/HerdrClient';
 import {
   terminalNativeWriteQueued,
+  terminalResizeSuperseded,
   type TerminalInputTrace,
+  type TerminalResizeTrace,
 } from '../src/services/performanceTrace';
 import type { ConnectionProfile } from '../src/types';
 
@@ -20,10 +22,12 @@ jest.mock('../src/services/performanceTrace', () => ({
   terminalNativePreflightStarted: jest.fn(),
   terminalNativeWriteStarted: jest.fn(),
   terminalNativeWriteQueued: jest.fn(),
+  terminalResizeSuperseded: jest.fn(),
 }));
 
 const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
 const nativeWriteQueued = jest.mocked(terminalNativeWriteQueued);
+const resizeSuperseded = jest.mocked(terminalResizeSuperseded);
 
 const profile: ConnectionProfile = {
   id: 'host-1',
@@ -67,6 +71,7 @@ describe('terminal bridge channels', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
     nativeWriteQueued.mockReset();
+    resizeSuperseded.mockReset();
   });
 
   test('retains every opened bridge across SSH clients without a maximum', async () => {
@@ -151,6 +156,31 @@ describe('terminal bridge channels', () => {
     resolveWrite();
     await write;
     expect(nativeWriteQueued).toHaveBeenCalledWith(inputTrace, true);
+  });
+
+  test('marks a resize arriving during cold attach as superseded without replacing the dispatched trace', async () => {
+    let resolveBridge!: () => void;
+    const bridgeOpening = new Promise<void>(resolve => {
+      resolveBridge = resolve;
+    });
+    const native = bridgeClient();
+    jest.mocked(native.startHerdrBridge).mockReturnValueOnce(bridgeOpening);
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const initialTrace = { targetKey: 'initial' } as TerminalResizeTrace;
+    const laterTrace = { targetKey: 'later' } as TerminalResizeTrace;
+    await client.connect(profile);
+
+    await client.resizeTerminal('term-1', 100, 30, 8, 16, initialTrace);
+    const opening = client.openTerminal('term-1', jest.fn());
+    await Promise.resolve();
+    await client.resizeTerminal('term-1', 101, 31, 8, 16, laterTrace);
+
+    expect(resizeSuperseded).toHaveBeenCalledWith(laterTrace);
+    expect(resizeSuperseded).not.toHaveBeenCalledWith(initialTrace);
+
+    resolveBridge();
+    await opening;
   });
 
   test('forwards the touched terminal cell with attached-pane scrolling', async () => {

@@ -338,7 +338,7 @@ const terminalSessionHtml = `<!doctype html>
       else send({ type: 'input', data });
     });
     terminal.onResize(({ cols, rows }) => {
-      send({ type: 'resize', source: 'xterm', cols, rows });
+      send({ type: 'resize', source: 'xterm', cols, rows, requestedAtEpochMs: Date.now() });
       reportOfflineScroll();
     });
     terminal.parser.registerOscHandler(52, data => {
@@ -417,30 +417,30 @@ const terminalSessionHtml = `<!doctype html>
     const reportTracePhase = (type, inboundCookie) => {
       if (Number.isInteger(inboundCookie)) send({ type, inboundCookie });
     };
-    const reportTraceRendered = (inputCookie, inboundCookie) => {
-      if (!Number.isInteger(inputCookie) && !Number.isInteger(inboundCookie)) return;
+    const reportTraceRendered = (inputCookie, resizeCookie, inboundCookie) => {
+      if (!Number.isInteger(inputCookie) && !Number.isInteger(resizeCookie) && !Number.isInteger(inboundCookie)) return;
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        send({ type: 'trace-rendered', inputCookie, inboundCookie });
+        send({ type: 'trace-rendered', inputCookie, resizeCookie, inboundCookie });
       }));
     };
-    window.herdrWrite = (data, inputCookie, inboundCookie) => {
+    window.herdrWrite = (data, inputCookie, resizeCookie, inboundCookie) => {
       reportTracePhase('trace-write-received', inboundCookie);
       if (renderDrop) {
         reportTracePhase('trace-xterm-written', inboundCookie);
-        reportTraceRendered(inputCookie, inboundCookie);
+        reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
         return;
       }
       prepareLiveWrite();
       terminal.write(data, () => {
         reportTracePhase('trace-xterm-written', inboundCookie);
-        reportTraceRendered(inputCookie, inboundCookie);
+        reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
       });
     };
-    window.herdrWriteBase64 = (data, inputCookie, inboundCookie) => {
+    window.herdrWriteBase64 = (data, inputCookie, resizeCookie, inboundCookie) => {
       reportTracePhase('trace-write-received', inboundCookie);
       if (renderDrop) {
         reportTracePhase('trace-xterm-written', inboundCookie);
-        reportTraceRendered(inputCookie, inboundCookie);
+        reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
         return;
       }
       prepareLiveWrite();
@@ -449,16 +449,19 @@ const terminalSessionHtml = `<!doctype html>
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       terminal.write(bytes, () => {
         reportTracePhase('trace-xterm-written', inboundCookie);
-        reportTraceRendered(inputCookie, inboundCookie);
+        reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
       });
     };
     const pendingFrames = new Map();
-    window.herdrWriteBase64Chunk = (sequence, data, final, inputCookie, inboundCookie) => {
+    window.herdrWriteBase64Chunk = (sequence, data, final, inputCookie, resizeCookie, inboundCookie) => {
       const pending = pendingFrames.get(sequence);
       const encoded = (pending?.encoded || '') + data;
       const pendingInputCookie = Number.isInteger(inputCookie)
         ? inputCookie
         : pending?.inputCookie;
+      const pendingResizeCookie = Number.isInteger(resizeCookie)
+        ? resizeCookie
+        : pending?.resizeCookie;
       const pendingInboundCookie = Number.isInteger(inboundCookie)
         ? inboundCookie
         : pending?.inboundCookie;
@@ -466,12 +469,13 @@ const terminalSessionHtml = `<!doctype html>
         pendingFrames.set(sequence, {
           encoded,
           inputCookie: pendingInputCookie,
+          resizeCookie: pendingResizeCookie,
           inboundCookie: pendingInboundCookie,
         });
         return;
       }
       pendingFrames.delete(sequence);
-      window.herdrWriteBase64(encoded, pendingInputCookie, pendingInboundCookie);
+      window.herdrWriteBase64(encoded, pendingInputCookie, pendingResizeCookie, pendingInboundCookie);
     };
     window.herdrSetRenderDrop = enabled => { renderDrop = enabled === true; };
     window.herdrReset = () => {
@@ -696,6 +700,7 @@ const terminalSessionHtml = `<!doctype html>
       });
     };
     const resize = () => {
+      const fitStartedAt = performance.now();
       fit.fit();
       const screen = terminal.element?.querySelector('.xterm-screen');
       const rect = screen?.getBoundingClientRect();
@@ -706,7 +711,9 @@ const terminalSessionHtml = `<!doctype html>
         cols: terminal.cols,
         rows: terminal.rows,
         cellWidthPx: rect ? Math.round((rect.width / terminal.cols) * scale) : 0,
-        cellHeightPx: rect ? Math.round((rect.height / terminal.rows) * scale) : 0
+        cellHeightPx: rect ? Math.round((rect.height / terminal.rows) * scale) : 0,
+        localFitMs: performance.now() - fitStartedAt,
+        requestedAtEpochMs: Date.now()
       });
       renderSelectionHandles();
     };
@@ -1301,8 +1308,8 @@ const terminalHtml = `<!doctype html>
       if (origin) origin.root.style.transform = 'translateX(' + offset + 'px)';
       if (target) target.root.style.transform = 'translateX(' + (offset + direction * width) + 'px)';
     };
-    window.herdrWriteBase64Chunk = (key, sequence, data, final, inputCookie, inboundCookie) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final, inputCookie, inboundCookie]);
-    window.herdrWrite = (key, data, inputCookie, inboundCookie) => call(key, 'herdrWrite', [data, inputCookie, inboundCookie]);
+    window.herdrWriteBase64Chunk = (key, sequence, data, final, inputCookie, resizeCookie, inboundCookie) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final, inputCookie, resizeCookie, inboundCookie]);
+    window.herdrWrite = (key, data, inputCookie, resizeCookie, inboundCookie) => call(key, 'herdrWrite', [data, inputCookie, resizeCookie, inboundCookie]);
     window.herdrReset = key => call(key, 'herdrReset');
     window.herdrBeginOfflineTranscript = key => call(key, 'herdrBeginOfflineTranscript');
     window.herdrAppendOfflineTranscript = (key, data) => call(key, 'herdrAppendOfflineTranscript', [data]);

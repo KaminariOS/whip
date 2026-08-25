@@ -66,6 +66,10 @@ function terminalInboundTrace() {
   return globalThis.__whipTerminalInboundTrace;
 }
 
+function herdrPerformanceTrace() {
+  return globalThis.__whipHerdrPerformanceTrace;
+}
+
 function bridgeEvent(message, terminalId, inboundTraceCookie) {
   const event = { type: message.kind, terminalId, inboundTraceCookie };
   if (message.kind === 'terminal') {
@@ -140,7 +144,8 @@ class SSHClient extends BaseSSHClient {
       settled = true;
       rejectWelcome(error instanceof Error ? error : new Error(String(error)));
     };
-    state.channel = await this.openLengthPrefixedUnixSocketChannel(
+    const channelTrace = herdrPerformanceTrace()?.begin('Whip Herdr bridge channel open') || null;
+    const channelOpening = this.openLengthPrefixedUnixSocketChannel(
       socketPath,
       { lengthFormat: 'u32le', maxFrameBytes: MAX_FRAME_BYTES },
       event => {
@@ -194,24 +199,34 @@ class SSHClient extends BaseSSHClient {
       },
     );
     try {
-      await state.channel.write(hello(
-        protocol,
-        columns,
-        rows,
-        cellWidthPx,
-        cellHeightPx,
-        terminalAttachLaunchMode,
-      ));
-      let timer;
+      state.channel = await channelOpening;
+    } finally {
+      herdrPerformanceTrace()?.end(channelTrace);
+    }
+    try {
+      const helloTrace = herdrPerformanceTrace()?.begin('Whip Herdr bridge hello to welcome') || null;
       try {
-        await Promise.race([
-          welcome,
-          new Promise((_, reject) => {
-            timer = setTimeout(() => reject(new Error('timed out waiting for Herdr Welcome')), 15_000);
-          }),
-        ]);
+        await state.channel.write(hello(
+          protocol,
+          columns,
+          rows,
+          cellWidthPx,
+          cellHeightPx,
+          terminalAttachLaunchMode,
+        ));
+        let timer;
+        try {
+          await Promise.race([
+            welcome,
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error('timed out waiting for Herdr Welcome')), 15_000);
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
       } finally {
-        clearTimeout(timer);
+        herdrPerformanceTrace()?.end(helloTrace);
       }
       return state;
     } catch (error) {
@@ -278,7 +293,12 @@ class SSHClient extends BaseSSHClient {
       state.terminalId = terminalId;
       state.handler = handler;
       this._herdrBridges.set(terminalId, state);
-      await state.channel.write(attach(terminalId, takeover));
+      const attachTrace = herdrPerformanceTrace()?.begin('Whip Herdr terminal attach') || null;
+      try {
+        await state.channel.write(attach(terminalId, takeover));
+      } finally {
+        herdrPerformanceTrace()?.end(attachTrace);
+      }
       if (callback) callback();
     } catch (error) {
       if (state) {

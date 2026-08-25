@@ -26,6 +26,18 @@ const INBOUND_WEBVIEW_INJECTION = 'Whip terminal inbound WebView injection';
 const INBOUND_WEBVIEW_DELIVERY = 'Whip terminal inbound WebView delivery';
 const INBOUND_XTERM_WRITE = 'Whip terminal inbound xterm write';
 const INBOUND_XTERM_TO_VISIBLE = 'Whip terminal inbound xterm to visible';
+const TAB_SELECTION_TO_RENDERER = 'Whip terminal tab selection to renderer entry';
+const RENDERER_READINESS = 'Whip terminal renderer readiness';
+const RENDERER_XTERM_READY = 'Whip terminal xterm creation';
+const RENDERER_INITIAL_SIZE = 'Whip terminal initial size measurement';
+const COLD_INPUT_TO_WRITABLE = 'Whip terminal cold input to writable';
+const RESIZE_REQUEST = 'Whip terminal resize request';
+const RESIZE_WAIT_FOR_WRITABLE = 'Whip terminal resize wait for writable';
+const RESIZE_NATIVE_DISPATCH = 'Whip terminal resize native dispatch';
+const RESIZE_TO_FIRST_FRAME = 'Whip terminal resize to first frame';
+const RESIZE_FRAME_TO_VISIBLE = 'Whip terminal resize frame to visible';
+const RESIZE_TO_VISIBLE = 'Whip terminal resize to visible';
+const RESIZE_SUPERSEDED = 'Whip terminal resize superseded';
 const TRACE_TIMEOUT_MS = 10_000;
 const INBOUND_TRACE_DISABLED_POLL_MS = 1_000;
 
@@ -52,8 +64,35 @@ export type TerminalInputTrace = {
   timeout: ReturnType<typeof setTimeout>;
 };
 
+export type TerminalRendererReadinessTrace = {
+  readiness: AppPerformanceTrace;
+  xtermCookie: number;
+  sizeCookie: number;
+  rendererReady: boolean;
+  sizeReady: boolean;
+};
+
+export type TerminalResizeTrace = {
+  targetKey: string;
+  request: AppPerformanceTrace;
+  sourceName: string;
+  sourceCookie: number;
+  waitCookie: number | null;
+  nativeCookie: number | null;
+  firstFrameCookie: number | null;
+  visibleCookie: number | null;
+  frameToVisibleCookie: number | null;
+  queuedForFrame: boolean;
+  ended: boolean;
+  timeout: ReturnType<typeof setTimeout> | null;
+};
+
 const pendingByTarget = new Map<string, TerminalInputTrace[]>();
 const pendingByVisibleCookie = new Map<number, TerminalInputTrace>();
+const pendingTabSelections = new Map<string, AppPerformanceTrace>();
+const pendingResizeByTarget = new Map<string, TerminalResizeTrace[]>();
+const pendingResizeByVisibleCookie = new Map<number, TerminalResizeTrace>();
+let resizeEventSequence = 0;
 
 type TerminalInboundTrace = {
   cookie: number;
@@ -194,6 +233,10 @@ type TerminalInboundGlobal = typeof globalThis & {
     decodeComplete: (cookie: number | null) => void;
     abandon: (cookie: number | null) => void;
   };
+  __whipHerdrPerformanceTrace?: {
+    begin: (name: string) => AppPerformanceTrace | null;
+    end: (trace: AppPerformanceTrace | null) => void;
+  };
 };
 
 // react-native-russh and the private Herdr codec cannot import app services.
@@ -220,6 +263,13 @@ export function endAppPerformanceTrace(trace: AppPerformanceTrace | null): void 
   performanceTrace?.endAsyncSection(trace.name, trace.cookie);
 }
 
+// The private SSH adapter cannot import app services. This trace-only hook keeps
+// channel/handshake markers optional and allocation-free when native tracing is off.
+(globalThis as TerminalInboundGlobal).__whipHerdrPerformanceTrace = {
+  begin: beginAppPerformanceTrace,
+  end: endAppPerformanceTrace,
+};
+
 export async function withAppPerformanceTrace<Result>(
   name: string,
   operation: () => Result | Promise<Result>,
@@ -230,6 +280,241 @@ export async function withAppPerformanceTrace<Result>(
   } finally {
     endAppPerformanceTrace(trace);
   }
+}
+
+/** Begins at the tab-selection state update and ends when its renderer entry is reached. */
+export function terminalTabSelectionStarted(terminalId: string): void {
+  const trace = beginAppPerformanceTrace(TAB_SELECTION_TO_RENDERER);
+  if (!trace) return;
+  endAppPerformanceTrace(pendingTabSelections.get(terminalId) || null);
+  pendingTabSelections.set(terminalId, trace);
+}
+
+export function terminalRendererEntryReached(terminalId: string): void {
+  const trace = pendingTabSelections.get(terminalId) || null;
+  if (!trace) return;
+  pendingTabSelections.delete(terminalId);
+  endAppPerformanceTrace(trace);
+}
+
+/** Cold-only renderer entry timing; no object is allocated while tracing is disabled. */
+export function beginTerminalRendererReadinessTrace(): TerminalRendererReadinessTrace | null {
+  const readiness = beginAppPerformanceTrace(RENDERER_READINESS);
+  if (!readiness) return null;
+  return {
+    readiness,
+    xtermCookie: beginAsyncEvent(RENDERER_XTERM_READY),
+    sizeCookie: beginAsyncEvent(RENDERER_INITIAL_SIZE),
+    rendererReady: false,
+    sizeReady: false,
+  };
+}
+
+function maybeEndRendererReadiness(trace: TerminalRendererReadinessTrace | null): void {
+  if (trace?.rendererReady && trace.sizeReady) endAppPerformanceTrace(trace.readiness);
+}
+
+export function terminalRendererBecameReady(
+  trace: TerminalRendererReadinessTrace | null,
+): void {
+  if (!trace || trace.rendererReady) return;
+  trace.rendererReady = true;
+  endAsyncEvent(RENDERER_XTERM_READY, trace.xtermCookie);
+  maybeEndRendererReadiness(trace);
+}
+
+export function terminalRendererSizeBecameReady(
+  trace: TerminalRendererReadinessTrace | null,
+): void {
+  if (!trace || trace.sizeReady) return;
+  trace.sizeReady = true;
+  endAsyncEvent(RENDERER_INITIAL_SIZE, trace.sizeCookie);
+  maybeEndRendererReadiness(trace);
+}
+
+export function abandonTerminalRendererReadinessTrace(
+  trace: TerminalRendererReadinessTrace | null,
+): void {
+  if (!trace) return;
+  if (!trace.rendererReady) endAsyncEvent(RENDERER_XTERM_READY, trace.xtermCookie);
+  if (!trace.sizeReady) endAsyncEvent(RENDERER_INITIAL_SIZE, trace.sizeCookie);
+  endAppPerformanceTrace(trace.readiness);
+}
+
+export function beginTerminalColdInputWait(): AppPerformanceTrace | null {
+  return beginAppPerformanceTrace(COLD_INPUT_TO_WRITABLE);
+}
+
+function resizeDetailName(
+  source: 'fit' | 'xterm',
+  columns: number,
+  rows: number,
+  cellWidthPx: number,
+  cellHeightPx: number,
+  localFitMs?: number,
+  webViewQueueMs?: number,
+): string {
+  resizeEventSequence += 1;
+  const local = source === 'fit' && Number.isFinite(localFitMs)
+    ? ` local-fit=${Math.max(0, localFitMs || 0).toFixed(2)}ms`
+    : '';
+  const queue = Number.isFinite(webViewQueueMs)
+    ? ` webview-queue=${Math.max(0, webViewQueueMs || 0).toFixed(1)}ms`
+    : '';
+  return `Whip terminal resize event: #${resizeEventSequence} ${source} ${columns}x${rows} cell=${cellWidthPx}x${cellHeightPx}${local}${queue}`;
+}
+
+/** Begins when TerminalRendererHost receives an xterm/fit resize message. */
+export function beginTerminalResizeTrace(
+  targetKey: string,
+  source: 'fit' | 'xterm',
+  columns: number,
+  rows: number,
+  cellWidthPx: number,
+  cellHeightPx: number,
+  localFitMs?: number,
+  webViewQueueMs?: number,
+): TerminalResizeTrace | null {
+  const request = beginAppPerformanceTrace(RESIZE_REQUEST);
+  if (!request) return null;
+  const sourceName = `Whip terminal resize: ${source}`;
+  const sourceCookie = beginAsyncEvent(sourceName);
+  const detailName = resizeDetailName(
+    source,
+    columns,
+    rows,
+    cellWidthPx,
+    cellHeightPx,
+    localFitMs,
+    webViewQueueMs,
+  );
+  const detailCookie = beginAsyncEvent(detailName);
+  endAsyncEvent(detailName, detailCookie);
+  return {
+    targetKey,
+    request,
+    sourceName,
+    sourceCookie,
+    waitCookie: null,
+    nativeCookie: null,
+    firstFrameCookie: null,
+    visibleCookie: null,
+    frameToVisibleCookie: null,
+    queuedForFrame: false,
+    ended: false,
+    timeout: null,
+  };
+}
+
+/** Ends immediately before Whip attempts (or deliberately declines) the resize. */
+export function terminalResizeRequestReady(trace: TerminalResizeTrace | null): void {
+  if (trace) endAppPerformanceTrace(trace.request);
+}
+
+/** Preserves the existing fit/xterm operation duration and source distinction. */
+export function terminalResizeRequestHandled(trace: TerminalResizeTrace | null): void {
+  if (!trace) return;
+  endAsyncEvent(trace.sourceName, trace.sourceCookie);
+}
+
+export function terminalResizeWaitStarted(trace: TerminalResizeTrace | null): void {
+  if (!trace || trace.ended || trace.waitCookie !== null) return;
+  trace.waitCookie = beginAsyncEvent(RESIZE_WAIT_FOR_WRITABLE);
+}
+
+function endTerminalResizeWait(trace: TerminalResizeTrace): void {
+  if (trace.waitCookie === null) return;
+  endAsyncEvent(RESIZE_WAIT_FOR_WRITABLE, trace.waitCookie);
+  trace.waitCookie = null;
+}
+
+/** Begins at the exact call into the native Herdr resize enqueue path. */
+export function terminalResizeNativeDispatchStarted(trace: TerminalResizeTrace | null): void {
+  if (!trace || trace.ended || trace.nativeCookie !== null) return;
+  endTerminalResizeWait(trace);
+  trace.nativeCookie = beginAsyncEvent(RESIZE_NATIVE_DISPATCH);
+  trace.firstFrameCookie = beginAsyncEvent(RESIZE_TO_FIRST_FRAME);
+  trace.visibleCookie = beginAsyncEvent(RESIZE_TO_VISIBLE);
+  const queue = pendingResizeByTarget.get(trace.targetKey) || [];
+  queue.push(trace);
+  pendingResizeByTarget.set(trace.targetKey, queue);
+  trace.queuedForFrame = true;
+  trace.timeout = setTimeout(() => finishTerminalResizeTrace(trace), TRACE_TIMEOUT_MS);
+}
+
+export function terminalResizeNativeDispatchEnded(
+  trace: TerminalResizeTrace | null,
+  success: boolean,
+): void {
+  if (!trace || trace.ended) return;
+  if (trace.nativeCookie !== null) {
+    endAsyncEvent(RESIZE_NATIVE_DISPATCH, trace.nativeCookie);
+    trace.nativeCookie = null;
+  }
+  if (!success) finishTerminalResizeTrace(trace);
+}
+
+function removePendingResize(trace: TerminalResizeTrace): void {
+  if (trace.queuedForFrame) {
+    const queue = pendingResizeByTarget.get(trace.targetKey);
+    const next = queue?.filter(item => item !== trace) || [];
+    if (next.length) pendingResizeByTarget.set(trace.targetKey, next);
+    else pendingResizeByTarget.delete(trace.targetKey);
+  }
+  if (trace.visibleCookie !== null) pendingResizeByVisibleCookie.delete(trace.visibleCookie);
+}
+
+function finishTerminalResizeTrace(trace: TerminalResizeTrace): void {
+  if (trace.ended) return;
+  trace.ended = true;
+  endAppPerformanceTrace(trace.request);
+  endTerminalResizeWait(trace);
+  if (trace.nativeCookie !== null) endAsyncEvent(RESIZE_NATIVE_DISPATCH, trace.nativeCookie);
+  if (trace.firstFrameCookie !== null) endAsyncEvent(RESIZE_TO_FIRST_FRAME, trace.firstFrameCookie);
+  if (trace.frameToVisibleCookie !== null) {
+    endAsyncEvent(RESIZE_FRAME_TO_VISIBLE, trace.frameToVisibleCookie);
+  }
+  if (trace.visibleCookie !== null) endAsyncEvent(RESIZE_TO_VISIBLE, trace.visibleCookie);
+  removePendingResize(trace);
+  if (trace.timeout) clearTimeout(trace.timeout);
+  trace.timeout = null;
+}
+
+/** Marks a cold request replaced before any native resize was dispatched. */
+export function terminalResizeSuperseded(trace: TerminalResizeTrace | null): void {
+  if (!trace || trace.ended) return;
+  const cookie = beginAsyncEvent(RESIZE_SUPERSEDED);
+  endAsyncEvent(RESIZE_SUPERSEDED, cookie);
+  finishTerminalResizeTrace(trace);
+}
+
+export function abandonTerminalResizeTrace(trace: TerminalResizeTrace | null): void {
+  if (trace) finishTerminalResizeTrace(trace);
+}
+
+/** Claims the first renderer-bound terminal frame after a native resize dispatch. */
+export function terminalResizeFrameReceived(targetKey: string): number | null {
+  const queue = pendingResizeByTarget.get(targetKey);
+  let trace: TerminalResizeTrace | undefined;
+  while ((trace = queue?.shift())) {
+    if (!trace.ended) break;
+    trace = undefined;
+  }
+  if (!queue?.length) pendingResizeByTarget.delete(targetKey);
+  if (!trace || trace.visibleCookie === null) return null;
+  trace.queuedForFrame = false;
+  if (trace.firstFrameCookie !== null) {
+    endAsyncEvent(RESIZE_TO_FIRST_FRAME, trace.firstFrameCookie);
+    trace.firstFrameCookie = null;
+  }
+  trace.frameToVisibleCookie = beginAsyncEvent(RESIZE_FRAME_TO_VISIBLE);
+  pendingResizeByVisibleCookie.set(trace.visibleCookie, trace);
+  return trace.visibleCookie;
+}
+
+export function terminalResizeFrameRendered(visibleCookie: number): void {
+  const trace = pendingResizeByVisibleCookie.get(visibleCookie);
+  if (trace) finishTerminalResizeTrace(trace);
 }
 
 function endWrite(trace: TerminalInputTrace, _result: 'ok' | 'error' | 'timeout'): void {
