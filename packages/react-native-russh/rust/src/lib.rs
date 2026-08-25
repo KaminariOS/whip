@@ -47,6 +47,8 @@ type UnixSocketChannels = RwLock<HashMap<(String, String), UnixSocketChannelHand
 
 const TERMINAL_INBOUND_RUST_FRAME_DELIVERY: &CStr = c"Whip terminal inbound Rust frame delivery";
 const TERMINAL_INBOUND_RUST_FRAME_RECEIVED: &CStr = c"Whip terminal inbound Rust frame received";
+const EXEC_INBOUND_RUST_CHUNK_DELIVERY: &CStr = c"Whip exec inbound Rust chunk delivery";
+const EXEC_INBOUND_RUST_CHUNK_RECEIVED: &CStr = c"Whip exec inbound Rust chunk received";
 
 #[cfg(target_os = "android")]
 struct AndroidTraceSlice(bool);
@@ -2144,6 +2146,7 @@ fn emit_exec_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>) {
         .unwrap_or_default()
     });
     if let Some(sink) = sink {
+        let _trace = AndroidTraceSlice::begin(EXEC_INBOUND_RUST_CHUNK_DELIVERY);
         sink.exec_channel_data(key.to_owned(), channel_id.to_owned(), bytes);
     }
     if let (Some(callback), Some(json)) = (callback, legacy_json) {
@@ -2189,11 +2192,16 @@ async fn open_exec_channel(params: &Value) -> Result<Value, TransportError> {
                 read = stream.read(&mut buffer) => match read {
                     Ok(0) => break ("remote exec channel reached EOF".to_owned(), false),
                     Err(error) => break (format!("remote exec-channel read failed: {error}"), false),
-                    Ok(count) => emit_exec_channel_data(
-                        &key,
-                        &channel_id,
-                        buffer[..count].to_vec(),
-                    ),
+                    Ok(count) => {
+                        {
+                            let _trace = AndroidTraceSlice::begin(EXEC_INBOUND_RUST_CHUNK_RECEIVED);
+                        }
+                        emit_exec_channel_data(
+                            &key,
+                            &channel_id,
+                            buffer[..count].to_vec(),
+                        );
+                    }
                 },
                 command = receiver.recv() => match command {
                     Some(StreamCommand::Write(data)) => if let Err(error) = stream.write_all(&data).await {

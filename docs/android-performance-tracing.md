@@ -74,8 +74,11 @@ Terminal interaction slices:
 
 Passive inbound terminal slices (these do not require an input event):
 
-- `Whip terminal inbound Rust frame delivery`: starts immediately after Rust
-  finishes a length-prefixed frame and includes synchronous event-sink delivery.
+- `Whip terminal inbound Rust frame received`: an instant-sized synchronous
+  slice emitted immediately after Rust finishes a length-prefixed frame. It
+  ends before the bounded delivery queue can await capacity.
+- `Whip terminal inbound Rust frame delivery`: runs on the owned-buffer delivery
+  worker and includes synchronous event-sink delivery.
 - `Whip terminal inbound native to JS`: the generated UniFFI C++ call around
   `invokeBlocking`; a spike here is direct evidence that the socket task is
   waiting for JS callback entry or synchronous JS callback work.
@@ -98,13 +101,31 @@ Passive inbound terminal slices (these do not require an input event):
   span. Its cookie is carried with the frame without copying terminal bytes.
 - `Whip terminal resize: fit` and `Whip terminal resize: xterm`: count the two
   resize message sources so redundant fit/onResize cycles are visible.
+- `Whip exec inbound Rust chunk received`: an instant-sized slice immediately
+  after a persistent SSH exec channel reads a chunk. Codex transcript streams
+  use this path rather than the terminal Unix-socket path.
+- `Whip exec inbound Rust chunk delivery`: synchronous delivery of an owned
+  exec-channel chunk to the UniFFI event sink.
+- `Whip exec inbound native to JS`: the generated UniFFI blocking callback wait
+  for `exec_channel_data`. A burst here can occupy the JS thread and delay an
+  otherwise decoupled terminal delivery worker.
 
-The native callback marker is a documented diagnostic edit in generated
+Background-work correlation slices:
+
+- `Whip host latency state apply`: starts when a completed RTT probe publishes
+  its low-priority React state update and ends after that state commits. Terminal
+  callbacks should remain short even when this slice spans a long transition.
+- `Whip terminal offline cache refresh`: covers the asynchronous 15-second pane
+  cache refresh, including the remote read and the resulting state update.
+- `Whip terminal offline cache decode`: isolates the synchronous conversion of
+  the returned pane output into the cached terminal transcript.
+
+The native callback markers are documented diagnostic edits in generated
 `packages/react-native-russh/cpp/generated/react_native_russh.cpp`, because the
 current UniFFI generator exposes no callback wrapper/template hook. Regenerating
-the binding must reapply the small `AndroidTraceSection` wrapper around method 1
-(`unix_socket_channel_data`). It intentionally retains `invokeBlocking` and its
-RustBuffer lifetime semantics.
+the binding must reapply the small `AndroidTraceSection` wrappers around method
+1 (`unix_socket_channel_data`) and method 2 (`exec_channel_data`). They
+intentionally retain `invokeBlocking` and their RustBuffer lifetime semantics.
 
 For the debug-only render-drop A/B experiment, rebuild the debug app with:
 
@@ -130,7 +151,16 @@ the app cost as negligible.
 
 The passive diagnostic adds Android-only markers to the repository-owned
 `react-native-russh` package at frame completion and at the generated callback
-boundary. It does not change transport behavior or buffer ownership.
+boundary. The callback itself retains its blocking buffer-ownership contract.
+
+Inbound callback delivery is decoupled from socket I/O. Each Unix-socket
+channel splits its read and write halves, queues complete owned frames in order,
+and invokes the existing blocking UniFFI callback from a delivery worker. The
+queue is bounded to 64 frames and 8 MiB of completed-frame data; a frame larger
+than 8 MiB reserves the entire byte budget until its callback returns. When the
+queue fills, only the inbound reader backpressures. Outbound input, resize, and
+close commands continue on the independent writer task. `invokeBlocking` is
+retained so RustBuffer ownership remains valid through callback return.
 
 The terminal protocol cannot identify which PTY output byte was caused by a
 specific input byte. The trace therefore pairs each input with the first subsequent

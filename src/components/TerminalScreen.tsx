@@ -22,7 +22,12 @@ import {
 } from '../lib/terminalRenderer';
 import type { TerminalProtocolState } from '../lib/terminalBridge';
 import type { TerminalPreferences } from '../services/devicePreferences';
-import { beginTerminalInputTrace, endTerminalWriteTrace } from '../services/performanceTrace';
+import {
+  beginAppPerformanceTrace,
+  beginTerminalInputTrace,
+  endAppPerformanceTrace,
+  endTerminalWriteTrace,
+} from '../services/performanceTrace';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
@@ -419,10 +424,17 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     const refreshCache = async () => {
       if (requestInFlight) return;
       requestInFlight = true;
+      const refreshTrace = beginAppPerformanceTrace('Whip terminal offline cache refresh');
       try {
         const output = await cacheTargetClient.readPane(cacheTargetPaneId, cacheLineLimit);
         if (cancelled || !output) return;
-        const transcript = terminalTranscript(output, cacheLineLimit);
+        const decodeTrace = beginAppPerformanceTrace('Whip terminal offline cache decode');
+        let transcript: string;
+        try {
+          transcript = terminalTranscript(output, cacheLineLimit);
+        } finally {
+          endAppPerformanceTrace(decodeTrace);
+        }
         offlineBackendRef.current.updateTranscript(cacheTargetKey, transcript);
         if (activeTargetRef.current?.key === cacheTargetKey) {
           setOfflineBackendRevision(value => value + 1);
@@ -431,6 +443,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
         // The existing cache remains readable when its refresh loses the network.
       } finally {
         requestInFlight = false;
+        endAppPerformanceTrace(refreshTrace);
       }
     };
     refreshCache();

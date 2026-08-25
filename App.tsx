@@ -1,6 +1,7 @@
 import './global.css';
 
 import {
+  startTransition,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -332,6 +333,7 @@ function AppContent() {
   const restoreStarted = useRef(false);
   const startupTraceRef = useRef<AppPerformanceTrace | null>(null);
   const tabMountTracesRef = useRef(new Map<AppTab, AppPerformanceTrace>());
+  const latencyStateApplyTracesRef = useRef(new Set<AppPerformanceTrace>());
   const deferredStartupStorageRef = useRef<StartupStorageSnapshot | null>(null);
   const deferredStartupFallbackRef = useRef(false);
   const deferredStartupHydrationStartedRef = useRef(false);
@@ -462,6 +464,13 @@ function AppContent() {
   alertsEnabledRef.current = alertsEnabled;
   persistentAlertDurationSecondsRef.current = persistentAlertDurationSeconds;
   ttsEnabledRef.current = ttsEnabled;
+
+  useEffect(() => {
+    for (const trace of latencyStateApplyTracesRef.current) {
+      endAppPerformanceTrace(trace);
+    }
+    latencyStateApplyTracesRef.current.clear();
+  }, [liveSessions]);
 
   useEffect(() => {
     const retained = retainedBackgroundRuntimes;
@@ -627,6 +636,8 @@ function AppContent() {
     endAppPerformanceTrace(startupTraceRef.current);
     for (const trace of tabMountTracesRef.current.values()) endAppPerformanceTrace(trace);
     tabMountTracesRef.current.clear();
+    for (const trace of latencyStateApplyTracesRef.current) endAppPerformanceTrace(trace);
+    latencyStateApplyTracesRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -971,7 +982,9 @@ function AppContent() {
     } as LiveRuntime;
     runtime.refresh = createRefreshCoordinator(
       async () => {
-        setLiveSessions(current => beginLiveHostSync(current, sessionId).state);
+        startTransition(() => {
+          setLiveSessions(current => beginLiveHostSync(current, sessionId).state);
+        });
         // Measure device-to-host network RTT separately from the much larger
         // SSH/Herdr snapshot operation so control-plane work cannot inflate it.
         const session = findLiveHostSession(liveSessionsRef.current, sessionId);
@@ -1034,23 +1047,25 @@ function AppContent() {
           }
         }
         runtime.previousStatuses = statuses;
-        setLiveSessions(current => {
-          const session = findLiveHostSession(current, sessionId);
-          if (!session) return current;
-          const updated = applyLiveHostSnapshot(
-            current,
-            sessionId,
-            session.sync.generation,
-            snapshot,
-            new Date().toISOString(),
-            latencyMs,
-          );
-          if (updated === current) return current;
-          return updateLiveHostTerminals(
-            updated,
-            sessionId,
-            terminals => reconcileTerminalSessions(terminals, snapshot.panes),
-          );
+        startTransition(() => {
+          setLiveSessions(current => {
+            const session = findLiveHostSession(current, sessionId);
+            if (!session) return current;
+            const updated = applyLiveHostSnapshot(
+              current,
+              sessionId,
+              session.sync.generation,
+              snapshot,
+              new Date().toISOString(),
+              latencyMs,
+            );
+            if (updated === current) return current;
+            return updateLiveHostTerminals(
+              updated,
+              sessionId,
+              terminals => reconcileTerminalSessions(terminals, snapshot.panes),
+            );
+          });
         });
       },
     );
@@ -1159,7 +1174,18 @@ function AppContent() {
             latencyMs,
           });
         }
-        setLiveSessions(current => applyLiveHostLatency(current, sessionId, latencyMs));
+        const trace = beginAppPerformanceTrace('Whip host latency state apply');
+        if (trace) latencyStateApplyTracesRef.current.add(trace);
+        startTransition(() => {
+          setLiveSessions(current => {
+            const updated = applyLiveHostLatency(current, sessionId, latencyMs);
+            if (updated === current && trace) {
+              endAppPerformanceTrace(trace);
+              latencyStateApplyTracesRef.current.delete(trace);
+            }
+            return updated;
+          });
+        });
       })
       .catch(error => {
         if (runtimes.current.get(sessionId) !== runtime) return;

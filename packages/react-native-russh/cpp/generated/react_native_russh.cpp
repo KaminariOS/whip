@@ -2274,6 +2274,10 @@ makeCallbackFunction( // uniffi::react_native_russh::cb::callbackinterfacereactn
         };
     // We'll then call that lambda from the callInvoker which will
     // look after calling it on the correct thread.
+    // Whip diagnostic patch: exec-channel data carries transcript/history
+    // chunks and uses the same blocking RustBuffer ownership contract as
+    // terminal data. Reapply this marker if UniFFI bindings are regenerated.
+    AndroidTraceSection trace("Whip exec inbound native to JS");
     callInvoker->invokeBlocking(rt, jsLambda);
   };
   return callback;

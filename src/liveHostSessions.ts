@@ -217,20 +217,30 @@ export function updateLiveHostConnection(
     const losesFreshness = update.status === 'reconnecting'
       || update.status === 'disconnected'
       || update.status === 'error';
+    const sync = losesFreshness
+      ? {
+          ...session.sync,
+          status: session.sync.status === 'synced' ? 'stale' as const : session.sync.status,
+          latencyMs: null,
+          latencyWarning: initialLatencyWarningState,
+        }
+      : session.sync;
+
+    if (
+      session.status === update.status
+      && session.connectionError === connectionError
+      && session.reconnectAttempt === reconnectAttempt
+      && session.sync === sync
+    ) {
+      return session;
+    }
 
     return {
       ...session,
       status: update.status,
       connectionError,
       reconnectAttempt,
-      sync: losesFreshness
-        ? {
-            ...session.sync,
-            status: session.sync.status === 'synced' ? 'stale' : session.sync.status,
-            latencyMs: null,
-            latencyWarning: initialLatencyWarningState,
-          }
-        : session.sync,
+      sync,
     };
   });
 }

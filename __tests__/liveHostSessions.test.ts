@@ -184,6 +184,13 @@ describe('live host session state', () => {
     });
   });
 
+  test('preserves state identity for a redundant ready connection update', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const ready = updateLiveHostConnection(opened, 'live-1', { status: 'ready' });
+
+    expect(updateLiveHostConnection(ready, 'live-1', { status: 'ready' })).toBe(ready);
+  });
+
   test('rejects stale snapshot responses and stale sync failures', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const first = beginLiveHostSync(opened, 'live-1');
