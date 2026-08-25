@@ -110,6 +110,7 @@ export interface SettingsSectionProps {
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
+  developerOptionsEnabled: boolean;
   sshQrPairingEnabled: boolean;
   language: LanguagePreference;
   keepScreenOn: boolean;
@@ -129,6 +130,7 @@ export interface SettingsSectionProps {
   onAppBackgroundImageChange: (value: string | null) => void;
   onAppBackgroundDimmingChange: (value: number) => void;
   onAppGlassEnabledChange: (value: boolean) => void;
+  onDeveloperOptionsEnabledChange: (value: boolean) => void;
   onSshQrPairingEnabledChange: (value: boolean) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
@@ -416,6 +418,16 @@ export function SettingsSection(props: SettingsSectionProps) {
           disabled={!props.terminalPreferences.backgroundImageUri}
           onChange={backgroundDimming => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming })}
           divided
+        />
+      </GlassSurface>
+
+      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.developer')}</Text>
+      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+        <SettingRow
+          title={t('settings.developerOptions')}
+          copy={t('settings.developerOptionsCopy')}
+          value={props.developerOptionsEnabled}
+          onChange={props.onDeveloperOptionsEnabledChange}
         />
       </GlassSurface>
 

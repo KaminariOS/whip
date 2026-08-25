@@ -69,6 +69,7 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.appBackgroundImageUri).toBeNull();
   expect(defaultDevicePreferences.appBackgroundDimming).toBe(60);
   expect(defaultDevicePreferences.appGlassEnabled).toBe(false);
+  expect(defaultDevicePreferences.developerOptionsEnabled).toBe(false);
   expect(defaultDevicePreferences.sshQrPairingEnabled).toBe(false);
   expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.biometricForKeys).toBe(false);
@@ -100,6 +101,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     appBackgroundImageUri: null,
     appBackgroundDimming: 60,
     appGlassEnabled: false,
+    developerOptionsEnabled: false,
     sshQrPairingEnabled: false,
     language: 'system',
     keepScreenOn: false,

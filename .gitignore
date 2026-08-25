@@ -43,6 +43,8 @@ local.properties
 node_modules/
 npm-debug.log
 yarn-error.log
+feedback-worker/.dev.vars*
+.wrangler/
 
 # fastlane
 #

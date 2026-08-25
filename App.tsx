@@ -134,6 +134,7 @@ import {
   prepareAlerts,
 } from './src/services/alerts';
 import { authenticateAppAccess } from './src/services/appAuthentication';
+import { setAppLogCaptureEnabled } from './src/services/appLogs';
 import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
 import { deleteAgentChatCachesForHost } from './src/services/agentChatCache';
 import {
@@ -152,6 +153,7 @@ import {
   isSlowHostLatency,
   recordHostLatencyFailure,
   recordSlowHostLatency,
+  setLatencyDiagnosticsEnabled,
   type HostLatencyMeasurement,
 } from './src/services/latencyDiagnostics';
 import { networkErrorMessage, recordNetworkDiagnostic } from './src/services/networkDiagnostics';
@@ -432,6 +434,7 @@ function AppContent() {
   const [appBackgroundImageUri, setAppBackgroundImageUri] = useState(defaultDevicePreferences.appBackgroundImageUri);
   const [appBackgroundDimming, setAppBackgroundDimming] = useState(defaultDevicePreferences.appBackgroundDimming);
   const [appGlassEnabled, setAppGlassEnabled] = useState(defaultDevicePreferences.appGlassEnabled);
+  const [developerOptionsEnabled, setDeveloperOptionsEnabled] = useState(defaultDevicePreferences.developerOptionsEnabled);
   const [sshQrPairingEnabled, setSshQrPairingEnabled] = useState(defaultDevicePreferences.sshQrPairingEnabled);
   const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
@@ -462,6 +465,7 @@ function AppContent() {
     setAppBackgroundImageUri(preferences.appBackgroundImageUri);
     setAppBackgroundDimming(preferences.appBackgroundDimming);
     setAppGlassEnabled(preferences.appGlassEnabled);
+    setDeveloperOptionsEnabled(preferences.developerOptionsEnabled);
     setSshQrPairingEnabled(preferences.sshQrPairingEnabled);
     setLanguage(preferences.language);
     setKeepScreenOn(preferences.keepScreenOn);
@@ -696,6 +700,7 @@ function AppContent() {
       appBackgroundImageUri,
       appBackgroundDimming,
       appGlassEnabled,
+      developerOptionsEnabled,
       sshQrPairingEnabled,
       language,
       keepScreenOn,
@@ -705,7 +710,13 @@ function AppContent() {
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, appGlassEnabled, biometricForKeys, biometricOnResume, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, sshQrPairingEnabled, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, appGlassEnabled, biometricForKeys, biometricOnResume, developerOptionsEnabled, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, sshQrPairingEnabled, terminalControlUsage, terminalPreferences, ttsEnabled]);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+    setAppLogCaptureEnabled(developerOptionsEnabled);
+    setLatencyDiagnosticsEnabled(developerOptionsEnabled).catch(() => undefined);
+  }, [developerOptionsEnabled, preferencesLoaded]);
 
   useEffect(() => {
     if (!terminalHistoryLoaded) return;
@@ -2433,6 +2444,7 @@ function AppContent() {
               appBackgroundImageUri={appBackgroundImageUri}
               appBackgroundDimming={appBackgroundDimming}
               appGlassEnabled={appGlassEnabled}
+              developerOptionsEnabled={developerOptionsEnabled}
               sshQrPairingEnabled={sshQrPairingEnabled}
               language={language}
               keepScreenOn={keepScreenOn}
@@ -2471,6 +2483,7 @@ function AppContent() {
               onAppBackgroundImageChange={setAppBackgroundImageUri}
               onAppBackgroundDimmingChange={setAppBackgroundDimming}
               onAppGlassEnabledChange={setAppGlassEnabled}
+              onDeveloperOptionsEnabledChange={setDeveloperOptionsEnabled}
               onSshQrPairingEnabledChange={setSshQrPairingEnabled}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}

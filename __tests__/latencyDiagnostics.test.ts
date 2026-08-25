@@ -1,6 +1,6 @@
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn() },
+  default: { getItem: jest.fn(), removeItem: jest.fn(), setItem: jest.fn() },
 }));
 
 import type AsyncStorageType from '@react-native-async-storage/async-storage';
@@ -42,6 +42,7 @@ test('persists only slow samples and first-class failure details', async () => {
   storage.getItem.mockResolvedValue(null);
   const diagnostics =
     require('../src/services/latencyDiagnostics') as typeof import('../src/services/latencyDiagnostics');
+  await diagnostics.setLatencyDiagnosticsEnabled(true);
 
   await expect(diagnostics.recordSlowHostLatency('host-1', {
     latencyMs: 4,
@@ -73,6 +74,7 @@ test('retains at most the latest 100 anomalous samples', async () => {
   mockedStorage().getItem.mockResolvedValue(null);
   const diagnostics =
     require('../src/services/latencyDiagnostics') as typeof import('../src/services/latencyDiagnostics');
+  await diagnostics.setLatencyDiagnosticsEnabled(true);
 
   for (let index = 0; index < 105; index += 1) {
     await diagnostics.recordSlowHostLatency(`host-${index}`, {
@@ -88,4 +90,25 @@ test('retains at most the latest 100 anomalous samples', async () => {
   expect(entries[0]).toMatchObject({ sessionId: 'host-5' });
   expect(entries[99]).toMatchObject({ sessionId: 'host-104' });
   await diagnostics.flushLatencyDiagnosticWrites();
+});
+
+test('does not collect while disabled and removes previously persisted diagnostics', async () => {
+  const storage = mockedStorage();
+  const diagnostics =
+    require('../src/services/latencyDiagnostics') as typeof import('../src/services/latencyDiagnostics');
+
+  await expect(diagnostics.recordSlowHostLatency('host-1', {
+    latencyMs: 500,
+    sshRttMs: 500,
+    totalMs: 501,
+    dispatchMs: 1,
+  })).resolves.toBe(false);
+  expect(storage.getItem).not.toHaveBeenCalled();
+  expect(diagnostics.getLatencyDiagnosticEntries()).toEqual([]);
+
+  await diagnostics.setLatencyDiagnosticsEnabled(false);
+  expect(storage.removeItem).toHaveBeenCalledWith(
+    diagnostics.LATENCY_DIAGNOSTICS_STORAGE_KEY,
+  );
+  expect(storage.setItem).not.toHaveBeenCalled();
 });

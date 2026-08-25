@@ -1,9 +1,9 @@
-import './src/installAppLogCapture';
 import './src/logBoxWarnings';
 import { registerRootComponent } from 'expo';
 import { AppRegistry, DeviceEventEmitter } from 'react-native';
 import './src/i18n';
 import App from './App';
+import { initializeRevenueCat } from './src/services/revenueCat';
 
 const BACKGROUND_MONITORING_TASK = 'HerdrBackgroundMonitoring';
 const BACKGROUND_MONITORING_STOP_EVENT = 'HerdrBackgroundMonitoringStopped';
@@ -14,10 +14,14 @@ DeviceEventEmitter.addListener(BACKGROUND_MONITORING_STOP_EVENT, () => {
   backgroundMonitoringStops.clear();
 });
 
-AppRegistry.registerHeadlessTask(BACKGROUND_MONITORING_TASK, () => () => (
-  new Promise(resolve => {
-    backgroundMonitoringStops.add(resolve);
-  })
-));
+initializeRevenueCat().catch(() => undefined);
+
+AppRegistry.registerHeadlessTask(
+  BACKGROUND_MONITORING_TASK,
+  () => () =>
+    new Promise(resolve => {
+      backgroundMonitoringStops.add(resolve);
+    }),
+);
 
 registerRootComponent(App);

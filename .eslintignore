@@ -3,5 +3,6 @@ android/app/build/
 modules/whip-terminal-assets/ios/TerminalAssets/
 dist/
 launch-videos/
+feedback-worker/worker-configuration.d.ts
 packages/react-native-whip-ssh/lib/
 .codex-*

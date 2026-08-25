@@ -424,6 +424,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/0e8926759dccd4a3.txt"),
   },
   {
+    id: "npm-react-native-purchases-10-8-0",
+    category: "npm",
+    projectName: "react-native-purchases",
+    sourceUrl: "https://github.com/revenuecat/react-native-purchases",
+    attribution: "Direct npm dependency · version 10.8.0",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/b175672dbc142198.txt"),
+  },
+  {
     id: "npm-react-native-reanimated-4-5-1",
     category: "npm",
     projectName: "react-native-reanimated",

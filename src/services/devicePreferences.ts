@@ -68,6 +68,7 @@ export interface DevicePreferences {
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
+  developerOptionsEnabled: boolean;
   sshQrPairingEnabled: boolean;
   language: LanguagePreference;
   keepScreenOn: boolean;
@@ -89,6 +90,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   appBackgroundImageUri: null,
   appBackgroundDimming: 60,
   appGlassEnabled: false,
+  developerOptionsEnabled: false,
   sshQrPairingEnabled: false,
   language: 'system',
   keepScreenOn: false,
@@ -199,6 +201,7 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         defaultDevicePreferences.appBackgroundDimming,
       ),
       appGlassEnabled: parsed.appGlassEnabled === true,
+      developerOptionsEnabled: parsed.developerOptionsEnabled === true,
       sshQrPairingEnabled: parsed.sshQrPairingEnabled === true,
       language: isLanguagePreference(parsed.language)
         ? parsed.language

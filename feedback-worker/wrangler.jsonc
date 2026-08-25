@@ -1,0 +1,22 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "whip-feedback-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "secrets": {
+    "required": ["REVENUECAT_WEBHOOK_AUTHORIZATION"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "whip-feedback",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 }
+  }
+}

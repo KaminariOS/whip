@@ -18,6 +18,7 @@ let nextId = 1;
 let installed = false;
 let notificationScheduled = false;
 let notifyingListeners = false;
+let collectionEnabled = false;
 
 const consoleMethods: readonly AppLogLevel[] = [
   'debug',
@@ -44,14 +45,26 @@ export function installAppLogCapture(): void {
     const original = console[level].bind(console);
     console[level] = (...args: unknown[]) => {
       try {
-        if (!notifyingListeners) appendAppLog(level, args);
+        if (collectionEnabled && !notifyingListeners) appendAppLog(level, args);
       } finally {
         original(...args);
       }
     };
   }
 
-  appendAppLog('info', ['App log capture started.']);
+  if (collectionEnabled) appendAppLog('info', ['App log capture started.']);
+}
+
+export function setAppLogCaptureEnabled(enabled: boolean): void {
+  if (!enabled) {
+    collectionEnabled = false;
+    clearAppLogs();
+    return;
+  }
+  if (collectionEnabled) return;
+  collectionEnabled = true;
+  if (installed) appendAppLog('info', ['App log capture started.']);
+  else installAppLogCapture();
 }
 
 export function getAppLogEntries(): readonly AppLogEntry[] {
@@ -90,6 +103,13 @@ export function formatAppLogTime(
 export function subscribeToAppLogs(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+function clearAppLogs(): void {
+  entries.length = 0;
+  snapshot = [];
+  entryCharacters = 0;
+  scheduleListenerNotification();
 }
 
 function appendAppLog(level: AppLogLevel, args: readonly unknown[]): void {

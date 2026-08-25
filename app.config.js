@@ -33,11 +33,18 @@ module.exports = ({ config }) => {
     ...config,
     plugins: [
       ...(config.plugins || []),
-      ...((config.plugins || []).includes('expo-sqlite') ? [] : ['expo-sqlite']),
+      ...((config.plugins || []).includes('expo-sqlite')
+        ? []
+        : ['expo-sqlite']),
     ],
     extra: {
       ...config.extra,
       ...(gitCommit ? { gitCommit } : {}),
+      feedbackApiUrl: process.env.WHIP_FEEDBACK_API_URL || null,
+      revenueCatIosPublicSdkKey:
+        process.env.WHIP_REVENUECAT_IOS_PUBLIC_SDK_KEY || null,
+      revenueCatAndroidPublicSdkKey:
+        process.env.WHIP_REVENUECAT_ANDROID_PUBLIC_SDK_KEY || null,
     },
   };
 };

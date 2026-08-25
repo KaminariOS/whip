@@ -43,6 +43,7 @@ let hydration: Promise<void> | null = null;
 let persistenceQueue: Promise<void> = Promise.resolve();
 let persistenceTimer: ReturnType<typeof setTimeout> | null = null;
 let nextId = 1;
+let collectionEnabled = false;
 
 function finiteMilliseconds(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
@@ -100,11 +101,12 @@ function publish(nextEntries: LatencyDiagnosticEntry[]): void {
 }
 
 export async function loadLatencyDiagnostics(): Promise<void> {
+  if (!collectionEnabled) return;
   if (hydrated) return;
   if (hydration) return hydration;
   hydration = AsyncStorage.getItem(LATENCY_DIAGNOSTICS_STORAGE_KEY)
     .then(value => {
-      if (!hydrated) publish(latencyDiagnosticsFromStorage(value));
+      if (collectionEnabled && !hydrated) publish(latencyDiagnosticsFromStorage(value));
       hydrated = true;
     })
     .catch(() => {
@@ -114,6 +116,21 @@ export async function loadLatencyDiagnostics(): Promise<void> {
       hydration = null;
     });
   return hydration;
+}
+
+export async function setLatencyDiagnosticsEnabled(enabled: boolean): Promise<void> {
+  collectionEnabled = enabled;
+  if (enabled) return;
+  if (persistenceTimer) {
+    clearTimeout(persistenceTimer);
+    persistenceTimer = null;
+  }
+  hydrated = false;
+  publish([]);
+  persistenceQueue = persistenceQueue
+    .then(() => AsyncStorage.removeItem(LATENCY_DIAGNOSTICS_STORAGE_KEY))
+    .catch(() => undefined);
+  await persistenceQueue;
 }
 
 function persist(): void {
@@ -145,10 +162,12 @@ export async function recordSlowHostLatency(
   sessionId: string,
   measurement: HostLatencyMeasurement,
 ): Promise<boolean> {
+  if (!collectionEnabled) return false;
   if (!isSlowHostLatency(measurement)) return false;
   const boundedSessionId = boundedString(sessionId, MAX_SESSION_ID_CHARACTERS);
   if (!boundedSessionId) return false;
   await loadLatencyDiagnostics();
+  if (!collectionEnabled) return false;
   const timestamp = new Date().toISOString();
   publish([...entries, {
     id: entryId(timestamp),
@@ -169,11 +188,13 @@ export async function recordHostLatencyFailure(
   totalMs: number,
   error: string,
 ): Promise<void> {
+  if (!collectionEnabled) return;
   const boundedSessionId = boundedString(sessionId, MAX_SESSION_ID_CHARACTERS);
   const boundedError = boundedString(error, MAX_ERROR_CHARACTERS);
   const boundedTotalMs = finiteMilliseconds(totalMs);
   if (!boundedSessionId || !boundedError || boundedTotalMs === null) return;
   await loadLatencyDiagnostics();
+  if (!collectionEnabled) return;
   const timestamp = new Date().toISOString();
   publish([...entries, {
     id: entryId(timestamp),
