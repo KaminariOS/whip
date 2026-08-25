@@ -50,12 +50,6 @@ const LIFECYCLE_SUBSCRIPTIONS = [
   'layout.updated',
 ] as const satisfies ReadonlyArray<Subscription['type']>;
 
-export function sessionSnapshotRequest(
-  id = 'android_snapshot',
-): Extract<HerdrApiRequest, { method: 'session.snapshot' }> {
-  return { id, method: 'session.snapshot', params: {} };
-}
-
 export function eventsSubscribeRequest(
   protocol: SupportedHerdrProtocol,
   paneIds: string[],

@@ -1,43 +1,11 @@
 import {
   apiEvent,
   apiErrorMessage,
-  apiRequestLine,
   eventsSubscribeRequest,
   HerdrApiBridgeDecoder,
-  sessionSnapshotRequest,
 } from '../src/lib/herdrApiBridge';
 
 describe('Herdr API bridge', () => {
-  it('builds a snapshot request', () => {
-    expect(JSON.parse(apiRequestLine(sessionSnapshotRequest('snapshot')))).toEqual({
-      id: 'snapshot',
-      method: 'session.snapshot',
-      params: {},
-    });
-  });
-
-  it('matches the wrapped session snapshot response used by Herdr', () => {
-    const response = {
-      id: 'snapshot',
-      result: {
-        type: 'session_snapshot',
-        snapshot: {
-          version: '0.7.4',
-          protocol: 17,
-          focused_workspace_id: null,
-          focused_tab_id: null,
-          focused_pane_id: null,
-          workspaces: [],
-          tabs: [],
-          panes: [],
-          layouts: [],
-          agents: [],
-        },
-      },
-    };
-    expect(response.result.snapshot.protocol).toBe(17);
-  });
-
   it('subscribes to lifecycle and per-pane agent changes without duplicates', () => {
     const request = eventsSubscribeRequest(20, ['w1:p2', 'w1:p1', 'w1:p2']);
     const subscriptions = request.params.subscriptions as Array<Record<string, string>>;

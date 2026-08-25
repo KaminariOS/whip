@@ -1,5 +1,4 @@
 import {
-  canPreviewRemoteTextFile,
   formatRemoteFileSize,
   isRemoteHiddenPath,
   joinRemotePath,
@@ -114,13 +113,7 @@ describe('remote file paths', () => {
 });
 
 describe('remote file previews', () => {
-  it('allows bounded text and code files', () => {
-    expect(canPreviewRemoteTextFile('App.tsx', 1000)).toBe(true);
-    expect(canPreviewRemoteTextFile('.env.local', 1000)).toBe(true);
-    expect(canPreviewRemoteTextFile('architecture.svg', 1000)).toBe(true);
-    expect(canPreviewRemoteTextFile('architecture.mmd', 1000)).toBe(true);
-    expect(canPreviewRemoteTextFile('photo.png', 1000)).toBe(false);
-    expect(canPreviewRemoteTextFile('large.md', 600 * 1024)).toBe(false);
+  it('selects the production preview for supported file types and sizes', () => {
     expect(remotePreviewKind('README.md', 1000)).toBe('markdown');
     expect(remotePreviewKind('index.html', 1000)).toBe('html');
     expect(remotePreviewKind('legacy.htm', 1000)).toBe('html');

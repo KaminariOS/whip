@@ -137,15 +137,6 @@ export function reconcileTerminalSessions(
   return { sessions, activeTerminalId };
 }
 
-export function selectTerminalSession(
-  state: TerminalSessionsState,
-  terminalId: string,
-): TerminalSessionsState {
-  return state.sessions.some(session => session.terminalId === terminalId)
-    ? { ...state, activeTerminalId: terminalId }
-    : state;
-}
-
 export function closeTerminalSession(
   state: TerminalSessionsState,
   terminalId: string,

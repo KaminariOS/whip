@@ -501,27 +501,6 @@ export function failLiveHostSync(
   });
 }
 
-export function selectLiveHostWorkspace(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  workspaceId: string,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const workspace = session.snapshot.workspaces.find(item => item.workspace_id === workspaceId);
-    if (!workspace) return session;
-    const tab = preferredTab(session.snapshot, workspace);
-    const pane = tab ? preferredPane(session.snapshot, tab) : undefined;
-    return {
-      ...session,
-      selection: {
-        workspaceId,
-        tabId: tab?.tab_id ?? null,
-        paneId: pane?.pane_id ?? null,
-      },
-    };
-  });
-}
-
 /** Resolve the terminal pane Herdr considers active for a workspace. */
 export function preferredWorkspacePane(
   snapshot: HerdrSnapshot,
@@ -531,45 +510,6 @@ export function preferredWorkspacePane(
   if (!workspace) return undefined;
   const tab = preferredTab(snapshot, workspace);
   return tab ? preferredPane(snapshot, tab) : undefined;
-}
-
-export function selectLiveHostTab(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  tabId: string,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const tab = session.snapshot.tabs.find(item => item.tab_id === tabId);
-    if (!tab) return session;
-    const pane = preferredPane(session.snapshot, tab);
-    return {
-      ...session,
-      selection: {
-        workspaceId: tab.workspace_id,
-        tabId,
-        paneId: pane?.pane_id ?? null,
-      },
-    };
-  });
-}
-
-export function selectLiveHostPane(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  paneId: string,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const pane = session.snapshot.panes.find(item => item.pane_id === paneId);
-    if (!pane) return session;
-    return {
-      ...session,
-      selection: {
-        workspaceId: pane.workspace_id,
-        tabId: pane.tab_id,
-        paneId,
-      },
-    };
-  });
 }
 
 export function replaceLiveHostTerminals(

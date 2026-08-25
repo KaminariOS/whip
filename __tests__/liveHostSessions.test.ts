@@ -17,10 +17,7 @@ import {
   openLiveHostSession,
   preferredWorkspacePane,
   selectLiveHost,
-  selectLiveHostPane,
   selectLiveHostSession,
-  selectLiveHostTab,
-  selectLiveHostWorkspace,
   updateLiveHostConnection,
   updateLiveHostTerminals,
 } from '../src/liveHostSessions';
@@ -492,29 +489,6 @@ describe('live host session state', () => {
     expect(after.tabs[1]).toBe(before.tabs[1]);
     expect(after.workspaces[1]).toBe(before.workspaces[1]);
     expect(after.panes[1]).toBe(before.panes[1]);
-  });
-
-  test('selecting workspace, tab, or pane keeps the hierarchy internally consistent', () => {
-    const value: HerdrSnapshot = {
-      server: { running: true },
-      focused_workspace_id: 'w1',
-      focused_tab_id: 't1',
-      focused_pane_id: 'p1',
-      agents: [],
-      workspaces: [workspace('w1', 't1', true), workspace('w2', 't2')],
-      tabs: [tab('t1', 'w1', true), tab('t2', 'w2')],
-      panes: [pane('p1', 'term-1', 'w1', 't1', true), pane('p2', 'term-2', 'w2', 't2', true)],
-      layouts: [],
-    };
-    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
-    const synced = syncSnapshot(opened, 'live-1', value);
-    const byWorkspace = selectLiveHostWorkspace(synced, 'live-1', 'w2');
-    const byTab = selectLiveHostTab(byWorkspace, 'live-1', 't1');
-    const byPane = selectLiveHostPane(byTab, 'live-1', 'p2');
-
-    expect(findLiveHostSession(byWorkspace, 'live-1')?.selection).toEqual({ workspaceId: 'w2', tabId: 't2', paneId: 'p2' });
-    expect(findLiveHostSession(byTab, 'live-1')?.selection).toEqual({ workspaceId: 'w1', tabId: 't1', paneId: 'p1' });
-    expect(findLiveHostSession(byPane, 'live-1')?.selection).toEqual({ workspaceId: 'w2', tabId: 't2', paneId: 'p2' });
   });
 
   test('owns an independent terminal collection for every live host', () => {

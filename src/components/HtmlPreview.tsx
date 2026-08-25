@@ -7,6 +7,11 @@ interface Props {
   uri: string;
 }
 
+/**
+ * Loads the live preview served through the SSH tunnel. JavaScript and DOM
+ * storage are intentional here so multi-file web apps behave as they do in a
+ * browser; this is not the former inert, inline-document preview.
+ */
 export function HtmlPreview({ filename, revision, uri }: Props) {
   const previewUrl = `${uri}${uri.includes('?') ? '&' : '?'}__whip_preview=${revision}`;
   return (

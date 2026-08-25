@@ -145,10 +145,6 @@ function remoteModificationTime(value: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-export function canPreviewRemoteTextFile(filename: string, fileSize: number): boolean {
-  return ['code', 'html', 'markdown', 'mermaid', 'svg', 'text'].includes(remotePreviewKind(filename, fileSize));
-}
-
 export function remotePreviewKind(filename: string, fileSize: number): RemotePreviewKind {
   if (!Number.isFinite(fileSize) || fileSize < 0) return 'unsupported';
   const lower = filename.toLowerCase();

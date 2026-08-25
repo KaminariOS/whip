@@ -4,7 +4,6 @@ import {
   openSshShellSession,
   openTerminalSession,
   reconcileTerminalSessions,
-  selectTerminalSession,
   updateTerminalSession,
 } from '../src/terminalSessions';
 import type { PaneInfo } from '../src/types';
@@ -45,7 +44,7 @@ describe('terminal session state', () => {
     const one = openTerminalSession(emptyTerminalSessions, pane('term-1', 'pane-1', 'one'));
     const two = openTerminalSession(one, pane('term-2', 'pane-2', 'two'));
     const three = openTerminalSession(two, pane('term-3', 'pane-3', 'three'));
-    const selected = selectTerminalSession(three, 'term-2');
+    const selected = { ...three, activeTerminalId: 'term-2' };
     const closed = closeTerminalSession(selected, 'term-2');
 
     expect(closed.sessions.map(session => session.terminalId)).toEqual(['term-1', 'term-3']);
@@ -84,7 +83,7 @@ describe('terminal session state', () => {
     const one = openTerminalSession(emptyTerminalSessions, pane('term-1', 'pane-1', 'one'));
     const two = openTerminalSession(one, pane('term-2', 'pane-2', 'two'));
     const three = openTerminalSession(two, pane('term-3', 'pane-3', 'three'));
-    const selected = selectTerminalSession(three, 'term-2');
+    const selected = { ...three, activeTerminalId: 'term-2' };
     const reconciled = reconcileTerminalSessions(selected, [
       pane('term-1', 'pane-1', 'one'),
       pane('term-3', 'pane-3', 'three'),

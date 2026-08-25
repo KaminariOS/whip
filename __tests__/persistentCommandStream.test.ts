@@ -31,10 +31,10 @@ const profile: ConnectionProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-function apiClient(responseFor: (request: { method: string; params: Record<string, unknown> }) => unknown) {
+function apiClient(responseFor: (request: { method: string; params: Record<string, unknown> }) => unknown | Promise<unknown>) {
   const requestHerdrApi = jest.fn(async (_socketPath: string, line: string) => {
     const request = JSON.parse(line);
-    const result = responseFor(request);
+    const result = await responseFor(request);
     if (result instanceof Error) throw result.message;
     return JSON.stringify({ id: request.id, result });
   });
@@ -82,12 +82,12 @@ describe('direct Herdr API requests', () => {
       snapshot: {
         version: '0.7.4',
         protocol: 17,
-        focused_workspace_id: null,
-        focused_tab_id: null,
-        focused_pane_id: null,
-        workspaces: [],
-        tabs: [],
-        panes: [],
+        focused_workspace_id: 'w1',
+        focused_tab_id: 't1',
+        focused_pane_id: 'p1',
+        workspaces: [{ workspace_id: 'w1', number: 1, label: 'work', focused: true, pane_count: 1, tab_count: 1, active_tab_id: 't1', agent_status: 'idle' }],
+        tabs: [{ tab_id: 't1', workspace_id: 'w1', number: 1, label: 'shell', focused: true, pane_count: 1, agent_status: 'idle' }],
+        panes: [{ pane_id: 'p1', terminal_id: 'term-1', workspace_id: 'w1', tab_id: 't1', focused: true, agent_status: 'idle', revision: 3 }],
         layouts: [],
         agents: [],
       },
@@ -97,7 +97,13 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
 
     await expect(client.initialSnapshot()).resolves.toMatchObject({
-      server: { running: true },
+      server: { running: true, version: '0.7.4', protocol: 17 },
+      focused_workspace_id: 'w1',
+      focused_tab_id: 't1',
+      focused_pane_id: 'p1',
+      workspaces: [expect.objectContaining({ workspace_id: 'w1' })],
+      tabs: [expect.objectContaining({ tab_id: 't1' })],
+      panes: [expect.objectContaining({ pane_id: 'p1', terminal_id: 'term-1' })],
     });
 
     const methods = jest.mocked(native.requestHerdrApi).mock.calls
@@ -265,26 +271,42 @@ describe('direct Herdr API requests', () => {
     ]);
   });
 
-  test('serializes concurrent commands and preserves multiline UTF-8 output', async () => {
+  test('issues concurrent native requests and preserves multiline UTF-8 output', async () => {
+    let resolveRead!: (result: unknown) => void;
+    const pendingRead = new Promise<unknown>(resolve => {
+      resolveRead = resolve;
+    });
     const native = apiClient(request => request.method === 'pane.read'
-      ? { type: 'pane_read', read: { text: 'first\n你好' } }
+      ? pendingRead
       : { type: 'ok' });
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
 
-    const [read] = await Promise.all([
-      client.readPane('pane-1', 500),
-      client.focusPane('pane-1'),
-    ]);
+    let readSettled = false;
+    const readPromise = client.readPane('pane-1', 500).finally(() => {
+      readSettled = true;
+    });
+    const focusPromise = client.focusPane('pane-1');
 
-    expect(read).toBe('first\n你好');
+    await expect(focusPromise).resolves.toBeUndefined();
+
     expect(native.requestHerdrApi).toHaveBeenCalledTimes(2);
     const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
-    expect(requests[0]).toMatchObject({
-      method: 'pane.read',
-      params: { pane_id: 'pane-1', source: 'recent', lines: 500, format: 'ansi', strip_ansi: false },
-    });
+    expect(requests).toEqual([
+      expect.objectContaining({
+        method: 'pane.read',
+        params: { pane_id: 'pane-1', source: 'recent', lines: 500, format: 'ansi', strip_ansi: false },
+      }),
+      expect.objectContaining({
+        method: 'pane.focus',
+        params: { pane_id: 'pane-1' },
+      }),
+    ]);
+    expect(readSettled).toBe(false);
+
+    resolveRead({ type: 'pane_read', read: { text: 'first\n你好' } });
+    await expect(readPromise).resolves.toBe('first\n你好');
   });
 
   test('rejects an in-flight command when the persistent stream closes', async () => {
