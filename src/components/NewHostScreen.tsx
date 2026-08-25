@@ -1,13 +1,12 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { Check, ChevronLeft, ClipboardPaste, Keyboard, KeyRound, ScanLine, Sparkles, X } from 'lucide-react-native';
+import { ChevronLeft, Keyboard, ScanLine, X } from 'lucide-react-native';
 import SSHClient from 'react-native-whip-ssh';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Clipboard, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
   isWhipPairingCode,
-  normalizeOpenSshPublicKey,
   publicKeyVerificationCode,
   type PairHostResult,
   type PairingKeySelection,
@@ -28,13 +27,12 @@ interface Props {
   onPaired: (result: PairHostResult, key: PairingKeySelection) => Promise<void>;
 }
 
-export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }: Props) {
+export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const [permission, requestPermission] = useCameraPermissions();
   const [selectedKey, setSelectedKey] = useState<PairingKeySelection | null>(null);
-  const [globalKeys, setGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [working, setWorking] = useState(false);
   const [pairing, setPairing] = useState(false);
@@ -42,10 +40,18 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
   const [error, setError] = useState<string | null>(null);
   const scanHandled = useRef(false);
 
-  const generateKey = async () => {
+  const launchScanner = async () => {
+    if (working) return;
     setWorking(true);
     setError(null);
     try {
+      let granted = permission?.granted;
+      if (!granted) granted = (await requestPermission()).granted;
+      if (!granted) {
+        Alert.alert(t('pairing.cameraDeniedTitle'), t('pairing.cameraDeniedCopy'));
+        return;
+      }
+
       const generated = await SSHClient.generateKeyPair('ed25519', '', 256, 'whip');
       const details = await SSHClient.getKeyDetails(generated.privateKey);
       const publicKey = generated.publicKey || details.publicKey;
@@ -58,83 +64,13 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
         passphrase: '',
         fingerprint: details.fingerprint,
       });
+      scanHandled.current = false;
+      setScannerOpen(true);
     } catch (generationError) {
       setError(t('pairing.keyError', { error: String(generationError) }));
     } finally {
       setWorking(false);
     }
-  };
-
-  const openGlobalKeys = async () => {
-    setWorking(true);
-    setError(null);
-    try {
-      const keys = await onLoadGlobalKeys();
-      if (keys === null) return;
-      if (keys.length === 0) {
-        Alert.alert(t('keychain.emptyTitle'), t('keychain.emptyPickerCopy'));
-        return;
-      }
-      setGlobalKeys(keys);
-    } catch (keyError) {
-      setError(t('pairing.keyError', { error: String(keyError) }));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const selectGlobalKey = async (key: GlobalSshKeyMaterial) => {
-    setGlobalKeys(null);
-    setWorking(true);
-    setError(null);
-    try {
-      const details = await SSHClient.getKeyDetails(key.secret, key.passphrase || undefined);
-      setVerificationCode(await publicKeyVerificationCode(details.publicKey));
-      setSelectedKey({
-        source: 'global',
-        label: key.name,
-        publicKey: details.publicKey,
-        privateKey: key.secret,
-        passphrase: key.passphrase,
-        fingerprint: details.fingerprint,
-      });
-    } catch (keyError) {
-      setError(t('pairing.keyError', { error: String(keyError) }));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const pastePublicKey = async () => {
-    setError(null);
-    try {
-      const publicKey = normalizeOpenSshPublicKey(await Clipboard.getString());
-      if (!publicKey) {
-        Alert.alert(t('pairing.invalidPublicKeyTitle'), t('pairing.invalidPublicKeyCopy'));
-        return;
-      }
-      setVerificationCode(await publicKeyVerificationCode(publicKey));
-      setSelectedKey({
-        source: 'clipboard',
-        label: t('pairing.clipboardKey'),
-        publicKey,
-      });
-    } catch (pasteError) {
-      setError(t('pairing.keyError', { error: String(pasteError) }));
-    }
-  };
-
-  const launchScanner = async () => {
-    if (!selectedKey || working) return;
-    setError(null);
-    let granted = permission?.granted;
-    if (!granted) granted = (await requestPermission()).granted;
-    if (!granted) {
-      Alert.alert(t('pairing.cameraDeniedTitle'), t('pairing.cameraDeniedCopy'));
-      return;
-    }
-    scanHandled.current = false;
-    setScannerOpen(true);
   };
 
   const handleScan = async ({ data }: BarcodeScanningResult) => {
@@ -219,48 +155,6 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
           </View>
         </GlassSurface>
 
-        <Text className="mb-2 text-sm font-semibold text-muted-foreground">{t('pairing.chooseKey')}</Text>
-        <GlassSurface className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10">
-          <KeyChoice
-            icon={Sparkles}
-            title={t('pairing.generate')}
-            copy={t('pairing.generateCopy')}
-            selected={selectedKey?.source === 'generated'}
-            disabled={working}
-            onPress={generateKey}
-          />
-          <View className="ml-[68px] h-px bg-border" />
-          <KeyChoice
-            icon={KeyRound}
-            title={t('pairing.globalKey')}
-            copy={t('pairing.globalKeyCopy')}
-            selected={selectedKey?.source === 'global'}
-            disabled={working}
-            onPress={openGlobalKeys}
-          />
-          <View className="ml-[68px] h-px bg-border" />
-          <KeyChoice
-            icon={ClipboardPaste}
-            title={t('pairing.clipboard')}
-            copy={t('pairing.clipboardCopy')}
-            selected={selectedKey?.source === 'clipboard'}
-            disabled={working}
-            onPress={pastePublicKey}
-          />
-        </GlassSurface>
-
-        {selectedKey ? (
-          <GlassSurface className="mt-4 flex-row items-start gap-3 rounded-lg border border-white/30 px-4 py-3 dark:border-white/10">
-            <Icon as={Check} className="mt-0.5 text-primary" size={17} />
-            <View className="min-w-0 flex-1">
-              <Text className="text-sm font-semibold" numberOfLines={1}>{selectedKey.label}</Text>
-              <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={2}>
-                {selectedKey.fingerprint || t('pairing.publicOnlyWarning')}
-              </Text>
-            </View>
-          </GlassSurface>
-        ) : null}
-
         {error ? <Text accessibilityLiveRegion="polite" className="mt-4 text-sm leading-5 text-destructive">{error}</Text> : null}
 
         {pairing && verificationCode ? (
@@ -269,7 +163,7 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
           </Text>
         ) : null}
 
-        <Button className={cn(pairing && verificationCode ? 'mt-4' : 'mt-7', 'h-12 rounded-full')} disabled={!selectedKey || working} onPress={hapticPress(launchScanner)}>
+        <Button className={cn(pairing && verificationCode ? 'mt-4' : 'mt-7', 'h-12 rounded-full')} disabled={working} onPress={hapticPress(launchScanner)}>
           {working ? <ActivityIndicator color={colors.onPrimary} /> : <Icon as={ScanLine} className="text-primary-foreground" size={19} />}
           <Text>{pairing ? t('pairing.waiting') : t('pairing.scan')}</Text>
         </Button>
@@ -285,46 +179,6 @@ export function NewHostScreen({ onCancel, onManual, onLoadGlobalKeys, onPaired }
         </Button>
       </ScrollView>
 
-      <Modal transparent animationType="fade" visible={globalKeys !== null} onRequestClose={() => setGlobalKeys(null)}>
-        <View className="flex-1 justify-end">
-          <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/45" onPress={() => setGlobalKeys(null)} />
-          <GlassSurface className="max-h-[70%] rounded-t-[24px] border-t border-white/30 px-5 pb-8 pt-4 dark:border-white/10">
-            <View className="mb-4 h-1 w-10 self-center rounded-full bg-muted-foreground/30" />
-            <Text className="text-xl font-semibold">{t('pairing.chooseGlobalKey')}</Text>
-            <ScrollView className="mt-3" contentContainerClassName="gap-2">
-              {globalKeys?.map(key => (
-                <Button
-                  key={key.id}
-                  size="content"
-                  variant="ghost"
-                  className={cn('h-auto w-full justify-start gap-3 rounded-xl px-3 py-3', appGlassEnabled && 'border')}
-                  style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                  onPress={() => selectGlobalKey(key)}>
-                  <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={KeyRound} className="text-primary" size={18} /></View>
-                  <View className="min-w-0 flex-1 items-start"><Text className="font-semibold" numberOfLines={1}>{key.name}</Text><Text className="mt-0.5 text-xs text-muted-foreground" numberOfLines={1}>{key.fingerprint}</Text></View>
-                </Button>
-              ))}
-            </ScrollView>
-          </GlassSurface>
-        </View>
-      </Modal>
     </View>
-  );
-}
-
-function KeyChoice({ icon, title, copy, selected, disabled, onPress }: {
-  icon: typeof KeyRound;
-  title: string;
-  copy: string;
-  selected: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Button size="content" variant="ghost" className="h-auto min-h-[78px] w-full justify-start gap-3 rounded-none px-4 py-3" disabled={disabled} onPress={hapticPress(onPress)}>
-      <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={icon} className="text-primary" size={18} /></View>
-      <View className="min-w-0 flex-1 items-start"><Text className="text-[15px] font-semibold">{title}</Text><Text className="mt-0.5 text-left text-xs leading-[17px] text-muted-foreground">{copy}</Text></View>
-      {selected ? <Icon as={Check} className="text-primary" size={19} /> : null}
-    </Button>
   );
 }

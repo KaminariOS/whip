@@ -119,7 +119,7 @@ export const zhHant: Record<string, string> = {
   'hosts.errorTitle': '連線發生問題',
   'pairing.title': '新增主機',
   'pairing.heading': '與附近主機配對',
-  'pairing.intro': '選擇要授權的 SSH 金鑰，然後掃描主機上 whip-pair 顯示的一次性 QR 碼。',
+  'pairing.intro': '掃描主機上 whip-pair 顯示的一次性 QR 碼。Whip 將為此主機產生新的 Ed25519 金鑰。',
   'pairing.runOnHost': '在主機上執行以下任一命令：',
   'pairing.chooseKey': '要授權的 SSH 金鑰',
   'pairing.generate': '產生新金鑰',

@@ -119,7 +119,7 @@ export const ja = {
   'hosts.errorTitle': '接続の問題',
   'pairing.title': 'ホストを追加',
   'pairing.heading': '近くのホストとペアリング',
-  'pairing.intro': '許可する SSH 鍵を選び、ホストの whip-pair に表示されたワンタイム QR コードをスキャンします。',
+  'pairing.intro': 'ホストの whip-pair に表示されたワンタイム QR コードをスキャンします。Whip がこのホスト用の新しい Ed25519 鍵を生成します。',
   'pairing.runOnHost': 'ホストで、次のいずれかのコマンドを実行します:',
   'pairing.chooseKey': '許可する SSH 鍵',
   'pairing.generate': '新しい鍵を生成',
