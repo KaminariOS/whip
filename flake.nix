@@ -40,6 +40,30 @@
     darwinRustToolchain = darwinPkgs.rust-bin.stable."1.97.1".default.override {
       targets = ["aarch64-apple-ios"];
     };
+    mkCargoAbout = pkgs: target: hash:
+      pkgs.stdenvNoCC.mkDerivation {
+        pname = "cargo-about";
+        version = "0.9.1";
+        src = pkgs.fetchurl {
+          url = "https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.1/cargo-about-0.9.1-${target}.tar.gz";
+          inherit hash;
+        };
+        sourceRoot = ".";
+        installPhase = ''
+          runHook preInstall
+          mkdir -p "$out/bin"
+          install -m 755 "cargo-about-0.9.1-${target}/cargo-about" "$out/bin/cargo-about"
+          runHook postInstall
+        '';
+      };
+    linuxCargoAbout = mkCargoAbout
+      androidPkgs
+      "x86_64-unknown-linux-musl"
+      "sha256-wOfcb110sL7sXABT05qyRRTHF9GazZGIaQeiJFfqnpg=";
+    darwinCargoAbout = mkCargoAbout
+      darwinPkgs
+      "aarch64-apple-darwin"
+      "sha256-ajj+Fm0XpnQmnUNzJWwLa9k6zCVT4S3gUXy57Mc8nAI=";
     mkWhipPair = pkgs:
       pkgs.rustPlatform.buildRustPackage {
         pname = "whip-pair";
@@ -67,8 +91,14 @@
     linuxWhipPair = mkWhipPair androidPkgs;
     darwinWhipPair = mkWhipPair darwinPkgs;
   in {
-    packages.${androidSystem}.whip-pair = linuxWhipPair;
-    packages.${darwinSystem}.whip-pair = darwinWhipPair;
+    packages.${androidSystem} = {
+      whip-pair = linuxWhipPair;
+      cargo-about = linuxCargoAbout;
+    };
+    packages.${darwinSystem} = {
+      whip-pair = darwinWhipPair;
+      cargo-about = darwinCargoAbout;
+    };
 
     apps.${androidSystem}.whip-pair = {
       type = "app";
@@ -84,6 +114,7 @@
     devShells.${androidSystem}.default = androidPkgs.mkShell {
       packages = [
         androidSdk
+        linuxCargoAbout
         androidPkgs.jdk17_headless
         androidPkgs.nodejs_22
         androidRustToolchain
@@ -102,6 +133,7 @@
 
     devShells.${darwinSystem}.default = darwinPkgs.mkShell {
       packages = with darwinPkgs; [
+        darwinCargoAbout
         nodejs_22
         watchman
         ruby_3_4

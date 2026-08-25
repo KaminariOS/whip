@@ -1,0 +1,15 @@
+{
+  "only": "prod",
+  "output": "json",
+  "fields": [
+    "name",
+    "licenseType",
+    "installedVersion"
+  ],
+  "httpRetryOptions": {
+    "limit": 2
+  },
+  "httpTimeoutOptions": {
+    "request": 10000
+  }
+}

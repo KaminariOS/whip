@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Whip Rust dependency licenses</title>
+    <style>
+      body { margin: 2rem auto; max-width: 72rem; padding: 0 1rem; font-family: sans-serif; line-height: 1.5; }
+      section { border-top: 1px solid #bbb; margin-top: 2rem; padding-top: 1rem; }
+      pre { overflow-x: auto; padding: 1rem; white-space: pre-wrap; background: #f4f4f4; }
+    </style>
+  </head>
+  <body>
+    <h1>Whip Rust dependency licenses</h1>
+    <p>This notice contains the selected Rust package and its direct production dependencies.</p>
+    {{#each licenses}}
+      <section id="{{id}}">
+        <h2>{{name}}</h2>
+        <p>Used by:</p>
+        <ul>
+          {{#each used_by}}
+            <li><strong>{{crate.name}}</strong> {{crate.version}}</li>
+          {{/each}}
+        </ul>
+        <pre>{{text}}</pre>
+      </section>
+    {{/each}}
+  </body>
+</html>
