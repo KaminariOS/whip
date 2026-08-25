@@ -112,7 +112,12 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    await expect(client.measureLatency()).resolves.toBe(42);
+    await expect(client.measureLatency()).resolves.toMatchObject({
+      latencyMs: 42,
+      sshRttMs: 42,
+      totalMs: 42,
+      dispatchMs: 0,
+    });
 
     expect(native.measureHostLatency).toHaveBeenCalledTimes(1);
     expect(native.requestHerdrApi).not.toHaveBeenCalled();
@@ -144,7 +149,12 @@ describe('direct Herdr API requests', () => {
     await client.openEventStream([], jest.fn());
     jest.mocked(native.measureHostLatency).mockResolvedValueOnce(37);
 
-    await expect(client.measureLatency()).resolves.toBe(37);
+    await expect(client.measureLatency()).resolves.toMatchObject({
+      latencyMs: 37,
+      sshRttMs: 37,
+      totalMs: 37,
+      dispatchMs: 0,
+    });
 
     const directMethods = jest.mocked(native.requestHerdrApi).mock.calls
       .map(([, line]) => JSON.parse(line).method);

@@ -249,6 +249,12 @@ reference measurement on a Pixel 9 Pro connected to the `thinker` host produced
 the following baseline. Network conditions and display scheduling vary, so treat
 these as representative boundaries rather than universal benchmarks.
 
+Release builds also retain a bounded history of the latest 100 SSH latency probes
+that take at least 200 ms or fail. Each slow record separates the native SSH
+ping/pong time from total JavaScript dispatch-to-resolution time. The history is
+available in **More → Diagnostics**, persists across app restarts, and is never
+uploaded automatically.
+
 | Stage | Average | Observed range |
 | --- | ---: | ---: |
 | App wait before entering native code | 0.05 ms | 0.04–0.06 ms |

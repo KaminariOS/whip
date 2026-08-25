@@ -17,6 +17,12 @@ import {
   subscribeToAppLogs,
   type AppLogLevel,
 } from '@/src/services/appLogs';
+import {
+  formatLatencyDiagnostics,
+  getLatencyDiagnosticEntries,
+  loadLatencyDiagnostics,
+  subscribeToLatencyDiagnostics,
+} from '@/src/services/latencyDiagnostics';
 import { hapticPress, IconButton } from './app-ui';
 import { GlassBackdrop, GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -91,6 +97,11 @@ function AppLogsModal({
     getAppLogEntries,
     getAppLogEntries,
   );
+  const latencyEntries = useSyncExternalStore(
+    subscribeToLatencyDiagnostics,
+    getLatencyDiagnosticEntries,
+    getLatencyDiagnosticEntries,
+  );
   const [copied, setCopied] = useState(false);
   const [levelFilter, setLevelFilter] = useState<AppLogLevelFilter>('all');
   const scrollRef = useRef<ScrollView>(null);
@@ -110,6 +121,10 @@ function AppLogsModal({
     else setCopied(false);
   }, [visible]);
 
+  useEffect(() => {
+    if (visible) loadLatencyDiagnostics().catch(() => undefined);
+  }, [visible]);
+
   useEffect(
     () => () => {
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
@@ -118,7 +133,12 @@ function AppLogsModal({
   );
 
   const copyLogs = () => {
-    Clipboard.setString(formatAppLogs(filteredEntries));
+    const latencyDiagnostics = formatLatencyDiagnostics(latencyEntries);
+    const appLogs = formatAppLogs(filteredEntries);
+    Clipboard.setString([
+      `Latency diagnostics\n${latencyDiagnostics || '(none)'}`,
+      `App logs\n${appLogs || '(none)'}`,
+    ].join('\n\n'));
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 2_000);
@@ -191,6 +211,30 @@ function AppLogsModal({
             <Text className="min-w-0 flex-1 text-xs leading-[18px] text-muted-foreground">
               {t('appLogs.privacy')}
             </Text>
+          </View>
+          <View className="mb-3 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas px-3 py-2.5">
+            <Text className="font-mono text-[11px] font-semibold leading-4 text-terminal-text">
+              {t('appLogs.latencyTitle')} ({latencyEntries.length})
+            </Text>
+            <Text className="mb-2 mt-0.5 text-[10px] leading-[14px] text-terminal-subtle">
+              {t('appLogs.latencyCopy')}
+            </Text>
+            {latencyEntries.length === 0 ? (
+              <Text className="font-mono text-[10px] leading-[15px] text-terminal-subtle">
+                {t('appLogs.latencyEmpty')}
+              </Text>
+            ) : latencyEntries.slice(-3).reverse().map(entry => (
+              <View key={entry.id} className="mb-1">
+                <Text selectable className="font-mono text-[10px] leading-[14px] text-terminal-text">
+                  {formatAppLogTime(entry.timestamp)} {entry.kind === 'slow'
+                    ? `SLOW SSH ${entry.sshRttMs}ms · TOTAL ${entry.totalMs}ms · DISPATCH ${entry.dispatchMs}ms`
+                    : `FAIL ${entry.totalMs}ms · ${entry.error}`}
+                </Text>
+                <Text selectable className="font-mono text-[9px] leading-[12px] text-terminal-subtle">
+                  {entry.sessionId}
+                </Text>
+              </View>
+            ))}
           </View>
           <ScrollView
             horizontal

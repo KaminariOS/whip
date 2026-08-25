@@ -1,4 +1,5 @@
 import SSHClient, { type HerdrBridgeEvent, type HerdrEventStreamEvent, type LsResult, type OpenSSHExecChannel, PtyType } from 'react-native-whip-ssh';
+import type { HostLatencyMeasurement } from './latencyDiagnostics';
 
 import { normalizePrivateKey } from '../lib/privateKey';
 import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
@@ -1019,12 +1020,20 @@ export class HerdrClient {
   }
 
   /** Measure an SSH protocol ping/pong RTT without remote process startup. */
-  async measureLatency(): Promise<number> {
-    const latencyMs = await this.requireClient().measureHostLatency();
-    if (!Number.isFinite(latencyMs) || latencyMs <= 0) {
+  async measureLatency(): Promise<HostLatencyMeasurement> {
+    const startedAt = performance.now();
+    const sshRttMs = await this.requireClient().measureHostLatency();
+    const elapsedMs = performance.now() - startedAt;
+    if (!Number.isFinite(sshRttMs) || sshRttMs <= 0) {
       throw new Error('Android returned an invalid host latency');
     }
-    return Math.round(latencyMs);
+    const roundMilliseconds = (value: number) => Math.round(value * 10) / 10;
+    return {
+      latencyMs: Math.round(sshRttMs),
+      sshRttMs: roundMilliseconds(sshRttMs),
+      totalMs: roundMilliseconds(Math.max(sshRttMs, elapsedMs)),
+      dispatchMs: roundMilliseconds(Math.max(0, elapsedMs - sshRttMs)),
+    };
   }
 
   async startServer(): Promise<void> {

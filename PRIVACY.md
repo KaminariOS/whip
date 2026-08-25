@@ -11,7 +11,8 @@ Whip may process or store:
 - Herdr workspace, pane, agent, terminal, and file content received from the host;
 - local terminal, notification, security, language, and appearance preferences;
 - background images and files explicitly downloaded or selected by the user; and
-- up to 500 recent app-log entries from the current launch, which may include hostnames or connection details and are cleared when Whip restarts.
+- up to 500 recent app-log entries from the current launch, which may include hostnames or connection details and are cleared when Whip restarts; and
+- up to 100 slow or failed SSH latency probe records, including a host identifier, timestamp, timing breakdown, and bounded error text. These records persist across app restarts in app data and may be included in operating-system backup or device transfer.
 
 Host credentials use Android Keystore-backed or iOS Keychain-backed storage and request a when-unlocked, this-device-only accessibility policy where the platform supports it. Global SSH keychain labels and fingerprints are ordinary app metadata; their private keys and passphrases remain in the platform credential store and require device authentication before the keychain is opened.
 
@@ -27,7 +28,7 @@ Whip verifies every direct and jump-host key. A new fingerprint is stored only a
 
 Blocked/done notifications, vibration, and optional speech are produced on the device. Notification text may be visible on the lock screen according to operating-system settings, and speech may be audible to nearby people or routed audio devices.
 
-App logs stay in memory for the current launch unless the user copies them to the clipboard. Review and redact copied logs and screenshots before sharing them.
+App logs stay in memory for the current launch. Slow or failed SSH latency diagnostics are retained in a bounded on-device history so intermittent production stalls can be inspected after they happen. Whip does not automatically upload either source. Review and redact copied diagnostics and screenshots before sharing them.
 
 ## Removing data
 

@@ -137,6 +137,13 @@ import {
   type TerminalPreferences,
 } from './src/services/devicePreferences';
 import { HerdrClient } from './src/services/HerdrClient';
+import {
+  flushLatencyDiagnosticWrites,
+  isSlowHostLatency,
+  recordHostLatencyFailure,
+  recordSlowHostLatency,
+  type HostLatencyMeasurement,
+} from './src/services/latencyDiagnostics';
 import { networkErrorMessage, recordNetworkDiagnostic } from './src/services/networkDiagnostics';
 import {
   deleteHostProfile,
@@ -213,6 +220,31 @@ const LIVE_HOST_RECONNECT_COOLDOWN_MS = 30_000;
 const NETWORK_CHANGE_DEBOUNCE_MS = 750;
 const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;
 const BACKGROUND_HOST_RESTORE_CONCURRENCY = 2;
+
+function recordLatencyMeasurement(
+  sessionId: string,
+  measurement: HostLatencyMeasurement,
+): void {
+  if (!isSlowHostLatency(measurement)) return;
+  recordNetworkDiagnostic('warn', 'latency-probe-slow', {
+    sessionId,
+    latencyMs: measurement.latencyMs,
+    sshRttMs: measurement.sshRttMs,
+    totalMs: measurement.totalMs,
+    dispatchMs: measurement.dispatchMs,
+  });
+  recordSlowHostLatency(sessionId, measurement).catch(() => undefined);
+}
+
+function recordLatencyFailure(
+  sessionId: string,
+  startedAt: number,
+  error: unknown,
+): void {
+  const totalMs = Math.round((performance.now() - startedAt) * 10) / 10;
+  const message = networkErrorMessage(error);
+  recordHostLatencyFailure(sessionId, totalMs, message).catch(() => undefined);
+}
 
 const StableStatusBar = memo(function AppStatusBar({
   backgroundColor,
@@ -985,23 +1017,26 @@ function AppContent() {
         startTransition(() => {
           setLiveSessions(current => beginLiveHostSync(current, sessionId).state);
         });
-        // Measure device-to-host network RTT separately from the much larger
-        // SSH/Herdr snapshot operation so control-plane work cannot inflate it.
+        // Measure the SSH protocol ping/pong separately from the much larger
+        // Herdr snapshot operation so server control-plane work cannot inflate it.
         const session = findLiveHostSession(liveSessionsRef.current, sessionId);
+        const latencyProbeStartedAt = performance.now();
         const latencyMs = session?.status === 'ready'
-          ? await runtime.client.measureLatency().then(value => {
+          ? await runtime.client.measureLatency().then(measurement => {
+              recordLatencyMeasurement(sessionId, measurement);
               runtime.latencyFailures = 0;
               if (runtime.latencyFailureActive) {
                 runtime.latencyFailureActive = false;
                 recordNetworkDiagnostic('info', 'latency-probe-recovered', {
                   sessionId,
-                  latencyMs: value,
+                  latencyMs: measurement.latencyMs,
                 });
               }
-              return value;
+              return measurement.latencyMs;
             }).catch(error => {
               if (!runtime.latencyFailureActive) {
                 runtime.latencyFailureActive = true;
+                recordLatencyFailure(sessionId, latencyProbeStartedAt, error);
                 recordNetworkDiagnostic('warn', 'latency-probe-failed', {
                   sessionId,
                   error: networkErrorMessage(error),
@@ -1163,9 +1198,12 @@ function AppContent() {
     if (!runtime || latencyPingsInFlight.current.get(sessionId) === runtime) return;
 
     latencyPingsInFlight.current.set(sessionId, runtime);
+    const latencyProbeStartedAt = performance.now();
     runtime.client.measureLatency()
-      .then(latencyMs => {
+      .then(measurement => {
         if (runtimes.current.get(sessionId) !== runtime) return;
+        const { latencyMs } = measurement;
+        recordLatencyMeasurement(sessionId, measurement);
         runtime.latencyFailures = 0;
         if (runtime.latencyFailureActive) {
           runtime.latencyFailureActive = false;
@@ -1197,6 +1235,7 @@ function AppContent() {
         setLiveSessions(current => invalidateLiveHostLatency(current, sessionId));
         if (!runtime.latencyFailureActive) {
           runtime.latencyFailureActive = true;
+          recordLatencyFailure(sessionId, latencyProbeStartedAt, error);
           recordNetworkDiagnostic('warn', 'latency-probe-failed', {
             sessionId,
             failures: decision.failures,
@@ -1348,6 +1387,8 @@ function AppContent() {
         restartLiveConnections('app-resume');
         measureConnectedHostLatencies(true);
         resumeLiveConnections(true);
+      } else {
+        flushLatencyDiagnosticWrites().catch(() => undefined);
       }
     });
     const heartbeat = setInterval(() => {
