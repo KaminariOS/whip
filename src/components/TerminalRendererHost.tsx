@@ -19,6 +19,7 @@ import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import type { TerminalFrame, TerminalProtocolState } from '../lib/terminalBridge';
+import { TerminalFrameSequence } from '../lib/terminalFrameSequence';
 import {
   TerminalArbitration,
   type TerminalDimensions,
@@ -27,6 +28,7 @@ import {
 import { arrayBufferToBase64 } from '../lib/base64';
 import {
   isOfflineTerminalNavigationInput,
+  TerminalRendererContentState,
   terminalResizeForcesNativeDispatch,
   terminalScrollbackMode,
   type TerminalRenderTarget,
@@ -43,6 +45,7 @@ import {
   abandonTerminalInboundTrace,
   abandonTerminalRendererReadinessTrace,
   abandonTerminalResizeTrace,
+  beginAppPerformanceTrace,
   beginTerminalColdInputWait,
   beginTerminalInputTrace,
   beginTerminalRendererReadinessTrace,
@@ -102,6 +105,9 @@ interface RendererEntry {
     resizeTraceCookie: number | null;
   }>;
   resetOnNextFrame: boolean;
+  contentState: TerminalRendererContentState;
+  frameSequence: TerminalFrameSequence;
+  repaintRequested: boolean;
   reconnectAttempt: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   fontPreference: number;
@@ -152,6 +158,7 @@ interface Props {
   onInput: (target: TerminalRenderTarget, data: string) => void | Promise<void>;
   onScroll: (target: TerminalRenderTarget, direction: 'up' | 'down', lines: number) => void;
   onOfflineScroll: (target: TerminalRenderTarget, scroll: PaneScrollInfo) => void;
+  onOfflineSnapshot: (targetKey: string, transcript: string) => void;
   onSearchResult: (count: number, index: number, invalid: boolean) => void;
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
@@ -184,6 +191,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onInput,
   onScroll,
   onOfflineScroll,
+  onOfflineSnapshot,
   onSearchResult,
   onLinksScanned,
   onOpenLink,
@@ -204,6 +212,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const appState = useRef(AppState.currentState);
   const offlineTranscriptRef = useRef(offlineTranscript);
   const offlineScrollRef = useRef(offlineScroll);
+  const serializationTraces = useRef(new Map<string, AppPerformanceTrace>());
   activeKey.current = activeTarget?.key || null;
   offlineTranscriptRef.current = offlineTranscript;
   offlineScrollRef.current = offlineScroll;
@@ -212,6 +221,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportInput = useEffectEvent(onInput);
   const reportScroll = useEffectEvent(onScroll);
   const reportOfflineScroll = useEffectEvent(onOfflineScroll);
+  const reportOfflineSnapshot = useEffectEvent(onOfflineSnapshot);
   const reportSearch = useEffectEvent(onSearchResult);
   const reportLinks = useEffectEvent(onLinksScanned);
   const reportOpenLink = useEffectEvent(onOpenLink);
@@ -249,7 +259,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     } else {
       entry.target.client.detachTerminal(terminalId).catch(() => undefined);
     }
-    if (hostReady.current) inject(`window.herdrRemove(${JSON.stringify(key)});`);
+    if (hostReady.current) {
+      const serializedKey = JSON.stringify(key);
+      const snapshot = !closeBridge
+        && entry.target.session.kind !== 'ssh'
+        && entry.contentState.hasRenderedState
+        ? `window.herdrSnapshot(${serializedKey}, "eviction"); `
+        : '';
+      inject(`${snapshot}window.herdrRemove(${serializedKey});`);
+    }
   }, [inject]);
 
   const pruneEntries = useCallback((protectedKeys: ReadonlySet<string>) => {
@@ -271,25 +289,24 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       fontSize: entry.fontSize,
       backgroundImageUri: null,
       ...scrollbackMode,
+      offlineCache: entry.target.session.kind !== 'ssh',
     })}); window.herdrSetRenderDrop(${JSON.stringify(entry.target.key)}, ${TERMINAL_RENDER_DROP_ENABLED});`);
   }, [inject, preferences]);
 
   const syncOfflineTranscript = useCallback((
-    targetKey: string,
-    targetKind: TerminalRenderTarget['session']['kind'],
-    offlineScrollback: boolean,
+    entry: RendererEntry,
     transcript: string,
     scroll?: PaneScrollInfo,
   ) => {
-    const key = JSON.stringify(targetKey);
-    if (
-      targetKind === 'ssh'
-      || !offlineScrollback
-      || !transcript
-    ) {
+    const key = JSON.stringify(entry.target.key);
+    const action = entry.contentState.restoreAction(entry.target.session.kind, transcript);
+    if (action === 'hide') {
       inject(`window.herdrHideOfflineTranscript(${key});`);
       return;
     }
+    // A mounted renderer already contains the interpreted live xterm state.
+    // Replaying a cache here would replace newer scrollback with a stale copy.
+    if (action === 'preserve') return;
     inject(`window.herdrBeginOfflineTranscript(${key});`);
     for (let offset = 0; offset < transcript.length; offset += TRANSCRIPT_CHUNK_SIZE) {
       inject(`window.herdrAppendOfflineTranscript(${key}, ${JSON.stringify(
@@ -297,7 +314,34 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       )});`);
     }
     inject(`window.herdrCommitOfflineTranscript(${key}, ${scroll?.offset_from_bottom || 0});`);
+    entry.contentState.restoredFromCache();
   }, [inject]);
+
+  const requestFullFrame = useCallback((entry: RendererEntry) => {
+    if (entry.repaintRequested) return;
+    const dimensions = entry.arbitration.latestDimensions();
+    if (!dimensions) return;
+    entry.repaintRequested = true;
+    const trace = beginAppPerformanceTrace('Whip terminal sequence recovery');
+    recordNetworkDiagnostic('warn', 'terminal-sequence-gap', {
+      sessionId: entry.target.hostSessionId,
+      terminalId: entry.target.session.terminalId,
+    });
+    entry.target.client.resizeTerminal(
+      entry.target.session.terminalId,
+      dimensions.columns,
+      dimensions.rows,
+      dimensions.cellWidthPx,
+      dimensions.cellHeightPx,
+      null,
+      // Herdr marks every terminal-ANSI resize as repaint_pending. The next
+      // frame is therefore a full visible baseline without a pane.read.
+      true,
+    ).catch(reason => {
+      entry.repaintRequested = false;
+      reportError(entry.target, String(reason));
+    }).finally(() => endAppPerformanceTrace(trace));
+  }, []);
 
   const injectFrame = useCallback((
     entry: RendererEntry,
@@ -311,6 +355,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.pendingFrames.push({ frame, inputTraceCookie, resizeTraceCookie });
       return;
     }
+    if (entry.target.session.kind !== 'ssh' && frame.encoding === 'ansi') {
+      const sequence = entry.frameSequence.observe(frame);
+      if (sequence.requestFull) requestFullFrame(entry);
+      if (!sequence.render) {
+        abandonTerminalInboundTrace(inboundTraceCookie);
+        return;
+      }
+      if (sequence.reset) entry.resetOnNextFrame = true;
+      if (frame.full) entry.repaintRequested = false;
+    }
     const key = JSON.stringify(entry.target.key);
     const serializedInputTraceCookie = inputTraceCookie === null
       ? 'null'
@@ -320,6 +374,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       : String(resizeTraceCookie);
     const reset = entry.resetOnNextFrame;
     if (reset) entry.resetOnNextFrame = false;
+    entry.contentState.receivedLiveFrame();
     const resetScript = reset ? `window.herdrReset(${key}); ` : '';
     const serializedInboundTraceCookie = inboundTraceCookie === null
       ? 'null'
@@ -362,7 +417,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
     // A frame can require multiple chunks, but it crosses into the WebView once.
     injectTracedFrame(`${resetScript}${writes.join('')}`);
-  }, [inject]);
+  }, [inject, requestFullFrame]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
     if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
@@ -380,6 +435,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (!retained) {
       entry.resetOnNextFrame = true;
       entry.pendingFrames = [];
+      entry.frameSequence.reset();
+      entry.repaintRequested = false;
       if (showConnecting) {
         reportStatus(entry.target, 'connecting', undefined, entry.reconnectAttempt);
       }
@@ -464,6 +521,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.reconnectAttempt = 0;
       reportStatus(entry.target, 'connected', undefined, 0);
       for (const waiter of entry.writableWaiters.splice(0)) waiter.resolve();
+      if (
+        retained
+        && !entry.contentState.hasLiveState
+        && entry.target.session.kind !== 'ssh'
+      ) {
+        entry.frameSequence.reset();
+        requestFullFrame(entry);
+      }
       if (recoveryAttempt > 0) {
         recordNetworkDiagnostic('info', 'terminal-reconnect-recovered', {
           sessionId: entry.target.hostSessionId,
@@ -479,7 +544,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportError(entry.target, message);
       scheduleReconnect(message, false);
     });
-  }, [injectFrame, preferences.pauseResizeInBackground]);
+  }, [injectFrame, preferences.pauseResizeInBackground, requestFullFrame]);
 
   const ensureEntry = useCallback((target: TerminalRenderTarget | null | undefined): RendererEntry | null => {
     if (!target) return null;
@@ -494,6 +559,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         connecting: false,
         pendingFrames: [],
         resetOnNextFrame: true,
+        contentState: new TerminalRendererContentState(),
+        frameSequence: new TerminalFrameSequence(),
+        repaintRequested: false,
         reconnectAttempt: target.session.reconnectAttempt || 0,
         reconnectTimer: null,
         fontPreference: preferences.fontSize,
@@ -725,26 +793,17 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [activeTarget, configureEntry, disposeEntry, ensureEntry, previewTarget, pruneEntries, targets]);
 
   const activeTranscriptKey = activeTarget?.key || '';
-  const activeTranscriptKind = activeTarget?.session.kind || 'herdr';
-  // Connecting, disconnected, and error are all the same cached scrollback mode.
-  // Keying this effect on the mode prevents reconnect attempts from replaying the
-  // same transcript and snapping an offline reader back to the bottom.
-  const activeTranscriptOffline = activeTarget
-    ? terminalScrollbackMode(activeTarget.session).offlineScrollback
-    : false;
   useEffect(() => {
     if (!hostReady.current || !activeTranscriptKey) return;
+    const entry = entries.current.get(activeTranscriptKey);
+    if (!entry) return;
     syncOfflineTranscript(
-      activeTranscriptKey,
-      activeTranscriptKind,
-      activeTranscriptOffline,
+      entry,
       offlineTranscript,
       offlineScrollRef.current,
     );
   }, [
     activeTranscriptKey,
-    activeTranscriptKind,
-    activeTranscriptOffline,
     offlineTranscript,
     syncOfflineTranscript,
   ]);
@@ -801,6 +860,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       previous = state;
       appState.current = state;
       if (state !== 'active') {
+        if (wasActive && hostReady.current) {
+          for (const entry of entries.current.values()) {
+            if (
+              entry.target.session.kind !== 'ssh'
+              && entry.contentState.hasRenderedState
+            ) {
+              inject(`window.herdrSnapshot(${JSON.stringify(entry.target.key)}, "background");`);
+            }
+          }
+        }
         if (wasActive && preferences.pauseResizeInBackground) {
           for (const entry of entries.current.values()) {
             if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
@@ -834,16 +903,36 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   useEffect(() => () => {
     for (const entry of entries.current.values()) {
       if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+      if (
+        hostReady.current
+        && entry.target.session.kind !== 'ssh'
+        && entry.contentState.hasRenderedState
+      ) {
+        inject(`window.herdrSnapshot(${JSON.stringify(entry.target.key)}, "detach");`);
+      }
       entry.target.client.detachTerminal(entry.target.session.terminalId).catch(() => undefined);
     }
+    for (const trace of serializationTraces.current.values()) {
+      endAppPerformanceTrace(trace);
+    }
+    serializationTraces.current.clear();
     entries.current.clear();
-  }, []);
+  }, [inject]);
 
   const handleMessage = async (event: WebViewMessageEvent) => {
     const message = JSON.parse(event.nativeEvent.data);
     if (message.type === 'ready') {
+      const reloaded = hostReady.current;
       hostReady.current = true;
       for (const entry of entries.current.values()) {
+        if (reloaded) {
+          entry.rendererReady = false;
+          entry.sizeReady = false;
+          entry.resetOnNextFrame = true;
+          entry.contentState = new TerminalRendererContentState();
+          entry.frameSequence.reset();
+          entry.repaintRequested = false;
+        }
         inject(`window.herdrCreate(${JSON.stringify(entry.target.key)});`);
         configureEntry(entry);
       }
@@ -852,13 +941,26 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
       const entry = activeKey.current ? entries.current.get(activeKey.current) : null;
       if (entry) syncOfflineTranscript(
-        entry.target.key,
-        entry.target.session.kind,
-        terminalScrollbackMode(entry.target.session).offlineScrollback,
+        entry,
         offlineTranscriptRef.current,
         offlineScrollRef.current,
       );
       reportReady();
+      return;
+    }
+    if (message.type === 'cache-snapshot-start' && typeof message.key === 'string') {
+      endAppPerformanceTrace(serializationTraces.current.get(message.key) || null);
+      const trace = beginAppPerformanceTrace('Whip terminal offline cache serialize');
+      if (trace) serializationTraces.current.set(message.key, trace);
+      else serializationTraces.current.delete(message.key);
+      return;
+    }
+    if (message.type === 'cache-snapshot' && typeof message.key === 'string') {
+      endAppPerformanceTrace(serializationTraces.current.get(message.key) || null);
+      serializationTraces.current.delete(message.key);
+      if (typeof message.transcript === 'string') {
+        reportOfflineSnapshot(message.key, message.transcript);
+      }
       return;
     }
     if (message.type === 'trace-write-received') {
@@ -897,6 +999,20 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         pending.inputTraceCookie,
         pending.resizeTraceCookie,
       );
+      if (entry.target.key === activeKey.current) {
+        syncOfflineTranscript(
+          entry,
+          offlineTranscriptRef.current,
+          offlineScrollRef.current,
+        );
+      }
+      if (
+        entry.controllerAttached
+        && !entry.contentState.hasLiveState
+        && entry.target.session.kind !== 'ssh'
+      ) {
+        requestFullFrame(entry);
+      }
       connectEntry(entry);
       return;
     }

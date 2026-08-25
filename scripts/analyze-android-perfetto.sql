@@ -72,6 +72,7 @@ WHERE (
     OR name = 'Whip host snapshot refresh'
     OR name = 'Whip host latency state apply'
     OR name GLOB 'Whip terminal offline cache *'
+    OR name = 'Whip terminal sequence recovery'
     OR name = 'Whip transcript initial parse'
   )
   AND dur > 0

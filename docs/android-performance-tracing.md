@@ -197,10 +197,13 @@ Background-work correlation slices:
 - `Whip host latency state apply`: starts when a completed RTT probe publishes
   its low-priority React state update and ends after that state commits. Terminal
   callbacks should remain short even when this slice spans a long transition.
-- `Whip terminal offline cache refresh`: covers the asynchronous 15-second pane
-  cache refresh, including the remote read and the resulting state update.
-- `Whip terminal offline cache decode`: isolates the synchronous conversion of
-  the returned pane output into the cached terminal transcript.
+- `Whip terminal offline cache serialize`: covers xterm serialization after an
+  output burst or at a lifecycle boundary. It starts from the WebView's
+  pre-serialization message and ends when React Native receives the bounded,
+  OSC-sanitized snapshot, so spikes include serialization and bridge delivery.
+- `Whip terminal sequence recovery`: covers the event-driven same-size resize
+  request used to obtain a full visible repaint after a terminal frame gap.
+  Normal connected operation performs no recurring `pane.read` cache refresh.
 
 The native callback markers are documented diagnostic edits in generated
 `packages/react-native-russh/cpp/generated/react_native_russh.cpp`, because the

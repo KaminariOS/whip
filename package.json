@@ -30,6 +30,7 @@
     "@ubjs/core": "0.31.0-3",
     "@xterm/addon-fit": "0.12.0-beta.299",
     "@xterm/addon-image": "0.10.0-beta.299",
+    "@xterm/addon-serialize": "0.15.0-beta.299",
     "@xterm/xterm": "6.1.0-beta.302",
     "babel-preset-expo": "~57.0.0",
     "class-variance-authority": "^0.7.1",

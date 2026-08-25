@@ -23,9 +23,7 @@ import {
 import type { TerminalProtocolState } from '../lib/terminalBridge';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import {
-  beginAppPerformanceTrace,
   beginTerminalInputTrace,
-  endAppPerformanceTrace,
   endTerminalWriteTrace,
   withTerminalWriteTrace,
 } from '../services/performanceTrace';
@@ -33,7 +31,7 @@ import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
 import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
 import { composeTerminalSubmission } from '../lib/terminalSubmission';
-import { terminalTranscript } from '../lib/terminalTranscript';
+import { terminalSerializedTranscript } from '../lib/terminalTranscript';
 import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '../lib/volumeKeys';
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import { terminalFontFamily } from '../lib/terminalFonts';
@@ -401,67 +399,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   }, [activeTarget?.key, getComposerDraft, restoreKeyboardAfterCompose, setAlt, setCtrl, setShift, terminalId]);
 
   const cacheTargetKey = activeTarget?.key || '';
-  const cacheTargetClient = activeTarget?.client || null;
-  const cacheTargetPaneId = activeTarget?.session.paneId || '';
-  const cacheTargetKind = activeTarget?.session.kind;
-  const cacheTargetStatus = activeTarget?.session.status;
-  const cacheLineLimit = preferences.scrollback;
   const offlineSnapshot = offlineBackendRef.current.snapshot(cacheTargetKey);
 
   useEffect(() => {
     offlineBackendRef.current.retain(new Set(targets.map(target => target.key)));
   }, [targets]);
-
-  useEffect(() => {
-    if (!cacheTargetKey) return;
-    if (
-      !visible
-      || !cacheTargetClient
-      || cacheTargetKind === 'ssh'
-      || cacheTargetStatus !== 'connected'
-    ) return;
-    let cancelled = false;
-    let requestInFlight = false;
-    const refreshCache = async () => {
-      if (requestInFlight) return;
-      requestInFlight = true;
-      const refreshTrace = beginAppPerformanceTrace('Whip terminal offline cache refresh');
-      try {
-        const output = await cacheTargetClient.readPane(cacheTargetPaneId, cacheLineLimit);
-        if (cancelled || !output) return;
-        const decodeTrace = beginAppPerformanceTrace('Whip terminal offline cache decode');
-        let transcript: string;
-        try {
-          transcript = terminalTranscript(output, cacheLineLimit);
-        } finally {
-          endAppPerformanceTrace(decodeTrace);
-        }
-        offlineBackendRef.current.updateTranscript(cacheTargetKey, transcript);
-        if (activeTargetRef.current?.key === cacheTargetKey) {
-          setOfflineBackendRevision(value => value + 1);
-        }
-      } catch {
-        // The existing cache remains readable when its refresh loses the network.
-      } finally {
-        requestInFlight = false;
-        endAppPerformanceTrace(refreshTrace);
-      }
-    };
-    refreshCache();
-    const timer = setInterval(refreshCache, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [
-    cacheLineLimit,
-    cacheTargetClient,
-    cacheTargetKey,
-    cacheTargetKind,
-    cacheTargetPaneId,
-    cacheTargetStatus,
-    visible,
-  ]);
 
   const activeUsesOfflineScroll = Boolean(
     activeTarget
@@ -1361,10 +1303,24 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
             }
           }}
           onOfflineScroll={(target, scroll) => {
-            const next = offlineBackendRef.current.updateScroll(target.key, scroll);
-            if (target.key === activeTarget?.key) {
+            const mutation = offlineBackendRef.current.updateScroll(target.key, scroll);
+            if (mutation.changed && target.key === activeTarget?.key) {
               setOfflineBackendRevision(value => value + 1);
-              setScrollPosition(next.scroll);
+              setScrollPosition(mutation.snapshot.scroll);
+            }
+          }}
+          onOfflineSnapshot={(targetKey, serialized) => {
+            const mutation = offlineBackendRef.current.updateTranscript(
+              targetKey,
+              terminalSerializedTranscript(serialized),
+            );
+            const target = activeTargetRef.current;
+            if (
+              mutation.changed
+              && target?.key === targetKey
+              && target.session.status !== 'connected'
+            ) {
+              setOfflineBackendRevision(value => value + 1);
             }
           }}
           onSearchResult={(count, index, invalid) => setSearchResult({ count, index, invalid })}

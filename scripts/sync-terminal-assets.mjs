@@ -3,9 +3,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import androidImeBridge from './android-ime-bridge.cjs';
+import terminalOfflineCache from './terminal-offline-cache.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
 
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
+const { createTerminalOfflineCache } = terminalOfflineCache;
 const {
   extractTerminalLinks,
   mergeTerminalLinks,
@@ -76,6 +78,10 @@ await Promise.all([
   copyTerminalAsset(
     resolve(root, 'node_modules/@xterm/addon-image/lib/addon-image.js'),
     'addon-image.js',
+  ),
+  copyTerminalAsset(
+    resolve(root, 'node_modules/@xterm/addon-serialize/lib/addon-serialize.js'),
+    'addon-serialize.js',
   ),
   copyTerminalAsset(
     resolve(root, 'node_modules/mermaid/dist/mermaid.min.js'),
@@ -216,9 +222,11 @@ const terminalSessionHtml = `<!doctype html>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
   <script src="addon-image.js"></script>
+  <script src="addon-serialize.js"></script>
   <script>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
+    ${createTerminalOfflineCache.toString()}
     const terminalFontFamily = '${androidTerminalFontFamily}';
     const fontReady = document.fonts?.load
       ? Promise.all([
@@ -265,6 +273,8 @@ const terminalSessionHtml = `<!doctype html>
       showPlaceholder: true,
     });
     terminal.loadAddon(images);
+    const serializer = new SerializeAddon.SerializeAddon();
+    terminal.loadAddon(serializer);
     terminal.open(document.getElementById('terminal'));
     let lastTap = null;
     let doubleTapAction = 'tab';
@@ -274,6 +284,10 @@ const terminalSessionHtml = `<!doctype html>
     let offlineTranscriptChunks = [];
     let offlineTranscriptVisible = false;
     let lastReportedOfflineScroll = '';
+    const offlineCache = createTerminalOfflineCache({
+      serialize: options => serializer.serialize(options),
+      send,
+    });
     const offlineScrollInfo = () => ({
       offsetFromBottom: Math.max(0, terminal.buffer.active.baseY - terminal.buffer.active.viewportY),
       maxOffsetFromBottom: Math.max(0, terminal.buffer.active.baseY),
@@ -435,6 +449,7 @@ const terminalSessionHtml = `<!doctype html>
       }
       prepareLiveWrite();
       terminal.write(data, () => {
+        offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
         reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
       });
@@ -451,6 +466,7 @@ const terminalSessionHtml = `<!doctype html>
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       terminal.write(bytes, () => {
+        offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
         reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
       });
@@ -481,6 +497,7 @@ const terminalSessionHtml = `<!doctype html>
       window.herdrWriteBase64(encoded, pendingInputCookie, pendingResizeCookie, pendingInboundCookie);
     };
     window.herdrSetRenderDrop = enabled => { renderDrop = enabled === true; };
+    window.herdrSnapshot = reason => offlineCache.snapshot(reason || 'lifecycle', true);
     window.herdrReset = () => {
       pendingFrames.clear();
       offlineTranscriptChunks = [];
@@ -531,6 +548,10 @@ const terminalSessionHtml = `<!doctype html>
       if (!nextOfflineScrollback) lastReportedOfflineScroll = '';
       localScrollback = options.localScrollback === true;
       offlineScrollback = nextOfflineScrollback;
+      offlineCache.configure({
+        enabled: options.offlineCache === true,
+        scrollback: options.scrollback,
+      });
       if (doubleTapAction === 'none') lastTap = null;
       const backgroundUri = options.backgroundImageUri || '';
       const dimming = Math.max(0, Math.min(100, Number(options.backgroundDimming) || 0)) / 100;
@@ -1163,6 +1184,7 @@ const terminalSessionScript = terminalSessionHtml
     }
     api.herdrDispose = () => {
       disposed = true;
+      offlineCache.dispose();
       window.removeEventListener('resize', resize);
       if (!usesNativeWindowImeResize) {
         window.visualViewport?.removeEventListener('resize', resize);
@@ -1204,6 +1226,7 @@ const terminalHtml = `<!doctype html>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
   <script src="addon-image.js"></script>
+  <script src="addon-serialize.js"></script>
   <script>
     const terminalMarkup = ${JSON.stringify(terminalSessionMarkup).replaceAll('<', '\\u003c')};
     const createTerminalSession = (root, report) => {
@@ -1336,6 +1359,7 @@ const terminalHtml = `<!doctype html>
     window.herdrBlur = key => call(key, 'herdrBlur');
     window.herdrSetKeyboardEnabled = (key, enabled) => call(key, 'herdrSetKeyboardEnabled', [enabled]);
     window.herdrSetRenderDrop = (key, enabled) => call(key, 'herdrSetRenderDrop', [enabled]);
+    window.herdrSnapshot = (key, reason) => call(key, 'herdrSnapshot', [reason]);
     window.herdrFit = key => call(key, 'herdrFit');
 
     send({ type: 'ready' });

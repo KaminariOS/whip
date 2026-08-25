@@ -32,6 +32,41 @@ export interface TerminalScrollbackMode {
   offlineScrollback: boolean;
 }
 
+export type TerminalOfflineRestoreAction = 'hide' | 'preserve' | 'restore';
+
+/** Decides whether a renderer needs cache reconstruction without using status. */
+export function terminalOfflineRestoreAction(
+  kind: TerminalSession['kind'],
+  hasRenderedState: boolean,
+  transcript: string,
+): TerminalOfflineRestoreAction {
+  if (kind === 'ssh') return 'hide';
+  if (hasRenderedState || !transcript) return 'preserve';
+  return 'restore';
+}
+
+/** Tracks whether a mounted xterm is warm or only showing cache reconstruction. */
+export class TerminalRendererContentState {
+  hasRenderedState = false;
+  hasLiveState = false;
+  snapshotVisible = false;
+
+  restoreAction(kind: TerminalSession['kind'], transcript: string): TerminalOfflineRestoreAction {
+    return terminalOfflineRestoreAction(kind, this.hasRenderedState, transcript);
+  }
+
+  restoredFromCache(): void {
+    this.hasRenderedState = true;
+    this.snapshotVisible = true;
+  }
+
+  receivedLiveFrame(): void {
+    this.hasRenderedState = true;
+    this.hasLiveState = true;
+    this.snapshotVisible = false;
+  }
+}
+
 export function terminalScrollbackMode(
   session: Pick<TerminalSession, 'kind' | 'status'>,
 ): TerminalScrollbackMode {

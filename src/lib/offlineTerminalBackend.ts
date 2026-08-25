@@ -5,6 +5,11 @@ export interface OfflineTerminalSnapshot {
   scroll: PaneScrollInfo;
 }
 
+export interface OfflineTerminalMutation {
+  snapshot: OfflineTerminalSnapshot;
+  changed: boolean;
+}
+
 const emptyScroll = (): PaneScrollInfo => ({
   offset_from_bottom: 0,
   max_offset_from_bottom: 0,
@@ -46,9 +51,11 @@ export class OfflineTerminalBackend {
     return this.snapshots.get(targetKey) || emptySnapshot();
   }
 
-  updateTranscript(targetKey: string, transcript: string): OfflineTerminalSnapshot {
-    const current = this.snapshots.get(targetKey);
-    if (current?.transcript === transcript) return current;
+  updateTranscript(targetKey: string, transcript: string): OfflineTerminalMutation {
+    const current = this.snapshots.get(targetKey) || emptySnapshot();
+    if (current.transcript === transcript) {
+      return { snapshot: current, changed: false };
+    }
     const next = {
       transcript,
       // A new remote capture is a new virtual pane snapshot. Its geometry is
@@ -56,16 +63,18 @@ export class OfflineTerminalBackend {
       scroll: emptyScroll(),
     };
     this.snapshots.set(targetKey, next);
-    return next;
+    return { snapshot: next, changed: true };
   }
 
-  updateScroll(targetKey: string, scroll: PaneScrollInfo): OfflineTerminalSnapshot {
+  updateScroll(targetKey: string, scroll: PaneScrollInfo): OfflineTerminalMutation {
     const current = this.snapshots.get(targetKey) || emptySnapshot();
     const normalized = normalizeScroll(scroll);
-    if (sameScroll(current.scroll, normalized)) return current;
+    if (sameScroll(current.scroll, normalized)) {
+      return { snapshot: current, changed: false };
+    }
     const next = { ...current, scroll: normalized };
     this.snapshots.set(targetKey, next);
-    return next;
+    return { snapshot: next, changed: true };
   }
 
   retain(targetKeys: ReadonlySet<string>): void {

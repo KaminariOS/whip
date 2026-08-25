@@ -1,4 +1,7 @@
-import { terminalTranscript } from '../src/lib/terminalTranscript';
+import {
+  terminalSerializedTranscript,
+  terminalTranscript,
+} from '../src/lib/terminalTranscript';
 
 test('creates a bounded ANSI terminal transcript', () => {
   const value = [
@@ -24,4 +27,10 @@ test('removes OSC side effects while preserving ANSI styling', () => {
     '\u001b]52;c;Y2xpcGJvYXJk\u0007\u001b[31mred\u001b[0m',
     10,
   )).toBe('\u001b[31mred\u001b[0m');
+});
+
+test('sanitizes xterm serialization without rewriting cursor control characters', () => {
+  expect(terminalSerializedTranscript(
+    '\u001b]52;c;Y2xpcGJvYXJk\u0007first\r\u001b[2Ksecond',
+  )).toBe('first\r\u001b[2Ksecond');
 });

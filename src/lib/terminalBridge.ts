@@ -1,10 +1,16 @@
 export interface TerminalFrame {
   type: 'terminal.frame';
+  /** Per terminal-ANSI client frame number; chunks of one frame share a seq. */
   seq: number;
   /** Herdr frames are raw ANSI byte views; compatibility frames may still use strings or buffers. */
   encoding: 'ansi' | 'utf8';
   width: number;
   height: number;
+  /**
+   * True when Herdr painted every visible cell (initial baseline, resize, or
+   * requested repaint). This is not pane scrollback and repaint frames may omit
+   * a clear, so only use it as a visible baseline after resetting locally.
+   */
   full: boolean;
   bytes: string | ArrayBuffer | ArrayBufferView;
   /** Present when a large base64 frame is already split into bridge-safe chunks. */

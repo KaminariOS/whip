@@ -1,6 +1,8 @@
 import {
   directTerminalKeyboardEnabled,
   isOfflineTerminalNavigationInput,
+  TerminalRendererContentState,
+  terminalOfflineRestoreAction,
   terminalResizeForcesNativeDispatch,
   terminalScrollbackMode,
 } from '../src/lib/terminalRenderer';
@@ -40,6 +42,60 @@ describe('terminalScrollbackMode', () => {
       localScrollback: true,
       offlineScrollback: false,
     });
+  });
+});
+
+describe('terminalOfflineRestoreAction', () => {
+  test('preserves a warm live renderer when Herdr disconnects', () => {
+    expect(terminalOfflineRestoreAction('herdr', true, 'older cache')).toBe('preserve');
+  });
+
+  test('restores a cold Herdr renderer from cached state', () => {
+    expect(terminalOfflineRestoreAction('herdr', false, 'cached state')).toBe('restore');
+  });
+
+  test('leaves a cold renderer empty until live output when no cache exists', () => {
+    expect(terminalOfflineRestoreAction('herdr', false, '')).toBe('preserve');
+  });
+
+  test('keeps SSH terminals out of the Herdr offline cache path', () => {
+    expect(terminalOfflineRestoreAction('ssh', false, 'ignored')).toBe('hide');
+  });
+});
+
+describe('TerminalRendererContentState', () => {
+  test('warm disconnect preserves live xterm and reconnect remains live', () => {
+    const state = new TerminalRendererContentState();
+    state.receivedLiveFrame();
+
+    expect(state.restoreAction('herdr', 'older cache')).toBe('preserve');
+    expect(state.hasLiveState).toBe(true);
+    expect(state.snapshotVisible).toBe(false);
+
+    state.receivedLiveFrame();
+    expect(state.snapshotVisible).toBe(false);
+  });
+
+  test('cold restoration is replaced by the first recovered live frame', () => {
+    const state = new TerminalRendererContentState();
+    expect(state.restoreAction('herdr', 'serialized xterm')).toBe('restore');
+
+    state.restoredFromCache();
+    expect(state.snapshotVisible).toBe(true);
+    expect(state.hasLiveState).toBe(false);
+
+    state.receivedLiveFrame();
+    expect(state.snapshotVisible).toBe(false);
+    expect(state.hasLiveState).toBe(true);
+  });
+
+  test('an evicted renderer recreates cold and can restore the retained snapshot', () => {
+    const evicted = new TerminalRendererContentState();
+    evicted.receivedLiveFrame();
+    const recreated = new TerminalRendererContentState();
+
+    expect(evicted.restoreAction('herdr', 'snapshot')).toBe('preserve');
+    expect(recreated.restoreAction('herdr', 'snapshot')).toBe('restore');
   });
 });
 

@@ -39,8 +39,25 @@ describe('OfflineTerminalBackend', () => {
       viewport_rows: 10,
     });
 
-    expect(backend.updateTranscript('one', 'first').scroll.offset_from_bottom).toBe(9);
-    expect(backend.updateTranscript('one', 'second').scroll).toEqual({
+    expect(backend.updateTranscript('one', 'first')).toEqual({
+      snapshot: expect.objectContaining({
+        transcript: 'first',
+        scroll: expect.objectContaining({ offset_from_bottom: 9 }),
+      }),
+      changed: false,
+    });
+    expect(backend.updateTranscript('one', 'second')).toEqual({
+      snapshot: expect.objectContaining({
+        transcript: 'second',
+        scroll: {
+          offset_from_bottom: 0,
+          max_offset_from_bottom: 0,
+          viewport_rows: 0,
+        },
+      }),
+      changed: true,
+    });
+    expect(backend.snapshot('one').scroll).toEqual({
       offset_from_bottom: 0,
       max_offset_from_bottom: 0,
       viewport_rows: 0,
@@ -56,7 +73,7 @@ describe('OfflineTerminalBackend', () => {
       offset_from_bottom: 99,
       max_offset_from_bottom: 8.4,
       viewport_rows: 12.6,
-    }).scroll).toEqual({
+    }).snapshot.scroll).toEqual({
       offset_from_bottom: 8,
       max_offset_from_bottom: 8,
       viewport_rows: 13,
@@ -65,5 +82,18 @@ describe('OfflineTerminalBackend', () => {
     backend.retain(new Set(['keep']));
     expect(backend.snapshot('keep').transcript).toBe('one');
     expect(backend.snapshot('remove').transcript).toBe('');
+  });
+
+  test('reports identical transcript and scroll mutations as unchanged', () => {
+    const backend = new OfflineTerminalBackend();
+
+    expect(backend.updateTranscript('empty', '').changed).toBe(false);
+    expect(backend.updateTranscript('one', 'cached').changed).toBe(true);
+    expect(backend.updateTranscript('one', 'cached').changed).toBe(false);
+    expect(backend.updateScroll('one', {
+      offset_from_bottom: 0,
+      max_offset_from_bottom: 0,
+      viewport_rows: 0,
+    }).changed).toBe(false);
   });
 });
