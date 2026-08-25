@@ -596,9 +596,9 @@ export class HerdrClient {
       this.queueTerminalInputTrace(terminalId, inputTrace);
       terminalNativeWriteStarted(inputTrace);
       try {
-        const write = this.requireSshShell(terminalId).client.writeToShell(data);
+        const result = await this.requireSshShell(terminalId).client.writeToShell(data);
         terminalNativeWriteQueued(inputTrace, true);
-        return await write;
+        return result;
       } catch (error) {
         terminalNativeWriteQueued(inputTrace, false);
         this.removeTerminalInputTrace(terminalId, inputTrace);
@@ -611,9 +611,8 @@ export class HerdrClient {
     this.queueTerminalInputTrace(terminalId, inputTrace);
     terminalNativeWriteStarted(inputTrace);
     try {
-      const write = this.requireClient().herdrBridgeInput(terminalId, data);
+      await this.requireClient().herdrBridgeInput(terminalId, data);
       terminalNativeWriteQueued(inputTrace, true);
-      await write;
     } catch (error) {
       terminalNativeWriteQueued(inputTrace, false);
       this.removeTerminalInputTrace(terminalId, inputTrace);

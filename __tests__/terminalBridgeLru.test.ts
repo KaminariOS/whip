@@ -1,6 +1,10 @@
 import SSHClient from 'react-native-whip-ssh';
 
 import { HerdrClient } from '../src/services/HerdrClient';
+import {
+  terminalNativeWriteQueued,
+  type TerminalInputTrace,
+} from '../src/services/performanceTrace';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => ({
@@ -11,7 +15,15 @@ jest.mock('react-native-whip-ssh', () => ({
   },
 }));
 
+jest.mock('../src/services/performanceTrace', () => ({
+  ...jest.requireActual('../src/services/performanceTrace'),
+  terminalNativePreflightStarted: jest.fn(),
+  terminalNativeWriteStarted: jest.fn(),
+  terminalNativeWriteQueued: jest.fn(),
+}));
+
 const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
+const nativeWriteQueued = jest.mocked(terminalNativeWriteQueued);
 
 const profile: ConnectionProfile = {
   id: 'host-1',
@@ -54,6 +66,7 @@ function bridgeClient(protocol = 17) {
 describe('terminal bridge channels', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
+    nativeWriteQueued.mockReset();
   });
 
   test('retains every opened bridge across SSH clients without a maximum', async () => {
@@ -117,6 +130,27 @@ describe('terminal bridge channels', () => {
 
     expect(native.herdrBridgeInput).toHaveBeenCalledWith('term-1', '\u001b[B');
     await write;
+  });
+
+  test('keeps the native enqueue trace open until a deferred write resolves', async () => {
+    let resolveWrite!: () => void;
+    const deferredWrite = new Promise<void>(resolve => {
+      resolveWrite = resolve;
+    });
+    const native = bridgeClient();
+    jest.mocked(native.herdrBridgeInput).mockReturnValueOnce(deferredWrite);
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const inputTrace = {} as TerminalInputTrace;
+    await client.connect(profile);
+    await client.openTerminal('term-1', jest.fn());
+
+    const write = client.writeToTerminal('term-1', 'status\r', inputTrace);
+
+    expect(nativeWriteQueued).not.toHaveBeenCalled();
+    resolveWrite();
+    await write;
+    expect(nativeWriteQueued).toHaveBeenCalledWith(inputTrace, true);
   });
 
   test('forwards the touched terminal cell with attached-pane scrolling', async () => {

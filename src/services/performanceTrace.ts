@@ -325,6 +325,21 @@ export function endTerminalWriteTrace(trace: TerminalInputTrace | null, success:
   else abandonTrace(trace, 'error');
 }
 
+/** Keeps the write slice open until the operation has actually settled. */
+export async function withTerminalWriteTrace<Result>(
+  trace: TerminalInputTrace | null,
+  operation: () => Result | Promise<Result>,
+): Promise<Result> {
+  try {
+    const result = await operation();
+    endTerminalWriteTrace(trace, true);
+    return result;
+  } catch (error) {
+    endTerminalWriteTrace(trace, false);
+    throw error;
+  }
+}
+
 /** Covers app-owned bridge readiness and scheduling before entering native code. */
 export function terminalNativePreflightStarted(trace: TerminalInputTrace | null): void {
   if (!trace || trace.visibleEnded || trace.preNativeWaitCookie !== null) return;

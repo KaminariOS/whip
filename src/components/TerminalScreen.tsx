@@ -27,6 +27,7 @@ import {
   beginTerminalInputTrace,
   endAppPerformanceTrace,
   endTerminalWriteTrace,
+  withTerminalWriteTrace,
 } from '../services/performanceTrace';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
@@ -493,11 +494,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     onInteraction?.(target);
     setScrollPosition(current => current ? { ...current, offset_from_bottom: 0 } : current);
     try {
-      const write = inputTrace
+      await withTerminalWriteTrace(inputTrace, () => inputTrace
         ? target.client.writeToTerminal(target.session.terminalId, data, inputTrace)
-        : target.client.writeToTerminal(target.session.terminalId, data);
-      endTerminalWriteTrace(inputTrace, true);
-      await write;
+        : target.client.writeToTerminal(target.session.terminalId, data));
       if (target.key === activeTargetRef.current?.key) setError(null);
       if (
         refocusTerminal

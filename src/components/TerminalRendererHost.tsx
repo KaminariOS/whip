@@ -52,6 +52,7 @@ import {
   terminalInboundXtermWritten,
   terminalFrameReceived,
   terminalFrameRendered,
+  withTerminalWriteTrace,
 } from '../services/performanceTrace';
 import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
@@ -630,14 +631,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
       const prepared = parts.map(prepareTerminalPaste);
       const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
-      return enqueueInput(entry, () => {
-        const submission = entry.target.client.submitPastesToPane(
+      return enqueueInput(entry, () => withTerminalWriteTrace(
+        inputTrace,
+        () => entry.target.client.submitPastesToPane(
           entry.target.session.paneId,
           prepared,
-        );
-        endTerminalWriteTrace(inputTrace, true);
-        return submission;
-      }, newUserInput).catch(reason => {
+        ),
+      ), newUserInput).catch(reason => {
         endTerminalWriteTrace(inputTrace, false);
         reportError(entry.target, String(reason));
         throw reason;
@@ -855,15 +855,23 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           : [];
         await enqueueInput(entry, async () => {
           for (const [index, data] of terminalSubmissionWrites(pastedParts).entries()) {
-            const write = index === 0 && inputTrace
-              ? entry.target.client.writeToTerminal(
+            if (index === 0) {
+              await withTerminalWriteTrace(
+                inputTrace,
+                () => inputTrace
+                  ? entry.target.client.writeToTerminal(
+                    entry.target.session.terminalId,
+                    data,
+                    inputTrace,
+                  )
+                  : entry.target.client.writeToTerminal(entry.target.session.terminalId, data),
+              );
+            } else {
+              await entry.target.client.writeToTerminal(
                 entry.target.session.terminalId,
                 data,
-                inputTrace,
-              )
-              : entry.target.client.writeToTerminal(entry.target.session.terminalId, data);
-            if (index === 0) endTerminalWriteTrace(inputTrace, true);
-            await write;
+              );
+            }
           }
         });
       } catch (reason) {
