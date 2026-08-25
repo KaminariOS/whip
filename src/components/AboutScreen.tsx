@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Code2, ExternalLink, Share2 } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, ExternalLink, Share2 } from 'lucide-react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
@@ -11,6 +11,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
+import { LocalSvg } from 'react-native-svg/css';
 
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
@@ -23,6 +24,7 @@ import { Text } from './ui/text';
 export const WHIP_RELEASES_URL = 'https://github.com/KaminariOS/whip/releases';
 export const WHIP_REPOSITORY_URL = 'https://github.com/KaminariOS/whip';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
+export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
 const ABOUT_EXPAND_DURATION = 340;
 const ABOUT_COLLAPSE_DURATION = 260;
 
@@ -85,6 +87,11 @@ export function AboutSection() {
       Alert.alert(t('about.herdrWebsiteError'), String(error));
     });
   };
+  const openXProfile = () => {
+    Linking.openURL(X_PROFILE_URL).catch(error => {
+      Alert.alert(t('about.xError'), String(error));
+    });
+  };
   const shareHerdrWebsite = () => {
     Share.share({
       title: t('about.shareHerdrTitle'),
@@ -134,8 +141,8 @@ export function AboutSection() {
               variant="outline"
               onPress={hapticPress(openReleases)}>
               <GlassBackdrop shapeClassName="rounded-lg" />
-              <View className="size-11 items-center justify-center rounded-full bg-accent">
-                <Icon as={Code2} size={22} />
+              <View className="size-11 items-center justify-center rounded-full bg-black">
+                <GitHubMark size={22} />
               </View>
               <View className="min-w-0 flex-1">
                 <Text className="text-[15px] font-semibold leading-5">{t('about.githubRepository')}</Text>
@@ -151,6 +158,23 @@ export function AboutSection() {
               onPress={hapticPress(shareReleases)}>
               <GlassBackdrop shapeClassName="rounded-lg" />
               <Icon as={Share2} size={21} />
+            </Button>
+          </View>
+          <View className="mt-2.5 flex-row gap-2.5">
+            <Button
+              accessibilityRole="link"
+              className="h-auto min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              variant="outline"
+              onPress={hapticPress(openXProfile)}>
+              <GlassBackdrop shapeClassName="rounded-lg" />
+              <View className="size-11 items-center justify-center rounded-full bg-black">
+                <XMark size={20} />
+              </View>
+              <View className="min-w-0 flex-1">
+                <Text className="text-[15px] font-semibold leading-5">X</Text>
+                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>@Kosumi1989</Text>
+              </View>
+              <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
             </Button>
           </View>
           <View className="mt-2.5 flex-row gap-2.5">
@@ -218,6 +242,28 @@ export function AboutSection() {
         ) : null}
       </Animated.View>
     </View>
+  );
+}
+
+function GitHubMark({ size }: { size: number }) {
+  return (
+    <LocalSvg
+      accessible={false}
+      asset={require('../../assets/brand/github.svg')}
+      height={size}
+      width={size}
+    />
+  );
+}
+
+function XMark({ size }: { size: number }) {
+  return (
+    <LocalSvg
+      accessible={false}
+      asset={require('../../assets/brand/x.svg')}
+      height={size}
+      width={size}
+    />
   );
 }
 

@@ -34,6 +34,7 @@ export const es = {
   'about.source': 'Lanzamientos',
   'about.githubRepository': 'Lanzamientos GitHub',
   'about.githubError': 'No se pudo abrir GitHub',
+  'about.xError': 'No se pudo abrir X',
   'about.herdrWebsite': 'Herdr sitio web',
   'about.herdrWebsiteError': 'No se pudo abrir el sitio web Herdr',
   'about.herdrIcon': 'Herdr icono',

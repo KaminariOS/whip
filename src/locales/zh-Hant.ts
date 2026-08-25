@@ -34,6 +34,7 @@ export const zhHant: Record<string, string> = {
   'about.source': '版本發布',
   'about.githubRepository': 'GitHub 版本發布',
   'about.githubError': '無法開啟 GitHub',
+  'about.xError': '無法開啟 X',
   'about.herdrWebsite': 'Herdr 網站',
   'about.herdrWebsiteError': '無法開啟 Herdr 網站',
   'about.herdrIcon': 'Herdr 圖示',

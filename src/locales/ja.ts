@@ -34,6 +34,7 @@ export const ja = {
   'about.source': 'リリース',
   'about.githubRepository': 'GitHub リリース',
   'about.githubError': 'GitHubを開けませんでした',
+  'about.xError': 'Xを開けませんでした',
   'about.herdrWebsite': 'Herdr ウェブサイト',
   'about.herdrWebsiteError': 'Herdr Web サイトを開けませんでした',
   'about.herdrIcon': 'Herdr アイコン',

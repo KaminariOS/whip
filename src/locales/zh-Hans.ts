@@ -34,6 +34,7 @@ export const zhHans = {
   'about.source': '发布',
   'about.githubRepository': 'GitHub 发布',
   'about.githubError': '无法打开 GitHub',
+  'about.xError': '无法打开 X',
   'about.herdrWebsite': 'Herdr 网站',
   'about.herdrWebsiteError': '无法打开 Herdr 网站',
   'about.herdrIcon': 'Herdr 图标',

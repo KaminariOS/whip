@@ -36,6 +36,7 @@ export const en = {
   'about.source': 'Releases',
   'about.githubRepository': 'GitHub releases',
   'about.githubError': 'Could not open GitHub',
+  'about.xError': 'Could not open X',
   'about.herdrWebsite': 'Herdr website',
   'about.herdrWebsiteError': 'Could not open Herdr website',
   'about.herdrIcon': 'Herdr icon',
