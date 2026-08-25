@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - internal-draft
+          - closed
           - production-draft
           - internal
 

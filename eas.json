@@ -39,6 +39,13 @@
         "releaseStatus": "completed"
       }
     },
+    "closed": {
+      "android": {
+        "serviceAccountKeyPath": ".eas-secrets/google-play-service-account.json",
+        "track": "alpha",
+        "releaseStatus": "completed"
+      }
+    },
     "production-draft": {
       "android": {
         "serviceAccountKeyPath": ".eas-secrets/google-play-service-account.json",
