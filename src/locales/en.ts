@@ -504,6 +504,7 @@ export const en = {
   'terminal.outbox': 'Outbox',
   'terminal.queued': 'Queued until connected',
   'terminal.sending': 'Sending…',
+  'terminal.retrying': 'Retrying',
   'terminal.unqueue': 'Move queued message back to composer',
   'terminal.find': 'FIND',
   'terminal.attach': 'Attach image or file',

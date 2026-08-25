@@ -490,6 +490,7 @@ export const ja = {
   'terminal.outbox': '送信トレイ',
   'terminal.queued': '接続まで待機中',
   'terminal.sending': '送信中…',
+  'terminal.retrying': '再試行中',
   'terminal.unqueue': '待機中のメッセージを入力欄に戻す',
   'terminal.find': '見つける',
   'terminal.attach': '画像またはファイルを添付してください',

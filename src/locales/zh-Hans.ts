@@ -490,6 +490,7 @@ export const zhHans = {
   'terminal.outbox': '发件箱',
   'terminal.queued': '已排队，等待连接',
   'terminal.sending': '正在发送…',
+  'terminal.retrying': '正在重试',
   'terminal.unqueue': '将排队的消息移回输入框',
   'terminal.find': '查找',
   'terminal.attach': '附加图像或文件',

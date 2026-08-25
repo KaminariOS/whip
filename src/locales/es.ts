@@ -490,6 +490,7 @@ export const es = {
   'terminal.outbox': 'Bandeja de salida',
   'terminal.queued': 'En cola hasta conectarse',
   'terminal.sending': 'Enviando…',
+  'terminal.retrying': 'Reintentando',
   'terminal.unqueue': 'Devolver mensaje en cola al editor',
   'terminal.find': 'BUSCAR',
   'terminal.attach': 'Adjuntar imagen o archivo',

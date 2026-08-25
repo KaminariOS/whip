@@ -977,9 +977,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     const queue = queuedMessagesByTargetRef.current.get(target.key) || [];
     const message = queue.find(item => item.id === id);
     if (!message || message.sending) return;
+    const wasHead = queue[0]?.id === id;
     const remaining = queue.filter(item => item.id !== id);
     publishQueuedMessages(target.key, remaining);
-    if (!remaining.length) {
+    if (wasHead) {
       const retryTimer = queueRetryTimersRef.current.get(target.key);
       if (retryTimer) clearTimeout(retryTimer);
       queueRetryTimersRef.current.delete(target.key);
@@ -999,6 +1000,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
       composeAttachmentsByTargetRef.current.set(target.key, composeAttachmentsRef.current);
     }
     setComposeAttachments(composeAttachmentsRef.current);
+    if (wasHead && remaining.length) flushQueuedTargetRef.current(target);
   };
 
   const selectHistoryEntry = (entry: string) => {
@@ -1484,6 +1486,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
                       label={t('terminal.outbox')}
                       queuedLabel={t('terminal.queued')}
                       sendingLabel={t('terminal.sending')}
+                      retryingLabel={t('terminal.retrying')}
                       unqueueLabel={t('terminal.unqueue')}
                       onUnqueue={unqueueComposeMessage}
                     />
@@ -1558,6 +1561,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
               label={t('terminal.outbox')}
               queuedLabel={t('terminal.queued')}
               sendingLabel={t('terminal.sending')}
+              retryingLabel={t('terminal.retrying')}
               unqueueLabel={t('terminal.unqueue')}
               onUnqueue={unqueueComposeMessage}
               expanded
@@ -1675,6 +1679,7 @@ function QueuedMessagesStrip({
   label,
   queuedLabel,
   sendingLabel,
+  retryingLabel,
   unqueueLabel,
   onUnqueue,
   expanded = false,
@@ -1683,6 +1688,7 @@ function QueuedMessagesStrip({
   label: string;
   queuedLabel: string;
   sendingLabel: string;
+  retryingLabel: string;
   unqueueLabel: string;
   onUnqueue: (id: number) => void;
   expanded?: boolean;
@@ -1706,8 +1712,17 @@ function QueuedMessagesStrip({
               <Text numberOfLines={1} className="font-mono text-[10px] text-terminal-text">
                 {message.historyEntry}
               </Text>
-              <Text className="font-mono text-[8px] text-terminal-muted">
-                {message.sending ? sendingLabel : queuedLabel}
+              <Text
+                numberOfLines={1}
+                className={cn(
+                  'font-mono text-[8px] text-terminal-muted',
+                  message.error && 'text-terminal-error',
+                )}>
+                {message.sending
+                  ? sendingLabel
+                  : message.error
+                    ? `${retryingLabel}: ${message.error}`
+                    : queuedLabel}
               </Text>
             </View>
             <Button

@@ -490,6 +490,7 @@ export const zhHant: Record<string, string> = {
   'terminal.outbox': '寄件匣',
   'terminal.queued': '已排入佇列，等待連線',
   'terminal.sending': '正在傳送…',
+  'terminal.retrying': '正在重試',
   'terminal.unqueue': '將佇列中的訊息移回輸入框',
   'terminal.find': '尋找',
   'terminal.attach': '附加圖片或檔案',
