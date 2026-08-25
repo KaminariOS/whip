@@ -71,6 +71,9 @@ jobs:
           nix develop .#default -c bash
           scripts/build-android-rust.sh
 
+      - name: Check license notices
+        run: nix develop .#default -c npm run check:license-notices
+
       - name: Prepare signing and Play credentials
         env:
           ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
