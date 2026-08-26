@@ -32,13 +32,23 @@ The control plane reads and mutates structured Herdr server state:
 - agents, status, metadata, and recent output
 - create, focus, rename, split, resize, send, close, and launch actions
 
-Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The product-specific Rust layer in `react-native-whip-ssh` owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, direct/legacy event-envelope normalization, and conversion into typed domain events. It composes directly with product-neutral raw Unix-socket transport callbacks in `react-native-russh`; Herdr JSON does not cross the React Native boundary. TypeScript invokes semantic operations and applies trusted typed results/events to application state. Normal operation does not start a remote shell, poll JSON-producing CLI commands, or depend on private TUI layout/render messages.
+Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The product-specific Rust layer in `react-native-whip-ssh` owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, direct/legacy event-envelope normalization, and conversion into typed domain events. It composes directly with product-neutral raw Unix-socket transport callbacks in `react-native-russh`; Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection. Normal operation does not start a remote shell, poll JSON-producing CLI commands, or depend on private TUI layout/render messages.
 
 One Rust `HostRuntime` owns each connected host's authenticated SSH transport,
 control generation, reconnect loop, event subscription, and Herdr terminal
 registry. It uses the generic `react-native-russh` Rust call interface directly;
 reconnect and resource restoration do not bounce through JavaScript. The
-runtime exposes a coherent connection state plus typed lifecycle/domain events.
+runtime exposes coherent connection and versioned `HostState` projections.
+
+`HostState` owns workspace/tab/pane topology, layouts, server focus, derived
+agent status, snapshot sync generations, monotonic state revisions, and
+freshness. Snapshot requests carry both connection and sync generations. Events
+that arrive while a snapshot is in flight are applied immediately and buffered,
+then replayed over the accepted snapshot so an older response cannot erase
+already-observed changes. Herdr does not currently expose a single revision
+shared by its request and subscription channels, so Rust coalesces a follow-up
+snapshot after gaps or inconsistent references instead of hiding that ordering
+limit with delays.
 
 If Whip needs a new server capability, it should be a neutral Herdr socket API method or event, not a mobile-specific endpoint and not a second source of runtime truth.
 
@@ -109,19 +119,19 @@ and PTY used by the mounted terminal.
 ## React Native state ownership
 
 - **Server profiles:** persistent metadata, keyed credentials, last-used state.
-- **Live host sessions:** serializable per-host snapshot, selection, sync generation, error, and a UI projection of native runtime state.
-- **Runtime registry:** one thin non-serializable `HerdrClient` facade and refresh coordinator per live host. Its native `HostRuntime` owns transport identity, reconnect attempts, subscriptions, and terminal handles.
-- **Herdr snapshots:** normalized workspaces, tabs, panes, agents, and server capabilities, isolated per live host.
+- **Live host render cache:** the latest monotonic Rust `HostState` projection per host plus mobile-only workspace selection and connection/latency presentation.
+- **Runtime registry:** one thin non-serializable `HerdrClient` facade per live host. Its native `HostRuntime` owns transport identity, reconnect attempts, subscriptions, terminals, refresh coalescing, and authoritative domain state.
+- **Herdr host state:** normalized workspaces, tabs, panes, layouts, agents, server focus, synchronization, and freshness are authoritative in Rust; React retains only the latest projection for rendering.
 - **Terminal sessions:** ordered open terminals plus active `terminal_id` per live host; terminal WebViews stay mounted across tab and host changes.
 - **Virtual Herdr terminals:** in-memory cached ANSI snapshots and logical scroll state per terminal while its live transport is offline; xterm reports measured viewport geometry and remains responsible for rendering and gestures.
 - **Navigation:** native destinations and sheets; terminal navigation is separate from Herdr workspace/tab focus.
 
 Transport objects do not live in React component state. Rust owns SSH/API
-lifetimes; React consumes serializable state and invokes typed actions through
-the `HerdrClient` facade. TypeScript still owns snapshot/event reduction,
-selection, navigation, refresh coalescing, and other application state. Moving
-that domain reconciliation is the next boundary step, not part of
-`HostRuntime`.
+lifetimes and connected-host domain truth; React consumes typed versioned state
+and invokes semantic actions through the `HerdrClient` facade. Mobile workspace
+selection, navigation, sheets, forms, persisted presentation preferences, and
+terminal view state remain TypeScript concerns. Mobile selection never mutates
+Herdr server focus locally.
 
 ## Mobile information architecture
 
@@ -153,7 +163,10 @@ Connection details, notifications, speech, terminal preferences, known hosts, di
   backoff, an explicit lifecycle state, monotonic epochs, and cancellation on
   user disconnect. A stale transport, event subscription, or terminal open may
   not replace a newer generation.
-- After an event-stream gap or reconnect, fetch a fresh session snapshot before applying new events.
+- During reconnect, retain known-good host state and mark it stale. Rust restarts
+  the event subscription, performs a generation-guarded snapshot sync, and only
+  marks the projection fresh after reconciliation. A failed read never becomes
+  a successful empty snapshot.
 - Terminal frames are byte-stream ANSI data carried through the typed UniFFI/JSI path. Do not convert the hot path to JSON strings or reinterpret partial UTF-8 before xterm receives the bytes.
 - Keep control and terminal failures independent. One failed terminal must not disconnect the Herdr dashboard or other terminals.
 - Backgrounding may suspend polling/rendering, but it must not imply that the remote Herdr session stopped.
@@ -169,7 +182,9 @@ Implemented:
 - a live-host rail plus nested Herdr workspace/tab/pane navigation;
 - multiple mounted, switchable terminal sessions per host with Rust-owned bounded reconnect and same-host restoration using the last native geometry;
 - lazy native Codex Chat projection from exact Herdr session identity and remote rollout JSONL, with RAM-only caching and live following;
-- serialized snapshot refresh and stale-response rejection in TypeScript, with event resubscription and bounded control replacement owned by Rust;
+- Rust-owned snapshot/event reconciliation with in-flight event replay,
+  generation-guarded stale-response rejection, monotonic projections, and
+  coalesced repair syncs;
 - typed binary terminal frames through UniFFI/JSI, batched at the WebView boundary;
 - terminal search, clipboard and OSC 52 writes, selection handles, long-press selection/paste, remote viewport swipes, and configurable gestures;
 - mobile extra keys with one-shot and long-press-locked Ctrl/Alt modifiers;
@@ -181,8 +196,8 @@ Implemented:
 - native Herdr control request/response handling and typed event-stream framing, validation, and normalization shared by Android and iOS;
 - a shared Android/iOS Rust `HostRuntime` with explicit connection states,
   generation guards, cancellable reconnect, event-stream restart, and terminal
-  restoration; React Native receives typed lifecycle notifications and retains
-  snapshot reconciliation only;
+  restoration plus authoritative workspace/tab/pane/layout/focus/agent state;
+  React Native receives typed lifecycle and versioned state projections;
 - Android release signing/Play delivery and unsigned ARM64 iOS device artifacts.
 
 Current transport/product milestones:

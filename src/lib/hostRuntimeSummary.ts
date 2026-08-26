@@ -1,5 +1,5 @@
 import type { AgentStatus, HerdrSnapshot } from '../types';
-import { aggregateAgentStatus } from '../liveHostSessions';
+import { aggregateAgentStatus } from './agentStatusAggregate';
 
 export interface HostRuntimeSummary {
   agentStatus: AgentStatus;

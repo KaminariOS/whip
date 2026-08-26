@@ -79,6 +79,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     await client.focusWorkspace('space-1');
     await client.focusTab('tab-1');
@@ -138,6 +139,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
     await expect(client.measureLatency()).resolves.toMatchObject({
       latencyMs: 42,
       sshRttMs: 42,
@@ -149,8 +151,8 @@ describe('direct Herdr API requests', () => {
     expect(native.requestHerdrApi).not.toHaveBeenCalled();
   });
 
-  test('measures host latency independently while the event subscription is open', async () => {
-    const native = Object.assign(apiClient(request => request.method === 'session.snapshot'
+  test('measures host latency independently after native state synchronization', async () => {
+    const native = apiClient(request => request.method === 'session.snapshot'
       ? {
         type: 'session_snapshot',
         snapshot: {
@@ -163,15 +165,11 @@ describe('direct Herdr API requests', () => {
           agents: [],
         },
       }
-      : { type: 'pong' }), {
-      startHerdrEventStream: jest.fn(async () => undefined),
-      closeHerdrEventStream: jest.fn(),
-    });
+      : { type: 'pong' });
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
     await client.initialSnapshot();
-    await client.openEventStream([], jest.fn());
     jest.mocked(native.measureHostLatency).mockResolvedValueOnce(37);
 
     await expect(client.measureLatency()).resolves.toMatchObject({
@@ -185,12 +183,6 @@ describe('direct Herdr API requests', () => {
       .map(([, request]) => request.method);
     expect(directMethods).toEqual(['session.snapshot']);
     expect(native.measureHostLatency).toHaveBeenCalledTimes(1);
-    expect(native.startHerdrEventStream).toHaveBeenCalledWith(
-      '/home/herdr/.config/herdr/sessions/main/herdr.sock',
-      17,
-      [],
-      expect.any(Function),
-    );
   });
 
   test('returns authoritative workspace creation resources', async () => {
@@ -204,6 +196,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     await expect(client.createWorkspace(' New space ', ' /repo ')).resolves.toEqual(created);
     const request = jest.mocked(native.requestHerdrApi).mock.calls[0][1];
@@ -222,6 +215,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     await expect(client.createTabAndLaunchCommand(
       'space-1',
@@ -252,6 +246,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     await expect(client.createTabAndLaunchCommand('space-1', ' Checks ', '  npm test  ')).resolves.toEqual(created);
 
@@ -289,6 +284,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     await expect(client.createTab('space-1', ' Notes ')).resolves.toEqual(created);
     const request = jest.mocked(native.requestHerdrApi).mock.calls[0][1];
@@ -305,6 +301,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     await expect(client.createTabAndLaunchCommand('space-1', '   ', '  npm test  '))
       .resolves.toMatchObject({ root_pane: { pane_id: 'pane-default-name' } });
@@ -326,6 +323,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     await expect(client.createTabAndLaunchCommand('space-1', 'Checks', 'npm test')).rejects.toMatchObject({
       name: 'CommandLaunchPartialFailure',
@@ -340,6 +338,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     await client.pasteIntoPane('pane-1', 'a long paste');
     await client.submitPastesToPane('pane-1', ['please inspect', '/tmp/image.png']);
@@ -370,6 +369,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
     let readSettled = false;
     const readPromise = client.readPane('pane-1', 500).finally(() => {
@@ -412,13 +412,11 @@ describe('direct Herdr API requests', () => {
   });
 
   test('rechecks an offline server so a later refresh discovers its workspaces', async () => {
-    let statusChecks = 0;
+    let snapshotChecks = 0;
     const native = apiClient(request => {
-      if (request.method === 'ping') {
-        statusChecks += 1;
-        return statusChecks === 1
-          ? new Error('channel is not opened.')
-          : { type: 'pong', version: '0.7.4', protocol: 17 };
+      if (request.method === 'session.snapshot') {
+        snapshotChecks += 1;
+        if (snapshotChecks <= 4) return new Error('channel is not opened.');
       }
       return { type: 'session_snapshot', snapshot: { version: '0.7.4', protocol: 17, focused_workspace_id: 'w1', focused_tab_id: 't1', focused_pane_id: 'p1', workspaces: [{ workspace_id: 'w1', number: 1, label: 'work', focused: true, pane_count: 1, tab_count: 1, active_tab_id: 't1', agent_status: 'idle' }], tabs: [], panes: [], layouts: [], agents: [] } };
     });
@@ -426,15 +424,19 @@ describe('direct Herdr API requests', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await expect(client.snapshot()).resolves.toMatchObject({ server: { running: false }, workspaces: [] });
+    await expect(client.snapshot()).rejects.toThrow('channel is not opened.');
+    expect(client.hostState()).toMatchObject({
+      freshness: 'unavailable',
+    });
+    expect(client.hostState().snapshot).toBeUndefined();
     await expect(client.snapshot()).resolves.toMatchObject({
       server: { running: true },
       workspaces: [{ workspace_id: 'w1', label: 'work' }],
     });
-    expect(statusChecks).toBe(2);
+    expect(snapshotChecks).toBe(5);
   });
 
-  test('rejects a stale SSH transport instead of reporting an empty Herdr server', async () => {
+  test('surfaces a failed refresh instead of reporting an empty Herdr server', async () => {
     const native = {
       requestHerdrApi: jest.fn(async () => { throw 'channel is not opened.'; }),
       getRemoteHome: jest.fn()
@@ -448,8 +450,12 @@ describe('direct Herdr API requests', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await expect(client.snapshot()).rejects.toBe('session is down');
-    expect(native.getRemoteHome).toHaveBeenCalledTimes(2);
+    await expect(client.snapshot()).rejects.toThrow('channel is not opened.');
+    expect(client.hostState()).toMatchObject({
+      freshness: 'unavailable',
+    });
+    expect(client.hostState().snapshot).toBeUndefined();
+    expect(native.getRemoteHome).toHaveBeenCalledTimes(1);
   });
 
   test('retries the initial API channel without repeating SSH authentication', async () => {

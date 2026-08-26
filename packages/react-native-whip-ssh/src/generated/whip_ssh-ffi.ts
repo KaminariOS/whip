@@ -366,6 +366,10 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_host_state(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_is_terminal_opening(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -384,6 +388,9 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     immediate: number,
     reason: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_refresh_state(
+    uniffiSelf: bigint,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_terminal(
     uniffiSelf: bigint,
@@ -472,9 +479,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_control_request(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_disconnect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_host_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_recover(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path(): number;

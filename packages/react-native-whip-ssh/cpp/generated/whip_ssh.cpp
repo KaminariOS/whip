@@ -181,6 +181,8 @@ void uniffi_whip_ssh_fn_method_hostruntime_close_terminal(
 int8_t uniffi_whip_ssh_fn_method_hostruntime_has_terminal(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id,
     RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_hostruntime_host_state(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 int8_t uniffi_whip_ssh_fn_method_hostruntime_is_terminal_opening(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id,
     RustCallStatus *uniffi_out_err);
@@ -190,6 +192,8 @@ int8_t uniffi_whip_ssh_fn_method_hostruntime_is_terminal_opening(
     uint32_t cell_height_px);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_recover(
     /*handle*/ uint64_t ptr, int8_t immediate, RustBuffer reason);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_refresh_state(
+    /*handle*/ uint64_t ptr);
 void uniffi_whip_ssh_fn_method_hostruntime_resize_terminal(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id, uint32_t columns,
     uint32_t rows, uint32_t cell_width_px, uint32_t cell_height_px,
@@ -421,9 +425,11 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntime_connect();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_control_request();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_disconnect();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_has_terminal();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_host_state();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_open_terminal();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_recover();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_refresh_state();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path();
@@ -3701,6 +3707,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_method_hostruntime_has_terminal(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_host_state"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_hostruntime_host_state"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_method_hostruntime_host_state(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_is_terminal_opening"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -3736,6 +3753,18 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_method_hostruntime_recover(
                 rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_refresh_state"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_hostruntime_refresh_state"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_refresh_state(
+                    rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_terminal"] =
       jsi::Function::createFromHostFunction(
@@ -4992,6 +5021,19 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_host_state"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_method_hostruntime_host_state"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_host_state(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_"
         "opening"] = jsi::Function::createFromHostFunction(
       rt,
@@ -5027,6 +5069,19 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_recover(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal"] =
@@ -5745,6 +5800,20 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_has_terminal(
 
   return uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_host_state(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_host_state(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_is_terminal_opening(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -5786,6 +5855,17 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_recover(
                                                         args[0]),
       uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[1]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_refresh_state(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_refresh_state(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
@@ -7033,6 +7113,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal(
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_host_state(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_hostruntime_host_state();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::
     cpp_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening(
         jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -7055,6 +7143,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_recover(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_hostruntime_recover();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_hostruntime_refresh_state();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

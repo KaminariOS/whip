@@ -1,8 +1,6 @@
 import {
   foregroundUsesBriefAlerts,
-  agentFromStatusEvent,
   agentNotificationTitle,
-  agentStatusFromEvent,
   isAgentAlertingStatus,
   previousVisibleAgentStatus,
   shouldNotifyAgentTransition,
@@ -22,12 +20,6 @@ const agent: AgentInfo = {
 };
 
 describe('agent status events', () => {
-  test('validates API status values', () => {
-    expect(agentStatusFromEvent('idle')).toBe('idle');
-    expect(agentStatusFromEvent('running')).toBeNull();
-    expect(agentStatusFromEvent(null)).toBeNull();
-  });
-
   test('treats public idle as already seen and done as completion', () => {
     expect(isAgentAlertingStatus('blocked')).toBe(true);
     expect(isAgentAlertingStatus('done')).toBe(true);
@@ -72,21 +64,6 @@ describe('agent status events', () => {
     expect(shouldNotifyAgentTransition('working', 'done')).toBe(true);
     expect(foregroundUsesBriefAlerts(true)).toBe(true);
     expect(foregroundUsesBriefAlerts(false)).toBe(false);
-  });
-
-  test('merges presentation metadata from a status event', () => {
-    expect(agentFromStatusEvent(agent, {
-      agent_status: 'idle',
-      title: 'Silver price found',
-      display_agent: 'Codex',
-      state_labels: { idle: 'Ready' },
-    })).toEqual({
-      ...agent,
-      agent_status: 'idle',
-      title: 'Silver price found',
-      display_agent: 'Codex',
-      state_labels: { idle: 'Ready' },
-    });
   });
 
   test('uses the tab name and agent name in notification titles', () => {

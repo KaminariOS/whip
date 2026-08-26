@@ -21,6 +21,7 @@ use crate::herdr_terminal::{
     HerdrTerminalAttachLaunchMode, close_all_herdr_terminal_bridges, close_herdr_terminal_bridge,
     herdr_terminal_input, herdr_terminal_resize, herdr_terminal_scroll, start_bridge_on_runtime,
 };
+use crate::host_state::{ApplyResult, HostState, HostStateSnapshot, now_ms};
 use crate::russh_transport::{self, CallError};
 
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
@@ -121,10 +122,10 @@ pub enum HostRuntimeEvent {
         state: HostTerminalState,
         error: Option<String>,
     },
-    Herdr {
+    HostStateChanged {
         runtime_id: String,
-        generation: u64,
-        event: HerdrEvent,
+        state: HostStateSnapshot,
+        changed_agent_pane_ids: Vec<String>,
     },
     EventSubscriptionClosed {
         runtime_id: String,
@@ -213,6 +214,7 @@ struct RuntimeState {
     protocol: Option<u32>,
     event: Option<EventSubscriptionRuntime>,
     terminals: HashMap<String, TerminalRuntime>,
+    host_state: HostState,
 }
 
 impl RuntimeState {
@@ -235,6 +237,7 @@ impl RuntimeState {
             protocol: None,
             event: None,
             terminals: HashMap::new(),
+            host_state: HostState::default(),
         }
     }
 
@@ -273,6 +276,7 @@ impl RuntimeState {
         self.reconnect_attempt = 0;
         self.reconnect_running = false;
         self.last_error = None;
+        self.host_state.connection_installed(self.generation);
         true
     }
 
@@ -288,6 +292,7 @@ impl RuntimeState {
             terminal.state = HostTerminalState::Closed;
             terminal.retry_running = false;
         }
+        self.host_state.mark_disconnected();
         self.epoch
     }
 }
@@ -307,15 +312,28 @@ pub struct HostRuntime {
 }
 
 fn emit(event: HostRuntimeEvent) {
-    if let Some(sink) = event_sink().read().clone() {
+    // Foreign callbacks may synchronously re-enter HostRuntime. Never retain
+    // either the sink registry lock or a runtime-state lock across the call.
+    let sink = event_sink().read().clone();
+    if let Some(sink) = sink {
         sink.event(event);
     }
 }
 
 fn emit_status(inner: &RuntimeInner) {
+    let status = inner.state.lock().status();
     emit(HostRuntimeEvent::ConnectionStateChanged {
         runtime_id: inner.id.clone(),
-        status: inner.state.lock().status(),
+        status,
+    });
+}
+
+fn emit_host_state(inner: &RuntimeInner, changed_agent_pane_ids: Vec<String>) {
+    let state = inner.state.lock().host_state.projection();
+    emit(HostRuntimeEvent::HostStateChanged {
+        runtime_id: inner.id.clone(),
+        state,
+        changed_agent_pane_ids,
     });
 }
 
@@ -443,11 +461,21 @@ async fn finish_connection(
         disconnect_key(key).await;
     }
     emit_status(&inner);
+    emit_host_state(&inner, Vec::new());
     let restored = if restoring {
         restore_resources(inner.clone(), epoch).await
     } else {
         0
     };
+    let _ = refresh_host_state_inner(inner.clone()).await;
+    {
+        let state = inner.state.lock();
+        if state.epoch != epoch || state.connection != HostConnectionState::Connected {
+            return Err(HostRuntimeError::StaleOperation(
+                "host state sync was superseded by another lifecycle operation".to_owned(),
+            ));
+        }
+    }
     inner.settled.notify_waiters();
     Ok(restored)
 }
@@ -469,9 +497,11 @@ async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), HostRuntimeErro
             if state.epoch == epoch {
                 state.connection = HostConnectionState::Failed;
                 state.last_error = Some(error.to_string());
+                state.host_state.mark_reconnecting(error.to_string());
             }
             drop(state);
             emit_status(&inner);
+            emit_host_state(&inner, Vec::new());
             inner.settled.notify_waiters();
             Err(error)
         }
@@ -508,10 +538,12 @@ fn begin_reconnect(inner: Arc<RuntimeInner>, reason: String, immediate: bool) ->
         state.reconnect_running = true;
         state.reconnect_attempt = 0;
         state.last_error = Some(reason.clone());
+        state.host_state.mark_reconnecting(reason.clone());
         state.epoch
     };
     let _ = inner.cancellation.send(epoch);
     emit_status(&inner);
+    emit_host_state(&inner, Vec::new());
     crate::runtime()
         .ok()
         .map(|runtime| {
@@ -558,9 +590,10 @@ async fn reconnect_loop(
         match connect_chain(&inner, epoch).await {
             Ok(jumps) => match finish_connection(inner.clone(), epoch, jumps, true).await {
                 Ok(restored) => {
+                    let generation = inner.state.lock().generation;
                     emit(HostRuntimeEvent::Reconnected {
                         runtime_id: inner.id.clone(),
-                        generation: inner.state.lock().generation,
+                        generation,
                         restored_terminals: restored,
                     });
                     return;
@@ -578,8 +611,10 @@ async fn reconnect_loop(
         state.connection = HostConnectionState::Failed;
         state.reconnect_running = false;
         state.last_error = Some(last_error.clone());
+        state.host_state.mark_reconnecting(last_error.clone());
     }
     emit_status(&inner);
+    emit_host_state(&inner, Vec::new());
     emit(HostRuntimeEvent::FatalError {
         runtime_id: inner.id.clone(),
         message: format!(
@@ -720,6 +755,7 @@ async fn control_request_inner(
     inner: Arc<RuntimeInner>,
     request: HerdrControlRequest,
 ) -> Result<HerdrControlResult, HerdrControlError> {
+    let request_for_state = request.clone();
     let state = inner.state.lock().connection;
     if state != HostConnectionState::Connected {
         return Err(HerdrControlError::TransportDisconnected(format!(
@@ -752,9 +788,16 @@ async fn control_request_inner(
     match result {
         Ok(result) => {
             update_server_from_result(&inner, socket, &result);
+            reconcile_control_result(&inner, &request_for_state, &result);
             Ok(result)
         }
         Err(error) if is_transport_control_error(&error) => {
+            // A missing Herdr socket is a product availability state, not proof
+            // that the authenticated SSH transport died. HostState records the
+            // failed snapshot as unavailable while retaining any known state.
+            if matches!(request_for_state, HerdrControlRequest::SessionSnapshot) {
+                return Err(error);
+            }
             let reason = error.to_string();
             if idempotent_replay(&request) {
                 begin_reconnect(inner.clone(), reason, true);
@@ -768,6 +811,7 @@ async fn control_request_inner(
                     request_on_runtime(inner.transport_key.clone(), socket.clone(), request)
                         .await?;
                 update_server_from_result(&inner, socket, &result);
+                reconcile_control_result(&inner, &request_for_state, &result);
                 Ok(result)
             } else {
                 begin_reconnect(inner.clone(), reason, false);
@@ -775,6 +819,98 @@ async fn control_request_inner(
             }
         }
         Err(error) => Err(error),
+    }
+}
+
+fn reconcile_control_result(
+    inner: &Arc<RuntimeInner>,
+    request: &HerdrControlRequest,
+    result: &HerdrControlResult,
+) {
+    if matches!(result, HerdrControlResult::SessionSnapshot { .. }) {
+        return;
+    }
+    let outcome = {
+        let mut state = inner.state.lock();
+        let generation = state.generation;
+        state
+            .host_state
+            .apply_control_result(generation, request, result)
+    };
+    if !matches!(outcome, ApplyResult::IgnoredStale) {
+        emit_host_state(inner, Vec::new());
+    }
+    if let ApplyResult::NeedsResync(reason) = outcome {
+        schedule_state_resync(inner.clone(), reason);
+    }
+}
+
+async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostStateSnapshot {
+    let (connection_generation, token) = {
+        let mut state = inner.state.lock();
+        let generation = state.generation;
+        let token = state.host_state.begin_sync(generation);
+        (generation, token)
+    };
+    emit_host_state(&inner, Vec::new());
+    let response = control_request_inner(inner.clone(), HerdrControlRequest::SessionSnapshot).await;
+    let response = match response {
+        Err(error) if is_transport_control_error(&error) => {
+            // Preserve the existing cold-connect behavior: retry the direct
+            // stream-local channel once without repeating SSH authentication.
+            control_request_inner(inner.clone(), HerdrControlRequest::SessionSnapshot).await
+        }
+        response => response,
+    };
+    let outcome = match response {
+        Ok(HerdrControlResult::SessionSnapshot { snapshot }) => inner
+            .state
+            .lock()
+            .host_state
+            .complete_sync(token, snapshot, now_ms()),
+        Ok(_) => inner.state.lock().host_state.fail_sync(
+            token,
+            "Herdr returned an unexpected result for session.snapshot".to_owned(),
+        ),
+        Err(error) => inner
+            .state
+            .lock()
+            .host_state
+            .fail_sync(token, error.to_string()),
+    };
+    emit_host_state(&inner, Vec::new());
+    if matches!(outcome, ApplyResult::Applied)
+        && inner.state.lock().generation == connection_generation
+        && let Err(error) = start_or_update_state_events(inner.clone()).await
+    {
+        let reason = error.to_string();
+        emit(HostRuntimeEvent::EventSubscriptionClosed {
+            runtime_id: inner.id.clone(),
+            reason: reason.clone(),
+        });
+        schedule_event_retry(inner.clone(), reason);
+    }
+    inner.state.lock().host_state.projection()
+}
+
+fn schedule_state_resync(inner: Arc<RuntimeInner>, reason: String) {
+    let should_spawn = inner.state.lock().host_state.request_resync(reason);
+    if !should_spawn {
+        return;
+    }
+    if let Ok(runtime) = crate::runtime() {
+        runtime.spawn(async move {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            let should_refresh = {
+                let mut state = inner.state.lock();
+                state.connection == HostConnectionState::Connected
+                    && !state.explicit_disconnect
+                    && state.host_state.take_resync_request()
+            };
+            if should_refresh {
+                let _ = refresh_host_state_inner(inner).await;
+            }
+        });
     }
 }
 
@@ -812,6 +948,39 @@ async fn start_desired_events(inner: Arc<RuntimeInner>, epoch: u64) -> Result<()
         ));
     }
     Ok(())
+}
+
+async fn start_or_update_state_events(inner: Arc<RuntimeInner>) -> Result<(), HerdrEventError> {
+    ensure_herdr_server(&inner)
+        .await
+        .map_err(|error| HerdrEventError::SubscriptionUnavailable(error.to_string()))?;
+    let (epoch, changed) = {
+        let mut state = inner.state.lock();
+        let pane_ids = state.host_state.pane_ids();
+        if state
+            .event
+            .as_ref()
+            .is_some_and(|event| event.pane_ids == pane_ids && !event.retry_running)
+        {
+            (state.epoch, false)
+        } else {
+            let operation_epoch = state
+                .event
+                .as_ref()
+                .map_or(1, |event| event.operation_epoch.wrapping_add(1));
+            state.event = Some(EventSubscriptionRuntime {
+                pane_ids,
+                operation_epoch,
+                retry_running: false,
+            });
+            (state.epoch, true)
+        }
+    };
+    if !changed {
+        return Ok(());
+    }
+    close_herdr_event_subscription(inner.transport_key.clone());
+    start_desired_events(inner, epoch).await
 }
 
 async fn open_terminal_inner(
@@ -1090,13 +1259,21 @@ fn schedule_event_retry(inner: Arc<RuntimeInner>, reason: String) {
                 close_herdr_event_subscription(inner.transport_key.clone());
                 match start_desired_events(inner.clone(), epoch).await {
                     Ok(()) => {
-                        if let Some(event) = inner.state.lock().event.as_mut() {
-                            event.retry_running = false;
-                        }
+                        let generation = {
+                            let mut state = inner.state.lock();
+                            if let Some(event) = state.event.as_mut() {
+                                event.retry_running = false;
+                            }
+                            state.generation
+                        };
                         emit(HostRuntimeEvent::EventSubscriptionRestored {
                             runtime_id: inner.id.clone(),
-                            generation: inner.state.lock().generation,
+                            generation,
                         });
+                        schedule_state_resync(
+                            inner.clone(),
+                            "event subscription restarted after a delivery gap".to_owned(),
+                        );
                         return;
                     }
                     Err(error) => last_error = error.to_string(),
@@ -1188,17 +1365,24 @@ fn schedule_terminal_retry(inner: Arc<RuntimeInner>, terminal_id: String, reason
 pub(crate) fn deliver_herdr_event(client_key: &str, event: HerdrEvent) -> bool {
     let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
     let Some(runtime) = runtime else { return false };
-    let state = runtime.state.lock();
-    if state.connection != HostConnectionState::Connected || state.event.is_none() {
-        return true;
+    let changed_agent_pane_ids = match &event {
+        HerdrEvent::PaneAgentStatusChanged { pane_id, .. } => vec![pane_id.clone()],
+        _ => Vec::new(),
+    };
+    let outcome = {
+        let mut state = runtime.state.lock();
+        if state.connection != HostConnectionState::Connected || state.event.is_none() {
+            return true;
+        }
+        let generation = state.generation;
+        state.host_state.apply_event(generation, event, now_ms())
+    };
+    if !matches!(outcome, ApplyResult::IgnoredStale) {
+        emit_host_state(&runtime, changed_agent_pane_ids);
     }
-    let generation = state.generation;
-    drop(state);
-    emit(HostRuntimeEvent::Herdr {
-        runtime_id: runtime.id.clone(),
-        generation,
-        event,
-    });
+    if let ApplyResult::NeedsResync(reason) = outcome {
+        schedule_state_resync(runtime, reason);
+    }
     true
 }
 
@@ -1210,6 +1394,12 @@ pub(crate) fn event_subscription_closed(client_key: &str, reason: String) -> boo
         return true;
     }
     drop(state);
+    runtime
+        .state
+        .lock()
+        .host_state
+        .mark_needs_resync(format!("event subscription closed: {reason}"));
+    emit_host_state(&runtime, Vec::new());
     emit(HostRuntimeEvent::EventSubscriptionClosed {
         runtime_id: runtime.id.clone(),
         reason: reason.clone(),
@@ -1288,6 +1478,30 @@ impl HostRuntime {
         self.inner.state.lock().status()
     }
 
+    pub fn host_state(&self) -> HostStateSnapshot {
+        self.inner.state.lock().host_state.projection()
+    }
+
+    pub async fn refresh_state(&self) -> Result<HostStateSnapshot, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                if inner.state.lock().connection != HostConnectionState::Connected {
+                    return Err(HostRuntimeError::RuntimeDisconnected(
+                        "host runtime is not connected".to_owned(),
+                    ));
+                }
+                Ok(refresh_host_state_inner(inner).await)
+            })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!(
+                    "host state refresh task failed: {error}"
+                ))
+            })?
+    }
+
     pub fn resolved_socket_path(&self) -> Option<String> {
         self.inner.state.lock().socket_path.clone()
     }
@@ -1334,6 +1548,7 @@ impl HostRuntime {
                     std::mem::take(&mut state.jump_keys)
                 };
                 emit_status(&inner);
+                emit_host_state(&inner, Vec::new());
                 close_herdr_event_subscription(inner.transport_key.clone());
                 close_all_herdr_terminal_bridges(inner.transport_key.clone());
                 disconnect_key(&inner.transport_key).await;
@@ -1346,6 +1561,7 @@ impl HostRuntime {
                     state.last_error = None;
                 }
                 emit_status(&inner);
+                emit_host_state(&inner, Vec::new());
                 inner.settled.notify_waiters();
                 runtimes().write().remove(&inner.id);
                 runtimes().write().remove(&inner.transport_key);
@@ -1644,7 +1860,26 @@ impl Drop for HostRuntime {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use super::*;
+
+    struct ReentrantRuntimeSink {
+        inner: Arc<RuntimeInner>,
+        called: AtomicBool,
+        runtime_unlocked: AtomicBool,
+        registry_unlocked: AtomicBool,
+    }
+
+    impl HostRuntimeEventSink for ReentrantRuntimeSink {
+        fn event(&self, _event: HostRuntimeEvent) {
+            self.called.store(true, Ordering::SeqCst);
+            self.runtime_unlocked
+                .store(self.inner.state.try_lock().is_some(), Ordering::SeqCst);
+            self.registry_unlocked
+                .store(event_sink().try_write().is_some(), Ordering::SeqCst);
+        }
+    }
 
     fn config() -> HostRuntimeConfig {
         HostRuntimeConfig {
@@ -1663,6 +1898,33 @@ mod tests {
             socket_path: None,
             cached_socket_path: None,
         }
+    }
+
+    #[test]
+    fn host_state_callback_can_synchronously_reenter_runtime() {
+        let (cancellation, _) = watch::channel(0);
+        let inner = Arc::new(RuntimeInner {
+            id: "reentrant-test".to_owned(),
+            transport_key: "reentrant-transport".to_owned(),
+            config: config(),
+            state: Mutex::new(RuntimeState::new(&config())),
+            cancellation,
+            settled: Notify::new(),
+        });
+        let sink = Arc::new(ReentrantRuntimeSink {
+            inner: inner.clone(),
+            called: AtomicBool::new(false),
+            runtime_unlocked: AtomicBool::new(false),
+            registry_unlocked: AtomicBool::new(false),
+        });
+        set_host_runtime_event_sink(sink.clone());
+
+        emit_host_state(&inner, Vec::new());
+        clear_host_runtime_event_sink();
+
+        assert!(sink.called.load(Ordering::SeqCst));
+        assert!(sink.runtime_unlocked.load(Ordering::SeqCst));
+        assert!(sink.registry_unlocked.load(Ordering::SeqCst));
     }
 
     #[test]

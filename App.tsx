@@ -19,6 +19,7 @@ import { PortalHost } from '@rn-primitives/portal';
 import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import type { HostRuntimeState } from 'react-native-whip-ssh';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
 import { AppBackground } from './src/components/AppBackground';
@@ -58,7 +59,6 @@ import { shouldEnableAppGlass } from './src/lib/appGlass';
 import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from './src/lib/biometricSecurity';
 import {
   foregroundUsesBriefAlerts,
-  agentFromStatusEvent,
   isAgentAlertingStatus,
   tabNameForAgent,
   previousVisibleAgentStatus,
@@ -87,28 +87,14 @@ import {
   parseAgentNotificationTarget,
   resolveAgentNotificationTarget,
 } from './src/lib/notificationNavigation';
-import { createRefreshCoordinator, type RefreshCoordinator } from './src/lib/refreshCoordinator';
-import {
-  createEventRefreshScheduler,
-  type EventRefreshScheduler,
-} from './src/lib/eventRefreshScheduler';
 import { nextHostLivenessFailure } from './src/lib/hostLiveness';
 import { launchCommandAndOpenCreatedTab } from './src/lib/herdrCreationFlows';
 import {
-  applyLiveHostAgentStatus,
-  applyLiveHostFocus,
-  applyLiveHostLayoutUpdate,
   applyLiveHostLatency,
-  applyLiveHostPaneUpdate,
-  applyLiveHostSnapshot,
-  applyLiveHostTabCreation,
-  applyLiveHostWorkspaceCreation,
-  aggregateAgentStatus,
-  beginLiveHostSync,
+  applyNativeHostState,
   canRefreshLiveHostSession,
   closeLiveHostSession,
   emptyLiveHostSessions,
-  failLiveHostSync,
   findLiveHostSession,
   getActiveLiveHostSession,
   invalidateLiveHostLatency,
@@ -116,10 +102,12 @@ import {
   preferredWorkspacePane,
   replaceLiveHostTerminals,
   selectLiveHostSession,
+  selectLiveHostWorkspaceView,
   updateLiveHostConnection,
   updateLiveHostTerminals,
   type LiveHostSession,
 } from './src/liveHostSessions';
+import { aggregateAgentStatus } from './src/lib/agentStatusAggregate';
 import {
   handleMobileBack,
   initialMobileNavigation,
@@ -210,7 +198,6 @@ import {
 } from './src/terminalSessions';
 import { useTheme } from './src/theme';
 import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, KnownHost, PaneInfo } from './src/types';
-import type { HerdrEvent } from './src/lib/herdrEvents';
 import { guiFontFamilies } from './src/lib/guiFonts';
 import { terminalFontFamily } from './src/lib/terminalFonts';
 import i18n, { languageForLocale } from './src/i18n';
@@ -279,18 +266,10 @@ const StableStatusBar = memo(function AppStatusBar({
 interface LiveRuntime {
   client: HerdrClient;
   profile: ConnectionProfile;
-  refresh: RefreshCoordinator<SnapshotMeasurement>;
   previousStatuses: Map<string, AgentStatus> | null;
-  eventPaneKey: string | null;
-  eventStatus: 'closed' | 'opening' | 'open';
-  eventRefresh: EventRefreshScheduler;
   latencyFailureActive: boolean;
   latencyFailures: number;
-}
-
-interface SnapshotMeasurement {
-  snapshot: HerdrSnapshot;
-  latencyMs: number | null;
+  acceptHostState: (state: HostRuntimeState, changedAgentPaneIds?: string[]) => void;
 }
 
 interface RemoteFilesRequest {
@@ -327,8 +306,6 @@ let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;
 
 function disposeRuntimes(target: Map<string, LiveRuntime>): void {
   for (const runtime of target.values()) {
-    runtime.eventRefresh.cancel();
-    runtime.refresh.invalidate();
     runtime.client.releaseAllTerminals()
       .finally(() => runtime.client.disconnect());
   }
@@ -758,16 +735,9 @@ function AppContent() {
     disposeRuntimes(runtimes.current);
   }, []);
 
-  const clearEventTimers = (runtime: LiveRuntime) => {
-    runtime.eventRefresh.cancel();
-  };
-
   const scheduleEventReconnect = (sessionId: string, cause: unknown) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) return;
-    // Rust owns retry/backoff and subscription generations. This notification
-    // only keeps low-volume diagnostics and UI-derived stream status current.
-    runtime.eventStatus = 'closed';
     recordNetworkDiagnostic('warn', 'event-stream-recovery-native', {
       sessionId,
       cause: networkErrorMessage(cause),
@@ -779,116 +749,6 @@ function AppContent() {
       .then(setHosts)
       .catch(() => undefined);
   };
-
-  async function ensureEventStream(
-    sessionId: string,
-    snapshot: HerdrSnapshot,
-    force = false,
-  ): Promise<void> {
-    const runtime = runtimes.current.get(sessionId);
-    if (!runtime) return;
-    if (!snapshot.server.running) {
-      clearEventTimers(runtime);
-      runtime.eventStatus = 'closed';
-      runtime.eventPaneKey = null;
-      runtime.client.closeEventStream();
-      return;
-    }
-    const paneIds = snapshot.panes.map(pane => pane.pane_id).sort();
-    const paneKey = paneIds.join('\n');
-    if (!force && runtime.eventPaneKey === paneKey && runtime.eventStatus !== 'closed') return;
-    clearEventTimers(runtime);
-    runtime.client.closeEventStream();
-    runtime.eventPaneKey = paneKey;
-    runtime.eventStatus = 'opening';
-    await runtime.client.openEventStream(
-      paneIds,
-      (event: HerdrEvent) => {
-        if (runtimes.current.get(sessionId) !== runtime) return;
-        if (event.event === 'workspace.focused' || event.event === 'tab.focused' || event.event === 'pane.focused') {
-          const workspaceId = event.data.workspace_id;
-          const tabId = 'tab_id' in event.data ? event.data.tab_id : undefined;
-          const paneId = 'pane_id' in event.data ? event.data.pane_id : undefined;
-          setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId, tabId, paneId }));
-        }
-        if (event.event === 'pane.updated') {
-          setLiveSessions(current => applyLiveHostPaneUpdate(
-            current,
-            sessionId,
-            event.data.pane,
-          ));
-        }
-        if (event.event === 'layout.updated') {
-          setLiveSessions(current => applyLiveHostLayoutUpdate(
-            current,
-            sessionId,
-            event.data.layout,
-          ));
-        }
-        if (event.event === 'pane.agent_status_changed') {
-          const { pane_id: paneId, agent_status: agentStatus } = event.data;
-          const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-          const currentAgent = session?.snapshot.agents.find(agent => agent.pane_id === paneId);
-          const agent = currentAgent ? agentFromStatusEvent(currentAgent, event.data) : null;
-          const previous = previousVisibleAgentStatus(
-            session?.snapshot,
-            paneId,
-            runtime.previousStatuses?.get(paneId),
-          );
-          const useBriefAlert = agent
-            ? foregroundUsesBriefAlerts(AppState.currentState === 'active')
-            : false;
-          if (!isAgentAlertingStatus(agentStatus)) {
-            dismissAgentAlertsForPane(sessionId, paneId).catch(() => undefined);
-          }
-          if (
-            agent
-            && alertsEnabledRef.current
-            && shouldNotifyAgentTransition(previous, agentStatus)
-          ) {
-            alertAgent(agent, ttsEnabledRef.current, {
-              hostId: sessionId,
-              paneId,
-            }, session ? tabNameForAgent(agent, session.snapshot.tabs) : undefined,
-            useBriefAlert ? 'brief' : 'persistent',
-            persistentAlertDurationSecondsRef.current * 1_000).catch(() => undefined);
-          }
-          recordNetworkDiagnostic('info', 'agent-status-event', {
-            sessionId,
-            paneId,
-            status: agentStatus,
-          });
-          runtime.previousStatuses?.set(paneId, agentStatus);
-          setLiveSessions(current => applyLiveHostAgentStatus(current, sessionId, paneId, event.data));
-        }
-        runtime.eventRefresh.schedule(
-          event.event === 'protocol.invalid' || event.event === 'protocol.unknown'
-            ? event.data.raw_event
-            : event.event,
-        );
-      },
-      reason => {
-        if (runtimes.current.get(sessionId) !== runtime) return;
-        runtime.eventStatus = 'closed';
-        const cause = reason || t('app.eventBridgeClosed');
-        recordNetworkDiagnostic('warn', 'event-stream-closed', {
-          sessionId,
-          paneCount: paneIds.length,
-          reason: networkErrorMessage(cause),
-        });
-        scheduleEventReconnect(sessionId, cause);
-        probeLiveHostRef.current(sessionId, true);
-      },
-    );
-    if (runtimes.current.get(sessionId) !== runtime) return;
-    runtime.eventStatus = 'open';
-    if (force) {
-      recordNetworkDiagnostic('info', 'event-stream-recovered', {
-        sessionId,
-        paneCount: paneIds.length,
-      });
-    }
-  }
 
   const scheduleReconnect = (sessionId: string, cause: unknown) => {
     const runtime = runtimes.current.get(sessionId);
@@ -914,7 +774,6 @@ function AppContent() {
       status: 'reconnecting',
       error: String(cause),
     }));
-    runtime.refresh.invalidate();
     runtime.client.reconnectControl(runtime.profile).catch(error => {
       if (runtimes.current.get(sessionId) !== runtime) return;
       recordNetworkDiagnostic('warn', 'control-recovery-native-failed', {
@@ -929,14 +788,72 @@ function AppContent() {
       client: new HerdrClient(),
       profile,
       previousStatuses: null,
-      eventPaneKey: null,
-      eventStatus: 'closed',
       latencyFailureActive: false,
       latencyFailures: 0,
-      eventRefresh: createEventRefreshScheduler(() => {
-        refreshHost(sessionId).catch(() => undefined);
-      }),
     } as LiveRuntime;
+    const acceptHostState = (state: HostRuntimeState, changedAgentPaneIds: string[] = []) => {
+      if (runtimes.current.get(sessionId) !== runtime) return;
+      const snapshot = runtime.client.snapshotFromHostState(state);
+      const visibleSnapshot = findLiveHostSession(liveSessionsRef.current, sessionId)?.snapshot;
+      const statuses = new Map(snapshot.agents.map(agent => [agent.pane_id, agent.agent_status]));
+      const changed = new Set(changedAgentPaneIds);
+      if (runtime.previousStatuses) {
+        for (const agent of snapshot.agents) {
+          if (runtime.previousStatuses.get(agent.pane_id) !== agent.agent_status) {
+            changed.add(agent.pane_id);
+          }
+        }
+      }
+      for (const paneId of changed) {
+        const agent = snapshot.agents.find(item => item.pane_id === paneId);
+        const status = agent?.agent_status
+          ?? snapshot.panes.find(item => item.pane_id === paneId)?.agent_status;
+        if (!status) continue;
+        const previous = previousVisibleAgentStatus(
+          visibleSnapshot,
+          paneId,
+          runtime.previousStatuses?.get(paneId),
+        );
+        if (!isAgentAlertingStatus(status)) {
+          dismissAgentAlertsForPane(sessionId, paneId).catch(() => undefined);
+        }
+        if (
+          agent
+          && alertsEnabledRef.current
+          && shouldNotifyAgentTransition(previous, status)
+        ) {
+          const useBriefAlert = foregroundUsesBriefAlerts(AppState.currentState === 'active');
+          alertAgent(agent, ttsEnabledRef.current, {
+            hostId: sessionId,
+            paneId,
+          }, tabNameForAgent(agent, snapshot.tabs),
+          useBriefAlert ? 'brief' : 'persistent',
+          persistentAlertDurationSecondsRef.current * 1_000).catch(() => undefined);
+        }
+        recordNetworkDiagnostic('info', 'agent-status-state-change', {
+          sessionId,
+          paneId,
+          status,
+          revision: state.revision,
+        });
+      }
+      runtime.previousStatuses = statuses;
+      startTransition(() => {
+        setLiveSessions(current => {
+          const updated = applyNativeHostState(current, sessionId, state, snapshot);
+          if (updated === current) return current;
+          return updateLiveHostTerminals(
+            updated,
+            sessionId,
+            terminals => reconcileTerminalSessions(terminals, snapshot.panes),
+          );
+        });
+      });
+      if (state.freshness === 'fresh' || state.freshness === 'unavailable') {
+        setConnectError(null);
+        setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'ready' }));
+      }
+    };
     runtime.client.setRuntimeEventHandler(event => {
       if (runtimes.current.get(sessionId) !== runtime) return;
       if (event.type === 'connection-state') {
@@ -967,13 +884,15 @@ function AppContent() {
       if (event.type === 'reconnected') {
         runtime.latencyFailures = 0;
         runtime.latencyFailureActive = false;
-        setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
         recordNetworkDiagnostic('info', 'control-reconnect-recovered', {
           sessionId,
           generation: event.generation,
           restoredTerminals: event.restoredTerminals,
         });
-        refreshHostSnapshot(sessionId).catch(() => undefined);
+        return;
+      }
+      if (event.type === 'host-state') {
+        acceptHostState(event.state, event.changedAgentPaneIds);
         return;
       }
       if (event.type === 'event-stream-closed') {
@@ -981,8 +900,10 @@ function AppContent() {
         return;
       }
       if (event.type === 'event-stream-restored') {
-        runtime.eventStatus = 'open';
-        refreshHost(sessionId).catch(() => undefined);
+        recordNetworkDiagnostic('info', 'event-stream-restored-native', {
+          sessionId,
+          generation: event.generation,
+        });
         return;
       }
       if (event.type === 'terminal-state' && event.state === 'failed' && event.error?.includes('recovery exhausted')) {
@@ -1000,102 +921,7 @@ function AppContent() {
         }));
       }
     });
-    runtime.refresh = createRefreshCoordinator(
-      async () => {
-        startTransition(() => {
-          setLiveSessions(current => beginLiveHostSync(current, sessionId).state);
-        });
-        // Measure the SSH protocol ping/pong separately from the much larger
-        // Herdr snapshot operation so server control-plane work cannot inflate it.
-        const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-        const latencyProbeStartedAt = performance.now();
-        const latencyMs = session?.status === 'ready'
-          ? await runtime.client.measureLatency().then(measurement => {
-              recordLatencyMeasurement(sessionId, measurement);
-              runtime.latencyFailures = 0;
-              if (runtime.latencyFailureActive) {
-                runtime.latencyFailureActive = false;
-                recordNetworkDiagnostic('info', 'latency-probe-recovered', {
-                  sessionId,
-                  latencyMs: measurement.latencyMs,
-                });
-              }
-              return measurement.latencyMs;
-            }).catch(error => {
-              if (!runtime.latencyFailureActive) {
-                runtime.latencyFailureActive = true;
-                recordLatencyFailure(sessionId, latencyProbeStartedAt, error);
-                recordNetworkDiagnostic('warn', 'latency-probe-failed', {
-                  sessionId,
-                  error: networkErrorMessage(error),
-                });
-              }
-              return null;
-            })
-          : null;
-        const snapshot = await runtime.client.snapshot();
-        return { snapshot, latencyMs };
-      },
-      measurement => {
-        if (runtimes.current.get(sessionId) !== runtime) return;
-        const { snapshot, latencyMs } = measurement;
-        const statuses = new Map(snapshot.agents.map(agent => [agent.pane_id, agent.agent_status]));
-        const changedAgentCount = runtime.previousStatuses
-          ? snapshot.agents.filter(agent => runtime.previousStatuses?.get(agent.pane_id) !== agent.agent_status).length
-          : 0;
-        if (changedAgentCount > 0) {
-          recordNetworkDiagnostic('warn', 'snapshot-status-divergence', {
-            sessionId,
-            eventStatus: runtime.eventStatus,
-            changedAgentCount,
-          });
-        }
-        const visibleSnapshot = findLiveHostSession(liveSessionsRef.current, sessionId)?.snapshot;
-        for (const agent of snapshot.agents) {
-          if (!isAgentAlertingStatus(agent.agent_status)) {
-            dismissAgentAlertsForPane(sessionId, agent.pane_id).catch(() => undefined);
-            continue;
-          }
-          if (alertsEnabledRef.current && runtime.previousStatuses) {
-            const previous = previousVisibleAgentStatus(
-              visibleSnapshot,
-              agent.pane_id,
-              runtime.previousStatuses.get(agent.pane_id),
-            );
-            const useBriefAlert = foregroundUsesBriefAlerts(AppState.currentState === 'active');
-            if (shouldNotifyAgentTransition(previous, agent.agent_status)) {
-              alertAgent(agent, ttsEnabledRef.current, {
-                hostId: sessionId,
-                paneId: agent.pane_id,
-              }, tabNameForAgent(agent, snapshot.tabs),
-              useBriefAlert ? 'brief' : 'persistent',
-              persistentAlertDurationSecondsRef.current * 1_000).catch(() => undefined);
-            }
-          }
-        }
-        runtime.previousStatuses = statuses;
-        startTransition(() => {
-          setLiveSessions(current => {
-            const session = findLiveHostSession(current, sessionId);
-            if (!session) return current;
-            const updated = applyLiveHostSnapshot(
-              current,
-              sessionId,
-              session.sync.generation,
-              snapshot,
-              new Date().toISOString(),
-              latencyMs,
-            );
-            if (updated === current) return current;
-            return updateLiveHostTerminals(
-              updated,
-              sessionId,
-              terminals => reconcileTerminalSessions(terminals, snapshot.panes),
-            );
-          });
-        });
-      },
-    );
+    runtime.acceptHostState = acceptHostState;
     return runtime;
   };
 
@@ -1105,32 +931,18 @@ function AppContent() {
     if (!runtime || !canRefreshLiveHostSession(session)) return null;
     const trace = beginAppPerformanceTrace('Whip host snapshot refresh');
     try {
-      const result = await runtime.refresh.request();
-      if (result.status === 'applied') {
-        setConnectError(null);
-        setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'ready' }));
-        try {
-          await ensureEventStream(sessionId, result.value.snapshot);
-        } catch (error) {
-          runtime.eventStatus = 'closed';
-          scheduleEventReconnect(sessionId, error);
-        }
-        return result.value.snapshot;
-      } else if (result.status === 'failed') {
+      const state = await runtime.client.refreshHostState();
+      const snapshot = runtime.client.snapshotFromHostState(state);
+      if (state.syncStatus === 'error') {
         recordNetworkDiagnostic('error', 'snapshot-refresh-failed', {
           sessionId,
           connectionStatus: session.status,
-          eventStatus: runtime.eventStatus,
-          error: networkErrorMessage(result.error),
+          freshness: state.freshness,
+          error: state.error,
         });
-        setLiveSessions(current => {
-          const currentSession = findLiveHostSession(current, sessionId);
-          if (!currentSession) return current;
-          return failLiveHostSync(current, sessionId, currentSession.sync.generation, String(result.error));
-        });
-        scheduleReconnect(sessionId, result.error);
+        return null;
       }
-      return null;
+      return snapshot;
     } finally {
       endAppPerformanceTrace(trace);
     }
@@ -1148,7 +960,6 @@ function AppContent() {
         !runtime ||
         !shouldRefreshLiveHost(
           session,
-          runtime.eventStatus === 'open',
           reconcile,
         )
       )
@@ -1163,7 +974,6 @@ function AppContent() {
       if (!runtime) continue;
       if (trigger === 'app-resume' && session.status !== 'error' && session.status !== 'reconnecting') continue;
 
-      runtime.refresh.invalidate();
       scheduleReconnect(
         session.id,
         trigger === 'network-change'
@@ -1463,8 +1273,6 @@ function AppContent() {
     }
     const runtime = runtimes.current.get(sessionId);
     if (runtime) {
-      clearEventTimers(runtime);
-      runtime.refresh.invalidate();
       runtime.client.releaseAllTerminals()
         .finally(() => runtime.client.disconnect());
       runtimes.current.delete(sessionId);
@@ -1573,11 +1381,8 @@ function AppContent() {
           trustedKeys += 1;
         }
       }
-      const initial = await withOptionalAppPerformanceTrace(
-        traceStartupRestore,
-        'Whip startup restore: initial snapshot',
-        () => runtime!.client.initialSnapshot(),
-      );
+      const initialState = runtime.client.hostState();
+      const initial = runtime.client.snapshotFromHostState(initialState);
       const restoredTerminals = await withOptionalAppPerformanceTrace(
         traceStartupRestore,
         'Whip startup restore: terminal state',
@@ -1585,8 +1390,7 @@ function AppContent() {
       );
       if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
-      // Publish only fully initialized transports. A failed first handshake is
-      // an offline saved host, not a live session eligible for reconnect.
+      // Publish the Rust-owned state projection only after the transport exists.
       runtimes.current.set(sessionId, runtime);
       setLiveSessions(current => {
         let next = openLiveHostSession(
@@ -1595,16 +1399,8 @@ function AppContent() {
           sessionId,
           activateSession,
         );
-        next = updateLiveHostConnection(next, sessionId, { status: 'connected' });
-        const request = beginLiveHostSync(next, sessionId);
-        next = applyLiveHostSnapshot(
-          request.state,
-          sessionId,
-          request.generation,
-          initial,
-          new Date().toISOString(),
-          null,
-        );
+        next = updateLiveHostConnection(next, sessionId, { status: 'ready' });
+        next = applyNativeHostState(next, sessionId, initialState, initial);
         return replaceLiveHostTerminals(next, sessionId, restoredTerminals);
       });
       liveSessionOpened = true;
@@ -1617,48 +1413,6 @@ function AppContent() {
           setNavigation(current => selectMobileTab(current, 'herd'));
         }
       }
-
-      // The initial snapshot is sufficient to render the destination. Settle
-      // event delivery and reconcile the subscription gap in the background so
-      // neither operation blocks restored-host usability or startup completion.
-      const connectedRuntime = runtime;
-      withOptionalAppPerformanceTrace(
-        traceStartupRestore,
-        'Whip startup restore: background settle',
-        async () => {
-          try {
-            await withOptionalAppPerformanceTrace(
-              traceStartupRestore,
-              'Whip startup restore: event stream',
-              () => ensureEventStream(sessionId, initial),
-            );
-            if (initial.server.running) {
-              await withOptionalAppPerformanceTrace(
-                traceStartupRestore,
-                'Whip startup restore: reconciliation',
-                () => refreshHost(sessionId),
-              );
-            }
-          } catch (error) {
-            connectedRuntime.eventStatus = 'closed';
-            scheduleEventReconnect(sessionId, error);
-          } finally {
-            if (runtimes.current.get(sessionId) === connectedRuntime) {
-              setLiveSessions(current => {
-                const session = findLiveHostSession(current, sessionId);
-                return session?.status === 'connected'
-                  ? updateLiveHostConnection(current, sessionId, { status: 'ready' })
-                  : current;
-              });
-            }
-          }
-        },
-      ).catch(error => {
-        recordNetworkDiagnostic('warn', 'startup-host-settle-failed', {
-          sessionId,
-          error: networkErrorMessage(error),
-        });
-      });
       return true;
     } catch (error) {
       const message = t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
@@ -1676,7 +1430,6 @@ function AppContent() {
         if (liveSessionOpened) {
           scheduleReconnect(nextProfile.id, error);
         } else {
-          runtime.refresh.invalidate();
           runtime.client.disconnect();
         }
       }
@@ -2172,7 +1925,7 @@ function AppContent() {
   };
 
   const selectHerdWorkspace = (sessionId: string, workspaceId: string) => {
-    setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));
+    setLiveSessions(current => selectLiveHostWorkspaceView(current, sessionId, workspaceId));
   };
 
   const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {
@@ -2182,7 +1935,7 @@ function AppContent() {
     const currentPane = currentSnapshot
       ? preferredWorkspacePane(currentSnapshot, workspaceId)
       : undefined;
-    setLiveSessions(current => applyLiveHostFocus(current, sessionId, { workspaceId }));
+    setLiveSessions(current => selectLiveHostWorkspaceView(current, sessionId, workspaceId));
     if (currentPane) {
       openPaneTerminal(sessionId, currentPane);
       return;
@@ -2207,7 +1960,6 @@ function AppContent() {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
     const created = await runtime.client.createWorkspace(name, cwd);
-    setLiveSessions(current => applyLiveHostWorkspaceCreation(current, sessionId, created));
     return created.workspace;
   };
 
@@ -2239,19 +1991,14 @@ function AppContent() {
   ) => {
     setSelectedPaneId(null);
     setLiveSessions(current => {
-      const projected = applyLiveHostTabCreation(current, sessionId, created);
       return updateLiveHostTerminals(
-        projected,
+        current,
         sessionId,
         terminals => openTerminalSession(terminals, created.root_pane),
       );
     });
     if (navigate) selectLiveHost(sessionId, 'terminal');
   }, [selectLiveHost]);
-
-  const projectCreatedTab = useCallback((sessionId: string, created: TabCreationResult) => {
-    setLiveSessions(current => applyLiveHostTabCreation(current, sessionId, created));
-  }, []);
 
   const runHerdCommand = async (
     sessionId: string,
@@ -2508,7 +2255,6 @@ function AppContent() {
             }}
             onExit={() => exitTerminalToHerd(activeSession.id)}
             onRefresh={refreshHost}
-            onTabCreated={projectCreatedTab}
             onOpenPane={(sessionId, pane) => {
               setLiveSessions(current => selectLiveHostSession(current, sessionId));
               setSelectedPaneId(pane.pane_id);
@@ -2718,7 +2464,6 @@ function LiveSessionView({
   onInteraction,
   onExit,
   onRefresh,
-  onTabCreated,
   onOpenPane,
   onActivateTerminal,
   onCloseTerminal,
@@ -2743,7 +2488,6 @@ function LiveSessionView({
   onInteraction: (sessionId: string, tabId: string) => void;
   onExit: () => void;
   onRefresh: (sessionId: string) => Promise<void>;
-  onTabCreated: (sessionId: string, created: TabCreationResult) => void;
   onOpenPane: (sessionId: string, pane: PaneInfo) => void;
   onActivateTerminal: (sessionId: string, pane: PaneInfo) => void;
   onCloseTerminal: (sessionId: string, terminalId: string) => void;
@@ -2752,10 +2496,6 @@ function LiveSessionView({
 }) {
   const sessionId = session.id;
   const refresh = useCallback(() => onRefresh(sessionId), [onRefresh, sessionId]);
-  const tabCreated = useCallback(
-    (created: TabCreationResult) => onTabCreated(sessionId, created),
-    [onTabCreated, sessionId],
-  );
   const openPane = useCallback((pane: PaneInfo) => onOpenPane(sessionId, pane), [onOpenPane, sessionId]);
   const activateTerminal = useCallback((pane: PaneInfo) => onActivateTerminal(sessionId, pane), [onActivateTerminal, sessionId]);
   const closeTerminal = useCallback((terminalId: string) => onCloseTerminal(sessionId, terminalId), [onCloseTerminal, sessionId]);
@@ -2783,7 +2523,6 @@ function LiveSessionView({
       latencyMs={session.status === 'ready' ? session.sync.latencyMs : null}
       latencyWarningActive={session.status === 'ready' && session.sync.latencyWarning.active}
       onRefresh={refresh}
-      onTabCreated={tabCreated}
       onOpenPane={openPane}
       onActivateTerminal={activateTerminal}
       onCloseTerminal={closeTerminal}

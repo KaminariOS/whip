@@ -34,12 +34,24 @@ function createMockWhipSshModule() {
 
   api.createHostRuntime.mockImplementation((config, lifecycleHandler) => {
     let clients = [];
-    let eventState = null;
     let generation = 0;
     let protocol;
     let resolvedSocket;
     let socketFromCache = Boolean(config.cachedSocketPath && !config.socketPath);
     const bridges = new Map();
+    let hostState = {
+      revision: 0,
+      connectionGeneration: 0,
+      syncGeneration: 0,
+      syncStatus: 'idle',
+      freshness: 'loading',
+      needsResync: false,
+      focus: {},
+    };
+
+    const emitHostState = (changedAgentPaneIds = []) => lifecycleHandler?.({
+      type: 'host-state', state: hostState, changedAgentPaneIds,
+    });
 
     const socketPath = async () => {
       if (config.socketPath) return config.socketPath;
@@ -64,6 +76,13 @@ function createMockWhipSshModule() {
         runtime.transportClient = opened[opened.length - 1];
         resolvedSocket = config.socketPath || config.cachedSocketPath;
         generation += 1;
+        hostState = {
+          ...hostState,
+          revision: hostState.revision + 1,
+          connectionGeneration: generation,
+          freshness: hostState.snapshot ? 'stale' : 'loading',
+          needsResync: true,
+        };
         lifecycleHandler?.({
           type: 'connection-state', state: 'connected', generation,
           reconnectAttempt: 0,
@@ -74,25 +93,15 @@ function createMockWhipSshModule() {
       }
     };
 
-    const startEvents = async state => {
-      const token = generation;
-      const client = runtime.transportClient;
-      await client.startHerdrEventStream?.(
-        await socketPath(), protocol || 20, state.paneIds,
-        event => {
-          if (token !== generation || eventState !== state) return;
-          state.handler(event);
-        },
-      );
-    };
-
     const runtime = {
       runtimeId: config.runtimeId,
       transportKey: `mock-runtime-${config.runtimeId}`,
       transportClient: undefined,
-      async connect() { await connectChain(); },
+      async connect() {
+        await connectChain();
+        await runtime.refreshState();
+      },
       async disconnect() {
-        eventState = null;
         bridges.clear();
         for (const client of clients.reverse()) client.disconnect?.();
         clients = [];
@@ -104,10 +113,9 @@ function createMockWhipSshModule() {
           reconnectAttempt: 1, error: reason,
         });
         const oldClients = clients;
-        runtime.transportClient?.closeHerdrEventStream?.();
         await connectChain();
+        await runtime.refreshState();
         for (const client of oldClients.reverse()) client.disconnect?.();
-        if (eventState) await startEvents(eventState);
         for (const [terminalId, bridge] of bridges) {
           await runtime.transportClient.startHerdrBridge(
             await socketPath(), protocol || 20, terminalId, bridge.takeover,
@@ -118,6 +126,59 @@ function createMockWhipSshModule() {
         lifecycleHandler?.({ type: 'reconnected', generation, restoredTerminals: bridges.size });
       },
       status() { return { state: clients.length ? 'connected' : 'disconnected', generation }; },
+      hostState() { return hostState; },
+      async refreshState() {
+        const syncGeneration = hostState.syncGeneration + 1;
+        hostState = {
+          ...hostState,
+          revision: hostState.revision + 1,
+          syncGeneration,
+          syncStatus: 'syncing',
+          freshness: hostState.snapshot ? 'stale' : 'loading',
+          error: undefined,
+        };
+        emitHostState();
+        let result;
+        let failure;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            result = await runtime.requestHerdrApi({ method: 'session.snapshot', params: {} });
+            failure = undefined;
+            break;
+          } catch (error) {
+            failure = error;
+            if (!unavailable(error)) break;
+          }
+        }
+        if (result?.type === 'session_snapshot' && result.snapshot) {
+          hostState = {
+            ...hostState,
+            revision: hostState.revision + 1,
+            syncStatus: 'synced',
+            freshness: 'fresh',
+            error: undefined,
+            needsResync: false,
+            lastSyncedAtMs: Date.now(),
+            focus: {
+              workspaceId: result.snapshot.focused_workspace_id,
+              tabId: result.snapshot.focused_tab_id,
+              paneId: result.snapshot.focused_pane_id,
+            },
+            snapshot: result.snapshot,
+          };
+        } else {
+          hostState = {
+            ...hostState,
+            revision: hostState.revision + 1,
+            syncStatus: 'error',
+            freshness: hostState.snapshot ? 'stale' : 'unavailable',
+            error: String(failure || 'Herdr host state unavailable'),
+            needsResync: true,
+          };
+        }
+        emitHostState();
+        return hostState;
+      },
       resolvedSocketPath() { return resolvedSocket; },
       resolveHerdrSocketPath() { return socketPath(); },
       async requestHerdrApi(request) {
@@ -143,15 +204,6 @@ function createMockWhipSshModule() {
           await runtime.recover(true, String(error));
           return call();
         }
-      },
-      async startHerdrEventStream(paneIds, handler) {
-        const state = { paneIds, handler };
-        eventState = state;
-        await startEvents(state);
-      },
-      closeHerdrEventStream() {
-        eventState = null;
-        runtime.transportClient?.closeHerdrEventStream?.();
       },
       async startHerdrBridge(terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, launchMode, handler) {
         const bridge = { takeover, columns, rows, cellWidthPx, cellHeightPx, launchMode, handler, state: 'opening' };

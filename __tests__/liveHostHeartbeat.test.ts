@@ -11,6 +11,9 @@ function state(
     sync: {
       status: syncStatus,
       generation: 1,
+      connectionGeneration: 1,
+      revision: 1,
+      freshness: syncStatus === 'synced' ? 'fresh' : syncStatus === 'stale' ? 'stale' : 'loading',
       error: null,
       lastSyncedAt: null,
       latencyMs: null,
@@ -21,27 +24,26 @@ function state(
 
 describe('live host heartbeat', () => {
   it('skips healthy event-backed sessions during frequent health checks', () => {
-    expect(shouldRefreshLiveHost(state(), true, false)).toBe(false);
+    expect(shouldRefreshLiveHost(state(), false)).toBe(false);
   });
 
   it('refreshes stale connections and sessions without an event stream', () => {
     expect(
-      shouldRefreshLiveHost(state('reconnecting', 'stale'), false, false),
+      shouldRefreshLiveHost(state('reconnecting', 'stale'), false),
     ).toBe(true);
-    expect(shouldRefreshLiveHost(state(), false, false)).toBe(true);
   });
 
   it('periodically reconciles healthy sessions without duplicating in-flight work', () => {
-    expect(shouldRefreshLiveHost(state(), true, true)).toBe(true);
+    expect(shouldRefreshLiveHost(state(), true)).toBe(true);
     expect(
-      shouldRefreshLiveHost(state('connected', 'syncing'), true, true),
+      shouldRefreshLiveHost(state('connected', 'syncing'), true),
     ).toBe(false);
     expect(
-      shouldRefreshLiveHost(state('connecting', 'idle'), false, true),
+      shouldRefreshLiveHost(state('connecting', 'idle'), true),
     ).toBe(false);
   });
 
   it('keeps transport-connected hosts refreshing until hydration marks them ready', () => {
-    expect(shouldRefreshLiveHost(state('connected'), true, false)).toBe(true);
+    expect(shouldRefreshLiveHost(state('connected'), false)).toBe(true);
   });
 });

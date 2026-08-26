@@ -14,7 +14,9 @@ import {
   HerdrTerminalAttachLaunchMode,
   HerdrTerminalNotificationKind,
   HerdrTerminalControlEvent_Tags,
+  HostFreshness,
   HostRuntimeEvent_Tags,
+  HostSyncStatus,
   HostSshCredential,
   createHostRuntime as createHostRuntimeRust,
   HerdrEvent_Tags,
@@ -45,6 +47,7 @@ import {
   type HerdrWorktreeInfo,
   type HostRuntimeEvent,
   type HostRuntimeLike,
+  type HostStateSnapshot,
 } from './generated-entry';
 
 type PairingResponse = {
@@ -93,9 +96,24 @@ export type RuntimeLifecycleEvent =
   | { type: 'reconnect-scheduled'; attempt: number; delayMs: number; reason: string }
   | { type: 'reconnected'; generation: number; restoredTerminals: number }
   | { type: 'terminal-state'; terminalId: string; state: string; error?: string }
+  | { type: 'host-state'; state: RuntimeHostState; changedAgentPaneIds: string[] }
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
   | { type: 'fatal-error'; message: string };
+
+export type RuntimeHostState = {
+  revision: number;
+  connectionGeneration: number;
+  syncGeneration: number;
+  syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  freshness: 'loading' | 'fresh' | 'stale' | 'unavailable';
+  error?: string;
+  lastSyncedAtMs?: number;
+  lastEventAtMs?: number;
+  needsResync: boolean;
+  focus: { workspaceId?: string; tabId?: string; paneId?: string };
+  snapshot?: Record<string, unknown>;
+};
 
 function runtimeSshConfig(value: RuntimeSshConfig) {
   return {
@@ -422,6 +440,44 @@ function snapshot(value: HerdrSessionSnapshot): Record<string, unknown> {
   };
 }
 
+function hostSyncStatus(value: HostSyncStatus): RuntimeHostState['syncStatus'] {
+  switch (value) {
+    case HostSyncStatus.Idle: return 'idle';
+    case HostSyncStatus.Syncing: return 'syncing';
+    case HostSyncStatus.Synced: return 'synced';
+    case HostSyncStatus.Error: return 'error';
+  }
+}
+
+function hostFreshness(value: HostFreshness): RuntimeHostState['freshness'] {
+  switch (value) {
+    case HostFreshness.Loading: return 'loading';
+    case HostFreshness.Fresh: return 'fresh';
+    case HostFreshness.Stale: return 'stale';
+    case HostFreshness.Unavailable: return 'unavailable';
+  }
+}
+
+function runtimeHostState(value: HostStateSnapshot): RuntimeHostState {
+  return {
+    revision: Number(value.revision),
+    connectionGeneration: Number(value.connectionGeneration),
+    syncGeneration: Number(value.syncGeneration),
+    syncStatus: hostSyncStatus(value.syncStatus),
+    freshness: hostFreshness(value.freshness),
+    error: value.error,
+    lastSyncedAtMs: value.lastSyncedAtMs === undefined ? undefined : Number(value.lastSyncedAtMs),
+    lastEventAtMs: value.lastEventAtMs === undefined ? undefined : Number(value.lastEventAtMs),
+    needsResync: value.needsResync,
+    focus: {
+      workspaceId: value.focus.workspaceId,
+      tabId: value.focus.tabId,
+      paneId: value.focus.paneId,
+    },
+    snapshot: value.snapshot ? snapshot(value.snapshot) : undefined,
+  };
+}
+
 function apiResult(value: HerdrControlResult): ApiResult {
   switch (value.tag) {
     case HerdrControlResult_Tags.Pong:
@@ -666,10 +722,6 @@ const herdrEventSink: HerdrEventSink = {
 const hostRuntimeEventSink = {
   event(event: HostRuntimeEvent): void {
     const { tag, inner } = event;
-    if (tag === HostRuntimeEvent_Tags.Herdr) {
-      eventHandlers.get(inner.runtimeId)?.({ type: 'event', event: apiEvent(inner.event) });
-      return;
-    }
     const handler = runtimeHandlers.get(inner.runtimeId);
     if (!handler) return;
     switch (tag) {
@@ -691,8 +743,14 @@ const hostRuntimeEventSink = {
       case HostRuntimeEvent_Tags.TerminalStateChanged:
         handler({ type: 'terminal-state', terminalId: inner.terminalId, state: String(inner.state).toLowerCase(), error: inner.error });
         break;
+      case HostRuntimeEvent_Tags.HostStateChanged:
+        handler({
+          type: 'host-state',
+          state: runtimeHostState(inner.state),
+          changedAgentPaneIds: [...inner.changedAgentPaneIds],
+        });
+        break;
       case HostRuntimeEvent_Tags.EventSubscriptionClosed:
-        eventHandlers.get(inner.runtimeId)?.({ type: 'closed', reason: inner.reason });
         handler({ type: 'event-stream-closed', reason: inner.reason });
         break;
       case HostRuntimeEvent_Tags.EventSubscriptionRestored:
@@ -737,6 +795,12 @@ export class NativeHostRuntime {
 
   status() { return this.runtime.status(); }
 
+  hostState(): RuntimeHostState { return runtimeHostState(this.runtime.hostState()); }
+
+  async refreshState(): Promise<RuntimeHostState> {
+    return runtimeHostState(await this.runtime.refreshState());
+  }
+
   resolvedSocketPath(): string | undefined { return this.runtime.resolvedSocketPath(); }
 
   resolveHerdrSocketPath(): Promise<string> { return this.runtime.resolveControlSocket(); }
@@ -747,21 +811,6 @@ export class NativeHostRuntime {
     } catch (error) {
       throw controlError(error);
     }
-  }
-
-  async startHerdrEventStream(paneIds: string[], handler: EventHandler): Promise<void> {
-    eventHandlers.set(this.runtimeId, handler);
-    try {
-      await this.runtime.subscribeEvents(paneIds);
-    } catch (error) {
-      eventHandlers.delete(this.runtimeId);
-      throw eventError(error);
-    }
-  }
-
-  closeHerdrEventStream(): void {
-    eventHandlers.delete(this.runtimeId);
-    this.runtime.unsubscribeEvents();
   }
 
   async startHerdrBridge(

@@ -1,30 +1,17 @@
 import type { TerminalSessionsState } from './terminalSessions';
-import { agentFromStatusEvent, type AgentStatusUpdate } from './lib/agentStatusEvents';
+import type { HostRuntimeState } from 'react-native-whip-ssh';
 import {
   initialLatencyWarningState,
   nextLatencyWarningState,
   type LatencyWarningState,
 } from './lib/latencyWarning';
 import type {
-  AgentStatus,
   HerdrSnapshot,
   HostProfile,
   PaneInfo,
-  PaneLayoutSnapshot,
   TabInfo,
   WorkspaceInfo,
 } from './types';
-
-export interface CreatedWorkspaceResources {
-  workspace: WorkspaceInfo;
-  tab: TabInfo;
-  root_pane: PaneInfo;
-}
-
-export interface CreatedTabResources {
-  tab: TabInfo;
-  root_pane: PaneInfo;
-}
 
 export type LiveHostConnectionStatus =
   | 'connecting'
@@ -44,8 +31,12 @@ export interface LiveHostSelection {
 
 export interface LiveHostSyncState {
   status: LiveHostSyncStatus;
-  /** Monotonically increasing token used to reject stale async responses. */
+  /** Rust-owned snapshot synchronization generation. */
   generation: number;
+  /** Rust-owned connection generation and domain-state revision. */
+  connectionGeneration: number;
+  revision: number;
+  freshness: HostRuntimeState['freshness'];
   error: string | null;
   lastSyncedAt: string | null;
   /** Latest successful Android-to-host network round trip. */
@@ -75,11 +66,6 @@ export interface LiveHostConnectionUpdate {
   status: LiveHostConnectionStatus;
   error?: string | null;
   reconnectAttempt?: number;
-}
-
-export interface LiveHostSyncRequest {
-  state: LiveHostSessionsState;
-  generation: number;
 }
 
 export const emptyLiveHostSessions: LiveHostSessionsState = {
@@ -123,6 +109,9 @@ export function createLiveHostSession(
     sync: {
       status: 'idle',
       generation: 0,
+      connectionGeneration: 0,
+      revision: 0,
+      freshness: 'loading',
       error: null,
       lastSyncedAt: null,
       latencyMs: null,
@@ -225,13 +214,12 @@ export function updateLiveHostConnection(
       ?? (update.status === 'ready' || update.status === 'connected'
         ? 0
         : session.reconnectAttempt);
-    const losesFreshness = update.status === 'reconnecting'
+    const losesTransportLatency = update.status === 'reconnecting'
       || update.status === 'disconnected'
       || update.status === 'error';
-    const sync = losesFreshness
+    const sync = losesTransportLatency
       ? {
           ...session.sync,
-          status: session.sync.status === 'synced' ? 'stale' as const : session.sync.status,
           latencyMs: null,
           latencyWarning: initialLatencyWarningState,
         }
@@ -289,11 +277,9 @@ export function invalidateLiveHostLatency(
   sessionId: string,
 ): LiveHostSessionsState {
   return updateSession(state, sessionId, session => {
-    const syncStatus = session.sync.status === 'synced' ? 'stale' : session.sync.status;
     if (
       session.sync.latencyMs === null
       && session.sync.latencyWarning === initialLatencyWarningState
-      && syncStatus === session.sync.status
     ) {
       return session;
     }
@@ -301,7 +287,6 @@ export function invalidateLiveHostLatency(
       ...session,
       sync: {
         ...session.sync,
-        status: syncStatus,
         latencyMs: null,
         latencyWarning: initialLatencyWarningState,
       },
@@ -309,284 +294,70 @@ export function invalidateLiveHostLatency(
   });
 }
 
-/** Start a snapshot request and return the generation the async result must carry. */
-export function beginLiveHostSync(
+/**
+ * Replace the React render cache with a newer Rust-owned HostState projection.
+ * No Herdr event or snapshot reconciliation occurs in TypeScript.
+ */
+export function applyNativeHostState(
   state: LiveHostSessionsState,
   sessionId: string,
-): LiveHostSyncRequest {
-  const session = findLiveHostSession(state, sessionId);
-  if (!session) return { state, generation: -1 };
-  const generation = session.sync.generation + 1;
-  return {
-    generation,
-    state: updateSession(state, sessionId, current => ({
-      ...current,
-      sync: {
-        ...current.sync,
-        status: 'syncing',
-        generation,
-        error: null,
-      },
-    })),
-  };
-}
-
-/** Apply a snapshot only when it belongs to the newest request for this host. */
-export function applyLiveHostSnapshot(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  generation: number,
+  nativeState: HostRuntimeState,
   snapshot: HerdrSnapshot,
-  syncedAt: string | null = null,
-  latencyMs: number | null = null,
 ): LiveHostSessionsState {
   return updateSession(state, sessionId, session => {
-    if (session.sync.generation !== generation) return session;
-    const readyLatencyMs = session.status === 'ready' ? latencyMs : null;
+    if (nativeState.revision <= session.sync.revision) return session;
+    const selection = validUiSelection(snapshot, session.selection)
+      ? session.selection
+      : serverFocusSelection(snapshot);
+    const status: LiveHostSyncStatus = nativeState.syncStatus === 'error'
+      ? 'error'
+      : nativeState.syncStatus === 'syncing'
+        ? 'syncing'
+        : nativeState.freshness === 'fresh'
+          ? 'synced'
+          : nativeState.freshness === 'stale'
+            ? 'stale'
+            : 'idle';
     return {
       ...session,
       snapshot,
-      selection: serverFocusSelection(snapshot),
-      sync: {
-        status: 'synced',
-        generation,
-        error: null,
-        lastSyncedAt: syncedAt,
-        latencyMs: readyLatencyMs,
-        latencyWarning: nextLatencyWarningState(session.sync.latencyWarning, readyLatencyMs),
-      },
-    };
-  });
-}
-
-/** Apply a focus event immediately while the authoritative snapshot refresh runs. */
-export function applyLiveHostFocus(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  target: { workspaceId?: string; tabId?: string; paneId?: string },
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const pane = target.paneId
-      ? session.snapshot.panes.find(item => item.pane_id === target.paneId)
-      : undefined;
-    const tabId = pane?.tab_id ?? target.tabId;
-    const tab = tabId
-      ? session.snapshot.tabs.find(item => item.tab_id === tabId)
-      : undefined;
-    const workspaceId = pane?.workspace_id ?? tab?.workspace_id ?? target.workspaceId;
-    const workspace = workspaceId
-      ? session.snapshot.workspaces.find(item => item.workspace_id === workspaceId)
-      : undefined;
-    if (!workspace) return session;
-
-    const activeTabId = tab?.tab_id ?? workspace.active_tab_id;
-    const focusedPane = pane
-      ?? session.snapshot.panes.find(item => item.tab_id === activeTabId && item.focused)
-      ?? session.snapshot.panes.find(item => item.tab_id === activeTabId);
-    const snapshot: HerdrSnapshot = {
-      ...session.snapshot,
-      focused_workspace_id: workspace.workspace_id,
-      focused_tab_id: activeTabId ?? null,
-      focused_pane_id: focusedPane?.pane_id ?? null,
-      workspaces: session.snapshot.workspaces.map(item => ({
-        ...item,
-        focused: item.workspace_id === workspace.workspace_id,
-        active_tab_id: item.workspace_id === workspace.workspace_id ? activeTabId : item.active_tab_id,
-      })),
-      tabs: session.snapshot.tabs.map(item => ({
-        ...item,
-        focused: item.tab_id === activeTabId,
-      })),
-      panes: session.snapshot.panes.map(item => ({
-        ...item,
-        focused: focusedPane ? item.pane_id === focusedPane.pane_id : item.focused,
-      })),
-    };
-    return {
-      ...session,
-      snapshot,
-      selection: serverFocusSelection(snapshot),
-    };
-  });
-}
-
-function upsertById<T>(items: T[], item: T, id: (value: T) => string): T[] {
-  return items.some(current => id(current) === id(item))
-    ? items.map(current => id(current) === id(item) ? item : current)
-    : [...items, item];
-}
-
-/** Project workspace.create's authoritative topology before event reconciliation. */
-export function applyLiveHostWorkspaceCreation(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  created: CreatedWorkspaceResources,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const workspace = { ...created.workspace, focused: true };
-    const tab = { ...created.tab, focused: true };
-    const rootPane = { ...created.root_pane, focused: true };
-    const snapshot: HerdrSnapshot = {
-      ...session.snapshot,
-      focused_workspace_id: workspace.workspace_id,
-      focused_tab_id: tab.tab_id,
-      focused_pane_id: rootPane.pane_id,
-      workspaces: upsertById(
-        session.snapshot.workspaces.map(item => ({ ...item, focused: false })),
-        workspace,
-        item => item.workspace_id,
-      ),
-      tabs: upsertById(
-        session.snapshot.tabs.map(item => ({ ...item, focused: false })),
-        tab,
-        item => item.tab_id,
-      ),
-      panes: upsertById(
-        session.snapshot.panes.map(item => ({ ...item, focused: false })),
-        rootPane,
-        item => item.pane_id,
-      ),
-    };
-    return { ...session, snapshot, selection: serverFocusSelection(snapshot) };
-  });
-}
-
-/** Project tab.create's authoritative objects before event reconciliation. */
-export function applyLiveHostTabCreation(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  created: CreatedTabResources,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const tab = { ...created.tab, focused: true };
-    const rootPane = { ...created.root_pane, focused: true };
-    const snapshot: HerdrSnapshot = {
-      ...session.snapshot,
-      focused_workspace_id: tab.workspace_id,
-      focused_tab_id: tab.tab_id,
-      focused_pane_id: rootPane.pane_id,
-      workspaces: session.snapshot.workspaces.map(item => ({
-        ...item,
-        focused: item.workspace_id === tab.workspace_id,
-        active_tab_id: item.workspace_id === tab.workspace_id ? tab.tab_id : item.active_tab_id,
-        tab_count: item.workspace_id === tab.workspace_id
-          ? Math.max(item.tab_count, session.snapshot.tabs.filter(existing => existing.workspace_id === tab.workspace_id && existing.tab_id !== tab.tab_id).length + 1)
-          : item.tab_count,
-      })),
-      tabs: upsertById(
-        session.snapshot.tabs.map(item => ({ ...item, focused: false })),
-        tab,
-        item => item.tab_id,
-      ),
-      panes: upsertById(
-        session.snapshot.panes.map(item => ({ ...item, focused: false })),
-        rootPane,
-        item => item.pane_id,
-      ),
-    };
-    return { ...session, snapshot, selection: serverFocusSelection(snapshot) };
-  });
-}
-
-/** Apply the public status event immediately; the following snapshot remains authoritative. */
-export function applyLiveHostAgentStatus(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  paneId: string,
-  data: AgentStatusUpdate,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const paneIndex = session.snapshot.panes.findIndex(pane => pane.pane_id === paneId);
-    if (paneIndex < 0) return session;
-
-    const currentPane = session.snapshot.panes[paneIndex];
-    const updatedPane = paneFromAgentStatusEvent(
-      currentPane,
-      data.agent_status,
-      data,
-    );
-    const panes = [...session.snapshot.panes];
-    panes[paneIndex] = updatedPane;
-    const agents = session.snapshot.agents.map(agent => {
-      if (agent.pane_id !== paneId) return agent;
-      return agentFromStatusEvent(agent, data);
-    });
-    const tabStatuses: AgentStatus[] = [];
-    const workspaceStatuses: AgentStatus[] = [];
-    for (const pane of panes) {
-      if (pane.tab_id === updatedPane.tab_id)
-        tabStatuses.push(pane.agent_status);
-      if (pane.workspace_id === updatedPane.workspace_id)
-        workspaceStatuses.push(pane.agent_status);
-    }
-    const tabStatus = aggregateAgentStatus(tabStatuses);
-    const workspaceStatus = aggregateAgentStatus(workspaceStatuses);
-    const tabs = session.snapshot.tabs.map(tab =>
-      tab.tab_id === updatedPane.tab_id
-        ? { ...tab, agent_status: tabStatus }
-        : tab,
-    );
-    const workspaces = session.snapshot.workspaces.map(workspace =>
-      workspace.workspace_id === updatedPane.workspace_id
-        ? { ...workspace, agent_status: workspaceStatus }
-        : workspace,
-    );
-
-    return {
-      ...session,
-      snapshot: { ...session.snapshot, agents, panes, tabs, workspaces },
-    };
-  });
-}
-
-/** Apply complete pane metadata carried by pane.updated without waiting for a snapshot. */
-export function applyLiveHostPaneUpdate(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  pane: PaneInfo,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    if (!session.snapshot.panes.some(item => item.pane_id === pane.pane_id)) return session;
-    return {
-      ...session,
-      snapshot: {
-        ...session.snapshot,
-        panes: session.snapshot.panes.map(item => item.pane_id === pane.pane_id ? pane : item),
-      },
-    };
-  });
-}
-
-/** Apply layout.updated immediately so layout state follows the native session. */
-export function applyLiveHostLayoutUpdate(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  layout: PaneLayoutSnapshot,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const layouts = session.snapshot.layouts.some(item => item.tab_id === layout.tab_id)
-      ? session.snapshot.layouts.map(item => item.tab_id === layout.tab_id ? layout : item)
-      : [...session.snapshot.layouts, layout];
-    return { ...session, snapshot: { ...session.snapshot, layouts } };
-  });
-}
-
-export function failLiveHostSync(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  generation: number,
-  error: string,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    if (session.sync.generation !== generation) return session;
-    return {
-      ...session,
+      selection,
       sync: {
         ...session.sync,
-        status: 'error',
-        error,
+        status,
+        generation: nativeState.syncGeneration,
+        connectionGeneration: nativeState.connectionGeneration,
+        revision: nativeState.revision,
+        freshness: nativeState.freshness,
+        error: nativeState.error ?? null,
+        lastSyncedAt: nativeState.lastSyncedAtMs
+          ? new Date(nativeState.lastSyncedAtMs).toISOString()
+          : session.sync.lastSyncedAt,
       },
     };
+  });
+}
+
+/** Mobile-only selection; this never changes Herdr's authoritative focus. */
+export function selectLiveHostWorkspaceView(
+  state: LiveHostSessionsState,
+  sessionId: string,
+  workspaceId: string,
+): LiveHostSessionsState {
+  return updateSession(state, sessionId, session => {
+    const pane = preferredWorkspacePane(session.snapshot, workspaceId);
+    const workspace = session.snapshot.workspaces.find(item => item.workspace_id === workspaceId);
+    if (!workspace) return session;
+    const selection: LiveHostSelection = {
+      workspaceId,
+      tabId: pane?.tab_id ?? workspace.active_tab_id ?? null,
+      paneId: pane?.pane_id ?? null,
+    };
+    return session.selection.workspaceId === selection.workspaceId
+      && session.selection.tabId === selection.tabId
+      && session.selection.paneId === selection.paneId
+      ? session
+      : { ...session, selection };
   });
 }
 
@@ -670,32 +441,19 @@ function serverFocusSelection(snapshot: HerdrSnapshot): LiveHostSelection {
   };
 }
 
-const AGENT_STATUS_PRIORITY: Record<AgentStatus, number> = {
-  blocked: 5,
-  done: 4,
-  working: 3,
-  idle: 2,
-  unknown: 1,
-};
-
-export function aggregateAgentStatus(statuses: AgentStatus[]): AgentStatus {
-  return statuses.reduce<AgentStatus>((aggregate, status) => (
-    AGENT_STATUS_PRIORITY[status] > AGENT_STATUS_PRIORITY[aggregate] ? status : aggregate
-  ), 'unknown');
-}
-
-function paneFromAgentStatusEvent(
-  pane: PaneInfo,
-  agentStatus: AgentStatus,
-  data: AgentStatusUpdate,
-): PaneInfo {
-  const next = { ...pane, agent_status: agentStatus };
-  for (const field of ['agent', 'title', 'display_agent'] as const) {
-    const value = data[field];
-    if (value !== undefined) next[field] = value;
-  }
-  if (data.state_labels) next.state_labels = data.state_labels;
-  return next;
+function validUiSelection(snapshot: HerdrSnapshot, selection: LiveHostSelection): boolean {
+  if (!selection.workspaceId) return snapshot.workspaces.length === 0;
+  const workspace = snapshot.workspaces.find(item => item.workspace_id === selection.workspaceId);
+  if (!workspace) return false;
+  if (!selection.tabId) return !snapshot.tabs.some(item => item.workspace_id === workspace.workspace_id);
+  const tab = snapshot.tabs.find(item => (
+    item.tab_id === selection.tabId && item.workspace_id === workspace.workspace_id
+  ));
+  if (!tab) return false;
+  if (!selection.paneId) return !snapshot.panes.some(item => item.tab_id === tab.tab_id);
+  return snapshot.panes.some(item => (
+    item.pane_id === selection.paneId && item.tab_id === tab.tab_id
+  ));
 }
 
 function preferredTab(snapshot: HerdrSnapshot, workspace: WorkspaceInfo): TabInfo | undefined {

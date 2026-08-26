@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type LsResult, type OpenSSHExecChannel, PtyType } from 'react-native-whip-ssh';
+import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type LsResult, type OpenSSHExecChannel, PtyType } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
 import type { ResponseResult } from '../generated/herdrApi';
 
@@ -8,7 +8,7 @@ import { uniqueRemoteAttachmentName } from '../lib/attachmentPaste';
 import { createSecureId } from '../lib/secureId';
 import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import { errorCode } from '../lib/connectionErrors';
-import { type HerdrApiEvent, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
+import { type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
 import { codexRolloutFindCommand, codexRolloutMetadataCommand, codexRolloutStreamCommand, isValidCodexSessionId, parseCodexIntegrationStatus, parseCodexRolloutMetadata, parseCodexRolloutResolution, type CodexIntegrationStatus, type CodexRolloutMetadata } from '../lib/codexSession';
 import type { CodexTranscriptStream } from './CodexTranscriptService';
@@ -51,7 +51,6 @@ import {
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
 type TerminalControlHandler = (event: TerminalControlEvent) => void;
-type ApiEventHandler = (event: HerdrApiEvent) => void;
 type HerdrApiMethod = HerdrApiRequest['method'];
 type HerdrApiParams<Method extends HerdrApiMethod> = Extract<
   HerdrApiRequest,
@@ -295,6 +294,14 @@ export class HerdrClient {
     this.runtimeEventHandler = handler;
   }
 
+  hostState(): HostRuntimeState {
+    return this.requireRuntime().hostState();
+  }
+
+  refreshHostState(): Promise<HostRuntimeState> {
+    return this.requireRuntime().refreshState();
+  }
+
   /** Ask the Rust-owned runtime to recover its transport and native resources. */
   async reconnectControl(profile: ConnectionProfile = this.requireProfile()): Promise<void> {
     this.profile = profile;
@@ -302,7 +309,6 @@ export class HerdrClient {
   }
 
   disconnect(): void {
-    this.closeEventStream();
     for (const terminalId of this.sshShellConnections.keys()) {
       this.closeSshShell(terminalId);
     }
@@ -840,21 +846,12 @@ export class HerdrClient {
   }
 
   async snapshot(): Promise<HerdrSnapshot> {
-    // A stopped server can be started independently after this SSH connection
-    // was opened. Only cache a usable API endpoint so refreshes can discover it.
-    const server = this.apiServer?.running ? this.apiServer : await this.probeServer();
-    this.apiServer = server.running ? server : null;
-    if (!server.running) {
-      return this.offlineSnapshot(server);
+    const state = await this.requireRuntime().refreshState();
+    const result = this.snapshotFromHostState(state);
+    if (state.syncStatus === 'error') {
+      throw new Error(state.error || 'Herdr host state refresh failed');
     }
-    assertHerdrProtocolCompatible(server.protocol, server.compatible !== false);
-    if (!server.socket) throw new Error('Herdr server status did not include its API socket');
-    try {
-      return await this.requestSessionSnapshot(server.socket);
-    } catch (error) {
-      this.apiServer = null;
-      throw error;
-    }
+    return result;
   }
 
   /**
@@ -866,74 +863,51 @@ export class HerdrClient {
    * and delays the offline Herd recovery screen.
    */
   async initialSnapshot(): Promise<HerdrSnapshot> {
-    let socket = await withAppPerformanceTrace(
-      'Whip initial snapshot: socket path',
-      () => this.apiSocketPath(),
-    );
-    try {
-      return await this.requestSessionSnapshot(socket, true);
-    } catch (error) {
-      if (!isUnavailableSshChannel(error)) throw error;
-    }
+    // HostRuntime performs the initial authoritative sync as part of connect.
+    // A missing snapshot represents an unavailable Herdr server, not a
+    // successful empty host.
+    let state = this.requireRuntime().hostState();
+    // Defensive for test doubles and runtimes created before their first sync;
+    // production HostRuntime normally completes this during connect.
+    if (state.revision === 0) state = await this.requireRuntime().refreshState();
+    return this.snapshotFromHostState(state);
+  }
 
-    // A cached absolute path may have become stale after an account or home
-    // directory change. Resolve it once through the current SSH session before
-    // treating the Herdr socket as unavailable.
-    if (this.resolvedApiSocketPathFromCache) {
-      this.invalidateCachedApiSocketPath();
-      socket = await withAppPerformanceTrace(
-        'Whip initial snapshot: socket path',
-        () => this.apiSocketPath(),
-      );
-    }
-
-    try {
-      return await this.requestSessionSnapshot(socket, true);
-    } catch (error) {
-      if (!isUnavailableSshChannel(error)) throw error;
+  /** Mechanical typed-FFI projection; Rust remains authoritative. */
+  snapshotFromHostState(state: HostRuntimeState): HerdrSnapshot {
+    const raw = state.snapshot as SessionSnapshotResult['snapshot'] | undefined;
+    const socket = this.runtime?.resolvedSocketPath();
+    if (!raw) {
       this.apiServer = null;
       return this.offlineSnapshot({ running: false, socket });
     }
-  }
-
-  private async requestSessionSnapshot(socket: string, traceInitialSnapshot = false): Promise<HerdrSnapshot> {
-    const tracePrefix = traceInitialSnapshot ? 'Whip initial snapshot' : undefined;
-    const result = await this.apiRequest<SessionSnapshotResult>('session.snapshot', {}, socket, tracePrefix);
-    const normalize = (): HerdrSnapshot => {
-      if (!result || result.type !== 'session_snapshot' || !result.snapshot) {
-        throw new Error('Herdr API socket did not return a session snapshot');
-      }
-      const snapshot = result.snapshot;
-      assertHerdrProtocolCompatible(snapshot.protocol);
-      const resolvedSocket = this.runtime?.resolvedSocketPath() || socket;
-      this.resolvedApiSocketPath = resolvedSocket;
+    assertHerdrProtocolCompatible(raw.protocol);
+    if (socket) {
+      this.resolvedApiSocketPath = socket;
       this.resolvedApiSocketPathFromCache = false;
       if (!this.requireProfile().herdrSocketPath?.trim()) {
-        rememberHerdrSocketPath(this.requireProfile(), resolvedSocket);
+        rememberHerdrSocketPath(this.requireProfile(), socket);
       }
-      const server: ServerInfo = {
-        running: true,
-        version: snapshot.version,
-        protocol: snapshot.protocol,
-        compatible: true,
-        socket: resolvedSocket,
-      };
-      this.apiServer = server;
-      return {
-        server,
-        focused_workspace_id: snapshot.focused_workspace_id ?? null,
-        focused_tab_id: snapshot.focused_tab_id ?? null,
-        focused_pane_id: snapshot.focused_pane_id ?? null,
-        agents: snapshot.agents,
-        workspaces: snapshot.workspaces,
-        tabs: snapshot.tabs,
-        panes: snapshot.panes,
-        layouts: snapshot.layouts ?? [],
-      };
+    }
+    const server: ServerInfo = {
+      running: true,
+      version: raw.version,
+      protocol: raw.protocol,
+      compatible: true,
+      socket,
     };
-    return tracePrefix
-      ? withAppPerformanceTrace(`${tracePrefix}: normalize`, normalize)
-      : normalize();
+    this.apiServer = server;
+    return {
+      server,
+      focused_workspace_id: raw.focused_workspace_id ?? null,
+      focused_tab_id: raw.focused_tab_id ?? null,
+      focused_pane_id: raw.focused_pane_id ?? null,
+      agents: raw.agents,
+      workspaces: raw.workspaces,
+      tabs: raw.tabs,
+      panes: raw.panes,
+      layouts: raw.layouts ?? [],
+    };
   }
 
   private offlineSnapshot(server: ServerInfo): HerdrSnapshot {
@@ -948,27 +922,6 @@ export class HerdrClient {
       panes: [],
       layouts: [],
     };
-  }
-
-  async openEventStream(paneIds: string[], onEvent: ApiEventHandler, onClosed?: TerminalClosedHandler): Promise<void> {
-    try {
-      await this.requireRuntime().startHerdrEventStream([...paneIds], event => {
-        if (event.type === 'closed') {
-          const reason = event.reason;
-          onClosed?.(typeof reason === 'string' && reason.trim()
-            ? `Herdr event bridge closed: ${reason}`
-            : 'Herdr event bridge closed');
-          return;
-        }
-        onEvent(event.event as HerdrApiEvent);
-      });
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  closeEventStream(): void {
-    this.runtime?.closeHerdrEventStream();
   }
 
   /** Measure an SSH protocol ping/pong RTT without remote process startup. */

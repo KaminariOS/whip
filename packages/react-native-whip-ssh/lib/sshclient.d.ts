@@ -49,9 +49,24 @@ export type HostRuntimeLifecycleEvent =
   | { type: 'reconnect-scheduled'; attempt: number; delayMs: number; reason: string }
   | { type: 'reconnected'; generation: number; restoredTerminals: number }
   | { type: 'terminal-state'; terminalId: string; state: string; error?: string }
+  | { type: 'host-state'; state: HostRuntimeState; changedAgentPaneIds: string[] }
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
   | { type: 'fatal-error'; message: string };
+
+export interface HostRuntimeState {
+  revision: number;
+  connectionGeneration: number;
+  syncGeneration: number;
+  syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  freshness: 'loading' | 'fresh' | 'stale' | 'unavailable';
+  error?: string;
+  lastSyncedAtMs?: number;
+  lastEventAtMs?: number;
+  needsResync: boolean;
+  focus: { workspaceId?: string; tabId?: string; paneId?: string };
+  snapshot?: Record<string, unknown>;
+}
 
 export interface HostRuntimeConnection {
   readonly runtimeId: string;
@@ -60,9 +75,9 @@ export interface HostRuntimeConnection {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   recover(immediate: boolean, reason: string): Promise<void>;
+  hostState(): HostRuntimeState;
+  refreshState(): Promise<HostRuntimeState>;
   requestHerdrApi(request: { method: string; params: object }): Promise<Record<string, unknown>>;
-  startHerdrEventStream(paneIds: string[], handler: (event: HerdrEventStreamEvent) => void): Promise<void>;
-  closeHerdrEventStream(): void;
   startHerdrBridge(terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, launchMode: number, handler: (event: HerdrBridgeEvent) => void): Promise<void>;
   herdrBridgeInput(terminalId: string, text: string): Promise<void>;
   herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number): Promise<void>;

@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrEventStreamEvent } from 'react-native-whip-ssh';
+import SSHClient from 'react-native-whip-ssh';
 
 import { HerdrClient, isUnavailableSshChannel } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
@@ -37,53 +37,6 @@ function nativeClient(options: { output?: unknown; startError?: unknown } = {}) 
   } as unknown as SSHClient;
 }
 
-function streamingNativeClient() {
-  let eventHandler: ((event: HerdrEventStreamEvent) => void) | null = null;
-  const client = {
-    requestHerdrApi: jest.fn(async (_socketPath: string, request: { method: string }) => {
-      const result = request.method === 'session.snapshot'
-        ? {
-          type: 'session_snapshot',
-          snapshot: {
-            version: '0.8.0',
-            protocol: 20,
-            focused_workspace_id: null,
-            focused_tab_id: null,
-            focused_pane_id: null,
-            workspaces: [],
-            tabs: [],
-            panes: [],
-            layouts: [],
-            agents: [],
-          },
-        }
-        : request.method === 'ping'
-          ? { type: 'pong', version: '0.8.0', protocol: 20 }
-          : { type: 'ok' };
-      return result;
-    }),
-    getRemoteHome: jest.fn(async () => '/home/herdr'),
-    startHerdrEventStream: jest.fn(async (
-      _socketPath: string,
-      _protocol: number,
-      _paneIds: string[],
-      handler: (event: HerdrEventStreamEvent) => void,
-    ) => {
-      eventHandler = handler;
-    }),
-    closeHerdrEventStream: jest.fn(),
-    off: jest.fn(),
-    disconnect: jest.fn(),
-  } as unknown as SSHClient;
-  return {
-    client,
-    emitEvent: (event: { event: string; data: Record<string, unknown> }) => {
-      eventHandler?.({ type: 'event', event });
-    },
-    emitEventClosed: (reason?: string) => eventHandler?.({ type: 'closed', reason }),
-  };
-}
-
 describe('SSH control reconnects', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
@@ -115,68 +68,15 @@ describe('SSH control reconnects', () => {
     await client.focusWorkspace('space-1');
 
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
-    expect(stale.requestHerdrApi).toHaveBeenCalledTimes(1);
+    const staleControlMethods = jest.mocked(stale.requestHerdrApi).mock.calls
+      .map(([, request]) => (request as { method: string }).method)
+      .filter(method => method !== 'session.snapshot');
+    expect(staleControlMethods).toEqual(['workspace.focus']);
     expect(fresh.requestHerdrApi).toHaveBeenCalledWith(
       '/home/herdr/.config/herdr/sessions/main/herdr.sock',
       expect.objectContaining({ method: 'workspace.focus' }),
     );
     expect(stale.disconnect).toHaveBeenCalledTimes(1);
-  });
-
-  test('restores the event subscription when replacing the control connection', async () => {
-    const stale = streamingNativeClient();
-    const fresh = streamingNativeClient();
-    connectWithPassword.mockResolvedValueOnce(stale.client).mockResolvedValueOnce(fresh.client);
-    const client = new HerdrClient();
-    const onEvent = jest.fn();
-    const onClosed = jest.fn();
-
-    await client.connect(profile);
-    await client.initialSnapshot();
-    await client.openEventStream(['pane-2', 'pane-1'], onEvent, onClosed);
-    await client.reconnectControl();
-
-    expect(stale.client.closeHerdrEventStream).toHaveBeenCalled();
-    expect(stale.client.disconnect).toHaveBeenCalledTimes(1);
-    expect(fresh.client.startHerdrEventStream).toHaveBeenCalledTimes(1);
-    expect(fresh.client.startHerdrEventStream).toHaveBeenCalledWith(
-      '/home/herdr/.config/herdr/sessions/main/herdr.sock',
-      20,
-      ['pane-2', 'pane-1'],
-      expect.any(Function),
-    );
-
-    stale.emitEventClosed();
-    expect(onClosed).not.toHaveBeenCalled();
-
-    fresh.emitEvent({
-      event: 'pane.agent_status_changed',
-      data: { workspace_id: 'space-1', pane_id: 'pane-1', agent_status: 'done' },
-    });
-    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'pane.agent_status_changed',
-      data: {
-        workspace_id: 'space-1',
-        pane_id: 'pane-1',
-        agent_status: 'done',
-      },
-    }));
-  });
-
-  test('preserves the native event-stream close reason for diagnostics', async () => {
-    const native = streamingNativeClient();
-    connectWithPassword.mockResolvedValue(native.client);
-    const client = new HerdrClient();
-    const onClosed = jest.fn();
-
-    await client.connect(profile);
-    await client.initialSnapshot();
-    await client.openEventStream([], jest.fn(), onClosed);
-    native.emitEventClosed('remote stream write failed: broken pipe');
-
-    expect(onClosed).toHaveBeenCalledWith(
-      'Herdr event bridge closed: remote stream write failed: broken pipe',
-    );
   });
 
   test('does not replay a mutating command when its channel fails', async () => {
@@ -188,6 +88,9 @@ describe('SSH control reconnects', () => {
 
     await expect(client.createWorkspace('New space', '')).rejects.toBe('channel is not opened.');
     expect(connectWithPassword).toHaveBeenCalledTimes(1);
-    expect(stale.requestHerdrApi).toHaveBeenCalledTimes(1);
+    const staleControlMethods = jest.mocked(stale.requestHerdrApi).mock.calls
+      .map(([, request]) => (request as { method: string }).method)
+      .filter(method => method !== 'session.snapshot');
+    expect(staleControlMethods).toEqual(['workspace.create']);
   });
 });

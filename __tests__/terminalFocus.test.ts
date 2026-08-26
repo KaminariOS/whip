@@ -37,7 +37,6 @@ test('locally created tabs select the tab and activate the returned root termina
     tab_id: 'tab-old',
   });
   const terminalSelectionStarted = jest.fn();
-  const project = jest.fn();
 
   activateCreatedTabLocally(createdTab, {
     select: (workspaceId, tabId) => {
@@ -45,7 +44,6 @@ test('locally created tabs select the tab and activate the returned root termina
       selectedTabId = tabId;
     },
     terminalSelectionStarted,
-    project,
     activateTerminal: pane => {
       terminals = openTerminalSession(terminals, pane);
     },
@@ -55,7 +53,6 @@ test('locally created tabs select the tab and activate the returned root termina
   expect(selectedTabId).toBe('tab-new');
   expect(terminals.activeTerminalId).toBe('terminal-new');
   expect(terminalSelectionStarted).toHaveBeenCalledWith('terminal-new');
-  expect(project).toHaveBeenCalledWith(createdTab);
 });
 
 test('ignores stale server focus while a selected pane is pending', () => {

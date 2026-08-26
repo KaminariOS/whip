@@ -3,7 +3,7 @@ import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { compareAgentStatusPriority } from '@/src/herdQueue';
-import { aggregateAgentStatus } from '@/src/liveHostSessions';
+import { aggregateAgentStatus } from '@/src/lib/agentStatusAggregate';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { WorkspaceInfo } from '@/src/types';

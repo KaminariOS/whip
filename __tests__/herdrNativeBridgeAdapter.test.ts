@@ -16,6 +16,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     ReconnectScheduled: 'ReconnectScheduled',
     Reconnected: 'Reconnected',
     TerminalStateChanged: 'TerminalStateChanged',
+    HostStateChanged: 'HostStateChanged',
     Herdr: 'Herdr',
     EventSubscriptionClosed: 'EventSubscriptionClosed',
     EventSubscriptionRestored: 'EventSubscriptionRestored',
@@ -33,6 +34,8 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   },
   HerdrAgentSessionKind: { Id: 0, Path: 1 },
   HerdrAgentStatus: { Idle: 0, Working: 1, Blocked: 2, Done: 3, Unknown: 4 },
+  HostSyncStatus: { Idle: 0, Syncing: 1, Synced: 2, Error: 3 },
+  HostFreshness: { Loading: 0, Fresh: 1, Stale: 2, Unavailable: 3 },
   HerdrSplitDirection: { Right: 0, Down: 1 },
   HerdrTerminalAttachLaunchMode: { LegacyTerminalAttach: 0, TerminalAttach: 1 },
   HerdrTerminalNotificationKind: { Sound: 0, Toast: 1, SystemToast: 2 },
@@ -189,6 +192,16 @@ describe('native Herdr bridge adapter', () => {
   });
 
   it('exposes semantic HostRuntime operations and typed lifecycle events', async () => {
+    const nativeState = {
+      revision: 7n,
+      connectionGeneration: 3n,
+      syncGeneration: 2n,
+      syncStatus: 2,
+      freshness: 1,
+      lastSyncedAtMs: 1234n,
+      needsResync: false,
+      focus: { workspaceId: 'w1', tabId: 't1', paneId: 'p1' },
+    };
     const rustRuntime = {
       runtimeId: jest.fn(() => 'runtime-1'),
       transportKey: jest.fn(() => 'transport-1'),
@@ -196,6 +209,8 @@ describe('native Herdr bridge adapter', () => {
       disconnect: jest.fn().mockResolvedValue(undefined),
       controlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
       resolveControlSocket: jest.fn().mockResolvedValue('/tmp/herdr.sock'),
+      hostState: jest.fn(() => nativeState),
+      refreshState: jest.fn().mockResolvedValue(nativeState),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
     const handler = jest.fn();
@@ -220,11 +235,37 @@ describe('native Herdr bridge adapter', () => {
         status: { state: 'Connected', generation: 3n, reconnectAttempt: 0 },
       },
     });
+    mockRuntimeEventSink.event({
+      tag: 'HostStateChanged',
+      inner: {
+        runtimeId: 'runtime-1',
+        state: nativeState,
+        changedAgentPaneIds: ['p1'],
+      },
+    });
 
     expect(rustRuntime.connect).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith({
+    expect(handler).toHaveBeenNthCalledWith(1, {
       type: 'connection-state', state: 'connected', generation: 3,
       reconnectAttempt: 0, error: undefined,
+    });
+    expect(runtime.hostState()).toEqual({
+      revision: 7,
+      connectionGeneration: 3,
+      syncGeneration: 2,
+      syncStatus: 'synced',
+      freshness: 'fresh',
+      error: undefined,
+      lastSyncedAtMs: 1234,
+      lastEventAtMs: undefined,
+      needsResync: false,
+      focus: { workspaceId: 'w1', tabId: 't1', paneId: 'p1' },
+      snapshot: undefined,
+    });
+    expect(handler).toHaveBeenNthCalledWith(2, {
+      type: 'host-state',
+      state: runtime.hostState(),
+      changedAgentPaneIds: ['p1'],
     });
   });
 });

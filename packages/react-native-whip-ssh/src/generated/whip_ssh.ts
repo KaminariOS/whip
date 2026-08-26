@@ -2264,6 +2264,226 @@ const FfiConverterTypeHostRuntimeStatus = (() => {
   return new FFIConverter();
 })();
 
+export type HostServerFocus = {
+  workspaceId?: string;
+  tabId?: string;
+  paneId?: string;
+};
+
+/**
+ * Generated factory for {@link HostServerFocus} record objects.
+ */
+export const HostServerFocus = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostServerFocus, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostServerFocus>,
+  });
+})();
+
+const FfiConverterTypeHostServerFocus = (() => {
+  type TypeName = HostServerFocus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        workspaceId: FfiConverterOptionalString.read(from),
+        tabId: FfiConverterOptionalString.read(from),
+        paneId: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.workspaceId, into);
+      FfiConverterOptionalString.write(value.tabId, into);
+      FfiConverterOptionalString.write(value.paneId, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.workspaceId) +
+        FfiConverterOptionalString.allocationSize(value.tabId) +
+        FfiConverterOptionalString.allocationSize(value.paneId)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HostSyncStatus {
+  Idle,
+  Syncing,
+  Synced,
+  Error,
+}
+
+const FfiConverterTypeHostSyncStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostSyncStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostSyncStatus.Idle;
+        case 2:
+          return HostSyncStatus.Syncing;
+        case 3:
+          return HostSyncStatus.Synced;
+        case 4:
+          return HostSyncStatus.Error;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostSyncStatus.Idle:
+          return ordinalConverter.write(1, into);
+        case HostSyncStatus.Syncing:
+          return ordinalConverter.write(2, into);
+        case HostSyncStatus.Synced:
+          return ordinalConverter.write(3, into);
+        case HostSyncStatus.Error:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HostFreshness {
+  Loading,
+  Fresh,
+  Stale,
+  Unavailable,
+}
+
+const FfiConverterTypeHostFreshness = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostFreshness;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostFreshness.Loading;
+        case 2:
+          return HostFreshness.Fresh;
+        case 3:
+          return HostFreshness.Stale;
+        case 4:
+          return HostFreshness.Unavailable;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostFreshness.Loading:
+          return ordinalConverter.write(1, into);
+        case HostFreshness.Fresh:
+          return ordinalConverter.write(2, into);
+        case HostFreshness.Stale:
+          return ordinalConverter.write(3, into);
+        case HostFreshness.Unavailable:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostStateSnapshot = {
+  revision: bigint;
+  connectionGeneration: bigint;
+  syncGeneration: bigint;
+  syncStatus: HostSyncStatus;
+  freshness: HostFreshness;
+  error?: string;
+  lastSyncedAtMs?: bigint;
+  lastEventAtMs?: bigint;
+  needsResync: boolean;
+  focus: HostServerFocus;
+  snapshot?: HerdrSessionSnapshot;
+};
+
+/**
+ * Generated factory for {@link HostStateSnapshot} record objects.
+ */
+export const HostStateSnapshot = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostStateSnapshot, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostStateSnapshot>,
+  });
+})();
+
+const FfiConverterTypeHostStateSnapshot = (() => {
+  type TypeName = HostStateSnapshot;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        connectionGeneration: FfiConverterUInt64.read(from),
+        syncGeneration: FfiConverterUInt64.read(from),
+        syncStatus: FfiConverterTypeHostSyncStatus.read(from),
+        freshness: FfiConverterTypeHostFreshness.read(from),
+        error: FfiConverterOptionalString.read(from),
+        lastSyncedAtMs: FfiConverterOptionalUInt64.read(from),
+        lastEventAtMs: FfiConverterOptionalUInt64.read(from),
+        needsResync: FfiConverterBool.read(from),
+        focus: FfiConverterTypeHostServerFocus.read(from),
+        snapshot: FfiConverterOptionalTypeHerdrSessionSnapshot.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterUInt64.write(value.connectionGeneration, into);
+      FfiConverterUInt64.write(value.syncGeneration, into);
+      FfiConverterTypeHostSyncStatus.write(value.syncStatus, into);
+      FfiConverterTypeHostFreshness.write(value.freshness, into);
+      FfiConverterOptionalString.write(value.error, into);
+      FfiConverterOptionalUInt64.write(value.lastSyncedAtMs, into);
+      FfiConverterOptionalUInt64.write(value.lastEventAtMs, into);
+      FfiConverterBool.write(value.needsResync, into);
+      FfiConverterTypeHostServerFocus.write(value.focus, into);
+      FfiConverterOptionalTypeHerdrSessionSnapshot.write(value.snapshot, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterUInt64.allocationSize(value.connectionGeneration) +
+        FfiConverterUInt64.allocationSize(value.syncGeneration) +
+        FfiConverterTypeHostSyncStatus.allocationSize(value.syncStatus) +
+        FfiConverterTypeHostFreshness.allocationSize(value.freshness) +
+        FfiConverterOptionalString.allocationSize(value.error) +
+        FfiConverterOptionalUInt64.allocationSize(value.lastSyncedAtMs) +
+        FfiConverterOptionalUInt64.allocationSize(value.lastEventAtMs) +
+        FfiConverterBool.allocationSize(value.needsResync) +
+        FfiConverterTypeHostServerFocus.allocationSize(value.focus) +
+        FfiConverterOptionalTypeHerdrSessionSnapshot.allocationSize(
+          value.snapshot,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: HerdrBridgeError
 export enum HerdrBridgeError_Tags {
   UnsupportedProtocol = 'UnsupportedProtocol',
@@ -8218,7 +8438,7 @@ export enum HostRuntimeEvent_Tags {
   ReconnectScheduled = 'ReconnectScheduled',
   Reconnected = 'Reconnected',
   TerminalStateChanged = 'TerminalStateChanged',
-  Herdr = 'Herdr',
+  HostStateChanged = 'HostStateChanged',
   EventSubscriptionClosed = 'EventSubscriptionClosed',
   EventSubscriptionRestored = 'EventSubscriptionRestored',
   FatalError = 'FatalError',
@@ -8396,45 +8616,48 @@ export const HostRuntimeEvent = (() => {
     }
   }
 
-  type Herdr__interface = {
-    tag: HostRuntimeEvent_Tags.Herdr;
+  type HostStateChanged__interface = {
+    tag: HostRuntimeEvent_Tags.HostStateChanged;
     inner: Readonly<{
       runtimeId: string;
-      generation: bigint;
-      event: HerdrEvent;
+      state: HostStateSnapshot;
+      changedAgentPaneIds: Array<string>;
     }>;
   };
-  class Herdr_ extends UniffiEnum implements Herdr__interface {
+  class HostStateChanged_
+    extends UniffiEnum
+    implements HostStateChanged__interface
+  {
     /**
      * @private
      * This field is private and should not be used, use `tag` instead.
      */
     readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
-    readonly tag = HostRuntimeEvent_Tags.Herdr;
+    readonly tag = HostRuntimeEvent_Tags.HostStateChanged;
     readonly inner: Readonly<{
       runtimeId: string;
-      generation: bigint;
-      event: HerdrEvent;
+      state: HostStateSnapshot;
+      changedAgentPaneIds: Array<string>;
     }>;
     constructor(inner: {
       runtimeId: string;
-      generation: bigint;
-      event: HerdrEvent;
+      state: HostStateSnapshot;
+      changedAgentPaneIds: Array<string>;
     }) {
-      super('HostRuntimeEvent', 'Herdr');
+      super('HostRuntimeEvent', 'HostStateChanged');
 
       this.inner = Object.freeze(inner);
     }
     static new(inner: {
       runtimeId: string;
-      generation: bigint;
-      event: HerdrEvent;
-    }): Herdr_ {
-      return new Herdr_(inner);
+      state: HostStateSnapshot;
+      changedAgentPaneIds: Array<string>;
+    }): HostStateChanged_ {
+      return new HostStateChanged_(inner);
     }
 
-    static instanceOf(obj: any): obj is Herdr_ {
-      return obj.tag === HostRuntimeEvent_Tags.Herdr;
+    static instanceOf(obj: any): obj is HostStateChanged_ {
+      return obj.tag === HostRuntimeEvent_Tags.HostStateChanged;
     }
   }
 
@@ -8538,7 +8761,7 @@ export const HostRuntimeEvent = (() => {
     ReconnectScheduled: ReconnectScheduled_,
     Reconnected: Reconnected_,
     TerminalStateChanged: TerminalStateChanged_,
-    Herdr: Herdr_,
+    HostStateChanged: HostStateChanged_,
     EventSubscriptionClosed: EventSubscriptionClosed_,
     EventSubscriptionRestored: EventSubscriptionRestored_,
     FatalError: FatalError_,
@@ -8550,7 +8773,7 @@ export type HostRuntimeEvent = InstanceType<
     | 'ReconnectScheduled'
     | 'Reconnected'
     | 'TerminalStateChanged'
-    | 'Herdr'
+    | 'HostStateChanged'
     | 'EventSubscriptionClosed'
     | 'EventSubscriptionRestored'
     | 'FatalError']
@@ -8589,10 +8812,10 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             error: FfiConverterOptionalString.read(from),
           });
         case 5:
-          return new HostRuntimeEvent.Herdr({
+          return new HostRuntimeEvent.HostStateChanged({
             runtimeId: FfiConverterString.read(from),
-            generation: FfiConverterUInt64.read(from),
-            event: FfiConverterTypeHerdrEvent.read(from),
+            state: FfiConverterTypeHostStateSnapshot.read(from),
+            changedAgentPaneIds: FfiConverterSequenceString.read(from),
           });
         case 6:
           return new HostRuntimeEvent.EventSubscriptionClosed({
@@ -8648,12 +8871,12 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           FfiConverterOptionalString.write(inner.error, into);
           return;
         }
-        case HostRuntimeEvent_Tags.Herdr: {
+        case HostRuntimeEvent_Tags.HostStateChanged: {
           ordinalConverter.write(5, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
-          FfiConverterUInt64.write(inner.generation, into);
-          FfiConverterTypeHerdrEvent.write(inner.event, into);
+          FfiConverterTypeHostStateSnapshot.write(inner.state, into);
+          FfiConverterSequenceString.write(inner.changedAgentPaneIds, into);
           return;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
@@ -8719,12 +8942,14 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           size += FfiConverterOptionalString.allocationSize(inner.error);
           return size;
         }
-        case HostRuntimeEvent_Tags.Herdr: {
+        case HostRuntimeEvent_Tags.HostStateChanged: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(5);
           size += FfiConverterString.allocationSize(inner.runtimeId);
-          size += FfiConverterUInt64.allocationSize(inner.generation);
-          size += FfiConverterTypeHerdrEvent.allocationSize(inner.event);
+          size += FfiConverterTypeHostStateSnapshot.allocationSize(inner.state);
+          size += FfiConverterSequenceString.allocationSize(
+            inner.changedAgentPaneIds,
+          );
           return size;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
@@ -9285,6 +9510,7 @@ export interface HostRuntimeLike {
   ): /*throws*/ Promise<HerdrControlResult>;
   disconnect(asyncOpts_?: { signal: AbortSignal }): /*throws*/ Promise<void>;
   hasTerminal(terminalId: string): boolean;
+  hostState(): HostStateSnapshot;
   isTerminalOpening(terminalId: string): boolean;
   openTerminal(
     terminalId: string,
@@ -9300,6 +9526,9 @@ export interface HostRuntimeLike {
     reason: string,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<void>;
+  refreshState(asyncOpts_?: {
+    signal: AbortSignal;
+  }): /*throws*/ Promise<HostStateSnapshot>;
   resizeTerminal(
     terminalId: string,
     columns: number,
@@ -9508,6 +9737,26 @@ export class HostRuntime
     );
   }
 
+  hostState(): HostStateSnapshot {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostStateSnapshot.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_host_state(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   isTerminalOpening(terminalId: string): boolean {
     return FfiConverterBool.lift(
       uniffiCaller.rustCall(
@@ -9603,6 +9852,48 @@ export class HostRuntime
           .ubrn_ffi_whip_ssh_rust_future_complete_void,
         /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
         /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async refreshState(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<HostStateSnapshot> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_refresh_state(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeHostStateSnapshot.lift.bind(
+          FfiConverterTypeHostStateSnapshot,
+        ),
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -10202,6 +10493,14 @@ const FfiConverterSequenceTypeHostSshConfig = new FfiConverterArray(
   FfiConverterTypeHostSshConfig,
 );
 
+// FfiConverter for bigint | undefined
+const FfiConverterOptionalUInt64 = new FfiConverterOptional(FfiConverterUInt64);
+
+// FfiConverter for HerdrSessionSnapshot | undefined
+const FfiConverterOptionalTypeHerdrSessionSnapshot = new FfiConverterOptional(
+  FfiConverterTypeHerdrSessionSnapshot,
+);
+
 // FfiConverter for Array<string>
 const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
 
@@ -10472,6 +10771,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_host_state() !==
+    14222
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_host_state',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening() !==
     28716
   ) {
@@ -10493,6 +10800,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_recover',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state() !==
+    22
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_refresh_state',
     );
   }
   if (
@@ -10625,14 +10940,18 @@ export default Object.freeze({
     FfiConverterTypeHerdrWorkspaceWorktreeInfo,
     FfiConverterTypeHerdrWorktreeInfo,
     FfiConverterTypeHostConnectionState,
+    FfiConverterTypeHostFreshness,
     FfiConverterTypeHostRuntime,
     FfiConverterTypeHostRuntimeConfig,
     FfiConverterTypeHostRuntimeError,
     FfiConverterTypeHostRuntimeEvent,
     FfiConverterTypeHostRuntimeEventSink,
     FfiConverterTypeHostRuntimeStatus,
+    FfiConverterTypeHostServerFocus,
     FfiConverterTypeHostSshConfig,
     FfiConverterTypeHostSshCredential,
+    FfiConverterTypeHostStateSnapshot,
+    FfiConverterTypeHostSyncStatus,
     FfiConverterTypeHostTerminalState,
   },
 });

@@ -11,13 +11,11 @@ export function activateCreatedTabLocally<Created extends CreatedTabFocusResult>
   actions: {
     select: (workspaceId: string, tabId: string) => void;
     terminalSelectionStarted: (terminalId: string) => void;
-    project: (created: Created) => void;
     activateTerminal: (pane: PaneInfo) => void;
   },
 ): void {
   actions.select(created.tab.workspace_id, created.tab.tab_id);
   actions.terminalSelectionStarted(created.root_pane.terminal_id);
-  actions.project(created);
   actions.activateTerminal(created.root_pane);
 }
 

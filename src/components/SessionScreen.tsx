@@ -42,7 +42,7 @@ import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalCon
 import { chatAgentForPane, openCodeSessionIdForPane, type ChatAgent } from '../lib/agentChatSession';
 import { codexChatAction, codexMissingIdentityAction, codexSessionIdForPane, type CodexIntegrationStatus } from '../lib/codexSession';
 import { emptyTranscript, type AgentChatState } from '../agentChat';
-import type { HerdrClient, TabCreationResult } from '../services/HerdrClient';
+import type { HerdrClient } from '../services/HerdrClient';
 import { codexTranscriptService } from '../services/CodexTranscriptService';
 import { openCodeTranscriptService } from '../services/OpenCodeTranscriptService';
 import { terminalTabSelectionStarted } from '../services/performanceTrace';
@@ -84,7 +84,6 @@ interface Props {
   latencyMs: number | null;
   latencyWarningActive: boolean;
   onRefresh: () => Promise<void>;
-  onTabCreated: (created: TabCreationResult) => void;
   onOpenPane: (pane: PaneInfo) => void;
   onActivateTerminal: (pane: PaneInfo) => void;
   onCloseTerminal: (terminalId: string) => void;
@@ -152,7 +151,6 @@ export function SessionScreen({
   latencyMs,
   latencyWarningActive,
   onRefresh,
-  onTabCreated,
   onActivateTerminal,
   onCloseTerminal,
   onTerminalStatus,
@@ -798,7 +796,6 @@ export function SessionScreen({
             setTabId(createdTabId);
           },
           terminalSelectionStarted: terminalTabSelectionStarted,
-          project: onTabCreated,
           activateTerminal: onActivateTerminal,
         });
       }, false);

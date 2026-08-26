@@ -1,29 +1,4 @@
-import type { EventData } from '../generated/herdrApi';
 import type { AgentInfo, AgentStatus, HerdrSnapshot, TabInfo } from '../types';
-
-type PaneAgentStatusChangedEvent = Extract<
-  EventData,
-  { type: 'pane_agent_status_changed' }
->;
-
-export type AgentStatusUpdate = Omit<
-  PaneAgentStatusChangedEvent,
-  'type' | 'pane_id' | 'workspace_id'
->;
-
-const AGENT_STATUSES = new Set<AgentStatus>([
-  'idle',
-  'working',
-  'blocked',
-  'done',
-  'unknown',
-]);
-
-export function agentStatusFromEvent(value: unknown): AgentStatus | null {
-  return typeof value === 'string' && AGENT_STATUSES.has(value as AgentStatus)
-    ? value as AgentStatus
-    : null;
-}
 
 export function shouldNotifyAgentTransition(
   previous: AgentStatus | undefined,
@@ -77,17 +52,4 @@ export function agentNotificationTitle(
     : labels?.finished(name) || `${name} finished`;
   const label = tabName?.trim();
   return label ? `${label} · ${action}` : action;
-}
-
-export function agentFromStatusEvent(
-  current: AgentInfo,
-  data: AgentStatusUpdate,
-): AgentInfo {
-  const next = { ...current, agent_status: data.agent_status };
-  for (const field of ['agent', 'title', 'display_agent'] as const) {
-    const value = data[field];
-    if (value !== undefined) next[field] = value;
-  }
-  if (data.state_labels) next.state_labels = data.state_labels;
-  return next;
 }
