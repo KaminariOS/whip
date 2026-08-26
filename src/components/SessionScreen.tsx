@@ -64,7 +64,6 @@ import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 import {
-  TERMINAL_CONTROL_BAR_HEIGHT,
   TerminalBackground,
   TerminalScreen,
 } from './TerminalScreen';
@@ -1128,17 +1127,6 @@ export function SessionScreen({
           terminalWidthRef.current = event.nativeEvent.layout.width;
           setTerminalWidth(event.nativeEvent.layout.width);
         }}>
-        {chatVisible && (
-          <View
-            accessibilityElementsHidden
-            pointerEvents="none"
-            className="absolute inset-x-0 top-0 z-10 bg-background"
-            style={{ bottom: TERMINAL_CONTROL_BAR_HEIGHT + safeAreaInsets.bottom }}>
-            {appGlassEnabled ? (
-              <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
-            ) : null}
-          </View>
-        )}
         <Animated.View
           pointerEvents="box-none"
           style={[
@@ -1188,6 +1176,17 @@ export function SessionScreen({
               loading: codexChatLoading,
               onPress: hapticPress(chatVisible ? closeActiveChat : openAgentChat),
             } : undefined}
+            viewportOverlay={activeChatView && activePane ? (
+              <AgentChatView
+                state={activeChatView.state}
+                agent={activeChatView.agent}
+                agentStatus={activePane.agent_status}
+                onOpenFile={openChatFile}
+              />
+            ) : undefined}
+            viewportOverlayBackground={chatVisible && appGlassEnabled ? (
+              <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
+            ) : undefined}
             onOpenLink={link => {
               if (terminalPreferences.openLinksInApp) setLinksOpen(true);
               openTerminalLink(link);
@@ -1216,21 +1215,6 @@ export function SessionScreen({
             }}
           />
         </Animated.View>
-        {activeChatView && activePane && (
-          <View
-            className="absolute inset-x-0 z-20"
-            style={{
-              top: topOverlayInset,
-              bottom: TERMINAL_CONTROL_BAR_HEIGHT + safeAreaInsets.bottom,
-            }}>
-            <AgentChatView
-              state={activeChatView.state}
-              agent={activeChatView.agent}
-              agentStatus={activePane.agent_status}
-              onOpenFile={openChatFile}
-            />
-          </View>
-        )}
         {tabSwipe
           && (!tabSwipe.targetTerminalId
             || !terminalState.sessions.some(session => session.terminalId === tabSwipe.targetTerminalId))

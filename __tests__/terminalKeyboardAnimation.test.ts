@@ -4,15 +4,21 @@ import { resolve } from 'node:path';
 const readSource = (path: string) =>
   readFileSync(resolve(__dirname, '..', path), 'utf8');
 
-describe('terminal keyboard animation', () => {
-  test('tracks the Android keyboard on the UI thread and resizes only the presented terminal', () => {
+describe('terminal keyboard layout', () => {
+  test('shares the measured keyboard layout between terminal and chat viewports', () => {
     const terminalScreen = readSource('src/components/TerminalScreen.tsx');
-    const terminalAssets = readSource('scripts/sync-terminal-assets.mjs');
+    const sessionScreen = readSource('src/components/SessionScreen.tsx');
 
-    expect(terminalScreen).toContain('useAnimatedKeyboard({');
-    expect(terminalScreen).toContain('paddingBottom: animatedKeyboardInset.value');
-    expect(terminalScreen).toContain('translateY: -animatedKeyboardInset.value');
-    expect(terminalAssets).toContain('if (terminalIsPresented()) resize();');
-    expect(terminalAssets).toContain("window.addEventListener('resize', resizePresentedTerminal)");
+    expect(terminalScreen).not.toContain('useAnimatedKeyboard({');
+    expect(terminalScreen).toContain('paddingBottom: keyboardInset');
+    expect(terminalScreen).toContain('translateY: -keyboardInset');
+    expect(terminalScreen).toContain(
+      'bottom: TERMINAL_CONTROL_BAR_HEIGHT + bottomSafeAreaInset + keyboardInset',
+    );
+    expect(terminalScreen).toContain('{viewportOverlay}');
+    expect(terminalScreen.indexOf('{viewportOverlay}')).toBeLessThan(
+      terminalScreen.indexOf('ref={controlsRef}'),
+    );
+    expect(sessionScreen).toContain('viewportOverlay={activeChatView && activePane ? (');
   });
 });
