@@ -227,6 +227,8 @@ jobs:
 
     runs-on: macos-26
     timeout-minutes: 25
+    env:
+      RUSTUP_TOOLCHAIN: 1.97.1
 
     steps:
       - name: Check out repository
@@ -234,8 +236,8 @@ jobs:
 
       - name: Install pinned Rust toolchain and iOS targets
         run: |
-          rustup toolchain install 1.97.1 --profile minimal
-          rustup target add --toolchain 1.97.1 aarch64-apple-ios aarch64-apple-ios-sim
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 
       - name: Cache Rust iOS builds
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
@@ -250,7 +252,7 @@ jobs:
           cache: npm
 
       - name: Install native binding generator
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Validate merged Whip Rust XCFramework
         run: |
