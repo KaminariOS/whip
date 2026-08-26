@@ -1,13 +1,14 @@
-import { Plus, Server, X } from 'lucide-react-native';
+import { Plus, Server, ServerOff, X } from 'lucide-react-native';
 import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { compareAgentStatusPriority } from '@/src/herdQueue';
+import { liveSessionRailIndicator } from '@/src/lib/liveSessionRail';
 import { cn } from '@/src/lib/utils';
-import { aggregateAgentStatus } from '@/src/liveHostSessions';
+import { aggregateAgentStatus, type LiveHostConnectionStatus } from '@/src/liveHostSessions';
 import { appGlassControlStyle, statusColor as agentStatusColor, useTheme, type ThemeColors } from '@/src/theme';
 import type { AgentStatus } from '@/src/types';
-import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
+import { AnimatedAgentStatusGlyph, AnimatedStatusIndicator, hapticPress } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -15,7 +16,7 @@ import { Text } from './ui/text';
 export interface LiveSessionRailItem {
   hostId: string;
   label: string;
-  status: 'connecting' | 'connected' | 'ready' | 'reconnecting' | 'error';
+  status: LiveHostConnectionStatus;
   agentStatus: AgentStatus;
   terminalCount: number;
 }
@@ -60,6 +61,11 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
       : 'text-primary-foreground'
     : undefined;
   const { t } = useTranslation();
+  const indicator = liveSessionRailIndicator(session.status);
+  const accessibilityStatus = session.status === 'ready'
+    ? t(`status.${session.agentStatus}`)
+    : t(`status.${session.status}`);
+  const indicatorColor = sessionStatusColor(session, colors);
   return (
     <View
       className={cn(
@@ -70,8 +76,14 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
-      <Button accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: session.agentStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onSelect)}>
-        <AnimatedAgentStatusGlyph status={session.agentStatus} color={sessionStatusColor(session, colors)} size={12} />
+      <Button accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: accessibilityStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onSelect)}>
+        {indicator === 'progress' ? (
+          <AnimatedStatusIndicator status={session.status} color={indicatorColor} size={12} />
+        ) : indicator === 'offline' ? (
+          <ServerOff size={14} color={indicatorColor} />
+        ) : (
+          <AnimatedAgentStatusGlyph status={session.agentStatus} color={indicatorColor} size={12} />
+        )}
         {session.hostId ? (
           <Text className={cn('max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', isIpad && 'max-w-[160px] text-[17px] leading-6', activeTextClass)} numberOfLines={1}>{session.label}</Text>
         ) : (
@@ -92,6 +104,7 @@ function sessionStatusColor(session: LiveSessionRailItem, colors: ThemeColors): 
 
 function aggregateConnectionStatus(sessions: LiveSessionRailItem[]): LiveSessionRailItem['status'] {
   if (sessions.some(session => session.status === 'error')) return 'error';
+  if (sessions.some(session => session.status === 'disconnected')) return 'disconnected';
   if (sessions.some(session => session.status === 'reconnecting')) return 'reconnecting';
   if (sessions.some(session => session.status === 'connecting')) return 'connecting';
   if (sessions.some(session => session.status === 'connected')) return 'connected';

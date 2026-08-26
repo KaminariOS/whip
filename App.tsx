@@ -31,6 +31,7 @@ import { HerdScreen } from './src/components/HerdScreen';
 import { GlobalKeychainScreen } from './src/components/GlobalKeychainScreen';
 import { GlassProvider } from './src/components/GlassSurface';
 import { HostsScreen } from './src/components/HostsScreen';
+import { HostSessionRecoveryScreen } from './src/components/HostSessionRecoveryScreen';
 import { KnownHostsScreen } from './src/components/KnownHostsScreen';
 import { LicensesScreen } from './src/components/LicensesScreen';
 import { NewHostScreen } from './src/components/NewHostScreen';
@@ -1562,7 +1563,7 @@ function AppContent() {
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === nextProfile.id);
     const reusingConnectingSession = Boolean(
       reuseConnectingSession
-      && existing?.status === 'connecting'
+      && existing
       && !runtimes.current.has(existing.id),
     );
     if (existing && !reusingConnectingSession) closeLiveHost(existing.id);
@@ -1946,9 +1947,19 @@ function AppContent() {
 
   const connectSavedHost = async (host: HostProfile) => {
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === host.id);
-    if (existing) {
+    const existingRuntime = existing ? runtimes.current.get(existing.id) : undefined;
+    if (existing && existingRuntime) {
       selectLiveHost(existing.id, 'terminal');
       refreshHost(existing.id).catch(error => scheduleReconnect(existing.id, error));
+      return;
+    }
+    // Startup restoration publishes a placeholder before SSH connects. If that
+    // first connection fails, the placeholder remains useful for status and
+    // persisted terminal metadata, but it cannot be refreshed: there is no
+    // client runtime to refresh. A user retry must therefore perform the full
+    // saved-host connection path instead of treating the record as live.
+    if (existing?.status === 'connecting') {
+      selectLiveHost(existing.id, 'terminal');
       return;
     }
     setConnectError(null);
@@ -1969,6 +1980,9 @@ function AppContent() {
         // connectSavedHost owns this host's busy state while it also loads or
         // restores credentials before opening the transport.
         trackConnecting: false,
+        // A restored error placeholder has no runtime to refresh. Keep its
+        // identity and persisted terminal metadata while rebuilding the client.
+        reuseConnectingSession: Boolean(existing),
       });
     } catch (error) {
       setConnectError(String(error));
@@ -2310,7 +2324,7 @@ function AppContent() {
   const railSessions: LiveSessionRailItem[] = liveSessions.sessions.map(session => ({
     hostId: session.id,
     label: hostDisplayName(session.host),
-    status: session.status === 'disconnected' ? 'error' : session.status,
+    status: session.status,
     agentStatus: aggregateAgentStatus(session.snapshot.workspaces.map(workspace => workspace.agent_status)),
     terminalCount: session.terminals.sessions.length,
   }));
@@ -2529,6 +2543,17 @@ function AppContent() {
             onTerminalFontSizeChange={updateTerminalFontSize}
             />
           </AgentStatusAnimationProvider>
+        )}
+        {mountedTabs.has('terminal') && activeSession && !activeRuntime && terminalVisible && (
+          <HostSessionRecoveryScreen
+            busy={activeSession.status === 'connecting' || connectingHostIds.has(activeSession.hostId)}
+            error={activeSession.connectionError}
+            host={hostDisplayName(activeSession.host)}
+            onBack={() => exitTerminalToHerd(activeSession.id)}
+            onReconnect={() => {
+              connectSavedHost(activeSession.host).catch(error => setConnectError(String(error)));
+            }}
+          />
         )}
         </NavigationBlurTarget>
 

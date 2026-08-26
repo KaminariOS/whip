@@ -490,6 +490,10 @@ export const en = {
   'rail.workspaceStatus': '{{workspace}}, {{status}}',
 
   'session.backToHerd': 'Back to herd',
+  'session.runtimeUnavailableTitle': '{{host}} is disconnected',
+  'session.runtimeUnavailableCopy': 'Whip restored this host, but its SSH connection is not available. Reconnect to continue.',
+  'session.reconnect': 'Reconnect',
+  'session.reconnecting': 'Reconnecting…',
   'session.openTab': 'Open {{tab}} tab',
   'session.closeTab': 'Close {{tab}} tab',
   'session.newTab': 'New tab',
