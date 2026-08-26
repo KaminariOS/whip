@@ -8,7 +8,7 @@ import { uniqueRemoteAttachmentName } from '../lib/attachmentPaste';
 import { createSecureId } from '../lib/secureId';
 import { assertHerdrProtocolCompatible, herdrTerminalAttachLaunchMode, type HerdrProtocolVersion } from '../lib/herdrProtocol';
 import { errorCode } from '../lib/connectionErrors';
-import { apiEvent, apiErrorMessage, apiRequestLine, eventsSubscribeRequest, HerdrApiBridgeDecoder, type HerdrApiEvent, type HerdrApiMessage, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
+import { type HerdrApiEvent, type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
 import { codexRolloutFindCommand, codexRolloutMetadataCommand, codexRolloutStreamCommand, isValidCodexSessionId, parseCodexIntegrationStatus, parseCodexRolloutMetadata, parseCodexRolloutResolution, type CodexIntegrationStatus, type CodexRolloutMetadata } from '../lib/codexSession';
 import type { CodexTranscriptStream } from './CodexTranscriptService';
@@ -252,7 +252,6 @@ export class HerdrClient {
   private resolvedApiSocketPath: string | null = null;
   private resolvedApiSocketPathFromCache = false;
   private remoteHome: string | null = null;
-  private apiSequence = 0;
   private controlConnect: Promise<void> | null = null;
   private controlReconnect: Promise<void> | null = null;
   private localForwards = new Map<number, SSHClient>();
@@ -1049,7 +1048,6 @@ export class HerdrClient {
     if (generation !== this.eventGeneration) {
       return;
     }
-    const decoder = new HerdrApiBridgeDecoder();
     const close = (reason?: string) => {
       if (generation !== this.eventGeneration) return;
       if (this.eventSubscription === subscription) this.eventSubscription = null;
@@ -1064,28 +1062,20 @@ export class HerdrClient {
           : 'Herdr event bridge closed');
         return;
       }
-      for (const message of decoder.push(streamEvent.data)) {
-        const error = apiErrorMessage(message);
-        const event = apiEvent(message);
-        if (error) {
-          close(error);
-          return;
-        } else if (event) {
-          subscription.onEvent(event);
-        }
-      }
+      subscription.onEvent(streamEvent.event as HerdrApiEvent);
     };
     try {
-      await client.startHerdrEventStream(server.socket, onStreamEvent);
+      await client.startHerdrEventStream(
+        server.socket,
+        server.protocol,
+        subscription.paneIds,
+        onStreamEvent,
+      );
       if (generation !== this.eventGeneration || this.eventSubscription !== subscription) {
         client.closeHerdrEventStream();
         throw new Error('Herdr event stream closed during startup');
       }
       this.eventClient = client;
-      await client.writeHerdrEventStream(apiRequestLine(eventsSubscribeRequest(
-        server.protocol,
-        subscription.paneIds,
-      )));
     } catch (error) {
       if (this.eventClient === client) this.eventClient = null;
       client.closeHerdrEventStream();
@@ -1308,33 +1298,12 @@ export class HerdrClient {
     socketPath?: string,
     performanceTracePrefix?: string,
   ): Promise<T> {
-    const request = {
-      id: `android_${++this.apiSequence}`,
-      method,
-      params,
-    } as HerdrApiRequest;
+    const request = { method, params } as HerdrApiRequest;
     const socket = socketPath ?? (await this.apiSocketPath());
-    const requestApi = () => this.requireClient().requestHerdrApi(socket, apiRequestLine(request));
-    const response = performanceTracePrefix
+    const requestApi = async () => await this.requireClient().requestHerdrApi(socket, request) as T;
+    return performanceTracePrefix
       ? await withAppPerformanceTrace(`${performanceTracePrefix}: API round trip`, requestApi)
       : await requestApi();
-    const decode = (): T => {
-      let message: HerdrApiMessage;
-      try {
-        message = JSON.parse(response) as HerdrApiMessage;
-      } catch {
-        throw new Error('Herdr API returned invalid JSON');
-      }
-      const error = apiErrorMessage(message);
-      if (error) throw new Error(error);
-      if (!Object.prototype.hasOwnProperty.call(message, 'result')) {
-        throw new Error('Herdr API response did not include a result');
-      }
-      return message.result as T;
-    };
-    return performanceTracePrefix
-      ? withAppPerformanceTrace(`${performanceTracePrefix}: decode response`, decode)
-      : decode();
   }
 
   /** Server startup is the only operation that needs the remote login environment. */

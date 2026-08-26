@@ -63,9 +63,6 @@ class SSHClient extends BaseSSHClient {
     super(...args);
     this._activeStream.herdrEventStream = false;
     this._activeStream.herdrCommandStream = false;
-    this._herdrEventChannel = null;
-    this._herdrEventHandler = null;
-    this._herdrEventDecode = null;
     this._herdrCommandChannel = null;
     this._herdrCommandHandler = null;
     this._herdrCommandDecode = null;
@@ -171,52 +168,34 @@ class SSHClient extends BaseSSHClient {
     privateNativeClient().closeAllHerdrBridges(this._key);
   }
 
-  startHerdrEventStream(socketPath, handler, callback) {
-    this._herdrEventHandler = handler;
-    if (this._herdrEventChannel) return Promise.resolve();
-    this._herdrEventDecode = createUtf8Decoder();
-    return this.openUnixSocketChannel(socketPath, event => {
-      if (event.type === 'data') {
-        const text = this._herdrEventDecode?.(event.bytes, true) || '';
-        if (text) this._herdrEventHandler?.({ type: 'data', data: text });
-        return;
-      }
-      const tail = this._herdrEventDecode?.(new ArrayBuffer(0), false) || '';
-      if (tail) this._herdrEventHandler?.({ type: 'data', data: tail });
-      this._herdrEventHandler?.({ type: 'closed', reason: event.reason });
-      this._herdrEventChannel = null;
-      this._herdrEventDecode = null;
-      this._activeStream.herdrEventStream = false;
-    }).then(channel => {
-      if (!channel.closed) {
-        this._herdrEventChannel = channel;
-        this._activeStream.herdrEventStream = true;
-      }
+  startHerdrEventStream(socketPath, protocol, paneIds, handler, callback) {
+    if (this._activeStream.herdrEventStream) return Promise.resolve();
+    return privateNativeClient().startHerdrEventStream(
+      this._key,
+      socketPath,
+      protocol,
+      paneIds,
+      event => {
+        if (event.type === 'closed') this._activeStream.herdrEventStream = false;
+        handler(event);
+      },
+    ).then(() => {
+      this._activeStream.herdrEventStream = true;
       if (callback) callback();
     }).catch(error => {
-      this._herdrEventHandler = null;
-      this._herdrEventDecode = null;
+      this._activeStream.herdrEventStream = false;
       if (callback) callback(error);
       throw error;
     });
   }
 
-  writeHerdrEventStream(value) {
-    if (!this._herdrEventChannel) return Promise.reject(new Error('Herdr event stream is not active'));
-    return this._herdrEventChannel.write(encodeUtf8(value).buffer);
-  }
-
   closeHerdrEventStream() {
-    const channel = this._herdrEventChannel;
-    this._herdrEventChannel = null;
-    this._herdrEventHandler = null;
-    this._herdrEventDecode = null;
     this._activeStream.herdrEventStream = false;
-    channel?.close().catch(() => {});
+    privateNativeClient().closeHerdrEventStream(this._key);
   }
 
   requestHerdrApi(socketPath, request) {
-    return this.requestUnixSocket(socketPath, request).then(response => response.replace(/\r$/, ''));
+    return privateNativeClient().requestHerdrApi(this._key, socketPath, request);
   }
 
   startHerdrCommandStream(command, handler, callback) {

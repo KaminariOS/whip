@@ -8,6 +8,7 @@ import {
   type UniffiRustFutureContinuationCallback,
   type UniffiForeignFutureDroppedCallback,
   type UniffiForeignFutureDroppedCallbackStruct,
+  type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
 } from './whip_ssh-ffi';
 import {
@@ -19,10 +20,12 @@ import {
   type UniffiReferenceHolder,
   type UniffiRustCallStatus,
   AbstractFfiConverterByteArray,
+  FfiConverterArray,
   FfiConverterArrayBuffer,
   FfiConverterBool,
   FfiConverterFloat64,
   FfiConverterInt32,
+  FfiConverterMap,
   FfiConverterObject,
   FfiConverterObjectWithCallbacks,
   FfiConverterOptional,
@@ -32,6 +35,7 @@ import {
   FfiConverterUInt8,
   RustBuffer,
   UniffiAbstractObject,
+  UniffiEnum,
   UniffiError,
   UniffiInternalError,
   UniffiResult,
@@ -56,6 +60,17 @@ const uniffiIsDebug =
 
 // Public interface members begin here.
 
+export function clearHerdrEventSink(): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_clear_herdr_event_sink(
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export function clearHerdrTerminalEventSink(): void {
   uniffiCaller.rustCall(
     /*caller:*/ callStatus => {
@@ -79,6 +94,18 @@ export function closeAllHerdrTerminalBridges(clientKey: string): void {
   );
 }
 
+export function closeHerdrEventSubscription(clientKey: string): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_close_herdr_event_subscription(
+        FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export function closeHerdrTerminalBridge(
   clientKey: string,
   terminalId: string,
@@ -93,6 +120,56 @@ export function closeHerdrTerminalBridge(
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
+}
+
+export async function herdrControlRequest(
+  clientKey: string,
+  socketPath: string,
+  request: HerdrControlRequest,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<HerdrControlResult> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_herdr_control_request(
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(socketPath, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeHerdrControlRequest.lower(
+            request,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterTypeHerdrControlResult.lift.bind(
+        FfiConverterTypeHerdrControlResult,
+      ),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+        FfiConverterTypeHerdrControlError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
 }
 
 export function herdrTerminalInput(
@@ -268,6 +345,21 @@ export async function prepareHerdrTerminalBridge(
   }
 }
 
+export function setHerdrEventSink(sink: HerdrEventSink): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_herdr_event_sink(
+        FfiConverterTypeHerdrEventSink.lower(
+          sink,
+          nativeModule().rustbuffer_alloc,
+        ),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export function setHerdrTerminalEventSink(sink: HerdrTerminalEventSink): void {
   uniffiCaller.rustCall(
     /*caller:*/ callStatus => {
@@ -281,6 +373,48 @@ export function setHerdrTerminalEventSink(sink: HerdrTerminalEventSink): void {
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
+}
+
+export async function startHerdrEventSubscription(
+  clientKey: string,
+  socketPath: string,
+  protocol: number,
+  paneIds: Array<string>,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_start_herdr_event_subscription(
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(socketPath, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(protocol, nativeModule().rustbuffer_alloc),
+          FfiConverterSequenceString.lower(
+            paneIds,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeHerdrEventError.lift.bind(
+        FfiConverterTypeHerdrEventError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
 }
 
 export async function startHerdrTerminalBridge(
@@ -405,6 +539,964 @@ const stringConverter = (() => {
 })();
 const FfiConverterString = uniffiCreateFfiConverterString(stringConverter);
 
+export type HerdrAgentSessionInfo = {
+  source: string;
+  agent: string;
+  kind: string;
+  value: string;
+};
+
+/**
+ * Generated factory for {@link HerdrAgentSessionInfo} record objects.
+ */
+export const HerdrAgentSessionInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrAgentSessionInfo,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrAgentSessionInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrAgentSessionInfo = (() => {
+  type TypeName = HerdrAgentSessionInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        source: FfiConverterString.read(from),
+        agent: FfiConverterString.read(from),
+        kind: FfiConverterString.read(from),
+        value: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.source, into);
+      FfiConverterString.write(value.agent, into);
+      FfiConverterString.write(value.kind, into);
+      FfiConverterString.write(value.value, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.source) +
+        FfiConverterString.allocationSize(value.agent) +
+        FfiConverterString.allocationSize(value.kind) +
+        FfiConverterString.allocationSize(value.value)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrAgentInfo = {
+  paneId: string;
+  terminalId: string;
+  workspaceId: string;
+  tabId: string;
+  focused: boolean;
+  agentStatus: string;
+  revision: number;
+  cwd?: string;
+  foregroundCwd?: string;
+  agent?: string;
+  name?: string;
+  title?: string;
+  terminalTitle?: string;
+  terminalTitleStripped?: string;
+  displayAgent?: string;
+  interactiveReady?: boolean;
+  launchPending?: boolean;
+  screenDetectionSkipped?: boolean;
+  stateChangeSeq?: number;
+  stateLabels?: Map<string, string>;
+  tokens?: Map<string, string>;
+  agentSession?: HerdrAgentSessionInfo;
+};
+
+/**
+ * Generated factory for {@link HerdrAgentInfo} record objects.
+ */
+export const HerdrAgentInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrAgentInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrAgentInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrAgentInfo = (() => {
+  type TypeName = HerdrAgentInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        paneId: FfiConverterString.read(from),
+        terminalId: FfiConverterString.read(from),
+        workspaceId: FfiConverterString.read(from),
+        tabId: FfiConverterString.read(from),
+        focused: FfiConverterBool.read(from),
+        agentStatus: FfiConverterString.read(from),
+        revision: FfiConverterFloat64.read(from),
+        cwd: FfiConverterOptionalString.read(from),
+        foregroundCwd: FfiConverterOptionalString.read(from),
+        agent: FfiConverterOptionalString.read(from),
+        name: FfiConverterOptionalString.read(from),
+        title: FfiConverterOptionalString.read(from),
+        terminalTitle: FfiConverterOptionalString.read(from),
+        terminalTitleStripped: FfiConverterOptionalString.read(from),
+        displayAgent: FfiConverterOptionalString.read(from),
+        interactiveReady: FfiConverterOptionalBoolean.read(from),
+        launchPending: FfiConverterOptionalBoolean.read(from),
+        screenDetectionSkipped: FfiConverterOptionalBoolean.read(from),
+        stateChangeSeq: FfiConverterOptionalFloat64.read(from),
+        stateLabels: FfiConverterOptionalMapStringString.read(from),
+        tokens: FfiConverterOptionalMapStringString.read(from),
+        agentSession: FfiConverterOptionalTypeHerdrAgentSessionInfo.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterString.write(value.terminalId, into);
+      FfiConverterString.write(value.workspaceId, into);
+      FfiConverterString.write(value.tabId, into);
+      FfiConverterBool.write(value.focused, into);
+      FfiConverterString.write(value.agentStatus, into);
+      FfiConverterFloat64.write(value.revision, into);
+      FfiConverterOptionalString.write(value.cwd, into);
+      FfiConverterOptionalString.write(value.foregroundCwd, into);
+      FfiConverterOptionalString.write(value.agent, into);
+      FfiConverterOptionalString.write(value.name, into);
+      FfiConverterOptionalString.write(value.title, into);
+      FfiConverterOptionalString.write(value.terminalTitle, into);
+      FfiConverterOptionalString.write(value.terminalTitleStripped, into);
+      FfiConverterOptionalString.write(value.displayAgent, into);
+      FfiConverterOptionalBoolean.write(value.interactiveReady, into);
+      FfiConverterOptionalBoolean.write(value.launchPending, into);
+      FfiConverterOptionalBoolean.write(value.screenDetectionSkipped, into);
+      FfiConverterOptionalFloat64.write(value.stateChangeSeq, into);
+      FfiConverterOptionalMapStringString.write(value.stateLabels, into);
+      FfiConverterOptionalMapStringString.write(value.tokens, into);
+      FfiConverterOptionalTypeHerdrAgentSessionInfo.write(
+        value.agentSession,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterString.allocationSize(value.workspaceId) +
+        FfiConverterString.allocationSize(value.tabId) +
+        FfiConverterBool.allocationSize(value.focused) +
+        FfiConverterString.allocationSize(value.agentStatus) +
+        FfiConverterFloat64.allocationSize(value.revision) +
+        FfiConverterOptionalString.allocationSize(value.cwd) +
+        FfiConverterOptionalString.allocationSize(value.foregroundCwd) +
+        FfiConverterOptionalString.allocationSize(value.agent) +
+        FfiConverterOptionalString.allocationSize(value.name) +
+        FfiConverterOptionalString.allocationSize(value.title) +
+        FfiConverterOptionalString.allocationSize(value.terminalTitle) +
+        FfiConverterOptionalString.allocationSize(value.terminalTitleStripped) +
+        FfiConverterOptionalString.allocationSize(value.displayAgent) +
+        FfiConverterOptionalBoolean.allocationSize(value.interactiveReady) +
+        FfiConverterOptionalBoolean.allocationSize(value.launchPending) +
+        FfiConverterOptionalBoolean.allocationSize(
+          value.screenDetectionSkipped,
+        ) +
+        FfiConverterOptionalFloat64.allocationSize(value.stateChangeSeq) +
+        FfiConverterOptionalMapStringString.allocationSize(value.stateLabels) +
+        FfiConverterOptionalMapStringString.allocationSize(value.tokens) +
+        FfiConverterOptionalTypeHerdrAgentSessionInfo.allocationSize(
+          value.agentSession,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrWorkspaceWorktreeInfo = {
+  repoKey: string;
+  repoName: string;
+  repoRoot: string;
+  checkoutPath: string;
+  isLinkedWorktree: boolean;
+};
+
+/**
+ * Generated factory for {@link HerdrWorkspaceWorktreeInfo} record objects.
+ */
+export const HerdrWorkspaceWorktreeInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrWorkspaceWorktreeInfo,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<HerdrWorkspaceWorktreeInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrWorkspaceWorktreeInfo = (() => {
+  type TypeName = HerdrWorkspaceWorktreeInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        repoKey: FfiConverterString.read(from),
+        repoName: FfiConverterString.read(from),
+        repoRoot: FfiConverterString.read(from),
+        checkoutPath: FfiConverterString.read(from),
+        isLinkedWorktree: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.repoKey, into);
+      FfiConverterString.write(value.repoName, into);
+      FfiConverterString.write(value.repoRoot, into);
+      FfiConverterString.write(value.checkoutPath, into);
+      FfiConverterBool.write(value.isLinkedWorktree, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.repoKey) +
+        FfiConverterString.allocationSize(value.repoName) +
+        FfiConverterString.allocationSize(value.repoRoot) +
+        FfiConverterString.allocationSize(value.checkoutPath) +
+        FfiConverterBool.allocationSize(value.isLinkedWorktree)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrWorkspaceInfo = {
+  workspaceId: string;
+  number: number;
+  label: string;
+  focused: boolean;
+  paneCount: number;
+  tabCount: number;
+  activeTabId: string;
+  agentStatus: string;
+  tokens?: Map<string, string>;
+  worktree?: HerdrWorkspaceWorktreeInfo;
+};
+
+/**
+ * Generated factory for {@link HerdrWorkspaceInfo} record objects.
+ */
+export const HerdrWorkspaceInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrWorkspaceInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrWorkspaceInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrWorkspaceInfo = (() => {
+  type TypeName = HerdrWorkspaceInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        workspaceId: FfiConverterString.read(from),
+        number: FfiConverterFloat64.read(from),
+        label: FfiConverterString.read(from),
+        focused: FfiConverterBool.read(from),
+        paneCount: FfiConverterFloat64.read(from),
+        tabCount: FfiConverterFloat64.read(from),
+        activeTabId: FfiConverterString.read(from),
+        agentStatus: FfiConverterString.read(from),
+        tokens: FfiConverterOptionalMapStringString.read(from),
+        worktree: FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.workspaceId, into);
+      FfiConverterFloat64.write(value.number, into);
+      FfiConverterString.write(value.label, into);
+      FfiConverterBool.write(value.focused, into);
+      FfiConverterFloat64.write(value.paneCount, into);
+      FfiConverterFloat64.write(value.tabCount, into);
+      FfiConverterString.write(value.activeTabId, into);
+      FfiConverterString.write(value.agentStatus, into);
+      FfiConverterOptionalMapStringString.write(value.tokens, into);
+      FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.write(
+        value.worktree,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.workspaceId) +
+        FfiConverterFloat64.allocationSize(value.number) +
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterBool.allocationSize(value.focused) +
+        FfiConverterFloat64.allocationSize(value.paneCount) +
+        FfiConverterFloat64.allocationSize(value.tabCount) +
+        FfiConverterString.allocationSize(value.activeTabId) +
+        FfiConverterString.allocationSize(value.agentStatus) +
+        FfiConverterOptionalMapStringString.allocationSize(value.tokens) +
+        FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.allocationSize(
+          value.worktree,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrTabInfo = {
+  tabId: string;
+  workspaceId: string;
+  number: number;
+  label: string;
+  focused: boolean;
+  paneCount: number;
+  agentStatus: string;
+};
+
+/**
+ * Generated factory for {@link HerdrTabInfo} record objects.
+ */
+export const HerdrTabInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrTabInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrTabInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrTabInfo = (() => {
+  type TypeName = HerdrTabInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        tabId: FfiConverterString.read(from),
+        workspaceId: FfiConverterString.read(from),
+        number: FfiConverterFloat64.read(from),
+        label: FfiConverterString.read(from),
+        focused: FfiConverterBool.read(from),
+        paneCount: FfiConverterFloat64.read(from),
+        agentStatus: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.tabId, into);
+      FfiConverterString.write(value.workspaceId, into);
+      FfiConverterFloat64.write(value.number, into);
+      FfiConverterString.write(value.label, into);
+      FfiConverterBool.write(value.focused, into);
+      FfiConverterFloat64.write(value.paneCount, into);
+      FfiConverterString.write(value.agentStatus, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.tabId) +
+        FfiConverterString.allocationSize(value.workspaceId) +
+        FfiConverterFloat64.allocationSize(value.number) +
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterBool.allocationSize(value.focused) +
+        FfiConverterFloat64.allocationSize(value.paneCount) +
+        FfiConverterString.allocationSize(value.agentStatus)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrPaneScrollInfo = {
+  offsetFromBottom: number;
+  maxOffsetFromBottom: number;
+  viewportRows: number;
+};
+
+/**
+ * Generated factory for {@link HerdrPaneScrollInfo} record objects.
+ */
+export const HerdrPaneScrollInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrPaneScrollInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrPaneScrollInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrPaneScrollInfo = (() => {
+  type TypeName = HerdrPaneScrollInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        offsetFromBottom: FfiConverterFloat64.read(from),
+        maxOffsetFromBottom: FfiConverterFloat64.read(from),
+        viewportRows: FfiConverterFloat64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterFloat64.write(value.offsetFromBottom, into);
+      FfiConverterFloat64.write(value.maxOffsetFromBottom, into);
+      FfiConverterFloat64.write(value.viewportRows, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterFloat64.allocationSize(value.offsetFromBottom) +
+        FfiConverterFloat64.allocationSize(value.maxOffsetFromBottom) +
+        FfiConverterFloat64.allocationSize(value.viewportRows)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrPaneInfo = {
+  paneId: string;
+  terminalId: string;
+  workspaceId: string;
+  tabId: string;
+  focused: boolean;
+  cwd?: string;
+  foregroundCwd?: string;
+  label?: string;
+  agent?: string;
+  title?: string;
+  terminalTitle?: string;
+  terminalTitleStripped?: string;
+  displayAgent?: string;
+  agentStatus: string;
+  stateLabels?: Map<string, string>;
+  tokens?: Map<string, string>;
+  agentSession?: HerdrAgentSessionInfo;
+  scroll?: HerdrPaneScrollInfo;
+  revision: number;
+};
+
+/**
+ * Generated factory for {@link HerdrPaneInfo} record objects.
+ */
+export const HerdrPaneInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrPaneInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrPaneInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrPaneInfo = (() => {
+  type TypeName = HerdrPaneInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        paneId: FfiConverterString.read(from),
+        terminalId: FfiConverterString.read(from),
+        workspaceId: FfiConverterString.read(from),
+        tabId: FfiConverterString.read(from),
+        focused: FfiConverterBool.read(from),
+        cwd: FfiConverterOptionalString.read(from),
+        foregroundCwd: FfiConverterOptionalString.read(from),
+        label: FfiConverterOptionalString.read(from),
+        agent: FfiConverterOptionalString.read(from),
+        title: FfiConverterOptionalString.read(from),
+        terminalTitle: FfiConverterOptionalString.read(from),
+        terminalTitleStripped: FfiConverterOptionalString.read(from),
+        displayAgent: FfiConverterOptionalString.read(from),
+        agentStatus: FfiConverterString.read(from),
+        stateLabels: FfiConverterOptionalMapStringString.read(from),
+        tokens: FfiConverterOptionalMapStringString.read(from),
+        agentSession: FfiConverterOptionalTypeHerdrAgentSessionInfo.read(from),
+        scroll: FfiConverterOptionalTypeHerdrPaneScrollInfo.read(from),
+        revision: FfiConverterFloat64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterString.write(value.terminalId, into);
+      FfiConverterString.write(value.workspaceId, into);
+      FfiConverterString.write(value.tabId, into);
+      FfiConverterBool.write(value.focused, into);
+      FfiConverterOptionalString.write(value.cwd, into);
+      FfiConverterOptionalString.write(value.foregroundCwd, into);
+      FfiConverterOptionalString.write(value.label, into);
+      FfiConverterOptionalString.write(value.agent, into);
+      FfiConverterOptionalString.write(value.title, into);
+      FfiConverterOptionalString.write(value.terminalTitle, into);
+      FfiConverterOptionalString.write(value.terminalTitleStripped, into);
+      FfiConverterOptionalString.write(value.displayAgent, into);
+      FfiConverterString.write(value.agentStatus, into);
+      FfiConverterOptionalMapStringString.write(value.stateLabels, into);
+      FfiConverterOptionalMapStringString.write(value.tokens, into);
+      FfiConverterOptionalTypeHerdrAgentSessionInfo.write(
+        value.agentSession,
+        into,
+      );
+      FfiConverterOptionalTypeHerdrPaneScrollInfo.write(value.scroll, into);
+      FfiConverterFloat64.write(value.revision, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterString.allocationSize(value.workspaceId) +
+        FfiConverterString.allocationSize(value.tabId) +
+        FfiConverterBool.allocationSize(value.focused) +
+        FfiConverterOptionalString.allocationSize(value.cwd) +
+        FfiConverterOptionalString.allocationSize(value.foregroundCwd) +
+        FfiConverterOptionalString.allocationSize(value.label) +
+        FfiConverterOptionalString.allocationSize(value.agent) +
+        FfiConverterOptionalString.allocationSize(value.title) +
+        FfiConverterOptionalString.allocationSize(value.terminalTitle) +
+        FfiConverterOptionalString.allocationSize(value.terminalTitleStripped) +
+        FfiConverterOptionalString.allocationSize(value.displayAgent) +
+        FfiConverterString.allocationSize(value.agentStatus) +
+        FfiConverterOptionalMapStringString.allocationSize(value.stateLabels) +
+        FfiConverterOptionalMapStringString.allocationSize(value.tokens) +
+        FfiConverterOptionalTypeHerdrAgentSessionInfo.allocationSize(
+          value.agentSession,
+        ) +
+        FfiConverterOptionalTypeHerdrPaneScrollInfo.allocationSize(
+          value.scroll,
+        ) +
+        FfiConverterFloat64.allocationSize(value.revision)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrPaneLayoutRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * Generated factory for {@link HerdrPaneLayoutRect} record objects.
+ */
+export const HerdrPaneLayoutRect = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrPaneLayoutRect, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrPaneLayoutRect>,
+  });
+})();
+
+const FfiConverterTypeHerdrPaneLayoutRect = (() => {
+  type TypeName = HerdrPaneLayoutRect;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        x: FfiConverterFloat64.read(from),
+        y: FfiConverterFloat64.read(from),
+        width: FfiConverterFloat64.read(from),
+        height: FfiConverterFloat64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterFloat64.write(value.x, into);
+      FfiConverterFloat64.write(value.y, into);
+      FfiConverterFloat64.write(value.width, into);
+      FfiConverterFloat64.write(value.height, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterFloat64.allocationSize(value.x) +
+        FfiConverterFloat64.allocationSize(value.y) +
+        FfiConverterFloat64.allocationSize(value.width) +
+        FfiConverterFloat64.allocationSize(value.height)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrPaneLayoutPane = {
+  paneId: string;
+  focused: boolean;
+  rect: HerdrPaneLayoutRect;
+};
+
+/**
+ * Generated factory for {@link HerdrPaneLayoutPane} record objects.
+ */
+export const HerdrPaneLayoutPane = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrPaneLayoutPane, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrPaneLayoutPane>,
+  });
+})();
+
+const FfiConverterTypeHerdrPaneLayoutPane = (() => {
+  type TypeName = HerdrPaneLayoutPane;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        paneId: FfiConverterString.read(from),
+        focused: FfiConverterBool.read(from),
+        rect: FfiConverterTypeHerdrPaneLayoutRect.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterBool.write(value.focused, into);
+      FfiConverterTypeHerdrPaneLayoutRect.write(value.rect, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterBool.allocationSize(value.focused) +
+        FfiConverterTypeHerdrPaneLayoutRect.allocationSize(value.rect)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrPaneLayoutSplit = {
+  id: string;
+  direction: string;
+  ratio: number;
+  rect: HerdrPaneLayoutRect;
+};
+
+/**
+ * Generated factory for {@link HerdrPaneLayoutSplit} record objects.
+ */
+export const HerdrPaneLayoutSplit = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrPaneLayoutSplit,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrPaneLayoutSplit>,
+  });
+})();
+
+const FfiConverterTypeHerdrPaneLayoutSplit = (() => {
+  type TypeName = HerdrPaneLayoutSplit;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        direction: FfiConverterString.read(from),
+        ratio: FfiConverterFloat64.read(from),
+        rect: FfiConverterTypeHerdrPaneLayoutRect.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.direction, into);
+      FfiConverterFloat64.write(value.ratio, into);
+      FfiConverterTypeHerdrPaneLayoutRect.write(value.rect, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.direction) +
+        FfiConverterFloat64.allocationSize(value.ratio) +
+        FfiConverterTypeHerdrPaneLayoutRect.allocationSize(value.rect)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrPaneLayoutSnapshot = {
+  workspaceId: string;
+  tabId: string;
+  zoomed: boolean;
+  area: HerdrPaneLayoutRect;
+  focusedPaneId: string;
+  panes: Array<HerdrPaneLayoutPane>;
+  splits: Array<HerdrPaneLayoutSplit>;
+};
+
+/**
+ * Generated factory for {@link HerdrPaneLayoutSnapshot} record objects.
+ */
+export const HerdrPaneLayoutSnapshot = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrPaneLayoutSnapshot,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<HerdrPaneLayoutSnapshot>,
+  });
+})();
+
+const FfiConverterTypeHerdrPaneLayoutSnapshot = (() => {
+  type TypeName = HerdrPaneLayoutSnapshot;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        workspaceId: FfiConverterString.read(from),
+        tabId: FfiConverterString.read(from),
+        zoomed: FfiConverterBool.read(from),
+        area: FfiConverterTypeHerdrPaneLayoutRect.read(from),
+        focusedPaneId: FfiConverterString.read(from),
+        panes: FfiConverterSequenceTypeHerdrPaneLayoutPane.read(from),
+        splits: FfiConverterSequenceTypeHerdrPaneLayoutSplit.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.workspaceId, into);
+      FfiConverterString.write(value.tabId, into);
+      FfiConverterBool.write(value.zoomed, into);
+      FfiConverterTypeHerdrPaneLayoutRect.write(value.area, into);
+      FfiConverterString.write(value.focusedPaneId, into);
+      FfiConverterSequenceTypeHerdrPaneLayoutPane.write(value.panes, into);
+      FfiConverterSequenceTypeHerdrPaneLayoutSplit.write(value.splits, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.workspaceId) +
+        FfiConverterString.allocationSize(value.tabId) +
+        FfiConverterBool.allocationSize(value.zoomed) +
+        FfiConverterTypeHerdrPaneLayoutRect.allocationSize(value.area) +
+        FfiConverterString.allocationSize(value.focusedPaneId) +
+        FfiConverterSequenceTypeHerdrPaneLayoutPane.allocationSize(
+          value.panes,
+        ) +
+        FfiConverterSequenceTypeHerdrPaneLayoutSplit.allocationSize(
+          value.splits,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrSessionSnapshot = {
+  version: string;
+  protocol: number;
+  focusedWorkspaceId?: string;
+  focusedTabId?: string;
+  focusedPaneId?: string;
+  agents: Array<HerdrAgentInfo>;
+  workspaces: Array<HerdrWorkspaceInfo>;
+  tabs: Array<HerdrTabInfo>;
+  panes: Array<HerdrPaneInfo>;
+  layouts: Array<HerdrPaneLayoutSnapshot>;
+};
+
+/**
+ * Generated factory for {@link HerdrSessionSnapshot} record objects.
+ */
+export const HerdrSessionSnapshot = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrSessionSnapshot,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrSessionSnapshot>,
+  });
+})();
+
+const FfiConverterTypeHerdrSessionSnapshot = (() => {
+  type TypeName = HerdrSessionSnapshot;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        version: FfiConverterString.read(from),
+        protocol: FfiConverterUInt32.read(from),
+        focusedWorkspaceId: FfiConverterOptionalString.read(from),
+        focusedTabId: FfiConverterOptionalString.read(from),
+        focusedPaneId: FfiConverterOptionalString.read(from),
+        agents: FfiConverterSequenceTypeHerdrAgentInfo.read(from),
+        workspaces: FfiConverterSequenceTypeHerdrWorkspaceInfo.read(from),
+        tabs: FfiConverterSequenceTypeHerdrTabInfo.read(from),
+        panes: FfiConverterSequenceTypeHerdrPaneInfo.read(from),
+        layouts: FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.version, into);
+      FfiConverterUInt32.write(value.protocol, into);
+      FfiConverterOptionalString.write(value.focusedWorkspaceId, into);
+      FfiConverterOptionalString.write(value.focusedTabId, into);
+      FfiConverterOptionalString.write(value.focusedPaneId, into);
+      FfiConverterSequenceTypeHerdrAgentInfo.write(value.agents, into);
+      FfiConverterSequenceTypeHerdrWorkspaceInfo.write(value.workspaces, into);
+      FfiConverterSequenceTypeHerdrTabInfo.write(value.tabs, into);
+      FfiConverterSequenceTypeHerdrPaneInfo.write(value.panes, into);
+      FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.write(
+        value.layouts,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.version) +
+        FfiConverterUInt32.allocationSize(value.protocol) +
+        FfiConverterOptionalString.allocationSize(value.focusedWorkspaceId) +
+        FfiConverterOptionalString.allocationSize(value.focusedTabId) +
+        FfiConverterOptionalString.allocationSize(value.focusedPaneId) +
+        FfiConverterSequenceTypeHerdrAgentInfo.allocationSize(value.agents) +
+        FfiConverterSequenceTypeHerdrWorkspaceInfo.allocationSize(
+          value.workspaces,
+        ) +
+        FfiConverterSequenceTypeHerdrTabInfo.allocationSize(value.tabs) +
+        FfiConverterSequenceTypeHerdrPaneInfo.allocationSize(value.panes) +
+        FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.allocationSize(
+          value.layouts,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrControlResult = {
+  kind: string;
+  version?: string;
+  protocol?: number;
+  snapshot?: HerdrSessionSnapshot;
+  workspace?: HerdrWorkspaceInfo;
+  tab?: HerdrTabInfo;
+  pane?: HerdrPaneInfo;
+  rootPane?: HerdrPaneInfo;
+  agent?: HerdrAgentInfo;
+  argv?: Array<string>;
+  readText?: string;
+};
+
+/**
+ * Generated factory for {@link HerdrControlResult} record objects.
+ */
+export const HerdrControlResult = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrControlResult, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrControlResult>,
+  });
+})();
+
+const FfiConverterTypeHerdrControlResult = (() => {
+  type TypeName = HerdrControlResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        kind: FfiConverterString.read(from),
+        version: FfiConverterOptionalString.read(from),
+        protocol: FfiConverterOptionalUInt32.read(from),
+        snapshot: FfiConverterOptionalTypeHerdrSessionSnapshot.read(from),
+        workspace: FfiConverterOptionalTypeHerdrWorkspaceInfo.read(from),
+        tab: FfiConverterOptionalTypeHerdrTabInfo.read(from),
+        pane: FfiConverterOptionalTypeHerdrPaneInfo.read(from),
+        rootPane: FfiConverterOptionalTypeHerdrPaneInfo.read(from),
+        agent: FfiConverterOptionalTypeHerdrAgentInfo.read(from),
+        argv: FfiConverterOptionalSequenceString.read(from),
+        readText: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.kind, into);
+      FfiConverterOptionalString.write(value.version, into);
+      FfiConverterOptionalUInt32.write(value.protocol, into);
+      FfiConverterOptionalTypeHerdrSessionSnapshot.write(value.snapshot, into);
+      FfiConverterOptionalTypeHerdrWorkspaceInfo.write(value.workspace, into);
+      FfiConverterOptionalTypeHerdrTabInfo.write(value.tab, into);
+      FfiConverterOptionalTypeHerdrPaneInfo.write(value.pane, into);
+      FfiConverterOptionalTypeHerdrPaneInfo.write(value.rootPane, into);
+      FfiConverterOptionalTypeHerdrAgentInfo.write(value.agent, into);
+      FfiConverterOptionalSequenceString.write(value.argv, into);
+      FfiConverterOptionalString.write(value.readText, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.kind) +
+        FfiConverterOptionalString.allocationSize(value.version) +
+        FfiConverterOptionalUInt32.allocationSize(value.protocol) +
+        FfiConverterOptionalTypeHerdrSessionSnapshot.allocationSize(
+          value.snapshot,
+        ) +
+        FfiConverterOptionalTypeHerdrWorkspaceInfo.allocationSize(
+          value.workspace,
+        ) +
+        FfiConverterOptionalTypeHerdrTabInfo.allocationSize(value.tab) +
+        FfiConverterOptionalTypeHerdrPaneInfo.allocationSize(value.pane) +
+        FfiConverterOptionalTypeHerdrPaneInfo.allocationSize(value.rootPane) +
+        FfiConverterOptionalTypeHerdrAgentInfo.allocationSize(value.agent) +
+        FfiConverterOptionalSequenceString.allocationSize(value.argv) +
+        FfiConverterOptionalString.allocationSize(value.readText)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type HerdrTerminalControlEvent = {
   clientKey: string;
   terminalId: string;
@@ -470,6 +1562,75 @@ const FfiConverterTypeHerdrTerminalControlEvent = (() => {
         FfiConverterOptionalBoolean.allocationSize(value.flag) +
         FfiConverterOptionalUInt32.allocationSize(value.notificationKind) +
         FfiConverterOptionalUInt32.allocationSize(value.count)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrWorktreeInfo = {
+  branch?: string;
+  isBare: boolean;
+  isDetached: boolean;
+  isLinkedWorktree: boolean;
+  isPrunable: boolean;
+  label: string;
+  openWorkspaceId?: string;
+  path: string;
+};
+
+/**
+ * Generated factory for {@link HerdrWorktreeInfo} record objects.
+ */
+export const HerdrWorktreeInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrWorktreeInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrWorktreeInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrWorktreeInfo = (() => {
+  type TypeName = HerdrWorktreeInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        branch: FfiConverterOptionalString.read(from),
+        isBare: FfiConverterBool.read(from),
+        isDetached: FfiConverterBool.read(from),
+        isLinkedWorktree: FfiConverterBool.read(from),
+        isPrunable: FfiConverterBool.read(from),
+        label: FfiConverterString.read(from),
+        openWorkspaceId: FfiConverterOptionalString.read(from),
+        path: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.branch, into);
+      FfiConverterBool.write(value.isBare, into);
+      FfiConverterBool.write(value.isDetached, into);
+      FfiConverterBool.write(value.isLinkedWorktree, into);
+      FfiConverterBool.write(value.isPrunable, into);
+      FfiConverterString.write(value.label, into);
+      FfiConverterOptionalString.write(value.openWorkspaceId, into);
+      FfiConverterString.write(value.path, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.branch) +
+        FfiConverterBool.allocationSize(value.isBare) +
+        FfiConverterBool.allocationSize(value.isDetached) +
+        FfiConverterBool.allocationSize(value.isLinkedWorktree) +
+        FfiConverterBool.allocationSize(value.isPrunable) +
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterOptionalString.allocationSize(value.openWorkspaceId) +
+        FfiConverterString.allocationSize(value.path)
       );
     }
   }
@@ -1012,6 +2173,3711 @@ const FfiConverterTypeHerdrBridgeError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: HerdrControlError
+export enum HerdrControlError_Tags {
+  TransportDisconnected = 'TransportDisconnected',
+  MalformedResponse = 'MalformedResponse',
+  ProtocolError = 'ProtocolError',
+  UnsupportedResponse = 'UnsupportedResponse',
+  InvalidField = 'InvalidField',
+  RequestCancelled = 'RequestCancelled',
+  RequestTimeout = 'RequestTimeout',
+}
+export const HerdrControlError = (() => {
+  type TransportDisconnected__interface = {
+    tag: HerdrControlError_Tags.TransportDisconnected;
+    inner: Readonly<[string]>;
+  };
+  class TransportDisconnected_
+    extends UniffiError
+    implements TransportDisconnected__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlError';
+    readonly tag = HerdrControlError_Tags.TransportDisconnected;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrControlError', 'TransportDisconnected');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): TransportDisconnected_ {
+      return new TransportDisconnected_(v0);
+    }
+
+    static instanceOf(obj: any): obj is TransportDisconnected_ {
+      return obj.tag === HerdrControlError_Tags.TransportDisconnected;
+    }
+    static hasInner(obj: any): obj is TransportDisconnected_ {
+      return TransportDisconnected_.instanceOf(obj);
+    }
+
+    static getInner(obj: TransportDisconnected_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type MalformedResponse__interface = {
+    tag: HerdrControlError_Tags.MalformedResponse;
+    inner: Readonly<[string]>;
+  };
+  class MalformedResponse_
+    extends UniffiError
+    implements MalformedResponse__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlError';
+    readonly tag = HerdrControlError_Tags.MalformedResponse;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrControlError', 'MalformedResponse');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): MalformedResponse_ {
+      return new MalformedResponse_(v0);
+    }
+
+    static instanceOf(obj: any): obj is MalformedResponse_ {
+      return obj.tag === HerdrControlError_Tags.MalformedResponse;
+    }
+    static hasInner(obj: any): obj is MalformedResponse_ {
+      return MalformedResponse_.instanceOf(obj);
+    }
+
+    static getInner(obj: MalformedResponse_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type ProtocolError__interface = {
+    tag: HerdrControlError_Tags.ProtocolError;
+    inner: Readonly<[string, string]>;
+  };
+  class ProtocolError_ extends UniffiError implements ProtocolError__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlError';
+    readonly tag = HerdrControlError_Tags.ProtocolError;
+    readonly inner: Readonly<[string, string]>;
+    constructor(v0: string, v1: string) {
+      super('HerdrControlError', 'ProtocolError');
+
+      this.inner = Object.freeze([v0, v1]);
+    }
+    static new(v0: string, v1: string): ProtocolError_ {
+      return new ProtocolError_(v0, v1);
+    }
+
+    static instanceOf(obj: any): obj is ProtocolError_ {
+      return obj.tag === HerdrControlError_Tags.ProtocolError;
+    }
+    static hasInner(obj: any): obj is ProtocolError_ {
+      return ProtocolError_.instanceOf(obj);
+    }
+
+    static getInner(obj: ProtocolError_): Readonly<[string, string]> {
+      return obj.inner;
+    }
+  }
+
+  type UnsupportedResponse__interface = {
+    tag: HerdrControlError_Tags.UnsupportedResponse;
+    inner: Readonly<[string]>;
+  };
+  class UnsupportedResponse_
+    extends UniffiError
+    implements UnsupportedResponse__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlError';
+    readonly tag = HerdrControlError_Tags.UnsupportedResponse;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrControlError', 'UnsupportedResponse');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): UnsupportedResponse_ {
+      return new UnsupportedResponse_(v0);
+    }
+
+    static instanceOf(obj: any): obj is UnsupportedResponse_ {
+      return obj.tag === HerdrControlError_Tags.UnsupportedResponse;
+    }
+    static hasInner(obj: any): obj is UnsupportedResponse_ {
+      return UnsupportedResponse_.instanceOf(obj);
+    }
+
+    static getInner(obj: UnsupportedResponse_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type InvalidField__interface = {
+    tag: HerdrControlError_Tags.InvalidField;
+    inner: Readonly<[string]>;
+  };
+  class InvalidField_ extends UniffiError implements InvalidField__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlError';
+    readonly tag = HerdrControlError_Tags.InvalidField;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrControlError', 'InvalidField');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): InvalidField_ {
+      return new InvalidField_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidField_ {
+      return obj.tag === HerdrControlError_Tags.InvalidField;
+    }
+    static hasInner(obj: any): obj is InvalidField_ {
+      return InvalidField_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidField_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type RequestCancelled__interface = {
+    tag: HerdrControlError_Tags.RequestCancelled;
+    inner: Readonly<[string]>;
+  };
+  class RequestCancelled_
+    extends UniffiError
+    implements RequestCancelled__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlError';
+    readonly tag = HerdrControlError_Tags.RequestCancelled;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrControlError', 'RequestCancelled');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): RequestCancelled_ {
+      return new RequestCancelled_(v0);
+    }
+
+    static instanceOf(obj: any): obj is RequestCancelled_ {
+      return obj.tag === HerdrControlError_Tags.RequestCancelled;
+    }
+    static hasInner(obj: any): obj is RequestCancelled_ {
+      return RequestCancelled_.instanceOf(obj);
+    }
+
+    static getInner(obj: RequestCancelled_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type RequestTimeout__interface = {
+    tag: HerdrControlError_Tags.RequestTimeout;
+    inner: Readonly<[string]>;
+  };
+  class RequestTimeout_
+    extends UniffiError
+    implements RequestTimeout__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlError';
+    readonly tag = HerdrControlError_Tags.RequestTimeout;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrControlError', 'RequestTimeout');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): RequestTimeout_ {
+      return new RequestTimeout_(v0);
+    }
+
+    static instanceOf(obj: any): obj is RequestTimeout_ {
+      return obj.tag === HerdrControlError_Tags.RequestTimeout;
+    }
+    static hasInner(obj: any): obj is RequestTimeout_ {
+      return RequestTimeout_.instanceOf(obj);
+    }
+
+    static getInner(obj: RequestTimeout_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HerdrControlError {
+    return obj[uniffiTypeNameSymbol] === 'HerdrControlError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    TransportDisconnected: TransportDisconnected_,
+    MalformedResponse: MalformedResponse_,
+    ProtocolError: ProtocolError_,
+    UnsupportedResponse: UnsupportedResponse_,
+    InvalidField: InvalidField_,
+    RequestCancelled: RequestCancelled_,
+    RequestTimeout: RequestTimeout_,
+  });
+})();
+export type HerdrControlError = InstanceType<
+  (typeof HerdrControlError)[
+    | 'TransportDisconnected'
+    | 'MalformedResponse'
+    | 'ProtocolError'
+    | 'UnsupportedResponse'
+    | 'InvalidField'
+    | 'RequestCancelled'
+    | 'RequestTimeout']
+>;
+
+// FfiConverter for enum HerdrControlError
+const FfiConverterTypeHerdrControlError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrControlError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HerdrControlError.TransportDisconnected(
+            FfiConverterString.read(from),
+          );
+        case 2:
+          return new HerdrControlError.MalformedResponse(
+            FfiConverterString.read(from),
+          );
+        case 3:
+          return new HerdrControlError.ProtocolError(
+            FfiConverterString.read(from),
+            FfiConverterString.read(from),
+          );
+        case 4:
+          return new HerdrControlError.UnsupportedResponse(
+            FfiConverterString.read(from),
+          );
+        case 5:
+          return new HerdrControlError.InvalidField(
+            FfiConverterString.read(from),
+          );
+        case 6:
+          return new HerdrControlError.RequestCancelled(
+            FfiConverterString.read(from),
+          );
+        case 7:
+          return new HerdrControlError.RequestTimeout(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HerdrControlError_Tags.TransportDisconnected: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrControlError_Tags.MalformedResponse: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrControlError_Tags.ProtocolError: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          FfiConverterString.write(inner[1], into);
+          return;
+        }
+        case HerdrControlError_Tags.UnsupportedResponse: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrControlError_Tags.InvalidField: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrControlError_Tags.RequestCancelled: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrControlError_Tags.RequestTimeout: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that HerdrControlError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HerdrControlError_Tags.TransportDisconnected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrControlError_Tags.MalformedResponse: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrControlError_Tags.ProtocolError: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner[0]);
+          size += FfiConverterString.allocationSize(inner[1]);
+          return size;
+        }
+        case HerdrControlError_Tags.UnsupportedResponse: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrControlError_Tags.InvalidField: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrControlError_Tags.RequestCancelled: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrControlError_Tags.RequestTimeout: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: HerdrControlRequest
+export enum HerdrControlRequest_Tags {
+  Ping = 'Ping',
+  SessionSnapshot = 'SessionSnapshot',
+  WorkspaceCreate = 'WorkspaceCreate',
+  WorkspaceFocus = 'WorkspaceFocus',
+  WorkspaceRename = 'WorkspaceRename',
+  WorkspaceClose = 'WorkspaceClose',
+  TabCreate = 'TabCreate',
+  TabFocus = 'TabFocus',
+  TabRename = 'TabRename',
+  TabClose = 'TabClose',
+  PaneRead = 'PaneRead',
+  PaneFocus = 'PaneFocus',
+  PaneRename = 'PaneRename',
+  PaneSplit = 'PaneSplit',
+  PaneZoom = 'PaneZoom',
+  PaneClose = 'PaneClose',
+  PaneSendInput = 'PaneSendInput',
+  PaneSendText = 'PaneSendText',
+  PaneSendKeys = 'PaneSendKeys',
+  AgentStart = 'AgentStart',
+  AgentFocus = 'AgentFocus',
+  AgentPrompt = 'AgentPrompt',
+}
+export const HerdrControlRequest = (() => {
+  type Ping__interface = {
+    tag: HerdrControlRequest_Tags.Ping;
+  };
+  class Ping_ extends UniffiEnum implements Ping__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.Ping;
+    constructor() {
+      super('HerdrControlRequest', 'Ping');
+    }
+
+    static new(): Ping_ {
+      return new Ping_();
+    }
+
+    static instanceOf(obj: any): obj is Ping_ {
+      return obj.tag === HerdrControlRequest_Tags.Ping;
+    }
+  }
+
+  type SessionSnapshot__interface = {
+    tag: HerdrControlRequest_Tags.SessionSnapshot;
+  };
+  class SessionSnapshot_
+    extends UniffiEnum
+    implements SessionSnapshot__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.SessionSnapshot;
+    constructor() {
+      super('HerdrControlRequest', 'SessionSnapshot');
+    }
+
+    static new(): SessionSnapshot_ {
+      return new SessionSnapshot_();
+    }
+
+    static instanceOf(obj: any): obj is SessionSnapshot_ {
+      return obj.tag === HerdrControlRequest_Tags.SessionSnapshot;
+    }
+  }
+
+  type WorkspaceCreate__interface = {
+    tag: HerdrControlRequest_Tags.WorkspaceCreate;
+    inner: Readonly<{ label?: string; cwd?: string }>;
+  };
+  class WorkspaceCreate_
+    extends UniffiEnum
+    implements WorkspaceCreate__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.WorkspaceCreate;
+    readonly inner: Readonly<{ label?: string; cwd?: string }>;
+    constructor(inner: { label?: string; cwd?: string }) {
+      super('HerdrControlRequest', 'WorkspaceCreate');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { label?: string; cwd?: string }): WorkspaceCreate_ {
+      return new WorkspaceCreate_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceCreate_ {
+      return obj.tag === HerdrControlRequest_Tags.WorkspaceCreate;
+    }
+  }
+
+  type WorkspaceFocus__interface = {
+    tag: HerdrControlRequest_Tags.WorkspaceFocus;
+    inner: Readonly<{ workspaceId: string }>;
+  };
+  class WorkspaceFocus_
+    extends UniffiEnum
+    implements WorkspaceFocus__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.WorkspaceFocus;
+    readonly inner: Readonly<{ workspaceId: string }>;
+    constructor(inner: { workspaceId: string }) {
+      super('HerdrControlRequest', 'WorkspaceFocus');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string }): WorkspaceFocus_ {
+      return new WorkspaceFocus_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceFocus_ {
+      return obj.tag === HerdrControlRequest_Tags.WorkspaceFocus;
+    }
+  }
+
+  type WorkspaceRename__interface = {
+    tag: HerdrControlRequest_Tags.WorkspaceRename;
+    inner: Readonly<{ workspaceId: string; label: string }>;
+  };
+  class WorkspaceRename_
+    extends UniffiEnum
+    implements WorkspaceRename__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.WorkspaceRename;
+    readonly inner: Readonly<{ workspaceId: string; label: string }>;
+    constructor(inner: { workspaceId: string; label: string }) {
+      super('HerdrControlRequest', 'WorkspaceRename');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      label: string;
+    }): WorkspaceRename_ {
+      return new WorkspaceRename_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceRename_ {
+      return obj.tag === HerdrControlRequest_Tags.WorkspaceRename;
+    }
+  }
+
+  type WorkspaceClose__interface = {
+    tag: HerdrControlRequest_Tags.WorkspaceClose;
+    inner: Readonly<{ workspaceId: string }>;
+  };
+  class WorkspaceClose_
+    extends UniffiEnum
+    implements WorkspaceClose__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.WorkspaceClose;
+    readonly inner: Readonly<{ workspaceId: string }>;
+    constructor(inner: { workspaceId: string }) {
+      super('HerdrControlRequest', 'WorkspaceClose');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string }): WorkspaceClose_ {
+      return new WorkspaceClose_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceClose_ {
+      return obj.tag === HerdrControlRequest_Tags.WorkspaceClose;
+    }
+  }
+
+  type TabCreate__interface = {
+    tag: HerdrControlRequest_Tags.TabCreate;
+    inner: Readonly<{ workspaceId: string; label?: string }>;
+  };
+  class TabCreate_ extends UniffiEnum implements TabCreate__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.TabCreate;
+    readonly inner: Readonly<{ workspaceId: string; label?: string }>;
+    constructor(inner: { workspaceId: string; label?: string }) {
+      super('HerdrControlRequest', 'TabCreate');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string; label?: string }): TabCreate_ {
+      return new TabCreate_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabCreate_ {
+      return obj.tag === HerdrControlRequest_Tags.TabCreate;
+    }
+  }
+
+  type TabFocus__interface = {
+    tag: HerdrControlRequest_Tags.TabFocus;
+    inner: Readonly<{ tabId: string }>;
+  };
+  class TabFocus_ extends UniffiEnum implements TabFocus__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.TabFocus;
+    readonly inner: Readonly<{ tabId: string }>;
+    constructor(inner: { tabId: string }) {
+      super('HerdrControlRequest', 'TabFocus');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string }): TabFocus_ {
+      return new TabFocus_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabFocus_ {
+      return obj.tag === HerdrControlRequest_Tags.TabFocus;
+    }
+  }
+
+  type TabRename__interface = {
+    tag: HerdrControlRequest_Tags.TabRename;
+    inner: Readonly<{ tabId: string; label: string }>;
+  };
+  class TabRename_ extends UniffiEnum implements TabRename__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.TabRename;
+    readonly inner: Readonly<{ tabId: string; label: string }>;
+    constructor(inner: { tabId: string; label: string }) {
+      super('HerdrControlRequest', 'TabRename');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string; label: string }): TabRename_ {
+      return new TabRename_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabRename_ {
+      return obj.tag === HerdrControlRequest_Tags.TabRename;
+    }
+  }
+
+  type TabClose__interface = {
+    tag: HerdrControlRequest_Tags.TabClose;
+    inner: Readonly<{ tabId: string }>;
+  };
+  class TabClose_ extends UniffiEnum implements TabClose__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.TabClose;
+    readonly inner: Readonly<{ tabId: string }>;
+    constructor(inner: { tabId: string }) {
+      super('HerdrControlRequest', 'TabClose');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string }): TabClose_ {
+      return new TabClose_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabClose_ {
+      return obj.tag === HerdrControlRequest_Tags.TabClose;
+    }
+  }
+
+  type PaneRead__interface = {
+    tag: HerdrControlRequest_Tags.PaneRead;
+    inner: Readonly<{ paneId: string; lines: number }>;
+  };
+  class PaneRead_ extends UniffiEnum implements PaneRead__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneRead;
+    readonly inner: Readonly<{ paneId: string; lines: number }>;
+    constructor(inner: { paneId: string; lines: number }) {
+      super('HerdrControlRequest', 'PaneRead');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string; lines: number }): PaneRead_ {
+      return new PaneRead_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneRead_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneRead;
+    }
+  }
+
+  type PaneFocus__interface = {
+    tag: HerdrControlRequest_Tags.PaneFocus;
+    inner: Readonly<{ paneId: string }>;
+  };
+  class PaneFocus_ extends UniffiEnum implements PaneFocus__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneFocus;
+    readonly inner: Readonly<{ paneId: string }>;
+    constructor(inner: { paneId: string }) {
+      super('HerdrControlRequest', 'PaneFocus');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string }): PaneFocus_ {
+      return new PaneFocus_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneFocus_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneFocus;
+    }
+  }
+
+  type PaneRename__interface = {
+    tag: HerdrControlRequest_Tags.PaneRename;
+    inner: Readonly<{ paneId: string; label?: string }>;
+  };
+  class PaneRename_ extends UniffiEnum implements PaneRename__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneRename;
+    readonly inner: Readonly<{ paneId: string; label?: string }>;
+    constructor(inner: { paneId: string; label?: string }) {
+      super('HerdrControlRequest', 'PaneRename');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string; label?: string }): PaneRename_ {
+      return new PaneRename_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneRename_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneRename;
+    }
+  }
+
+  type PaneSplit__interface = {
+    tag: HerdrControlRequest_Tags.PaneSplit;
+    inner: Readonly<{ paneId: string; direction: string }>;
+  };
+  class PaneSplit_ extends UniffiEnum implements PaneSplit__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneSplit;
+    readonly inner: Readonly<{ paneId: string; direction: string }>;
+    constructor(inner: { paneId: string; direction: string }) {
+      super('HerdrControlRequest', 'PaneSplit');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string; direction: string }): PaneSplit_ {
+      return new PaneSplit_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneSplit_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneSplit;
+    }
+  }
+
+  type PaneZoom__interface = {
+    tag: HerdrControlRequest_Tags.PaneZoom;
+    inner: Readonly<{ paneId: string }>;
+  };
+  class PaneZoom_ extends UniffiEnum implements PaneZoom__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneZoom;
+    readonly inner: Readonly<{ paneId: string }>;
+    constructor(inner: { paneId: string }) {
+      super('HerdrControlRequest', 'PaneZoom');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string }): PaneZoom_ {
+      return new PaneZoom_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneZoom_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneZoom;
+    }
+  }
+
+  type PaneClose__interface = {
+    tag: HerdrControlRequest_Tags.PaneClose;
+    inner: Readonly<{ paneId: string }>;
+  };
+  class PaneClose_ extends UniffiEnum implements PaneClose__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneClose;
+    readonly inner: Readonly<{ paneId: string }>;
+    constructor(inner: { paneId: string }) {
+      super('HerdrControlRequest', 'PaneClose');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string }): PaneClose_ {
+      return new PaneClose_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneClose_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneClose;
+    }
+  }
+
+  type PaneSendInput__interface = {
+    tag: HerdrControlRequest_Tags.PaneSendInput;
+    inner: Readonly<{ paneId: string; text: string; keys: Array<string> }>;
+  };
+  class PaneSendInput_ extends UniffiEnum implements PaneSendInput__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneSendInput;
+    readonly inner: Readonly<{
+      paneId: string;
+      text: string;
+      keys: Array<string>;
+    }>;
+    constructor(inner: { paneId: string; text: string; keys: Array<string> }) {
+      super('HerdrControlRequest', 'PaneSendInput');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      paneId: string;
+      text: string;
+      keys: Array<string>;
+    }): PaneSendInput_ {
+      return new PaneSendInput_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneSendInput_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneSendInput;
+    }
+  }
+
+  type PaneSendText__interface = {
+    tag: HerdrControlRequest_Tags.PaneSendText;
+    inner: Readonly<{ paneId: string; text: string }>;
+  };
+  class PaneSendText_ extends UniffiEnum implements PaneSendText__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneSendText;
+    readonly inner: Readonly<{ paneId: string; text: string }>;
+    constructor(inner: { paneId: string; text: string }) {
+      super('HerdrControlRequest', 'PaneSendText');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string; text: string }): PaneSendText_ {
+      return new PaneSendText_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneSendText_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneSendText;
+    }
+  }
+
+  type PaneSendKeys__interface = {
+    tag: HerdrControlRequest_Tags.PaneSendKeys;
+    inner: Readonly<{ paneId: string; keys: Array<string> }>;
+  };
+  class PaneSendKeys_ extends UniffiEnum implements PaneSendKeys__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneSendKeys;
+    readonly inner: Readonly<{ paneId: string; keys: Array<string> }>;
+    constructor(inner: { paneId: string; keys: Array<string> }) {
+      super('HerdrControlRequest', 'PaneSendKeys');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string; keys: Array<string> }): PaneSendKeys_ {
+      return new PaneSendKeys_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneSendKeys_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneSendKeys;
+    }
+  }
+
+  type AgentStart__interface = {
+    tag: HerdrControlRequest_Tags.AgentStart;
+    inner: Readonly<{
+      name: string;
+      kind: string;
+      paneId: string;
+      args: Array<string>;
+    }>;
+  };
+  class AgentStart_ extends UniffiEnum implements AgentStart__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.AgentStart;
+    readonly inner: Readonly<{
+      name: string;
+      kind: string;
+      paneId: string;
+      args: Array<string>;
+    }>;
+    constructor(inner: {
+      name: string;
+      kind: string;
+      paneId: string;
+      args: Array<string>;
+    }) {
+      super('HerdrControlRequest', 'AgentStart');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      name: string;
+      kind: string;
+      paneId: string;
+      args: Array<string>;
+    }): AgentStart_ {
+      return new AgentStart_(inner);
+    }
+
+    static instanceOf(obj: any): obj is AgentStart_ {
+      return obj.tag === HerdrControlRequest_Tags.AgentStart;
+    }
+  }
+
+  type AgentFocus__interface = {
+    tag: HerdrControlRequest_Tags.AgentFocus;
+    inner: Readonly<{ target: string }>;
+  };
+  class AgentFocus_ extends UniffiEnum implements AgentFocus__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.AgentFocus;
+    readonly inner: Readonly<{ target: string }>;
+    constructor(inner: { target: string }) {
+      super('HerdrControlRequest', 'AgentFocus');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { target: string }): AgentFocus_ {
+      return new AgentFocus_(inner);
+    }
+
+    static instanceOf(obj: any): obj is AgentFocus_ {
+      return obj.tag === HerdrControlRequest_Tags.AgentFocus;
+    }
+  }
+
+  type AgentPrompt__interface = {
+    tag: HerdrControlRequest_Tags.AgentPrompt;
+    inner: Readonly<{ target: string; text: string }>;
+  };
+  class AgentPrompt_ extends UniffiEnum implements AgentPrompt__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.AgentPrompt;
+    readonly inner: Readonly<{ target: string; text: string }>;
+    constructor(inner: { target: string; text: string }) {
+      super('HerdrControlRequest', 'AgentPrompt');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { target: string; text: string }): AgentPrompt_ {
+      return new AgentPrompt_(inner);
+    }
+
+    static instanceOf(obj: any): obj is AgentPrompt_ {
+      return obj.tag === HerdrControlRequest_Tags.AgentPrompt;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HerdrControlRequest {
+    return obj[uniffiTypeNameSymbol] === 'HerdrControlRequest';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Ping: Ping_,
+    SessionSnapshot: SessionSnapshot_,
+    WorkspaceCreate: WorkspaceCreate_,
+    WorkspaceFocus: WorkspaceFocus_,
+    WorkspaceRename: WorkspaceRename_,
+    WorkspaceClose: WorkspaceClose_,
+    TabCreate: TabCreate_,
+    TabFocus: TabFocus_,
+    TabRename: TabRename_,
+    TabClose: TabClose_,
+    PaneRead: PaneRead_,
+    PaneFocus: PaneFocus_,
+    PaneRename: PaneRename_,
+    PaneSplit: PaneSplit_,
+    PaneZoom: PaneZoom_,
+    PaneClose: PaneClose_,
+    PaneSendInput: PaneSendInput_,
+    PaneSendText: PaneSendText_,
+    PaneSendKeys: PaneSendKeys_,
+    AgentStart: AgentStart_,
+    AgentFocus: AgentFocus_,
+    AgentPrompt: AgentPrompt_,
+  });
+})();
+export type HerdrControlRequest = InstanceType<
+  (typeof HerdrControlRequest)[
+    | 'Ping'
+    | 'SessionSnapshot'
+    | 'WorkspaceCreate'
+    | 'WorkspaceFocus'
+    | 'WorkspaceRename'
+    | 'WorkspaceClose'
+    | 'TabCreate'
+    | 'TabFocus'
+    | 'TabRename'
+    | 'TabClose'
+    | 'PaneRead'
+    | 'PaneFocus'
+    | 'PaneRename'
+    | 'PaneSplit'
+    | 'PaneZoom'
+    | 'PaneClose'
+    | 'PaneSendInput'
+    | 'PaneSendText'
+    | 'PaneSendKeys'
+    | 'AgentStart'
+    | 'AgentFocus'
+    | 'AgentPrompt']
+>;
+
+// FfiConverter for enum HerdrControlRequest
+const FfiConverterTypeHerdrControlRequest = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrControlRequest;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HerdrControlRequest.Ping();
+        case 2:
+          return new HerdrControlRequest.SessionSnapshot();
+        case 3:
+          return new HerdrControlRequest.WorkspaceCreate({
+            label: FfiConverterOptionalString.read(from),
+            cwd: FfiConverterOptionalString.read(from),
+          });
+        case 4:
+          return new HerdrControlRequest.WorkspaceFocus({
+            workspaceId: FfiConverterString.read(from),
+          });
+        case 5:
+          return new HerdrControlRequest.WorkspaceRename({
+            workspaceId: FfiConverterString.read(from),
+            label: FfiConverterString.read(from),
+          });
+        case 6:
+          return new HerdrControlRequest.WorkspaceClose({
+            workspaceId: FfiConverterString.read(from),
+          });
+        case 7:
+          return new HerdrControlRequest.TabCreate({
+            workspaceId: FfiConverterString.read(from),
+            label: FfiConverterOptionalString.read(from),
+          });
+        case 8:
+          return new HerdrControlRequest.TabFocus({
+            tabId: FfiConverterString.read(from),
+          });
+        case 9:
+          return new HerdrControlRequest.TabRename({
+            tabId: FfiConverterString.read(from),
+            label: FfiConverterString.read(from),
+          });
+        case 10:
+          return new HerdrControlRequest.TabClose({
+            tabId: FfiConverterString.read(from),
+          });
+        case 11:
+          return new HerdrControlRequest.PaneRead({
+            paneId: FfiConverterString.read(from),
+            lines: FfiConverterUInt32.read(from),
+          });
+        case 12:
+          return new HerdrControlRequest.PaneFocus({
+            paneId: FfiConverterString.read(from),
+          });
+        case 13:
+          return new HerdrControlRequest.PaneRename({
+            paneId: FfiConverterString.read(from),
+            label: FfiConverterOptionalString.read(from),
+          });
+        case 14:
+          return new HerdrControlRequest.PaneSplit({
+            paneId: FfiConverterString.read(from),
+            direction: FfiConverterString.read(from),
+          });
+        case 15:
+          return new HerdrControlRequest.PaneZoom({
+            paneId: FfiConverterString.read(from),
+          });
+        case 16:
+          return new HerdrControlRequest.PaneClose({
+            paneId: FfiConverterString.read(from),
+          });
+        case 17:
+          return new HerdrControlRequest.PaneSendInput({
+            paneId: FfiConverterString.read(from),
+            text: FfiConverterString.read(from),
+            keys: FfiConverterSequenceString.read(from),
+          });
+        case 18:
+          return new HerdrControlRequest.PaneSendText({
+            paneId: FfiConverterString.read(from),
+            text: FfiConverterString.read(from),
+          });
+        case 19:
+          return new HerdrControlRequest.PaneSendKeys({
+            paneId: FfiConverterString.read(from),
+            keys: FfiConverterSequenceString.read(from),
+          });
+        case 20:
+          return new HerdrControlRequest.AgentStart({
+            name: FfiConverterString.read(from),
+            kind: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+            args: FfiConverterSequenceString.read(from),
+          });
+        case 21:
+          return new HerdrControlRequest.AgentFocus({
+            target: FfiConverterString.read(from),
+          });
+        case 22:
+          return new HerdrControlRequest.AgentPrompt({
+            target: FfiConverterString.read(from),
+            text: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HerdrControlRequest_Tags.Ping: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.SessionSnapshot: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.WorkspaceCreate: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterOptionalString.write(inner.label, into);
+          FfiConverterOptionalString.write(inner.cwd, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.WorkspaceFocus: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.WorkspaceRename: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.label, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.WorkspaceClose: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.TabCreate: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterOptionalString.write(inner.label, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.TabFocus: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.TabRename: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          FfiConverterString.write(inner.label, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.TabClose: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneRead: {
+          ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterUInt32.write(inner.lines, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneFocus: {
+          ordinalConverter.write(12, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneRename: {
+          ordinalConverter.write(13, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterOptionalString.write(inner.label, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneSplit: {
+          ordinalConverter.write(14, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterString.write(inner.direction, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneZoom: {
+          ordinalConverter.write(15, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneClose: {
+          ordinalConverter.write(16, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneSendInput: {
+          ordinalConverter.write(17, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterString.write(inner.text, into);
+          FfiConverterSequenceString.write(inner.keys, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneSendText: {
+          ordinalConverter.write(18, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterString.write(inner.text, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneSendKeys: {
+          ordinalConverter.write(19, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterSequenceString.write(inner.keys, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.AgentStart: {
+          ordinalConverter.write(20, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.name, into);
+          FfiConverterString.write(inner.kind, into);
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterSequenceString.write(inner.args, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.AgentFocus: {
+          ordinalConverter.write(21, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.target, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.AgentPrompt: {
+          ordinalConverter.write(22, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.target, into);
+          FfiConverterString.write(inner.text, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HerdrControlRequest_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HerdrControlRequest_Tags.Ping: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case HerdrControlRequest_Tags.SessionSnapshot: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case HerdrControlRequest_Tags.WorkspaceCreate: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterOptionalString.allocationSize(inner.label);
+          size += FfiConverterOptionalString.allocationSize(inner.cwd);
+          return size;
+        }
+        case HerdrControlRequest_Tags.WorkspaceFocus: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.WorkspaceRename: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.label);
+          return size;
+        }
+        case HerdrControlRequest_Tags.WorkspaceClose: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.TabCreate: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterOptionalString.allocationSize(inner.label);
+          return size;
+        }
+        case HerdrControlRequest_Tags.TabFocus: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.TabRename: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          size += FfiConverterString.allocationSize(inner.label);
+          return size;
+        }
+        case HerdrControlRequest_Tags.TabClose: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneRead: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterUInt32.allocationSize(inner.lines);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneFocus: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(12);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneRename: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(13);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterOptionalString.allocationSize(inner.label);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneSplit: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(14);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterString.allocationSize(inner.direction);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneZoom: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(15);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneClose: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(16);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneSendInput: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(17);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterString.allocationSize(inner.text);
+          size += FfiConverterSequenceString.allocationSize(inner.keys);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneSendText: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(18);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterString.allocationSize(inner.text);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneSendKeys: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(19);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterSequenceString.allocationSize(inner.keys);
+          return size;
+        }
+        case HerdrControlRequest_Tags.AgentStart: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(20);
+          size += FfiConverterString.allocationSize(inner.name);
+          size += FfiConverterString.allocationSize(inner.kind);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterSequenceString.allocationSize(inner.args);
+          return size;
+        }
+        case HerdrControlRequest_Tags.AgentFocus: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(21);
+          size += FfiConverterString.allocationSize(inner.target);
+          return size;
+        }
+        case HerdrControlRequest_Tags.AgentPrompt: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(22);
+          size += FfiConverterString.allocationSize(inner.target);
+          size += FfiConverterString.allocationSize(inner.text);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: HerdrEvent
+export enum HerdrEvent_Tags {
+  WorkspaceCreated = 'WorkspaceCreated',
+  WorkspaceUpdated = 'WorkspaceUpdated',
+  WorkspaceMetadataUpdated = 'WorkspaceMetadataUpdated',
+  WorkspaceClosed = 'WorkspaceClosed',
+  WorkspaceRenamed = 'WorkspaceRenamed',
+  WorkspaceMoved = 'WorkspaceMoved',
+  WorkspaceReordered = 'WorkspaceReordered',
+  WorkspaceFocused = 'WorkspaceFocused',
+  WorktreeCreated = 'WorktreeCreated',
+  WorktreeOpened = 'WorktreeOpened',
+  WorktreeRemoved = 'WorktreeRemoved',
+  TabCreated = 'TabCreated',
+  TabClosed = 'TabClosed',
+  TabFocused = 'TabFocused',
+  TabRenamed = 'TabRenamed',
+  TabMoved = 'TabMoved',
+  PaneCreated = 'PaneCreated',
+  PaneUpdated = 'PaneUpdated',
+  PaneClosed = 'PaneClosed',
+  PaneFocused = 'PaneFocused',
+  PaneExited = 'PaneExited',
+  PaneMoved = 'PaneMoved',
+  PaneOutputChanged = 'PaneOutputChanged',
+  PaneAgentDetected = 'PaneAgentDetected',
+  PaneAgentStatusChanged = 'PaneAgentStatusChanged',
+  LayoutUpdated = 'LayoutUpdated',
+  ProtocolUnknown = 'ProtocolUnknown',
+  ProtocolInvalid = 'ProtocolInvalid',
+}
+export const HerdrEvent = (() => {
+  type WorkspaceCreated__interface = {
+    tag: HerdrEvent_Tags.WorkspaceCreated;
+    inner: Readonly<{ workspace: HerdrWorkspaceInfo }>;
+  };
+  class WorkspaceCreated_
+    extends UniffiEnum
+    implements WorkspaceCreated__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorkspaceCreated;
+    readonly inner: Readonly<{ workspace: HerdrWorkspaceInfo }>;
+    constructor(inner: { workspace: HerdrWorkspaceInfo }) {
+      super('HerdrEvent', 'WorkspaceCreated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspace: HerdrWorkspaceInfo }): WorkspaceCreated_ {
+      return new WorkspaceCreated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceCreated_ {
+      return obj.tag === HerdrEvent_Tags.WorkspaceCreated;
+    }
+  }
+
+  type WorkspaceUpdated__interface = {
+    tag: HerdrEvent_Tags.WorkspaceUpdated;
+    inner: Readonly<{ workspace: HerdrWorkspaceInfo }>;
+  };
+  class WorkspaceUpdated_
+    extends UniffiEnum
+    implements WorkspaceUpdated__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorkspaceUpdated;
+    readonly inner: Readonly<{ workspace: HerdrWorkspaceInfo }>;
+    constructor(inner: { workspace: HerdrWorkspaceInfo }) {
+      super('HerdrEvent', 'WorkspaceUpdated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspace: HerdrWorkspaceInfo }): WorkspaceUpdated_ {
+      return new WorkspaceUpdated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceUpdated_ {
+      return obj.tag === HerdrEvent_Tags.WorkspaceUpdated;
+    }
+  }
+
+  type WorkspaceMetadataUpdated__interface = {
+    tag: HerdrEvent_Tags.WorkspaceMetadataUpdated;
+    inner: Readonly<{ workspace: HerdrWorkspaceInfo }>;
+  };
+  class WorkspaceMetadataUpdated_
+    extends UniffiEnum
+    implements WorkspaceMetadataUpdated__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorkspaceMetadataUpdated;
+    readonly inner: Readonly<{ workspace: HerdrWorkspaceInfo }>;
+    constructor(inner: { workspace: HerdrWorkspaceInfo }) {
+      super('HerdrEvent', 'WorkspaceMetadataUpdated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspace: HerdrWorkspaceInfo;
+    }): WorkspaceMetadataUpdated_ {
+      return new WorkspaceMetadataUpdated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceMetadataUpdated_ {
+      return obj.tag === HerdrEvent_Tags.WorkspaceMetadataUpdated;
+    }
+  }
+
+  type WorkspaceClosed__interface = {
+    tag: HerdrEvent_Tags.WorkspaceClosed;
+    inner: Readonly<{ workspaceId: string; workspace?: HerdrWorkspaceInfo }>;
+  };
+  class WorkspaceClosed_
+    extends UniffiEnum
+    implements WorkspaceClosed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorkspaceClosed;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      workspace?: HerdrWorkspaceInfo;
+    }>;
+    constructor(inner: {
+      workspaceId: string;
+      workspace?: HerdrWorkspaceInfo;
+    }) {
+      super('HerdrEvent', 'WorkspaceClosed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      workspace?: HerdrWorkspaceInfo;
+    }): WorkspaceClosed_ {
+      return new WorkspaceClosed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceClosed_ {
+      return obj.tag === HerdrEvent_Tags.WorkspaceClosed;
+    }
+  }
+
+  type WorkspaceRenamed__interface = {
+    tag: HerdrEvent_Tags.WorkspaceRenamed;
+    inner: Readonly<{ workspaceId: string; label: string }>;
+  };
+  class WorkspaceRenamed_
+    extends UniffiEnum
+    implements WorkspaceRenamed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorkspaceRenamed;
+    readonly inner: Readonly<{ workspaceId: string; label: string }>;
+    constructor(inner: { workspaceId: string; label: string }) {
+      super('HerdrEvent', 'WorkspaceRenamed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      label: string;
+    }): WorkspaceRenamed_ {
+      return new WorkspaceRenamed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceRenamed_ {
+      return obj.tag === HerdrEvent_Tags.WorkspaceRenamed;
+    }
+  }
+
+  type WorkspaceMoved__interface = {
+    tag: HerdrEvent_Tags.WorkspaceMoved;
+    inner: Readonly<{
+      workspaceId: string;
+      insertIndex: number;
+      workspaces: Array<HerdrWorkspaceInfo>;
+    }>;
+  };
+  class WorkspaceMoved_
+    extends UniffiEnum
+    implements WorkspaceMoved__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorkspaceMoved;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      insertIndex: number;
+      workspaces: Array<HerdrWorkspaceInfo>;
+    }>;
+    constructor(inner: {
+      workspaceId: string;
+      insertIndex: number;
+      workspaces: Array<HerdrWorkspaceInfo>;
+    }) {
+      super('HerdrEvent', 'WorkspaceMoved');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      insertIndex: number;
+      workspaces: Array<HerdrWorkspaceInfo>;
+    }): WorkspaceMoved_ {
+      return new WorkspaceMoved_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceMoved_ {
+      return obj.tag === HerdrEvent_Tags.WorkspaceMoved;
+    }
+  }
+
+  type WorkspaceReordered__interface = {
+    tag: HerdrEvent_Tags.WorkspaceReordered;
+    inner: Readonly<{
+      workspaceIds: Array<string>;
+      workspaces: Array<HerdrWorkspaceInfo>;
+      beforeWorkspaceId?: string;
+    }>;
+  };
+  class WorkspaceReordered_
+    extends UniffiEnum
+    implements WorkspaceReordered__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorkspaceReordered;
+    readonly inner: Readonly<{
+      workspaceIds: Array<string>;
+      workspaces: Array<HerdrWorkspaceInfo>;
+      beforeWorkspaceId?: string;
+    }>;
+    constructor(inner: {
+      workspaceIds: Array<string>;
+      workspaces: Array<HerdrWorkspaceInfo>;
+      beforeWorkspaceId?: string;
+    }) {
+      super('HerdrEvent', 'WorkspaceReordered');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceIds: Array<string>;
+      workspaces: Array<HerdrWorkspaceInfo>;
+      beforeWorkspaceId?: string;
+    }): WorkspaceReordered_ {
+      return new WorkspaceReordered_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceReordered_ {
+      return obj.tag === HerdrEvent_Tags.WorkspaceReordered;
+    }
+  }
+
+  type WorkspaceFocused__interface = {
+    tag: HerdrEvent_Tags.WorkspaceFocused;
+    inner: Readonly<{ workspaceId: string }>;
+  };
+  class WorkspaceFocused_
+    extends UniffiEnum
+    implements WorkspaceFocused__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorkspaceFocused;
+    readonly inner: Readonly<{ workspaceId: string }>;
+    constructor(inner: { workspaceId: string }) {
+      super('HerdrEvent', 'WorkspaceFocused');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string }): WorkspaceFocused_ {
+      return new WorkspaceFocused_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorkspaceFocused_ {
+      return obj.tag === HerdrEvent_Tags.WorkspaceFocused;
+    }
+  }
+
+  type WorktreeCreated__interface = {
+    tag: HerdrEvent_Tags.WorktreeCreated;
+    inner: Readonly<{
+      workspace: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+    }>;
+  };
+  class WorktreeCreated_
+    extends UniffiEnum
+    implements WorktreeCreated__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorktreeCreated;
+    readonly inner: Readonly<{
+      workspace: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+    }>;
+    constructor(inner: {
+      workspace: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+    }) {
+      super('HerdrEvent', 'WorktreeCreated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspace: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+    }): WorktreeCreated_ {
+      return new WorktreeCreated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorktreeCreated_ {
+      return obj.tag === HerdrEvent_Tags.WorktreeCreated;
+    }
+  }
+
+  type WorktreeOpened__interface = {
+    tag: HerdrEvent_Tags.WorktreeOpened;
+    inner: Readonly<{
+      workspace: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+      alreadyOpen: boolean;
+    }>;
+  };
+  class WorktreeOpened_
+    extends UniffiEnum
+    implements WorktreeOpened__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorktreeOpened;
+    readonly inner: Readonly<{
+      workspace: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+      alreadyOpen: boolean;
+    }>;
+    constructor(inner: {
+      workspace: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+      alreadyOpen: boolean;
+    }) {
+      super('HerdrEvent', 'WorktreeOpened');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspace: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+      alreadyOpen: boolean;
+    }): WorktreeOpened_ {
+      return new WorktreeOpened_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorktreeOpened_ {
+      return obj.tag === HerdrEvent_Tags.WorktreeOpened;
+    }
+  }
+
+  type WorktreeRemoved__interface = {
+    tag: HerdrEvent_Tags.WorktreeRemoved;
+    inner: Readonly<{
+      workspaceId: string;
+      workspace?: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+      forced: boolean;
+    }>;
+  };
+  class WorktreeRemoved_
+    extends UniffiEnum
+    implements WorktreeRemoved__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.WorktreeRemoved;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      workspace?: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+      forced: boolean;
+    }>;
+    constructor(inner: {
+      workspaceId: string;
+      workspace?: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+      forced: boolean;
+    }) {
+      super('HerdrEvent', 'WorktreeRemoved');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      workspace?: HerdrWorkspaceInfo;
+      worktree: HerdrWorktreeInfo;
+      forced: boolean;
+    }): WorktreeRemoved_ {
+      return new WorktreeRemoved_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WorktreeRemoved_ {
+      return obj.tag === HerdrEvent_Tags.WorktreeRemoved;
+    }
+  }
+
+  type TabCreated__interface = {
+    tag: HerdrEvent_Tags.TabCreated;
+    inner: Readonly<{ tab: HerdrTabInfo }>;
+  };
+  class TabCreated_ extends UniffiEnum implements TabCreated__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.TabCreated;
+    readonly inner: Readonly<{ tab: HerdrTabInfo }>;
+    constructor(inner: { tab: HerdrTabInfo }) {
+      super('HerdrEvent', 'TabCreated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tab: HerdrTabInfo }): TabCreated_ {
+      return new TabCreated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabCreated_ {
+      return obj.tag === HerdrEvent_Tags.TabCreated;
+    }
+  }
+
+  type TabClosed__interface = {
+    tag: HerdrEvent_Tags.TabClosed;
+    inner: Readonly<{ workspaceId: string; tabId: string }>;
+  };
+  class TabClosed_ extends UniffiEnum implements TabClosed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.TabClosed;
+    readonly inner: Readonly<{ workspaceId: string; tabId: string }>;
+    constructor(inner: { workspaceId: string; tabId: string }) {
+      super('HerdrEvent', 'TabClosed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string; tabId: string }): TabClosed_ {
+      return new TabClosed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabClosed_ {
+      return obj.tag === HerdrEvent_Tags.TabClosed;
+    }
+  }
+
+  type TabFocused__interface = {
+    tag: HerdrEvent_Tags.TabFocused;
+    inner: Readonly<{ workspaceId: string; tabId: string }>;
+  };
+  class TabFocused_ extends UniffiEnum implements TabFocused__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.TabFocused;
+    readonly inner: Readonly<{ workspaceId: string; tabId: string }>;
+    constructor(inner: { workspaceId: string; tabId: string }) {
+      super('HerdrEvent', 'TabFocused');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string; tabId: string }): TabFocused_ {
+      return new TabFocused_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabFocused_ {
+      return obj.tag === HerdrEvent_Tags.TabFocused;
+    }
+  }
+
+  type TabRenamed__interface = {
+    tag: HerdrEvent_Tags.TabRenamed;
+    inner: Readonly<{ workspaceId: string; tabId: string; label: string }>;
+  };
+  class TabRenamed_ extends UniffiEnum implements TabRenamed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.TabRenamed;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      tabId: string;
+      label: string;
+    }>;
+    constructor(inner: { workspaceId: string; tabId: string; label: string }) {
+      super('HerdrEvent', 'TabRenamed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      tabId: string;
+      label: string;
+    }): TabRenamed_ {
+      return new TabRenamed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabRenamed_ {
+      return obj.tag === HerdrEvent_Tags.TabRenamed;
+    }
+  }
+
+  type TabMoved__interface = {
+    tag: HerdrEvent_Tags.TabMoved;
+    inner: Readonly<{
+      workspaceId: string;
+      tabId: string;
+      insertIndex: number;
+      tabs: Array<HerdrTabInfo>;
+    }>;
+  };
+  class TabMoved_ extends UniffiEnum implements TabMoved__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.TabMoved;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      tabId: string;
+      insertIndex: number;
+      tabs: Array<HerdrTabInfo>;
+    }>;
+    constructor(inner: {
+      workspaceId: string;
+      tabId: string;
+      insertIndex: number;
+      tabs: Array<HerdrTabInfo>;
+    }) {
+      super('HerdrEvent', 'TabMoved');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      tabId: string;
+      insertIndex: number;
+      tabs: Array<HerdrTabInfo>;
+    }): TabMoved_ {
+      return new TabMoved_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TabMoved_ {
+      return obj.tag === HerdrEvent_Tags.TabMoved;
+    }
+  }
+
+  type PaneCreated__interface = {
+    tag: HerdrEvent_Tags.PaneCreated;
+    inner: Readonly<{ pane: HerdrPaneInfo }>;
+  };
+  class PaneCreated_ extends UniffiEnum implements PaneCreated__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneCreated;
+    readonly inner: Readonly<{ pane: HerdrPaneInfo }>;
+    constructor(inner: { pane: HerdrPaneInfo }) {
+      super('HerdrEvent', 'PaneCreated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { pane: HerdrPaneInfo }): PaneCreated_ {
+      return new PaneCreated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneCreated_ {
+      return obj.tag === HerdrEvent_Tags.PaneCreated;
+    }
+  }
+
+  type PaneUpdated__interface = {
+    tag: HerdrEvent_Tags.PaneUpdated;
+    inner: Readonly<{ pane: HerdrPaneInfo }>;
+  };
+  class PaneUpdated_ extends UniffiEnum implements PaneUpdated__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneUpdated;
+    readonly inner: Readonly<{ pane: HerdrPaneInfo }>;
+    constructor(inner: { pane: HerdrPaneInfo }) {
+      super('HerdrEvent', 'PaneUpdated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { pane: HerdrPaneInfo }): PaneUpdated_ {
+      return new PaneUpdated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneUpdated_ {
+      return obj.tag === HerdrEvent_Tags.PaneUpdated;
+    }
+  }
+
+  type PaneClosed__interface = {
+    tag: HerdrEvent_Tags.PaneClosed;
+    inner: Readonly<{ workspaceId: string; paneId: string }>;
+  };
+  class PaneClosed_ extends UniffiEnum implements PaneClosed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneClosed;
+    readonly inner: Readonly<{ workspaceId: string; paneId: string }>;
+    constructor(inner: { workspaceId: string; paneId: string }) {
+      super('HerdrEvent', 'PaneClosed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string; paneId: string }): PaneClosed_ {
+      return new PaneClosed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneClosed_ {
+      return obj.tag === HerdrEvent_Tags.PaneClosed;
+    }
+  }
+
+  type PaneFocused__interface = {
+    tag: HerdrEvent_Tags.PaneFocused;
+    inner: Readonly<{ workspaceId: string; paneId: string }>;
+  };
+  class PaneFocused_ extends UniffiEnum implements PaneFocused__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneFocused;
+    readonly inner: Readonly<{ workspaceId: string; paneId: string }>;
+    constructor(inner: { workspaceId: string; paneId: string }) {
+      super('HerdrEvent', 'PaneFocused');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string; paneId: string }): PaneFocused_ {
+      return new PaneFocused_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneFocused_ {
+      return obj.tag === HerdrEvent_Tags.PaneFocused;
+    }
+  }
+
+  type PaneExited__interface = {
+    tag: HerdrEvent_Tags.PaneExited;
+    inner: Readonly<{ workspaceId: string; paneId: string }>;
+  };
+  class PaneExited_ extends UniffiEnum implements PaneExited__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneExited;
+    readonly inner: Readonly<{ workspaceId: string; paneId: string }>;
+    constructor(inner: { workspaceId: string; paneId: string }) {
+      super('HerdrEvent', 'PaneExited');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { workspaceId: string; paneId: string }): PaneExited_ {
+      return new PaneExited_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneExited_ {
+      return obj.tag === HerdrEvent_Tags.PaneExited;
+    }
+  }
+
+  type PaneMoved__interface = {
+    tag: HerdrEvent_Tags.PaneMoved;
+    inner: Readonly<{
+      previousPaneId: string;
+      previousWorkspaceId: string;
+      previousTabId: string;
+      pane: HerdrPaneInfo;
+      createdWorkspace?: HerdrWorkspaceInfo;
+      createdTab?: HerdrTabInfo;
+      closedWorkspaceId?: string;
+      closedTabId?: string;
+    }>;
+  };
+  class PaneMoved_ extends UniffiEnum implements PaneMoved__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneMoved;
+    readonly inner: Readonly<{
+      previousPaneId: string;
+      previousWorkspaceId: string;
+      previousTabId: string;
+      pane: HerdrPaneInfo;
+      createdWorkspace?: HerdrWorkspaceInfo;
+      createdTab?: HerdrTabInfo;
+      closedWorkspaceId?: string;
+      closedTabId?: string;
+    }>;
+    constructor(inner: {
+      previousPaneId: string;
+      previousWorkspaceId: string;
+      previousTabId: string;
+      pane: HerdrPaneInfo;
+      createdWorkspace?: HerdrWorkspaceInfo;
+      createdTab?: HerdrTabInfo;
+      closedWorkspaceId?: string;
+      closedTabId?: string;
+    }) {
+      super('HerdrEvent', 'PaneMoved');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      previousPaneId: string;
+      previousWorkspaceId: string;
+      previousTabId: string;
+      pane: HerdrPaneInfo;
+      createdWorkspace?: HerdrWorkspaceInfo;
+      createdTab?: HerdrTabInfo;
+      closedWorkspaceId?: string;
+      closedTabId?: string;
+    }): PaneMoved_ {
+      return new PaneMoved_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneMoved_ {
+      return obj.tag === HerdrEvent_Tags.PaneMoved;
+    }
+  }
+
+  type PaneOutputChanged__interface = {
+    tag: HerdrEvent_Tags.PaneOutputChanged;
+    inner: Readonly<{ workspaceId: string; paneId: string; revision: number }>;
+  };
+  class PaneOutputChanged_
+    extends UniffiEnum
+    implements PaneOutputChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneOutputChanged;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      paneId: string;
+      revision: number;
+    }>;
+    constructor(inner: {
+      workspaceId: string;
+      paneId: string;
+      revision: number;
+    }) {
+      super('HerdrEvent', 'PaneOutputChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      paneId: string;
+      revision: number;
+    }): PaneOutputChanged_ {
+      return new PaneOutputChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneOutputChanged_ {
+      return obj.tag === HerdrEvent_Tags.PaneOutputChanged;
+    }
+  }
+
+  type PaneAgentDetected__interface = {
+    tag: HerdrEvent_Tags.PaneAgentDetected;
+    inner: Readonly<{
+      workspaceId: string;
+      paneId: string;
+      agent?: string;
+      released: boolean;
+      finalStatus?: string;
+    }>;
+  };
+  class PaneAgentDetected_
+    extends UniffiEnum
+    implements PaneAgentDetected__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneAgentDetected;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      paneId: string;
+      agent?: string;
+      released: boolean;
+      finalStatus?: string;
+    }>;
+    constructor(inner: {
+      workspaceId: string;
+      paneId: string;
+      agent?: string;
+      released: boolean;
+      finalStatus?: string;
+    }) {
+      super('HerdrEvent', 'PaneAgentDetected');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      paneId: string;
+      agent?: string;
+      released: boolean;
+      finalStatus?: string;
+    }): PaneAgentDetected_ {
+      return new PaneAgentDetected_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneAgentDetected_ {
+      return obj.tag === HerdrEvent_Tags.PaneAgentDetected;
+    }
+  }
+
+  type PaneAgentStatusChanged__interface = {
+    tag: HerdrEvent_Tags.PaneAgentStatusChanged;
+    inner: Readonly<{
+      workspaceId: string;
+      paneId: string;
+      agentStatus: string;
+      agent?: string;
+      title?: string;
+      displayAgent?: string;
+      stateLabels?: Map<string, string>;
+    }>;
+  };
+  class PaneAgentStatusChanged_
+    extends UniffiEnum
+    implements PaneAgentStatusChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneAgentStatusChanged;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      paneId: string;
+      agentStatus: string;
+      agent?: string;
+      title?: string;
+      displayAgent?: string;
+      stateLabels?: Map<string, string>;
+    }>;
+    constructor(inner: {
+      workspaceId: string;
+      paneId: string;
+      agentStatus: string;
+      agent?: string;
+      title?: string;
+      displayAgent?: string;
+      stateLabels?: Map<string, string>;
+    }) {
+      super('HerdrEvent', 'PaneAgentStatusChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      paneId: string;
+      agentStatus: string;
+      agent?: string;
+      title?: string;
+      displayAgent?: string;
+      stateLabels?: Map<string, string>;
+    }): PaneAgentStatusChanged_ {
+      return new PaneAgentStatusChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneAgentStatusChanged_ {
+      return obj.tag === HerdrEvent_Tags.PaneAgentStatusChanged;
+    }
+  }
+
+  type LayoutUpdated__interface = {
+    tag: HerdrEvent_Tags.LayoutUpdated;
+    inner: Readonly<{ layout: HerdrPaneLayoutSnapshot }>;
+  };
+  class LayoutUpdated_ extends UniffiEnum implements LayoutUpdated__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.LayoutUpdated;
+    readonly inner: Readonly<{ layout: HerdrPaneLayoutSnapshot }>;
+    constructor(inner: { layout: HerdrPaneLayoutSnapshot }) {
+      super('HerdrEvent', 'LayoutUpdated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { layout: HerdrPaneLayoutSnapshot }): LayoutUpdated_ {
+      return new LayoutUpdated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is LayoutUpdated_ {
+      return obj.tag === HerdrEvent_Tags.LayoutUpdated;
+    }
+  }
+
+  type ProtocolUnknown__interface = {
+    tag: HerdrEvent_Tags.ProtocolUnknown;
+    inner: Readonly<{ rawEvent: string }>;
+  };
+  class ProtocolUnknown_
+    extends UniffiEnum
+    implements ProtocolUnknown__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.ProtocolUnknown;
+    readonly inner: Readonly<{ rawEvent: string }>;
+    constructor(inner: { rawEvent: string }) {
+      super('HerdrEvent', 'ProtocolUnknown');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { rawEvent: string }): ProtocolUnknown_ {
+      return new ProtocolUnknown_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ProtocolUnknown_ {
+      return obj.tag === HerdrEvent_Tags.ProtocolUnknown;
+    }
+  }
+
+  type ProtocolInvalid__interface = {
+    tag: HerdrEvent_Tags.ProtocolInvalid;
+    inner: Readonly<{ rawEvent: string; reason: string }>;
+  };
+  class ProtocolInvalid_
+    extends UniffiEnum
+    implements ProtocolInvalid__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.ProtocolInvalid;
+    readonly inner: Readonly<{ rawEvent: string; reason: string }>;
+    constructor(inner: { rawEvent: string; reason: string }) {
+      super('HerdrEvent', 'ProtocolInvalid');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { rawEvent: string; reason: string }): ProtocolInvalid_ {
+      return new ProtocolInvalid_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ProtocolInvalid_ {
+      return obj.tag === HerdrEvent_Tags.ProtocolInvalid;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HerdrEvent {
+    return obj[uniffiTypeNameSymbol] === 'HerdrEvent';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    WorkspaceCreated: WorkspaceCreated_,
+    WorkspaceUpdated: WorkspaceUpdated_,
+    WorkspaceMetadataUpdated: WorkspaceMetadataUpdated_,
+    WorkspaceClosed: WorkspaceClosed_,
+    WorkspaceRenamed: WorkspaceRenamed_,
+    WorkspaceMoved: WorkspaceMoved_,
+    WorkspaceReordered: WorkspaceReordered_,
+    WorkspaceFocused: WorkspaceFocused_,
+    WorktreeCreated: WorktreeCreated_,
+    WorktreeOpened: WorktreeOpened_,
+    WorktreeRemoved: WorktreeRemoved_,
+    TabCreated: TabCreated_,
+    TabClosed: TabClosed_,
+    TabFocused: TabFocused_,
+    TabRenamed: TabRenamed_,
+    TabMoved: TabMoved_,
+    PaneCreated: PaneCreated_,
+    PaneUpdated: PaneUpdated_,
+    PaneClosed: PaneClosed_,
+    PaneFocused: PaneFocused_,
+    PaneExited: PaneExited_,
+    PaneMoved: PaneMoved_,
+    PaneOutputChanged: PaneOutputChanged_,
+    PaneAgentDetected: PaneAgentDetected_,
+    PaneAgentStatusChanged: PaneAgentStatusChanged_,
+    LayoutUpdated: LayoutUpdated_,
+    ProtocolUnknown: ProtocolUnknown_,
+    ProtocolInvalid: ProtocolInvalid_,
+  });
+})();
+export type HerdrEvent = InstanceType<
+  (typeof HerdrEvent)[
+    | 'WorkspaceCreated'
+    | 'WorkspaceUpdated'
+    | 'WorkspaceMetadataUpdated'
+    | 'WorkspaceClosed'
+    | 'WorkspaceRenamed'
+    | 'WorkspaceMoved'
+    | 'WorkspaceReordered'
+    | 'WorkspaceFocused'
+    | 'WorktreeCreated'
+    | 'WorktreeOpened'
+    | 'WorktreeRemoved'
+    | 'TabCreated'
+    | 'TabClosed'
+    | 'TabFocused'
+    | 'TabRenamed'
+    | 'TabMoved'
+    | 'PaneCreated'
+    | 'PaneUpdated'
+    | 'PaneClosed'
+    | 'PaneFocused'
+    | 'PaneExited'
+    | 'PaneMoved'
+    | 'PaneOutputChanged'
+    | 'PaneAgentDetected'
+    | 'PaneAgentStatusChanged'
+    | 'LayoutUpdated'
+    | 'ProtocolUnknown'
+    | 'ProtocolInvalid']
+>;
+
+// FfiConverter for enum HerdrEvent
+const FfiConverterTypeHerdrEvent = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrEvent;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HerdrEvent.WorkspaceCreated({
+            workspace: FfiConverterTypeHerdrWorkspaceInfo.read(from),
+          });
+        case 2:
+          return new HerdrEvent.WorkspaceUpdated({
+            workspace: FfiConverterTypeHerdrWorkspaceInfo.read(from),
+          });
+        case 3:
+          return new HerdrEvent.WorkspaceMetadataUpdated({
+            workspace: FfiConverterTypeHerdrWorkspaceInfo.read(from),
+          });
+        case 4:
+          return new HerdrEvent.WorkspaceClosed({
+            workspaceId: FfiConverterString.read(from),
+            workspace: FfiConverterOptionalTypeHerdrWorkspaceInfo.read(from),
+          });
+        case 5:
+          return new HerdrEvent.WorkspaceRenamed({
+            workspaceId: FfiConverterString.read(from),
+            label: FfiConverterString.read(from),
+          });
+        case 6:
+          return new HerdrEvent.WorkspaceMoved({
+            workspaceId: FfiConverterString.read(from),
+            insertIndex: FfiConverterFloat64.read(from),
+            workspaces: FfiConverterSequenceTypeHerdrWorkspaceInfo.read(from),
+          });
+        case 7:
+          return new HerdrEvent.WorkspaceReordered({
+            workspaceIds: FfiConverterSequenceString.read(from),
+            workspaces: FfiConverterSequenceTypeHerdrWorkspaceInfo.read(from),
+            beforeWorkspaceId: FfiConverterOptionalString.read(from),
+          });
+        case 8:
+          return new HerdrEvent.WorkspaceFocused({
+            workspaceId: FfiConverterString.read(from),
+          });
+        case 9:
+          return new HerdrEvent.WorktreeCreated({
+            workspace: FfiConverterTypeHerdrWorkspaceInfo.read(from),
+            worktree: FfiConverterTypeHerdrWorktreeInfo.read(from),
+          });
+        case 10:
+          return new HerdrEvent.WorktreeOpened({
+            workspace: FfiConverterTypeHerdrWorkspaceInfo.read(from),
+            worktree: FfiConverterTypeHerdrWorktreeInfo.read(from),
+            alreadyOpen: FfiConverterBool.read(from),
+          });
+        case 11:
+          return new HerdrEvent.WorktreeRemoved({
+            workspaceId: FfiConverterString.read(from),
+            workspace: FfiConverterOptionalTypeHerdrWorkspaceInfo.read(from),
+            worktree: FfiConverterTypeHerdrWorktreeInfo.read(from),
+            forced: FfiConverterBool.read(from),
+          });
+        case 12:
+          return new HerdrEvent.TabCreated({
+            tab: FfiConverterTypeHerdrTabInfo.read(from),
+          });
+        case 13:
+          return new HerdrEvent.TabClosed({
+            workspaceId: FfiConverterString.read(from),
+            tabId: FfiConverterString.read(from),
+          });
+        case 14:
+          return new HerdrEvent.TabFocused({
+            workspaceId: FfiConverterString.read(from),
+            tabId: FfiConverterString.read(from),
+          });
+        case 15:
+          return new HerdrEvent.TabRenamed({
+            workspaceId: FfiConverterString.read(from),
+            tabId: FfiConverterString.read(from),
+            label: FfiConverterString.read(from),
+          });
+        case 16:
+          return new HerdrEvent.TabMoved({
+            workspaceId: FfiConverterString.read(from),
+            tabId: FfiConverterString.read(from),
+            insertIndex: FfiConverterFloat64.read(from),
+            tabs: FfiConverterSequenceTypeHerdrTabInfo.read(from),
+          });
+        case 17:
+          return new HerdrEvent.PaneCreated({
+            pane: FfiConverterTypeHerdrPaneInfo.read(from),
+          });
+        case 18:
+          return new HerdrEvent.PaneUpdated({
+            pane: FfiConverterTypeHerdrPaneInfo.read(from),
+          });
+        case 19:
+          return new HerdrEvent.PaneClosed({
+            workspaceId: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+          });
+        case 20:
+          return new HerdrEvent.PaneFocused({
+            workspaceId: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+          });
+        case 21:
+          return new HerdrEvent.PaneExited({
+            workspaceId: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+          });
+        case 22:
+          return new HerdrEvent.PaneMoved({
+            previousPaneId: FfiConverterString.read(from),
+            previousWorkspaceId: FfiConverterString.read(from),
+            previousTabId: FfiConverterString.read(from),
+            pane: FfiConverterTypeHerdrPaneInfo.read(from),
+            createdWorkspace:
+              FfiConverterOptionalTypeHerdrWorkspaceInfo.read(from),
+            createdTab: FfiConverterOptionalTypeHerdrTabInfo.read(from),
+            closedWorkspaceId: FfiConverterOptionalString.read(from),
+            closedTabId: FfiConverterOptionalString.read(from),
+          });
+        case 23:
+          return new HerdrEvent.PaneOutputChanged({
+            workspaceId: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+            revision: FfiConverterFloat64.read(from),
+          });
+        case 24:
+          return new HerdrEvent.PaneAgentDetected({
+            workspaceId: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+            agent: FfiConverterOptionalString.read(from),
+            released: FfiConverterBool.read(from),
+            finalStatus: FfiConverterOptionalString.read(from),
+          });
+        case 25:
+          return new HerdrEvent.PaneAgentStatusChanged({
+            workspaceId: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+            agentStatus: FfiConverterString.read(from),
+            agent: FfiConverterOptionalString.read(from),
+            title: FfiConverterOptionalString.read(from),
+            displayAgent: FfiConverterOptionalString.read(from),
+            stateLabels: FfiConverterOptionalMapStringString.read(from),
+          });
+        case 26:
+          return new HerdrEvent.LayoutUpdated({
+            layout: FfiConverterTypeHerdrPaneLayoutSnapshot.read(from),
+          });
+        case 27:
+          return new HerdrEvent.ProtocolUnknown({
+            rawEvent: FfiConverterString.read(from),
+          });
+        case 28:
+          return new HerdrEvent.ProtocolInvalid({
+            rawEvent: FfiConverterString.read(from),
+            reason: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HerdrEvent_Tags.WorkspaceCreated: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrWorkspaceInfo.write(inner.workspace, into);
+          return;
+        }
+        case HerdrEvent_Tags.WorkspaceUpdated: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrWorkspaceInfo.write(inner.workspace, into);
+          return;
+        }
+        case HerdrEvent_Tags.WorkspaceMetadataUpdated: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrWorkspaceInfo.write(inner.workspace, into);
+          return;
+        }
+        case HerdrEvent_Tags.WorkspaceClosed: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterOptionalTypeHerdrWorkspaceInfo.write(
+            inner.workspace,
+            into,
+          );
+          return;
+        }
+        case HerdrEvent_Tags.WorkspaceRenamed: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.label, into);
+          return;
+        }
+        case HerdrEvent_Tags.WorkspaceMoved: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterFloat64.write(inner.insertIndex, into);
+          FfiConverterSequenceTypeHerdrWorkspaceInfo.write(
+            inner.workspaces,
+            into,
+          );
+          return;
+        }
+        case HerdrEvent_Tags.WorkspaceReordered: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterSequenceString.write(inner.workspaceIds, into);
+          FfiConverterSequenceTypeHerdrWorkspaceInfo.write(
+            inner.workspaces,
+            into,
+          );
+          FfiConverterOptionalString.write(inner.beforeWorkspaceId, into);
+          return;
+        }
+        case HerdrEvent_Tags.WorkspaceFocused: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          return;
+        }
+        case HerdrEvent_Tags.WorktreeCreated: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrWorkspaceInfo.write(inner.workspace, into);
+          FfiConverterTypeHerdrWorktreeInfo.write(inner.worktree, into);
+          return;
+        }
+        case HerdrEvent_Tags.WorktreeOpened: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrWorkspaceInfo.write(inner.workspace, into);
+          FfiConverterTypeHerdrWorktreeInfo.write(inner.worktree, into);
+          FfiConverterBool.write(inner.alreadyOpen, into);
+          return;
+        }
+        case HerdrEvent_Tags.WorktreeRemoved: {
+          ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterOptionalTypeHerdrWorkspaceInfo.write(
+            inner.workspace,
+            into,
+          );
+          FfiConverterTypeHerdrWorktreeInfo.write(inner.worktree, into);
+          FfiConverterBool.write(inner.forced, into);
+          return;
+        }
+        case HerdrEvent_Tags.TabCreated: {
+          ordinalConverter.write(12, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrTabInfo.write(inner.tab, into);
+          return;
+        }
+        case HerdrEvent_Tags.TabClosed: {
+          ordinalConverter.write(13, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case HerdrEvent_Tags.TabFocused: {
+          ordinalConverter.write(14, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case HerdrEvent_Tags.TabRenamed: {
+          ordinalConverter.write(15, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.tabId, into);
+          FfiConverterString.write(inner.label, into);
+          return;
+        }
+        case HerdrEvent_Tags.TabMoved: {
+          ordinalConverter.write(16, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.tabId, into);
+          FfiConverterFloat64.write(inner.insertIndex, into);
+          FfiConverterSequenceTypeHerdrTabInfo.write(inner.tabs, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneCreated: {
+          ordinalConverter.write(17, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrPaneInfo.write(inner.pane, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneUpdated: {
+          ordinalConverter.write(18, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrPaneInfo.write(inner.pane, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneClosed: {
+          ordinalConverter.write(19, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneFocused: {
+          ordinalConverter.write(20, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneExited: {
+          ordinalConverter.write(21, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneMoved: {
+          ordinalConverter.write(22, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.previousPaneId, into);
+          FfiConverterString.write(inner.previousWorkspaceId, into);
+          FfiConverterString.write(inner.previousTabId, into);
+          FfiConverterTypeHerdrPaneInfo.write(inner.pane, into);
+          FfiConverterOptionalTypeHerdrWorkspaceInfo.write(
+            inner.createdWorkspace,
+            into,
+          );
+          FfiConverterOptionalTypeHerdrTabInfo.write(inner.createdTab, into);
+          FfiConverterOptionalString.write(inner.closedWorkspaceId, into);
+          FfiConverterOptionalString.write(inner.closedTabId, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneOutputChanged: {
+          ordinalConverter.write(23, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterFloat64.write(inner.revision, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneAgentDetected: {
+          ordinalConverter.write(24, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterOptionalString.write(inner.agent, into);
+          FfiConverterBool.write(inner.released, into);
+          FfiConverterOptionalString.write(inner.finalStatus, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneAgentStatusChanged: {
+          ordinalConverter.write(25, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterString.write(inner.agentStatus, into);
+          FfiConverterOptionalString.write(inner.agent, into);
+          FfiConverterOptionalString.write(inner.title, into);
+          FfiConverterOptionalString.write(inner.displayAgent, into);
+          FfiConverterOptionalMapStringString.write(inner.stateLabels, into);
+          return;
+        }
+        case HerdrEvent_Tags.LayoutUpdated: {
+          ordinalConverter.write(26, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrPaneLayoutSnapshot.write(inner.layout, into);
+          return;
+        }
+        case HerdrEvent_Tags.ProtocolUnknown: {
+          ordinalConverter.write(27, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.rawEvent, into);
+          return;
+        }
+        case HerdrEvent_Tags.ProtocolInvalid: {
+          ordinalConverter.write(28, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.rawEvent, into);
+          FfiConverterString.write(inner.reason, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HerdrEvent_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HerdrEvent_Tags.WorkspaceCreated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspace,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.WorkspaceUpdated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspace,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.WorkspaceMetadataUpdated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspace,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.WorkspaceClosed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterOptionalTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspace,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.WorkspaceRenamed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.label);
+          return size;
+        }
+        case HerdrEvent_Tags.WorkspaceMoved: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterFloat64.allocationSize(inner.insertIndex);
+          size += FfiConverterSequenceTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspaces,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.WorkspaceReordered: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterSequenceString.allocationSize(inner.workspaceIds);
+          size += FfiConverterSequenceTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspaces,
+          );
+          size += FfiConverterOptionalString.allocationSize(
+            inner.beforeWorkspaceId,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.WorkspaceFocused: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          return size;
+        }
+        case HerdrEvent_Tags.WorktreeCreated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspace,
+          );
+          size += FfiConverterTypeHerdrWorktreeInfo.allocationSize(
+            inner.worktree,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.WorktreeOpened: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspace,
+          );
+          size += FfiConverterTypeHerdrWorktreeInfo.allocationSize(
+            inner.worktree,
+          );
+          size += FfiConverterBool.allocationSize(inner.alreadyOpen);
+          return size;
+        }
+        case HerdrEvent_Tags.WorktreeRemoved: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterOptionalTypeHerdrWorkspaceInfo.allocationSize(
+            inner.workspace,
+          );
+          size += FfiConverterTypeHerdrWorktreeInfo.allocationSize(
+            inner.worktree,
+          );
+          size += FfiConverterBool.allocationSize(inner.forced);
+          return size;
+        }
+        case HerdrEvent_Tags.TabCreated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(12);
+          size += FfiConverterTypeHerdrTabInfo.allocationSize(inner.tab);
+          return size;
+        }
+        case HerdrEvent_Tags.TabClosed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(13);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case HerdrEvent_Tags.TabFocused: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(14);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case HerdrEvent_Tags.TabRenamed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(15);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          size += FfiConverterString.allocationSize(inner.label);
+          return size;
+        }
+        case HerdrEvent_Tags.TabMoved: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(16);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          size += FfiConverterFloat64.allocationSize(inner.insertIndex);
+          size += FfiConverterSequenceTypeHerdrTabInfo.allocationSize(
+            inner.tabs,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.PaneCreated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(17);
+          size += FfiConverterTypeHerdrPaneInfo.allocationSize(inner.pane);
+          return size;
+        }
+        case HerdrEvent_Tags.PaneUpdated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(18);
+          size += FfiConverterTypeHerdrPaneInfo.allocationSize(inner.pane);
+          return size;
+        }
+        case HerdrEvent_Tags.PaneClosed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(19);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        case HerdrEvent_Tags.PaneFocused: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(20);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        case HerdrEvent_Tags.PaneExited: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(21);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        case HerdrEvent_Tags.PaneMoved: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(22);
+          size += FfiConverterString.allocationSize(inner.previousPaneId);
+          size += FfiConverterString.allocationSize(inner.previousWorkspaceId);
+          size += FfiConverterString.allocationSize(inner.previousTabId);
+          size += FfiConverterTypeHerdrPaneInfo.allocationSize(inner.pane);
+          size += FfiConverterOptionalTypeHerdrWorkspaceInfo.allocationSize(
+            inner.createdWorkspace,
+          );
+          size += FfiConverterOptionalTypeHerdrTabInfo.allocationSize(
+            inner.createdTab,
+          );
+          size += FfiConverterOptionalString.allocationSize(
+            inner.closedWorkspaceId,
+          );
+          size += FfiConverterOptionalString.allocationSize(inner.closedTabId);
+          return size;
+        }
+        case HerdrEvent_Tags.PaneOutputChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(23);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterFloat64.allocationSize(inner.revision);
+          return size;
+        }
+        case HerdrEvent_Tags.PaneAgentDetected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(24);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterOptionalString.allocationSize(inner.agent);
+          size += FfiConverterBool.allocationSize(inner.released);
+          size += FfiConverterOptionalString.allocationSize(inner.finalStatus);
+          return size;
+        }
+        case HerdrEvent_Tags.PaneAgentStatusChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(25);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterString.allocationSize(inner.agentStatus);
+          size += FfiConverterOptionalString.allocationSize(inner.agent);
+          size += FfiConverterOptionalString.allocationSize(inner.title);
+          size += FfiConverterOptionalString.allocationSize(inner.displayAgent);
+          size += FfiConverterOptionalMapStringString.allocationSize(
+            inner.stateLabels,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.LayoutUpdated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(26);
+          size += FfiConverterTypeHerdrPaneLayoutSnapshot.allocationSize(
+            inner.layout,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.ProtocolUnknown: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(27);
+          size += FfiConverterString.allocationSize(inner.rawEvent);
+          return size;
+        }
+        case HerdrEvent_Tags.ProtocolInvalid: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(28);
+          size += FfiConverterString.allocationSize(inner.rawEvent);
+          size += FfiConverterString.allocationSize(inner.reason);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: HerdrEventError
+export enum HerdrEventError_Tags {
+  UnsupportedProtocol = 'UnsupportedProtocol',
+  TransportDisconnected = 'TransportDisconnected',
+  SubscriptionUnavailable = 'SubscriptionUnavailable',
+}
+export const HerdrEventError = (() => {
+  type UnsupportedProtocol__interface = {
+    tag: HerdrEventError_Tags.UnsupportedProtocol;
+    inner: Readonly<[string]>;
+  };
+  class UnsupportedProtocol_
+    extends UniffiError
+    implements UnsupportedProtocol__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEventError';
+    readonly tag = HerdrEventError_Tags.UnsupportedProtocol;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrEventError', 'UnsupportedProtocol');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): UnsupportedProtocol_ {
+      return new UnsupportedProtocol_(v0);
+    }
+
+    static instanceOf(obj: any): obj is UnsupportedProtocol_ {
+      return obj.tag === HerdrEventError_Tags.UnsupportedProtocol;
+    }
+    static hasInner(obj: any): obj is UnsupportedProtocol_ {
+      return UnsupportedProtocol_.instanceOf(obj);
+    }
+
+    static getInner(obj: UnsupportedProtocol_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type TransportDisconnected__interface = {
+    tag: HerdrEventError_Tags.TransportDisconnected;
+    inner: Readonly<[string]>;
+  };
+  class TransportDisconnected_
+    extends UniffiError
+    implements TransportDisconnected__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEventError';
+    readonly tag = HerdrEventError_Tags.TransportDisconnected;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrEventError', 'TransportDisconnected');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): TransportDisconnected_ {
+      return new TransportDisconnected_(v0);
+    }
+
+    static instanceOf(obj: any): obj is TransportDisconnected_ {
+      return obj.tag === HerdrEventError_Tags.TransportDisconnected;
+    }
+    static hasInner(obj: any): obj is TransportDisconnected_ {
+      return TransportDisconnected_.instanceOf(obj);
+    }
+
+    static getInner(obj: TransportDisconnected_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type SubscriptionUnavailable__interface = {
+    tag: HerdrEventError_Tags.SubscriptionUnavailable;
+    inner: Readonly<[string]>;
+  };
+  class SubscriptionUnavailable_
+    extends UniffiError
+    implements SubscriptionUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEventError';
+    readonly tag = HerdrEventError_Tags.SubscriptionUnavailable;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrEventError', 'SubscriptionUnavailable');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): SubscriptionUnavailable_ {
+      return new SubscriptionUnavailable_(v0);
+    }
+
+    static instanceOf(obj: any): obj is SubscriptionUnavailable_ {
+      return obj.tag === HerdrEventError_Tags.SubscriptionUnavailable;
+    }
+    static hasInner(obj: any): obj is SubscriptionUnavailable_ {
+      return SubscriptionUnavailable_.instanceOf(obj);
+    }
+
+    static getInner(obj: SubscriptionUnavailable_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HerdrEventError {
+    return obj[uniffiTypeNameSymbol] === 'HerdrEventError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    UnsupportedProtocol: UnsupportedProtocol_,
+    TransportDisconnected: TransportDisconnected_,
+    SubscriptionUnavailable: SubscriptionUnavailable_,
+  });
+})();
+export type HerdrEventError = InstanceType<
+  (typeof HerdrEventError)[
+    | 'UnsupportedProtocol'
+    | 'TransportDisconnected'
+    | 'SubscriptionUnavailable']
+>;
+
+// FfiConverter for enum HerdrEventError
+const FfiConverterTypeHerdrEventError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrEventError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HerdrEventError.UnsupportedProtocol(
+            FfiConverterString.read(from),
+          );
+        case 2:
+          return new HerdrEventError.TransportDisconnected(
+            FfiConverterString.read(from),
+          );
+        case 3:
+          return new HerdrEventError.SubscriptionUnavailable(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HerdrEventError_Tags.UnsupportedProtocol: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrEventError_Tags.TransportDisconnected: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrEventError_Tags.SubscriptionUnavailable: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that HerdrEventError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HerdrEventError_Tags.UnsupportedProtocol: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrEventError_Tags.TransportDisconnected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrEventError_Tags.SubscriptionUnavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export interface HerdrEventSink {
+  event(clientKey: string, event: HerdrEvent): void;
+  closed(clientKey: string, reason: string): void;
+}
+
+export class HerdrEventSinkImpl
+  extends UniffiAbstractObject
+  implements HerdrEventSink
+{
+  readonly [uniffiTypeNameSymbol] = 'HerdrEventSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHerdrEventSinkImplObjectFactory.bless(pointer);
+  }
+
+  event(clientKey: string, event: HerdrEvent): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdreventsink_event(
+          uniffiTypeHerdrEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeHerdrEvent.lower(
+            event,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  closed(clientKey: string, reason: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdreventsink_closed(
+          uniffiTypeHerdrEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(reason, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeHerdrEventSinkImplObjectFactory.pointer(this);
+      uniffiTypeHerdrEventSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeHerdrEventSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HerdrEventSinkImpl {
+    return uniffiTypeHerdrEventSinkImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHerdrEventSinkImplObjectFactory: UniffiObjectFactory<HerdrEventSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HerdrEventSink {
+        const instance = Object.create(HerdrEventSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HerdrEventSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_herdreventsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HerdrEventSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HerdrEventSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_herdreventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_herdreventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HerdrEventSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HerdrEventSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHerdrEventSink = new FfiConverterObjectWithCallbacks(
+  uniffiTypeHerdrEventSinkImplObjectFactory,
+);
+
+// Add a vtable for the callbacks that go in HerdrEventSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceHerdrEventSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    event: (uniffiHandle: bigint, clientKey: Uint8Array, event: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
+        return jsCallback.event(
+          FfiConverterString.lift(clientKey),
+          FfiConverterTypeHerdrEvent.lift(event),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    closed: (
+      uniffiHandle: bigint,
+      clientKey: Uint8Array,
+      reason: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
+        return jsCallback.closed(
+          FfiConverterString.lift(clientKey),
+          FfiConverterString.lift(reason),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeHerdrEventSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeHerdrEventSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdreventsink(
+      uniffiCallbackInterfaceHerdrEventSink.vtable,
+    );
+  },
+};
+
 export interface HerdrTerminalEventSink {
   terminalFrame(
     clientKey: string,
@@ -1314,11 +6180,104 @@ const FfiConverterOptionalString = new FfiConverterOptional(FfiConverterString);
 const FfiConverterOptionalBoolean = new FfiConverterOptional(FfiConverterBool);
 
 // FfiConverter for number | undefined
-const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
-
-// FfiConverter for number | undefined
 const FfiConverterOptionalFloat64 = new FfiConverterOptional(
   FfiConverterFloat64,
+);
+
+// FfiConverter for Map<string, string>
+const FfiConverterMapStringString = new FfiConverterMap(
+  FfiConverterString,
+  FfiConverterString,
+);
+
+// FfiConverter for Map<string, string> | undefined
+const FfiConverterOptionalMapStringString = new FfiConverterOptional(
+  FfiConverterMapStringString,
+);
+
+// FfiConverter for HerdrAgentSessionInfo | undefined
+const FfiConverterOptionalTypeHerdrAgentSessionInfo = new FfiConverterOptional(
+  FfiConverterTypeHerdrAgentSessionInfo,
+);
+
+// FfiConverter for number | undefined
+const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
+
+// FfiConverter for Array<HerdrAgentInfo>
+const FfiConverterSequenceTypeHerdrAgentInfo = new FfiConverterArray(
+  FfiConverterTypeHerdrAgentInfo,
+);
+
+// FfiConverter for HerdrWorkspaceWorktreeInfo | undefined
+const FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo =
+  new FfiConverterOptional(FfiConverterTypeHerdrWorkspaceWorktreeInfo);
+
+// FfiConverter for Array<HerdrWorkspaceInfo>
+const FfiConverterSequenceTypeHerdrWorkspaceInfo = new FfiConverterArray(
+  FfiConverterTypeHerdrWorkspaceInfo,
+);
+
+// FfiConverter for Array<HerdrTabInfo>
+const FfiConverterSequenceTypeHerdrTabInfo = new FfiConverterArray(
+  FfiConverterTypeHerdrTabInfo,
+);
+
+// FfiConverter for HerdrPaneScrollInfo | undefined
+const FfiConverterOptionalTypeHerdrPaneScrollInfo = new FfiConverterOptional(
+  FfiConverterTypeHerdrPaneScrollInfo,
+);
+
+// FfiConverter for Array<HerdrPaneInfo>
+const FfiConverterSequenceTypeHerdrPaneInfo = new FfiConverterArray(
+  FfiConverterTypeHerdrPaneInfo,
+);
+
+// FfiConverter for Array<HerdrPaneLayoutPane>
+const FfiConverterSequenceTypeHerdrPaneLayoutPane = new FfiConverterArray(
+  FfiConverterTypeHerdrPaneLayoutPane,
+);
+
+// FfiConverter for Array<HerdrPaneLayoutSplit>
+const FfiConverterSequenceTypeHerdrPaneLayoutSplit = new FfiConverterArray(
+  FfiConverterTypeHerdrPaneLayoutSplit,
+);
+
+// FfiConverter for Array<HerdrPaneLayoutSnapshot>
+const FfiConverterSequenceTypeHerdrPaneLayoutSnapshot = new FfiConverterArray(
+  FfiConverterTypeHerdrPaneLayoutSnapshot,
+);
+
+// FfiConverter for HerdrSessionSnapshot | undefined
+const FfiConverterOptionalTypeHerdrSessionSnapshot = new FfiConverterOptional(
+  FfiConverterTypeHerdrSessionSnapshot,
+);
+
+// FfiConverter for HerdrWorkspaceInfo | undefined
+const FfiConverterOptionalTypeHerdrWorkspaceInfo = new FfiConverterOptional(
+  FfiConverterTypeHerdrWorkspaceInfo,
+);
+
+// FfiConverter for HerdrTabInfo | undefined
+const FfiConverterOptionalTypeHerdrTabInfo = new FfiConverterOptional(
+  FfiConverterTypeHerdrTabInfo,
+);
+
+// FfiConverter for HerdrPaneInfo | undefined
+const FfiConverterOptionalTypeHerdrPaneInfo = new FfiConverterOptional(
+  FfiConverterTypeHerdrPaneInfo,
+);
+
+// FfiConverter for HerdrAgentInfo | undefined
+const FfiConverterOptionalTypeHerdrAgentInfo = new FfiConverterOptional(
+  FfiConverterTypeHerdrAgentInfo,
+);
+
+// FfiConverter for Array<string>
+const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
+
+// FfiConverter for Array<string> | undefined
+const FfiConverterOptionalSequenceString = new FfiConverterOptional(
+  FfiConverterSequenceString,
 );
 
 /**
@@ -1344,6 +6303,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_clear_herdr_event_sink() !==
+    35187
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_clear_herdr_event_sink',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_clear_herdr_terminal_event_sink() !==
     57772
   ) {
@@ -1360,11 +6327,27 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_herdr_event_subscription() !==
+    1017
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_close_herdr_event_subscription',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_herdr_terminal_bridge() !==
     43120
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_close_herdr_terminal_bridge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request() !==
+    42403
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_herdr_control_request',
     );
   }
   if (
@@ -1405,6 +6388,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_herdr_event_sink() !==
+    53728
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_herdr_event_sink',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_herdr_terminal_event_sink() !==
     152
   ) {
@@ -1413,11 +6404,35 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_start_herdr_event_subscription() !==
+    36264
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_start_herdr_event_subscription',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge() !==
     4369
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_event() !==
+    60721
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdreventsink_event',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_closed() !==
+    9830
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdreventsink_closed',
     );
   }
   if (
@@ -1445,14 +6460,34 @@ function uniffiEnsureInitialized() {
     );
   }
 
+  uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
 }
 
 export default Object.freeze({
   initialize: uniffiEnsureInitialized,
   converters: {
+    FfiConverterTypeHerdrAgentInfo,
+    FfiConverterTypeHerdrAgentSessionInfo,
     FfiConverterTypeHerdrBridgeError,
+    FfiConverterTypeHerdrControlError,
+    FfiConverterTypeHerdrControlRequest,
+    FfiConverterTypeHerdrControlResult,
+    FfiConverterTypeHerdrEvent,
+    FfiConverterTypeHerdrEventError,
+    FfiConverterTypeHerdrEventSink,
+    FfiConverterTypeHerdrPaneInfo,
+    FfiConverterTypeHerdrPaneLayoutPane,
+    FfiConverterTypeHerdrPaneLayoutRect,
+    FfiConverterTypeHerdrPaneLayoutSnapshot,
+    FfiConverterTypeHerdrPaneLayoutSplit,
+    FfiConverterTypeHerdrPaneScrollInfo,
+    FfiConverterTypeHerdrSessionSnapshot,
+    FfiConverterTypeHerdrTabInfo,
     FfiConverterTypeHerdrTerminalControlEvent,
     FfiConverterTypeHerdrTerminalEventSink,
+    FfiConverterTypeHerdrWorkspaceInfo,
+    FfiConverterTypeHerdrWorkspaceWorktreeInfo,
+    FfiConverterTypeHerdrWorktreeInfo,
   },
 });

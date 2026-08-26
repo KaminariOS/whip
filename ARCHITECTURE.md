@@ -32,7 +32,7 @@ The control plane reads and mutates structured Herdr server state:
 - agents, status, metadata, and recent output
 - create, focus, rename, split, resize, send, close, and launch actions
 
-Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. Normal operation does not start a remote shell, poll JSON-producing CLI commands, or depend on private TUI layout/render messages.
+Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The product-specific Rust layer in `react-native-whip-ssh` owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, direct/legacy event-envelope normalization, and conversion into typed domain events. It composes directly with product-neutral raw Unix-socket transport callbacks in `react-native-russh`; Herdr JSON does not cross the React Native boundary. TypeScript invokes semantic operations and applies trusted typed results/events to application state. Normal operation does not start a remote shell, poll JSON-producing CLI commands, or depend on private TUI layout/render messages.
 
 If Whip needs a new server capability, it should be a neutral Herdr socket API method or event, not a mobile-specific endpoint and not a second source of runtime truth.
 
@@ -110,6 +110,8 @@ and PTY used by the mounted terminal.
 
 Transport objects do not live in React component state. A service owns SSH/API lifetimes; React consumes serializable state and invokes typed actions.
 
+`HerdrClient` still owns control replacement, reconnect/backoff, event-subscription restart, terminal restoration, and refresh scheduling. Moving that per-host coordination into Rust is a separate runtime-boundary step; the current native control/event layer deliberately does not make reconnect decisions.
+
 ## Mobile information architecture
 
 ### Servers
@@ -162,6 +164,7 @@ Implemented:
 - strict host-key verification, nested jump hosts, restricted agent forwarding, and SSH-backed private-network browser tunnels;
 - SFTP browsing, transfer, editing, deletion, and previews for text, code, Markdown, images, SVG, Mermaid, PDF, audio, video, and sandboxed HTML;
 - shared Rust/Russh SSH behavior on Android and iOS through UniFFI, with typed binary terminal frames on the hot path;
+- native Herdr control request/response handling and typed event-stream framing, validation, and normalization shared by Android and iOS;
 - Android release signing/Play delivery and unsigned ARM64 iOS device artifacts.
 
 Current transport/product milestones:

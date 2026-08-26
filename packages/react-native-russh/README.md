@@ -108,6 +108,12 @@ The framed reader retains partial prefix/payload progress across cancellation,
 allocates each complete payload once, and transfers that owned payload through
 the typed callback.
 
+The native library also exposes product-neutral C callbacks for one-shot raw
+requests and long-lived raw or length-prefixed channels. Product-specific Rust
+adapters can compose with the existing SSH session without routing protocol
+bytes through JavaScript. Those callbacks contain no Herdr-specific framing,
+serialization, or state.
+
 The SSH server must permit Unix-socket forwarding and the authenticated user
 must be able to access the requested socket path.
 

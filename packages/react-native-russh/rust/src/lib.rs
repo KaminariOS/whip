@@ -43,6 +43,7 @@ type ResponseCallback = unsafe extern "C" fn(u64, *const c_char);
 type NativeChannelOpenCallback = unsafe extern "C" fn(u64, *const c_char);
 type NativeChannelFrameCallback = unsafe extern "C" fn(u64, *const u8, usize);
 type NativeChannelClosedCallback = unsafe extern "C" fn(u64, *const c_char);
+type NativeUnixSocketRequestCallback = unsafe extern "C" fn(u64, *const u8, usize, *const c_char);
 type Shells = RwLock<HashMap<String, mpsc::Sender<ShellCommand>>>;
 type SftpSessions = RwLock<HashMap<String, Arc<SftpSession>>>;
 type ExecChannels = RwLock<HashMap<(String, String), mpsc::Sender<StreamCommand>>>;
@@ -1269,10 +1270,12 @@ async fn sftp_transfer(
     result.map(Value::String)
 }
 
-async fn request_unix_socket(params: &Value) -> Result<Value, TransportError> {
+async fn request_unix_socket_bytes(
+    params: &Value,
+    request: &[u8],
+) -> Result<Vec<u8>, TransportError> {
     let session = session_for(params)?;
     let socket_path = required_string(params, "socketPath")?;
-    let request = required_string(params, "request")?;
     let terminator = params
         .get("responseTerminator")
         .and_then(Value::as_str)
@@ -1298,7 +1301,7 @@ async fn request_unix_socket(params: &Value) -> Result<Value, TransportError> {
         .channel_open_direct_streamlocal(socket_path)
         .await?;
     let mut stream = BufReader::new(channel.into_stream());
-    stream.write_all(request.as_bytes()).await?;
+    stream.write_all(request).await?;
     let mut reader = stream.take(max_response_bytes + 1);
     let mut response = Vec::new();
     tokio::time::timeout(
@@ -1320,6 +1323,12 @@ async fn request_unix_socket(params: &Value) -> Result<Value, TransportError> {
         ));
     }
     response.pop();
+    Ok(response)
+}
+
+async fn request_unix_socket(params: &Value) -> Result<Value, TransportError> {
+    let request = required_string(params, "request")?;
+    let response = request_unix_socket_bytes(params, request.as_bytes()).await?;
     Ok(json!(String::from_utf8_lossy(&response)))
 }
 
@@ -2772,19 +2781,8 @@ fn notify_native_channel_open(
     }
 }
 
-/// Opens a product-neutral u32-LE length-prefixed stream-local channel and
-/// delivers its payload frames directly to native callbacks.
-///
-/// This API intentionally contains no product protocol knowledge. It exists so
-/// product-native codecs can reuse the already-connected SSH session without a
-/// JavaScript frame round trip.
-///
-/// # Safety
-///
-/// String pointers must reference valid NUL-terminated UTF-8 for the duration
-/// of this call. Callback functions must remain valid until `closed` fires.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_open_native_length_prefixed_unix_socket_channel(
+#[allow(clippy::too_many_arguments)]
+unsafe fn open_native_unix_socket_channel(
     context: u64,
     key: *const c_char,
     channel_id: *const c_char,
@@ -2793,6 +2791,7 @@ pub unsafe extern "C" fn react_native_russh_open_native_length_prefixed_unix_soc
     opened: Option<NativeChannelOpenCallback>,
     frame: Option<NativeChannelFrameCallback>,
     closed: Option<NativeChannelClosedCallback>,
+    framing: Option<LengthFormat>,
 ) {
     let Some(opened) = opened else { return };
     let strings = [key, channel_id, socket_path]
@@ -2852,7 +2851,7 @@ pub unsafe extern "C" fn react_native_russh_open_native_length_prefixed_unix_soc
         });
         let result = open_unix_socket_channel_with_framing(
             &params,
-            Some(LengthFormat::U32Le),
+            framing,
             UnixSocketDelivery::Native {
                 context,
                 frame,
@@ -2862,6 +2861,211 @@ pub unsafe extern "C" fn react_native_russh_open_native_length_prefixed_unix_soc
         .await;
         notify_native_channel_open(opened, context, result);
     });
+}
+
+/// Opens a product-neutral raw stream-local channel and delivers byte chunks
+/// directly to native callbacks.
+///
+/// # Safety
+///
+/// String pointers must reference valid NUL-terminated UTF-8 for the duration
+/// of this call. Callback functions must remain valid until `closed` fires.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn react_native_russh_open_native_unix_socket_channel(
+    context: u64,
+    key: *const c_char,
+    channel_id: *const c_char,
+    socket_path: *const c_char,
+    max_frame_bytes: usize,
+    opened: Option<NativeChannelOpenCallback>,
+    frame: Option<NativeChannelFrameCallback>,
+    closed: Option<NativeChannelClosedCallback>,
+) {
+    unsafe {
+        open_native_unix_socket_channel(
+            context,
+            key,
+            channel_id,
+            socket_path,
+            max_frame_bytes,
+            opened,
+            frame,
+            closed,
+            None,
+        );
+    }
+}
+
+/// Opens a product-neutral u32-LE length-prefixed stream-local channel and
+/// delivers its payload frames directly to native callbacks.
+///
+/// This API intentionally contains no product protocol knowledge. It exists so
+/// product-native codecs can reuse the already-connected SSH session without a
+/// JavaScript frame round trip.
+///
+/// # Safety
+///
+/// String pointers must reference valid NUL-terminated UTF-8 for the duration
+/// of this call. Callback functions must remain valid until `closed` fires.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn react_native_russh_open_native_length_prefixed_unix_socket_channel(
+    context: u64,
+    key: *const c_char,
+    channel_id: *const c_char,
+    socket_path: *const c_char,
+    max_frame_bytes: usize,
+    opened: Option<NativeChannelOpenCallback>,
+    frame: Option<NativeChannelFrameCallback>,
+    closed: Option<NativeChannelClosedCallback>,
+) {
+    unsafe {
+        open_native_unix_socket_channel(
+            context,
+            key,
+            channel_id,
+            socket_path,
+            max_frame_bytes,
+            opened,
+            frame,
+            closed,
+            Some(LengthFormat::U32Le),
+        );
+    }
+}
+
+fn notify_native_unix_socket_request(
+    callback: NativeUnixSocketRequestCallback,
+    context: u64,
+    result: Result<Vec<u8>, TransportError>,
+) {
+    match result {
+        Ok(response) => unsafe {
+            callback(context, response.as_ptr(), response.len(), std::ptr::null());
+        },
+        Err(error) => match CString::new(error.to_string()) {
+            Ok(error) => unsafe {
+                callback(context, std::ptr::null(), 0, error.as_ptr());
+            },
+            Err(_) => unsafe {
+                callback(
+                    context,
+                    std::ptr::null(),
+                    0,
+                    c"native Unix-socket request failed".as_ptr(),
+                );
+            },
+        },
+    }
+}
+
+/// Sends one byte request over a product-neutral stream-local channel and
+/// returns the bytes before the configured single-byte response terminator.
+///
+/// # Safety
+///
+/// String pointers must be valid NUL-terminated UTF-8. `request` must reference
+/// `request_length` readable bytes when nonzero. The callback must remain valid
+/// until it is invoked once.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn react_native_russh_request_native_unix_socket(
+    context: u64,
+    key: *const c_char,
+    socket_path: *const c_char,
+    request: *const u8,
+    request_length: usize,
+    response_terminator: u8,
+    timeout_ms: u64,
+    max_response_bytes: usize,
+    callback: Option<NativeUnixSocketRequestCallback>,
+) {
+    let Some(callback) = callback else { return };
+    if key.is_null()
+        || socket_path.is_null()
+        || (request.is_null() && request_length != 0)
+        || response_terminator == 0
+        || !response_terminator.is_ascii()
+    {
+        notify_native_unix_socket_request(
+            callback,
+            context,
+            Err(TransportError::InvalidRequest(
+                "invalid native Unix-socket request arguments".to_owned(),
+            )),
+        );
+        return;
+    }
+    let key = unsafe { CStr::from_ptr(key) }
+        .to_string_lossy()
+        .into_owned();
+    let socket_path = unsafe { CStr::from_ptr(socket_path) }
+        .to_string_lossy()
+        .into_owned();
+    let request = if request_length == 0 {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(request, request_length) }.to_vec()
+    };
+    let runtime = match runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            notify_native_unix_socket_request(
+                callback,
+                context,
+                Err(TransportError::ChannelUnavailable(format!(
+                    "failed to initialize SSH runtime: {error}"
+                ))),
+            );
+            return;
+        }
+    };
+    runtime.spawn(async move {
+        let terminator = char::from(response_terminator).to_string();
+        let params = json!({
+            "key": key,
+            "socketPath": socket_path,
+            "responseTerminator": terminator,
+            "timeoutMs": timeout_ms,
+            "maxResponseBytes": max_response_bytes,
+        });
+        let result = request_unix_socket_bytes(&params, &request).await;
+        notify_native_unix_socket_request(callback, context, result);
+    });
+}
+
+unsafe fn write_native_unix_socket_channel(
+    key: *const c_char,
+    channel_id: *const c_char,
+    bytes: *const u8,
+    length: usize,
+    framed: bool,
+) -> *mut c_char {
+    if key.is_null() || channel_id.is_null() || (bytes.is_null() && length != 0) {
+        return native_channel_result(Some("invalid native Unix-socket write arguments"));
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_string_lossy();
+    let channel_id = unsafe { CStr::from_ptr(channel_id) }.to_string_lossy();
+    let bytes = if length == 0 {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(bytes, length) }.to_vec()
+    };
+    native_channel_result(write_unix_socket_channel_for_key(&key, &channel_id, bytes, framed).err())
+}
+
+/// Queues bytes for a native raw stream-local channel.
+///
+/// # Safety
+///
+/// String pointers must be valid NUL-terminated strings. `bytes` must reference
+/// `length` readable bytes when `length` is nonzero.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn react_native_russh_write_native_unix_socket_channel(
+    key: *const c_char,
+    channel_id: *const c_char,
+    bytes: *const u8,
+    length: usize,
+) -> *mut c_char {
+    unsafe { write_native_unix_socket_channel(key, channel_id, bytes, length, false) }
 }
 
 /// Queues one payload for a native u32-LE length-prefixed channel.
@@ -2880,17 +3084,7 @@ pub unsafe extern "C" fn react_native_russh_write_native_length_prefixed_unix_so
     bytes: *const u8,
     length: usize,
 ) -> *mut c_char {
-    if key.is_null() || channel_id.is_null() || (bytes.is_null() && length != 0) {
-        return native_channel_result(Some("invalid native Unix-socket write arguments"));
-    }
-    let key = unsafe { CStr::from_ptr(key) }.to_string_lossy();
-    let channel_id = unsafe { CStr::from_ptr(channel_id) }.to_string_lossy();
-    let bytes = if length == 0 {
-        Vec::new()
-    } else {
-        unsafe { std::slice::from_raw_parts(bytes, length) }.to_vec()
-    };
-    native_channel_result(write_unix_socket_channel_for_key(&key, &channel_id, bytes, true).err())
+    unsafe { write_native_unix_socket_channel(key, channel_id, bytes, length, true) }
 }
 
 /// Closes a native Unix-socket channel.

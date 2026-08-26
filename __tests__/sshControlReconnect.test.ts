@@ -28,11 +28,10 @@ const profile: ConnectionProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-function nativeClient(options: { output?: string; startError?: unknown } = {}) {
-  const requestHerdrApi = jest.fn(async (_socketPath: string, requestLine: string) => {
+function nativeClient(options: { output?: unknown; startError?: unknown } = {}) {
+  const requestHerdrApi = jest.fn(async (_socketPath: string, _request: object) => {
     if (options.startError) throw options.startError;
-    const request = JSON.parse(requestLine);
-    return options.output ?? JSON.stringify({ id: request.id, result: { type: 'ok' } });
+    return options.output ?? { type: 'ok' };
   });
   return {
     requestHerdrApi,
@@ -45,8 +44,7 @@ function nativeClient(options: { output?: string; startError?: unknown } = {}) {
 function streamingNativeClient() {
   let eventHandler: ((event: HerdrEventStreamEvent) => void) | null = null;
   const client = {
-    requestHerdrApi: jest.fn(async (_socketPath: string, requestLine: string) => {
-      const request = JSON.parse(requestLine);
+    requestHerdrApi: jest.fn(async (_socketPath: string, request: { method: string }) => {
       const result = request.method === 'session.snapshot'
         ? {
           type: 'session_snapshot',
@@ -66,20 +64,26 @@ function streamingNativeClient() {
         : request.method === 'ping'
           ? { type: 'pong', version: '0.8.0', protocol: 20 }
           : { type: 'ok' };
-      return JSON.stringify({ id: request.id, result });
+      return result;
     }),
     getRemoteHome: jest.fn(async () => '/home/herdr'),
-    startHerdrEventStream: jest.fn(async (_socketPath: string, handler: (event: HerdrEventStreamEvent) => void) => {
+    startHerdrEventStream: jest.fn(async (
+      _socketPath: string,
+      _protocol: number,
+      _paneIds: string[],
+      handler: (event: HerdrEventStreamEvent) => void,
+    ) => {
       eventHandler = handler;
     }),
-    writeHerdrEventStream: jest.fn(async () => undefined),
     closeHerdrEventStream: jest.fn(),
     off: jest.fn(),
     disconnect: jest.fn(),
   } as unknown as SSHClient;
   return {
     client,
-    emitEventData: (data: string) => eventHandler?.({ type: 'data', data }),
+    emitEvent: (event: { event: string; data: Record<string, unknown> }) => {
+      eventHandler?.({ type: 'event', event });
+    },
     emitEventClosed: (reason?: string) => eventHandler?.({ type: 'closed', reason }),
   };
 }
@@ -118,7 +122,7 @@ describe('SSH control reconnects', () => {
     expect(stale.requestHerdrApi).toHaveBeenCalledTimes(1);
     expect(fresh.requestHerdrApi).toHaveBeenCalledWith(
       '/home/herdr/.config/herdr/sessions/main/herdr.sock',
-      expect.stringContaining('"method":"workspace.focus"'),
+      expect.objectContaining({ method: 'workspace.focus' }),
     );
     expect(stale.disconnect).toHaveBeenCalledTimes(1);
   });
@@ -139,17 +143,20 @@ describe('SSH control reconnects', () => {
     expect(stale.client.closeHerdrEventStream).toHaveBeenCalled();
     expect(stale.client.disconnect).toHaveBeenCalledTimes(1);
     expect(fresh.client.startHerdrEventStream).toHaveBeenCalledTimes(1);
-    expect(fresh.client.writeHerdrEventStream).toHaveBeenCalledWith(
-      expect.stringContaining('"method":"events.subscribe"'),
+    expect(fresh.client.startHerdrEventStream).toHaveBeenCalledWith(
+      '/home/herdr/.config/herdr/sessions/main/herdr.sock',
+      20,
+      ['pane-2', 'pane-1'],
+      expect.any(Function),
     );
 
     stale.emitEventClosed();
     expect(onClosed).not.toHaveBeenCalled();
 
-    fresh.emitEventData('{"herdr_android_bridge_closed":true}\n');
-    expect(onClosed).not.toHaveBeenCalled();
-
-    fresh.emitEventData('{"event":"pane.agent_status_changed","data":{"workspace_id":"space-1","pane_id":"pane-1","agent_status":"done"}}\n');
+    fresh.emitEvent({
+      event: 'pane.agent_status_changed',
+      data: { workspace_id: 'space-1', pane_id: 'pane-1', agent_status: 'done' },
+    });
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
       event: 'pane.agent_status_changed',
       data: {

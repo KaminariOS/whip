@@ -33,11 +33,10 @@ const profile: ConnectionProfile = {
 };
 
 function apiClient(responseFor: (request: { method: string; params: Record<string, unknown> }) => unknown | Promise<unknown>) {
-  const requestHerdrApi = jest.fn(async (_socketPath: string, line: string) => {
-    const request = JSON.parse(line);
+  const requestHerdrApi = jest.fn(async (_socketPath: string, request: { method: string; params: Record<string, unknown> }) => {
     const result = await responseFor(request);
     if (result instanceof Error) throw result.message;
-    return JSON.stringify({ id: request.id, result });
+    return result;
   });
   return {
     requestHerdrApi,
@@ -92,12 +91,12 @@ describe('direct Herdr API requests', () => {
     expect(native.requestHerdrApi).toHaveBeenNthCalledWith(
       1,
       '/home/herdr/.config/herdr/sessions/main/herdr.sock',
-      expect.stringContaining('"method":"workspace.focus"'),
+      expect.objectContaining({ method: 'workspace.focus' }),
     );
     expect(native.requestHerdrApi).toHaveBeenNthCalledWith(
       2,
       '/home/herdr/.config/herdr/sessions/main/herdr.sock',
-      expect.stringContaining('"method":"tab.focus"'),
+      expect.objectContaining({ method: 'tab.focus' }),
     );
   });
 
@@ -132,7 +131,7 @@ describe('direct Herdr API requests', () => {
     });
 
     const methods = jest.mocked(native.requestHerdrApi).mock.calls
-      .map(([, line]) => JSON.parse(line).method);
+      .map(([, request]) => request.method);
     expect(methods).toEqual(['session.snapshot']);
   });
 
@@ -170,7 +169,6 @@ describe('direct Herdr API requests', () => {
       }
       : { type: 'pong' }), {
       startHerdrEventStream: jest.fn(async () => undefined),
-      writeHerdrEventStream: jest.fn(async () => undefined),
       closeHerdrEventStream: jest.fn(),
     });
     connectWithPassword.mockResolvedValue(native);
@@ -188,10 +186,15 @@ describe('direct Herdr API requests', () => {
     });
 
     const directMethods = jest.mocked(native.requestHerdrApi).mock.calls
-      .map(([, line]) => JSON.parse(line).method);
+      .map(([, request]) => request.method);
     expect(directMethods).toEqual(['session.snapshot']);
     expect(native.measureHostLatency).toHaveBeenCalledTimes(1);
-    expect(native.writeHerdrEventStream).toHaveBeenCalledTimes(1);
+    expect(native.startHerdrEventStream).toHaveBeenCalledWith(
+      '/home/herdr/.config/herdr/sessions/main/herdr.sock',
+      17,
+      [],
+      expect.any(Function),
+    );
   });
 
   test('returns authoritative workspace creation resources', async () => {
@@ -207,7 +210,7 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
 
     await expect(client.createWorkspace(' New space ', ' /repo ')).resolves.toEqual(created);
-    const request = JSON.parse(jest.mocked(native.requestHerdrApi).mock.calls[0][1]);
+    const request = jest.mocked(native.requestHerdrApi).mock.calls[0][1];
     expect(request).toMatchObject({
       method: 'workspace.create',
       params: { label: 'New space', cwd: '/repo', focus: true },
@@ -230,7 +233,7 @@ describe('direct Herdr API requests', () => {
       ' opencode --model "current model" ',
     )).resolves.toMatchObject({ root_pane: { pane_id: 'pane-new' } });
 
-    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, request]) => request);
     expect(requests.map(request => request.method)).toEqual(['tab.create', 'agent.start']);
     expect(requests[0].params).toEqual({
       workspace_id: 'space-1',
@@ -256,7 +259,7 @@ describe('direct Herdr API requests', () => {
 
     await expect(client.createTabAndLaunchCommand('space-1', ' Checks ', '  npm test  ')).resolves.toEqual(created);
 
-    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, request]) => request);
     expect(requests.map(request => request.method)).toEqual([
       'tab.create',
       'pane.send_input',
@@ -292,7 +295,7 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
 
     await expect(client.createTab('space-1', ' Notes ')).resolves.toEqual(created);
-    const request = JSON.parse(jest.mocked(native.requestHerdrApi).mock.calls[0][1]);
+    const request = jest.mocked(native.requestHerdrApi).mock.calls[0][1];
     expect(request).toMatchObject({
       method: 'tab.create',
       params: { workspace_id: 'space-1', label: 'Notes', focus: true },
@@ -310,7 +313,7 @@ describe('direct Herdr API requests', () => {
     await expect(client.createTabAndLaunchCommand('space-1', '   ', '  npm test  '))
       .resolves.toMatchObject({ root_pane: { pane_id: 'pane-default-name' } });
 
-    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, request]) => request);
     expect(requests.map(request => request.method)).toEqual(['tab.create', 'pane.send_input']);
     expect(requests[0].params).toEqual({ workspace_id: 'space-1', label: null, focus: true });
     expect(requests[1].params).toEqual({
@@ -345,7 +348,7 @@ describe('direct Herdr API requests', () => {
     await client.pasteIntoPane('pane-1', 'a long paste');
     await client.submitPastesToPane('pane-1', ['please inspect', '/tmp/image.png']);
 
-    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, request]) => request);
     expect(requests.map(request => request.method)).toEqual([
       'pane.send_input',
       'pane.send_input',
@@ -381,7 +384,7 @@ describe('direct Herdr API requests', () => {
     await expect(focusPromise).resolves.toBeUndefined();
 
     expect(native.requestHerdrApi).toHaveBeenCalledTimes(2);
-    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, request]) => request);
     expect(requests).toEqual([
       expect.objectContaining({
         method: 'pane.read',
@@ -544,7 +547,7 @@ describe('direct Herdr API requests', () => {
     expect(secondNative.getRemoteHome).not.toHaveBeenCalled();
     expect(secondNative.requestHerdrApi).toHaveBeenCalledWith(
       '/home/herdr/.config/herdr/sessions/main/herdr.sock',
-      expect.stringContaining('"method":"session.snapshot"'),
+      expect.objectContaining({ method: 'session.snapshot' }),
     );
   });
 
@@ -571,10 +574,9 @@ describe('direct Herdr API requests', () => {
     await first.initialSnapshot();
 
     const secondNative = {
-      requestHerdrApi: jest.fn(async (socketPath: string, line: string) => {
+      requestHerdrApi: jest.fn(async (socketPath: string, _request: object) => {
         if (socketPath.startsWith('/home/herdr/')) throw 'channel is not opened.';
-        const request = JSON.parse(line);
-        return JSON.stringify({ id: request.id, result: snapshot });
+        return snapshot;
       }),
       getRemoteHome: jest.fn(async () => '/srv/herdr'),
       closeAllHerdrBridges: jest.fn(),
@@ -592,7 +594,7 @@ describe('direct Herdr API requests', () => {
     expect(secondNative.requestHerdrApi).toHaveBeenNthCalledWith(
       2,
       '/srv/herdr/.config/herdr/sessions/main/herdr.sock',
-      expect.stringContaining('"method":"session.snapshot"'),
+      expect.objectContaining({ method: 'session.snapshot' }),
     );
   });
 });

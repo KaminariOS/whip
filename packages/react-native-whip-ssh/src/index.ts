@@ -1,16 +1,37 @@
 import {
+  closeHerdrEventSubscription,
   closeAllHerdrTerminalBridges,
   closeHerdrTerminalBridge,
+  herdrControlRequest,
   herdrTerminalInput,
   herdrTerminalResize,
   herdrTerminalScroll,
+  HerdrControlRequest,
+  HerdrEvent_Tags,
   pairHost as pairHostRust,
   prepareHerdrTerminalBridge,
+  setHerdrEventSink,
   setHerdrTerminalEventSink,
+  startHerdrEventSubscription,
   startHerdrTerminalBridge,
   type HerdrBridgeError,
+  type HerdrControlError,
+  type HerdrControlResult,
+  type HerdrEvent,
+  type HerdrEventSink,
+  type HerdrAgentInfo,
+  type HerdrAgentSessionInfo,
+  type HerdrPaneInfo,
+  type HerdrPaneLayoutRect,
+  type HerdrPaneLayoutSnapshot,
+  type HerdrPaneScrollInfo,
+  type HerdrSessionSnapshot,
+  type HerdrTabInfo,
   type HerdrTerminalControlEvent,
   type HerdrTerminalEventSink,
+  type HerdrWorkspaceInfo,
+  type HerdrWorkspaceWorktreeInfo,
+  type HerdrWorktreeInfo,
 } from './generated-entry';
 
 type PairingResponse = {
@@ -21,12 +42,18 @@ type PairingResponse = {
 
 type BridgeEvent = Record<string, unknown> & { type: string; terminalId: string };
 type BridgeHandler = (event: BridgeEvent) => void;
+type ApiRequest = { method: string; params: Record<string, unknown> };
+type ApiResult = Record<string, unknown> & { type: string };
+type ApiEvent = { event: string; data: Record<string, unknown> };
+type EventStreamEvent = { type: 'event'; event: ApiEvent } | { type: 'closed'; reason?: string };
+type EventHandler = (event: EventStreamEvent) => void;
 type WhipTerminalInboundTrace = {
   jsReceived: () => number | null;
   decodeComplete: (cookie: number | null) => void;
 };
 
 const bridgeHandlers = new Map<string, Map<string, BridgeHandler>>();
+const eventHandlers = new Map<string, EventHandler>();
 
 function terminalInboundTrace(): WhipTerminalInboundTrace | undefined {
   return (globalThis as typeof globalThis & {
@@ -67,6 +94,386 @@ function bridgeError(error: unknown): Error {
   result.name = 'HerdrBridgeError';
   if (nativeError.tag) Object.assign(result, { code: nativeError.tag });
   return result;
+}
+
+function controlError(error: unknown): Error {
+  const nativeError = error as Partial<HerdrControlError> & {
+    tag?: string;
+    inner?: readonly unknown[];
+  };
+  const protocolError = nativeError.tag === 'ProtocolError';
+  const message = protocolError && typeof nativeError.inner?.[1] === 'string'
+    ? nativeError.inner[1]
+    : typeof nativeError.inner?.[0] === 'string'
+      ? nativeError.inner[0]
+      : error instanceof Error
+        ? error.message
+        : String(error);
+  const result = new Error(message);
+  result.name = 'HerdrControlError';
+  const code = protocolError && typeof nativeError.inner?.[0] === 'string'
+    ? nativeError.inner[0]
+    : nativeError.tag;
+  if (code) Object.assign(result, { code });
+  return result;
+}
+
+function eventError(error: unknown): Error {
+  const nativeError = error as { tag?: string; inner?: readonly unknown[] };
+  const message = typeof nativeError.inner?.[0] === 'string'
+    ? nativeError.inner[0]
+    : error instanceof Error
+      ? error.message
+      : String(error);
+  const result = new Error(message);
+  result.name = 'HerdrEventError';
+  if (nativeError.tag) Object.assign(result, { code: nativeError.tag });
+  return result;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function controlRequest(request: ApiRequest): HerdrControlRequest {
+  const params = request.params || {};
+  const text = (key: string): string => String(params[key] ?? '');
+  switch (request.method) {
+    case 'ping': return HerdrControlRequest.Ping.new();
+    case 'session.snapshot': return HerdrControlRequest.SessionSnapshot.new();
+    case 'workspace.create': return HerdrControlRequest.WorkspaceCreate.new({
+      label: optionalString(params.label),
+      cwd: optionalString(params.cwd),
+    });
+    case 'workspace.focus': return HerdrControlRequest.WorkspaceFocus.new({ workspaceId: text('workspace_id') });
+    case 'workspace.rename': return HerdrControlRequest.WorkspaceRename.new({ workspaceId: text('workspace_id'), label: text('label') });
+    case 'workspace.close': return HerdrControlRequest.WorkspaceClose.new({ workspaceId: text('workspace_id') });
+    case 'tab.create': return HerdrControlRequest.TabCreate.new({ workspaceId: text('workspace_id'), label: optionalString(params.label) });
+    case 'tab.focus': return HerdrControlRequest.TabFocus.new({ tabId: text('tab_id') });
+    case 'tab.rename': return HerdrControlRequest.TabRename.new({ tabId: text('tab_id'), label: text('label') });
+    case 'tab.close': return HerdrControlRequest.TabClose.new({ tabId: text('tab_id') });
+    case 'pane.read': return HerdrControlRequest.PaneRead.new({ paneId: text('pane_id'), lines: Number(params.lines) });
+    case 'pane.focus': return HerdrControlRequest.PaneFocus.new({ paneId: text('pane_id') });
+    case 'pane.rename': return HerdrControlRequest.PaneRename.new({ paneId: text('pane_id'), label: optionalString(params.label) });
+    case 'pane.split': return HerdrControlRequest.PaneSplit.new({ paneId: text('target_pane_id'), direction: text('direction') });
+    case 'pane.zoom': return HerdrControlRequest.PaneZoom.new({ paneId: text('pane_id') });
+    case 'pane.close': return HerdrControlRequest.PaneClose.new({ paneId: text('pane_id') });
+    case 'pane.send_input': return HerdrControlRequest.PaneSendInput.new({ paneId: text('pane_id'), text: text('text'), keys: stringArray(params.keys) });
+    case 'pane.send_text': return HerdrControlRequest.PaneSendText.new({ paneId: text('pane_id'), text: text('text') });
+    case 'pane.send_keys': return HerdrControlRequest.PaneSendKeys.new({ paneId: text('pane_id'), keys: stringArray(params.keys) });
+    case 'agent.start': return HerdrControlRequest.AgentStart.new({
+      name: text('name'),
+      kind: text('kind'),
+      paneId: text('pane_id'),
+      args: stringArray(params.args),
+    });
+    case 'agent.focus': return HerdrControlRequest.AgentFocus.new({ target: text('target') });
+    case 'agent.prompt': return HerdrControlRequest.AgentPrompt.new({ target: text('target'), text: text('text') });
+    default: throw new Error(`Unsupported Herdr API method ${request.method}`);
+  }
+}
+
+function stringRecord(value: Map<string, string> | undefined): Record<string, string> | undefined {
+  return value ? Object.fromEntries(value) : undefined;
+}
+
+function assignOptional(target: Record<string, unknown>, key: string, value: unknown): void {
+  if (value !== undefined) target[key] = value;
+}
+
+function agentSession(value: HerdrAgentSessionInfo | undefined): Record<string, unknown> | undefined {
+  return value && { source: value.source, agent: value.agent, kind: value.kind, value: value.value };
+}
+
+function paneScroll(value: HerdrPaneScrollInfo | undefined): Record<string, unknown> | undefined {
+  return value && {
+    offset_from_bottom: value.offsetFromBottom,
+    max_offset_from_bottom: value.maxOffsetFromBottom,
+    viewport_rows: value.viewportRows,
+  };
+}
+
+function workspaceWorktree(value: HerdrWorkspaceWorktreeInfo | undefined): Record<string, unknown> | undefined {
+  return value && {
+    repo_key: value.repoKey,
+    repo_name: value.repoName,
+    repo_root: value.repoRoot,
+    checkout_path: value.checkoutPath,
+    is_linked_worktree: value.isLinkedWorktree,
+  };
+}
+
+function workspace(value: HerdrWorkspaceInfo): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    workspace_id: value.workspaceId,
+    number: value.number,
+    label: value.label,
+    focused: value.focused,
+    pane_count: value.paneCount,
+    tab_count: value.tabCount,
+    active_tab_id: value.activeTabId,
+    agent_status: value.agentStatus,
+  };
+  assignOptional(result, 'tokens', stringRecord(value.tokens));
+  assignOptional(result, 'worktree', workspaceWorktree(value.worktree));
+  return result;
+}
+
+function worktree(value: HerdrWorktreeInfo): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    is_bare: value.isBare,
+    is_detached: value.isDetached,
+    is_linked_worktree: value.isLinkedWorktree,
+    is_prunable: value.isPrunable,
+    label: value.label,
+    path: value.path,
+  };
+  assignOptional(result, 'branch', value.branch);
+  assignOptional(result, 'open_workspace_id', value.openWorkspaceId);
+  return result;
+}
+
+function tab(value: HerdrTabInfo): Record<string, unknown> {
+  return {
+    tab_id: value.tabId,
+    workspace_id: value.workspaceId,
+    number: value.number,
+    label: value.label,
+    focused: value.focused,
+    pane_count: value.paneCount,
+    agent_status: value.agentStatus,
+  };
+}
+
+function pane(value: HerdrPaneInfo): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    pane_id: value.paneId,
+    terminal_id: value.terminalId,
+    workspace_id: value.workspaceId,
+    tab_id: value.tabId,
+    focused: value.focused,
+    agent_status: value.agentStatus,
+    revision: value.revision,
+  };
+  for (const [key, field] of [
+    ['cwd', value.cwd],
+    ['foreground_cwd', value.foregroundCwd],
+    ['label', value.label],
+    ['agent', value.agent],
+    ['title', value.title],
+    ['terminal_title', value.terminalTitle],
+    ['terminal_title_stripped', value.terminalTitleStripped],
+    ['display_agent', value.displayAgent],
+  ] as const) assignOptional(result, key, field);
+  assignOptional(result, 'state_labels', stringRecord(value.stateLabels));
+  assignOptional(result, 'tokens', stringRecord(value.tokens));
+  assignOptional(result, 'agent_session', agentSession(value.agentSession));
+  assignOptional(result, 'scroll', paneScroll(value.scroll));
+  return result;
+}
+
+function agent(value: HerdrAgentInfo): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    pane_id: value.paneId,
+    terminal_id: value.terminalId,
+    workspace_id: value.workspaceId,
+    tab_id: value.tabId,
+    focused: value.focused,
+    agent_status: value.agentStatus,
+    revision: value.revision,
+  };
+  for (const [key, field] of [
+    ['cwd', value.cwd], ['foreground_cwd', value.foregroundCwd], ['agent', value.agent],
+    ['name', value.name], ['title', value.title], ['terminal_title', value.terminalTitle],
+    ['terminal_title_stripped', value.terminalTitleStripped], ['display_agent', value.displayAgent],
+    ['interactive_ready', value.interactiveReady], ['launch_pending', value.launchPending],
+    ['screen_detection_skipped', value.screenDetectionSkipped], ['state_change_seq', value.stateChangeSeq],
+  ] as const) assignOptional(result, key, field);
+  assignOptional(result, 'state_labels', stringRecord(value.stateLabels));
+  assignOptional(result, 'tokens', stringRecord(value.tokens));
+  assignOptional(result, 'agent_session', agentSession(value.agentSession));
+  return result;
+}
+
+function rect(value: HerdrPaneLayoutRect): Record<string, unknown> {
+  return { x: value.x, y: value.y, width: value.width, height: value.height };
+}
+
+function layout(value: HerdrPaneLayoutSnapshot): Record<string, unknown> {
+  return {
+    workspace_id: value.workspaceId,
+    tab_id: value.tabId,
+    zoomed: value.zoomed,
+    area: rect(value.area),
+    focused_pane_id: value.focusedPaneId,
+    panes: value.panes.map(item => ({ pane_id: item.paneId, focused: item.focused, rect: rect(item.rect) })),
+    splits: value.splits.map(item => ({ id: item.id, direction: item.direction, ratio: item.ratio, rect: rect(item.rect) })),
+  };
+}
+
+function snapshot(value: HerdrSessionSnapshot): Record<string, unknown> {
+  return {
+    version: value.version,
+    protocol: value.protocol,
+    focused_workspace_id: value.focusedWorkspaceId,
+    focused_tab_id: value.focusedTabId,
+    focused_pane_id: value.focusedPaneId,
+    agents: value.agents.map(agent),
+    workspaces: value.workspaces.map(workspace),
+    tabs: value.tabs.map(tab),
+    panes: value.panes.map(pane),
+    layouts: value.layouts.map(layout),
+  };
+}
+
+function apiResult(value: HerdrControlResult): ApiResult {
+  const result: ApiResult = { type: value.kind };
+  assignOptional(result, 'version', value.version);
+  assignOptional(result, 'protocol', value.protocol);
+  assignOptional(result, 'snapshot', value.snapshot && snapshot(value.snapshot));
+  assignOptional(result, 'workspace', value.workspace && workspace(value.workspace));
+  assignOptional(result, 'tab', value.tab && tab(value.tab));
+  assignOptional(result, 'pane', value.pane && pane(value.pane));
+  assignOptional(result, 'root_pane', value.rootPane && pane(value.rootPane));
+  assignOptional(result, 'agent', value.agent && agent(value.agent));
+  assignOptional(result, 'argv', value.argv);
+  if (value.readText !== undefined) result.read = { text: value.readText };
+  return result;
+}
+
+function apiEvent(value: HerdrEvent): ApiEvent {
+  const { tag: eventTag, inner } = value;
+  switch (eventTag) {
+    case HerdrEvent_Tags.WorkspaceCreated:
+      return { event: 'workspace.created', data: { workspace: workspace(inner.workspace) } };
+    case HerdrEvent_Tags.WorkspaceUpdated:
+      return { event: 'workspace.updated', data: { workspace: workspace(inner.workspace) } };
+    case HerdrEvent_Tags.WorkspaceMetadataUpdated:
+      return { event: 'workspace.metadata_updated', data: { workspace: workspace(inner.workspace) } };
+    case HerdrEvent_Tags.WorkspaceClosed: {
+      const data: Record<string, unknown> = { workspace_id: inner.workspaceId };
+      assignOptional(data, 'workspace', inner.workspace && workspace(inner.workspace));
+      return { event: 'workspace.closed', data };
+    }
+    case HerdrEvent_Tags.WorkspaceRenamed:
+      return { event: 'workspace.renamed', data: { workspace_id: inner.workspaceId, label: inner.label } };
+    case HerdrEvent_Tags.WorkspaceMoved:
+      return { event: 'workspace.moved', data: {
+        workspace_id: inner.workspaceId,
+        insert_index: inner.insertIndex,
+        workspaces: inner.workspaces.map(workspace),
+      } };
+    case HerdrEvent_Tags.WorkspaceReordered: {
+      const data: Record<string, unknown> = {
+        workspace_ids: inner.workspaceIds,
+        workspaces: inner.workspaces.map(workspace),
+      };
+      assignOptional(data, 'before_workspace_id', inner.beforeWorkspaceId);
+      return { event: 'workspace.reordered', data };
+    }
+    case HerdrEvent_Tags.WorkspaceFocused:
+      return { event: 'workspace.focused', data: { workspace_id: inner.workspaceId } };
+    case HerdrEvent_Tags.WorktreeCreated:
+      return { event: 'worktree.created', data: {
+        workspace: workspace(inner.workspace),
+        worktree: worktree(inner.worktree),
+      } };
+    case HerdrEvent_Tags.WorktreeOpened:
+      return { event: 'worktree.opened', data: {
+        workspace: workspace(inner.workspace),
+        worktree: worktree(inner.worktree),
+        already_open: inner.alreadyOpen,
+      } };
+    case HerdrEvent_Tags.WorktreeRemoved: {
+      const data: Record<string, unknown> = {
+        workspace_id: inner.workspaceId,
+        worktree: worktree(inner.worktree),
+        forced: inner.forced,
+      };
+      assignOptional(data, 'workspace', inner.workspace && workspace(inner.workspace));
+      return { event: 'worktree.removed', data };
+    }
+    case HerdrEvent_Tags.TabCreated:
+      return { event: 'tab.created', data: { tab: tab(inner.tab) } };
+    case HerdrEvent_Tags.TabClosed:
+      return { event: 'tab.closed', data: { workspace_id: inner.workspaceId, tab_id: inner.tabId } };
+    case HerdrEvent_Tags.TabFocused:
+      return { event: 'tab.focused', data: { workspace_id: inner.workspaceId, tab_id: inner.tabId } };
+    case HerdrEvent_Tags.TabRenamed:
+      return { event: 'tab.renamed', data: {
+        workspace_id: inner.workspaceId,
+        tab_id: inner.tabId,
+        label: inner.label,
+      } };
+    case HerdrEvent_Tags.TabMoved:
+      return { event: 'tab.moved', data: {
+        workspace_id: inner.workspaceId,
+        tab_id: inner.tabId,
+        insert_index: inner.insertIndex,
+        tabs: inner.tabs.map(tab),
+      } };
+    case HerdrEvent_Tags.PaneCreated:
+      return { event: 'pane.created', data: { pane: pane(inner.pane) } };
+    case HerdrEvent_Tags.PaneUpdated:
+      return { event: 'pane.updated', data: { pane: pane(inner.pane) } };
+    case HerdrEvent_Tags.PaneClosed:
+      return { event: 'pane.closed', data: { workspace_id: inner.workspaceId, pane_id: inner.paneId } };
+    case HerdrEvent_Tags.PaneFocused:
+      return { event: 'pane.focused', data: { workspace_id: inner.workspaceId, pane_id: inner.paneId } };
+    case HerdrEvent_Tags.PaneExited:
+      return { event: 'pane.exited', data: { workspace_id: inner.workspaceId, pane_id: inner.paneId } };
+    case HerdrEvent_Tags.PaneMoved: {
+      const data: Record<string, unknown> = {
+        previous_pane_id: inner.previousPaneId,
+        previous_workspace_id: inner.previousWorkspaceId,
+        previous_tab_id: inner.previousTabId,
+        pane: pane(inner.pane),
+      };
+      assignOptional(data, 'created_workspace', inner.createdWorkspace && workspace(inner.createdWorkspace));
+      assignOptional(data, 'created_tab', inner.createdTab && tab(inner.createdTab));
+      assignOptional(data, 'closed_workspace_id', inner.closedWorkspaceId);
+      assignOptional(data, 'closed_tab_id', inner.closedTabId);
+      return { event: 'pane.moved', data };
+    }
+    case HerdrEvent_Tags.PaneOutputChanged:
+      return { event: 'pane.output_changed', data: {
+        workspace_id: inner.workspaceId,
+        pane_id: inner.paneId,
+        revision: inner.revision,
+      } };
+    case HerdrEvent_Tags.PaneAgentDetected: {
+      const data: Record<string, unknown> = {
+        workspace_id: inner.workspaceId,
+        pane_id: inner.paneId,
+        released: inner.released,
+      };
+      assignOptional(data, 'agent', inner.agent);
+      assignOptional(data, 'final_status', inner.finalStatus);
+      return { event: 'pane.agent_detected', data };
+    }
+    case HerdrEvent_Tags.PaneAgentStatusChanged: {
+      const data: Record<string, unknown> = {
+        workspace_id: inner.workspaceId,
+        pane_id: inner.paneId,
+        agent_status: inner.agentStatus,
+      };
+      assignOptional(data, 'agent', inner.agent);
+      assignOptional(data, 'title', inner.title);
+      assignOptional(data, 'display_agent', inner.displayAgent);
+      assignOptional(data, 'state_labels', stringRecord(inner.stateLabels));
+      return { event: 'pane.agent_status_changed', data };
+    }
+    case HerdrEvent_Tags.LayoutUpdated:
+      return { event: 'layout.updated', data: { layout: layout(inner.layout) } };
+    case HerdrEvent_Tags.ProtocolUnknown:
+      return { event: 'protocol.unknown', data: { raw_event: inner.rawEvent } };
+    case HerdrEvent_Tags.ProtocolInvalid:
+      return { event: 'protocol.invalid', data: { raw_event: inner.rawEvent, reason: inner.reason } };
+  }
 }
 
 function controlEvent(event: HerdrTerminalControlEvent): BridgeEvent {
@@ -120,7 +527,19 @@ const herdrTerminalEventSink: HerdrTerminalEventSink = {
   },
 };
 
+const herdrEventSink: HerdrEventSink = {
+  event(clientKey, event): void {
+    eventHandlers.get(clientKey)?.({ type: 'event', event: apiEvent(event) });
+  },
+  closed(clientKey, reason): void {
+    const handler = eventHandlers.get(clientKey);
+    eventHandlers.delete(clientKey);
+    handler?.({ type: 'closed', reason });
+  },
+};
+
 setHerdrTerminalEventSink(herdrTerminalEventSink);
+setHerdrEventSink(herdrEventSink);
 
 const nativeClient = {
   async pairHost(code: string, publicKey: string, deviceName: string): Promise<unknown> {
@@ -151,6 +570,39 @@ const nativeClient = {
     } catch (error) {
       throw bridgeError(error);
     }
+  },
+
+  async requestHerdrApi(
+    clientKey: string,
+    socketPath: string,
+    request: ApiRequest,
+  ): Promise<ApiResult> {
+    try {
+      return apiResult(await herdrControlRequest(clientKey, socketPath, controlRequest(request)));
+    } catch (error) {
+      throw controlError(error);
+    }
+  },
+
+  async startHerdrEventStream(
+    clientKey: string,
+    socketPath: string,
+    protocol: number,
+    paneIds: string[],
+    handler: EventHandler,
+  ): Promise<void> {
+    eventHandlers.set(clientKey, handler);
+    try {
+      await startHerdrEventSubscription(clientKey, socketPath, protocol, paneIds);
+    } catch (error) {
+      eventHandlers.delete(clientKey);
+      throw eventError(error);
+    }
+  },
+
+  closeHerdrEventStream(clientKey: string): void {
+    eventHandlers.delete(clientKey);
+    closeHerdrEventSubscription(clientKey);
   },
 
   async startHerdrBridge(

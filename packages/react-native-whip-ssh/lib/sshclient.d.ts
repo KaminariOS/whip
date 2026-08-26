@@ -41,8 +41,13 @@ export interface HerdrCommandStreamEvent {
 }
 
 export type HerdrEventStreamEvent =
-  | { type: 'data'; data: string }
+  | { type: 'event'; event: { event: string; data: Record<string, unknown> } }
   | { type: 'closed'; reason?: string };
+
+export interface HerdrApiRequest {
+  method: string;
+  params: object;
+}
 
 export interface PairHostResult {
   sshHost: string;
@@ -136,12 +141,13 @@ export default class SSHClient extends BaseSSHClient {
   closeAllHerdrBridges(): void;
   startHerdrEventStream(
     socketPath: string,
+    protocol: number,
+    paneIds: string[],
     handler: (event: HerdrEventStreamEvent) => void,
     callback?: CallbackFunction<void>,
   ): Promise<void>;
-  writeHerdrEventStream(value: string): Promise<void>;
   closeHerdrEventStream(): void;
-  requestHerdrApi(socketPath: string, request: string): Promise<string>;
+  requestHerdrApi(socketPath: string, request: HerdrApiRequest): Promise<unknown>;
   startHerdrCommandStream(
     command: string,
     handler: (event: HerdrCommandStreamEvent) => void,
