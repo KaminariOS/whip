@@ -5,7 +5,11 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { loadPersistedTerminals, savePersistedTerminals } from '../src/services/persistedTerminals';
+import {
+  loadPersistedTerminals,
+  PersistedTerminalsWriter,
+  savePersistedTerminals,
+} from '../src/services/persistedTerminals';
 import { emptyTerminalSessions, openSshShellSession } from '../src/terminalSessions';
 import type { HerdrSnapshot, PaneInfo } from '../src/types';
 
@@ -106,6 +110,120 @@ test('persists each pane font zoom with its restored terminal', async () => {
       sessions: [{ terminalId: 'term-grok', paneId: 'p-grok', title: 'grok', fontSize: 9 }],
     }),
   );
+});
+
+test('skips every host write when unrelated live-session state changes', async () => {
+  const writer = new PersistedTerminalsWriter();
+  const hostIds = ['alpha', 'beta', 'gamma'];
+  const terminalStates = hostIds.map(hostId => ({
+    activeTerminalId: `term-${hostId}`,
+    sessions: [{
+      terminalId: `term-${hostId}`,
+      paneId: `pane-${hostId}`,
+      title: hostId,
+      kind: 'herdr' as const,
+      status: 'connected' as const,
+      reconnectAttempt: 0,
+    }],
+  }));
+
+  await Promise.all(terminalStates.map((state, index) => (
+    writer.saveIfChanged(
+      `session-${index}`,
+      hostIds[index],
+      state,
+    )
+  )));
+  mockSetItem.mockClear();
+
+  await Promise.all(terminalStates.map((state, index) => (
+    writer.saveIfChanged(
+      `session-${index}`,
+      hostIds[index],
+      state,
+    )
+  )));
+
+  expect(mockSetItem).not.toHaveBeenCalled();
+});
+
+test('tracks separate live sessions for the same saved host independently', async () => {
+  const writer = new PersistedTerminalsWriter();
+  const first = {
+    activeTerminalId: 'term-1',
+    sessions: [{
+      terminalId: 'term-1',
+      paneId: 'pane-1',
+      title: 'first',
+      status: 'connected' as const,
+      reconnectAttempt: 0,
+    }],
+  };
+  const second = {
+    activeTerminalId: 'term-2',
+    sessions: [{
+      terminalId: 'term-2',
+      paneId: 'pane-2',
+      title: 'second',
+      status: 'connected' as const,
+      reconnectAttempt: 0,
+    }],
+  };
+  await writer.saveIfChanged('live-1', 'thinker', first);
+  await writer.saveIfChanged('live-2', 'thinker', second);
+  mockSetItem.mockClear();
+
+  await writer.saveIfChanged('live-1', 'thinker', first);
+  await writer.saveIfChanged('live-2', 'thinker', second);
+
+  expect(mockSetItem).not.toHaveBeenCalled();
+});
+
+test('skips terminal runtime-only changes but writes persisted terminal changes', async () => {
+  const writer = new PersistedTerminalsWriter();
+  const terminals = {
+    activeTerminalId: 'term-grok',
+    sessions: [{
+      terminalId: 'term-grok',
+      paneId: 'p-grok',
+      title: 'grok',
+      fontSize: 10,
+      kind: 'herdr' as const,
+      status: 'connecting' as const,
+      reconnectAttempt: 0,
+    }],
+  };
+  await writer.saveIfChanged('live-1', 'thinker', terminals);
+  mockSetItem.mockClear();
+
+  await expect(writer.saveIfChanged('live-1', 'thinker', {
+    ...terminals,
+    sessions: [{ ...terminals.sessions[0], status: 'connected' }],
+  })).resolves.toBe(false);
+  expect(mockSetItem).not.toHaveBeenCalled();
+
+  await expect(writer.saveIfChanged('live-1', 'thinker', {
+    ...terminals,
+    sessions: [{ ...terminals.sessions[0], fontSize: 11 }],
+  })).resolves.toBe(true);
+  expect(mockSetItem).toHaveBeenCalledTimes(1);
+});
+
+test('retries an unchanged terminal value after its write fails', async () => {
+  const writer = new PersistedTerminalsWriter();
+  const terminals = {
+    activeTerminalId: null,
+    sessions: [],
+  };
+  mockSetItem.mockRejectedValueOnce(new Error('write unavailable'));
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+
+  await expect(writer.saveIfChanged('live-1', 'thinker', terminals)).rejects.toThrow('write unavailable');
+  mockSetItem.mockResolvedValueOnce();
+  await expect(writer.saveIfChanged('live-1', 'thinker', terminals)).resolves.toBe(true);
+
+  expect(mockSetItem).toHaveBeenCalledTimes(2);
+  consoleError.mockRestore();
 });
 
 test('logs persisted-terminal getItem rejection without changing rejection behavior', async () => {

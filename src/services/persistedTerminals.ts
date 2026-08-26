@@ -17,6 +17,11 @@ interface PersistedTerminal {
   fontSize?: number;
 }
 
+interface ObservedPersistedTerminals {
+  state: TerminalSessionsState;
+  value: string;
+}
+
 function persistedFontSize(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(8, Math.min(24, Math.round(value)))
@@ -74,22 +79,26 @@ export async function loadPersistedTerminals(hostId: string, snapshot: HerdrSnap
   }
 }
 
-export async function savePersistedTerminals(hostId: string, state: TerminalSessionsState): Promise<void> {
-  const storageKey = `${PREFIX}${hostId}`;
+function persistedTerminalsValue(state: TerminalSessionsState): string {
   const sessions = state.sessions.filter(session => session.kind !== 'ssh');
   const activeTerminalId = sessions.some(session => session.terminalId === state.activeTerminalId)
     ? state.activeTerminalId
     : sessions[0]?.terminalId ?? null;
+  return JSON.stringify({
+    activeTerminalId,
+    sessions: sessions.map(({ terminalId, paneId, title, fontSize }) => ({
+      terminalId,
+      paneId,
+      title,
+      fontSize: persistedFontSize(fontSize),
+    })),
+  });
+}
+
+async function savePersistedTerminalsValue(hostId: string, value: string): Promise<void> {
+  const storageKey = `${PREFIX}${hostId}`;
   try {
-    await AsyncStorage.setItem(storageKey, JSON.stringify({
-      activeTerminalId,
-      sessions: sessions.map(({ terminalId, paneId, title, fontSize }) => ({
-        terminalId,
-        paneId,
-        title,
-        fontSize: persistedFontSize(fontSize),
-      })),
-    }));
+    await AsyncStorage.setItem(storageKey, value);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-write-failed', {
       store: 'persisted-terminal-sessions',
@@ -99,5 +108,48 @@ export async function savePersistedTerminals(hostId: string, state: TerminalSess
       ...storageErrorDetails(error),
     });
     throw error;
+  }
+}
+
+export async function savePersistedTerminals(hostId: string, state: TerminalSessionsState): Promise<void> {
+  await savePersistedTerminalsValue(hostId, persistedTerminalsValue(state));
+}
+
+/**
+ * Tracks the normalized persisted value for each live session so callers may
+ * observe a broad session collection without rewriting terminal metadata when
+ * only latency, snapshots, agent state, or terminal connection status changed.
+ */
+export class PersistedTerminalsWriter {
+  private readonly observedBySessionId = new Map<string, ObservedPersistedTerminals>();
+
+  async saveIfChanged(
+    sessionId: string,
+    hostId: string,
+    state: TerminalSessionsState,
+  ): Promise<boolean> {
+    const previous = this.observedBySessionId.get(sessionId);
+    if (previous?.state === state) return false;
+
+    const value = persistedTerminalsValue(state);
+    const observed = { state, value };
+    this.observedBySessionId.set(sessionId, observed);
+    if (previous?.value === value) return false;
+
+    try {
+      await savePersistedTerminalsValue(hostId, value);
+      return true;
+    } catch (error) {
+      if (this.observedBySessionId.get(sessionId) === observed) {
+        this.observedBySessionId.delete(sessionId);
+      }
+      throw error;
+    }
+  }
+
+  retainSessions(sessionIds: ReadonlySet<string>): void {
+    for (const sessionId of this.observedBySessionId.keys()) {
+      if (!sessionIds.has(sessionId)) this.observedBySessionId.delete(sessionId);
+    }
   }
 }

@@ -168,7 +168,11 @@ import {
   trustKnownHost,
   type UnknownHostKeyChallenge,
 } from './src/services/knownHosts';
-import { loadPersistedTerminals, savePersistedTerminals } from './src/services/persistedTerminals';
+import {
+  loadPersistedTerminals,
+  PersistedTerminalsWriter,
+  savePersistedTerminals,
+} from './src/services/persistedTerminals';
 import {
   beginAppPerformanceTrace,
   endAppPerformanceTrace,
@@ -344,6 +348,7 @@ function AppContent() {
   const knownHostsRef = useRef<KnownHost[]>([]);
   const persistedLiveHostsRef = useRef<PersistedLiveHosts>({ hostIds: [], activeHostId: null });
   const restoredTerminalHostIdsRef = useRef(new Set<string>());
+  const persistedTerminalsWriterRef = useRef(new PersistedTerminalsWriter());
   const restoreStarted = useRef(false);
   const startupTraceRef = useRef<AppPerformanceTrace | null>(null);
   const tabMountTracesRef = useRef(new Map<AppTab, AppPerformanceTrace>());
@@ -696,11 +701,16 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    const retainedSessionIds = new Set<string>();
     for (const session of liveSessions.sessions) {
+      retainedSessionIds.add(session.id);
       if (session.status !== 'connecting') {
-        savePersistedTerminals(session.hostId, session.terminals).catch(() => undefined);
+        persistedTerminalsWriterRef.current
+          .saveIfChanged(session.id, session.hostId, session.terminals)
+          .catch(() => undefined);
       }
     }
+    persistedTerminalsWriterRef.current.retainSessions(retainedSessionIds);
   }, [liveSessions.sessions]);
 
   useEffect(() => {
