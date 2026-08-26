@@ -44,6 +44,10 @@ describe('HerdrClient native transcript boundary', () => {
       key: `codex\n${sessionId}`, state: transcript,
     });
     expect(runtime.openAgentSession).toHaveBeenCalledWith('codex', 'terminal-1', sessionId, blob, handler);
+    expect(client.openOpenCodeAgentTranscript('terminal-2', 'ses_abc123', blob, handler)).toEqual({
+      key: `codex\n${sessionId}`, state: transcript,
+    });
+    expect(runtime.openAgentSession).toHaveBeenCalledWith('opencode', 'terminal-2', 'ses_abc123', blob, handler);
     expect(client.agentTranscript(`codex\n${sessionId}`)).toBe(transcript);
     client.closeAgentTranscriptTerminal('terminal-1');
     client.closeAgentTranscript(`codex\n${sessionId}`);

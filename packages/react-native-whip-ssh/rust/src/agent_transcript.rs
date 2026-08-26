@@ -2033,6 +2033,547 @@ impl CodexSessionCore {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct CachedOpenCodeSession {
+    schema_version: u32,
+    session_id: String,
+    cursor: u64,
+    transcript: AgentTranscriptState,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum OpenCodeTranscriptError {
+    #[error("OpenCode returned an invalid session export")]
+    InvalidExport,
+    #[error("OpenCode returned an invalid event cursor")]
+    InvalidCursor,
+    #[error("OpenCode returned invalid session events")]
+    InvalidEvents,
+    #[error("OpenCode part event references a missing message")]
+    MissingMessage,
+    #[error("OpenCode event database is behind the cached cursor")]
+    CursorDiverged,
+    #[error("OpenCode incremental events did not reach the remote cursor")]
+    IncompleteEvents,
+}
+
+/// OpenCode export/event adapter with an opaque, cursor-bearing cache. Remote
+/// I/O stays in `AgentSessionManager`; this type is deterministic and testable.
+#[derive(Clone, Debug)]
+pub struct OpenCodeSessionCore {
+    session_id: String,
+    source_generation: u64,
+    cursor: Option<u64>,
+    revision: u64,
+    info: Option<AgentTranscriptInfo>,
+    messages: Vec<AgentTranscriptMessage>,
+    status: AgentTranscriptStatus,
+    error: Option<String>,
+}
+
+impl OpenCodeSessionCore {
+    pub fn new(session_id: impl Into<String>) -> Self {
+        let session_id = session_id.into();
+        Self {
+            info: Some(AgentTranscriptInfo {
+                id: session_id.clone(),
+                title: None,
+                directory: None,
+                created_at_ms: None,
+                updated_at_ms: None,
+            }),
+            session_id,
+            source_generation: 0,
+            cursor: None,
+            revision: 0,
+            messages: Vec::new(),
+            status: AgentTranscriptStatus::Loading,
+            error: None,
+        }
+    }
+
+    pub fn source_generation(&self) -> u64 {
+        self.source_generation
+    }
+
+    pub fn begin_sync_generation(&mut self) -> u64 {
+        self.source_generation = self.source_generation.saturating_add(1);
+        self.source_generation
+    }
+
+    pub fn cursor(&self) -> Option<u64> {
+        self.cursor
+    }
+
+    pub fn state(&self) -> AgentTranscriptState {
+        AgentTranscriptState {
+            session_id: self.session_id.clone(),
+            agent: AgentTranscriptKind::OpenCode,
+            revision: self.revision,
+            status: self.status,
+            info: self.info.clone(),
+            messages: self.messages.clone(),
+            turns: project_turns(&self.messages),
+            error: self.error.clone(),
+        }
+    }
+
+    pub fn mark_stale(&mut self, error: impl Into<String>) -> AgentTranscriptState {
+        self.status = if self.cursor.is_some() {
+            AgentTranscriptStatus::Stale
+        } else {
+            AgentTranscriptStatus::Error
+        };
+        self.error = Some(error.into());
+        self.bump_revision();
+        self.state()
+    }
+
+    pub fn mark_unavailable(&mut self, error: impl Into<String>) -> AgentTranscriptState {
+        self.status = if self.cursor.is_some() {
+            AgentTranscriptStatus::Stale
+        } else {
+            AgentTranscriptStatus::Unavailable
+        };
+        self.error = Some(error.into());
+        self.bump_revision();
+        self.state()
+    }
+
+    pub fn mark_live(&mut self) -> AgentTranscriptState {
+        if self.status != AgentTranscriptStatus::Live || self.error.is_some() {
+            self.status = AgentTranscriptStatus::Live;
+            self.error = None;
+            self.bump_revision();
+        }
+        self.state()
+    }
+
+    pub fn close(&mut self) -> AgentTranscriptState {
+        self.source_generation = self.source_generation.saturating_add(1);
+        self.status = AgentTranscriptStatus::Closed;
+        self.error = None;
+        self.bump_revision();
+        self.state()
+    }
+
+    pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
+        let cached: CachedOpenCodeSession = serde_json::from_slice(bytes)
+            .map_err(|error| AgentCacheError::Malformed(error.to_string()))?;
+        if cached.schema_version != 1 {
+            return Err(AgentCacheError::Malformed("unsupported schema".to_owned()));
+        }
+        if cached.session_id != self.session_id
+            || cached.transcript.session_id != self.session_id
+            || cached.transcript.agent != AgentTranscriptKind::OpenCode
+        {
+            return Err(AgentCacheError::SessionMismatch);
+        }
+        if cached.transcript.turns != project_turns(&cached.transcript.messages) {
+            return Err(AgentCacheError::ReplayDiverged);
+        }
+        if cached
+            .transcript
+            .info
+            .as_ref()
+            .is_some_and(|info| info.id != self.session_id)
+        {
+            return Err(AgentCacheError::SessionMismatch);
+        }
+        self.cursor = Some(cached.cursor);
+        self.info = cached.transcript.info;
+        self.messages = cached.transcript.messages;
+        self.revision = cached.transcript.revision;
+        self.status = AgentTranscriptStatus::Stale;
+        self.error = None;
+        self.bump_revision();
+        Ok(self.state())
+    }
+
+    pub fn cache_blob(&self) -> Result<Vec<u8>, AgentCacheError> {
+        let cursor = self.cursor.ok_or_else(|| {
+            AgentCacheError::Malformed("OpenCode cursor is unavailable".to_owned())
+        })?;
+        serde_json::to_vec(&CachedOpenCodeSession {
+            schema_version: 1,
+            session_id: self.session_id.clone(),
+            cursor,
+            transcript: self.state(),
+        })
+        .map_err(|error| AgentCacheError::Malformed(error.to_string()))
+    }
+
+    pub fn confirm_cache(&self, source_generation: u64, cursor: u64) -> bool {
+        source_generation == self.source_generation
+            && self.cursor.is_some_and(|current| cursor <= current)
+    }
+
+    /// Installs an authoritative export at the cursor read immediately before
+    /// it. Events committed during the export are intentionally replayed by the
+    /// next incremental query.
+    pub fn bootstrap(
+        &mut self,
+        cursor: u64,
+        export_json: &str,
+    ) -> Result<bool, OpenCodeTranscriptError> {
+        let value: Value = serde_json::from_str(export_json)
+            .map_err(|_| OpenCodeTranscriptError::InvalidExport)?;
+        let (info, messages) = parse_open_code_export(&value, &self.session_id)?;
+        let changed = self.info.as_ref() != Some(&info) || self.messages != messages;
+        self.cursor = Some(cursor);
+        self.info = Some(info);
+        self.messages = messages;
+        if changed {
+            self.bump_revision();
+        }
+        Ok(changed)
+    }
+
+    pub fn apply_events(
+        &mut self,
+        remote_cursor: u64,
+        events_json: &str,
+    ) -> Result<bool, OpenCodeTranscriptError> {
+        let local_cursor = self.cursor.ok_or(OpenCodeTranscriptError::InvalidCursor)?;
+        if remote_cursor < local_cursor {
+            return Err(OpenCodeTranscriptError::CursorDiverged);
+        }
+        let value: Value = serde_json::from_str(events_json)
+            .map_err(|_| OpenCodeTranscriptError::InvalidEvents)?;
+        let rows = value
+            .as_array()
+            .ok_or(OpenCodeTranscriptError::InvalidEvents)?;
+        let mut cursor = local_cursor;
+        let mut info = self.info.clone();
+        let mut messages = self.messages.clone();
+        let mut changed = false;
+        for row in rows {
+            let row = row
+                .as_object()
+                .ok_or(OpenCodeTranscriptError::InvalidEvents)?;
+            let sequence =
+                open_code_u64(row.get("seq")).ok_or(OpenCodeTranscriptError::InvalidEvents)?;
+            let raw_type =
+                nonempty(row.get("type")).ok_or(OpenCodeTranscriptError::InvalidEvents)?;
+            let event_type = strip_open_code_event_version(raw_type);
+            let data = decoded_open_code_object(row.get("data"))
+                .ok_or(OpenCodeTranscriptError::InvalidEvents)?;
+            if sequence <= cursor {
+                continue;
+            }
+            cursor = sequence;
+            match event_type {
+                "session.created" | "session.updated" => {
+                    if let Some(next) = object(data.get("info"))
+                        && nonempty(next.get("id")) == Some(self.session_id.as_str())
+                    {
+                        let next = open_code_session_info(next);
+                        changed |= info.as_ref() != Some(&next);
+                        info = Some(next);
+                    }
+                }
+                "message.updated" => {
+                    let Some(next_info) = data.get("info") else {
+                        continue;
+                    };
+                    let Some(next) = open_code_message_from_parts(next_info, &[]) else {
+                        continue;
+                    };
+                    if let Some(index) = messages.iter().position(|message| message.id == next.id) {
+                        let next = AgentTranscriptMessage {
+                            parts: messages[index].parts.clone(),
+                            ..next
+                        };
+                        changed |= messages[index] != next;
+                        messages[index] = next;
+                    } else {
+                        messages.push(next);
+                        changed = true;
+                    }
+                }
+                "message.removed" => {
+                    let Some(message_id) = nonempty(data.get("messageID")) else {
+                        continue;
+                    };
+                    let before = messages.len();
+                    messages.retain(|message| message.id != message_id);
+                    changed |= messages.len() != before;
+                }
+                "message.part.updated" => {
+                    let Some(raw_part) = object(data.get("part")) else {
+                        continue;
+                    };
+                    let Some(message_id) = nonempty(raw_part.get("messageID")) else {
+                        continue;
+                    };
+                    let Some(next) = open_code_part(raw_part) else {
+                        continue;
+                    };
+                    let message = messages
+                        .iter_mut()
+                        .find(|message| message.id == message_id)
+                        .ok_or(OpenCodeTranscriptError::MissingMessage)?;
+                    if let Some(index) =
+                        message.parts.iter().position(|part| part.id() == next.id())
+                    {
+                        changed |= message.parts[index] != next;
+                        message.parts[index] = next;
+                    } else {
+                        message.parts.push(next);
+                        changed = true;
+                    }
+                }
+                "message.part.removed" => {
+                    let Some(message_id) = nonempty(data.get("messageID")) else {
+                        continue;
+                    };
+                    let Some(part_id) = nonempty(data.get("partID")) else {
+                        continue;
+                    };
+                    if let Some(message) =
+                        messages.iter_mut().find(|message| message.id == message_id)
+                    {
+                        let before = message.parts.len();
+                        message.parts.retain(|part| part.id() != part_id);
+                        changed |= message.parts.len() != before;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if cursor < remote_cursor {
+            return Err(OpenCodeTranscriptError::IncompleteEvents);
+        }
+        self.cursor = Some(cursor);
+        self.info = info;
+        self.messages = messages;
+        if changed {
+            self.bump_revision();
+        }
+        Ok(changed)
+    }
+
+    fn bump_revision(&mut self) {
+        self.revision = self.revision.saturating_add(1);
+    }
+}
+
+pub fn parse_open_code_cursor(value: &str) -> Result<u64, OpenCodeTranscriptError> {
+    let value: Value =
+        serde_json::from_str(value).map_err(|_| OpenCodeTranscriptError::InvalidCursor)?;
+    value
+        .as_array()
+        .and_then(|rows| rows.first())
+        .and_then(Value::as_object)
+        .and_then(|row| open_code_u64(row.get("seq")))
+        .ok_or(OpenCodeTranscriptError::InvalidCursor)
+}
+
+fn parse_open_code_export(
+    value: &Value,
+    expected_session_id: &str,
+) -> Result<(AgentTranscriptInfo, Vec<AgentTranscriptMessage>), OpenCodeTranscriptError> {
+    let export = value
+        .as_object()
+        .ok_or(OpenCodeTranscriptError::InvalidExport)?;
+    let info = object(export.get("info")).ok_or(OpenCodeTranscriptError::InvalidExport)?;
+    if nonempty(info.get("id")) != Some(expected_session_id) {
+        return Err(OpenCodeTranscriptError::InvalidExport);
+    }
+    let messages = export
+        .get("messages")
+        .and_then(Value::as_array)
+        .ok_or(OpenCodeTranscriptError::InvalidExport)?
+        .iter()
+        .filter_map(|value| {
+            let wrapper = value.as_object()?;
+            let info = wrapper.get("info")?;
+            let parts = wrapper
+                .get("parts")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            open_code_message_from_parts(info, parts)
+        })
+        .collect();
+    Ok((open_code_session_info(info), messages))
+}
+
+fn open_code_session_info(info: &Map<String, Value>) -> AgentTranscriptInfo {
+    let time = object(info.get("time"));
+    AgentTranscriptInfo {
+        id: nonempty(info.get("id")).unwrap_or_default().to_owned(),
+        title: nonempty(info.get("title")).map(str::to_owned),
+        directory: nonempty(info.get("directory")).map(str::to_owned),
+        created_at_ms: time.and_then(|time| timestamp_ms(time.get("created"))),
+        updated_at_ms: time.and_then(|time| timestamp_ms(time.get("updated"))),
+    }
+}
+
+fn open_code_message_from_parts(
+    info: &Value,
+    raw_parts: &[Value],
+) -> Option<AgentTranscriptMessage> {
+    let info = info.as_object()?;
+    let id = nonempty(info.get("id"))?.to_owned();
+    let role = match nonempty(info.get("role"))? {
+        "user" => AgentMessageRole::User,
+        "assistant" => AgentMessageRole::Assistant,
+        _ => return None,
+    };
+    let time = object(info.get("time"));
+    let summary = object(info.get("summary"));
+    Some(AgentTranscriptMessage {
+        id,
+        role,
+        parent_id: nonempty(info.get("parentID")).map(str::to_owned),
+        created_at_ms: time.and_then(|time| timestamp_ms(time.get("created"))),
+        completed_at_ms: time.and_then(|time| timestamp_ms(time.get("completed"))),
+        error: info.get("error").and_then(|value| detail(Some(value))),
+        parts: raw_parts
+            .iter()
+            .filter_map(Value::as_object)
+            .filter_map(open_code_part)
+            .collect(),
+        diffs: summary
+            .and_then(|summary| summary.get("diffs"))
+            .map(open_code_diffs)
+            .unwrap_or_default(),
+    })
+}
+
+fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
+    if part.get("synthetic").and_then(Value::as_bool) == Some(true)
+        || part.get("ignored").and_then(Value::as_bool) == Some(true)
+    {
+        return None;
+    }
+    let id = nonempty(part.get("id"))?.to_owned();
+    let part_type = nonempty(part.get("type"))?;
+    let time = object(part.get("time"));
+    let at = time
+        .and_then(|time| timestamp_ms(time.get("start")))
+        .or_else(|| timestamp_ms(part.get("timestamp")));
+    match part_type {
+        "text" => Some(AgentTranscriptPart::Text {
+            id,
+            text: part
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            timestamp_ms: at,
+        }),
+        "reasoning" => Some(AgentTranscriptPart::Reasoning {
+            id,
+            text: part
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            timestamp_ms: at,
+        }),
+        "tool" => {
+            let state = object(part.get("state"));
+            let state_time = state.and_then(|state| object(state.get("time")));
+            let status = parse_tool_status(
+                state.and_then(|state| state.get("status")),
+                AgentToolStatus::Pending,
+            );
+            Some(AgentTranscriptPart::Tool {
+                call_id: nonempty(part.get("callID")).unwrap_or(&id).to_owned(),
+                tool: canonical_tool_name(nonempty(part.get("tool")).unwrap_or("tool")),
+                timestamp_ms: state_time
+                    .and_then(|time| timestamp_ms(time.get("start")))
+                    .or(at),
+                state: AgentToolState {
+                    status,
+                    input: scalar_fields(state.and_then(|state| state.get("input"))),
+                    output: state.and_then(|state| detail(state.get("output"))),
+                    error: state.and_then(|state| detail(state.get("error"))),
+                    title: state
+                        .and_then(|state| nonempty(state.get("title")))
+                        .map(str::to_owned),
+                    started_at_ms: state_time.and_then(|time| timestamp_ms(time.get("start"))),
+                    completed_at_ms: state_time.and_then(|time| timestamp_ms(time.get("end"))),
+                    exit_code: state
+                        .and_then(|state| object(state.get("metadata")))
+                        .and_then(|metadata| metadata.get("exitCode"))
+                        .and_then(Value::as_i64),
+                    files: Vec::new(),
+                },
+                id,
+            })
+        }
+        "subtask" => Some(AgentTranscriptPart::Plan {
+            id,
+            text: [
+                nonempty(part.get("description")),
+                nonempty(part.get("prompt")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+            timestamp_ms: at,
+        }),
+        _ => None,
+    }
+}
+
+fn open_code_diffs(value: &Value) -> Vec<AgentFileDiff> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .filter_map(|diff| {
+            Some(AgentFileDiff {
+                file: nonempty(diff.get("file"))?.to_owned(),
+                patch: nonempty(diff.get("patch")).map(str::to_owned),
+                before: nonempty(diff.get("before")).map(str::to_owned),
+                after: nonempty(diff.get("after")).map(str::to_owned),
+                additions: diff
+                    .get("additions")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| value.try_into().ok()),
+                deletions: diff
+                    .get("deletions")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| value.try_into().ok()),
+            })
+        })
+        .collect()
+}
+
+fn decoded_open_code_object(value: Option<&Value>) -> Option<Map<String, Value>> {
+    match value? {
+        Value::Object(value) => Some(value.clone()),
+        Value::String(value) => serde_json::from_str::<Value>(value)
+            .ok()?
+            .as_object()
+            .cloned(),
+        _ => None,
+    }
+}
+
+fn strip_open_code_event_version(value: &str) -> &str {
+    let Some((prefix, suffix)) = value.rsplit_once('.') else {
+        return value;
+    };
+    if suffix.chars().all(|character| character.is_ascii_digit()) {
+        prefix
+    } else {
+        value
+    }
+}
+
+fn open_code_u64(value: Option<&Value>) -> Option<u64> {
+    value?
+        .as_u64()
+        .or_else(|| value?.as_i64().and_then(|value| u64::try_from(value).ok()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2365,5 +2906,95 @@ mod tests {
         assert_eq!(state.status, AgentTranscriptStatus::Unavailable);
         assert!(state.messages.is_empty());
         assert_eq!(state.error.as_deref(), Some("rollout not created"));
+    }
+
+    #[test]
+    fn opencode_export_and_events_are_projected_incrementally() {
+        let export = serde_json::json!({
+            "info": {
+                "id": "ses_abc123", "title": "Fix chat view", "directory": "/repo",
+                "time": { "created": 1_700_000_000_000_u64, "updated": 1_700_000_001_000_u64 }
+            },
+            "messages": [
+                {
+                    "info": { "id": "msg_user", "role": "user", "time": { "created": 1_u64 } },
+                    "parts": [
+                        { "id": "hidden", "type": "text", "text": "context", "synthetic": true },
+                        { "id": "prompt", "type": "text", "text": "Fix it" }
+                    ]
+                },
+                {
+                    "info": { "id": "msg_assistant", "role": "assistant", "parentID": "msg_user", "time": { "created": 2_u64 } },
+                    "parts": [
+                        { "id": "reasoning", "type": "reasoning", "text": "Inspecting." },
+                        { "id": "tool", "type": "tool", "callID": "call_1", "tool": "bash",
+                          "state": { "status": "completed", "input": { "command": "npm test" }, "output": "ok" } }
+                    ]
+                }
+            ]
+        });
+        let mut core = OpenCodeSessionCore::new("ses_abc123");
+        core.begin_sync_generation();
+        core.bootstrap(7, &export.to_string()).unwrap();
+        let state = core.mark_live();
+        assert_eq!(state.agent, AgentTranscriptKind::OpenCode);
+        assert_eq!(
+            state.info.as_ref().unwrap().directory.as_deref(),
+            Some("/repo")
+        );
+        assert_eq!(text_parts(&state, AgentMessageRole::User), ["Fix it"]);
+        assert_eq!(state.turns.len(), 1);
+
+        let events = serde_json::json!([
+            {
+                "seq": 8_u64, "type": "message.part.updated.1",
+                "data": serde_json::json!({
+                    "part": { "id": "tool", "messageID": "msg_assistant", "type": "tool",
+                              "callID": "call_1", "tool": "bash",
+                              "state": { "status": "error", "input": { "command": "npm test" }, "error": "failed" } }
+                }).to_string()
+            },
+            {
+                "seq": 9_u64, "type": "message.part.removed.1",
+                "data": { "messageID": "msg_assistant", "partID": "reasoning" }
+            }
+        ]);
+        core.apply_events(9, &events.to_string()).unwrap();
+        let state = core.state();
+        assert_eq!(core.cursor(), Some(9));
+        assert_eq!(state.turns[0].status, AgentTurnStatus::Error);
+        assert!(
+            !state.messages[1]
+                .parts
+                .iter()
+                .any(|part| part.id() == "reasoning")
+        );
+    }
+
+    #[test]
+    fn opencode_cache_restores_cursor_and_rejects_divergence() {
+        let export = serde_json::json!({
+            "info": { "id": "ses_cache" },
+            "messages": [{
+                "info": { "id": "user", "role": "user" },
+                "parts": [{ "id": "text", "type": "text", "text": "cached" }]
+            }]
+        });
+        let mut core = OpenCodeSessionCore::new("ses_cache");
+        let generation = core.begin_sync_generation();
+        core.bootstrap(4, &export.to_string()).unwrap();
+        core.mark_live();
+        let blob = core.cache_blob().unwrap();
+        assert!(core.confirm_cache(generation, 4));
+
+        let mut restored = OpenCodeSessionCore::new("ses_cache");
+        let state = restored.restore_cache(&blob).unwrap();
+        assert_eq!(state.status, AgentTranscriptStatus::Stale);
+        assert_eq!(restored.cursor(), Some(4));
+        assert_eq!(text_parts(&state, AgentMessageRole::User), ["cached"]);
+        assert_eq!(
+            restored.apply_events(3, "[]").unwrap_err(),
+            OpenCodeTranscriptError::CursorDiverged
+        );
     }
 }

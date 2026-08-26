@@ -8,10 +8,14 @@ use std::time::Duration;
 use chrono::NaiveDateTime;
 use parking_lot::{Mutex, RwLock};
 
-use crate::agent_transcript::{AgentCacheError, AgentTranscriptState, CodexSessionCore};
+use crate::agent_transcript::{
+    AgentCacheError, AgentTranscriptKind, AgentTranscriptState, CodexSessionCore,
+    OpenCodeSessionCore, parse_open_code_cursor,
+};
 use crate::ssh::SshSession;
 
 const RETRY_DELAY: Duration = Duration::from_millis(1_500);
+const OPENCODE_POLL_DELAY: Duration = Duration::from_millis(1_200);
 static NEXT_STREAM_CONTEXT: AtomicU64 = AtomicU64::new(1);
 static STREAMS: OnceLock<RwLock<HashMap<u64, StreamContext>>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn AgentTranscriptEventSink>>>> = OnceLock::new();
@@ -91,7 +95,7 @@ struct SessionRuntime {
     key: String,
     session_id: String,
     terminals: HashSet<String>,
-    core: CodexSessionCore,
+    core: AgentSessionCore,
     host_generation: u64,
     operation_epoch: u64,
     stream_context: Option<u64>,
@@ -99,6 +103,65 @@ struct SessionRuntime {
     retry_running: bool,
     pending_cache_offset: Option<u64>,
     closed: bool,
+}
+
+#[derive(Debug)]
+enum AgentSessionCore {
+    Codex(Box<CodexSessionCore>),
+    OpenCode(Box<OpenCodeSessionCore>),
+}
+
+impl AgentSessionCore {
+    fn kind(&self) -> AgentTranscriptKind {
+        match self {
+            Self::Codex(_) => AgentTranscriptKind::Codex,
+            Self::OpenCode(_) => AgentTranscriptKind::OpenCode,
+        }
+    }
+
+    fn state(&self) -> AgentTranscriptState {
+        match self {
+            Self::Codex(core) => core.state(),
+            Self::OpenCode(core) => core.state(),
+        }
+    }
+
+    fn mark_stale(&mut self, reason: impl Into<String>) -> AgentTranscriptState {
+        let reason = reason.into();
+        match self {
+            Self::Codex(core) => core.mark_stale(reason),
+            Self::OpenCode(core) => core.mark_stale(reason),
+        }
+    }
+
+    fn mark_unavailable(&mut self, reason: impl Into<String>) -> AgentTranscriptState {
+        let reason = reason.into();
+        match self {
+            Self::Codex(core) => core.mark_unavailable(reason),
+            Self::OpenCode(core) => core.mark_unavailable(reason),
+        }
+    }
+
+    fn close(&mut self) -> AgentTranscriptState {
+        match self {
+            Self::Codex(core) => core.close(),
+            Self::OpenCode(core) => core.close(),
+        }
+    }
+
+    fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
+        match self {
+            Self::Codex(core) => core.restore_cache(bytes),
+            Self::OpenCode(core) => core.restore_cache(bytes),
+        }
+    }
+
+    fn confirm_cache(&mut self, source_generation: u64, position: u64) -> bool {
+        match self {
+            Self::Codex(core) => core.confirm_cache(source_generation, position),
+            Self::OpenCode(core) => core.confirm_cache(source_generation, position),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -226,7 +289,8 @@ impl AgentSessionManager {
             }
             let generation = state.connected_generation;
             let session = state.sessions.entry(key.clone()).or_insert_with(|| {
-                let mut core = CodexSessionCore::new(session_id.clone());
+                let mut core =
+                    AgentSessionCore::Codex(Box::new(CodexSessionCore::new(session_id.clone())));
                 if let Some(blob) = cache_blob.as_deref() {
                     let _ = core.restore_cache(blob);
                 }
@@ -251,6 +315,62 @@ impl AgentSessionManager {
         };
         if should_start {
             self.restart(key.clone(), "Opening Codex transcript".to_owned());
+        }
+        Ok((key, state_snapshot))
+    }
+
+    pub(crate) fn open_opencode(
+        &self,
+        terminal_id: String,
+        session_id: String,
+        cache_blob: Option<Vec<u8>>,
+    ) -> Result<(String, AgentTranscriptState), AgentSessionError> {
+        validate_opencode_session_id(&session_id)?;
+        let key = format!("opencode:{session_id}");
+        let (state_snapshot, should_start) = {
+            let mut state = self.inner.state.lock();
+            if state.closed {
+                return Err(AgentSessionError::SessionClosed(
+                    "host runtime is closed".to_owned(),
+                ));
+            }
+            if let Some(old_key) = state
+                .terminal_bindings
+                .insert(terminal_id.clone(), key.clone())
+                && old_key != key
+                && let Some(old) = state.sessions.get_mut(&old_key)
+            {
+                old.terminals.remove(&terminal_id);
+            }
+            let generation = state.connected_generation;
+            let session = state.sessions.entry(key.clone()).or_insert_with(|| {
+                let mut core = AgentSessionCore::OpenCode(Box::new(OpenCodeSessionCore::new(
+                    session_id.clone(),
+                )));
+                if let Some(blob) = cache_blob.as_deref() {
+                    let _ = core.restore_cache(blob);
+                }
+                SessionRuntime {
+                    key: key.clone(),
+                    session_id: session_id.clone(),
+                    terminals: HashSet::new(),
+                    core,
+                    host_generation: generation.unwrap_or(0),
+                    operation_epoch: 0,
+                    stream_context: None,
+                    stream_channel_id: None,
+                    retry_running: false,
+                    pending_cache_offset: None,
+                    closed: false,
+                }
+            });
+            session.terminals.insert(terminal_id);
+            session.closed = false;
+            let should_start = generation.is_some() && session.operation_epoch == 0;
+            (session.core.state(), should_start)
+        };
+        if should_start {
+            self.restart(key.clone(), "Opening OpenCode transcript".to_owned());
         }
         Ok((key, state_snapshot))
     }
@@ -350,21 +470,35 @@ impl AgentSessionManager {
             {
                 let _ = ssh.close_exec(&channel);
             }
+            let kind = session.core.kind();
+            if let AgentSessionCore::OpenCode(core) = &mut session.core {
+                core.begin_sync_generation();
+            }
             let snapshot = session.core.mark_stale(reason.clone());
             (
                 host_generation,
                 session.operation_epoch,
                 session.session_id.clone(),
                 snapshot,
+                kind,
             )
         };
         emit(&self.inner, key.clone(), operation.3, None);
         let manager = self.clone();
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
-                manager
-                    .resolve_and_open(key, operation.0, operation.1, operation.2)
-                    .await;
+                match operation.4 {
+                    AgentTranscriptKind::Codex => {
+                        manager
+                            .resolve_and_open(key, operation.0, operation.1, operation.2)
+                            .await;
+                    }
+                    AgentTranscriptKind::OpenCode => {
+                        manager
+                            .sync_opencode(key, operation.0, operation.1, operation.2)
+                            .await;
+                    }
+                }
             });
         }
     }
@@ -433,9 +567,10 @@ impl AgentSessionManager {
                 return;
             }
             session.pending_cache_offset = None;
-            let binding = session
-                .core
-                .bind_source(path.clone(), file_id.clone(), size);
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                return;
+            };
+            let binding = core.bind_source(path.clone(), file_id.clone(), size);
             let context = NEXT_STREAM_CONTEXT.fetch_add(1, Ordering::Relaxed);
             let channel_id = format!("agent-transcript-{context}");
             streams().write().insert(
@@ -473,12 +608,275 @@ impl AgentSessionManager {
         if stream_requested && size == opened.2 {
             let emission = {
                 let mut state = self.inner.state.lock();
-                current_session_mut(&mut state, &key, host_generation, operation_epoch)
-                    .map(|session| session.core.mark_live())
+                current_session_mut(&mut state, &key, host_generation, operation_epoch).and_then(
+                    |session| match &mut session.core {
+                        AgentSessionCore::Codex(core) => Some(core.mark_live()),
+                        AgentSessionCore::OpenCode(_) => None,
+                    },
+                )
             };
             if let Some(state) = emission {
                 emit(&self.inner, key, state, None);
             }
+        }
+    }
+
+    async fn sync_opencode(
+        &self,
+        key: String,
+        host_generation: u64,
+        operation_epoch: u64,
+        session_id: String,
+    ) {
+        let Some(ssh) = self.inner.ssh.read().clone() else {
+            self.fail_and_retry(
+                key,
+                host_generation,
+                operation_epoch,
+                "host SSH session is disconnected".to_owned(),
+                false,
+            );
+            return;
+        };
+        let cursor_output = match execute(
+            &ssh,
+            opencode_login_command(&opencode_cursor_command(&session_id)),
+        )
+        .await
+        {
+            Ok(output) => output,
+            Err(error) => {
+                self.fail_and_retry(
+                    key,
+                    host_generation,
+                    operation_epoch,
+                    error.to_string(),
+                    false,
+                );
+                return;
+            }
+        };
+        let remote_cursor = match parse_open_code_cursor(&cursor_output) {
+            Ok(cursor) => cursor,
+            Err(error) => {
+                self.fail_and_retry(
+                    key,
+                    host_generation,
+                    operation_epoch,
+                    error.to_string(),
+                    false,
+                );
+                return;
+            }
+        };
+        let local_cursor = {
+            let mut state = self.inner.state.lock();
+            let Some(session) =
+                current_session_mut(&mut state, &key, host_generation, operation_epoch)
+            else {
+                return;
+            };
+            let AgentSessionCore::OpenCode(core) = &mut session.core else {
+                return;
+            };
+            core.cursor()
+        };
+
+        if local_cursor == Some(remote_cursor) {
+            let snapshot = {
+                let mut state = self.inner.state.lock();
+                current_session_mut(&mut state, &key, host_generation, operation_epoch).and_then(
+                    |session| match &mut session.core {
+                        AgentSessionCore::OpenCode(core) => Some(core.mark_live()),
+                        AgentSessionCore::Codex(_) => None,
+                    },
+                )
+            };
+            if let Some(snapshot) = snapshot {
+                emit(&self.inner, key.clone(), snapshot, None);
+                self.schedule_opencode_poll(key, host_generation, operation_epoch, session_id);
+            }
+            return;
+        }
+
+        let needs_full = local_cursor.is_none_or(|cursor| remote_cursor < cursor);
+        let command = if needs_full {
+            opencode_export_command(&session_id)
+        } else {
+            opencode_events_command(&session_id, local_cursor.unwrap_or_default())
+        };
+        let payload = match execute(&ssh, opencode_login_command(&command)).await {
+            Ok(output) => output,
+            Err(error) => {
+                self.fail_and_retry(
+                    key,
+                    host_generation,
+                    operation_epoch,
+                    error.to_string(),
+                    false,
+                );
+                return;
+            }
+        };
+        let applied = self.finish_opencode_sync(
+            &key,
+            host_generation,
+            operation_epoch,
+            remote_cursor,
+            &payload,
+            needs_full,
+        );
+        if let Err(error) = applied {
+            if needs_full {
+                self.fail_and_retry(key, host_generation, operation_epoch, error, false);
+                return;
+            }
+            let export = execute(
+                &ssh,
+                opencode_login_command(&opencode_export_command(&session_id)),
+            )
+            .await;
+            match export {
+                Ok(export) => {
+                    if let Err(export_error) = self.finish_opencode_sync(
+                        &key,
+                        host_generation,
+                        operation_epoch,
+                        remote_cursor,
+                        &export,
+                        true,
+                    ) {
+                        self.fail_and_retry(
+                            key,
+                            host_generation,
+                            operation_epoch,
+                            export_error,
+                            false,
+                        );
+                        return;
+                    }
+                }
+                Err(export_error) => {
+                    self.fail_and_retry(
+                        key,
+                        host_generation,
+                        operation_epoch,
+                        format!("{error}; fallback export failed: {export_error}"),
+                        false,
+                    );
+                    return;
+                }
+            }
+        }
+        self.schedule_opencode_poll(key, host_generation, operation_epoch, session_id);
+    }
+
+    fn finish_opencode_sync(
+        &self,
+        key: &str,
+        host_generation: u64,
+        operation_epoch: u64,
+        remote_cursor: u64,
+        payload: &str,
+        full: bool,
+    ) -> Result<(), String> {
+        let emission = {
+            let mut state = self.inner.state.lock();
+            let (snapshot, cache_candidate) = {
+                let session =
+                    current_session_mut(&mut state, key, host_generation, operation_epoch)
+                        .ok_or_else(|| "OpenCode transcript operation became stale".to_owned())?;
+                let AgentSessionCore::OpenCode(core) = &mut session.core else {
+                    return Err("OpenCode transcript was rebound to another agent".to_owned());
+                };
+                if full {
+                    core.bootstrap(remote_cursor, payload)
+                } else {
+                    core.apply_events(remote_cursor, payload)
+                }
+                .map_err(|error| error.to_string())?;
+                let snapshot = core.mark_live();
+                let cursor = core.cursor().unwrap_or(remote_cursor);
+                let new_checkpoint = session
+                    .pending_cache_offset
+                    .is_none_or(|pending| cursor > pending);
+                let cache = new_checkpoint
+                    .then(|| core.cache_blob().ok())
+                    .flatten()
+                    .map(|blob| {
+                        session.pending_cache_offset = Some(cursor);
+                        (blob, core.source_generation(), cursor)
+                    });
+                (snapshot, cache)
+            };
+            let cache = cache_candidate.map(|(blob, source_generation, cursor)| {
+                let checkpoint = state.next_checkpoint;
+                state.next_checkpoint = state.next_checkpoint.saturating_add(1);
+                let token = format!("checkpoint-{checkpoint}");
+                state.checkpoints.insert(
+                    token.clone(),
+                    PendingCheckpoint {
+                        session_key: key.to_owned(),
+                        source_generation,
+                        offset: cursor,
+                    },
+                );
+                AgentTranscriptCacheWrite {
+                    key: key.to_owned(),
+                    blob,
+                    confirmation_token: token,
+                }
+            });
+            (snapshot, cache)
+        };
+        emit(&self.inner, key.to_owned(), emission.0, emission.1);
+        Ok(())
+    }
+
+    fn schedule_opencode_poll(
+        &self,
+        key: String,
+        host_generation: u64,
+        operation_epoch: u64,
+        session_id: String,
+    ) {
+        let scheduled = {
+            let mut state = self.inner.state.lock();
+            let Some(session) =
+                current_session_mut(&mut state, &key, host_generation, operation_epoch)
+            else {
+                return;
+            };
+            if session.retry_running || session.terminals.is_empty() {
+                false
+            } else {
+                session.retry_running = true;
+                true
+            }
+        };
+        if !scheduled {
+            return;
+        }
+        let manager = self.clone();
+        if let Ok(runtime) = crate::runtime() {
+            runtime.spawn(async move {
+                tokio::time::sleep(OPENCODE_POLL_DELAY).await;
+                let should_poll = {
+                    let mut state = manager.inner.state.lock();
+                    let Some(session) =
+                        current_session_mut(&mut state, &key, host_generation, operation_epoch)
+                    else {
+                        return;
+                    };
+                    session.retry_running = false;
+                    !session.terminals.is_empty() && !session.closed
+                };
+                if should_poll {
+                    manager
+                        .sync_opencode(key, host_generation, operation_epoch, session_id)
+                        .await;
+                }
+            });
         }
     }
 
@@ -581,17 +979,19 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
             ) else {
                 return;
             };
-            match session.core.ingest(context_value.source_generation, &bytes) {
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                return;
+            };
+            match core.ingest(context_value.source_generation, &bytes) {
                 Ok(result) => {
-                    let previous_revision = session.core.revision();
-                    let snapshot = session.core.mark_live();
-                    let new_checkpoint = result.committable_offset
-                        > session.core.committed_offset()
+                    let previous_revision = core.revision();
+                    let snapshot = core.mark_live();
+                    let new_checkpoint = result.committable_offset > core.committed_offset()
                         && session
                             .pending_cache_offset
                             .is_none_or(|offset| result.committable_offset > offset);
                     let cache = new_checkpoint
-                        .then(|| session.core.cache_blob().ok())
+                        .then(|| core.cache_blob().ok())
                         .flatten()
                         .map(|blob| {
                             session.pending_cache_offset = Some(result.committable_offset);
@@ -679,8 +1079,43 @@ fn validate_codex_session_id(value: &str) -> Result<(), AgentSessionError> {
     }
 }
 
+fn validate_opencode_session_id(value: &str) -> Result<(), AgentSessionError> {
+    let valid = value.strip_prefix("ses_").is_some_and(|suffix| {
+        !suffix.is_empty() && suffix.chars().all(|value| value.is_ascii_alphanumeric())
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err(AgentSessionError::InvalidSession(
+            "OpenCode session ID must match ses_[A-Za-z0-9]+".to_owned(),
+        ))
+    }
+}
+
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn opencode_login_command(command: &str) -> String {
+    format!("exec \"${{SHELL:-/bin/sh}}\" -lc {}", shell_quote(command))
+}
+
+fn opencode_export_command(session_id: &str) -> String {
+    format!("opencode export {}", shell_quote(session_id))
+}
+
+fn opencode_cursor_command(session_id: &str) -> String {
+    let query = format!(
+        "SELECT COALESCE(MAX(seq), 0) AS seq FROM event WHERE aggregate_id = '{session_id}'"
+    );
+    format!("opencode db {} --format json", shell_quote(&query))
+}
+
+fn opencode_events_command(session_id: &str, after_sequence: u64) -> String {
+    let query = format!(
+        "SELECT seq, type, data FROM event WHERE aggregate_id = '{session_id}' AND seq > {after_sequence} ORDER BY seq"
+    );
+    format!("opencode db {} --format json", shell_quote(&query))
 }
 
 fn codex_rollout_find_command(session_id: &str) -> String {
@@ -826,6 +1261,22 @@ mod tests {
     fn validates_session_ids_before_building_remote_commands() {
         assert!(validate_codex_session_id(SESSION).is_ok());
         assert!(validate_codex_session_id(&format!("{SESSION}; uname -a")).is_err());
+        assert!(validate_opencode_session_id("ses_abc123").is_ok());
+        assert!(validate_opencode_session_id("ses_x'; DROP TABLE event;--").is_err());
+    }
+
+    #[test]
+    fn opencode_commands_use_the_official_read_only_db_interface() {
+        assert_eq!(
+            opencode_export_command("ses_abc123"),
+            "opencode export 'ses_abc123'"
+        );
+        assert!(opencode_cursor_command("ses_abc123").contains("MAX(seq)"));
+        assert!(opencode_events_command("ses_abc123", 42).contains("seq > 42"));
+        assert!(
+            opencode_login_command("opencode export 'ses_abc123'")
+                .starts_with("exec \"${SHELL:-/bin/sh}\" -lc ")
+        );
     }
 
     #[test]

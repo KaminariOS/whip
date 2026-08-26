@@ -10,12 +10,6 @@ import { shellQuote } from '../lib/shell';
 import { parseCodexIntegrationStatus, type CodexIntegrationStatus } from '../lib/codexSession';
 import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
-import {
-  openCodeEventCursorCommand,
-  openCodeEventsCommand,
-  openCodeExportCommand,
-  parseOpenCodeEventCursor,
-} from '../lib/openCodeTranscript';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 import {
@@ -360,6 +354,15 @@ export class HerdrClient {
     return this.requireRuntime().openAgentSession('codex', terminalId, sessionId, cacheBlob, handler);
   }
 
+  openOpenCodeAgentTranscript(
+    terminalId: string,
+    sessionId: string,
+    cacheBlob: ArrayBuffer | undefined,
+    handler: (event: NativeAgentTranscriptUpdate) => void,
+  ): { key: string; state: NativeAgentTranscriptState } {
+    return this.requireRuntime().openAgentSession('opencode', terminalId, sessionId, cacheBlob, handler);
+  }
+
   agentTranscript(key: string): NativeAgentTranscriptState {
     return this.requireRuntime().agentTranscript(key);
   }
@@ -374,21 +377,6 @@ export class HerdrClient {
 
   confirmAgentTranscriptCache(confirmationToken: string): boolean {
     return this.requireRuntime().confirmAgentTranscriptCache(confirmationToken);
-  }
-
-  async loadOpenCodeTranscript(sessionId: string): Promise<unknown> {
-    const output = await this.requireRuntime().execute(this.loginShellCommand(openCodeExportCommand(sessionId)));
-    return JSON.parse(output);
-  }
-
-  async loadOpenCodeEventCursor(sessionId: string): Promise<number> {
-    const output = await this.requireRuntime().execute(this.loginShellCommand(openCodeEventCursorCommand(sessionId)));
-    return parseOpenCodeEventCursor(JSON.parse(output));
-  }
-
-  async loadOpenCodeEvents(sessionId: string, afterSequence: number): Promise<unknown> {
-    const output = await this.requireRuntime().execute(this.loginShellCommand(openCodeEventsCommand(sessionId, afterSequence)));
-    return JSON.parse(output);
   }
 
   /** Explicit user-approved host integration setup; never called during connect. */

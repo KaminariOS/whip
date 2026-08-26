@@ -1860,9 +1860,13 @@ impl HostRuntime {
                         .open_codex(terminal_id, session_id, cache_blob)?;
                 Ok(AgentSessionOpenResult { key, state })
             }
-            AgentTranscriptKind::OpenCode => Err(AgentSessionError::UnsupportedAgent(
-                "OpenCode native session transport is not available yet".to_owned(),
-            )),
+            AgentTranscriptKind::OpenCode => {
+                let (key, state) =
+                    self.inner
+                        .agents
+                        .open_opencode(terminal_id, session_id, cache_blob)?;
+                Ok(AgentSessionOpenResult { key, state })
+            }
         }
     }
 
@@ -2741,13 +2745,11 @@ impl HostRuntime {
 
     pub fn cancel_transfer(&self, transfer_id: String) -> bool {
         let cancelled = self.inner.operations.cancel_transfer(&transfer_id);
-        if cancelled {
-            if let Some(progress) = self.transfer_progress(transfer_id) {
-                emit(HostRuntimeEvent::TransferProgressChanged {
-                    runtime_id: self.inner.id.clone(),
-                    progress,
-                });
-            }
+        if cancelled && let Some(progress) = self.transfer_progress(transfer_id) {
+            emit(HostRuntimeEvent::TransferProgressChanged {
+                runtime_id: self.inner.id.clone(),
+                progress,
+            });
         }
         cancelled
     }

@@ -4,27 +4,30 @@ import { emptyTranscript, type AgentChatState } from '../agentChat';
 import { agentChatStateFromNative } from '../lib/nativeAgentTranscript';
 import { agentChatCache, type AgentChatCache, type AgentChatCacheKey } from './agentChatCache';
 
-export interface CodexTranscriptTransport {
-  openCodexAgentTranscript(
-    terminalId: string,
-    sessionId: string,
-    cacheBlob: ArrayBuffer | undefined,
-    handler: (event: NativeAgentTranscriptUpdate) => void,
-  ): { key: string; state: NativeAgentTranscriptState };
+export interface NativeTranscriptTransport {
   agentTranscript(key: string): NativeAgentTranscriptState;
   closeAgentTranscript(key: string): void;
   closeAgentTranscriptTerminal(terminalId: string): void;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
 }
 
+export interface CodexTranscriptTransport extends NativeTranscriptTransport {
+  openCodexAgentTranscript(
+    terminalId: string,
+    sessionId: string,
+    cacheBlob: ArrayBuffer | undefined,
+    handler: (event: NativeAgentTranscriptUpdate) => void,
+  ): { key: string; state: NativeAgentTranscriptState };
+}
+
 type Listener = (state: AgentChatState) => void;
 
-interface TranscriptEntry {
+interface TranscriptEntry<Transport extends NativeTranscriptTransport> {
   nativeKey: string | null;
   cacheKey: AgentChatCacheKey;
   hostSessionId: string;
   sessionId: string;
-  transport: CodexTranscriptTransport;
+  transport: Transport;
   terminals: Set<string>;
   listeners: Set<Listener>;
   state: AgentChatState;
@@ -32,33 +35,43 @@ interface TranscriptEntry {
   persistChain: Promise<void>;
 }
 
-function transcriptKey(hostProfileId: string, sessionId: string): string {
-  return `${hostProfileId}\ncodex\n${sessionId}`;
+function transcriptKey(agent: AgentChatCacheKey['agent'], hostProfileId: string, sessionId: string): string {
+  return `${hostProfileId}\n${agent}\n${sessionId}`;
 }
 
 function terminalKey(hostSessionId: string, terminalId: string): string {
   return `${hostSessionId}\n${terminalId}`;
 }
 
-/** Thin UI/listener and opaque-storage facade over Rust AgentSessionManager. */
-export class CodexTranscriptService {
-  private readonly entries = new Map<string, TranscriptEntry>();
+/** Agent-neutral UI/listener and opaque-storage facade over Rust AgentSessionManager. */
+export class NativeTranscriptService<Transport extends NativeTranscriptTransport> {
+  private readonly entries = new Map<string, TranscriptEntry<Transport>>();
   private readonly bindings = new Map<string, string>();
   private readonly activatedTerminals = new Set<string>();
 
-  constructor(private readonly cache: AgentChatCache = agentChatCache) {}
+  constructor(
+    private readonly agent: AgentChatCacheKey['agent'],
+    private readonly open: (
+      transport: Transport,
+      terminalId: string,
+      sessionId: string,
+      cacheBlob: ArrayBuffer | undefined,
+      handler: (event: NativeAgentTranscriptUpdate) => void,
+    ) => { key: string; state: NativeAgentTranscriptState },
+    private readonly cache: AgentChatCache = agentChatCache,
+  ) {}
 
   activate(
     hostProfileId: string,
     hostSessionId: string,
     terminalId: string,
     sessionId: string,
-    transport: CodexTranscriptTransport,
+    transport: Transport,
   ): string {
     const terminal = terminalKey(hostSessionId, terminalId);
     this.activatedTerminals.add(terminal);
     this.bind(hostProfileId, hostSessionId, terminalId, sessionId, transport);
-    return transcriptKey(hostProfileId, sessionId);
+    return transcriptKey(this.agent, hostProfileId, sessionId);
   }
 
   rebind(
@@ -66,12 +79,12 @@ export class CodexTranscriptService {
     hostSessionId: string,
     terminalId: string,
     sessionId: string | null,
-    transport: CodexTranscriptTransport,
+    transport: Transport,
   ): void {
     const terminal = terminalKey(hostSessionId, terminalId);
     if (!this.activatedTerminals.has(terminal)) return;
     const current = this.bindings.get(terminal);
-    const next = sessionId ? transcriptKey(hostProfileId, sessionId) : null;
+    const next = sessionId ? transcriptKey(this.agent, hostProfileId, sessionId) : null;
     if (current === next) return;
     this.releaseBinding(terminal, terminalId);
     if (sessionId) this.bind(hostProfileId, hostSessionId, terminalId, sessionId, transport);
@@ -133,10 +146,10 @@ export class CodexTranscriptService {
     hostSessionId: string,
     terminalId: string,
     sessionId: string,
-    transport: CodexTranscriptTransport,
+    transport: Transport,
   ): void {
     const terminal = terminalKey(hostSessionId, terminalId);
-    const key = transcriptKey(hostProfileId, sessionId);
+    const key = transcriptKey(this.agent, hostProfileId, sessionId);
     const current = this.bindings.get(terminal);
     if (current && current !== key) this.releaseBinding(terminal, terminalId);
     this.bindings.set(terminal, key);
@@ -144,7 +157,7 @@ export class CodexTranscriptService {
     if (!entry) {
       entry = {
         nativeKey: null,
-        cacheKey: { hostProfileId, agent: 'codex', sessionId },
+        cacheKey: { hostProfileId, agent: this.agent, sessionId },
         hostSessionId,
         sessionId,
         transport,
@@ -164,7 +177,7 @@ export class CodexTranscriptService {
     entry.terminals.add(terminal);
   }
 
-  private restoreAndOpen(entry: TranscriptEntry, terminalId: string): void {
+  private restoreAndOpen(entry: TranscriptEntry<Transport>, terminalId: string): void {
     const generation = ++entry.generation;
     this.cache.loadNative(entry.cacheKey).then(blob => {
       if (generation === entry.generation) this.openNative(entry, terminalId, blob || undefined, generation);
@@ -175,9 +188,10 @@ export class CodexTranscriptService {
     });
   }
 
-  private openNative(entry: TranscriptEntry, terminalId: string, cacheBlob: ArrayBuffer | undefined, generation: number): void {
+  private openNative(entry: TranscriptEntry<Transport>, terminalId: string, cacheBlob: ArrayBuffer | undefined, generation: number): void {
     try {
-      const result = entry.transport.openCodexAgentTranscript(
+      const result = this.open(
+        entry.transport,
         terminalId,
         entry.sessionId,
         cacheBlob,
@@ -194,7 +208,7 @@ export class CodexTranscriptService {
     }
   }
 
-  private acceptEvent(entry: TranscriptEntry, generation: number, event: NativeAgentTranscriptUpdate): void {
+  private acceptEvent(entry: TranscriptEntry<Transport>, generation: number, event: NativeAgentTranscriptUpdate): void {
     if (generation !== entry.generation || (entry.nativeKey && event.key !== entry.nativeKey)) {
       return;
     }
@@ -207,16 +221,16 @@ export class CodexTranscriptService {
       await this.cache.saveNative(entry.cacheKey, blob);
       if (generation === entry.generation) entry.transport.confirmAgentTranscriptCache(confirmationToken);
     }).catch(error => {
-      if (generation === entry.generation) this.publish(entry, { ...entry.state, status: 'stale', error: `Could not persist Codex history: ${String(error)}` });
+      if (generation === entry.generation) this.publish(entry, { ...entry.state, status: 'stale', error: `Could not persist ${this.agent} history: ${String(error)}` });
     });
   }
 
-  private acceptState(entry: TranscriptEntry, native: NativeAgentTranscriptState): void {
+  private acceptState(entry: TranscriptEntry<Transport>, native: NativeAgentTranscriptState): void {
     if ((entry.state.revision ?? -1) >= native.revision) return;
     this.publish(entry, agentChatStateFromNative(native));
   }
 
-  private publish(entry: TranscriptEntry, state: AgentChatState): void {
+  private publish(entry: TranscriptEntry<Transport>, state: AgentChatState): void {
     entry.state = state;
     for (const listener of entry.listeners) listener(state);
   }
@@ -235,6 +249,21 @@ export class CodexTranscriptService {
       entry.listeners.clear();
       this.entries.delete(key);
     }
+  }
+}
+
+export class CodexTranscriptService extends NativeTranscriptService<CodexTranscriptTransport> {
+  constructor(cache: AgentChatCache = agentChatCache) {
+    super(
+      'codex',
+      (transport, terminalId, sessionId, cacheBlob, handler) => transport.openCodexAgentTranscript(
+        terminalId,
+        sessionId,
+        cacheBlob,
+        handler,
+      ),
+      cache,
+    );
   }
 }
 

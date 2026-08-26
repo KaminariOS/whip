@@ -102,18 +102,18 @@ the user explicitly opens Chat, the Rust `HostRuntime` uses the pane's Herdr
 Codex rollout over the existing authenticated SSH transport:
 
 ```text
-Herdr terminal stream              Codex rollout JSONL
-        |                                  |
-        v                                  v
-  Terminal View               Rust Codex source runtime
-                                            |
-                              framing / offsets / retry
-                                            |
-                                            v
-                                typed AgentTranscript
-                                            |
-                                            v
-                                    Native Chat View
+Herdr terminal stream       Codex rollout JSONL       OpenCode export + event DB
+        |                           |                            |
+        v                           v                            v
+  Terminal View              Rust agent source/session runtime
+                                           |
+                             framing / cursors / retry
+                                           |
+                                           v
+                               typed AgentTranscript
+                                           |
+                                           v
+                                   Native Chat View
 ```
 
 Rust owns rollout identity, byte-oriented JSONL framing, partial lines,
@@ -132,11 +132,11 @@ visible reasoning summaries, tools, plans, notices, file diffs, lifecycle status
 and stable source-derived IDs. React Native mechanically projects those records
 into the existing render types and retains only UI concerns such as scrolling,
 expansion, composition, markdown, and navigation. It does not know rollout paths,
-offsets, JSONL records, or retry policy. OpenCode still uses its existing
-TypeScript export/event adapter for now, but the Rust model and session-kind
-boundary already include OpenCode so its persistence adapter can migrate without
-changing the renderer. Chat composer submissions return to the same Herdr pane
-and PTY used by the mounted terminal.
+offsets, OpenCode event sequences, JSONL records, or retry policy. OpenCode uses
+an official export for a cold snapshot and polls only newer durable events with
+`opencode db`; Rust validates sequence continuity and falls back to an export on
+divergence. Chat composer submissions return to the same Herdr pane and PTY used
+by the mounted terminal.
 
 ### Rust-owned remote operations
 
@@ -184,7 +184,7 @@ dead URL. At most eight previews are open per host.
 - **Live host render cache:** the latest monotonic Rust `HostState` projection per host plus mobile-only workspace selection and connection/latency presentation.
 - **Runtime registry:** one thin non-serializable `HerdrClient` facade per live host. Its native `HostRuntime` owns transport identity, reconnect attempts, subscriptions, terminals, refresh coalescing, and authoritative domain state.
 - **Herdr host state:** normalized workspaces, tabs, panes, layouts, agents, server focus, synchronization, and freshness are authoritative in Rust; React retains only the latest projection for rendering.
-- **Codex transcript state:** one Rust `AgentSessionManager` per `HostRuntime` owns remote source identity, incremental parsing/checkpoints, reconnect rebind, and normalized revisioned chat state. React retains a typed render projection and opaque cache storage only.
+- **Agent transcript state:** one Rust `AgentSessionManager` per `HostRuntime` owns Codex rollout identity/offsets, OpenCode export/event cursors, incremental parsing/checkpoints, reconnect rebind, and normalized revisioned chat state. React retains a typed render projection and opaque cache storage only.
 - **Remote operations:** Rust filesystem, transfer, Git, and preview services own SFTP/forward resources, generation checks, cancellation, parsing, and cleanup. React retains picker/share/WebView presentation and confirmation state.
 - **Terminal sessions:** ordered open terminals plus active `terminal_id` per live host; terminal WebViews stay mounted across tab and host changes.
 - **Virtual Herdr terminals:** in-memory cached ANSI snapshots and logical scroll state per terminal while its live transport is offline; xterm reports measured viewport geometry and remains responsible for rendering and gestures.
