@@ -34,6 +34,7 @@ import {
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
 import { prepareTerminalPaste } from '../lib/terminalPaste';
+import { nextReconnect } from '../lib/reconnectPolicy';
 import { terminalSubmissionWrites } from '../lib/terminalSubmission';
 import {
   terminalRendererEvictionKeys,
@@ -75,7 +76,6 @@ import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { PaneScrollInfo } from '../types';
 
-const MAX_RECONNECT_ATTEMPTS = 5;
 const FRAME_CHUNK_SIZE = 16_384;
 const TRANSCRIPT_CHUNK_SIZE = 16_384;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
@@ -466,8 +466,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         entry.target.client.releaseTerminal(terminalId).catch(() => undefined);
         return;
       }
-      const nextAttempt = entry.reconnectAttempt + 1;
-      if (nextAttempt > MAX_RECONNECT_ATTEMPTS) {
+      const decision = nextReconnect(entry.reconnectAttempt);
+      if (decision.action === 'stop') {
         recordNetworkDiagnostic('error', 'terminal-reconnect-exhausted', {
           sessionId: entry.target.hostSessionId,
           terminalId,
@@ -480,23 +480,22 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         }
         return;
       }
-      entry.reconnectAttempt = nextAttempt;
-      const delayMs = Math.min(8000, 750 * (2 ** (nextAttempt - 1)));
+      entry.reconnectAttempt = decision.attempt;
       recordNetworkDiagnostic('warn', 'terminal-reconnect-scheduled', {
         sessionId: entry.target.hostSessionId,
         terminalId,
-        attempt: nextAttempt,
-        delayMs,
+        attempt: decision.attempt,
+        delayMs: decision.delayMs,
         reason: networkErrorMessage(reason),
       });
-      reportStatus(entry.target, 'disconnected', reason, nextAttempt);
+      reportStatus(entry.target, 'disconnected', reason, decision.attempt);
       if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
       entry.reconnectTimer = setTimeout(
         () => {
           entry.reconnectTimer = null;
           connectEntry(entry);
         },
-        delayMs,
+        decision.delayMs,
       );
     };
     client.openTerminal(

@@ -1,52 +1,27 @@
-export interface ReconnectPolicy {
-  maxAttempts: number;
-  initialDelayMs: number;
-  multiplier: number;
-  maxDelayMs: number;
-}
-
 export type ReconnectDecision =
   | { action: 'retry'; attempt: number; delayMs: number }
   | { action: 'stop'; attempts: number };
 
 export type ReconnectRecoveryTrigger = 'app-resume' | 'network-change';
 
-export const defaultReconnectPolicy: Readonly<ReconnectPolicy> = {
-  maxAttempts: 5,
-  initialDelayMs: 750,
-  multiplier: 2,
-  maxDelayMs: 8000,
-};
+export const MAX_RECONNECT_ATTEMPTS = 5;
 
-function assertPolicy(policy: ReconnectPolicy): void {
-  if (!Number.isInteger(policy.maxAttempts) || policy.maxAttempts < 0) {
-    throw new RangeError('maxAttempts must be a non-negative integer');
-  }
-  if (!Number.isFinite(policy.initialDelayMs) || policy.initialDelayMs < 0) {
-    throw new RangeError('initialDelayMs must be a non-negative finite number');
-  }
-  if (!Number.isFinite(policy.multiplier) || policy.multiplier < 1) {
-    throw new RangeError('multiplier must be a finite number greater than or equal to 1');
-  }
-  if (!Number.isFinite(policy.maxDelayMs) || policy.maxDelayMs < policy.initialDelayMs) {
-    throw new RangeError('maxDelayMs must be finite and at least initialDelayMs');
-  }
-}
+const INITIAL_RECONNECT_DELAY_MS = 750;
+const MAX_RECONNECT_DELAY_MS = 8000;
 
-/** Returns the bounded delay for a one-based retry attempt. */
+/** Returns capped exponential backoff with equal jitter for a one-based retry. */
 export function reconnectDelay(
   attempt: number,
-  policy: ReconnectPolicy = defaultReconnectPolicy,
+  random: () => number = Math.random,
 ): number {
-  assertPolicy(policy);
-  if (!Number.isInteger(attempt) || attempt < 1) {
-    throw new RangeError('attempt must be a positive integer');
-  }
-
-  return Math.min(
-    policy.maxDelayMs,
-    policy.initialDelayMs * (policy.multiplier ** (attempt - 1)),
+  const upperBound = Math.min(
+    MAX_RECONNECT_DELAY_MS,
+    INITIAL_RECONNECT_DELAY_MS * (2 ** (attempt - 1)),
   );
+
+  // Keep retries progressive while spreading clients across the latter half
+  // of each backoff window after a shared network or server outage.
+  return Math.round(upperBound * (0.5 + random() * 0.5));
 }
 
 /**
@@ -56,17 +31,12 @@ export function reconnectDelay(
  */
 export function nextReconnect(
   completedAttempts: number,
-  policy: ReconnectPolicy = defaultReconnectPolicy,
+  random: () => number = Math.random,
 ): ReconnectDecision {
-  assertPolicy(policy);
-  if (!Number.isInteger(completedAttempts) || completedAttempts < 0) {
-    throw new RangeError('completedAttempts must be a non-negative integer');
-  }
-
   const attempt = completedAttempts + 1;
-  return attempt > policy.maxAttempts
+  return attempt > MAX_RECONNECT_ATTEMPTS
     ? { action: 'stop', attempts: completedAttempts }
-    : { action: 'retry', attempt, delayMs: reconnectDelay(attempt, policy) };
+    : { action: 'retry', attempt, delayMs: reconnectDelay(attempt, random) };
 }
 
 /**
@@ -76,8 +46,7 @@ export function nextReconnect(
 export function shouldRestartReconnect(
   completedAttempts: number,
   trigger: ReconnectRecoveryTrigger,
-  policy: ReconnectPolicy = defaultReconnectPolicy,
 ): boolean {
   return trigger === 'network-change'
-    || nextReconnect(completedAttempts, policy).action === 'stop';
+    || completedAttempts >= MAX_RECONNECT_ATTEMPTS;
 }

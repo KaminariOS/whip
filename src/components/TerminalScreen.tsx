@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
 import { cn } from '@/src/lib/utils';
+import { MAX_RECONNECT_ATTEMPTS, reconnectDelay } from '../lib/reconnectPolicy';
 import {
   orderTerminalControls,
   type TerminalControlId,
@@ -165,8 +166,6 @@ const TERMINAL_CONTROL_LABEL_STYLE = {
   includeFontPadding: false,
   textAlignVertical: 'center',
 } as const;
-const MAX_RECONNECT_ATTEMPTS = 5;
-
 function AndroidDirectKeyboardAnimation({ inset }: { inset: SharedValue<number> }) {
   const keyboard = useAnimatedKeyboard({
     isNavigationBarTranslucentAndroid: true,
@@ -657,7 +656,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
 
   const scheduleQueuedRetry = useCallback((targetKey: string, attempts: number) => {
     if (queueRetryTimersRef.current.has(targetKey)) return;
-    const delayMs = Math.min(8000, 750 * (2 ** Math.max(0, attempts - 1)));
+    const delayMs = reconnectDelay(attempts);
     const timer = setTimeout(() => {
       queueRetryTimersRef.current.delete(targetKey);
       const target = targetsRef.current.find(item => item.key === targetKey);
