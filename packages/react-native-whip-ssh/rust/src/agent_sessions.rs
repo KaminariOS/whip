@@ -1,17 +1,15 @@
 //! Rust-owned lifecycle for remote coding-agent transcript sessions.
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::{CStr, c_char};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
 
 use chrono::NaiveDateTime;
 use parking_lot::{Mutex, RwLock};
-use serde_json::{Value, json};
 
 use crate::agent_transcript::{AgentCacheError, AgentTranscriptState, CodexSessionCore};
-use crate::russh_transport;
+use crate::ssh::SshSession;
 
 const RETRY_DELAY: Duration = Duration::from_millis(1_500);
 static NEXT_STREAM_CONTEXT: AtomicU64 = AtomicU64::new(1);
@@ -120,14 +118,13 @@ struct ManagerState {
     closed: bool,
 }
 
-#[derive(Debug)]
 struct AgentSessionManagerInner {
     runtime_id: String,
-    transport_key: String,
+    ssh: Arc<RwLock<Option<Arc<SshSession>>>>,
     state: Mutex<ManagerState>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct AgentSessionManager {
     inner: Arc<AgentSessionManagerInner>,
 }
@@ -142,11 +139,11 @@ struct StreamContext {
 }
 
 impl AgentSessionManager {
-    pub(crate) fn new(runtime_id: String, transport_key: String) -> Self {
+    pub(crate) fn new(runtime_id: String, ssh: Arc<RwLock<Option<Arc<SshSession>>>>) -> Self {
         Self {
             inner: Arc::new(AgentSessionManagerInner {
                 runtime_id,
-                transport_key,
+                ssh,
                 state: Mutex::new(ManagerState {
                     connected_generation: None,
                     sessions: HashMap::new(),
@@ -176,7 +173,7 @@ impl AgentSessionManager {
             let mut state = self.inner.state.lock();
             state.connected_generation = None;
             state.closed = closed;
-            let transport_key = self.inner.transport_key.clone();
+            let ssh = self.inner.ssh.read().clone();
             let mut emissions = Vec::new();
             for session in state.sessions.values_mut() {
                 session.operation_epoch = session.operation_epoch.saturating_add(1);
@@ -184,8 +181,10 @@ impl AgentSessionManager {
                 if let Some(context) = session.stream_context.take() {
                     streams().write().remove(&context);
                 }
-                if let Some(channel) = session.stream_channel_id.take() {
-                    let _ = russh_transport::close_exec(&transport_key, &channel);
+                if let Some(channel) = session.stream_channel_id.take()
+                    && let Some(ssh) = &ssh
+                {
+                    let _ = ssh.close_exec(&channel);
                 }
                 let state = if closed {
                     session.closed = true;
@@ -296,8 +295,10 @@ impl AgentSessionManager {
             if let Some(context) = session.stream_context.take() {
                 streams().write().remove(&context);
             }
-            if let Some(channel) = session.stream_channel_id.take() {
-                let _ = russh_transport::close_exec(&self.inner.transport_key, &channel);
+            if let Some(channel) = session.stream_channel_id.take()
+                && let Some(ssh) = self.inner.ssh.read().clone()
+            {
+                let _ = ssh.close_exec(&channel);
             }
             (session.key.clone(), session.core.close())
         };
@@ -344,8 +345,10 @@ impl AgentSessionManager {
             if let Some(context) = session.stream_context.take() {
                 streams().write().remove(&context);
             }
-            if let Some(channel) = session.stream_channel_id.take() {
-                let _ = russh_transport::close_exec(&self.inner.transport_key, &channel);
+            if let Some(channel) = session.stream_channel_id.take()
+                && let Some(ssh) = self.inner.ssh.read().clone()
+            {
+                let _ = ssh.close_exec(&channel);
             }
             let snapshot = session.core.mark_stale(reason.clone());
             (
@@ -373,12 +376,18 @@ impl AgentSessionManager {
         operation_epoch: u64,
         session_id: String,
     ) {
+        let Some(ssh) = self.inner.ssh.read().clone() else {
+            self.fail_and_retry(
+                key,
+                host_generation,
+                operation_epoch,
+                "host SSH session is disconnected".to_owned(),
+                false,
+            );
+            return;
+        };
         let result = async {
-            let output = execute(
-                &self.inner.transport_key,
-                codex_rollout_find_command(&session_id),
-            )
-            .await?;
+            let output = execute(&ssh, codex_rollout_find_command(&session_id)).await?;
             let path = resolve_rollout_path(&output, &session_id)?;
             let Some(path) = path else {
                 return Err(AgentSessionError::SourceUnavailable(
@@ -386,7 +395,7 @@ impl AgentSessionManager {
                 ));
             };
             let metadata = execute(
-                &self.inner.transport_key,
+                &ssh,
                 format!(
                     "stat -c '%d:%i %s' {} 2>/dev/null || stat -f '%d:%i %z' {}",
                     shell_quote(&path),
@@ -444,21 +453,23 @@ impl AgentSessionManager {
             (context, channel_id, binding.start_offset)
         };
         let command = codex_stream_command(&path, opened.2);
-        let stream_requested = if let Err(error) = russh_transport::open_exec(
-            opened.0,
-            &self.inner.transport_key,
-            &opened.1,
-            &command,
-            stream_opened,
-            stream_data,
-            stream_closed,
-        ) {
-            streams().write().remove(&opened.0);
-            self.fail_and_retry(key.clone(), host_generation, operation_epoch, error, false);
-            false
-        } else {
-            true
-        };
+        let context = opened.0;
+        let data = Arc::new(move |bytes| stream_data(context, bytes));
+        let closed = Arc::new(move |reason| stream_failed(context, reason));
+        let stream_requested =
+            if let Err(error) = ssh.open_exec(&opened.1, &command, data, closed).await {
+                streams().write().remove(&opened.0);
+                self.fail_and_retry(
+                    key.clone(),
+                    host_generation,
+                    operation_epoch,
+                    error.to_string(),
+                    false,
+                );
+                false
+            } else {
+                true
+            };
         if stream_requested && size == opened.2 {
             let emission = {
                 let mut state = self.inner.state.lock();
@@ -551,29 +562,7 @@ fn emit(
     }
 }
 
-unsafe extern "C" fn stream_opened(context: u64, error: *const c_char) {
-    if error.is_null() {
-        return;
-    }
-    let reason = unsafe { CStr::from_ptr(error) }
-        .to_string_lossy()
-        .into_owned();
-    stream_failed(context, reason);
-}
-
-unsafe extern "C" fn stream_data(context: u64, bytes: *const u8, length: usize) {
-    if bytes.is_null() && length != 0 {
-        stream_failed(
-            context,
-            "native transcript stream returned invalid bytes".to_owned(),
-        );
-        return;
-    }
-    let bytes = if length == 0 {
-        &[]
-    } else {
-        unsafe { std::slice::from_raw_parts(bytes, length) }
-    };
+fn stream_data(context: u64, bytes: Vec<u8>) {
     let Some(context_value) = streams().read().get(&context).cloned() else {
         return;
     };
@@ -592,7 +581,7 @@ unsafe extern "C" fn stream_data(context: u64, bytes: *const u8, length: usize) 
             ) else {
                 return;
             };
-            match session.core.ingest(context_value.source_generation, bytes) {
+            match session.core.ingest(context_value.source_generation, &bytes) {
                 Ok(result) => {
                     let previous_revision = session.core.revision();
                     let snapshot = session.core.mark_live();
@@ -639,17 +628,6 @@ unsafe extern "C" fn stream_data(context: u64, bytes: *const u8, length: usize) 
     }
 }
 
-unsafe extern "C" fn stream_closed(context: u64, reason: *const c_char) {
-    let reason = if reason.is_null() {
-        "Transcript stream closed".to_owned()
-    } else {
-        unsafe { CStr::from_ptr(reason) }
-            .to_string_lossy()
-            .into_owned()
-    };
-    stream_failed(context, reason);
-}
-
 fn stream_failed(context: u64, reason: String) {
     let Some(context_value) = streams().write().remove(&context) else {
         return;
@@ -666,23 +644,21 @@ fn stream_failed(context: u64, reason: String) {
     );
 }
 
-async fn execute(key: &str, command: String) -> Result<String, AgentSessionError> {
-    let value = russh_transport::call("execute", json!({ "key": key, "command": command }))
+async fn execute(ssh: &SshSession, command: String) -> Result<String, AgentSessionError> {
+    let output = ssh
+        .execute(&command)
         .await
         .map_err(|error| AgentSessionError::ReadFailed(error.message))?;
-    let stdout = value.get("stdout").and_then(Value::as_str).ok_or_else(|| {
-        AgentSessionError::ReadFailed("SSH returned invalid command output".to_owned())
-    })?;
-    let status = value.get("exitStatus").and_then(Value::as_u64);
-    if status.is_some_and(|status| status != 0) {
-        let stderr = value
-            .get("stderr")
-            .and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("remote transcript command failed");
-        return Err(AgentSessionError::ReadFailed(stderr.to_owned()));
+    if output.exit_status.is_some_and(|status| status != 0) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        return Err(AgentSessionError::ReadFailed(if stderr.is_empty() {
+            "remote transcript command failed".to_owned()
+        } else {
+            stderr.to_owned()
+        }));
     }
-    Ok(stdout.to_owned())
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn validate_codex_session_id(value: &str) -> Result<(), AgentSessionError> {
@@ -929,7 +905,7 @@ mod tests {
 
     #[test]
     fn two_sessions_and_terminal_bindings_are_independent() {
-        let manager = AgentSessionManager::new("host".into(), "transport".into());
+        let manager = AgentSessionManager::new("host".into(), Arc::new(RwLock::new(None)));
         let second = "22222222-2222-4222-8222-222222222222";
         let (first_key, _) = manager
             .open_codex("terminal-1".into(), SESSION.into(), None)

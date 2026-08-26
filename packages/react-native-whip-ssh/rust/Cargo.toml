@@ -11,18 +11,22 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+futures = "0.3"
+hmac = "0.12"
+parking_lot = "0.12"
 russh = { version = "0.62", default-features = false, features = ["flate2", "ring"] }
+russh-sftp = "2.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+sha1 = "0.10"
 ssh-key = { version = "=0.7.0-rc.11", features = ["ed25519", "getrandom"] }
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "net", "rt-multi-thread", "sync", "time"] }
 uniffi = "=0.31"
-parking_lot = "0.12"
 
-[target.'cfg(target_os = "android")'.dependencies]
-libloading = "0.8"
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 codegen-units = 1

@@ -14,12 +14,6 @@ const noticesPath = resolve(outputDirectory, 'cargo-direct-license-notices.json'
 
 const packages = [
   {
-    name: 'react-native-russh',
-    manifest: 'packages/react-native-russh/rust/Cargo.toml',
-    output: 'cargo-react-native-russh-licenses.html',
-    textOutput: 'cargo-react-native-russh-licenses.txt',
-  },
-  {
     name: 'whip-ssh',
     manifest: 'packages/react-native-whip-ssh/rust/Cargo.toml',
     output: 'cargo-whip-ssh-licenses.html',

@@ -155,6 +155,9 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging = (findProperty('expo.useLegacyPackaging') ?: 'false').toBoolean()
+            // New-architecture autolinking builds this same local target from
+            // app CMake and the library AAR. Package one deterministic copy.
+            pickFirsts += ['**/libreact-native-whip-ssh.so']
         }
     }
 }

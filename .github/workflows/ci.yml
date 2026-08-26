@@ -19,12 +19,12 @@ concurrency:
 
 jobs:
   rust:
-    name: Rust SSH checks
+    name: Whip Rust core checks
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
       run:
-        working-directory: packages/react-native-russh/rust
+        working-directory: packages/react-native-whip-ssh/rust
 
     steps:
       - name: Check out repository
@@ -42,36 +42,22 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          workspaces: |
-            packages/react-native-russh/rust
-            packages/react-native-whip-ssh/rust
+          workspaces: packages/react-native-whip-ssh/rust
 
       - name: Check Rust formatting
         run: cargo fmt --check
 
-      - name: Lint Rust SSH transport
+      - name: Lint Whip Rust core
         run: cargo clippy --locked --all-targets -- -D warnings
 
-      - name: Test Rust SSH transport
-        run: cargo test --locked
-
-      - name: Check private Rust formatting
-        working-directory: ${{ github.workspace }}/packages/react-native-whip-ssh/rust
-        run: cargo fmt --check
-
-      - name: Lint private WP4 crate
-        working-directory: ${{ github.workspace }}/packages/react-native-whip-ssh/rust
-        run: cargo clippy --locked --all-targets -- -D warnings
-
-      - name: Test private WP4 crate
-        working-directory: ${{ github.workspace }}/packages/react-native-whip-ssh/rust
+      - name: Test Whip Rust core
         run: cargo test --locked
 
       - name: Audit Rust dependencies
         uses: rustsec/audit-check@858dc40f52ca2b8570b7a997c1c4e35c6fc9a432 # main
         with:
           token: ${{ github.token }}
-          working-directory: packages/react-native-russh/rust
+          working-directory: packages/react-native-whip-ssh/rust
 
       - name: Test against live OpenSSH
         run: bash tests/live-ssh.sh
@@ -254,10 +240,19 @@ jobs:
       - name: Cache Rust iOS builds
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          workspaces: packages/react-native-russh/rust
+          workspaces: packages/react-native-whip-ssh/rust
           key: ios-xcframework
 
-      - name: Validate distributable Rust XCFramework
-        run: >-
-          bash packages/react-native-russh/rust/build-xcframework.sh
-          "$RUNNER_TEMP/ReactNativeRussh.xcframework"
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install native binding generator
+        run: npm ci
+
+      - name: Validate merged Whip Rust XCFramework
+        run: |
+          scripts/build-ios-uniffi.sh
+          test -d packages/react-native-whip-ssh/build/WhipSsh.xcframework

@@ -1,3 +1,4 @@
+// Transitional generic facade over the single Whip native module.
 const nativeClient = require('../src').default;
 if (!nativeClient) {
     throw new Error('Native SSH backend is unavailable');

@@ -23,7 +23,6 @@ describe('bundled direct dependency license notices', () => {
 
   test('contains one row per resolved direct Rust crate and excludes workspace roots', () => {
     const expectedPackages = [
-      ...directCargoDependencies('packages/react-native-russh/rust/Cargo.toml'),
       ...directCargoDependencies('packages/react-native-whip-ssh/rust/Cargo.toml'),
     ];
     const noticedPackages = generatedEntries
@@ -31,7 +30,6 @@ describe('bundled direct dependency license notices', () => {
       .map(entry => entry.projectName);
 
     expect([...new Set(noticedPackages)].sort()).toEqual([...new Set(expectedPackages)].sort());
-    expect(noticedPackages).not.toContain('react-native-russh');
     expect(noticedPackages).not.toContain('whip-ssh');
   });
 

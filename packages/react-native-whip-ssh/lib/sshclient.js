@@ -1,9 +1,9 @@
 /* global TextDecoder */
 /* eslint-disable no-bitwise */
 
-import BaseSSHClient, { PtyType } from 'react-native-russh';
+import SSHClient, { PtyType } from './base-sshclient';
 
-export * from 'react-native-russh';
+export * from './base-sshclient';
 export { PtyType };
 
 function privateNativeClient() {
@@ -57,42 +57,19 @@ function encodeUtf8(value) {
   return Uint8Array.from(encoded, character => character.charCodeAt(0));
 }
 
-/** Whip's private Herdr adapter over the public product-neutral SSH client. */
-class SSHClient extends BaseSSHClient {
-  constructor(...args) {
-    super(...args);
-    this._activeStream.herdrEventStream = false;
-    this._activeStream.herdrCommandStream = false;
-    this._herdrCommandChannel = null;
-    this._herdrCommandHandler = null;
-    this._herdrCommandDecode = null;
-  }
+SSHClient.pairHost = function pairHost(code, publicKey, deviceName) {
+  return privateNativeClient().pairHost(code, publicKey, deviceName);
+};
 
-  static connectWithKey(...args) { return super.connectWithKey(...args); }
-  static connectWithKeyViaJump(...args) { return super.connectWithKeyViaJump(...args); }
-  static connectWithPassword(...args) { return super.connectWithPassword(...args); }
-  static connectWithPasswordViaJump(...args) { return super.connectWithPasswordViaJump(...args); }
+SSHClient.createHostRuntime = function createHostRuntime(config, lifecycleHandler) {
+  return privateNativeClient().createHostRuntime(config, lifecycleHandler);
+};
 
-  static pairHost(code, publicKey, deviceName) {
-    return privateNativeClient().pairHost(code, publicKey, deviceName);
-  }
+const disconnectSshClient = SSHClient.prototype.disconnect;
 
-  static createHostRuntime(config, lifecycleHandler) {
-    const runtime = privateNativeClient().createHostRuntime(config, lifecycleHandler);
-    const client = this.fromNativeSession(
-      config.ssh.host,
-      config.ssh.port,
-      config.ssh.username,
-      runtime.transportKey,
-    );
-    client._activeStream.herdrEventStream = false;
-    client._activeStream.herdrCommandStream = false;
-    client._herdrCommandChannel = null;
-    client._herdrCommandHandler = null;
-    client._herdrCommandDecode = null;
-    runtime.transportClient = client;
-    return runtime;
-  }
+// Whip-specific conveniences augment the one SSH facade; there is no second
+// client class or inherited native stack.
+Object.assign(SSHClient.prototype, {
 
   prepareHerdrBridge(socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
     return privateNativeClient()
@@ -112,7 +89,7 @@ class SSHClient extends BaseSSHClient {
         if (callback) callback(error);
         throw error;
       });
-  }
+  },
 
   startHerdrBridge(
     socketPath,
@@ -148,11 +125,11 @@ class SSHClient extends BaseSSHClient {
         if (callback) callback(error);
         throw error;
       });
-  }
+  },
 
   herdrBridgeInput(terminalId, text) {
     return privateNativeClient().herdrBridgeInput(this._key, terminalId, text);
-  }
+  },
 
   herdrBridgeResize(terminalId, columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
     return privateNativeClient().herdrBridgeResize(
@@ -163,7 +140,7 @@ class SSHClient extends BaseSSHClient {
       cellWidthPx,
       cellHeightPx,
     );
-  }
+  },
 
   herdrBridgeScroll(terminalId, direction, lines, column, row, modifiers = 0) {
     return privateNativeClient().herdrBridgeScroll(
@@ -175,15 +152,15 @@ class SSHClient extends BaseSSHClient {
       row,
       modifiers,
     );
-  }
+  },
 
   closeHerdrBridge(terminalId) {
     privateNativeClient().closeHerdrBridge(this._key, terminalId);
-  }
+  },
 
   closeAllHerdrBridges() {
     privateNativeClient().closeAllHerdrBridges(this._key);
-  }
+  },
 
   startHerdrEventStream(socketPath, protocol, paneIds, handler, callback) {
     if (this._activeStream.herdrEventStream) return Promise.resolve();
@@ -204,16 +181,16 @@ class SSHClient extends BaseSSHClient {
       if (callback) callback(error);
       throw error;
     });
-  }
+  },
 
   closeHerdrEventStream() {
     this._activeStream.herdrEventStream = false;
     privateNativeClient().closeHerdrEventStream(this._key);
-  }
+  },
 
   requestHerdrApi(socketPath, request) {
     return privateNativeClient().requestHerdrApi(this._key, socketPath, request);
-  }
+  },
 
   startHerdrCommandStream(command, handler, callback) {
     this._herdrCommandHandler = handler;
@@ -246,14 +223,14 @@ class SSHClient extends BaseSSHClient {
       if (callback) callback(error);
       throw error;
     });
-  }
+  },
 
   writeHerdrCommandStream(value) {
     if (!this._herdrCommandChannel) {
       return Promise.reject(new Error('Herdr command stream is not active'));
     }
     return this._herdrCommandChannel.write(encodeUtf8(value).buffer);
-  }
+  },
 
   closeHerdrCommandStream() {
     const channel = this._herdrCommandChannel;
@@ -262,14 +239,14 @@ class SSHClient extends BaseSSHClient {
     this._herdrCommandDecode = null;
     this._activeStream.herdrCommandStream = false;
     channel?.close().catch(() => {});
-  }
+  },
 
   disconnect() {
     this.closeAllHerdrBridges();
     this.closeHerdrEventStream();
     this.closeHerdrCommandStream();
-    super.disconnect();
+    disconnectSshClient.call(this);
   }
-}
+});
 
 export default SSHClient;

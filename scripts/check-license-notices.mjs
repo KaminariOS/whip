@@ -66,7 +66,6 @@ const npmLicenseSourceOverrides = new Map([
   ['@react-native-community/slider', 'licenses/npm/react-native-slider-MIT.txt'],
   ['@ubjs/core', 'node_modules/uniffi-bindgen-react-native/LICENSE'],
   ['@xterm/addon-serialize', 'node_modules/@xterm/xterm/LICENSE'],
-  ['react-native-russh', 'LICENSE'],
   ['react-native-whip-ssh', 'LICENSE'],
 ]);
 

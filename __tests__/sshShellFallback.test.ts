@@ -1,4 +1,4 @@
-import SSHClient, { PtyType } from 'react-native-whip-ssh';
+import SSHClient from 'react-native-whip-ssh';
 
 import { HerdrClient } from '../src/services/HerdrClient';
 import { SSH_SHELL_TERMINAL_ID } from '../src/terminalSessions';
@@ -6,7 +6,6 @@ import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => ({
   ...require('./mockWhipSsh').createMockWhipSshModule(),
-  PtyType: { XTERM: 'xterm' },
 }));
 
 const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
@@ -50,51 +49,44 @@ describe('plain SSH shell fallback', () => {
 
   it('opens a dedicated interactive PTY and streams decoded text frames', async () => {
     const control = sshClient();
-    const shell = sshClient();
-    connectWithPassword
-      .mockResolvedValueOnce(control.client)
-      .mockResolvedValueOnce(shell.client);
+    connectWithPassword.mockResolvedValueOnce(control.client);
     const client = new HerdrClient();
     const onFrame = jest.fn();
 
     await client.connect(profile);
     await client.openTerminal(SSH_SHELL_TERMINAL_ID, onFrame);
-    shell.emitShell('\u001b[32moperator@fresh\u001b[0m $ ');
+    control.emitShell('\u001b[32moperator@fresh\u001b[0m $ ');
 
-    expect(connectWithPassword).toHaveBeenCalledTimes(2);
-    expect(shell.client.startShell).toHaveBeenCalledWith(PtyType.XTERM);
-    expect(shell.client.resizeShell).toHaveBeenCalledWith(80, 24);
+    expect(connectWithPassword).toHaveBeenCalledTimes(1);
+    expect(control.client.startShell).toHaveBeenCalledWith('xterm-256color');
+    expect(control.client.resizeShell).toHaveBeenCalledWith(80, 24);
     expect(onFrame).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'terminal.frame',
         seq: 1,
         encoding: 'utf8',
         full: false,
-        bytes: '\u001b[32moperator@fresh\u001b[0m $ ',
+        bytes: expect.any(ArrayBuffer),
       }),
     );
 
     await client.writeToTerminal(SSH_SHELL_TERMINAL_ID, 'herdr --version\r');
     client.resizeTerminal(SSH_SHELL_TERMINAL_ID, 120, 40);
 
-    expect(shell.client.writeToShell).toHaveBeenCalledWith('herdr --version\r');
-    expect(shell.client.resizeShell).toHaveBeenLastCalledWith(120, 40);
+    expect(control.client.writeToShell).toHaveBeenCalledWith('herdr --version\r');
+    expect(control.client.resizeShell).toHaveBeenLastCalledWith(120, 40);
   });
 
   it('closes only the fallback PTY when its terminal session closes', async () => {
     const control = sshClient();
-    const shell = sshClient();
-    connectWithPassword
-      .mockResolvedValueOnce(control.client)
-      .mockResolvedValueOnce(shell.client);
+    connectWithPassword.mockResolvedValueOnce(control.client);
     const client = new HerdrClient();
 
     await client.connect(profile);
     await client.openTerminal(SSH_SHELL_TERMINAL_ID, jest.fn());
     await client.closeTerminalBridge(SSH_SHELL_TERMINAL_ID);
 
-    expect(shell.client.closeShell).toHaveBeenCalledTimes(1);
-    expect(shell.client.disconnect).toHaveBeenCalledTimes(1);
+    expect(control.client.closeShell).toHaveBeenCalledTimes(1);
     expect(control.client.disconnect).not.toHaveBeenCalled();
     expect(client.isTerminalBridgeRetained(SSH_SHELL_TERMINAL_ID)).toBe(false);
   });

@@ -19,7 +19,7 @@ The mobile device reaches a remote machine over SSH. A saved host profile owns h
 
 Metadata is stored in AsyncStorage. Passwords, private keys, and passphrases are stored through the platform credential store and referenced by profile ID; they must never be embedded in profile JSON, logs, screenshots, or fixtures. Android may back up only AES-GCM ciphertext, with its recovery token separated into Block Store. Global SSH keychain secrets are excluded from that recovery path.
 
-Both platforms use the shared Rust/Russh transport. It loads one process-wide OpenSSH-compatible known-host repository, returns unknown keys for explicit fingerprint approval, and rejects changed keys. Direct hosts and every jump-host hop follow the same rule.
+Both platforms link one `whip-ssh` static library and expose one WhipSsh TurboModule. The Rust core loads one process-wide OpenSSH-compatible known-host repository, returns unknown keys for explicit fingerprint approval, and rejects changed keys. Direct hosts and every jump-host hop follow the same rule.
 
 ### Control plane
 
@@ -32,13 +32,16 @@ The control plane reads and mutates structured Herdr server state:
 - agents, status, metadata, and recent output
 - create, focus, rename, split, resize, send, close, and launch actions
 
-Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The product-specific Rust layer in `react-native-whip-ssh` owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, direct/legacy event-envelope normalization, and conversion into typed domain events. It composes directly with product-neutral raw Unix-socket transport callbacks in `react-native-russh`; Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection. Normal operation does not start a remote shell, poll JSON-producing CLI commands, or depend on private TUI layout/render messages.
+Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. Herdr calls an owned `SshSession` through ordinary Rust methods and closures; there is no C ABI, callback context, dynamic symbol lookup, or JSON dispatch between the SSH and Herdr modules. Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection.
 
-One Rust `HostRuntime` owns each connected host's authenticated SSH transport,
-control generation, reconnect loop, event subscription, and Herdr terminal
-registry. It uses the generic `react-native-russh` Rust call interface directly;
-reconnect and resource restoration do not bounce through JavaScript. The
-runtime exposes coherent connection and versioned `HostState` projections.
+One Rust `HostRuntime` owns each connected host's authenticated `Arc<SshSession>`,
+ProxyJump chain, control generation, reconnect loop, event subscription, and
+Herdr terminal registry. Reconnect replaces the owned session, advances the
+existing generation/epoch state, cancels stale work, and restores requested
+resources without bouncing through JavaScript. Shell, command, remote-home,
+latency, forwarding, SFTP, upload cancellation, and file-server operations all
+use the runtime's owned session directly; no string-key session alias is
+published for React Native.
 
 `HostState` owns workspace/tab/pane topology, layouts, server focus, derived
 agent status, snapshot sync generations, monotonic state revisions, and
@@ -67,12 +70,12 @@ Rust selects the protocol-specific terminal attach variant.
 ### Terminal plane
 
 Each opened Herdr terminal owns an independent SSH stream-local channel to the
-server's client-protocol socket. The product-specific Rust bridge in
-`react-native-whip-ssh` owns protocol validation, binary encoding/decoding, the
-`Hello` / `Welcome` / `AttachTerminal` state machine, prepared connections, and
-protocol-level cleanup. It composes directly with a product-neutral native
-length-prefixed channel in `react-native-russh`; terminal frames do not travel
-through a JavaScript codec or generic JSON event path. React Native sends
+server's client-protocol socket. The Whip Rust core owns protocol validation,
+binary encoding/decoding, the `Hello` / `Welcome` / `AttachTerminal` state
+machine, prepared connections, and protocol-level cleanup. Its Herdr bridge
+opens and drives the length-prefixed channel directly on the owned Rust SSH
+session; terminal frames do not travel through a JavaScript codec, generic JSON
+event path, or a second native library. React Native sends
 semantic input, resize, scroll, and close operations and receives typed control
 events plus raw binary terminal/graphics payloads for the renderer. Do not
 substitute the human-facing

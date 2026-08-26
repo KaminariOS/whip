@@ -1,7 +1,6 @@
 //! Product-specific Herdr terminal bridge lifecycle.
 
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char};
 use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
@@ -15,7 +14,7 @@ use crate::herdr_codec::{
     self, CodecError, HerdrTerminalEncoding, MAX_FRAME_BYTES, ServerMessage, decode,
     validate_protocol,
 };
-use crate::russh_transport;
+use crate::ssh::SshSession;
 
 pub use crate::herdr_codec::{HerdrTerminalAttachLaunchMode, HerdrTerminalNotificationKind};
 
@@ -114,9 +113,9 @@ struct Bridge {
     id: u64,
     client_key: String,
     channel_id: String,
+    ssh: Option<Arc<SshSession>>,
     protocol: u32,
     state: Mutex<ProtocolState>,
-    opened: Mutex<Option<oneshot::Sender<Result<(), HerdrBridgeError>>>>,
     welcomed: Mutex<Option<oneshot::Sender<Result<(), HerdrBridgeError>>>>,
 }
 
@@ -159,55 +158,18 @@ fn remove_bridge(id: u64) {
     registry.bridges.remove(&id);
 }
 
-fn c_error(error: *const c_char) -> Option<String> {
-    if error.is_null() {
-        None
-    } else {
-        Some(
-            unsafe { CStr::from_ptr(error) }
-                .to_string_lossy()
-                .into_owned(),
-        )
-    }
-}
-
-unsafe extern "C" fn transport_opened(id: u64, error: *const c_char) {
+fn transport_frame(id: u64, bytes: Vec<u8>) {
     let Some(bridge) = bridge_for_id(id) else {
         return;
     };
-    let result = c_error(error)
-        .map(|message| Err(HerdrBridgeError::BridgeUnavailable(message)))
-        .unwrap_or(Ok(()));
-    if let Some(sender) = bridge.opened.lock().take() {
-        let _ = sender.send(result);
-    }
+    bridge.handle_frame(&bytes);
 }
 
-unsafe extern "C" fn transport_frame(id: u64, bytes: *const u8, length: usize) {
+fn transport_closed(id: u64, reason: String) {
     let Some(bridge) = bridge_for_id(id) else {
         return;
     };
-    if bytes.is_null() && length != 0 {
-        bridge.protocol_failure(HerdrBridgeError::MalformedServerFrame(
-            "native SSH transport delivered a null frame".to_owned(),
-        ));
-        return;
-    }
-    let bytes = if length == 0 {
-        &[]
-    } else {
-        unsafe { std::slice::from_raw_parts(bytes, length) }
-    };
-    bridge.handle_frame(bytes);
-}
-
-unsafe extern "C" fn transport_closed(id: u64, reason: *const c_char) {
-    let Some(bridge) = bridge_for_id(id) else {
-        return;
-    };
-    bridge.transport_closed(
-        c_error(reason).unwrap_or_else(|| "Herdr terminal bridge closed".to_owned()),
-    );
+    bridge.transport_closed(reason);
 }
 
 impl Bridge {
@@ -418,7 +380,9 @@ impl Bridge {
             self.emit_closed(error.to_string());
             *self.state.lock() = ProtocolState::Closing;
         }
-        let _ = russh_transport::close(&self.client_key, &self.channel_id);
+        if let Some(ssh) = &self.ssh {
+            let _ = ssh.close_unix_socket(&self.channel_id);
+        }
         remove_bridge(self.id);
     }
 
@@ -430,9 +394,6 @@ impl Bridge {
                     "Herdr bridge closed before Welcome: {reason}"
                 ));
                 *self.state.lock() = ProtocolState::Closed;
-                if let Some(sender) = self.opened.lock().take() {
-                    let _ = sender.send(Err(error.clone()));
-                }
                 self.finish_welcome(Err(error));
             }
             ProtocolState::Attached(_) => self.emit_closed(reason),
@@ -444,7 +405,9 @@ impl Bridge {
 
     fn close_transport(&self) {
         *self.state.lock() = ProtocolState::Closing;
-        let _ = russh_transport::close(&self.client_key, &self.channel_id);
+        if let Some(ssh) = &self.ssh {
+            let _ = ssh.close_unix_socket(&self.channel_id);
+        }
         remove_bridge(self.id);
     }
 }
@@ -452,6 +415,7 @@ impl Bridge {
 #[allow(clippy::too_many_arguments)]
 async fn open_bridge(
     client_key: String,
+    ssh: Arc<SshSession>,
     socket_path: String,
     protocol: u32,
     columns: u32,
@@ -471,48 +435,30 @@ async fn open_bridge(
     )?;
     let id = NEXT_BRIDGE_ID.fetch_add(1, Ordering::Relaxed);
     let channel_id = format!("whip-herdr-{id}");
-    let (opened_sender, opened_receiver) = oneshot::channel();
     let (welcome_sender, welcome_receiver) = oneshot::channel();
     let bridge = Arc::new(Bridge {
         id,
         client_key: client_key.clone(),
         channel_id: channel_id.clone(),
+        ssh: Some(ssh.clone()),
         protocol,
         state: Mutex::new(ProtocolState::AwaitingWelcome),
-        opened: Mutex::new(Some(opened_sender)),
         welcomed: Mutex::new(Some(welcome_sender)),
     });
     registry().lock().bridges.insert(id, bridge.clone());
 
-    if let Err(error) = russh_transport::open(
-        id,
-        &client_key,
-        &channel_id,
-        &socket_path,
-        MAX_FRAME_BYTES,
-        transport_opened,
-        transport_frame,
-        transport_closed,
-    ) {
+    let frame = Arc::new(move |bytes| transport_frame(id, bytes));
+    let closed = Arc::new(move |reason| transport_closed(id, reason));
+    if let Err(error) = ssh
+        .open_length_prefixed_unix_socket(&channel_id, &socket_path, MAX_FRAME_BYTES, frame, closed)
+        .await
+    {
         remove_bridge(id);
-        return Err(HerdrBridgeError::BridgeUnavailable(error));
+        return Err(HerdrBridgeError::BridgeUnavailable(error.to_string()));
     }
-    match opened_receiver.await {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => {
-            remove_bridge(id);
-            return Err(error);
-        }
-        Err(_) => {
-            remove_bridge(id);
-            return Err(HerdrBridgeError::BridgeUnavailable(
-                "native SSH transport did not finish opening the Herdr bridge".to_owned(),
-            ));
-        }
-    }
-    if let Err(error) = russh_transport::write(&client_key, &channel_id, &hello) {
+    if let Err(error) = ssh.write_unix_socket(&channel_id, hello, true) {
         bridge.close_transport();
-        return Err(HerdrBridgeError::BridgeUnavailable(error));
+        return Err(HerdrBridgeError::BridgeUnavailable(error.to_string()));
     }
     match tokio::time::timeout(WELCOME_TIMEOUT, welcome_receiver).await {
         Ok(Ok(Ok(()))) => Ok(bridge),
@@ -539,8 +485,10 @@ pub fn clear_herdr_terminal_event_sink() {
     *event_sink().write() = None;
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn prepare_bridge_on_runtime(
     client_key: String,
+    ssh: Arc<SshSession>,
     socket_path: String,
     protocol: u32,
     columns: u32,
@@ -553,6 +501,7 @@ async fn prepare_bridge_on_runtime(
     }
     let bridge = open_bridge(
         client_key.clone(),
+        ssh,
         socket_path,
         protocol,
         columns,
@@ -569,6 +518,7 @@ async fn prepare_bridge_on_runtime(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn start_bridge_on_runtime(
     client_key: String,
+    ssh: Arc<SshSession>,
     socket_path: String,
     protocol: u32,
     terminal_id: String,
@@ -595,6 +545,7 @@ pub(crate) async fn start_bridge_on_runtime(
         None => {
             open_bridge(
                 client_key.clone(),
+                ssh,
                 socket_path,
                 protocol,
                 columns,
@@ -611,13 +562,18 @@ pub(crate) async fn start_bridge_on_runtime(
         .lock()
         .active
         .insert((client_key.clone(), terminal_id.clone()), bridge.id);
-    if let Err(error) = russh_transport::write(
-        &client_key,
-        &bridge.channel_id,
-        &herdr_codec::attach(&terminal_id, takeover),
-    ) {
+    if let Err(error) = bridge
+        .ssh
+        .as_ref()
+        .expect("production bridge owns SSH")
+        .write_unix_socket(
+            &bridge.channel_id,
+            herdr_codec::attach(&terminal_id, takeover),
+            true,
+        )
+    {
         bridge.close_transport();
-        return Err(HerdrBridgeError::BridgeClosed(error));
+        return Err(HerdrBridgeError::BridgeClosed(error.to_string()));
     }
     Ok(())
 }
@@ -633,9 +589,12 @@ pub async fn prepare_herdr_terminal_bridge(
     cell_height_px: u32,
 ) -> Result<(), HerdrBridgeError> {
     let runtime = crate::runtime().map_err(HerdrBridgeError::BridgeUnavailable)?;
+    let ssh = SshSession::registered(&client_key)
+        .map_err(|error| HerdrBridgeError::BridgeUnavailable(error.to_string()))?;
     runtime
         .spawn(prepare_bridge_on_runtime(
             client_key,
+            ssh,
             socket_path,
             protocol,
             columns,
@@ -666,9 +625,12 @@ pub async fn start_herdr_terminal_bridge(
     terminal_attach_launch_mode: HerdrTerminalAttachLaunchMode,
 ) -> Result<(), HerdrBridgeError> {
     let runtime = crate::runtime().map_err(HerdrBridgeError::BridgeUnavailable)?;
+    let ssh = SshSession::registered(&client_key)
+        .map_err(|error| HerdrBridgeError::BridgeUnavailable(error.to_string()))?;
     runtime
         .spawn(start_bridge_on_runtime(
             client_key,
+            ssh,
             socket_path,
             protocol,
             terminal_id,
@@ -705,12 +667,16 @@ pub fn herdr_terminal_input(
     text: String,
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
-    russh_transport::write(
-        &client_key,
-        &bridge.channel_id,
-        &herdr_codec::input(text.as_bytes()),
-    )
-    .map_err(HerdrBridgeError::BridgeClosed)
+    bridge
+        .ssh
+        .as_ref()
+        .expect("production bridge owns SSH")
+        .write_unix_socket(
+            &bridge.channel_id,
+            herdr_codec::input(text.as_bytes()),
+            true,
+        )
+        .map_err(|error| HerdrBridgeError::BridgeClosed(error.to_string()))
 }
 
 #[uniffi::export]
@@ -724,8 +690,12 @@ pub fn herdr_terminal_resize(
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
     let payload = herdr_codec::resize(columns, rows, cell_width_px, cell_height_px)?;
-    russh_transport::write(&client_key, &bridge.channel_id, &payload)
-        .map_err(HerdrBridgeError::BridgeClosed)
+    bridge
+        .ssh
+        .as_ref()
+        .expect("production bridge owns SSH")
+        .write_unix_socket(&bridge.channel_id, payload, true)
+        .map_err(|error| HerdrBridgeError::BridgeClosed(error.to_string()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -741,8 +711,12 @@ pub fn herdr_terminal_scroll(
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
     let payload = herdr_codec::scroll(up, lines, column, row, modifiers)?;
-    russh_transport::write(&client_key, &bridge.channel_id, &payload)
-        .map_err(HerdrBridgeError::BridgeClosed)
+    bridge
+        .ssh
+        .as_ref()
+        .expect("production bridge owns SSH")
+        .write_unix_socket(&bridge.channel_id, payload, true)
+        .map_err(|error| HerdrBridgeError::BridgeClosed(error.to_string()))
 }
 
 #[uniffi::export]
@@ -755,7 +729,11 @@ pub fn close_herdr_terminal_bridge(client_key: String, terminal_id: String) {
         registry.active.remove(&(client_key.clone(), terminal_id));
     }
     *bridge.state.lock() = ProtocolState::Closing;
-    let _ = russh_transport::write(&client_key, &bridge.channel_id, &herdr_codec::detach());
+    let _ = bridge
+        .ssh
+        .as_ref()
+        .expect("production bridge owns SSH")
+        .write_unix_socket(&bridge.channel_id, herdr_codec::detach(), true);
     bridge.close_transport();
 }
 
@@ -772,7 +750,11 @@ pub fn close_all_herdr_terminal_bridges(client_key: String) {
     };
     for bridge in bridges {
         if bridge.terminal_id().is_some() {
-            let _ = russh_transport::write(&client_key, &bridge.channel_id, &herdr_codec::detach());
+            let _ = bridge
+                .ssh
+                .as_ref()
+                .expect("production bridge owns SSH")
+                .write_unix_socket(&bridge.channel_id, herdr_codec::detach(), true);
         }
         bridge.close_transport();
     }
@@ -815,16 +797,15 @@ mod tests {
     fn test_bridge(
         protocol: u32,
     ) -> (Arc<Bridge>, oneshot::Receiver<Result<(), HerdrBridgeError>>) {
-        let (opened, _) = oneshot::channel();
         let (welcome_sender, welcome_receiver) = oneshot::channel();
         (
             Arc::new(Bridge {
                 id: u64::MAX,
                 client_key: "test".to_owned(),
                 channel_id: "test-channel".to_owned(),
+                ssh: None,
                 protocol,
                 state: Mutex::new(ProtocolState::AwaitingWelcome),
-                opened: Mutex::new(Some(opened)),
                 welcomed: Mutex::new(Some(welcome_sender)),
             }),
             welcome_receiver,
@@ -884,29 +865,6 @@ mod tests {
         bridge.transport_closed("remote Unix socket reached EOF".to_owned());
         assert!(matches!(
             received(receiver),
-            Err(HerdrBridgeError::ClosedBeforeHandshake(message))
-                if message.contains("closed before Welcome")
-        ));
-    }
-
-    #[test]
-    fn handshake_reports_close_that_races_the_open_callback() {
-        let (opened_sender, opened_receiver) = oneshot::channel();
-        let (welcome_sender, _) = oneshot::channel();
-        let bridge = Arc::new(Bridge {
-            id: u64::MAX,
-            client_key: "test".to_owned(),
-            channel_id: "test-channel".to_owned(),
-            protocol: 20,
-            state: Mutex::new(ProtocolState::AwaitingWelcome),
-            opened: Mutex::new(Some(opened_sender)),
-            welcomed: Mutex::new(Some(welcome_sender)),
-        });
-
-        bridge.transport_closed("remote Unix socket reached EOF".to_owned());
-
-        assert!(matches!(
-            received(opened_receiver),
             Err(HerdrBridgeError::ClosedBeforeHandshake(message))
                 if message.contains("closed before Welcome")
         ));

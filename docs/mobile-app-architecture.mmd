@@ -1,73 +1,40 @@
-%%{init: {
-  "theme": "base",
-  "themeVariables": {
-    "background": "#ffffff",
-    "primaryTextColor": "#172033",
-    "lineColor": "#64748b",
-    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif"
-  },
-  "flowchart": {
-    "curve": "basis",
-    "htmlLabels": true,
-    "nodeSpacing": 34,
-    "rankSpacing": 48
-  }
-}}%%
+%%{init: {"theme":"base","flowchart":{"curve":"basis","htmlLabels":true}}}%%
 flowchart TB
-  subgraph ReactNative["React Native mobile app"]
-    direction LR
-    App["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/react.svg' width='44' height='44'/></span><br/><b>React Native</b><br/>Screens and state<br/>Hosts · Herd · Terminal · Files · Settings"]
-    Pairing["WP4 QR pairing<br/>camera · key selection · host approval"]
-    TerminalHost["TerminalRendererHost<br/>renderer lifecycle · frame batching<br/>offset-aware WebView encoding"]
-    HerdrClient["<span style='display:inline-block;width:44px;height:44px'><img src='https://raw.githubusercontent.com/KaminariOS/whip/main/assets/whip-cyborg-hand-concept.svg' width='44' height='44'/></span><br/><b>HerdrClient</b><br/>connections · channels · reconnects"]
-    WhipAdapter["Private Whip adapter subclass<br/>react-native-whip-ssh<br/>Herdr codec/behavior · WP4 API<br/>terminal Uint8Array subarray views"]
-    NativeClient["Public react-native-russh SSHClient<br/>raw/framed sockets · persistent exec<br/>SSH · SFTP · typed bytes"]
-
-    App --> Pairing
-    Pairing --> WhipAdapter
-    App --> TerminalHost
-    App <-->|"actions · snapshots · status"| HerdrClient
-    TerminalHost <-->|"terminal controller"| HerdrClient
-    HerdrClient <--> WhipAdapter
-    WhipAdapter -->|"inherits generic transport<br/>sockets and exec channels"| NativeClient
+  subgraph UI["React Native mobile app"]
+    Screens["Hosts · Herd · Terminal · Files · Settings"]
+    Client["HerdrClient<br/>UI coordination and projections"]
+    Renderer["TerminalRendererHost<br/>xterm lifecycle and rendering"]
+    Screens <--> Client
+    Client <--> Renderer
   end
 
-  subgraph Terminal["Terminal renderer"]
-    direction LR
-    WebView["React Native WebView"]
-    Xterm["<span style='display:inline-block;width:44px;height:44px'><img src='https://raw.githubusercontent.com/xtermjs/xtermjs-branding/master/logo.svg' width='44' height='44'/></span><br/><b>xterm.js + addon-fit</b><br/>keyboard · selection · search · scrollback"]
-    Assets["Packaged terminal assets<br/>Android APK · iOS bundle"]
-
-    WebView <--> Xterm
-    Assets --> WebView
+  subgraph Boundary["One native boundary"]
+    Module["WhipSsh TurboModule<br/>TypeScript bindings · C++ JSI · UniFFI"]
   end
 
-  TerminalHost <-->|"ANSI ArrayBufferView → base64 only at WebView<br/>← input · resize · scroll · clipboard"| WebView
-
-  subgraph Platform["React Native New Architecture"]
-    direction LR
-    IOS["<span style='display:inline-block;width:40px;height:40px'><img src='https://api.iconify.design/logos/apple.svg' width='40' height='40'/></span><br/><b>iOS · arm64</b><br/>Objective-C++ TurboModule"]
-    JSI["Public generated C++ JSI<br/>ReactNativeRussh"]
-    PairingJSI["Private WhipSsh TurboModule<br/>generated TypeScript · C++ JSI · UniFFI<br/>WP4 only"]
-    Android["<span style='display:inline-block;width:40px;height:40px'><img src='https://api.iconify.design/logos/android-icon.svg' width='40' height='40'/></span><br/><b>Android · arm64-v8a</b><br/>Kotlin TurboModule · JNI"]
-
-    IOS -.->|"installs Runtime + CallInvoker"| JSI
-    Android -.->|"installs Runtime + CallInvoker"| JSI
-    IOS -.-> PairingJSI
-    Android -.-> PairingJSI
+  subgraph Rust["Whip Rust core · one Tokio runtime"]
+    Host["HostRuntime<br/>connection generation · reconnect · resource restore"]
+    State["Herdr HostState<br/>snapshot/event reconciliation"]
+    Transport["Owned SSH session<br/>russh · ProxyJump · known_hosts · SFTP"]
+    Protocol["Herdr API/events/terminal<br/>binary terminal hot path"]
+    Pairing["WP4 pairing"]
+    Host --> State
+    Host --> Transport
+    Host --> Protocol
+    Protocol <--> Transport
   end
 
-  NativeClient <-->|"typed calls · owned complete frames<br/>JSON for control operations"| JSI
-  JSI <-->|"UniFFI ABI · owned Vec&lt;u8&gt; callbacks"| Transport["<span style='display:inline-block;width:44px;height:44px'><img src='https://api.iconify.design/logos/rust.svg' width='44' height='44'/></span><br/><b>react-native-russh transport</b><br/>persistent cancellation-safe frame reader<br/>one payload allocation"]
-  WhipAdapter <-->|"pairHost"| PairingJSI
-  PairingJSI <-->|"UniFFI ABI"| PairingTransport["Private WP4 Rust crate<br/>QR-pinned bootstrap SSH"]
+  Xterm["WebView + xterm.js"]
 
-  classDef react fill:#e9f1ff,stroke:#3772c5,color:#172033,stroke-width:1.5px
-  classDef terminal fill:#f2ecff,stroke:#7958b5,color:#172033,stroke-width:1.5px
-  classDef native fill:#e9f7f5,stroke:#23847a,color:#172033,stroke-width:1.5px
-  classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033,stroke-width:1.5px
+  Client <-->|"typed lifecycle, state, and actions"| Module
+  Renderer <-->|"terminal/graphics buffers once across JSI"| Module
+  Module <--> Host
+  Module --> Pairing
+  Renderer <--> Xterm
 
-  class App,Pairing,TerminalHost,HerdrClient,WhipAdapter,NativeClient react
-  class WebView,Xterm,Assets terminal
-  class IOS,JSI,PairingJSI,Android native
-  class Transport,PairingTransport rust
+  classDef react fill:#e9f1ff,stroke:#3772c5,color:#172033
+  classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
+  classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
+  class Screens,Client,Renderer,Xterm react
+  class Module native
+  class Host,State,Transport,Protocol,Pairing rust

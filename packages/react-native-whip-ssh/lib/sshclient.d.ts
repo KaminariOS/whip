@@ -1,6 +1,6 @@
-import BaseSSHClient, { type CallbackFunction } from 'react-native-russh';
+import BaseSSHClient, { type CallbackFunction } from './base-sshclient';
 
-export * from 'react-native-russh';
+export * from './base-sshclient';
 
 export interface HerdrBridgeEvent {
   type:
@@ -100,8 +100,6 @@ export interface NativeAgentTranscriptUpdate {
 
 export interface HostRuntimeConnection {
   readonly runtimeId: string;
-  readonly transportKey: string;
-  transportClient: SSHClient;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   recover(immediate: boolean, reason: string): Promise<void>;
@@ -121,6 +119,27 @@ export interface HostRuntimeConnection {
   closeAllHerdrBridges(): void;
   hasHerdrBridge(terminalId: string): boolean;
   isHerdrBridgeOpening(terminalId: string): boolean;
+  openSshShell(terminalId: string, columns: number, rows: number, handler: {
+    data(bytes: ArrayBuffer): void;
+    closed?(reason: string): void;
+  }): Promise<void>;
+  sshShellInput(terminalId: string, bytes: ArrayBuffer): void;
+  resizeSshShell(terminalId: string, columns: number, rows: number): void;
+  closeSshShell(terminalId: string): void;
+  hasSshShell(terminalId: string): boolean;
+  execute(command: string): Promise<string>;
+  remoteHome(): Promise<string>;
+  measureHostLatency(): Promise<number>;
+  openLocalForward(remoteHost: string, remotePort: number): Promise<number>;
+  closeLocalForward(localPort: number): void;
+  sftpLs(path: string): Promise<LsResult[]>;
+  sftpRemove(path: string, directory: boolean): Promise<void>;
+  sftpCreateDirAll(path: string): Promise<void>;
+  sftpUpload(localPath: string, remotePath: string, exactPath?: boolean): Promise<void>;
+  sftpDownload(remotePath: string, localDirectory: string): Promise<string>;
+  cancelSftpUpload(): void;
+  startSftpFileServer(remotePath: string): Promise<{ localPort: number; token: string }>;
+  closeSftpFileServer(localPort: number): void;
   resolvedSocketPath(): string | undefined;
   resolveHerdrSocketPath(): Promise<string>;
 }
@@ -141,53 +160,8 @@ export interface PairHostResult {
   alreadyPresent: boolean;
 }
 
-/** Whip's private product adapter over the public react-native-russh client. */
-export default class SSHClient extends BaseSSHClient {
-  static createHostRuntime(config: {
-    runtimeId: string;
-    ssh: { host: string; port: number; username: string; authMode: 'password' | 'key'; secret: string; passphrase?: string; forwardAgent?: boolean };
-    jumpHosts: Array<{ host: string; port: number; username: string; authMode: 'password' | 'key'; secret: string; passphrase?: string; forwardAgent?: boolean }>;
-    sessionName: string;
-    socketPath?: string;
-    cachedSocketPath?: string;
-  }, lifecycleHandler?: (event: HostRuntimeLifecycleEvent) => void): HostRuntimeConnection;
-  static pairHost(
-    code: string,
-    publicKey: string,
-    deviceName: string,
-  ): Promise<PairHostResult>;
-  static connectWithKey(
-    host: string,
-    port: number,
-    username: string,
-    privateKey: string,
-    passphrase?: string,
-    callback?: CallbackFunction<SSHClient>,
-  ): Promise<SSHClient>;
-  static connectWithKeyViaJump(
-    host: string,
-    port: number,
-    username: string,
-    privateKey: string,
-    passphrase: string | undefined,
-    jumpClient: BaseSSHClient,
-    callback?: CallbackFunction<SSHClient>,
-  ): Promise<SSHClient>;
-  static connectWithPassword(
-    host: string,
-    port: number,
-    username: string,
-    password: string,
-    callback?: CallbackFunction<SSHClient>,
-  ): Promise<SSHClient>;
-  static connectWithPasswordViaJump(
-    host: string,
-    port: number,
-    username: string,
-    password: string,
-    jumpClient: BaseSSHClient,
-    callback?: CallbackFunction<SSHClient>,
-  ): Promise<SSHClient>;
+/** Whip-specific methods augment the single SSH facade without subclassing it. */
+export interface WhipSSHClientExtensions {
   prepareHerdrBridge(
     command: string,
     protocol: number,
@@ -246,3 +220,28 @@ export default class SSHClient extends BaseSSHClient {
   closeHerdrCommandStream(): void;
   disconnect(): void;
 }
+
+/** Declaration merging models prototype augmentation; the runtime has one class. */
+interface SSHClient extends BaseSSHClient, WhipSSHClientExtensions {}
+
+declare class SSHClient {
+  static addNetworkChangeListener(handler: () => void): { remove: () => void };
+  static setKnownHosts(knownHosts: string): void;
+  static getKeyDetails(key: string, passphrase?: string): ReturnType<typeof BaseSSHClient.getKeyDetails>;
+  static generateKeyPair(type: string, passphrase?: string, keySize?: number, comment?: string): ReturnType<typeof BaseSSHClient.generateKeyPair>;
+  static createHostRuntime(config: {
+    runtimeId: string;
+    ssh: { host: string; port: number; username: string; authMode: 'password' | 'key'; secret: string; passphrase?: string; forwardAgent?: boolean };
+    jumpHosts: Array<{ host: string; port: number; username: string; authMode: 'password' | 'key'; secret: string; passphrase?: string; forwardAgent?: boolean }>;
+    sessionName: string;
+    socketPath?: string;
+    cachedSocketPath?: string;
+  }, lifecycleHandler?: (event: HostRuntimeLifecycleEvent) => void): HostRuntimeConnection;
+  static pairHost(code: string, publicKey: string, deviceName: string): Promise<PairHostResult>;
+  static connectWithKey(host: string, port: number, username: string, privateKey: string, passphrase?: string, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
+  static connectWithKeyViaJump(host: string, port: number, username: string, privateKey: string, passphrase: string | undefined, jumpClient: BaseSSHClient, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
+  static connectWithPassword(host: string, port: number, username: string, password: string, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
+  static connectWithPasswordViaJump(host: string, port: number, username: string, password: string, jumpClient: BaseSSHClient, callback?: CallbackFunction<SSHClient>): Promise<SSHClient>;
+}
+
+export default SSHClient;

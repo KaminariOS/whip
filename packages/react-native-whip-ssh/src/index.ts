@@ -60,6 +60,7 @@ import {
   type AgentTranscriptEvent,
   type AgentTranscriptState,
 } from './generated-entry';
+import sshNativeClient from './ssh-native';
 
 type PairingResponse = {
   ok: boolean;
@@ -83,6 +84,7 @@ const bridgeHandlers = new Map<string, Map<string, BridgeHandler>>();
 const eventHandlers = new Map<string, EventHandler>();
 const runtimeHandlers = new Map<string, (event: RuntimeLifecycleEvent) => void>();
 const agentTranscriptHandlers = new Map<string, Map<string, (event: NativeAgentTranscriptUpdate) => void>>();
+const runtimeSshShellHandlers = new Map<string, Map<string, RuntimeSshShellHandler>>();
 
 export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
@@ -155,6 +157,11 @@ export type RuntimeLifecycleEvent =
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
   | { type: 'fatal-error'; message: string };
+
+export type RuntimeSshShellHandler = {
+  data: (bytes: ArrayBuffer) => void;
+  closed?: (reason: string) => void;
+};
 
 export type RuntimeHostState = {
   revision: number;
@@ -890,6 +897,18 @@ const herdrEventSink: HerdrEventSink = {
 const hostRuntimeEventSink = {
   event(event: HostRuntimeEvent): void {
     const { tag, inner } = event;
+    if (tag === HostRuntimeEvent_Tags.SshShellData) {
+      runtimeSshShellHandlers.get(inner.runtimeId)?.get(inner.terminalId)?.data(inner.bytes);
+      return;
+    }
+    if (tag === HostRuntimeEvent_Tags.SshShellClosed) {
+      const handlers = runtimeSshShellHandlers.get(inner.runtimeId);
+      const shell = handlers?.get(inner.terminalId);
+      handlers?.delete(inner.terminalId);
+      if (handlers?.size === 0) runtimeSshShellHandlers.delete(inner.runtimeId);
+      shell?.closed?.(inner.reason);
+      return;
+    }
     const handler = runtimeHandlers.get(inner.runtimeId);
     if (!handler) return;
     switch (tag) {
@@ -945,14 +964,12 @@ setAgentTranscriptEventSink(agentTranscriptEventSink);
 
 export class NativeHostRuntime {
   readonly runtimeId: string;
-  readonly transportKey: string;
 
   constructor(
     private readonly runtime: HostRuntimeLike,
     lifecycleHandler?: (event: RuntimeLifecycleEvent) => void,
   ) {
     this.runtimeId = runtime.runtimeId();
-    this.transportKey = runtime.transportKey();
     if (lifecycleHandler) runtimeHandlers.set(this.runtimeId, lifecycleHandler);
   }
 
@@ -961,8 +978,9 @@ export class NativeHostRuntime {
   async disconnect(): Promise<void> {
     runtimeHandlers.delete(this.runtimeId);
     agentTranscriptHandlers.delete(this.runtimeId);
+    runtimeSshShellHandlers.delete(this.runtimeId);
     eventHandlers.delete(this.runtimeId);
-    bridgeHandlers.delete(this.transportKey);
+    bridgeHandlers.delete(this.runtimeId);
     await this.runtime.disconnect();
   }
 
@@ -1041,11 +1059,11 @@ export class NativeHostRuntime {
     launchMode: number,
     handler: BridgeHandler,
   ): Promise<void> {
-    setBridgeHandler(this.transportKey, terminalId, handler);
+    setBridgeHandler(this.runtimeId, terminalId, handler);
     try {
       await this.runtime.openTerminal(terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx);
     } catch (error) {
-      removeBridgeHandler(this.transportKey, terminalId);
+      removeBridgeHandler(this.runtimeId, terminalId);
       throw bridgeError(error);
     }
   }
@@ -1066,21 +1084,114 @@ export class NativeHostRuntime {
   }
 
   closeHerdrBridge(terminalId: string): void {
-    removeBridgeHandler(this.transportKey, terminalId);
+    removeBridgeHandler(this.runtimeId, terminalId);
     this.runtime.closeTerminal(terminalId);
   }
 
   closeAllHerdrBridges(): void {
-    bridgeHandlers.delete(this.transportKey);
+    bridgeHandlers.delete(this.runtimeId);
     this.runtime.closeAllTerminals();
   }
 
   hasHerdrBridge(terminalId: string): boolean { return this.runtime.hasTerminal(terminalId); }
 
   isHerdrBridgeOpening(terminalId: string): boolean { return this.runtime.isTerminalOpening(terminalId); }
+
+  async openSshShell(
+    terminalId: string,
+    columns: number,
+    rows: number,
+    handler: RuntimeSshShellHandler,
+  ): Promise<void> {
+    let handlers = runtimeSshShellHandlers.get(this.runtimeId);
+    if (!handlers) {
+      handlers = new Map();
+      runtimeSshShellHandlers.set(this.runtimeId, handlers);
+    }
+    handlers.set(terminalId, handler);
+    try {
+      await this.runtime.openSshShell(terminalId, columns, rows);
+    } catch (error) {
+      handlers.delete(terminalId);
+      if (handlers.size === 0) runtimeSshShellHandlers.delete(this.runtimeId);
+      throw error;
+    }
+  }
+
+  sshShellInput(terminalId: string, bytes: ArrayBuffer): void {
+    this.runtime.sshShellInput(terminalId, bytes);
+  }
+
+  resizeSshShell(terminalId: string, columns: number, rows: number): void {
+    this.runtime.resizeSshShell(terminalId, columns, rows);
+  }
+
+  closeSshShell(terminalId: string): void {
+    runtimeSshShellHandlers.get(this.runtimeId)?.delete(terminalId);
+    this.runtime.closeSshShell(terminalId);
+  }
+
+  hasSshShell(terminalId: string): boolean { return this.runtime.hasSshShell(terminalId); }
+
+  execute(command: string): Promise<string> { return this.runtime.execute(command); }
+
+  remoteHome(): Promise<string> { return this.runtime.remoteHome(); }
+
+  measureHostLatency(): Promise<number> { return this.runtime.measureHostLatency(); }
+
+  openLocalForward(remoteHost: string, remotePort: number): Promise<number> {
+    return this.runtime.openLocalForward(remoteHost, remotePort);
+  }
+
+  closeLocalForward(localPort: number): void { this.runtime.closeLocalForward(localPort); }
+
+  async sftpLs(path: string): Promise<Array<{
+    filename: string;
+    isDirectory: boolean;
+    modificationDate: string;
+    lastAccess: string;
+    fileSize: number;
+    ownerUserID: number;
+    ownerGroupID: number;
+    flags: number;
+  }>> {
+    return (await this.runtime.sftpList(path)).map(entry => ({
+      filename: entry.filename,
+      isDirectory: entry.isDirectory,
+      modificationDate: entry.modificationDate,
+      lastAccess: entry.lastAccess,
+      fileSize: Number(entry.fileSize),
+      ownerUserID: entry.ownerUserId,
+      ownerGroupID: entry.ownerGroupId,
+      flags: 0,
+    }));
+  }
+
+  sftpRemove(path: string, directory: boolean): Promise<void> {
+    return this.runtime.sftpRemove(path, directory);
+  }
+
+  sftpCreateDirAll(path: string): Promise<void> { return this.runtime.sftpCreateDirAll(path); }
+
+  sftpUpload(localPath: string, remotePath: string, exactPath = false): Promise<void> {
+    return this.runtime.sftpUpload(localPath, remotePath, exactPath);
+  }
+
+  sftpDownload(remotePath: string, localDirectory: string): Promise<string> {
+    return this.runtime.sftpDownload(remotePath, localDirectory);
+  }
+
+  cancelSftpUpload(): void { this.runtime.cancelSftpUpload(); }
+
+  startSftpFileServer(remotePath: string): Promise<{ localPort: number; token: string }> {
+    return this.runtime.startSftpFileServer(remotePath);
+  }
+
+  closeSftpFileServer(localPort: number): void { this.runtime.closeSftpFileServer(localPort); }
 }
 
 const nativeClient = {
+  ...sshNativeClient,
   createHostRuntime(config: RuntimeConfig, handler?: (event: RuntimeLifecycleEvent) => void): NativeHostRuntime {
     const runtime = createHostRuntimeRust({
       runtimeId: config.runtimeId,

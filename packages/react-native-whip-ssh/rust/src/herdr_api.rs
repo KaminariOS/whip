@@ -1,18 +1,12 @@
 //! Typed Herdr control API requests, responses, and shared domain validation.
 
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char};
-use std::sync::{
-    OnceLock,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::{Arc, OnceLock};
 
+use crate::ssh::SshSession;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
-use tokio::sync::oneshot;
-
-use crate::russh_transport;
 
 const CONTROL_TIMEOUT_MS: u64 = 15_000;
 const MAX_CONTROL_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
@@ -755,17 +749,10 @@ impl HerdrControlResultKind {
     }
 }
 
-static NEXT_REQUEST_CONTEXT: AtomicU64 = AtomicU64::new(1);
 static CONTROL_SEQUENCES: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
-type PendingRequest = oneshot::Sender<Result<Vec<u8>, String>>;
-static PENDING_REQUESTS: OnceLock<Mutex<HashMap<u64, PendingRequest>>> = OnceLock::new();
 
 fn control_sequences() -> &'static Mutex<HashMap<String, u64>> {
     CONTROL_SEQUENCES.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn pending_requests() -> &'static Mutex<HashMap<u64, PendingRequest>> {
-    PENDING_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn next_request_id(client_key: &str) -> String {
@@ -773,32 +760,6 @@ fn next_request_id(client_key: &str) -> String {
     let sequence = sequences.entry(client_key.to_owned()).or_default();
     *sequence += 1;
     format!("android_{sequence}")
-}
-
-unsafe extern "C" fn request_finished(
-    context: u64,
-    bytes: *const u8,
-    length: usize,
-    error: *const c_char,
-) {
-    let Some(sender) = pending_requests().lock().remove(&context) else {
-        return;
-    };
-    let result = if !error.is_null() {
-        Err(unsafe { CStr::from_ptr(error) }
-            .to_string_lossy()
-            .into_owned())
-    } else if bytes.is_null() && length != 0 {
-        Err("native SSH transport returned a null control response".to_owned())
-    } else {
-        let response = if length == 0 {
-            Vec::new()
-        } else {
-            unsafe { std::slice::from_raw_parts(bytes, length) }.to_vec()
-        };
-        Ok(response)
-    };
-    let _ = sender.send(result);
 }
 
 fn transport_error(message: String) -> HerdrControlError {
@@ -811,33 +772,22 @@ fn transport_error(message: String) -> HerdrControlError {
 
 pub(crate) async fn request_on_runtime(
     client_key: String,
+    ssh: Arc<SshSession>,
     socket_path: String,
     request: HerdrControlRequest,
 ) -> Result<HerdrControlResult, HerdrControlError> {
     let request_id = next_request_id(&client_key);
     let bytes = request.encode(&request_id)?;
-    let context = NEXT_REQUEST_CONTEXT.fetch_add(1, Ordering::Relaxed);
-    let (sender, receiver) = oneshot::channel();
-    pending_requests().lock().insert(context, sender);
-    if let Err(error) = russh_transport::request(
-        context,
-        &client_key,
-        &socket_path,
-        &bytes,
-        b'\n',
-        CONTROL_TIMEOUT_MS,
-        MAX_CONTROL_RESPONSE_BYTES,
-        request_finished,
-    ) {
-        pending_requests().lock().remove(&context);
-        return Err(transport_error(error));
-    }
-    let response = receiver
+    let response = ssh
+        .request_unix_socket(
+            &socket_path,
+            &bytes,
+            b'\n',
+            CONTROL_TIMEOUT_MS,
+            MAX_CONTROL_RESPONSE_BYTES,
+        )
         .await
-        .map_err(|_| {
-            HerdrControlError::RequestCancelled("Herdr control request was cancelled".to_owned())
-        })?
-        .map_err(transport_error)?;
+        .map_err(|error| transport_error(error.to_string()))?;
     parse_response(&request, &response)
 }
 
@@ -848,8 +798,10 @@ pub async fn herdr_control_request(
     request: HerdrControlRequest,
 ) -> Result<HerdrControlResult, HerdrControlError> {
     let runtime = crate::runtime().map_err(HerdrControlError::TransportDisconnected)?;
+    let ssh = SshSession::registered(&client_key)
+        .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
     runtime
-        .spawn(request_on_runtime(client_key, socket_path, request))
+        .spawn(request_on_runtime(client_key, ssh, socket_path, request))
         .await
         .map_err(|error| {
             HerdrControlError::RequestCancelled(format!(

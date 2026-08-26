@@ -11,7 +11,6 @@ fi
 
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 module_dirs=(
-  "$root_dir/packages/react-native-russh"
   "$root_dir/packages/react-native-whip-ssh"
 )
 build_path="$PATH"

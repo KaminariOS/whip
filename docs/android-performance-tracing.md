@@ -210,7 +210,7 @@ Background-work correlation slices:
   Normal connected operation performs no recurring `pane.read` cache refresh.
 
 The native callback markers are documented diagnostic edits in generated
-`packages/react-native-russh/cpp/generated/react_native_russh.cpp`, because the
+`packages/react-native-whip-ssh/cpp/generated/whip_ssh.cpp`, because the
 current UniFFI generator exposes no callback wrapper/template hook. Regenerating
 the binding must reapply the small `AndroidTraceSection` wrappers around method
 1 (`unix_socket_channel_data`) and method 2 (`exec_channel_data`). They
@@ -270,9 +270,9 @@ network dominates. If either local slice is repeatedly tens of milliseconds,
 inspect its JS, WebView, CPU scheduling, and frame-timeline tracks before treating
 the app cost as negligible.
 
-The passive diagnostic adds Android-only markers to the repository-owned
-`react-native-russh` package at frame completion and at the generated callback
-boundary. The callback itself retains its blocking buffer-ownership contract.
+The passive diagnostic adds Android-only markers to the merged Whip Rust core
+at frame completion and at the generated callback boundary. The callback itself
+retains its blocking buffer-ownership contract.
 
 Inbound callback delivery is decoupled from socket I/O. Each Unix-socket
 channel splits its read and write halves, queues complete owned frames in order,

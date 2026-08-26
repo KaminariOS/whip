@@ -8,7 +8,6 @@ use std::sync::{
 use std::time::Duration;
 
 use parking_lot::{Mutex, RwLock};
-use serde_json::{Value, json};
 use tokio::sync::{Notify, watch};
 
 use crate::agent_sessions::{AgentSessionError, AgentSessionManager, AgentSessionOpenResult};
@@ -24,7 +23,7 @@ use crate::herdr_terminal::{
     herdr_terminal_input, herdr_terminal_resize, herdr_terminal_scroll, start_bridge_on_runtime,
 };
 use crate::host_state::{ApplyResult, HostState, HostStateSnapshot, now_ms};
-use crate::russh_transport::{self, CallError};
+use crate::ssh::{SshConnectionConfig, SshCredential, SshFailure, SshSession};
 
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
 const INITIAL_RECONNECT_DELAY_MS: u64 = 750;
@@ -124,6 +123,16 @@ pub enum HostRuntimeEvent {
         state: HostTerminalState,
         error: Option<String>,
     },
+    SshShellData {
+        runtime_id: String,
+        terminal_id: String,
+        bytes: Vec<u8>,
+    },
+    SshShellClosed {
+        runtime_id: String,
+        terminal_id: String,
+        reason: String,
+    },
     HostStateChanged {
         runtime_id: String,
         state: HostStateSnapshot,
@@ -146,6 +155,24 @@ pub enum HostRuntimeEvent {
 #[uniffi::export(with_foreign)]
 pub trait HostRuntimeEventSink: Send + Sync {
     fn event(&self, event: HostRuntimeEvent);
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct HostSftpEntry {
+    pub filename: String,
+    pub is_directory: bool,
+    pub modification_date: String,
+    pub last_access: String,
+    pub file_size: u64,
+    pub owner_user_id: u32,
+    pub owner_group_id: u32,
+    pub permissions: String,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct HostSftpFileServer {
+    pub local_port: u16,
+    pub token: String,
 }
 
 #[derive(Clone, Debug, thiserror::Error, uniffi::Error, PartialEq, Eq)]
@@ -172,11 +199,11 @@ pub enum HostRuntimeError {
     InvalidConfiguration(String),
 }
 
-impl From<CallError> for HostRuntimeError {
-    fn from(error: CallError) -> Self {
-        match error.code.as_deref() {
-            Some("AUTHENTICATION_FAILED") => Self::AuthenticationFailure(error.message),
-            Some("HOST_KEY_UNKNOWN" | "HOST_KEY_CHANGED") => Self::HostKeyFailure(error.message),
+impl From<SshFailure> for HostRuntimeError {
+    fn from(error: SshFailure) -> Self {
+        match error.code.as_str() {
+            "AUTHENTICATION_FAILED" => Self::AuthenticationFailure(error.message),
+            "HOST_KEY_UNKNOWN" | "HOST_KEY_CHANGED" => Self::HostKeyFailure(error.message),
             _ => Self::SshTransportFailure(error.message),
         }
     }
@@ -210,7 +237,6 @@ struct RuntimeState {
     reconnect_running: bool,
     explicit_disconnect: bool,
     last_error: Option<String>,
-    jump_keys: Vec<String>,
     socket_path: Option<String>,
     socket_from_cache: bool,
     protocol: Option<u32>,
@@ -233,7 +259,6 @@ impl RuntimeState {
             reconnect_running: false,
             explicit_disconnect: false,
             last_error: None,
-            jump_keys: Vec::new(),
             socket_path,
             socket_from_cache: config.socket_path.is_none() && config.cached_socket_path.is_some(),
             protocol: None,
@@ -301,9 +326,10 @@ impl RuntimeState {
 
 struct RuntimeInner {
     id: String,
-    transport_key: String,
     config: HostRuntimeConfig,
     state: Mutex<RuntimeState>,
+    ssh: Arc<RwLock<Option<Arc<SshSession>>>>,
+    jump_sessions: Mutex<Vec<Arc<SshSession>>>,
     agents: AgentSessionManager,
     cancellation: watch::Sender<u64>,
     settled: Notify,
@@ -358,111 +384,92 @@ fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRuntimeError> {
     Ok(())
 }
 
-fn credential_json(credential: &HostSshCredential) -> Value {
-    match credential {
-        HostSshCredential::Password { password } => json!({
-            "type": "password",
-            "password": password,
-        }),
-        HostSshCredential::Key {
-            private_key,
-            passphrase,
-        } => json!({
-            "type": "key",
-            "privateKey": private_key,
-            "passphrase": passphrase,
-        }),
+fn current_ssh(inner: &RuntimeInner) -> Result<Arc<SshSession>, HostRuntimeError> {
+    inner.ssh.read().clone().ok_or_else(|| {
+        HostRuntimeError::RuntimeDisconnected("host SSH session is disconnected".to_owned())
+    })
+}
+
+fn ssh_config(config: &HostSshConfig) -> SshConnectionConfig {
+    SshConnectionConfig {
+        host: config.host.trim().to_owned(),
+        port: config.port,
+        username: config.username.trim().to_owned(),
+        credential: match &config.credential {
+            HostSshCredential::Password { password } => SshCredential::Password(password.clone()),
+            HostSshCredential::Key {
+                private_key,
+                passphrase,
+            } => SshCredential::Key {
+                private_key: private_key.clone(),
+                passphrase: passphrase.clone(),
+            },
+        },
+        forward_agent: config.forward_agent,
     }
 }
 
-async fn connect_one(
-    config: &HostSshConfig,
-    key: &str,
-    jump_key: Option<&str>,
-) -> Result<(), HostRuntimeError> {
-    let mut params = json!({
-        "host": config.host.trim(),
-        "port": config.port,
-        "username": config.username.trim(),
-        "credential": credential_json(&config.credential),
-        "key": key,
-    });
-    if let Some(jump_key) = jump_key {
-        params["jumpKey"] = Value::String(jump_key.to_owned());
+async fn disconnect_sessions(sessions: Vec<Arc<SshSession>>) {
+    for session in sessions.into_iter().rev() {
+        session.disconnect().await;
     }
-    russh_transport::call("connect", params).await?;
-    if config.forward_agent {
-        russh_transport::call(
-            "setAgentForwarding",
-            json!({
-                "key": key,
-                "enabled": true,
-            }),
-        )
-        .await?;
-    }
-    Ok(())
 }
 
-async fn disconnect_key(key: &str) {
-    let _ = russh_transport::call("disconnect", json!({ "key": key })).await;
-}
-
-async fn connect_chain(inner: &RuntimeInner, epoch: u64) -> Result<Vec<String>, HostRuntimeError> {
-    let mut jump_keys: Vec<String> = Vec::new();
-    let mut previous_jump: Option<String> = None;
-    for (index, jump) in inner.config.jump_hosts.iter().enumerate() {
-        let key = format!("{}-jump-{epoch}-{index}", inner.transport_key);
-        if let Err(error) = connect_one(jump, &key, previous_jump.as_deref()).await {
-            for key in jump_keys.iter().rev() {
-                disconnect_key(key).await;
+async fn connect_chain(
+    inner: &RuntimeInner,
+) -> Result<(Arc<SshSession>, Vec<Arc<SshSession>>), HostRuntimeError> {
+    let mut jumps: Vec<Arc<SshSession>> = Vec::new();
+    for jump in &inner.config.jump_hosts {
+        match SshSession::connect(&ssh_config(jump), jumps.last().map(Arc::as_ref)).await {
+            Ok(session) => jumps.push(session),
+            Err(error) => {
+                disconnect_sessions(jumps).await;
+                return Err(error.into());
             }
-            return Err(error);
         }
-        previous_jump = Some(key.clone());
-        jump_keys.push(key);
     }
-    if let Err(error) = connect_one(
-        &inner.config.ssh,
-        &inner.transport_key,
-        previous_jump.as_deref(),
+    match SshSession::connect(
+        &ssh_config(&inner.config.ssh),
+        jumps.last().map(Arc::as_ref),
     )
     .await
     {
-        for key in jump_keys.iter().rev() {
-            disconnect_key(key).await;
+        Ok(session) => Ok((session, jumps)),
+        Err(error) => {
+            disconnect_sessions(jumps).await;
+            Err(error.into())
         }
-        return Err(error);
     }
-    Ok(jump_keys)
 }
 
 async fn finish_connection(
     inner: Arc<RuntimeInner>,
     epoch: u64,
-    jump_keys: Vec<String>,
+    ssh: Arc<SshSession>,
+    jumps: Vec<Arc<SshSession>>,
     restoring: bool,
 ) -> Result<u32, HostRuntimeError> {
-    let old_jump_keys = {
+    let installed = {
         let mut state = inner.state.lock();
-        if state.install_connection(epoch) {
-            Some(std::mem::replace(&mut state.jump_keys, jump_keys.clone()))
-        } else {
+        if !state.install_connection(epoch) {
             None
+        } else {
+            let old_ssh = inner.ssh.write().replace(ssh.clone());
+            let old_jumps = std::mem::replace(&mut *inner.jump_sessions.lock(), jumps.clone());
+            Some((old_ssh, old_jumps))
         }
     };
-    let Some(old_jump_keys) = old_jump_keys else {
-        disconnect_key(&inner.transport_key).await;
-        for key in jump_keys.iter().rev() {
-            disconnect_key(key).await;
-        }
+    let Some((old_ssh, old_jumps)) = installed else {
+        ssh.disconnect().await;
+        disconnect_sessions(jumps).await;
         return Err(HostRuntimeError::StaleOperation(
             "stale host connection completed after a newer lifecycle operation".to_owned(),
         ));
     };
-    for key in old_jump_keys.iter().rev() {
-        disconnect_key(key).await;
+    if let Some(old_ssh) = old_ssh {
+        old_ssh.disconnect().await;
     }
+    disconnect_sessions(old_jumps).await;
     let generation = inner.state.lock().generation;
     inner.agents.connected(generation);
     emit_status(&inner);
@@ -492,9 +499,9 @@ async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), HostRuntimeErro
     let epoch = inner.state.lock().begin_connect()?;
     let _ = inner.cancellation.send(epoch);
     emit_status(&inner);
-    match connect_chain(&inner, epoch).await {
-        Ok(jumps) => {
-            finish_connection(inner, epoch, jumps, false).await?;
+    match connect_chain(&inner).await {
+        Ok((ssh, jumps)) => {
+            finish_connection(inner, epoch, ssh, jumps, false).await?;
             Ok(())
         }
         Err(error) => {
@@ -564,8 +571,8 @@ async fn reconnect_loop(
     initial_reason: String,
     immediate: bool,
 ) {
-    close_herdr_event_subscription(inner.transport_key.clone());
-    close_all_herdr_terminal_bridges(inner.transport_key.clone());
+    close_herdr_event_subscription(inner.id.clone());
+    close_all_herdr_terminal_bridges(inner.id.clone());
     let mut cancellation = inner.cancellation.subscribe();
     let mut last_error = initial_reason;
     for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
@@ -593,19 +600,21 @@ async fn reconnect_loop(
                 _ = cancellation.changed() => return,
             }
         }
-        match connect_chain(&inner, epoch).await {
-            Ok(jumps) => match finish_connection(inner.clone(), epoch, jumps, true).await {
-                Ok(restored) => {
-                    let generation = inner.state.lock().generation;
-                    emit(HostRuntimeEvent::Reconnected {
-                        runtime_id: inner.id.clone(),
-                        generation,
-                        restored_terminals: restored,
-                    });
-                    return;
+        match connect_chain(&inner).await {
+            Ok((ssh, jumps)) => {
+                match finish_connection(inner.clone(), epoch, ssh, jumps, true).await {
+                    Ok(restored) => {
+                        let generation = inner.state.lock().generation;
+                        emit(HostRuntimeEvent::Reconnected {
+                            runtime_id: inner.id.clone(),
+                            generation,
+                            restored_terminals: restored,
+                        });
+                        return;
+                    }
+                    Err(_) => return,
                 }
-                Err(_) => return,
-            },
+            }
             Err(error) => last_error = error.to_string(),
         }
     }
@@ -658,21 +667,13 @@ async fn resolve_socket_path(inner: &RuntimeInner) -> Result<String, HostRuntime
     if let Some(path) = inner.state.lock().socket_path.clone() {
         return Ok(path);
     }
-    let value = russh_transport::call(
-        "getRemoteHome",
-        json!({
-            "key": inner.transport_key,
-        }),
-    )
-    .await?;
-    let home = value
-        .as_str()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            HostRuntimeError::ControlConnectionFailure(
-                "SSH transport returned an invalid remote home directory".to_owned(),
-            )
-        })?;
+    let output = current_ssh(inner)?.execute(r#"printf %s "$HOME""#).await?;
+    let home = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let home = (!home.is_empty()).then_some(home).ok_or_else(|| {
+        HostRuntimeError::ControlConnectionFailure(
+            "SSH transport returned an invalid remote home directory".to_owned(),
+        )
+    })?;
     let data_dir = if inner.config.session_name.trim().is_empty() {
         format!("{home}/.config/herdr")
     } else {
@@ -742,7 +743,8 @@ async fn ensure_herdr_server(inner: &RuntimeInner) -> Result<(), HostRuntimeErro
     }
     let socket = resolve_socket_path(inner).await?;
     let result = request_on_runtime(
-        inner.transport_key.clone(),
+        inner.id.clone(),
+        current_ssh(inner)?,
         socket.clone(),
         HerdrControlRequest::Ping,
     )
@@ -771,8 +773,14 @@ async fn control_request_inner(
     let mut socket = resolve_socket_path(&inner)
         .await
         .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
-    let mut result =
-        request_on_runtime(inner.transport_key.clone(), socket.clone(), request.clone()).await;
+    let mut result = request_on_runtime(
+        inner.id.clone(),
+        current_ssh(&inner)
+            .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?,
+        socket.clone(),
+        request.clone(),
+    )
+    .await;
     if result
         .as_ref()
         .err()
@@ -788,8 +796,14 @@ async fn control_request_inner(
         socket = resolve_socket_path(&inner)
             .await
             .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
-        result =
-            request_on_runtime(inner.transport_key.clone(), socket.clone(), request.clone()).await;
+        result = request_on_runtime(
+            inner.id.clone(),
+            current_ssh(&inner)
+                .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?,
+            socket.clone(),
+            request.clone(),
+        )
+        .await;
     }
     match result {
         Ok(result) => {
@@ -813,9 +827,15 @@ async fn control_request_inner(
                 let socket = resolve_socket_path(&inner)
                     .await
                     .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
-                let result =
-                    request_on_runtime(inner.transport_key.clone(), socket.clone(), request)
-                        .await?;
+                let result = request_on_runtime(
+                    inner.id.clone(),
+                    current_ssh(&inner).map_err(|error| {
+                        HerdrControlError::TransportDisconnected(error.to_string())
+                    })?,
+                    socket.clone(),
+                    request,
+                )
+                .await?;
                 update_server_from_result(&inner, socket, &result);
                 reconcile_control_result(&inner, &request_for_state, &result);
                 Ok(result)
@@ -939,7 +959,9 @@ async fn start_desired_events(inner: Arc<RuntimeInner>, epoch: u64) -> Result<()
             event.operation_epoch,
         )
     };
-    start_events(inner.transport_key.clone(), socket, protocol, pane_ids).await?;
+    let ssh = current_ssh(&inner)
+        .map_err(|error| HerdrEventError::TransportDisconnected(error.to_string()))?;
+    start_events(inner.id.clone(), ssh, socket, protocol, pane_ids).await?;
     let state = inner.state.lock();
     if state.epoch != epoch
         || state
@@ -948,7 +970,7 @@ async fn start_desired_events(inner: Arc<RuntimeInner>, epoch: u64) -> Result<()
             .is_none_or(|event| event.operation_epoch != operation_epoch)
     {
         drop(state);
-        close_herdr_event_subscription(inner.transport_key.clone());
+        close_herdr_event_subscription(inner.id.clone());
         return Err(HerdrEventError::SubscriptionUnavailable(
             "stale event subscription completed after replacement".to_owned(),
         ));
@@ -985,7 +1007,7 @@ async fn start_or_update_state_events(inner: Arc<RuntimeInner>) -> Result<(), He
     if !changed {
         return Ok(());
     }
-    close_herdr_event_subscription(inner.transport_key.clone());
+    close_herdr_event_subscription(inner.id.clone());
     start_desired_events(inner, epoch).await
 }
 
@@ -1019,7 +1041,8 @@ async fn open_terminal_inner(
         )
     };
     let result = start_bridge_on_runtime(
-        inner.transport_key.clone(),
+        inner.id.clone(),
+        current_ssh(&inner)?,
         client_socket_path(&socket),
         protocol,
         terminal_id.clone(),
@@ -1038,7 +1061,7 @@ async fn open_terminal_inner(
     let mut state = inner.state.lock();
     let Some(current) = state.terminals.get_mut(&terminal_id) else {
         drop(state);
-        close_herdr_terminal_bridge(inner.transport_key.clone(), terminal_id.clone());
+        close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
         inner.settled.notify_waiters();
         return Err(HostRuntimeError::StaleOperation(format!(
             "terminal {terminal_id} was closed while opening"
@@ -1046,7 +1069,7 @@ async fn open_terminal_inner(
     };
     if current.operation_epoch != operation_epoch || current.state == HostTerminalState::Closed {
         drop(state);
-        close_herdr_terminal_bridge(inner.transport_key.clone(), terminal_id.clone());
+        close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
         inner.settled.notify_waiters();
         return Err(HostRuntimeError::StaleOperation(format!(
             "stale open completed for terminal {terminal_id}"
@@ -1179,7 +1202,7 @@ async fn open_terminal_with_retry(
 async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u32 {
     let event_requested = inner.state.lock().event.is_some();
     if event_requested {
-        close_herdr_event_subscription(inner.transport_key.clone());
+        close_herdr_event_subscription(inner.id.clone());
         if let Err(error) = start_desired_events(inner.clone(), epoch).await {
             emit(HostRuntimeEvent::EventSubscriptionClosed {
                 runtime_id: inner.id.clone(),
@@ -1262,7 +1285,7 @@ fn schedule_event_retry(inner: Arc<RuntimeInner>, reason: String) {
                         return;
                     }
                 }
-                close_herdr_event_subscription(inner.transport_key.clone());
+                close_herdr_event_subscription(inner.id.clone());
                 match start_desired_events(inner.clone(), epoch).await {
                     Ok(()) => {
                         let generation = {
@@ -1453,20 +1476,17 @@ pub fn create_host_runtime(
         )));
     }
     let (cancellation, _) = watch::channel(0);
-    let transport_nonce = NEXT_RUNTIME_ID.fetch_add(1, Ordering::Relaxed);
-    let transport_key = format!("whip-runtime-{id}-{transport_nonce}");
+    let ssh = Arc::new(RwLock::new(None));
     let inner = Arc::new(RuntimeInner {
         id: id.clone(),
-        transport_key: transport_key.clone(),
         state: Mutex::new(RuntimeState::new(&config)),
-        agents: AgentSessionManager::new(id.clone(), transport_key),
+        agents: AgentSessionManager::new(id.clone(), ssh.clone()),
+        ssh,
+        jump_sessions: Mutex::new(Vec::new()),
         config,
         cancellation,
         settled: Notify::new(),
     });
-    runtimes()
-        .write()
-        .insert(inner.transport_key.clone(), Arc::downgrade(&inner));
     runtimes().write().insert(id, Arc::downgrade(&inner));
     Ok(Arc::new(HostRuntime { inner }))
 }
@@ -1475,11 +1495,6 @@ pub fn create_host_runtime(
 impl HostRuntime {
     pub fn runtime_id(&self) -> String {
         self.inner.id.clone()
-    }
-
-    /// Private-package compatibility handle for independent exec/SFTP features.
-    pub fn transport_key(&self) -> String {
-        self.inner.transport_key.clone()
     }
 
     pub fn status(&self) -> HostRuntimeStatus {
@@ -1582,27 +1597,27 @@ impl HostRuntime {
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
-                let jump_keys = {
+                {
                     let mut state = inner.state.lock();
                     if state.connection == HostConnectionState::Disconnected {
                         drop(state);
                         runtimes().write().remove(&inner.id);
-                        runtimes().write().remove(&inner.transport_key);
                         return Ok(());
                     }
                     let epoch = state.disconnect();
                     let _ = inner.cancellation.send(epoch);
-                    std::mem::take(&mut state.jump_keys)
-                };
+                }
                 emit_status(&inner);
                 emit_host_state(&inner, Vec::new());
                 inner.agents.disconnected(true, "Host runtime disconnected");
-                close_herdr_event_subscription(inner.transport_key.clone());
-                close_all_herdr_terminal_bridges(inner.transport_key.clone());
-                disconnect_key(&inner.transport_key).await;
-                for key in jump_keys.iter().rev() {
-                    disconnect_key(key).await;
+                close_herdr_event_subscription(inner.id.clone());
+                close_all_herdr_terminal_bridges(inner.id.clone());
+                let ssh = inner.ssh.write().take();
+                let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
+                if let Some(ssh) = ssh {
+                    ssh.disconnect().await;
                 }
+                disconnect_sessions(jumps).await;
                 {
                     let mut state = inner.state.lock();
                     state.connection = HostConnectionState::Disconnected;
@@ -1612,7 +1627,6 @@ impl HostRuntime {
                 emit_host_state(&inner, Vec::new());
                 inner.settled.notify_waiters();
                 runtimes().write().remove(&inner.id);
-                runtimes().write().remove(&inner.transport_key);
                 Ok(())
             })
             .await
@@ -1656,7 +1670,7 @@ impl HostRuntime {
         crate::runtime()
             .map_err(HerdrEventError::TransportDisconnected)?
             .spawn(async move {
-                close_herdr_event_subscription(inner.transport_key.clone());
+                close_herdr_event_subscription(inner.id.clone());
                 let epoch = {
                     let mut state = inner.state.lock();
                     let operation_epoch = state
@@ -1680,7 +1694,7 @@ impl HostRuntime {
 
     pub fn unsubscribe_events(&self) {
         self.inner.state.lock().event = None;
-        close_herdr_event_subscription(self.inner.transport_key.clone());
+        close_herdr_event_subscription(self.inner.id.clone());
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1770,7 +1784,7 @@ impl HostRuntime {
             )));
         }
         drop(state);
-        herdr_terminal_input(self.inner.transport_key.clone(), terminal_id, text)
+        herdr_terminal_input(self.inner.id.clone(), terminal_id, text)
             .map_err(|error| HostRuntimeError::TerminalUnavailable(error.to_string()))
     }
 
@@ -1798,7 +1812,7 @@ impl HostRuntime {
             }
         }
         herdr_terminal_resize(
-            self.inner.transport_key.clone(),
+            self.inner.id.clone(),
             terminal_id,
             columns.max(20),
             rows.max(8),
@@ -1818,7 +1832,7 @@ impl HostRuntime {
         modifiers: u8,
     ) -> Result<(), HostRuntimeError> {
         herdr_terminal_scroll(
-            self.inner.transport_key.clone(),
+            self.inner.id.clone(),
             terminal_id,
             up,
             lines,
@@ -1831,7 +1845,7 @@ impl HostRuntime {
 
     pub fn close_terminal(&self, terminal_id: String) {
         self.inner.state.lock().terminals.remove(&terminal_id);
-        close_herdr_terminal_bridge(self.inner.transport_key.clone(), terminal_id.clone());
+        close_herdr_terminal_bridge(self.inner.id.clone(), terminal_id.clone());
         emit(HostRuntimeEvent::TerminalStateChanged {
             runtime_id: self.inner.id.clone(),
             terminal_id,
@@ -1850,7 +1864,7 @@ impl HostRuntime {
             .drain()
             .map(|(terminal_id, _)| terminal_id)
             .collect::<Vec<_>>();
-        close_all_herdr_terminal_bridges(self.inner.transport_key.clone());
+        close_all_herdr_terminal_bridges(self.inner.id.clone());
         for terminal_id in terminal_ids {
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: self.inner.id.clone(),
@@ -1884,6 +1898,279 @@ impl HostRuntime {
                 )
             })
     }
+
+    pub async fn open_ssh_shell(
+        &self,
+        terminal_id: String,
+        columns: u32,
+        rows: u32,
+    ) -> Result<(), HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                let epoch = {
+                    let state = inner.state.lock();
+                    if state.connection != HostConnectionState::Connected {
+                        return Err(HostRuntimeError::RuntimeDisconnected(
+                            "host runtime is not connected".to_owned(),
+                        ));
+                    }
+                    state.epoch
+                };
+                let ssh = current_ssh(&inner)?;
+                let runtime_id = inner.id.clone();
+                let data_terminal_id = terminal_id.clone();
+                let data = Arc::new(move |bytes| {
+                    emit(HostRuntimeEvent::SshShellData {
+                        runtime_id: runtime_id.clone(),
+                        terminal_id: data_terminal_id.clone(),
+                        bytes,
+                    });
+                });
+                let runtime_id = inner.id.clone();
+                let closed_terminal_id = terminal_id.clone();
+                let closed = Arc::new(move |reason| {
+                    emit(HostRuntimeEvent::SshShellClosed {
+                        runtime_id: runtime_id.clone(),
+                        terminal_id: closed_terminal_id.clone(),
+                        reason,
+                    });
+                });
+                ssh.open_shell(
+                    &terminal_id,
+                    "xterm-256color",
+                    columns.max(20),
+                    rows.max(8),
+                    data,
+                    closed,
+                )
+                .await?;
+                let stale = {
+                    let state = inner.state.lock();
+                    state.epoch != epoch || state.connection != HostConnectionState::Connected
+                };
+                if stale {
+                    let _ = ssh.close_shell(&terminal_id);
+                    return Err(HostRuntimeError::StaleOperation(format!(
+                        "SSH shell {terminal_id} opened after its connection was replaced"
+                    )));
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::TerminalUnavailable(format!(
+                    "SSH shell open task failed: {error}"
+                ))
+            })?
+    }
+
+    pub fn ssh_shell_input(
+        &self,
+        terminal_id: String,
+        bytes: Vec<u8>,
+    ) -> Result<(), HostRuntimeError> {
+        current_ssh(&self.inner)?.shell_input(&terminal_id, bytes)?;
+        Ok(())
+    }
+
+    pub fn resize_ssh_shell(
+        &self,
+        terminal_id: String,
+        columns: u32,
+        rows: u32,
+    ) -> Result<(), HostRuntimeError> {
+        current_ssh(&self.inner)?.resize_shell(&terminal_id, columns.max(20), rows.max(8))?;
+        Ok(())
+    }
+
+    pub fn close_ssh_shell(&self, terminal_id: String) {
+        if let Ok(ssh) = current_ssh(&self.inner) {
+            let _ = ssh.close_shell(&terminal_id);
+        }
+    }
+
+    pub fn has_ssh_shell(&self, terminal_id: String) -> bool {
+        current_ssh(&self.inner).is_ok_and(|ssh| ssh.has_shell(&terminal_id))
+    }
+
+    pub async fn execute(&self, command: String) -> Result<String, HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        let output = crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.execute(&command).await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!("SSH command task failed: {error}"))
+            })??;
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    pub async fn remote_home(&self) -> Result<String, HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        let home = crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.remote_home().await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!(
+                    "remote home discovery task failed: {error}"
+                ))
+            })??;
+        Ok(home)
+    }
+
+    pub async fn measure_host_latency(&self) -> Result<f64, HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        let latency_ms = crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.latency_ms().await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!("SSH latency task failed: {error}"))
+            })??;
+        Ok(latency_ms)
+    }
+
+    pub async fn open_local_forward(
+        &self,
+        remote_host: String,
+        remote_port: u16,
+    ) -> Result<u16, HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        let local_port = crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.open_local_forward(&remote_host, remote_port).await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!(
+                    "local forwarding task failed: {error}"
+                ))
+            })??;
+        Ok(local_port)
+    }
+
+    pub fn close_local_forward(&self, local_port: u16) {
+        if let Ok(ssh) = current_ssh(&self.inner) {
+            ssh.close_local_forward(local_port);
+        }
+    }
+
+    pub async fn sftp_list(&self, path: String) -> Result<Vec<HostSftpEntry>, HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        let entries = crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.sftp_list(&path).await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!("SFTP list task failed: {error}"))
+            })??;
+        Ok(entries
+            .into_iter()
+            .map(|entry| HostSftpEntry {
+                filename: entry.filename,
+                is_directory: entry.is_directory,
+                modification_date: entry.modification_date,
+                last_access: entry.last_access,
+                file_size: entry.file_size,
+                owner_user_id: entry.owner_user_id,
+                owner_group_id: entry.owner_group_id,
+                permissions: entry.permissions,
+            })
+            .collect())
+    }
+
+    pub async fn sftp_remove(&self, path: String, directory: bool) -> Result<(), HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.sftp_remove(&path, directory).await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!("SFTP remove task failed: {error}"))
+            })??;
+        Ok(())
+    }
+
+    pub async fn sftp_create_dir_all(&self, path: String) -> Result<(), HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.sftp_create_dir_all(&path).await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!(
+                    "SFTP directory task failed: {error}"
+                ))
+            })??;
+        Ok(())
+    }
+
+    pub async fn sftp_upload(
+        &self,
+        local_path: String,
+        remote_path: String,
+        exact_path: bool,
+    ) -> Result<(), HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.sftp_upload(&local_path, &remote_path, exact_path).await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!("SFTP upload task failed: {error}"))
+            })??;
+        Ok(())
+    }
+
+    pub async fn sftp_download(
+        &self,
+        remote_path: String,
+        local_directory: String,
+    ) -> Result<String, HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        let path = crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.sftp_download(&remote_path, &local_directory).await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!("SFTP download task failed: {error}"))
+            })??;
+        Ok(path)
+    }
+
+    pub fn cancel_sftp_upload(&self) {
+        if let Ok(ssh) = current_ssh(&self.inner) {
+            ssh.cancel_sftp_upload();
+        }
+    }
+
+    pub async fn start_sftp_file_server(
+        &self,
+        remote_path: String,
+    ) -> Result<HostSftpFileServer, HostRuntimeError> {
+        let ssh = current_ssh(&self.inner)?;
+        let server = crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move { ssh.start_sftp_file_server(&remote_path).await })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!(
+                    "SFTP file server task failed: {error}"
+                ))
+            })??;
+        Ok(HostSftpFileServer {
+            local_port: server.local_port,
+            token: server.token,
+        })
+    }
+
+    pub fn close_sftp_file_server(&self, local_port: u16) {
+        if let Ok(ssh) = current_ssh(&self.inner) {
+            ssh.close_sftp_file_server(local_port);
+        }
+    }
 }
 
 impl Drop for HostRuntime {
@@ -1893,15 +2180,19 @@ impl Drop for HostRuntime {
         }
         let inner = self.inner.clone();
         runtimes().write().remove(&inner.id);
-        runtimes().write().remove(&inner.transport_key);
         let epoch = inner.state.lock().disconnect();
         let _ = inner.cancellation.send(epoch);
         inner.agents.disconnected(true, "Host runtime dropped");
-        close_herdr_event_subscription(inner.transport_key.clone());
-        close_all_herdr_terminal_bridges(inner.transport_key.clone());
+        close_herdr_event_subscription(inner.id.clone());
+        close_all_herdr_terminal_bridges(inner.id.clone());
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
-                disconnect_key(&inner.transport_key).await;
+                let ssh = inner.ssh.write().take();
+                let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
+                if let Some(ssh) = ssh {
+                    ssh.disconnect().await;
+                }
+                disconnect_sessions(jumps).await;
             });
         }
     }
@@ -1952,15 +2243,14 @@ mod tests {
     #[test]
     fn host_state_callback_can_synchronously_reenter_runtime() {
         let (cancellation, _) = watch::channel(0);
+        let ssh = Arc::new(RwLock::new(None));
         let inner = Arc::new(RuntimeInner {
             id: "reentrant-test".to_owned(),
-            transport_key: "reentrant-transport".to_owned(),
             config: config(),
             state: Mutex::new(RuntimeState::new(&config())),
-            agents: AgentSessionManager::new(
-                "reentrant-test".to_owned(),
-                "reentrant-transport".to_owned(),
-            ),
+            agents: AgentSessionManager::new("reentrant-test".to_owned(), ssh.clone()),
+            ssh,
+            jump_sessions: Mutex::new(Vec::new()),
             cancellation,
             settled: Notify::new(),
         });

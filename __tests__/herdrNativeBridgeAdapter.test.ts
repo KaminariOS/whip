@@ -216,7 +216,6 @@ describe('native Herdr bridge adapter', () => {
     };
     const rustRuntime = {
       runtimeId: jest.fn(() => 'runtime-1'),
-      transportKey: jest.fn(() => 'transport-1'),
       connect: jest.fn().mockResolvedValue(undefined),
       disconnect: jest.fn().mockResolvedValue(undefined),
       controlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
@@ -295,7 +294,6 @@ describe('native Herdr bridge adapter', () => {
     };
     const rustRuntime = {
       runtimeId: jest.fn(() => 'runtime-agent'),
-      transportKey: jest.fn(() => 'transport-agent'),
       openAgentSession: jest.fn(() => ({ key: 'codex:session-1', state: nativeState })),
       agentTranscript: jest.fn(() => nativeState),
       closeAgentSession: jest.fn(),

@@ -9,7 +9,7 @@ mod herdr_terminal;
 mod host_runtime;
 mod host_state;
 mod pairing;
-mod russh_transport;
+mod ssh;
 
 pub use agent_sessions::*;
 pub use agent_transcript::*;
@@ -75,7 +75,7 @@ mod tests {
 
     use serde_json::Value;
 
-    use super::pair_host;
+    use super::{pair_host, ssh};
 
     const BASE45_ALPHABET: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 
@@ -139,5 +139,28 @@ mod tests {
         assert_eq!(response["ok"], false);
         assert!(!error.contains("no reactor running"), "{error}");
         assert!(!error.contains("pairing runtime task failed"), "{error}");
+    }
+
+    #[test]
+    fn exported_ssh_future_uses_the_core_tokio_runtime() {
+        let request = serde_json::json!({
+            "operation": "connect",
+            "params": {
+                "key": "direct-core-test",
+                "host": "127.0.0.1",
+                "port": 1,
+                "username": "test",
+                "credential": { "type": "password", "password": "test" }
+            }
+        })
+        .to_string();
+        let response = block_on_without_tokio(ssh::call_async(request));
+        let response: Value = serde_json::from_str(&response).unwrap();
+        let error = response["error"]["message"].as_str().unwrap();
+
+        assert_eq!(response["ok"], false);
+        assert!(!error.contains("no reactor running"), "{error}");
+        assert!(!error.contains("SSH runtime task failed"), "{error}");
+        assert!(!error.contains("native transport"), "{error}");
     }
 }

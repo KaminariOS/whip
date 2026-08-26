@@ -1,3 +1,5 @@
+//! OpenSSH known_hosts parsing and verification for the Whip SSH core.
+
 use base64::Engine as _;
 use hmac::{Hmac, Mac};
 use russh::keys::PublicKey;

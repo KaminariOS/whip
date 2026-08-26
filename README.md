@@ -283,10 +283,9 @@ for the slice definitions, capture command, SQL analysis, and interpretation.
 
 ## Architecture
 
-Whip is split between the React Native mobile application, its private
-pairing/Herdr adapter, and the public `react-native-russh` transport. The
-diagrams below show those boundaries together with the terminal and remote
-host paths.
+Whip is split between the React Native presentation layer and one Whip-owned
+Rust/native core. The diagrams below show that boundary together with the
+terminal and remote-host paths.
 
 ### Mobile app
 
@@ -296,23 +295,16 @@ host paths.
 
 ### SSH transport
 
-[![Whip and react-native-russh SSH transport architecture](docs/whip-ssh-architecture.svg)](docs/whip-ssh-architecture.svg)
+[![Whip SSH and Herdr core architecture](docs/whip-ssh-architecture.svg)](docs/whip-ssh-architecture.svg)
 
 [Edit the SSH transport diagram](docs/whip-ssh-architecture.mmd).
 
-The reusable New Architecture transport is published on npm as
-[`react-native-russh`](packages/react-native-russh):
-
-```bash
-npm install react-native-russh
-```
-
-Its public package root exposes generic SSH, PTY, forwarding, `known_hosts`,
-SFTP, persistent exec, and raw/length-prefixed OpenSSH Unix-socket channels.
-Whip imports the unpublished `react-native-whip-ssh` subclass: all Herdr codec,
-negotiation, and terminal protocol lifecycle lives in its private Rust crate;
-the JavaScript subclass supplies semantic calls and UI callbacks. The same
-private crate also implements QR-pinned WP4 pairing.
+`react-native-whip-ssh` exposes the single New Architecture module and links a
+single Rust static library. Its core owns generic SSH, PTY, forwarding,
+`known_hosts`, SFTP, persistent exec, stream-local channels, Herdr protocol and
+state, reconnect restoration, and QR-pinned WP4 pairing. Existing generic
+JavaScript utilities used by key management and native diagnostics share that
+same module; the Whip host path calls typed `HostRuntime` operations directly.
 
 After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 
@@ -411,13 +403,10 @@ npm test -- --runInBand
 npx expo export --platform android
 ```
 
-The native transport is maintained in
-[`packages/react-native-russh`](packages/react-native-russh) and published as
-`react-native-russh`. Its public API contains only generic SSH/SFTP features.
-[`packages/react-native-whip-ssh`](packages/react-native-whip-ssh) is the
-private Whip adapter that exposes WP4 QR pairing and Herdr protocols through
-the transport's internal dispatcher. Both mobile platforms use the same
-Rust/Russh transport; there is no legacy native SSH fallback.
+The native core is maintained in
+[`packages/react-native-whip-ssh`](packages/react-native-whip-ssh). Both mobile
+platforms link the same Rust/Russh library and expose the same WhipSsh
+TurboModule; there is no legacy or second SSH native fallback.
 
 ## Community
 

@@ -11,10 +11,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const diagrams = [
   ['docs/mobile-app-architecture.mmd', 'docs/mobile-app-architecture.svg'],
   ['docs/whip-ssh-architecture.mmd', 'docs/whip-ssh-architecture.svg'],
-  [
-    'packages/react-native-russh/docs/architecture.mmd',
-    'packages/react-native-russh/docs/architecture.svg',
-  ],
 ];
 const localImages = new Map([
   [

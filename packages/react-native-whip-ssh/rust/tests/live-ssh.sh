@@ -3,7 +3,7 @@ set -euo pipefail
 
 rust_dir="$(cd "$(dirname "$0")/.." && pwd)"
 test_dir="$(mktemp -d)"
-container_name="russh-live-ssh-${RANDOM}-$$"
+container_name="whip-live-ssh-${RANDOM}-$$"
 image="${RUSSH_SSH_TEST_IMAGE:-lscr.io/linuxserver/openssh-server@sha256:4e3054a3c64f19cf4ee28dcac64c030f3a722a4fe46a319f68f9e0952c7de074}"
 
 if command -v podman >/dev/null 2>&1; then
@@ -16,10 +16,15 @@ else
 fi
 
 cleanup() {
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    "$container_runtime" logs "$container_name" >&2 || true
+  fi
   "$container_runtime" exec "$container_name" rm -rf \
     /workspace/client /workspace/download /workspace/remote >/dev/null 2>&1 || true
   "$container_runtime" rm --force "$container_name" >/dev/null 2>&1 || true
   rm -rf "$test_dir"
+  return "$status"
 }
 trap cleanup EXIT
 
@@ -31,6 +36,11 @@ printf '%s\n' \
   "sed -i 's/^AllowTcpForwarding no/AllowTcpForwarding yes/' /etc/ssh/sshd_config" \
   >"$test_dir/enable-forwarding"
 chmod 0755 "$test_dir/enable-forwarding"
+printf '%s\n' \
+  '#!/usr/bin/with-contenv bash' \
+  "echo 'russh:russh-test-password' | chpasswd" \
+  >"$test_dir/set-password"
+chmod 0755 "$test_dir/set-password"
 
 "$container_runtime" run --detach --name "$container_name" \
   --env PUID="$(id -u)" \
@@ -38,12 +48,13 @@ chmod 0755 "$test_dir/enable-forwarding"
   --env TZ=Etc/UTC \
   --env PUBLIC_KEY_FILE=/run/secrets/russh_test_key.pub \
   --env PASSWORD_ACCESS=true \
-  --env USER_PASSWORD=russh-test-password \
+  --env USER_PASSWORD=whip-test-password \
   --env USER_NAME=russh \
   --env LOG_STDOUT=true \
   --publish 127.0.0.1::2222 \
   --volume "$test_dir/client_key.pub:/run/secrets/russh_test_key.pub:ro" \
   --volume "$test_dir/enable-forwarding:/etc/cont-init.d/88-enable-forwarding:ro" \
+  --volume "$test_dir/set-password:/custom-cont-init.d/99-set-password:ro" \
   --volume "$test_dir/shared:/workspace" \
   "$image" >/dev/null
 

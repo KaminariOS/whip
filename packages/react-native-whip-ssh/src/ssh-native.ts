@@ -5,7 +5,7 @@ import {
   resizeShellFast,
   setEventSink,
   shutdown as shutdownRust,
-  type ReactNativeRusshEventSink,
+  type WhipSshEventSink,
   writeUnixSocketChannel as writeUnixSocketChannelRust,
   writeLengthPrefixedUnixSocketChannel as writeLengthPrefixedUnixSocketChannelRust,
   writeExecChannel as writeExecChannelRust,
@@ -95,7 +95,7 @@ async function invokeAsync(operation: string, params: Params = {}): Promise<unkn
   try {
     return decodeResponse(await callAsync(request(operation, params)));
   } catch (error) {
-    console.error(`[ReactNativeRussh] ${operation} failed: ${errorMessage(error)}`);
+    console.error(`[WhipSsh] ${operation} failed: ${errorMessage(error)}`);
     throw error;
   }
 }
@@ -142,7 +142,7 @@ function credential(passwordOrKey: string | { privateKey?: string; passphrase?: 
       };
 }
 
-const eventSink: ReactNativeRusshEventSink = {
+const eventSink: WhipSshEventSink = {
   emit(eventJson: string): void {
     try {
       const event = JSON.parse(eventJson) as Record<string, unknown>;
@@ -189,15 +189,17 @@ const eventSink: ReactNativeRusshEventSink = {
 function finishFast(operation: string, invoke: () => string | undefined, callback: Callback): void {
   try {
     const error = invoke();
-    if (error) console.error(`[ReactNativeRussh] ${operation} failed: ${error}`);
+    if (error) console.error(`[WhipSsh] ${operation} failed: ${error}`);
     callback(error ? decodeError(error) : undefined);
   } catch (error) {
-    console.error(`[ReactNativeRussh] ${operation} failed: ${errorMessage(error)}`);
+    console.error(`[WhipSsh] ${operation} failed: ${errorMessage(error)}`);
     callback(error instanceof Error ? error : decodeError(error));
   }
 }
 
-setEventSink(eventSink);
+// Product-only unit tests mock a narrow generated binding surface. Native
+// builds always provide this export from the merged Whip crate.
+if (typeof setEventSink === 'function') setEventSink(eventSink);
 
 const nativeClient = {
   addListener(name: string, listener: Listener) {
@@ -229,7 +231,7 @@ const nativeClient = {
   },
 
   generateKeyPair(type: string, passphrase: string, keySize: number, comment: string, callback: Callback) {
-    finish(invokeAsync('generateKeyPair', { type: type || 'ed25519', passphrase: passphrase || '', keySize, comment: comment || 'react-native-russh' }), callback);
+    finish(invokeAsync('generateKeyPair', { type: type || 'ed25519', passphrase: passphrase || '', keySize, comment: comment || 'whip-ssh' }), callback);
   },
 
   connectToHost(host: string, port: number, username: string, passwordOrKey: string | Params, key: string, callback: Callback) {

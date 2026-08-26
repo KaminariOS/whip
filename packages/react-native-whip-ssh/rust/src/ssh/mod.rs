@@ -1,16 +1,17 @@
-//! Product-neutral SSH transport for React Native.
+//! SSH transport owned by the Whip Rust core.
 //!
 //! The public boundary keeps a small JSON API for control-plane operations and
-//! uses typed UniFFI calls for latency-sensitive terminal traffic. The original
-//! C ABI remains available for compatibility with transitional native clients.
-//! React Native owns JavaScript callbacks and lifecycle, while this crate owns
-//! the Tokio runtime, SSH sessions, host-key verification, and byte streams.
+//! uses typed UniFFI calls for latency-sensitive terminal traffic. HostRuntime
+//! composes with this module through ordinary typed Rust handles; there is no
+//! native callback ABI between the SSH and Herdr implementations.
 
 mod known_hosts;
-uniffi::setup_scaffolding!();
+mod session;
 
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::CStr;
+#[cfg(target_os = "android")]
+use std::ffi::c_char;
 use std::future::Future;
 use std::io::SeekFrom;
 use std::panic::AssertUnwindSafe;
@@ -20,7 +21,6 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use futures::{FutureExt, channel::mpsc as futures_mpsc, future::try_join_all};
 use parking_lot::RwLock;
 use russh::client;
@@ -28,23 +28,16 @@ use russh::keys::{PrivateKeyWithHashAlg, PublicKey};
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tokio::{
     fs,
     io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader},
 };
 
-use crate::known_hosts::{HostKeyDecision, KnownHosts};
+use self::known_hosts::{HostKeyDecision, KnownHosts};
 
 type Sessions = RwLock<HashMap<String, Arc<Session>>>;
-type EventCallback = unsafe extern "C" fn(*const c_char);
-type ResponseCallback = unsafe extern "C" fn(u64, *const c_char);
-type NativeChannelOpenCallback = unsafe extern "C" fn(u64, *const c_char);
-type NativeChannelFrameCallback = unsafe extern "C" fn(u64, *const u8, usize);
-type NativeChannelClosedCallback = unsafe extern "C" fn(u64, *const c_char);
-type NativeUnixSocketRequestCallback = unsafe extern "C" fn(u64, *const u8, usize, *const c_char);
-type Shells = RwLock<HashMap<String, mpsc::Sender<ShellCommand>>>;
+type Shells = RwLock<HashMap<(String, String), mpsc::Sender<ShellCommand>>>;
 type SftpSessions = RwLock<HashMap<String, Arc<SftpSession>>>;
 type ExecChannels = RwLock<HashMap<(String, String), mpsc::Sender<StreamCommand>>>;
 type UnixSocketChannels = RwLock<HashMap<(String, String), UnixSocketChannelHandle>>;
@@ -100,12 +93,9 @@ type Forwards = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
 type SftpFileServers = RwLock<HashMap<(String, u16), watch::Sender<bool>>>;
 type Transfers = RwLock<HashMap<(String, &'static str), watch::Sender<bool>>>;
 
-static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 static SESSIONS: OnceLock<Sessions> = OnceLock::new();
 static KNOWN_HOSTS: OnceLock<RwLock<KnownHosts>> = OnceLock::new();
-static EVENT_CALLBACK: OnceLock<RwLock<Option<EventCallback>>> = OnceLock::new();
-static UNIFFI_EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn ReactNativeRusshEventSink>>>> =
-    OnceLock::new();
+static UNIFFI_EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn WhipSshEventSink>>>> = OnceLock::new();
 static SHELLS: OnceLock<Shells> = OnceLock::new();
 static SFTP_SESSIONS: OnceLock<SftpSessions> = OnceLock::new();
 static EXEC_CHANNELS: OnceLock<ExecChannels> = OnceLock::new();
@@ -126,6 +116,7 @@ const SFTP_HTTP_PIPELINE_DEPTH: usize = 8;
 const SFTP_HTTP_READ_SIZE: u64 = 256 * 1024;
 const SFTP_HTTP_SERVER_LIFETIME: Duration = Duration::from_secs(60 * 60);
 const REMOTE_HOME_COMMAND: &str = r#"printf %s "$HOME""#;
+const COMPATIBILITY_SHELL_ID: &str = "default";
 
 #[derive(Debug, thiserror::Error)]
 enum TransportError {
@@ -304,7 +295,7 @@ impl Response {
 }
 
 #[uniffi::export(with_foreign)]
-pub trait ReactNativeRusshEventSink: Send + Sync {
+pub trait WhipSshEventSink: Send + Sync {
     fn emit(&self, event_json: String);
     fn unix_socket_channel_data(&self, key: String, channel_id: String, bytes: Vec<u8>);
     fn exec_channel_data(&self, key: String, channel_id: String, bytes: Vec<u8>);
@@ -315,6 +306,60 @@ struct Session {
     host: String,
     port: u16,
     agent: Arc<AgentState>,
+}
+
+/// Authenticated SSH session owned directly by a Whip host runtime.
+///
+/// `resource_key` scopes shell/channel compatibility registries; connection
+/// lookup never goes through the process-wide React Native session map.
+pub(crate) struct SshSession {
+    inner: Arc<Session>,
+    resource_key: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum SshCredential {
+    Password(String),
+    Key {
+        private_key: String,
+        passphrase: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SshConnectionConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub credential: SshCredential,
+    pub forward_agent: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SshFailure {
+    pub code: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for SshFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for SshFailure {}
+
+impl From<TransportError> for SshFailure {
+    fn from(error: TransportError) -> Self {
+        let code = serde_json::to_value(transport_error_code(&error))
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "UNKNOWN".to_owned());
+        Self {
+            code,
+            message: error.to_string(),
+        }
+    }
 }
 
 trait AgentIo: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Sync + Unpin {}
@@ -351,6 +396,15 @@ enum ShellCommand {
     Close,
 }
 
+#[derive(Clone)]
+enum ShellDelivery {
+    ReactNative,
+    Rust {
+        data: Arc<dyn Fn(Vec<u8>) + Send + Sync>,
+        closed: Arc<dyn Fn(String) + Send + Sync>,
+    },
+}
+
 enum StreamCommand {
     Write(Vec<u8>),
     Close,
@@ -376,29 +430,23 @@ enum LengthFormat {
     U32Be,
 }
 
-/// Product-neutral delivery target for an owned Unix-socket channel.
-///
-/// Native callbacks let another native library compose with the connected SSH
-/// transport without routing binary frames through JavaScript. Callback byte
-/// and string pointers are borrowed only for the duration of the call.
-#[derive(Clone, Copy)]
+/// Delivery target for an owned Unix-socket channel.
+#[derive(Clone)]
 enum UnixSocketDelivery {
     ReactNative,
-    Native {
-        context: u64,
-        frame: NativeChannelFrameCallback,
-        closed: NativeChannelClosedCallback,
+    Rust {
+        frame: Arc<dyn Fn(Vec<u8>) + Send + Sync>,
+        closed: Arc<dyn Fn(String) + Send + Sync>,
     },
 }
 
 /// Product-neutral delivery target for an owned exec channel.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum ExecDelivery {
     ReactNative,
-    Native {
-        context: u64,
-        data: NativeChannelFrameCallback,
-        closed: NativeChannelClosedCallback,
+    Rust {
+        data: Arc<dyn Fn(Vec<u8>) + Send + Sync>,
+        closed: Arc<dyn Fn(String) + Send + Sync>,
     },
 }
 
@@ -449,11 +497,8 @@ impl client::Handler for RusshHandler {
     }
 }
 
-fn runtime() -> Result<&'static Runtime, String> {
-    RUNTIME
-        .get_or_init(|| Runtime::new().map_err(|error| error.to_string()))
-        .as_ref()
-        .map_err(Clone::clone)
+fn runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+    crate::runtime()
 }
 
 fn sessions() -> &'static Sessions {
@@ -468,10 +513,7 @@ fn shells() -> &'static Shells {
     SHELLS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-fn event_callback() -> &'static RwLock<Option<EventCallback>> {
-    EVENT_CALLBACK.get_or_init(|| RwLock::new(None))
-}
-fn uniffi_event_sink() -> &'static RwLock<Option<Arc<dyn ReactNativeRusshEventSink>>> {
+fn uniffi_event_sink() -> &'static RwLock<Option<Arc<dyn WhipSshEventSink>>> {
     UNIFFI_EVENT_SINK.get_or_init(|| RwLock::new(None))
 }
 fn sftp_sessions() -> &'static SftpSessions {
@@ -498,24 +540,9 @@ fn emit_event(value: Value) {
         return;
     };
     let sink = uniffi_event_sink().read().clone();
-    let callback = *event_callback().read();
-    match (sink, callback) {
-        (Some(sink), None) => sink.emit(json),
-        (None, Some(callback)) => emit_legacy_json(callback, json),
-        (Some(sink), Some(callback)) => {
-            sink.emit(json.clone());
-            emit_legacy_json(callback, json);
-        }
-        (None, None) => {}
+    if let Some(sink) = sink {
+        sink.emit(json);
     }
-}
-
-fn emit_legacy_json(callback: EventCallback, json: String) {
-    let Ok(json) = CString::new(json) else {
-        return;
-    };
-    // The Objective-C callback copies the string before returning.
-    unsafe { callback(json.as_ptr()) };
 }
 
 fn required_string(params: &Value, name: &str) -> Result<String, TransportError> {
@@ -576,7 +603,7 @@ fn generate_key_pair(params: &Value) -> Result<Value, TransportError> {
     let comment = params
         .get("comment")
         .and_then(Value::as_str)
-        .unwrap_or("react-native-russh");
+        .unwrap_or("whip-ssh");
     let mut rng =
         russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
     let mut private_key =
@@ -620,12 +647,59 @@ async fn initialize_agent(
 
 async fn connect(params: &Value) -> Result<Value, TransportError> {
     let key = required_string(params, "key")?;
-    let host = required_string(params, "host")?;
-    let port = required_u16(params, "port")?;
-    let username = required_string(params, "username")?;
     let credential = params
         .get("credential")
         .ok_or_else(|| TransportError::InvalidRequest("missing credential parameter".to_owned()))?;
+    let credential = match credential.get("type").and_then(Value::as_str) {
+        Some("password") => SshCredential::Password(required_string(credential, "password")?),
+        Some("key") => SshCredential::Key {
+            private_key: required_string(credential, "privateKey")?,
+            passphrase: credential
+                .get("passphrase")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        },
+        _ => {
+            return Err(TransportError::InvalidRequest(
+                "credential.type must be 'password' or 'key'".to_owned(),
+            ));
+        }
+    };
+    let config = SshConnectionConfig {
+        host: required_string(params, "host")?,
+        port: required_u16(params, "port")?,
+        username: required_string(params, "username")?,
+        credential,
+        forward_agent: false,
+    };
+    let jump = params
+        .get("jumpKey")
+        .and_then(Value::as_str)
+        .map(|jump_key| {
+            sessions().read().get(jump_key).cloned().ok_or_else(|| {
+                TransportError::InvalidRequest("jump host SSH connection is not active".to_owned())
+            })
+        })
+        .transpose()?;
+    let session = connect_inner(&config, jump.as_deref()).await?;
+    let previous = sessions().write().insert(key, session);
+    // Install an authenticated replacement first, then retire the old handle.
+    if let Some(previous) = previous {
+        let _ = previous
+            .handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+    }
+    Ok(Value::Null)
+}
+
+async fn connect_inner(
+    connection: &SshConnectionConfig,
+    jump: Option<&Session>,
+) -> Result<Arc<Session>, TransportError> {
+    let host = connection.host.trim().to_owned();
+    let port = connection.port;
+    let username = connection.username.trim().to_owned();
     let config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(30)),
         keepalive_interval: Some(Duration::from_secs(15)),
@@ -638,10 +712,7 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
         port,
         agent: agent.clone(),
     };
-    let mut handle = if let Some(jump_key) = params.get("jumpKey").and_then(Value::as_str) {
-        let jump = sessions().read().get(jump_key).cloned().ok_or_else(|| {
-            TransportError::InvalidRequest("jump host SSH connection is not active".to_owned())
-        })?;
+    let mut handle = if let Some(jump) = jump {
         let channel = jump
             .handle
             .channel_open_direct_tcpip(host.clone(), port as u32, "127.0.0.1", 0)
@@ -654,15 +725,18 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
     };
 
     let mut forwarding_key = None;
-    let authenticated = match credential.get("type").and_then(Value::as_str) {
-        Some("password") => {
-            let password = required_string(credential, "password")?;
-            authenticate_password(&mut handle, &username, &password).await?
+    let authenticated = match &connection.credential {
+        SshCredential::Password(password) => {
+            authenticate_password(&mut handle, &username, password).await?
         }
-        Some("key") => {
-            let private_key = required_string(credential, "privateKey")?;
-            let passphrase = credential.get("passphrase").and_then(Value::as_str);
-            let key_pair = Arc::new(russh::keys::decode_secret_key(&private_key, passphrase)?);
+        SshCredential::Key {
+            private_key,
+            passphrase,
+        } => {
+            let key_pair = Arc::new(russh::keys::decode_secret_key(
+                private_key,
+                passphrase.as_deref(),
+            )?);
             let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
             let auth_key = PrivateKeyWithHashAlg::new(key_pair.clone(), hash_alg);
             let result = handle
@@ -674,11 +748,6 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
             }
             result
         }
-        _ => {
-            return Err(TransportError::InvalidRequest(
-                "credential.type must be 'password' or 'key'".to_owned(),
-            ));
-        }
     };
     if !authenticated {
         return Err(TransportError::AuthenticationFailed);
@@ -686,25 +755,16 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
     if let Some(private_key) = forwarding_key {
         initialize_agent(private_key, agent.clone()).await?;
     }
-    let previous = sessions().write().insert(
-        key,
-        Arc::new(Session {
-            handle,
-            host,
-            port,
-            agent,
-        }),
-    );
-    // Native product runtimes reconnect under a stable logical session key so
-    // existing typed channels never need to expose transport identities to JS.
-    // Install the authenticated replacement first, then retire the old handle.
-    if let Some(previous) = previous {
-        let _ = previous
-            .handle
-            .disconnect(russh::Disconnect::ByApplication, "", "en")
-            .await;
+    let session = Arc::new(Session {
+        handle,
+        host,
+        port,
+        agent,
+    });
+    if connection.forward_agent {
+        session.agent.enabled.store(true, Ordering::Relaxed);
     }
-    Ok(Value::Null)
+    Ok(session)
 }
 
 async fn authenticate_password(
@@ -783,15 +843,29 @@ fn append_capped(destination: &mut Vec<u8>, source: &[u8]) -> bool {
 }
 
 async fn execute(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
     let command = required_string(params, "command")?;
-    let session = sessions()
-        .read()
-        .get(&key)
-        .cloned()
-        .ok_or(TransportError::UnknownClient)?;
+    let session = session_for(params)?;
+    let output = execute_on(&session, &command).await?;
+    Ok(json!({
+        "stdout": String::from_utf8_lossy(&output.stdout),
+        "stderr": String::from_utf8_lossy(&output.stderr),
+        "exitStatus": output.exit_status,
+        "stdoutTruncated": output.stdout_truncated,
+        "stderrTruncated": output.stderr_truncated,
+    }))
+}
+
+pub(crate) struct CommandOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub exit_status: Option<u32>,
+    pub stdout_truncated: bool,
+    pub stderr_truncated: bool,
+}
+
+async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, TransportError> {
     let mut channel = session.handle.channel_open_session().await?;
-    request_agent_forwarding(&session, &channel).await?;
+    request_agent_forwarding(session, &channel).await?;
     channel.exec(true, command).await?;
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -813,18 +887,18 @@ async fn execute(params: &Value) -> Result<Value, TransportError> {
         }
     }
     if stdout_truncated {
-        stdout.extend_from_slice(b"\n[react-native-russh: stdout truncated at 8 MiB]\n");
+        stdout.extend_from_slice(b"\n[whip-ssh: stdout truncated at 8 MiB]\n");
     }
     if stderr_truncated {
-        stderr.extend_from_slice(b"\n[react-native-russh: stderr truncated at 8 MiB]\n");
+        stderr.extend_from_slice(b"\n[whip-ssh: stderr truncated at 8 MiB]\n");
     }
-    Ok(json!({
-        "stdout": String::from_utf8_lossy(&stdout),
-        "stderr": String::from_utf8_lossy(&stderr),
-        "exitStatus": exit_status,
-        "stdoutTruncated": stdout_truncated,
-        "stderrTruncated": stderr_truncated,
-    }))
+    Ok(CommandOutput {
+        stdout,
+        stderr,
+        exit_status,
+        stdout_truncated,
+        stderr_truncated,
+    })
 }
 
 async fn latency(params: &Value) -> Result<Value, TransportError> {
@@ -843,6 +917,16 @@ async fn latency(params: &Value) -> Result<Value, TransportError> {
     Ok(json!(start.elapsed().as_secs_f64() * 1000.0))
 }
 
+async fn latency_on(session: &Session) -> Result<f64, TransportError> {
+    let start = Instant::now();
+    tokio::time::timeout(HOST_LATENCY_PROBE_TIMEOUT, session.handle.send_ping())
+        .await
+        .map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::TimedOut, "SSH latency probe timed out")
+        })??;
+    Ok(start.elapsed().as_secs_f64() * 1000.0)
+}
+
 async fn start_shell(params: &Value) -> Result<Value, TransportError> {
     let key = required_string(params, "key")?;
     let pty_type = params
@@ -856,31 +940,70 @@ async fn start_shell(params: &Value) -> Result<Value, TransportError> {
         .get(&key)
         .cloned()
         .ok_or(TransportError::UnknownClient)?;
+    start_shell_on(
+        key,
+        COMPATIBILITY_SHELL_ID.to_owned(),
+        session,
+        pty_type.to_owned(),
+        columns,
+        rows,
+        ShellDelivery::ReactNative,
+    )
+    .await?;
+    Ok(Value::Null)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn start_shell_on(
+    key: String,
+    shell_id: String,
+    session: Arc<Session>,
+    pty_type: String,
+    columns: u32,
+    rows: u32,
+    delivery: ShellDelivery,
+) -> Result<(), TransportError> {
+    let map_key = (key.clone(), shell_id.clone());
+    if shells().read().contains_key(&map_key) {
+        return Err(TransportError::InvalidRequest(format!(
+            "shell '{shell_id}' is already open"
+        )));
+    }
     let mut channel = session.handle.channel_open_session().await?;
     channel
-        .request_pty(false, pty_type, columns, rows, 0, 0, &[])
+        .request_pty(false, &pty_type, columns, rows, 0, 0, &[])
         .await?;
     request_agent_forwarding(&session, &channel).await?;
     channel.request_shell(true).await?;
     let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
-    shells().write().insert(key.clone(), sender);
+    shells().write().insert(map_key.clone(), sender.clone());
     tokio::spawn(async move {
+        let mut close_reason = "remote shell closed".to_owned();
         loop {
             tokio::select! {
                 message = channel.wait() => match message {
                     Some(russh::ChannelMsg::Data { data }) => {
-                        emit_event(json!({
-                            "name": "Shell",
-                            "key": key,
-                            "value": String::from_utf8_lossy(&data),
-                        }));
+                        match &delivery {
+                            ShellDelivery::ReactNative => emit_event(json!({
+                                "name": "Shell",
+                                "key": key,
+                                "value": String::from_utf8_lossy(&data),
+                            })),
+                            ShellDelivery::Rust { data: deliver, .. } => deliver(data.to_vec()),
+                        }
                     }
                     Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                        emit_event(json!({
-                            "name": "Shell",
-                            "key": key,
-                            "value": String::from_utf8_lossy(&data),
-                        }));
+                        match &delivery {
+                            ShellDelivery::ReactNative => emit_event(json!({
+                                "name": "Shell",
+                                "key": key,
+                                "value": String::from_utf8_lossy(&data),
+                            })),
+                            ShellDelivery::Rust { data: deliver, .. } => deliver(data.to_vec()),
+                        }
+                    }
+                    Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                        close_reason = format!("remote shell exited with status {exit_status}");
                     }
                     Some(russh::ChannelMsg::Eof | russh::ChannelMsg::Close) | None => break,
                     _ => {}
@@ -900,10 +1023,19 @@ async fn start_shell(params: &Value) -> Result<Value, TransportError> {
                 }
             }
         }
-        shells().write().remove(&key);
-        emit_event(json!({ "name": "ShellClosed", "key": key }));
+        let should_remove = shells()
+            .read()
+            .get(&map_key)
+            .is_some_and(|current| current.same_channel(&sender));
+        if should_remove {
+            shells().write().remove(&map_key);
+        }
+        match delivery {
+            ShellDelivery::ReactNative => emit_event(json!({ "name": "ShellClosed", "key": key })),
+            ShellDelivery::Rust { closed, .. } => closed(close_reason),
+        }
     });
-    Ok(Value::Null)
+    Ok(())
 }
 
 fn shell_command(params: &Value, command: ShellCommand) -> Result<Value, TransportError> {
@@ -913,9 +1045,17 @@ fn shell_command(params: &Value, command: ShellCommand) -> Result<Value, Transpo
 }
 
 fn shell_command_for_key(key: &str, command: ShellCommand) -> Result<(), TransportError> {
+    shell_command_for_id(key, COMPATIBILITY_SHELL_ID, command)
+}
+
+fn shell_command_for_id(
+    key: &str,
+    shell_id: &str,
+    command: ShellCommand,
+) -> Result<(), TransportError> {
     let sender = shells()
         .read()
-        .get(key)
+        .get(&(key.to_owned(), shell_id.to_owned()))
         .cloned()
         .ok_or(TransportError::UnknownClient)?;
     sender.try_send(command).map_err(|error| {
@@ -935,30 +1075,72 @@ fn session_for(params: &Value) -> Result<Arc<Session>, TransportError> {
 
 async fn connect_sftp(params: &Value) -> Result<Value, TransportError> {
     let key = required_string(params, "key")?;
-    if sftp_sessions().read().contains_key(&key) {
-        return Ok(Value::Null);
-    }
     let session = session_for(params)?;
+    connect_sftp_on(&key, &session).await?;
+    Ok(Value::Null)
+}
+
+async fn connect_sftp_on(key: &str, session: &Session) -> Result<(), TransportError> {
+    if sftp_sessions().read().contains_key(key) {
+        return Ok(());
+    }
     let channel = session.handle.channel_open_session().await?;
     channel.request_subsystem(true, "sftp").await?;
     let sftp = SftpSession::new(channel.into_stream()).await?;
-    sftp_sessions().write().insert(key, Arc::new(sftp));
-    Ok(Value::Null)
+    sftp_sessions()
+        .write()
+        .insert(key.to_owned(), Arc::new(sftp));
+    Ok(())
 }
 
 fn sftp_for(params: &Value) -> Result<(String, Arc<SftpSession>), TransportError> {
     let key = required_string(params, "key")?;
+    Ok((key.clone(), sftp_for_key(&key)?))
+}
+
+fn sftp_for_key(key: &str) -> Result<Arc<SftpSession>, TransportError> {
     let sftp = sftp_sessions()
         .read()
-        .get(&key)
+        .get(key)
         .cloned()
         .ok_or_else(|| TransportError::InvalidRequest("SFTP is not connected".to_owned()))?;
-    Ok((key, sftp))
+    Ok(sftp)
+}
+
+pub(crate) struct SftpEntry {
+    pub filename: String,
+    pub is_directory: bool,
+    pub modification_date: String,
+    pub last_access: String,
+    pub file_size: u64,
+    pub owner_user_id: u32,
+    pub owner_group_id: u32,
+    pub permissions: String,
 }
 
 async fn sftp_list(params: &Value) -> Result<Value, TransportError> {
     let (_, sftp) = sftp_for(params)?;
     let path = required_string(params, "path")?;
+    let entries = sftp_list_on(&sftp, &path).await?;
+    Ok(json!(
+        entries
+            .into_iter()
+            .map(|entry| json!({
+                "filename": entry.filename,
+                "isDirectory": if entry.is_directory { 1 } else { 0 },
+                "modificationDate": entry.modification_date,
+                "lastAccess": entry.last_access,
+                "fileSize": entry.file_size,
+                "ownerUserID": entry.owner_user_id,
+                "ownerGroupID": entry.owner_group_id,
+                "permissions": entry.permissions,
+                "flags": 0,
+            }))
+            .collect::<Vec<_>>()
+    ))
+}
+
+async fn sftp_list_on(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>, TransportError> {
     let entries = sftp
         .read_dir(path)
         .await?
@@ -969,20 +1151,19 @@ async fn sftp_list(params: &Value) -> Result<Value, TransportError> {
             if is_directory {
                 filename.push('/');
             }
-            json!({
-                "filename": filename,
-                "isDirectory": if is_directory { 1 } else { 0 },
-                "modificationDate": metadata.mtime.unwrap_or_default().to_string(),
-                "lastAccess": metadata.atime.unwrap_or_default().to_string(),
-                "fileSize": metadata.size.unwrap_or_default(),
-                "ownerUserID": metadata.uid.unwrap_or_default(),
-                "ownerGroupID": metadata.gid.unwrap_or_default(),
-                "permissions": metadata.permissions.unwrap_or_default().to_string(),
-                "flags": 0,
-            })
+            SftpEntry {
+                filename,
+                is_directory,
+                modification_date: metadata.mtime.unwrap_or_default().to_string(),
+                last_access: metadata.atime.unwrap_or_default().to_string(),
+                file_size: metadata.size.unwrap_or_default(),
+                owner_user_id: metadata.uid.unwrap_or_default(),
+                owner_group_id: metadata.gid.unwrap_or_default(),
+                permissions: metadata.permissions.unwrap_or_default().to_string(),
+            }
         })
         .collect::<Vec<_>>();
-    Ok(json!(entries))
+    Ok(entries)
 }
 
 async fn sftp_mutation(params: &Value, operation: &str) -> Result<Value, TransportError> {
@@ -1019,6 +1200,14 @@ async fn sftp_mutation(params: &Value, operation: &str) -> Result<Value, Transpo
 async fn sftp_create_dir_all(params: &Value) -> Result<Value, TransportError> {
     let (_, sftp) = sftp_for(params)?;
     let remote_path = required_string(params, "path")?;
+    sftp_create_dir_all_on(&sftp, &remote_path).await?;
+    Ok(Value::Null)
+}
+
+async fn sftp_create_dir_all_on(
+    sftp: &SftpSession,
+    remote_path: &str,
+) -> Result<(), TransportError> {
     if remote_path.is_empty() {
         return Err(TransportError::InvalidRequest(
             "remote directory path must not be empty".to_owned(),
@@ -1073,7 +1262,7 @@ async fn sftp_create_dir_all(params: &Value) -> Result<Value, TransportError> {
             "remote directory path must contain a directory".to_owned(),
         ));
     }
-    Ok(Value::Null)
+    Ok(())
 }
 
 fn transfer_cancelled(direction: &str) -> TransportError {
@@ -1147,6 +1336,19 @@ async fn sftp_transfer(
     let (key, sftp) = sftp_for(params)?;
     let local = required_string(params, "localPath")?;
     let remote_path = required_string(params, "remotePath")?;
+    Ok(Value::String(
+        sftp_transfer_on(key, sftp, local, remote_path, upload, upload_to_exact_path).await?,
+    ))
+}
+
+async fn sftp_transfer_on(
+    key: String,
+    sftp: Arc<SftpSession>,
+    local: String,
+    remote_path: String,
+    upload: bool,
+    upload_to_exact_path: bool,
+) -> Result<String, TransportError> {
     let direction = if upload { "upload" } else { "download" };
     let event = if upload {
         "UploadProgress"
@@ -1287,7 +1489,7 @@ async fn sftp_transfer(
     }
     .await;
     transfers().write().remove(&(key, direction));
-    result.map(Value::String)
+    result
 }
 
 async fn request_unix_socket_bytes(
@@ -1316,28 +1518,47 @@ async fn request_unix_socket_bytes(
         .and_then(Value::as_u64)
         .unwrap_or(8 * 1024 * 1024)
         .clamp(1, 32 * 1024 * 1024);
+    request_unix_socket_bytes_on(
+        &session,
+        &socket_path,
+        request,
+        terminator[0],
+        timeout_ms,
+        max_response_bytes as usize,
+    )
+    .await
+}
+
+async fn request_unix_socket_bytes_on(
+    session: &Session,
+    socket_path: &str,
+    request: &[u8],
+    response_terminator: u8,
+    timeout_ms: u64,
+    max_response_bytes: usize,
+) -> Result<Vec<u8>, TransportError> {
     let channel = session
         .handle
         .channel_open_direct_streamlocal(socket_path)
         .await?;
     let mut stream = BufReader::new(channel.into_stream());
     stream.write_all(request).await?;
-    let mut reader = stream.take(max_response_bytes + 1);
+    let mut reader = stream.take(max_response_bytes as u64 + 1);
     let mut response = Vec::new();
     tokio::time::timeout(
         Duration::from_millis(timeout_ms),
-        reader.read_until(terminator[0], &mut response),
+        reader.read_until(response_terminator, &mut response),
     )
     .await
     .map_err(|_| {
         TransportError::InvalidRequest("timed out waiting for Unix-socket response".to_owned())
     })??;
-    if response.len() as u64 > max_response_bytes {
+    if response.len() > max_response_bytes {
         return Err(TransportError::InvalidRequest(format!(
             "Unix-socket response exceeds {max_response_bytes} bytes"
         )));
     }
-    if response.last() != Some(&terminator[0]) {
+    if response.last() != Some(&response_terminator) {
         return Err(TransportError::InvalidRequest(
             "Unix-socket response ended before its terminator".to_owned(),
         ));
@@ -1354,24 +1575,8 @@ async fn request_unix_socket(params: &Value) -> Result<Value, TransportError> {
 
 fn emit_unix_socket_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>) {
     let sink = uniffi_event_sink().read().clone();
-    let callback = *event_callback().read();
-    let legacy_json = callback.map(|_| {
-        serde_json::to_string(&json!({
-            "name": "UnixSocketChannel",
-            "key": key,
-            "value": {
-                "type": "data",
-                "channelId": channel_id,
-                "bytes": BASE64.encode(&bytes),
-            },
-        }))
-        .unwrap_or_default()
-    });
     if let Some(sink) = sink {
         sink.unix_socket_channel_data(key.to_owned(), channel_id.to_owned(), bytes);
-    }
-    if let (Some(callback), Some(json)) = (callback, legacy_json) {
-        emit_legacy_json(callback, json);
     }
 }
 
@@ -1627,6 +1832,7 @@ async fn deliver_unix_socket_frames(
         } = frame;
         let key = Arc::clone(&key);
         let channel_id = Arc::clone(&channel_id);
+        let delivery = delivery.clone();
         tokio::task::spawn_blocking(move || {
             // The owned frame and its byte-budget permit remain alive until
             // invokeBlocking has returned, preserving RustBuffer lifetime.
@@ -1636,9 +1842,7 @@ async fn deliver_unix_socket_frames(
                 UnixSocketDelivery::ReactNative => {
                     emit_unix_socket_channel_data(&key, &channel_id, bytes);
                 }
-                UnixSocketDelivery::Native { context, frame, .. } => unsafe {
-                    frame(context, bytes.as_ptr(), bytes.len());
-                },
+                UnixSocketDelivery::Rust { frame, .. } => frame(bytes),
             }
         })
         .await
@@ -1648,12 +1852,14 @@ async fn deliver_unix_socket_frames(
 }
 
 async fn open_unix_socket_channel_with_framing(
-    params: &Value,
+    key: String,
+    channel_id: String,
+    session: Arc<Session>,
+    socket_path: String,
     framing: Option<LengthFormat>,
+    max_frame_bytes: usize,
     delivery: UnixSocketDelivery,
-) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let channel_id = required_string(params, "channelId")?;
+) -> Result<(), TransportError> {
     if channel_id.is_empty() || channel_id.len() > 128 || channel_id.chars().any(char::is_control) {
         return Err(TransportError::InvalidRequest(
             "channelId must contain 1 through 128 printable characters".to_owned(),
@@ -1666,17 +1872,10 @@ async fn open_unix_socket_channel_with_framing(
         )));
     }
 
-    let session = session_for(params)?;
-    let socket_path = required_string(params, "socketPath")?;
     let channel = session
         .handle
         .channel_open_direct_streamlocal(socket_path)
         .await?;
-    let max_frame_bytes = params
-        .get("maxFrameBytes")
-        .and_then(Value::as_u64)
-        .unwrap_or(32 * 1024 * 1024)
-        .clamp(1, 128 * 1024 * 1024) as usize;
     let (sender, receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
     {
         let mut channels = unix_socket_channels().write();
@@ -1709,7 +1908,7 @@ async fn open_unix_socket_channel_with_framing(
         let delivery_task = tokio::spawn(deliver_unix_socket_frames(
             Arc::<str>::from(key.as_str()),
             Arc::<str>::from(channel_id.as_str()),
-            delivery,
+            delivery.clone(),
             delivery_receiver,
         ));
 
@@ -1759,26 +1958,46 @@ async fn open_unix_socket_channel_with_framing(
                     "closedByClient": closed_by_client,
                 },
             })),
-            UnixSocketDelivery::Native {
-                context, closed, ..
-            } => match CString::new(reason) {
-                Ok(reason) => unsafe { closed(context, reason.as_ptr()) },
-                Err(_) => unsafe { closed(context, c"native Unix-socket channel closed".as_ptr()) },
-            },
+            UnixSocketDelivery::Rust { closed, .. } => closed(reason),
         }
     });
 
-    Ok(Value::Null)
+    Ok(())
 }
 
 async fn open_unix_socket_channel(params: &Value) -> Result<Value, TransportError> {
-    open_unix_socket_channel_with_framing(params, None, UnixSocketDelivery::ReactNative).await
+    open_unix_socket_channel_from_params(params, None).await
 }
 
 async fn open_length_prefixed_unix_socket_channel(params: &Value) -> Result<Value, TransportError> {
     let format = LengthFormat::parse(&required_string(params, "lengthFormat")?)?;
-    open_unix_socket_channel_with_framing(params, Some(format), UnixSocketDelivery::ReactNative)
-        .await
+    open_unix_socket_channel_from_params(params, Some(format)).await
+}
+
+async fn open_unix_socket_channel_from_params(
+    params: &Value,
+    framing: Option<LengthFormat>,
+) -> Result<Value, TransportError> {
+    let key = required_string(params, "key")?;
+    let channel_id = required_string(params, "channelId")?;
+    let session = session_for(params)?;
+    let socket_path = required_string(params, "socketPath")?;
+    let max_frame_bytes = params
+        .get("maxFrameBytes")
+        .and_then(Value::as_u64)
+        .unwrap_or(32 * 1024 * 1024)
+        .clamp(1, 128 * 1024 * 1024) as usize;
+    open_unix_socket_channel_with_framing(
+        key,
+        channel_id,
+        session,
+        socket_path,
+        framing,
+        max_frame_bytes,
+        UnixSocketDelivery::ReactNative,
+    )
+    .await?;
+    Ok(Value::Null)
 }
 
 fn unix_socket_channel_command_for_key(
@@ -1858,6 +2077,17 @@ async fn open_local_forward(params: &Value) -> Result<Value, TransportError> {
     let remote_host = required_string(params, "remoteHost")?;
     let remote_port = required_u16(params, "remotePort")?;
     let session = session_for(params)?;
+    Ok(json!(
+        open_local_forward_on(key, session, remote_host, remote_port).await?
+    ))
+}
+
+async fn open_local_forward_on(
+    key: String,
+    session: Arc<Session>,
+    remote_host: String,
+    remote_port: u16,
+) -> Result<u16, TransportError> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
     let local_port = listener.local_addr()?.port();
     let (cancel_tx, mut cancel_rx) = watch::channel(false);
@@ -1893,7 +2123,13 @@ async fn open_local_forward(params: &Value) -> Result<Value, TransportError> {
             forwards().write().remove(&map_key);
         }
     });
-    Ok(json!(local_port))
+    Ok(local_port)
+}
+
+fn close_local_forward_for_key(key: &str, local_port: u16) {
+    if let Some(cancel) = forwards().write().remove(&(key.to_owned(), local_port)) {
+        let _ = cancel.send(true);
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -2128,6 +2364,20 @@ async fn start_sftp_file_server(params: &Value) -> Result<Value, TransportError>
     let key = required_string(params, "key")?;
     let remote_path = required_string(params, "remotePath")?;
     let session = session_for(params)?;
+    let server = start_sftp_file_server_on(key, session, remote_path).await?;
+    Ok(json!({ "localPort": server.local_port, "token": server.token }))
+}
+
+pub(crate) struct SftpFileServer {
+    pub local_port: u16,
+    pub token: String,
+}
+
+async fn start_sftp_file_server_on(
+    key: String,
+    session: Arc<Session>,
+    remote_path: String,
+) -> Result<SftpFileServer, TransportError> {
     let channel = session.handle.channel_open_session().await?;
     channel.request_subsystem(true, "sftp").await?;
     let sftp = Arc::new(SftpSession::new(channel.into_stream()).await?);
@@ -2193,43 +2443,34 @@ async fn start_sftp_file_server(params: &Value) -> Result<Value, TransportError>
             sftp_file_servers().write().remove(&map_key);
         }
     });
-    Ok(json!({ "localPort": local_port, "token": returned_token }))
+    Ok(SftpFileServer {
+        local_port,
+        token: returned_token,
+    })
 }
 
-fn emit_exec_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>, delivery: ExecDelivery) {
-    if let ExecDelivery::Native { context, data, .. } = delivery {
-        unsafe { data(context, bytes.as_ptr(), bytes.len()) };
-        return;
+fn emit_exec_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>, delivery: &ExecDelivery) {
+    match delivery {
+        ExecDelivery::Rust { data, .. } => {
+            data(bytes);
+            return;
+        }
+        ExecDelivery::ReactNative => {}
     }
     let sink = uniffi_event_sink().read().clone();
-    let callback = *event_callback().read();
-    let legacy_json = callback.map(|_| {
-        serde_json::to_string(&json!({
-            "name": "ExecChannel",
-            "key": key,
-            "value": {
-                "type": "data",
-                "channelId": channel_id,
-                "bytes": BASE64.encode(&bytes),
-            },
-        }))
-        .unwrap_or_default()
-    });
     if let Some(sink) = sink {
         let _trace = AndroidTraceSlice::begin(EXEC_INBOUND_RUST_CHUNK_DELIVERY);
         sink.exec_channel_data(key.to_owned(), channel_id.to_owned(), bytes);
     }
-    if let (Some(callback), Some(json)) = (callback, legacy_json) {
-        emit_legacy_json(callback, json);
-    }
 }
 
 async fn open_exec_channel_with_delivery(
-    params: &Value,
+    key: String,
+    channel_id: String,
+    session: Arc<Session>,
+    command: String,
     delivery: ExecDelivery,
-) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let channel_id = required_string(params, "channelId")?;
+) -> Result<(), TransportError> {
     if channel_id.is_empty() || channel_id.len() > 128 || channel_id.chars().any(char::is_control) {
         return Err(TransportError::InvalidRequest(
             "channelId must contain 1 through 128 printable characters".to_owned(),
@@ -2241,12 +2482,9 @@ async fn open_exec_channel_with_delivery(
             "exec channel '{channel_id}' is already open"
         )));
     }
-    let session = session_for(params)?;
     let channel = session.handle.channel_open_session().await?;
     request_agent_forwarding(&session, &channel).await?;
-    channel
-        .exec(true, required_string(params, "command")?)
-        .await?;
+    channel.exec(true, command).await?;
     let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
     {
         let mut channels = exec_channels().write();
@@ -2272,7 +2510,7 @@ async fn open_exec_channel_with_delivery(
                             &key,
                             &channel_id,
                             data.to_vec(),
-                            delivery,
+                            &delivery,
                         );
                     },
                     Some(russh::ChannelMsg::ExtendedData { data, ext: 1 }) => {
@@ -2323,15 +2561,10 @@ async fn open_exec_channel_with_delivery(
                     "closedByClient": closed_by_client,
                 },
             })),
-            ExecDelivery::Native {
-                context, closed, ..
-            } => match CString::new(reason) {
-                Ok(reason) => unsafe { closed(context, reason.as_ptr()) },
-                Err(_) => unsafe { closed(context, c"native exec channel closed".as_ptr()) },
-            },
+            ExecDelivery::Rust { closed, .. } => closed(reason),
         }
     });
-    Ok(Value::Null)
+    Ok(())
 }
 
 fn exec_channel_close_reason(exit_status: Option<u32>, stderr: &[u8]) -> String {
@@ -2348,7 +2581,15 @@ fn exec_channel_close_reason(exit_status: Option<u32>, stderr: &[u8]) -> String 
 }
 
 async fn open_exec_channel(params: &Value) -> Result<Value, TransportError> {
-    open_exec_channel_with_delivery(params, ExecDelivery::ReactNative).await
+    open_exec_channel_with_delivery(
+        required_string(params, "key")?,
+        required_string(params, "channelId")?,
+        session_for(params)?,
+        required_string(params, "command")?,
+        ExecDelivery::ReactNative,
+    )
+    .await?;
+    Ok(Value::Null)
 }
 
 fn exec_channel_command_for_key(
@@ -2407,8 +2648,15 @@ async fn disconnect_key(key: String) {
     if let Some(cancel) = transfers().read().get(&(key.clone(), "download")) {
         let _ = cancel.send(true);
     }
-    if let Some(sender) = shells().write().remove(&key) {
-        let _ = sender.try_send(ShellCommand::Close);
+    let shell_ids = shells()
+        .read()
+        .keys()
+        .filter_map(|(owner, shell_id)| (owner == &key).then_some(shell_id.clone()))
+        .collect::<Vec<_>>();
+    for shell_id in shell_ids {
+        if let Some(sender) = shells().write().remove(&(key.clone(), shell_id)) {
+            let _ = sender.try_send(ShellCommand::Close);
+        }
     }
     let file_server_ports = sftp_file_servers()
         .read()
@@ -2741,7 +2989,7 @@ pub fn write_exec_channel(key: String, channel_id: String, bytes: Vec<u8>) -> Op
 }
 
 #[uniffi::export]
-pub fn set_event_sink(sink: Arc<dyn ReactNativeRusshEventSink>) {
+pub fn set_event_sink(sink: Arc<dyn WhipSshEventSink>) {
     *uniffi_event_sink().write() = Some(sink);
 }
 
@@ -2749,540 +2997,6 @@ pub fn set_event_sink(sink: Arc<dyn ReactNativeRusshEventSink>) {
 pub fn clear_event_sink() {
     *uniffi_event_sink().write() = None;
 }
-
-/// Executes one transport operation. The caller owns the returned UTF-8 string
-/// and must release it with [`react_native_russh_string_free`].
-///
-/// # Safety
-///
-/// `request_json` must be null or point to a valid NUL-terminated byte string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_call(request_json: *const c_char) -> *mut c_char {
-    if request_json.is_null() {
-        return CString::new(r#"{"ok":false,"error":"request pointer was null"}"#)
-            .map_or(std::ptr::null_mut(), CString::into_raw);
-    }
-    let input = unsafe { CStr::from_ptr(request_json) }.to_string_lossy();
-    CString::new(process_json(&input)).map_or(std::ptr::null_mut(), CString::into_raw)
-}
-
-/// Schedules an operation on the transport runtime. The response pointer is
-/// valid only for the duration of the callback and must be copied by the caller.
-///
-/// # Safety
-///
-/// `request_json` must be null or point to a valid NUL-terminated byte string.
-/// The callback must remain callable until it receives this request's response.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_call_async(
-    request_id: u64,
-    request_json: *const c_char,
-    callback: Option<ResponseCallback>,
-) {
-    let Some(callback) = callback else { return };
-    let input = if request_json.is_null() {
-        None
-    } else {
-        Some(
-            unsafe { CStr::from_ptr(request_json) }
-                .to_string_lossy()
-                .into_owned(),
-        )
-    };
-    let lifecycle_epoch = LIFECYCLE_EPOCH.load(Ordering::Acquire);
-    let runtime = match runtime() {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            let response = serialize_response(&Response::failure(SshError::unknown(format!(
-                "failed to initialize SSH runtime: {error}"
-            ))));
-            if let Ok(response) = CString::new(response) {
-                unsafe { callback(request_id, response.as_ptr()) };
-            }
-            return;
-        }
-    };
-    runtime.spawn(async move {
-        let response = process_json_for_lifecycle(input, lifecycle_epoch).await;
-        if let Ok(response) = CString::new(response) {
-            // The Objective-C callback copies the string before returning.
-            unsafe { callback(request_id, response.as_ptr()) };
-        }
-    });
-}
-
-/// Releases a string previously returned by [`react_native_russh_call`].
-///
-/// # Safety
-///
-/// `value` must be null or a pointer returned by [`react_native_russh_call`] that has not
-/// already been released.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_string_free(value: *mut c_char) {
-    if !value.is_null() {
-        drop(unsafe { CString::from_raw(value) });
-    }
-}
-
-/// Registers the process-wide event sink. Passing `None` detaches it.
-#[unsafe(no_mangle)]
-pub extern "C" fn react_native_russh_set_event_callback(callback: Option<EventCallback>) {
-    *event_callback().write() = callback;
-}
-
-fn native_channel_result(error: Option<impl ToString>) -> *mut c_char {
-    let Some(error) = error else {
-        return std::ptr::null_mut();
-    };
-    CString::new(error.to_string())
-        .unwrap_or_else(|_| CString::new("native Unix-socket operation failed").unwrap())
-        .into_raw()
-}
-
-fn notify_native_channel_open(
-    callback: NativeChannelOpenCallback,
-    context: u64,
-    result: Result<Value, TransportError>,
-) {
-    match result {
-        Ok(_) => unsafe { callback(context, std::ptr::null()) },
-        Err(error) => match CString::new(error.to_string()) {
-            Ok(error) => unsafe { callback(context, error.as_ptr()) },
-            Err(_) => unsafe { callback(context, c"native Unix-socket open failed".as_ptr()) },
-        },
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-unsafe fn open_native_unix_socket_channel(
-    context: u64,
-    key: *const c_char,
-    channel_id: *const c_char,
-    socket_path: *const c_char,
-    max_frame_bytes: usize,
-    opened: Option<NativeChannelOpenCallback>,
-    frame: Option<NativeChannelFrameCallback>,
-    closed: Option<NativeChannelClosedCallback>,
-    framing: Option<LengthFormat>,
-) {
-    let Some(opened) = opened else { return };
-    let strings = [key, channel_id, socket_path]
-        .into_iter()
-        .map(|value| {
-            if value.is_null() {
-                Err(TransportError::InvalidRequest(
-                    "native Unix-socket channel received a null string".to_owned(),
-                ))
-            } else {
-                Ok(unsafe { CStr::from_ptr(value) }
-                    .to_string_lossy()
-                    .into_owned())
-            }
-        })
-        .collect::<Result<Vec<_>, _>>();
-    let [key, channel_id, socket_path] = match strings.and_then(|strings| {
-        strings.try_into().map_err(|_| {
-            TransportError::InvalidRequest("native Unix-socket arguments were invalid".to_owned())
-        })
-    }) {
-        Ok(strings) => strings,
-        Err(error) => {
-            notify_native_channel_open(opened, context, Err(error));
-            return;
-        }
-    };
-    let (Some(frame), Some(closed)) = (frame, closed) else {
-        notify_native_channel_open(
-            opened,
-            context,
-            Err(TransportError::InvalidRequest(
-                "native Unix-socket callbacks are required".to_owned(),
-            )),
-        );
-        return;
-    };
-    let runtime = match runtime() {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            notify_native_channel_open(
-                opened,
-                context,
-                Err(TransportError::ChannelUnavailable(format!(
-                    "failed to initialize SSH runtime: {error}"
-                ))),
-            );
-            return;
-        }
-    };
-    runtime.spawn(async move {
-        let params = json!({
-            "key": key,
-            "channelId": channel_id,
-            "socketPath": socket_path,
-            "maxFrameBytes": max_frame_bytes,
-        });
-        let result = open_unix_socket_channel_with_framing(
-            &params,
-            framing,
-            UnixSocketDelivery::Native {
-                context,
-                frame,
-                closed,
-            },
-        )
-        .await;
-        notify_native_channel_open(opened, context, result);
-    });
-}
-
-/// Opens a product-neutral raw stream-local channel and delivers byte chunks
-/// directly to native callbacks.
-///
-/// # Safety
-///
-/// String pointers must reference valid NUL-terminated UTF-8 for the duration
-/// of this call. Callback functions must remain valid until `closed` fires.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_open_native_unix_socket_channel(
-    context: u64,
-    key: *const c_char,
-    channel_id: *const c_char,
-    socket_path: *const c_char,
-    max_frame_bytes: usize,
-    opened: Option<NativeChannelOpenCallback>,
-    frame: Option<NativeChannelFrameCallback>,
-    closed: Option<NativeChannelClosedCallback>,
-) {
-    unsafe {
-        open_native_unix_socket_channel(
-            context,
-            key,
-            channel_id,
-            socket_path,
-            max_frame_bytes,
-            opened,
-            frame,
-            closed,
-            None,
-        );
-    }
-}
-
-/// Opens a product-neutral u32-LE length-prefixed stream-local channel and
-/// delivers its payload frames directly to native callbacks.
-///
-/// This API intentionally contains no product protocol knowledge. It exists so
-/// product-native codecs can reuse the already-connected SSH session without a
-/// JavaScript frame round trip.
-///
-/// # Safety
-///
-/// String pointers must reference valid NUL-terminated UTF-8 for the duration
-/// of this call. Callback functions must remain valid until `closed` fires.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_open_native_length_prefixed_unix_socket_channel(
-    context: u64,
-    key: *const c_char,
-    channel_id: *const c_char,
-    socket_path: *const c_char,
-    max_frame_bytes: usize,
-    opened: Option<NativeChannelOpenCallback>,
-    frame: Option<NativeChannelFrameCallback>,
-    closed: Option<NativeChannelClosedCallback>,
-) {
-    unsafe {
-        open_native_unix_socket_channel(
-            context,
-            key,
-            channel_id,
-            socket_path,
-            max_frame_bytes,
-            opened,
-            frame,
-            closed,
-            Some(LengthFormat::U32Le),
-        );
-    }
-}
-
-/// Opens a product-neutral SSH exec channel and delivers raw stdout/stderr
-/// bytes directly to native callbacks.
-///
-/// # Safety
-///
-/// String pointers must reference valid NUL-terminated UTF-8 for the duration
-/// of this call. Callback functions must remain valid until `closed` fires.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_open_native_exec_channel(
-    context: u64,
-    key: *const c_char,
-    channel_id: *const c_char,
-    command: *const c_char,
-    opened: Option<NativeChannelOpenCallback>,
-    data: Option<NativeChannelFrameCallback>,
-    closed: Option<NativeChannelClosedCallback>,
-) {
-    let Some(opened) = opened else { return };
-    let (Some(data), Some(closed)) = (data, closed) else {
-        notify_native_channel_open(
-            opened,
-            context,
-            Err(TransportError::InvalidRequest(
-                "native exec callbacks are required".to_owned(),
-            )),
-        );
-        return;
-    };
-    let strings = [key, channel_id, command]
-        .into_iter()
-        .map(|value| {
-            if value.is_null() {
-                Err(TransportError::InvalidRequest(
-                    "native exec channel received a null string".to_owned(),
-                ))
-            } else {
-                Ok(unsafe { CStr::from_ptr(value) }
-                    .to_string_lossy()
-                    .into_owned())
-            }
-        })
-        .collect::<Result<Vec<_>, _>>();
-    let [key, channel_id, command] = match strings.and_then(|values| {
-        values.try_into().map_err(|_| {
-            TransportError::InvalidRequest("native exec arguments were invalid".to_owned())
-        })
-    }) {
-        Ok(values) => values,
-        Err(error) => {
-            notify_native_channel_open(opened, context, Err(error));
-            return;
-        }
-    };
-    let runtime = match runtime() {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            notify_native_channel_open(
-                opened,
-                context,
-                Err(TransportError::ChannelUnavailable(format!(
-                    "failed to initialize SSH runtime: {error}"
-                ))),
-            );
-            return;
-        }
-    };
-    runtime.spawn(async move {
-        let params = json!({ "key": key, "channelId": channel_id, "command": command });
-        let result = open_exec_channel_with_delivery(
-            &params,
-            ExecDelivery::Native {
-                context,
-                data,
-                closed,
-            },
-        )
-        .await;
-        notify_native_channel_open(opened, context, result);
-    });
-}
-
-/// Closes a native exec channel.
-///
-/// # Safety
-///
-/// String pointers must reference valid NUL-terminated UTF-8.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_close_native_exec_channel(
-    key: *const c_char,
-    channel_id: *const c_char,
-) -> *mut c_char {
-    if key.is_null() || channel_id.is_null() {
-        return native_channel_result(Some("invalid native exec close arguments"));
-    }
-    let key = unsafe { CStr::from_ptr(key) }.to_string_lossy();
-    let channel_id = unsafe { CStr::from_ptr(channel_id) }.to_string_lossy();
-    native_channel_result(
-        exec_channel_command_for_key(&key, &channel_id, StreamCommand::Close).err(),
-    )
-}
-
-fn notify_native_unix_socket_request(
-    callback: NativeUnixSocketRequestCallback,
-    context: u64,
-    result: Result<Vec<u8>, TransportError>,
-) {
-    match result {
-        Ok(response) => unsafe {
-            callback(context, response.as_ptr(), response.len(), std::ptr::null());
-        },
-        Err(error) => match CString::new(error.to_string()) {
-            Ok(error) => unsafe {
-                callback(context, std::ptr::null(), 0, error.as_ptr());
-            },
-            Err(_) => unsafe {
-                callback(
-                    context,
-                    std::ptr::null(),
-                    0,
-                    c"native Unix-socket request failed".as_ptr(),
-                );
-            },
-        },
-    }
-}
-
-/// Sends one byte request over a product-neutral stream-local channel and
-/// returns the bytes before the configured single-byte response terminator.
-///
-/// # Safety
-///
-/// String pointers must be valid NUL-terminated UTF-8. `request` must reference
-/// `request_length` readable bytes when nonzero. The callback must remain valid
-/// until it is invoked once.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_request_native_unix_socket(
-    context: u64,
-    key: *const c_char,
-    socket_path: *const c_char,
-    request: *const u8,
-    request_length: usize,
-    response_terminator: u8,
-    timeout_ms: u64,
-    max_response_bytes: usize,
-    callback: Option<NativeUnixSocketRequestCallback>,
-) {
-    let Some(callback) = callback else { return };
-    if key.is_null()
-        || socket_path.is_null()
-        || (request.is_null() && request_length != 0)
-        || response_terminator == 0
-        || !response_terminator.is_ascii()
-    {
-        notify_native_unix_socket_request(
-            callback,
-            context,
-            Err(TransportError::InvalidRequest(
-                "invalid native Unix-socket request arguments".to_owned(),
-            )),
-        );
-        return;
-    }
-    let key = unsafe { CStr::from_ptr(key) }
-        .to_string_lossy()
-        .into_owned();
-    let socket_path = unsafe { CStr::from_ptr(socket_path) }
-        .to_string_lossy()
-        .into_owned();
-    let request = if request_length == 0 {
-        Vec::new()
-    } else {
-        unsafe { std::slice::from_raw_parts(request, request_length) }.to_vec()
-    };
-    let runtime = match runtime() {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            notify_native_unix_socket_request(
-                callback,
-                context,
-                Err(TransportError::ChannelUnavailable(format!(
-                    "failed to initialize SSH runtime: {error}"
-                ))),
-            );
-            return;
-        }
-    };
-    runtime.spawn(async move {
-        let terminator = char::from(response_terminator).to_string();
-        let params = json!({
-            "key": key,
-            "socketPath": socket_path,
-            "responseTerminator": terminator,
-            "timeoutMs": timeout_ms,
-            "maxResponseBytes": max_response_bytes,
-        });
-        let result = request_unix_socket_bytes(&params, &request).await;
-        notify_native_unix_socket_request(callback, context, result);
-    });
-}
-
-unsafe fn write_native_unix_socket_channel(
-    key: *const c_char,
-    channel_id: *const c_char,
-    bytes: *const u8,
-    length: usize,
-    framed: bool,
-) -> *mut c_char {
-    if key.is_null() || channel_id.is_null() || (bytes.is_null() && length != 0) {
-        return native_channel_result(Some("invalid native Unix-socket write arguments"));
-    }
-    let key = unsafe { CStr::from_ptr(key) }.to_string_lossy();
-    let channel_id = unsafe { CStr::from_ptr(channel_id) }.to_string_lossy();
-    let bytes = if length == 0 {
-        Vec::new()
-    } else {
-        unsafe { std::slice::from_raw_parts(bytes, length) }.to_vec()
-    };
-    native_channel_result(write_unix_socket_channel_for_key(&key, &channel_id, bytes, framed).err())
-}
-
-/// Queues bytes for a native raw stream-local channel.
-///
-/// # Safety
-///
-/// String pointers must be valid NUL-terminated strings. `bytes` must reference
-/// `length` readable bytes when `length` is nonzero.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_write_native_unix_socket_channel(
-    key: *const c_char,
-    channel_id: *const c_char,
-    bytes: *const u8,
-    length: usize,
-) -> *mut c_char {
-    unsafe { write_native_unix_socket_channel(key, channel_id, bytes, length, false) }
-}
-
-/// Queues one payload for a native u32-LE length-prefixed channel.
-///
-/// The returned string is null on success and otherwise must be released with
-/// [`react_native_russh_string_free`].
-///
-/// # Safety
-///
-/// String pointers must be valid NUL-terminated strings. `bytes` must reference
-/// `length` readable bytes when `length` is nonzero.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_write_native_length_prefixed_unix_socket_channel(
-    key: *const c_char,
-    channel_id: *const c_char,
-    bytes: *const u8,
-    length: usize,
-) -> *mut c_char {
-    unsafe { write_native_unix_socket_channel(key, channel_id, bytes, length, true) }
-}
-
-/// Closes a native Unix-socket channel.
-///
-/// The returned string is null on success and otherwise must be released with
-/// [`react_native_russh_string_free`].
-///
-/// # Safety
-///
-/// String pointers must be valid NUL-terminated strings.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn react_native_russh_close_native_unix_socket_channel(
-    key: *const c_char,
-    channel_id: *const c_char,
-) -> *mut c_char {
-    if key.is_null() || channel_id.is_null() {
-        return native_channel_result(Some("invalid native Unix-socket close arguments"));
-    }
-    let key = unsafe { CStr::from_ptr(key) }.to_string_lossy();
-    let channel_id = unsafe { CStr::from_ptr(channel_id) }.to_string_lossy();
-    native_channel_result(
-        unix_socket_channel_command_for_key(&key, &channel_id, StreamCommand::Close).err(),
-    )
-}
-
 fn shutdown_transport() {
     *uniffi_event_sink().write() = None;
     LIFECYCLE_EPOCH.fetch_add(1, Ordering::AcqRel);
@@ -3296,778 +3010,5 @@ pub fn shutdown() {
     shutdown_transport();
 }
 
-/// Stops all process-wide sessions and child tasks during React Native bridge
-/// invalidation. Cleanup is asynchronous so invalidation never blocks JS.
-#[unsafe(no_mangle)]
-pub extern "C" fn react_native_russh_shutdown() {
-    shutdown_transport();
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn live_call(operation: &str, params: Value) -> Value {
-        dispatch(Request {
-            operation: operation.to_owned(),
-            params,
-        })
-        .await
-        .unwrap_or_else(|error| panic!("{operation} failed: {error}"))
-    }
-
-    #[test]
-    fn invalid_json_is_a_structured_failure() {
-        let result: Value = serde_json::from_str(&process_json("{")).unwrap();
-        assert_eq!(result["ok"], false);
-        assert_eq!(result["error"]["code"], "INVALID_REQUEST");
-        assert!(
-            result["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("invalid request JSON")
-        );
-    }
-
-    #[test]
-    fn missing_parameter_is_a_structured_failure() {
-        let result: Value =
-            serde_json::from_str(&process_json(r#"{"operation":"connect"}"#)).unwrap();
-        assert_eq!(result["ok"], false);
-        assert_eq!(result["error"]["code"], "INVALID_REQUEST");
-        assert!(
-            result["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("missing string parameter 'key'")
-        );
-    }
-
-    #[test]
-    fn transport_errors_have_stable_codes() {
-        assert_eq!(
-            transport_error_code(&TransportError::AuthenticationFailed),
-            SshErrorCode::AuthenticationFailed,
-        );
-        assert_eq!(
-            transport_error_code(&TransportError::Io(std::io::Error::from(
-                std::io::ErrorKind::ConnectionRefused,
-            ))),
-            SshErrorCode::ConnectionRefused,
-        );
-        assert_eq!(
-            transport_error_code(&TransportError::Ssh(russh::Error::WrongChannel)),
-            SshErrorCode::ChannelUnavailable,
-        );
-        assert!(matches!(
-            classify_direct_connect_error(TransportError::Ssh(russh::Error::IO(
-                std::io::Error::other("host lookup failed"),
-            ))),
-            TransportError::HostUnreachable(_),
-        ));
-    }
-
-    #[test]
-    fn host_key_errors_carry_structured_challenges() {
-        let mut rng =
-            russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
-        let private_key =
-            russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap();
-        let challenge =
-            match KnownHosts::default().check("Example.COM", 2222, private_key.public_key()) {
-                HostKeyDecision::Unknown(challenge) => challenge,
-                _ => panic!("empty known_hosts should reject the key as unknown"),
-            };
-        let error = serde_json::to_value(SshError::from(TransportError::HostKeyUnknown(challenge)))
-            .unwrap();
-        assert_eq!(error["code"], "HOST_KEY_UNKNOWN");
-        assert_eq!(error["details"]["host"], "Example.COM");
-        assert_eq!(error["details"]["port"], 2222);
-        assert_eq!(error["details"]["keyType"], "ssh-ed25519");
-        assert!(
-            error["details"]["fingerprint"]
-                .as_str()
-                .unwrap()
-                .starts_with("SHA256:")
-        );
-        assert!(
-            error["details"]["publicKey"]
-                .as_str()
-                .unwrap()
-                .starts_with("ssh-ed25519 ")
-        );
-    }
-
-    #[test]
-    fn remote_home_command_expands_without_literal_quotes() {
-        assert_eq!(REMOTE_HOME_COMMAND, "printf %s \"$HOME\"");
-    }
-
-    #[test]
-    fn exec_close_reason_preserves_bounded_remote_diagnostics() {
-        assert_eq!(
-            exec_channel_close_reason(Some(127), b"sh: tail: not found\n"),
-            "remote exec channel exited with status 127: sh: tail: not found"
-        );
-        assert_eq!(
-            exec_channel_close_reason(Some(75), b"source replaced\r\ntry again"),
-            "remote exec channel exited with status 75: source replaced  try again"
-        );
-        assert_eq!(
-            exec_channel_close_reason(Some(0), b""),
-            "remote exec channel reached EOF"
-        );
-    }
-
-    #[test]
-    fn blocked_transfer_io_cancels_promptly_and_does_not_poison_the_next_transfer() {
-        runtime().unwrap().block_on(async {
-            let (blocked_destination, _blocked_reader) = tokio::io::duplex(1);
-            let (cancel_sender, mut cancel) = watch::channel(false);
-            let transfer = tokio::spawn(async move {
-                copy_sftp_stream(
-                    Box::new(std::io::Cursor::new(vec![7u8; 64 * 1024])),
-                    Box::new(blocked_destination),
-                    64 * 1024,
-                    "test-client",
-                    "upload",
-                    "UploadProgress",
-                    &mut cancel,
-                )
-                .await
-            });
-
-            // The one-byte duplex capacity leaves write_all blocked in the
-            // middle of its first chunk until cancellation wins the select.
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            cancel_sender.send(true).unwrap();
-            let error = tokio::time::timeout(Duration::from_millis(100), transfer)
-                .await
-                .expect("cancelled transfer should settle promptly")
-                .unwrap()
-                .unwrap_err();
-            assert!(error.to_string().contains("cancelled"));
-
-            let (_next_cancel_sender, mut next_cancel) = watch::channel(false);
-            copy_sftp_stream(
-                Box::new(std::io::Cursor::new(b"next upload".to_vec())),
-                Box::new(tokio::io::sink()),
-                11,
-                "test-client",
-                "upload",
-                "UploadProgress",
-                &mut next_cancel,
-            )
-            .await
-            .expect("a later transfer should still succeed");
-        });
-    }
-
-    #[test]
-    fn parses_file_preview_get_head_and_single_ranges() {
-        assert_eq!(
-            parse_sftp_http_request(
-                b"GET /secret/video.mp4 HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=10-19\r\n\r\n",
-            )
-            .unwrap(),
-            SftpHttpRequest {
-                head: false,
-                path: "/secret/video.mp4".to_owned(),
-                range: Some("bytes=10-19".to_owned()),
-            },
-        );
-        assert!(parse_sftp_http_request(b"POST /secret/video.mp4 HTTP/1.1\r\n\r\n").is_err());
-        assert_eq!(parse_sftp_http_range(None, 100), Ok((0, 99, false)));
-        assert_eq!(
-            parse_sftp_http_range(Some("bytes=10-19"), 100),
-            Ok((10, 19, true)),
-        );
-        assert_eq!(
-            parse_sftp_http_range(Some("bytes=90-"), 100),
-            Ok((90, 99, true)),
-        );
-        assert_eq!(
-            parse_sftp_http_range(Some("bytes=-10"), 100),
-            Ok((90, 99, true)),
-        );
-        assert!(parse_sftp_http_range(Some("bytes=100-"), 100).is_err());
-        assert!(parse_sftp_http_range(Some("bytes=0-1,4-5"), 100).is_err());
-    }
-
-    #[test]
-    fn assigns_inline_media_content_types() {
-        assert_eq!(sftp_http_content_type("/tmp/report.PDF"), "application/pdf");
-        assert_eq!(sftp_http_content_type("/tmp/movie.mp4"), "video/mp4");
-        assert_eq!(sftp_http_content_type("/tmp/audio.flac"), "audio/flac");
-        assert_eq!(
-            sftp_http_content_type("/tmp/archive.bin"),
-            "application/octet-stream",
-        );
-    }
-
-    #[test]
-    fn typed_fast_paths_report_missing_channels_without_json() {
-        let shell_error: Value = serde_json::from_str(
-            &write_shell_input("missing-shell".to_owned(), "x".to_owned()).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(shell_error["code"], "SESSION_CLOSED");
-        assert!(
-            write_unix_socket_channel(
-                "missing-client".to_owned(),
-                "missing-channel".to_owned(),
-                vec![1, 2, 3],
-            )
-            .is_some_and(|error| {
-                let error: Value = serde_json::from_str(&error).unwrap();
-                error["code"] == "CHANNEL_UNAVAILABLE"
-                    && error["message"]
-                        .as_str()
-                        .unwrap()
-                        .contains("Unix-socket channel 'missing-channel' is not open")
-            })
-        );
-        assert!(
-            write_length_prefixed_unix_socket_channel(
-                "missing-client".to_owned(),
-                "missing-channel".to_owned(),
-                vec![1, 2, 3],
-            )
-            .is_some_and(|error| {
-                let error: Value = serde_json::from_str(&error).unwrap();
-                error["code"] == "CHANNEL_UNAVAILABLE"
-                    && error["message"]
-                        .as_str()
-                        .unwrap()
-                        .contains("Unix-socket channel 'missing-channel' is not open")
-            })
-        );
-        assert!(
-            write_exec_channel(
-                "missing-client".to_owned(),
-                "missing-channel".to_owned(),
-                vec![1, 2, 3],
-            )
-            .is_some_and(|error| {
-                let error: Value = serde_json::from_str(&error).unwrap();
-                error["code"] == "CHANNEL_UNAVAILABLE"
-                    && error["message"]
-                        .as_str()
-                        .unwrap()
-                        .contains("exec channel 'missing-channel' is not open")
-            })
-        );
-    }
-
-    #[test]
-    fn encodes_supported_frame_length_formats() {
-        assert_eq!(LengthFormat::U8.prefix(42).unwrap(), vec![42]);
-        assert_eq!(
-            LengthFormat::U16Le.prefix(0x1234).unwrap(),
-            vec![0x34, 0x12]
-        );
-        assert_eq!(
-            LengthFormat::U16Be.prefix(0x1234).unwrap(),
-            vec![0x12, 0x34]
-        );
-        assert_eq!(
-            LengthFormat::U32Le.prefix(0x1234_5678).unwrap(),
-            vec![0x78, 0x56, 0x34, 0x12],
-        );
-        assert_eq!(
-            LengthFormat::U32Be.prefix(0x1234_5678).unwrap(),
-            vec![0x12, 0x34, 0x56, 0x78],
-        );
-        assert!(LengthFormat::U8.prefix(256).is_err());
-    }
-
-    #[test]
-    fn reads_complete_length_prefixed_payloads() {
-        runtime().unwrap().block_on(async {
-            let mut input = &b"\x03\0\0\0abc\0\0\0\0"[..];
-            let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 1024);
-            assert_eq!(
-                reader.read_frame(&mut input).await.unwrap(),
-                Some(b"abc".to_vec()),
-            );
-            assert_eq!(
-                reader.read_frame(&mut input).await.unwrap(),
-                Some(Vec::new())
-            );
-            assert_eq!(reader.read_frame(&mut input).await.unwrap(), None);
-
-            let mut oversized = &b"\x04\0\0\0abcd"[..];
-            let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 3);
-            assert!(reader.read_frame(&mut oversized).await.is_err());
-        });
-    }
-
-    #[test]
-    fn preserves_partial_frame_state_when_a_read_is_cancelled() {
-        runtime().unwrap().block_on(async {
-            let (mut writer, mut input) = tokio::io::duplex(64);
-            let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 1024);
-
-            writer.write_all(b"\x03\0").await.unwrap();
-            assert!(
-                tokio::time::timeout(Duration::from_millis(10), reader.read_frame(&mut input),)
-                    .await
-                    .is_err()
-            );
-
-            writer.write_all(b"\0\0abc").await.unwrap();
-            assert_eq!(
-                reader.read_frame(&mut input).await.unwrap(),
-                Some(b"abc".to_vec()),
-            );
-        });
-    }
-
-    #[test]
-    fn outbound_writes_continue_when_inbound_delivery_is_backpressured() {
-        runtime().unwrap().block_on(async {
-            let (socket, mut remote) = tokio::io::duplex(1024);
-            let (socket_reader, socket_writer) = tokio::io::split(socket);
-            let (delivery_sender, delivery_receiver) = mpsc::channel(1);
-            let byte_budget = Arc::new(Semaphore::new(1));
-            let held_permit = byte_budget
-                .clone()
-                .acquire_owned()
-                .await
-                .expect("test byte budget should be open");
-            delivery_sender
-                .send(OwnedInboundFrame {
-                    bytes: vec![0],
-                    _byte_permit: held_permit,
-                })
-                .await
-                .unwrap();
-
-            let read_task = tokio::spawn(read_unix_socket_frames(
-                socket_reader,
-                Some(LengthFormat::U32Le),
-                1024,
-                delivery_sender,
-                byte_budget,
-            ));
-            remote.write_all(b"\x03\0\0\0abc").await.unwrap();
-
-            let (control_sender, control_receiver) = mpsc::channel(1);
-            let write_task =
-                tokio::spawn(write_unix_socket_commands(socket_writer, control_receiver));
-            control_sender
-                .send(StreamCommand::Write(b"out".to_vec()))
-                .await
-                .unwrap();
-            let mut output = [0; 3];
-            tokio::time::timeout(Duration::from_millis(100), remote.read_exact(&mut output))
-                .await
-                .expect("outbound write must not wait for inbound delivery")
-                .unwrap();
-            assert_eq!(&output, b"out");
-
-            control_sender.send(StreamCommand::Close).await.unwrap();
-            assert_eq!(
-                write_task.await.unwrap(),
-                ("Unix-socket channel closed by client".to_owned(), true),
-            );
-            read_task.abort();
-            drop(delivery_receiver);
-        });
-    }
-
-    #[test]
-    fn answers_standard_keyboard_interactive_password_prompts() {
-        let prompts = [client::Prompt {
-            prompt: "Password:".to_owned(),
-            echo: false,
-        }];
-        assert_eq!(
-            keyboard_interactive_password_responses(&prompts, "a1", "secret"),
-            Some(vec!["secret".to_owned()]),
-        );
-    }
-
-    #[test]
-    fn refuses_unknown_keyboard_interactive_challenges() {
-        let prompts = [
-            client::Prompt {
-                prompt: "Password:".to_owned(),
-                echo: false,
-            },
-            client::Prompt {
-                prompt: "Verification code:".to_owned(),
-                echo: false,
-            },
-        ];
-        assert_eq!(
-            keyboard_interactive_password_responses(&prompts, "a1", "secret"),
-            None,
-        );
-    }
-
-    #[test]
-    fn generated_ed25519_key_round_trips_through_inspection() {
-        let generated = generate_key_pair(&json!({
-            "type": "ed25519",
-            "passphrase": "test-passphrase",
-            "comment": "russh-test",
-        }))
-        .unwrap();
-        let details = key_details(&json!({
-            "privateKey": generated["privateKey"],
-            "passphrase": "test-passphrase",
-        }))
-        .unwrap();
-        assert_eq!(details["keyType"], "ssh-ed25519");
-        assert_eq!(details["keySize"], 256);
-        assert_eq!(details["publicKey"], generated["publicKey"]);
-        assert!(
-            details["fingerprint"]
-                .as_str()
-                .unwrap()
-                .starts_with("SHA256:")
-        );
-    }
-
-    #[test]
-    fn forwarded_agent_lists_and_signs_with_the_authenticated_key() {
-        let mut rng =
-            russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
-        let private_key = Arc::new(
-            russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap(),
-        );
-        let state = Arc::new(AgentState::default());
-
-        runtime().unwrap().block_on(async {
-            initialize_agent(private_key, state.clone()).await.unwrap();
-            let (client_stream, server_stream) = tokio::io::duplex(256 * 1024);
-            state
-                .sender
-                .read()
-                .as_ref()
-                .unwrap()
-                .unbounded_send(Ok(Box::new(server_stream)))
-                .unwrap();
-            let mut client = russh::keys::agent::client::AgentClient::connect(client_stream);
-            let identities = client.request_identities().await.unwrap();
-            assert_eq!(identities.len(), 1);
-            let payload = b"agent-forwarding-test".to_vec();
-            let signed = client
-                .sign_request(&identities[0], None, payload.clone())
-                .await
-                .unwrap();
-            assert!(signed.starts_with(&payload));
-            assert!(signed.len() > payload.len());
-        });
-    }
-
-    #[test]
-    #[ignore = "run through tests/live-ssh.sh"]
-    fn live_openssh_feature_matrix() {
-        let host = std::env::var("RUSSH_SSH_TEST_HOST").expect("missing test host");
-        let port = std::env::var("RUSSH_SSH_TEST_PORT")
-            .expect("missing test port")
-            .parse::<u16>()
-            .expect("invalid test port");
-        let target_port = std::env::var("RUSSH_SSH_TEST_TARGET_PORT")
-            .expect("missing target port")
-            .parse::<u16>()
-            .expect("invalid target port");
-        let username = std::env::var("RUSSH_SSH_TEST_USER").expect("missing test user");
-        let private_key = std::fs::read_to_string(
-            std::env::var("RUSSH_SSH_TEST_PRIVATE_KEY").expect("missing private key path"),
-        )
-        .expect("could not read private key");
-        let known_hosts = std::fs::read_to_string(
-            std::env::var("RUSSH_SSH_TEST_KNOWN_HOSTS").expect("missing known_hosts path"),
-        )
-        .expect("could not read known_hosts");
-        let shared = std::path::PathBuf::from(
-            std::env::var("RUSSH_SSH_TEST_SHARED_DIR").expect("missing shared directory"),
-        );
-
-        runtime().unwrap().block_on(async {
-            live_call("setKnownHosts", json!({"contents": known_hosts})).await;
-            let credential = json!({
-                "type": "key",
-                "privateKey": private_key,
-                "passphrase": null,
-            });
-            live_call(
-                "connect",
-                json!({
-                    "host": host,
-                    "port": port,
-                    "username": username,
-                    "credential": credential,
-                    "key": "live-main",
-                }),
-            )
-            .await;
-            let executed = live_call(
-                "execute",
-                json!({"key": "live-main", "command": "printf russh-live"}),
-            )
-            .await;
-            assert_eq!(executed["stdout"], "russh-live");
-
-            live_call(
-                "setAgentForwarding",
-                json!({"key": "live-main", "enabled": true}),
-            )
-            .await;
-            let agent = live_call(
-                "execute",
-                json!({"key": "live-main", "command": "ssh-add -L"}),
-            )
-            .await;
-            assert!(agent["stdout"].as_str().unwrap_or_default().contains("ssh-ed25519"));
-
-            live_call("connectSFTP", json!({"key": "live-main"})).await;
-            live_call(
-                "sftpCreateDirAll",
-                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
-            )
-            .await;
-            live_call(
-                "sftpCreateDirAll",
-                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
-            )
-            .await;
-            let client_dir = shared.join("client");
-            let download_dir = shared.join("download");
-            fs::create_dir_all(&client_dir).await.unwrap();
-            fs::create_dir_all(&download_dir).await.unwrap();
-            let payload = client_dir.join("payload.txt");
-            fs::write(&payload, b"sftp-live-payload").await.unwrap();
-            live_call(
-                "sftpUpload",
-                json!({
-                    "key": "live-main",
-                    "localPath": payload,
-                    "remotePath": "/workspace/remote/nested",
-                }),
-            )
-            .await;
-            let mkdir_collision = dispatch(Request {
-                operation: "sftpCreateDirAll".to_owned(),
-                params: json!({
-                    "key": "live-main",
-                    "path": "/workspace/remote/nested/payload.txt/child",
-                }),
-            })
-            .await
-            .unwrap_err();
-            assert!(mkdir_collision.to_string().contains("is not a directory"));
-            fs::write(&payload, b"sftp-live-replacement").await.unwrap();
-            live_call(
-                "sftpUploadToPath",
-                json!({
-                    "key": "live-main",
-                    "localPath": payload,
-                    "remotePath": "/workspace/remote/nested/generated-name.txt",
-                }),
-            )
-            .await;
-            live_call(
-                "sftpUploadToPath",
-                json!({
-                    "key": "live-main",
-                    "localPath": payload,
-                    "remotePath": "/workspace/remote/nested/generated-name.txt",
-                }),
-            )
-            .await;
-            live_call(
-                "sftpChmod",
-                json!({"key": "live-main", "path": "/workspace/remote/nested/generated-name.txt", "permissions": 0o640}),
-            )
-            .await;
-            live_call(
-                "sftpRename",
-                json!({
-                    "key": "live-main",
-                    "oldPath": "/workspace/remote/nested/generated-name.txt",
-                    "newPath": "/workspace/remote/nested/renamed.txt",
-                }),
-            )
-            .await;
-            let entries = live_call(
-                "sftpLs",
-                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
-            )
-            .await;
-            assert!(entries.as_array().unwrap().iter().any(|entry| {
-                entry["filename"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .contains("renamed.txt")
-            }));
-            assert!(!entries.as_array().unwrap().iter().any(|entry| {
-                let filename = entry["filename"].as_str().unwrap_or_default();
-                filename.contains("russh-part") || filename.contains("russh-backup")
-            }));
-            let downloaded = live_call(
-                "sftpDownload",
-                json!({
-                    "key": "live-main",
-                    "remotePath": "/workspace/remote/nested/renamed.txt",
-                    "localPath": download_dir,
-                }),
-            )
-            .await;
-            assert_eq!(
-                fs::read(downloaded.as_str().unwrap()).await.unwrap(),
-                b"sftp-live-replacement"
-            );
-
-            let file_server = live_call(
-                "startSftpFileServer",
-                json!({
-                    "key": "live-main",
-                    "remotePath": "/workspace/remote/nested/renamed.txt",
-                }),
-            )
-            .await;
-            let file_server_port = file_server["localPort"].as_u64().unwrap() as u16;
-            let file_server_token = file_server["token"].as_str().unwrap();
-            let mut preview = tokio::net::TcpStream::connect(("127.0.0.1", file_server_port))
-                .await
-                .unwrap();
-            preview
-                .write_all(
-                    format!(
-                        "GET /{file_server_token}/renamed.txt HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=10-20\r\n\r\n"
-                    )
-                    .as_bytes(),
-                )
-                .await
-                .unwrap();
-            let mut preview_response = Vec::new();
-            preview.read_to_end(&mut preview_response).await.unwrap();
-            let preview_response = String::from_utf8(preview_response).unwrap();
-            assert!(preview_response.starts_with("HTTP/1.1 206 Partial Content\r\n"));
-            assert!(preview_response.contains("Content-Range: bytes 10-20/21\r\n"));
-            assert!(preview_response.ends_with("replacement"));
-            live_call(
-                "closeSftpFileServer",
-                json!({"key": "live-main", "localPort": file_server_port}),
-            )
-            .await;
-
-            let cancel_payload = client_dir.join("cancel.bin");
-            fs::write(&cancel_payload, vec![7u8; 16 * 1024 * 1024])
-                .await
-                .unwrap();
-            let transfer = runtime().unwrap().spawn(dispatch(Request {
-                operation: "sftpUpload".to_owned(),
-                params: json!({
-                    "key": "live-main",
-                    "localPath": cancel_payload,
-                    "remotePath": "/workspace/remote",
-                }),
-            }));
-            while !transfers()
-                .read()
-                .contains_key(&("live-main".to_owned(), "upload"))
-            {
-                tokio::task::yield_now().await;
-            }
-            live_call("sftpCancelUpload", json!({"key": "live-main"})).await;
-            let transfer_error = tokio::time::timeout(Duration::from_secs(1), transfer)
-                .await
-                .expect("cancelled upload should settle promptly")
-                .unwrap()
-                .unwrap_err()
-                .to_string();
-            assert!(transfer_error.contains("cancelled"));
-            let entries = live_call(
-                "sftpLs",
-                json!({"key": "live-main", "path": "/workspace/remote"}),
-            )
-            .await;
-            assert!(!entries.as_array().unwrap().iter().any(|entry| {
-                let filename = entry["filename"].as_str().unwrap_or_default();
-                filename == "cancel.bin" || filename.contains("russh-part")
-            }));
-            live_call(
-                "sftpUploadToPath",
-                json!({
-                    "key": "live-main",
-                    "localPath": payload,
-                    "remotePath": "/workspace/remote/after-cancel.txt",
-                }),
-            )
-            .await;
-            let entries = live_call(
-                "sftpLs",
-                json!({"key": "live-main", "path": "/workspace/remote"}),
-            )
-            .await;
-            assert!(entries.as_array().unwrap().iter().any(|entry| {
-                entry["filename"].as_str() == Some("after-cancel.txt")
-            }));
-
-            let forward_port = live_call(
-                "openLocalForward",
-                json!({
-                    "key": "live-main",
-                    "remoteHost": "127.0.0.1",
-                    "remotePort": target_port,
-                }),
-            )
-            .await
-            .as_u64()
-            .unwrap() as u16;
-            let mut forwarded = tokio::net::TcpStream::connect(("127.0.0.1", forward_port))
-                .await
-                .unwrap();
-            let mut banner = [0u8; 4];
-            tokio::time::timeout(Duration::from_secs(5), forwarded.read_exact(&mut banner))
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(&banner, b"SSH-");
-            live_call(
-                "closeLocalForward",
-                json!({"key": "live-main", "localPort": forward_port}),
-            )
-            .await;
-
-            live_call(
-                "connect",
-                json!({
-                    "host": "127.0.0.1",
-                    "port": target_port,
-                    "username": username,
-                    "credential": credential,
-                    "jumpKey": "live-main",
-                    "key": "live-jump-target",
-                }),
-            )
-            .await;
-            let jumped = live_call(
-                "execute",
-                json!({"key": "live-jump-target", "command": "printf jumped"}),
-            )
-            .await;
-            assert_eq!(jumped["stdout"], "jumped");
-
-            live_call(
-                "connect",
-                json!({
-                    "host": host,
-                    "port": port,
-                    "username": username,
-                    "credential": {"type": "password", "password": "russh-test-password"},
-                    "key": "live-password",
-                }),
-            )
-            .await;
-            live_call("disconnect", json!({"key": "live-password"})).await;
-            live_call("disconnect", json!({"key": "live-jump-target"})).await;
-            live_call("disconnect", json!({"key": "live-main"})).await;
-        });
-    }
-}
+mod tests;

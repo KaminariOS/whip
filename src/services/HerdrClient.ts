@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type LsResult, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, PtyType } from 'react-native-whip-ssh';
+import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type LsResult, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
 import type { ResponseResult } from '../generated/herdrApi';
 
@@ -153,7 +153,6 @@ interface TerminalConnection {
 }
 
 interface SshShellConnection extends TerminalConnection {
-  client: SSHClient;
   sequence: number;
 }
 
@@ -204,16 +203,13 @@ export function isTerminalAttachmentUploadCancelled(error: unknown): boolean {
 }
 
 interface TerminalAttachmentUpload {
-  client: SSHClient;
   cancelled: boolean;
   cancellation: Promise<void>;
   signalCancellation: () => void;
   transferStarted: boolean;
 }
 
-interface RemoteHtmlPreviewProcess extends RemoteHtmlServerProcess {
-  client: SSHClient;
-}
+type RemoteHtmlPreviewProcess = RemoteHtmlServerProcess;
 
 export class HerdrClient {
   static addNetworkChangeListener(listener: () => void): {
@@ -222,12 +218,9 @@ export class HerdrClient {
     return SSHClient.addNetworkChangeListener(listener);
   }
 
-  private client: SSHClient | null = null;
   private runtime: HostRuntimeConnection | null = null;
   private runtimeEventHandler: ((event: HostRuntimeLifecycleEvent) => void) | null = null;
   private profile: ConnectionProfile | null = null;
-  private jumpProfiles: ConnectionProfile[] = [];
-  private proxyClients = new Map<SSHClient, SSHClient[]>();
   private terminalConnections = new Map<string, TerminalConnection>();
   private sshShellConnections = new Map<string, SshShellConnection>();
   private terminalOpenings = new Map<string, Promise<void>>();
@@ -240,10 +233,10 @@ export class HerdrClient {
   private resolvedApiSocketPath: string | null = null;
   private resolvedApiSocketPathFromCache = false;
   private remoteHome: string | null = null;
-  private localForwards = new Map<number, SSHClient>();
+  private localForwards = new Set<number>();
   private remoteHtmlPreviews = new Map<number, RemoteHtmlPreviewProcess>();
   private remoteHtmlPreviewSequence = 0;
-  private remoteSftpFileServers = new Map<number, SSHClient>();
+  private remoteSftpFileServers = new Set<number>();
   private activeSftpUpload: object | null = null;
   private terminalAttachmentUpload: TerminalAttachmentUpload | null = null;
 
@@ -272,18 +265,15 @@ export class HerdrClient {
     }, event => this.runtimeEventHandler?.(event));
     this.runtime = runtime;
     this.profile = profile;
-    this.jumpProfiles = jumpProfiles;
     this.apiServer = null;
     this.resolvedApiSocketPath = profile.herdrSocketPath?.trim() ? null : cachedSocketPath || null;
     this.resolvedApiSocketPathFromCache = Boolean(this.resolvedApiSocketPath);
     this.remoteHome = null;
     try {
       await runtime.connect();
-      this.client = runtime.transportClient;
     } catch (error) {
       if (this.runtime === runtime) {
         this.runtime = null;
-        this.client = null;
       }
       throw error;
     }
@@ -311,12 +301,9 @@ export class HerdrClient {
     for (const terminalId of this.sshShellConnections.keys()) {
       this.closeSshShell(terminalId);
     }
-    this.client?.off('Shell');
     this.runtime?.disconnect().catch(() => undefined);
     this.runtime = null;
-    this.client = null;
     this.profile = null;
-    this.jumpProfiles = [];
     this.apiServer = null;
     this.resolvedApiSocketPath = null;
     this.resolvedApiSocketPathFromCache = false;
@@ -333,25 +320,23 @@ export class HerdrClient {
   async openWebTunnel(value: string): Promise<{ url: string; localPort: number } | null> {
     const target = terminalWebLinkTarget(value);
     if (!target.requiresSshTunnel) return null;
-    const client = this.requireClient();
-    const localPort = await client.openLocalForward(target.hostname, target.port);
-    this.localForwards.set(localPort, client);
+    const localPort = await this.requireRuntime().openLocalForward(target.hostname, target.port);
+    this.localForwards.add(localPort);
     return { url: localTunnelUrl(target.url, localPort), localPort };
   }
 
   async closeWebTunnel(localPort: number): Promise<void> {
-    const client = this.localForwards.get(localPort);
-    this.localForwards.delete(localPort);
+    const forwarded = this.localForwards.delete(localPort);
     const preview = this.remoteHtmlPreviews.get(localPort);
     this.remoteHtmlPreviews.delete(localPort);
     if (preview) {
-      await preview.client.execute(remoteHtmlPreviewStopCommand(preview)).catch(() => undefined);
+      await this.requireRuntime().execute(remoteHtmlPreviewStopCommand(preview)).catch(() => undefined);
     }
-    if (client) await client.closeLocalForward(localPort);
+    if (forwarded) this.requireRuntime().closeLocalForward(localPort);
   }
 
   async openRemoteHtmlPreview(remotePath: string): Promise<RemoteHtmlPreviewHandle> {
-    const client = this.requireClient();
+    const runtime = this.requireRuntime();
     const normalizedPath = remotePath.replace(/\\/g, '/');
     const separator = normalizedPath.lastIndexOf('/');
     const directory = separator > 0 ? normalizedPath.slice(0, separator) : '/';
@@ -359,13 +344,13 @@ export class HerdrClient {
     if (!filename) throw new Error('The remote HTML preview path has no filename');
 
     const token = `${Date.now().toString(36)}-${(++this.remoteHtmlPreviewSequence).toString(36)}`;
-    const output = await client.execute(remoteHtmlPreviewStartCommand(directory, token));
+    const output = await runtime.execute(remoteHtmlPreviewStartCommand(directory, token));
     const process = parseRemoteHtmlPreviewStart(output, token);
     let localPort: number | null = null;
     try {
-      localPort = await client.openLocalForward('127.0.0.1', process.port);
-      this.localForwards.set(localPort, client);
-      this.remoteHtmlPreviews.set(localPort, { ...process, client });
+      localPort = await runtime.openLocalForward('127.0.0.1', process.port);
+      this.localForwards.add(localPort);
+      this.remoteHtmlPreviews.set(localPort, process);
       const displayUrl = remoteHtmlPreviewPageUrl(process.port, filename);
       return {
         displayUrl,
@@ -375,9 +360,9 @@ export class HerdrClient {
     } catch (error) {
       if (localPort !== null) {
         this.localForwards.delete(localPort);
-        await client.closeLocalForward(localPort).catch(() => undefined);
+        runtime.closeLocalForward(localPort);
       }
-      await client.execute(remoteHtmlPreviewStopCommand(process)).catch(() => undefined);
+      await runtime.execute(remoteHtmlPreviewStopCommand(process)).catch(() => undefined);
       throw error;
     }
   }
@@ -387,10 +372,9 @@ export class HerdrClient {
   }
 
   async openRemoteSftpFileServer(remotePath: string): Promise<RemoteSftpFileServerHandle> {
-    const client = this.requireClient();
-    const server = await client.startSftpFileServer(remotePath);
+    const server = await this.requireRuntime().startSftpFileServer(remotePath);
     const filename = remotePath.replace(/\\/g, '/').split('/').pop() || 'file';
-    this.remoteSftpFileServers.set(server.localPort, client);
+    this.remoteSftpFileServers.add(server.localPort);
     return {
       localPort: server.localPort,
       url: `http://127.0.0.1:${server.localPort}/${server.token}/${encodeURIComponent(filename)}`,
@@ -398,49 +382,48 @@ export class HerdrClient {
   }
 
   async closeRemoteSftpFileServer(server: RemoteSftpFileServerHandle): Promise<void> {
-    const client = this.remoteSftpFileServers.get(server.localPort);
-    this.remoteSftpFileServers.delete(server.localPort);
-    if (client) await client.closeSftpFileServer(server.localPort);
+    if (this.remoteSftpFileServers.delete(server.localPort)) {
+      this.requireRuntime().closeSftpFileServer(server.localPort);
+    }
   }
 
   async listRemoteDirectory(path?: string): Promise<{ path: string; entries: LsResult[] }> {
     const resolvedPath = normalizeRemotePath(path, await this.remoteHomeDirectory());
-    const entries = await this.requireClient().sftpLs(resolvedPath);
+    const entries = await this.requireRuntime().sftpLs(resolvedPath);
     return { path: resolvedPath, entries: sortRemoteEntries(entries) };
   }
 
   async discoverRemoteGitRepository(path: string): Promise<RemoteGitRepository | null> {
-    const output = await this.requireClient().execute(remoteGitRepositoryCommand(path));
+    const output = await this.requireRuntime().execute(remoteGitRepositoryCommand(path));
     return parseRemoteGitRepository(output);
   }
 
   async listRemoteGitChanges(root: string): Promise<RemoteGitStatusEntry[]> {
-    const output = await this.requireClient().execute(remoteGitStatusCommand(root));
+    const output = await this.requireRuntime().execute(remoteGitStatusCommand(root));
     return parseRemoteGitStatus(output);
   }
 
   async loadRemoteGitDiff(repository: RemoteGitRepository, status: RemoteGitStatusEntry): Promise<RemoteGitDiff> {
-    const output = await this.requireClient().execute(remoteGitDiffCommand(repository, status));
+    const output = await this.requireRuntime().execute(remoteGitDiffCommand(repository, status));
     return parseRemoteGitDiff(output);
   }
 
   downloadRemoteFile(path: string, localDirectoryPath: string): Promise<string> {
-    return this.requireClient().sftpDownload(path, localDirectoryPath);
+    return this.requireRuntime().sftpDownload(path, localDirectoryPath);
   }
 
   async uploadRemoteFile(localFilePath: string, remoteDirectoryPath: string): Promise<void> {
     const upload = {};
     this.reserveSftpUpload(upload);
     try {
-      await this.requireClient().sftpUpload(localFilePath, remoteDirectoryPath);
+      await this.requireRuntime().sftpUpload(localFilePath, remoteDirectoryPath);
     } finally {
       if (this.activeSftpUpload === upload) this.activeSftpUpload = null;
     }
   }
 
   deleteRemoteEntry(path: string, isDirectory: boolean): Promise<void> {
-    const client = this.requireClient();
-    return isDirectory ? client.sftpRmdir(path) : client.sftpRm(path);
+    return this.requireRuntime().sftpRemove(path, isDirectory);
   }
 
   private reserveSftpUpload(upload: object): void {
@@ -467,10 +450,8 @@ export class HerdrClient {
   }
 
   async uploadTerminalAttachment(localFilePath: string): Promise<string> {
-    const client = this.requireClient();
     let signalCancellation!: () => void;
     const upload: TerminalAttachmentUpload = {
-      client,
       cancelled: false,
       cancellation: new Promise(resolve => { signalCancellation = resolve; }),
       signalCancellation: () => signalCancellation(),
@@ -487,17 +468,17 @@ export class HerdrClient {
       const uploadDirectory = `${appDirectory}/uploads`;
       await this.waitForAttachmentUploadSetup(
         upload,
-        client.sftpCreateDirAll(uploadDirectory),
+        this.requireRuntime().sftpCreateDirAll(uploadDirectory),
       );
       this.throwIfAttachmentUploadCancelled(upload);
       const uploadId = createSecureId('attachment');
       const remoteFilename = uniqueRemoteAttachmentName(sourceFilename, uploadId);
       const remotePath = `${uploadDirectory}/${remoteFilename}`;
       upload.transferStarted = true;
-      await client.sftpUploadToPath(localFilePath, remotePath);
+      await this.requireRuntime().sftpUpload(localFilePath, remotePath, true);
       upload.transferStarted = false;
       if (upload.cancelled) {
-        await client.sftpRm(remotePath).catch(() => undefined);
+        await this.requireRuntime().sftpRemove(remotePath, false).catch(() => undefined);
         throw new TerminalAttachmentUploadCancelledError();
       }
       return remotePath;
@@ -516,7 +497,7 @@ export class HerdrClient {
     if (!upload || upload.cancelled) return;
     upload.cancelled = true;
     upload.signalCancellation();
-    if (upload.transferStarted) upload.client.sftpCancelUpload();
+    if (upload.transferStarted) this.requireRuntime().cancelSftpUpload();
   }
 
   openCodexAgentTranscript(
@@ -545,17 +526,17 @@ export class HerdrClient {
   }
 
   async loadOpenCodeTranscript(sessionId: string): Promise<unknown> {
-    const output = await this.requireClient().execute(this.loginShellCommand(openCodeExportCommand(sessionId)));
+    const output = await this.requireRuntime().execute(this.loginShellCommand(openCodeExportCommand(sessionId)));
     return JSON.parse(output);
   }
 
   async loadOpenCodeEventCursor(sessionId: string): Promise<number> {
-    const output = await this.requireClient().execute(this.loginShellCommand(openCodeEventCursorCommand(sessionId)));
+    const output = await this.requireRuntime().execute(this.loginShellCommand(openCodeEventCursorCommand(sessionId)));
     return parseOpenCodeEventCursor(JSON.parse(output));
   }
 
   async loadOpenCodeEvents(sessionId: string, afterSequence: number): Promise<unknown> {
-    const output = await this.requireClient().execute(this.loginShellCommand(openCodeEventsCommand(sessionId, afterSequence)));
+    const output = await this.requireRuntime().execute(this.loginShellCommand(openCodeEventsCommand(sessionId, afterSequence)));
     return JSON.parse(output);
   }
 
@@ -565,7 +546,7 @@ export class HerdrClient {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
-        this.requireClient().execute(this.loginShellCommand(command)),
+        this.requireRuntime().execute(this.loginShellCommand(command)),
         new Promise<never>((_resolve, reject) => {
           timeout = setTimeout(
             () => reject(new Error('Codex integration installation timed out after 30 seconds. It will not be retried automatically.')),
@@ -581,7 +562,7 @@ export class HerdrClient {
   /** Lazily check setup only after the user requests Chat. */
   async codexIntegrationStatus(): Promise<CodexIntegrationStatus> {
     const command = `${shellQuote(this.requireProfile().herdrCommand.trim() || 'herdr')} integration status`;
-    const output = await this.requireClient().execute(this.loginShellCommand(command));
+    const output = await this.requireRuntime().execute(this.loginShellCommand(command));
     return parseCodexIntegrationStatus(output);
   }
 
@@ -647,9 +628,12 @@ export class HerdrClient {
       this.queueTerminalInputTrace(terminalId, inputTrace);
       terminalNativeWriteStarted(inputTrace);
       try {
-        const result = await this.requireSshShell(terminalId).client.writeToShell(data);
+        this.requireSshShell(terminalId);
+        const bytes = new TextEncoder().encode(data);
+        const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        this.requireRuntime().sshShellInput(terminalId, buffer);
         terminalNativeWriteQueued(inputTrace, true);
-        return result;
+        return '';
       } catch (error) {
         terminalNativeWriteQueued(inputTrace, false);
         this.removeTerminalInputTrace(terminalId, inputTrace);
@@ -710,7 +694,7 @@ export class HerdrClient {
       this.terminalDispatchedSizes.set(terminalId, size);
       terminalResizeNativeDispatchStarted(performanceTrace);
       try {
-        sshShell.client.resizeShell(size.columns, size.rows);
+        this.requireRuntime().resizeSshShell(terminalId, size.columns, size.rows);
         terminalResizeNativeDispatchEnded(performanceTrace, true);
       } catch (error) {
         if (this.terminalDispatchedSizes.get(terminalId) === size) {
@@ -924,7 +908,7 @@ export class HerdrClient {
   /** Measure an SSH protocol ping/pong RTT without remote process startup. */
   async measureLatency(): Promise<HostLatencyMeasurement> {
     const startedAt = performance.now();
-    const sshRttMs = await this.requireClient().measureHostLatency();
+    const sshRttMs = await this.requireRuntime().measureHostLatency();
     const elapsedMs = performance.now() - startedAt;
     if (!Number.isFinite(sshRttMs) || sshRttMs <= 0) {
       throw new Error('Android returned an invalid host latency');
@@ -940,7 +924,7 @@ export class HerdrClient {
 
   async startServer(): Promise<void> {
     const command = `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`;
-    await this.requireClient().execute(this.loginShellCommand(command));
+    await this.requireRuntime().execute(this.loginShellCommand(command));
     this.apiServer = null;
   }
 
@@ -1156,7 +1140,7 @@ export class HerdrClient {
   }
 
   private async remoteHomeDirectory(): Promise<string> {
-    if (!this.remoteHome) this.remoteHome = await this.requireClient().getRemoteHome();
+    if (!this.remoteHome) this.remoteHome = await this.requireRuntime().remoteHome();
     return this.remoteHome;
   }
 
@@ -1180,7 +1164,7 @@ export class HerdrClient {
       // unavailable direct-streamlocal channel. Verify a second SSH subsystem
       // before publishing an offline server snapshot; if that channel also
       // fails, the caller must reconnect instead of erasing its workspaces.
-      await this.requireClient().getRemoteHome();
+      await this.requireRuntime().remoteHome();
       return { running: false, socket };
     }
   }
@@ -1209,13 +1193,6 @@ export class HerdrClient {
     return profile.sessionName.trim() ? `${command} --session ${shellQuote(profile.sessionName.trim())}` : command;
   }
 
-  private requireClient(): SSHClient {
-    if (!this.client) {
-      throw new Error('SSH connection is not active');
-    }
-    return this.client;
-  }
-
   private requireRuntime(): HostRuntimeConnection {
     if (!this.runtime) throw new Error('Host runtime is not active');
     return this.runtime;
@@ -1228,52 +1205,6 @@ export class HerdrClient {
     return this.profile;
   }
 
-  private async connectSsh(profile: ConnectionProfile, port = Number(profile.port), jumpProfiles = this.jumpProfiles): Promise<SSHClient> {
-    const proxyClients: SSHClient[] = [];
-    let proxyClient: SSHClient | null = null;
-
-    try {
-      for (const jumpProfile of jumpProfiles) {
-        const jumpPort = Number(jumpProfile.port);
-        this.validateSshPort(jumpPort);
-        proxyClient = await this.connectDirectSsh(jumpProfile, jumpProfile.host.trim(), jumpPort, proxyClient);
-        proxyClients.push(proxyClient);
-      }
-
-      const client = await this.connectDirectSsh(profile, profile.host.trim(), port, proxyClient);
-      if (proxyClients.length > 0) this.proxyClients.set(client, proxyClients);
-      return client;
-    } catch (error) {
-      [...proxyClients].reverse().forEach(client => client.disconnect());
-      throw error;
-    }
-  }
-
-  private connectDirectSsh(profile: ConnectionProfile, host: string, port: number, jumpClient: SSHClient | null = null): Promise<SSHClient> {
-    const privateKey = normalizePrivateKey(profile.secret);
-    const connection =
-      profile.authMode === 'password'
-        ? jumpClient
-          ? SSHClient.connectWithPasswordViaJump(host, port, profile.username.trim(), profile.secret, jumpClient)
-          : SSHClient.connectWithPassword(host, port, profile.username.trim(), profile.secret)
-        : jumpClient
-        ? SSHClient.connectWithKeyViaJump(host, port, profile.username.trim(), privateKey, profile.passphrase || undefined, jumpClient)
-        : SSHClient.connectWithKey(host, port, profile.username.trim(), privateKey, profile.passphrase || undefined);
-    return connection.then(client => {
-      if (profile.forwardAgent) client.setAgentForwarding(true);
-      return client;
-    });
-  }
-
-  private disconnectSsh(client: SSHClient): void {
-    client.disconnect();
-    const proxyClients = this.proxyClients.get(client);
-    this.proxyClients.delete(client);
-    if (proxyClients) {
-      [...proxyClients].reverse().forEach(proxyClient => proxyClient.disconnect());
-    }
-  }
-
   private validateSshPort(port: number): void {
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error('SSH port must be between 1 and 65535');
@@ -1281,24 +1212,23 @@ export class HerdrClient {
   }
 
   private async createSshShell(terminalId: string, onFrame: TerminalFrameHandler, onClosed?: TerminalClosedHandler): Promise<void> {
-    const client = await this.connectSsh(this.requireProfile());
     const connection: SshShellConnection = {
-      client,
       onFrame,
       onClosed,
       sequence: 0,
     };
-    const onData = (data: string) => {
+    const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
+    const onData = (data: ArrayBuffer) => {
       const active = this.sshShellConnections.get(terminalId);
       if (active !== connection) return;
-      const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
+      const activeSize = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
       this.deliverTracedTerminalFrame(terminalId, () => {
         active.onFrame({
           type: 'terminal.frame',
           seq: ++active.sequence,
           encoding: 'utf8',
-          width: size.columns,
-          height: size.rows,
+          width: activeSize.columns,
+          height: activeSize.rows,
           full: false,
           bytes: data,
         });
@@ -1306,10 +1236,16 @@ export class HerdrClient {
     };
     this.sshShellConnections.set(terminalId, connection);
     try {
-      client.on('Shell', onData);
-      await client.startShell(PtyType.XTERM);
-      const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
-      client.resizeShell(size.columns, size.rows);
+      await this.requireRuntime().openSshShell(terminalId, size.columns, size.rows, {
+        data: onData,
+        closed: reason => {
+          const active = this.sshShellConnections.get(terminalId);
+          if (active !== connection) return;
+          this.sshShellConnections.delete(terminalId);
+          this.terminalDispatchedSizes.delete(terminalId);
+          active.onClosed?.(reason);
+        },
+      });
       this.terminalDispatchedSizes.set(terminalId, size);
     } catch (error) {
       this.closeSshShell(terminalId);
@@ -1322,9 +1258,7 @@ export class HerdrClient {
     if (!connection) return;
     this.sshShellConnections.delete(terminalId);
     this.terminalDispatchedSizes.delete(terminalId);
-    connection.client.off('Shell');
-    connection.client.closeShell();
-    this.disconnectSsh(connection.client);
+    this.runtime?.closeSshShell(terminalId);
   }
 
   private requireSshShell(terminalId: string): SshShellConnection {

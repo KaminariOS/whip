@@ -240,7 +240,7 @@ type TerminalInboundGlobal = typeof globalThis & {
   };
 };
 
-// react-native-russh and the private Herdr codec cannot import app services.
+// The generated Whip core bindings cannot import app services.
 // This no-op-when-absent hook preserves that dependency boundary while placing
 // the first JS marker at the generated UniFFI callback's immediate consumer.
 (globalThis as TerminalInboundGlobal).__whipTerminalInboundTrace = {
@@ -640,7 +640,7 @@ export function terminalNativePreflightStarted(trace: TerminalInputTrace | null)
   trace.preNativeWaitCookie = beginAsyncEvent(PRE_NATIVE_WAIT);
 }
 
-/** Starts immediately before Whip calls the react-native-russh UniFFI fast path. */
+/** Starts immediately before Whip calls the merged Rust core's UniFFI fast path. */
 export function terminalNativeWriteStarted(trace: TerminalInputTrace | null): void {
   if (!trace || trace.visibleEnded || trace.nativeEnqueueCookie !== null) return;
   if (trace.preNativeWaitCookie !== null) {

@@ -1,16 +1,10 @@
 //! Native Herdr event subscription, JSONL framing, normalization, and validation.
 
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char};
 use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
-
-use parking_lot::{Mutex, RwLock};
-use serde::Serialize;
-use serde_json::{Map, Value};
-use tokio::sync::oneshot;
 
 use crate::herdr_api::{
     HerdrAgentStatus, HerdrPaneInfo, HerdrPaneLayoutSnapshot, HerdrTabInfo, HerdrWorkspaceInfo,
@@ -18,7 +12,10 @@ use crate::herdr_api::{
     object, optional_string, pane, pane_layout, required, required_string, string_array,
     string_map, tab, workspace, worktree,
 };
-use crate::{herdr_codec, russh_transport};
+use crate::{herdr_codec, ssh::SshSession};
+use parking_lot::{Mutex, RwLock};
+use serde::Serialize;
+use serde_json::{Map, Value};
 
 const MAX_EVENT_LINE_BYTES: usize = 1024 * 1024;
 const EVENT_READ_CHUNK_BYTES: usize = 32 * 1024;
@@ -612,8 +609,8 @@ struct EventSubscription {
     id: u64,
     client_key: String,
     channel_id: String,
+    ssh: Arc<SshSession>,
     parser: Mutex<JsonlEventParser>,
-    opened: Mutex<Option<oneshot::Sender<Result<(), HerdrEventError>>>>,
 }
 
 #[derive(Default)]
@@ -642,43 +639,11 @@ fn remove_subscription(id: u64) {
     registry.by_id.remove(&id);
 }
 
-fn c_error(error: *const c_char) -> Option<String> {
-    (!error.is_null()).then(|| {
-        unsafe { CStr::from_ptr(error) }
-            .to_string_lossy()
-            .into_owned()
-    })
-}
-
-unsafe extern "C" fn transport_opened(id: u64, error: *const c_char) {
+fn transport_frame(id: u64, bytes: Vec<u8>) {
     let Some(subscription) = subscription(id) else {
         return;
     };
-    let result = c_error(error)
-        .map(|message| Err(HerdrEventError::TransportDisconnected(message)))
-        .unwrap_or(Ok(()));
-    if let Some(sender) = subscription.opened.lock().take() {
-        let _ = sender.send(result);
-    }
-}
-
-unsafe extern "C" fn transport_frame(id: u64, bytes: *const u8, length: usize) {
-    let Some(subscription) = subscription(id) else {
-        return;
-    };
-    if bytes.is_null() && length != 0 {
-        fail_subscription(
-            &subscription,
-            "native SSH transport delivered null event bytes".to_owned(),
-        );
-        return;
-    }
-    let bytes = if length == 0 {
-        &[]
-    } else {
-        unsafe { std::slice::from_raw_parts(bytes, length) }
-    };
-    let items = subscription.parser.lock().push(bytes);
+    let items = subscription.parser.lock().push(&bytes);
     for item in items {
         match item {
             StreamItem::Event(event) => {
@@ -699,24 +664,15 @@ unsafe extern "C" fn transport_frame(id: u64, bytes: *const u8, length: usize) {
     }
 }
 
-unsafe extern "C" fn transport_closed(id: u64, reason: *const c_char) {
+fn transport_closed(id: u64, reason: String) {
     let Some(subscription) = subscription(id) else {
         return;
     };
     subscription.parser.lock().end();
-    if let Some(sender) = subscription.opened.lock().take() {
-        let _ = sender.send(Err(HerdrEventError::TransportDisconnected(
-            c_error(reason)
-                .unwrap_or_else(|| "Herdr event subscription closed during startup".to_owned()),
-        )));
-    } else {
-        let reason =
-            c_error(reason).unwrap_or_else(|| "Herdr event subscription closed".to_owned());
-        if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
-            && let Some(sink) = event_sink().read().clone()
-        {
-            sink.closed(subscription.client_key.clone(), reason);
-        }
+    if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
+        && let Some(sink) = event_sink().read().clone()
+    {
+        sink.closed(subscription.client_key.clone(), reason);
     }
     remove_subscription(id);
 }
@@ -727,12 +683,13 @@ fn fail_subscription(subscription: &EventSubscription, reason: String) {
     {
         sink.closed(subscription.client_key.clone(), reason);
     }
-    let _ = russh_transport::close(&subscription.client_key, &subscription.channel_id);
+    let _ = subscription.ssh.close_unix_socket(&subscription.channel_id);
     remove_subscription(subscription.id);
 }
 
 pub(crate) async fn start_on_runtime(
     client_key: String,
+    ssh: Arc<SshSession>,
     socket_path: String,
     protocol: u32,
     pane_ids: Vec<String>,
@@ -743,49 +700,37 @@ pub(crate) async fn start_on_runtime(
     let request = subscription_request(protocol, &pane_ids)?;
     let id = NEXT_SUBSCRIPTION_ID.fetch_add(1, Ordering::Relaxed);
     let channel_id = format!("whip-herdr-events-{id}");
-    let (opened_sender, opened_receiver) = oneshot::channel();
     let subscription = Arc::new(EventSubscription {
         id,
         client_key: client_key.clone(),
         channel_id: channel_id.clone(),
+        ssh: ssh.clone(),
         parser: Mutex::new(JsonlEventParser::default()),
-        opened: Mutex::new(Some(opened_sender)),
     });
     {
         let mut registry = registry().lock();
         registry.by_id.insert(id, subscription.clone());
         registry.by_client.insert(client_key.clone(), id);
     }
-    if let Err(error) = russh_transport::open_raw(
-        id,
-        &client_key,
-        &channel_id,
-        &socket_path,
-        EVENT_READ_CHUNK_BYTES,
-        transport_opened,
-        transport_frame,
-        transport_closed,
-    ) {
+    let frame = Arc::new(move |bytes| transport_frame(id, bytes));
+    let closed = Arc::new(move |reason| transport_closed(id, reason));
+    if let Err(error) = ssh
+        .open_unix_socket(
+            &channel_id,
+            &socket_path,
+            EVENT_READ_CHUNK_BYTES,
+            frame,
+            closed,
+        )
+        .await
+    {
         remove_subscription(id);
-        return Err(HerdrEventError::TransportDisconnected(error));
+        return Err(HerdrEventError::TransportDisconnected(error.to_string()));
     }
-    match opened_receiver.await {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => {
-            remove_subscription(id);
-            return Err(error);
-        }
-        Err(_) => {
-            remove_subscription(id);
-            return Err(HerdrEventError::SubscriptionUnavailable(
-                "Herdr event transport did not finish opening".to_owned(),
-            ));
-        }
-    }
-    if let Err(error) = russh_transport::write_raw(&client_key, &channel_id, &request) {
-        let _ = russh_transport::close(&client_key, &channel_id);
+    if let Err(error) = ssh.write_unix_socket(&channel_id, request, false) {
+        let _ = ssh.close_unix_socket(&channel_id);
         remove_subscription(id);
-        return Err(HerdrEventError::TransportDisconnected(error));
+        return Err(HerdrEventError::TransportDisconnected(error.to_string()));
     }
     Ok(())
 }
@@ -808,9 +753,12 @@ pub async fn start_herdr_event_subscription(
     pane_ids: Vec<String>,
 ) -> Result<(), HerdrEventError> {
     let runtime = crate::runtime().map_err(HerdrEventError::TransportDisconnected)?;
+    let ssh = SshSession::registered(&client_key)
+        .map_err(|error| HerdrEventError::TransportDisconnected(error.to_string()))?;
     runtime
         .spawn(start_on_runtime(
             client_key,
+            ssh,
             socket_path,
             protocol,
             pane_ids,
@@ -835,7 +783,7 @@ pub fn close_herdr_event_subscription(client_key: String) {
     };
     if let Some(subscription) = subscription {
         remove_subscription(subscription.id);
-        let _ = russh_transport::close(&subscription.client_key, &subscription.channel_id);
+        let _ = subscription.ssh.close_unix_socket(&subscription.channel_id);
     }
 }
 

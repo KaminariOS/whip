@@ -1,0 +1,763 @@
+use super::*;
+
+async fn live_call(operation: &str, params: Value) -> Value {
+    dispatch(Request {
+        operation: operation.to_owned(),
+        params,
+    })
+    .await
+    .unwrap_or_else(|error| panic!("{operation} failed: {error}"))
+}
+
+#[test]
+fn invalid_json_is_a_structured_failure() {
+    let result: Value = serde_json::from_str(&process_json("{")).unwrap();
+    assert_eq!(result["ok"], false);
+    assert_eq!(result["error"]["code"], "INVALID_REQUEST");
+    assert!(
+        result["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("invalid request JSON")
+    );
+}
+
+#[test]
+fn missing_parameter_is_a_structured_failure() {
+    let result: Value = serde_json::from_str(&process_json(r#"{"operation":"connect"}"#)).unwrap();
+    assert_eq!(result["ok"], false);
+    assert_eq!(result["error"]["code"], "INVALID_REQUEST");
+    assert!(
+        result["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("missing string parameter 'key'")
+    );
+}
+
+#[test]
+fn transport_errors_have_stable_codes() {
+    assert_eq!(
+        transport_error_code(&TransportError::AuthenticationFailed),
+        SshErrorCode::AuthenticationFailed,
+    );
+    assert_eq!(
+        transport_error_code(&TransportError::Io(std::io::Error::from(
+            std::io::ErrorKind::ConnectionRefused,
+        ))),
+        SshErrorCode::ConnectionRefused,
+    );
+    assert_eq!(
+        transport_error_code(&TransportError::Ssh(russh::Error::WrongChannel)),
+        SshErrorCode::ChannelUnavailable,
+    );
+    assert!(matches!(
+        classify_direct_connect_error(TransportError::Ssh(russh::Error::IO(
+            std::io::Error::other("host lookup failed"),
+        ))),
+        TransportError::HostUnreachable(_),
+    ));
+}
+
+#[test]
+fn host_key_errors_carry_structured_challenges() {
+    let mut rng =
+        russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
+    let private_key =
+        russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap();
+    let challenge = match KnownHosts::default().check("Example.COM", 2222, private_key.public_key())
+    {
+        HostKeyDecision::Unknown(challenge) => challenge,
+        _ => panic!("empty known_hosts should reject the key as unknown"),
+    };
+    let error =
+        serde_json::to_value(SshError::from(TransportError::HostKeyUnknown(challenge))).unwrap();
+    assert_eq!(error["code"], "HOST_KEY_UNKNOWN");
+    assert_eq!(error["details"]["host"], "Example.COM");
+    assert_eq!(error["details"]["port"], 2222);
+    assert_eq!(error["details"]["keyType"], "ssh-ed25519");
+    assert!(
+        error["details"]["fingerprint"]
+            .as_str()
+            .unwrap()
+            .starts_with("SHA256:")
+    );
+    assert!(
+        error["details"]["publicKey"]
+            .as_str()
+            .unwrap()
+            .starts_with("ssh-ed25519 ")
+    );
+}
+
+#[test]
+fn remote_home_command_expands_without_literal_quotes() {
+    assert_eq!(REMOTE_HOME_COMMAND, "printf %s \"$HOME\"");
+}
+
+#[test]
+fn exec_close_reason_preserves_bounded_remote_diagnostics() {
+    assert_eq!(
+        exec_channel_close_reason(Some(127), b"sh: tail: not found\n"),
+        "remote exec channel exited with status 127: sh: tail: not found"
+    );
+    assert_eq!(
+        exec_channel_close_reason(Some(75), b"source replaced\r\ntry again"),
+        "remote exec channel exited with status 75: source replaced  try again"
+    );
+    assert_eq!(
+        exec_channel_close_reason(Some(0), b""),
+        "remote exec channel reached EOF"
+    );
+}
+
+#[test]
+fn blocked_transfer_io_cancels_promptly_and_does_not_poison_the_next_transfer() {
+    runtime().unwrap().block_on(async {
+        let (blocked_destination, _blocked_reader) = tokio::io::duplex(1);
+        let (cancel_sender, mut cancel) = watch::channel(false);
+        let transfer = tokio::spawn(async move {
+            copy_sftp_stream(
+                Box::new(std::io::Cursor::new(vec![7u8; 64 * 1024])),
+                Box::new(blocked_destination),
+                64 * 1024,
+                "test-client",
+                "upload",
+                "UploadProgress",
+                &mut cancel,
+            )
+            .await
+        });
+
+        // The one-byte duplex capacity leaves write_all blocked in the
+        // middle of its first chunk until cancellation wins the select.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        cancel_sender.send(true).unwrap();
+        let error = tokio::time::timeout(Duration::from_millis(100), transfer)
+            .await
+            .expect("cancelled transfer should settle promptly")
+            .unwrap()
+            .unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
+
+        let (_next_cancel_sender, mut next_cancel) = watch::channel(false);
+        copy_sftp_stream(
+            Box::new(std::io::Cursor::new(b"next upload".to_vec())),
+            Box::new(tokio::io::sink()),
+            11,
+            "test-client",
+            "upload",
+            "UploadProgress",
+            &mut next_cancel,
+        )
+        .await
+        .expect("a later transfer should still succeed");
+    });
+}
+
+#[test]
+fn parses_file_preview_get_head_and_single_ranges() {
+    assert_eq!(
+        parse_sftp_http_request(
+            b"GET /secret/video.mp4 HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=10-19\r\n\r\n",
+        )
+        .unwrap(),
+        SftpHttpRequest {
+            head: false,
+            path: "/secret/video.mp4".to_owned(),
+            range: Some("bytes=10-19".to_owned()),
+        },
+    );
+    assert!(parse_sftp_http_request(b"POST /secret/video.mp4 HTTP/1.1\r\n\r\n").is_err());
+    assert_eq!(parse_sftp_http_range(None, 100), Ok((0, 99, false)));
+    assert_eq!(
+        parse_sftp_http_range(Some("bytes=10-19"), 100),
+        Ok((10, 19, true)),
+    );
+    assert_eq!(
+        parse_sftp_http_range(Some("bytes=90-"), 100),
+        Ok((90, 99, true)),
+    );
+    assert_eq!(
+        parse_sftp_http_range(Some("bytes=-10"), 100),
+        Ok((90, 99, true)),
+    );
+    assert!(parse_sftp_http_range(Some("bytes=100-"), 100).is_err());
+    assert!(parse_sftp_http_range(Some("bytes=0-1,4-5"), 100).is_err());
+}
+
+#[test]
+fn assigns_inline_media_content_types() {
+    assert_eq!(sftp_http_content_type("/tmp/report.PDF"), "application/pdf");
+    assert_eq!(sftp_http_content_type("/tmp/movie.mp4"), "video/mp4");
+    assert_eq!(sftp_http_content_type("/tmp/audio.flac"), "audio/flac");
+    assert_eq!(
+        sftp_http_content_type("/tmp/archive.bin"),
+        "application/octet-stream",
+    );
+}
+
+#[test]
+fn typed_fast_paths_report_missing_channels_without_json() {
+    let shell_error: Value = serde_json::from_str(
+        &write_shell_input("missing-shell".to_owned(), "x".to_owned()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(shell_error["code"], "SESSION_CLOSED");
+    assert!(
+        write_unix_socket_channel(
+            "missing-client".to_owned(),
+            "missing-channel".to_owned(),
+            vec![1, 2, 3],
+        )
+        .is_some_and(|error| {
+            let error: Value = serde_json::from_str(&error).unwrap();
+            error["code"] == "CHANNEL_UNAVAILABLE"
+                && error["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Unix-socket channel 'missing-channel' is not open")
+        })
+    );
+    assert!(
+        write_length_prefixed_unix_socket_channel(
+            "missing-client".to_owned(),
+            "missing-channel".to_owned(),
+            vec![1, 2, 3],
+        )
+        .is_some_and(|error| {
+            let error: Value = serde_json::from_str(&error).unwrap();
+            error["code"] == "CHANNEL_UNAVAILABLE"
+                && error["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Unix-socket channel 'missing-channel' is not open")
+        })
+    );
+    assert!(
+        write_exec_channel(
+            "missing-client".to_owned(),
+            "missing-channel".to_owned(),
+            vec![1, 2, 3],
+        )
+        .is_some_and(|error| {
+            let error: Value = serde_json::from_str(&error).unwrap();
+            error["code"] == "CHANNEL_UNAVAILABLE"
+                && error["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("exec channel 'missing-channel' is not open")
+        })
+    );
+}
+
+#[test]
+fn encodes_supported_frame_length_formats() {
+    assert_eq!(LengthFormat::U8.prefix(42).unwrap(), vec![42]);
+    assert_eq!(
+        LengthFormat::U16Le.prefix(0x1234).unwrap(),
+        vec![0x34, 0x12]
+    );
+    assert_eq!(
+        LengthFormat::U16Be.prefix(0x1234).unwrap(),
+        vec![0x12, 0x34]
+    );
+    assert_eq!(
+        LengthFormat::U32Le.prefix(0x1234_5678).unwrap(),
+        vec![0x78, 0x56, 0x34, 0x12],
+    );
+    assert_eq!(
+        LengthFormat::U32Be.prefix(0x1234_5678).unwrap(),
+        vec![0x12, 0x34, 0x56, 0x78],
+    );
+    assert!(LengthFormat::U8.prefix(256).is_err());
+}
+
+#[test]
+fn reads_complete_length_prefixed_payloads() {
+    runtime().unwrap().block_on(async {
+        let mut input = &b"\x03\0\0\0abc\0\0\0\0"[..];
+        let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 1024);
+        assert_eq!(
+            reader.read_frame(&mut input).await.unwrap(),
+            Some(b"abc".to_vec()),
+        );
+        assert_eq!(
+            reader.read_frame(&mut input).await.unwrap(),
+            Some(Vec::new())
+        );
+        assert_eq!(reader.read_frame(&mut input).await.unwrap(), None);
+
+        let mut oversized = &b"\x04\0\0\0abcd"[..];
+        let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 3);
+        assert!(reader.read_frame(&mut oversized).await.is_err());
+    });
+}
+
+#[test]
+fn preserves_partial_frame_state_when_a_read_is_cancelled() {
+    runtime().unwrap().block_on(async {
+        let (mut writer, mut input) = tokio::io::duplex(64);
+        let mut reader = LengthPrefixedFrameReader::new(LengthFormat::U32Le, 1024);
+
+        writer.write_all(b"\x03\0").await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), reader.read_frame(&mut input),)
+                .await
+                .is_err()
+        );
+
+        writer.write_all(b"\0\0abc").await.unwrap();
+        assert_eq!(
+            reader.read_frame(&mut input).await.unwrap(),
+            Some(b"abc".to_vec()),
+        );
+    });
+}
+
+#[test]
+fn outbound_writes_continue_when_inbound_delivery_is_backpressured() {
+    runtime().unwrap().block_on(async {
+        let (socket, mut remote) = tokio::io::duplex(1024);
+        let (socket_reader, socket_writer) = tokio::io::split(socket);
+        let (delivery_sender, delivery_receiver) = mpsc::channel(1);
+        let byte_budget = Arc::new(Semaphore::new(1));
+        let held_permit = byte_budget
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("test byte budget should be open");
+        delivery_sender
+            .send(OwnedInboundFrame {
+                bytes: vec![0],
+                _byte_permit: held_permit,
+            })
+            .await
+            .unwrap();
+
+        let read_task = tokio::spawn(read_unix_socket_frames(
+            socket_reader,
+            Some(LengthFormat::U32Le),
+            1024,
+            delivery_sender,
+            byte_budget,
+        ));
+        remote.write_all(b"\x03\0\0\0abc").await.unwrap();
+
+        let (control_sender, control_receiver) = mpsc::channel(1);
+        let write_task = tokio::spawn(write_unix_socket_commands(socket_writer, control_receiver));
+        control_sender
+            .send(StreamCommand::Write(b"out".to_vec()))
+            .await
+            .unwrap();
+        let mut output = [0; 3];
+        tokio::time::timeout(Duration::from_millis(100), remote.read_exact(&mut output))
+            .await
+            .expect("outbound write must not wait for inbound delivery")
+            .unwrap();
+        assert_eq!(&output, b"out");
+
+        control_sender.send(StreamCommand::Close).await.unwrap();
+        assert_eq!(
+            write_task.await.unwrap(),
+            ("Unix-socket channel closed by client".to_owned(), true),
+        );
+        read_task.abort();
+        drop(delivery_receiver);
+    });
+}
+
+#[test]
+fn answers_standard_keyboard_interactive_password_prompts() {
+    let prompts = [client::Prompt {
+        prompt: "Password:".to_owned(),
+        echo: false,
+    }];
+    assert_eq!(
+        keyboard_interactive_password_responses(&prompts, "a1", "secret"),
+        Some(vec!["secret".to_owned()]),
+    );
+}
+
+#[test]
+fn refuses_unknown_keyboard_interactive_challenges() {
+    let prompts = [
+        client::Prompt {
+            prompt: "Password:".to_owned(),
+            echo: false,
+        },
+        client::Prompt {
+            prompt: "Verification code:".to_owned(),
+            echo: false,
+        },
+    ];
+    assert_eq!(
+        keyboard_interactive_password_responses(&prompts, "a1", "secret"),
+        None,
+    );
+}
+
+#[test]
+fn generated_ed25519_key_round_trips_through_inspection() {
+    let generated = generate_key_pair(&json!({
+        "type": "ed25519",
+        "passphrase": "test-passphrase",
+        "comment": "russh-test",
+    }))
+    .unwrap();
+    let details = key_details(&json!({
+        "privateKey": generated["privateKey"],
+        "passphrase": "test-passphrase",
+    }))
+    .unwrap();
+    assert_eq!(details["keyType"], "ssh-ed25519");
+    assert_eq!(details["keySize"], 256);
+    assert_eq!(details["publicKey"], generated["publicKey"]);
+    assert!(
+        details["fingerprint"]
+            .as_str()
+            .unwrap()
+            .starts_with("SHA256:")
+    );
+}
+
+#[test]
+fn forwarded_agent_lists_and_signs_with_the_authenticated_key() {
+    let mut rng =
+        russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
+    let private_key = Arc::new(
+        russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap(),
+    );
+    let state = Arc::new(AgentState::default());
+
+    runtime().unwrap().block_on(async {
+        initialize_agent(private_key, state.clone()).await.unwrap();
+        let (client_stream, server_stream) = tokio::io::duplex(256 * 1024);
+        state
+            .sender
+            .read()
+            .as_ref()
+            .unwrap()
+            .unbounded_send(Ok(Box::new(server_stream)))
+            .unwrap();
+        let mut client = russh::keys::agent::client::AgentClient::connect(client_stream);
+        let identities = client.request_identities().await.unwrap();
+        assert_eq!(identities.len(), 1);
+        let payload = b"agent-forwarding-test".to_vec();
+        let signed = client
+            .sign_request(&identities[0], None, payload.clone())
+            .await
+            .unwrap();
+        assert!(signed.starts_with(&payload));
+        assert!(signed.len() > payload.len());
+    });
+}
+
+#[test]
+#[ignore = "run through tests/live-ssh.sh"]
+fn live_openssh_feature_matrix() {
+    let host = std::env::var("RUSSH_SSH_TEST_HOST").expect("missing test host");
+    let port = std::env::var("RUSSH_SSH_TEST_PORT")
+        .expect("missing test port")
+        .parse::<u16>()
+        .expect("invalid test port");
+    let target_port = std::env::var("RUSSH_SSH_TEST_TARGET_PORT")
+        .expect("missing target port")
+        .parse::<u16>()
+        .expect("invalid target port");
+    let username = std::env::var("RUSSH_SSH_TEST_USER").expect("missing test user");
+    let private_key = std::fs::read_to_string(
+        std::env::var("RUSSH_SSH_TEST_PRIVATE_KEY").expect("missing private key path"),
+    )
+    .expect("could not read private key");
+    let known_hosts = std::fs::read_to_string(
+        std::env::var("RUSSH_SSH_TEST_KNOWN_HOSTS").expect("missing known_hosts path"),
+    )
+    .expect("could not read known_hosts");
+    let shared = std::path::PathBuf::from(
+        std::env::var("RUSSH_SSH_TEST_SHARED_DIR").expect("missing shared directory"),
+    );
+
+    runtime().unwrap().block_on(async {
+            live_call("setKnownHosts", json!({"contents": known_hosts})).await;
+            let credential = json!({
+                "type": "key",
+                "privateKey": private_key,
+                "passphrase": null,
+            });
+            live_call(
+                "connect",
+                json!({
+                    "host": host,
+                    "port": port,
+                    "username": username,
+                    "credential": credential,
+                    "key": "live-main",
+                }),
+            )
+            .await;
+            let executed = live_call(
+                "execute",
+                json!({"key": "live-main", "command": "printf russh-live"}),
+            )
+            .await;
+            assert_eq!(executed["stdout"], "russh-live");
+
+            live_call(
+                "setAgentForwarding",
+                json!({"key": "live-main", "enabled": true}),
+            )
+            .await;
+            let agent = live_call(
+                "execute",
+                json!({"key": "live-main", "command": "ssh-add -L"}),
+            )
+            .await;
+            assert!(agent["stdout"].as_str().unwrap_or_default().contains("ssh-ed25519"));
+
+            live_call("connectSFTP", json!({"key": "live-main"})).await;
+            live_call(
+                "sftpCreateDirAll",
+                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
+            )
+            .await;
+            live_call(
+                "sftpCreateDirAll",
+                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
+            )
+            .await;
+            let client_dir = shared.join("client");
+            let download_dir = shared.join("download");
+            fs::create_dir_all(&client_dir).await.unwrap();
+            fs::create_dir_all(&download_dir).await.unwrap();
+            let payload = client_dir.join("payload.txt");
+            fs::write(&payload, b"sftp-live-payload").await.unwrap();
+            live_call(
+                "sftpUpload",
+                json!({
+                    "key": "live-main",
+                    "localPath": payload,
+                    "remotePath": "/workspace/remote/nested",
+                }),
+            )
+            .await;
+            let mkdir_collision = dispatch(Request {
+                operation: "sftpCreateDirAll".to_owned(),
+                params: json!({
+                    "key": "live-main",
+                    "path": "/workspace/remote/nested/payload.txt/child",
+                }),
+            })
+            .await
+            .unwrap_err();
+            assert!(mkdir_collision.to_string().contains("is not a directory"));
+            fs::write(&payload, b"sftp-live-replacement").await.unwrap();
+            live_call(
+                "sftpUploadToPath",
+                json!({
+                    "key": "live-main",
+                    "localPath": payload,
+                    "remotePath": "/workspace/remote/nested/generated-name.txt",
+                }),
+            )
+            .await;
+            live_call(
+                "sftpUploadToPath",
+                json!({
+                    "key": "live-main",
+                    "localPath": payload,
+                    "remotePath": "/workspace/remote/nested/generated-name.txt",
+                }),
+            )
+            .await;
+            live_call(
+                "sftpChmod",
+                json!({"key": "live-main", "path": "/workspace/remote/nested/generated-name.txt", "permissions": 0o640}),
+            )
+            .await;
+            live_call(
+                "sftpRename",
+                json!({
+                    "key": "live-main",
+                    "oldPath": "/workspace/remote/nested/generated-name.txt",
+                    "newPath": "/workspace/remote/nested/renamed.txt",
+                }),
+            )
+            .await;
+            let entries = live_call(
+                "sftpLs",
+                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
+            )
+            .await;
+            assert!(entries.as_array().unwrap().iter().any(|entry| {
+                entry["filename"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("renamed.txt")
+            }));
+            assert!(!entries.as_array().unwrap().iter().any(|entry| {
+                let filename = entry["filename"].as_str().unwrap_or_default();
+                filename.contains("russh-part") || filename.contains("russh-backup")
+            }));
+            let downloaded = live_call(
+                "sftpDownload",
+                json!({
+                    "key": "live-main",
+                    "remotePath": "/workspace/remote/nested/renamed.txt",
+                    "localPath": download_dir,
+                }),
+            )
+            .await;
+            assert_eq!(
+                fs::read(downloaded.as_str().unwrap()).await.unwrap(),
+                b"sftp-live-replacement"
+            );
+
+            let file_server = live_call(
+                "startSftpFileServer",
+                json!({
+                    "key": "live-main",
+                    "remotePath": "/workspace/remote/nested/renamed.txt",
+                }),
+            )
+            .await;
+            let file_server_port = file_server["localPort"].as_u64().unwrap() as u16;
+            let file_server_token = file_server["token"].as_str().unwrap();
+            let mut preview = tokio::net::TcpStream::connect(("127.0.0.1", file_server_port))
+                .await
+                .unwrap();
+            preview
+                .write_all(
+                    format!(
+                        "GET /{file_server_token}/renamed.txt HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=10-20\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut preview_response = Vec::new();
+            preview.read_to_end(&mut preview_response).await.unwrap();
+            let preview_response = String::from_utf8(preview_response).unwrap();
+            assert!(preview_response.starts_with("HTTP/1.1 206 Partial Content\r\n"));
+            assert!(preview_response.contains("Content-Range: bytes 10-20/21\r\n"));
+            assert!(preview_response.ends_with("replacement"));
+            live_call(
+                "closeSftpFileServer",
+                json!({"key": "live-main", "localPort": file_server_port}),
+            )
+            .await;
+
+            let cancel_payload = client_dir.join("cancel.bin");
+            fs::write(&cancel_payload, vec![7u8; 16 * 1024 * 1024])
+                .await
+                .unwrap();
+            let transfer = runtime().unwrap().spawn(dispatch(Request {
+                operation: "sftpUpload".to_owned(),
+                params: json!({
+                    "key": "live-main",
+                    "localPath": cancel_payload,
+                    "remotePath": "/workspace/remote",
+                }),
+            }));
+            while !transfers()
+                .read()
+                .contains_key(&("live-main".to_owned(), "upload"))
+            {
+                tokio::task::yield_now().await;
+            }
+            live_call("sftpCancelUpload", json!({"key": "live-main"})).await;
+            let transfer_error = tokio::time::timeout(Duration::from_secs(1), transfer)
+                .await
+                .expect("cancelled upload should settle promptly")
+                .unwrap()
+                .unwrap_err()
+                .to_string();
+            assert!(transfer_error.contains("cancelled"));
+            let entries = live_call(
+                "sftpLs",
+                json!({"key": "live-main", "path": "/workspace/remote"}),
+            )
+            .await;
+            assert!(!entries.as_array().unwrap().iter().any(|entry| {
+                let filename = entry["filename"].as_str().unwrap_or_default();
+                filename == "cancel.bin" || filename.contains("russh-part")
+            }));
+            live_call(
+                "sftpUploadToPath",
+                json!({
+                    "key": "live-main",
+                    "localPath": payload,
+                    "remotePath": "/workspace/remote/after-cancel.txt",
+                }),
+            )
+            .await;
+            let entries = live_call(
+                "sftpLs",
+                json!({"key": "live-main", "path": "/workspace/remote"}),
+            )
+            .await;
+            assert!(entries.as_array().unwrap().iter().any(|entry| {
+                entry["filename"].as_str() == Some("after-cancel.txt")
+            }));
+
+            let forward_port = live_call(
+                "openLocalForward",
+                json!({
+                    "key": "live-main",
+                    "remoteHost": "127.0.0.1",
+                    "remotePort": target_port,
+                }),
+            )
+            .await
+            .as_u64()
+            .unwrap() as u16;
+            let mut forwarded = tokio::net::TcpStream::connect(("127.0.0.1", forward_port))
+                .await
+                .unwrap();
+            let mut banner = [0u8; 4];
+            tokio::time::timeout(Duration::from_secs(5), forwarded.read_exact(&mut banner))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(&banner, b"SSH-");
+            live_call(
+                "closeLocalForward",
+                json!({"key": "live-main", "localPort": forward_port}),
+            )
+            .await;
+
+            live_call(
+                "connect",
+                json!({
+                    "host": "127.0.0.1",
+                    "port": target_port,
+                    "username": username,
+                    "credential": credential,
+                    "jumpKey": "live-main",
+                    "key": "live-jump-target",
+                }),
+            )
+            .await;
+            let jumped = live_call(
+                "execute",
+                json!({"key": "live-jump-target", "command": "printf jumped"}),
+            )
+            .await;
+            assert_eq!(jumped["stdout"], "jumped");
+
+            live_call(
+                "connect",
+                json!({
+                    "host": host,
+                    "port": port,
+                    "username": username,
+                    "credential": {"type": "password", "password": "russh-test-password"},
+                    "key": "live-password",
+                }),
+            )
+            .await;
+            live_call("disconnect", json!({"key": "live-password"})).await;
+            live_call("disconnect", json!({"key": "live-jump-target"})).await;
+            live_call("disconnect", json!({"key": "live-main"})).await;
+        });
+}
