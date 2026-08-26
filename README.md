@@ -144,7 +144,7 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 ### Connect securely
 
 - Import, inspect, copy, remove, or generate SSH keys, and reuse them from a biometric-protected global keychain.
-- Authorize a generated, global-keychain, or clipboard public key by scanning a one-time QR code from [`whip-pair`](whip-pair/README.md), using the host's existing SSH port without a relay.
+- Authorize a generated, global-keychain, or clipboard public key by scanning a one-time QR code from [`whipair`](whipair/README.md), using the host's existing SSH port without a relay.
 - Route connections through nested, OpenSSH-compatible jump hosts and optionally forward a profile's key as an SSH agent without copying the private key to the server.
 - Verify every direct and jump-host connection against a global known-hosts list, prompting for unknown fingerprints and rejecting changed host keys.
 - Store each host's password or private-key credential in Android Keystore or iOS Keychain, with encrypted, device-authenticated Block Store recovery on supported Android devices.
@@ -192,14 +192,14 @@ of these package managers:
 
 ```bash
 # uv
-uvx whip-pair
+uvx whipair
 
 # npm
-npx whip-pair
+npx whipair
 
 # Cargo
-cargo install --locked whip-pair
-whip-pair
+cargo install --locked whipair
+whipair
 ```
 
 Select the reachable network and confirm the SSH port, then open **Add host**
@@ -211,7 +211,7 @@ Whip, so it authorizes and saves the host without making it immediately
 connectable from that device.
 
 The uv, npm, and Cargo versions require `ssh-keyscan` from an OpenSSH client
-package. See the [`whip-pair` documentation](whip-pair/README.md) for the
+package. See the [`whipair` documentation](whipair/README.md) for the
 protocol, security boundaries, Nix command, and nonstandard-port options.
 
 ### Enter a host manually

@@ -11,7 +11,7 @@ const cargoToml = fs.readFileSync(path.join(packageRoot, "..", "Cargo.toml"), "u
 const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 
 if (!cargoVersion) {
-  throw new Error("Unable to read the whip-pair version from Cargo.toml");
+  throw new Error("Unable to read the whipair version from Cargo.toml");
 }
 if (packageJson.version !== cargoVersion) {
   throw new Error(
@@ -25,11 +25,11 @@ for (const target of [
   "linux-arm64",
   "linux-x64",
 ]) {
-  const binary = path.join(packageRoot, "vendor", target, "whip-pair");
+  const binary = path.join(packageRoot, "vendor", target, "whipair");
   const stat = fs.statSync(binary, { throwIfNoEntry: false });
   if (!stat?.isFile()) {
-    throw new Error(`Missing native binary: vendor/${target}/whip-pair`);
+    throw new Error(`Missing native binary: vendor/${target}/whipair`);
   }
 }
 
-console.log(`Verified whip-pair npm package ${packageJson.version}`);
+console.log(`Verified whipair npm package ${packageJson.version}`);

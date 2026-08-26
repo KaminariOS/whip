@@ -144,13 +144,13 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
               selectable
               className={cn('rounded-lg border px-3 py-2 font-mono text-sm', !appGlassEnabled && 'border-border bg-background')}
               style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}>
-              {'uvx whip-pair'}
+              {'uvx whipair'}
             </Text>
             <Text
               selectable
               className={cn('rounded-lg border px-3 py-2 font-mono text-sm', !appGlassEnabled && 'border-border bg-background')}
               style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}>
-              {'npx whip-pair'}
+              {'npx whipair'}
             </Text>
           </View>
         </GlassSurface>

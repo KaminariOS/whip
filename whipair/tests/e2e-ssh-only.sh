@@ -49,8 +49,8 @@ if ! kill -0 "$sshd_pid" 2>/dev/null; then
   exit 1
 fi
 
-cargo build --quiet --manifest-path whip-pair/Cargo.toml
-pair_binary="whip-pair/target/debug/whip-pair"
+cargo build --quiet --manifest-path whipair/Cargo.toml
+pair_binary="whipair/target/debug/whipair"
 "$pair_binary" serve \
   --advertise-host 127.0.0.1 \
   --ssh-port "$ssh_port" \
@@ -76,7 +76,7 @@ IFS= read -r pairing_code <"$test_root/code"
 wait "$pair_pid"
 pair_pid=""
 
-if rg -q 'whip-pair-temporary' "$test_root/authorized_keys"; then
+if rg -q 'whipair-temporary' "$test_root/authorized_keys"; then
   echo "temporary authorization was not removed" >&2
   exit 1
 fi

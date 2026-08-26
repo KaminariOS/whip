@@ -266,7 +266,7 @@ mod tests {
         let directory = tempdir().unwrap();
         let path = directory.path().join(".ssh/authorized_keys");
         fs::create_dir(path.parent().unwrap()).unwrap();
-        let temporary = format!("restrict,command=\"whip-pair exchange\" {ED25519_KEY} temporary");
+        let temporary = format!("restrict,command=\"whipair exchange\" {ED25519_KEY} temporary");
         fs::write(
             &path,
             format!("# keep this comment\n{temporary}\n{ECDSA_KEY} permanent\n"),

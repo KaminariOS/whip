@@ -176,7 +176,7 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
     }
     if !args.yes && !io::stdin().is_terminal() {
         return Err(Error::Message(
-            "pairing approval requires a terminal; run whip-pair interactively".into(),
+            "pairing approval requires a terminal; run whipair interactively".into(),
         ));
     }
 
@@ -204,9 +204,9 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
     let mut temporary_private_key_seed = [0_u8; 32];
     OsRng.fill_bytes(&mut temporary_private_key_seed);
     let mut temporary_private_key = temporary_private_key(&temporary_private_key_seed);
-    temporary_private_key.set_comment("whip-pair temporary credential");
+    temporary_private_key.set_comment("whipair temporary credential");
 
-    let exchange_directory = tempfile::Builder::new().prefix("whip-pair-").tempdir()?;
+    let exchange_directory = tempfile::Builder::new().prefix("whipair-").tempdir()?;
     let socket_path = exchange_directory.path().join("exchange.sock");
     let listener = UnixListener::bind(&socket_path)?;
     let forced_command = forced_command(&socket_path)?;
@@ -491,7 +491,7 @@ async fn pair_over_ssh(
     }
 
     let mut channel = handle.channel_open_session().await?;
-    channel.exec(true, "whip-pair").await?;
+    channel.exec(true, "whipair").await?;
     let mut encoded = serde_json::to_vec(request)?;
     encoded.push(b'\n');
     channel.data(encoded.as_slice()).await?;
@@ -639,7 +639,7 @@ fn temporary_authorized_key_line(private_key: &PrivateKey, command: &str) -> Res
     let escaped_command = command.replace('\\', "\\\\").replace('"', "\\\"");
     let public_key = private_key.public_key().to_openssh()?;
     Ok(format!(
-        "restrict,command=\"{escaped_command}\" {public_key} whip-pair-temporary"
+        "restrict,command=\"{escaped_command}\" {public_key} whipair-temporary"
     ))
 }
 
@@ -775,7 +775,7 @@ fn print_pairing_screen(
         .light_color(unicode::Dense1x2::Light)
         .quiet_zone(true)
         .build();
-    println!("\nWhip Pair\n");
+    println!("\nWhipair\n");
     println!(
         "Endpoint: {} ({}, {})",
         selected.label, selected.source, selected.host
@@ -1003,7 +1003,7 @@ mod tests {
         let key = temporary_private_key(&[7; 32]);
         let line = temporary_authorized_key_line(
             &key,
-            "'/nix/store/example/bin/whip-pair' exchange --socket '/tmp/example.sock'",
+            "'/nix/store/example/bin/whipair' exchange --socket '/tmp/example.sock'",
         )
         .unwrap();
         assert!(line.starts_with("restrict,command=\""));

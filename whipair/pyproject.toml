@@ -3,7 +3,7 @@ requires = ["maturin>=1.9,<2"]
 build-backend = "maturin"
 
 [project]
-name = "whip-pair"
+name = "whipair"
 dynamic = ["version"]
 description = "Direct, QR-based SSH public-key enrollment prototype for Whip"
 readme = "README.md"
@@ -21,7 +21,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/KaminariOS/whip/tree/main/whip-pair"
+Homepage = "https://github.com/KaminariOS/whip/tree/main/whipair"
 Repository = "https://github.com/KaminariOS/whip"
 Issues = "https://github.com/KaminariOS/whip/issues"
 

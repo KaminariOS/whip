@@ -1,14 +1,14 @@
 {
-  "name": "whip-pair",
+  "name": "whipair",
   "version": "0.1.3",
   "description": "Direct, QR-based SSH public-key enrollment prototype for Whip",
   "license": "AGPL-3.0-or-later",
   "author": "KaminariOS",
-  "homepage": "https://github.com/KaminariOS/whip/tree/main/whip-pair#readme",
+  "homepage": "https://github.com/KaminariOS/whip/tree/main/whipair#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KaminariOS/whip.git",
-    "directory": "whip-pair"
+    "directory": "whipair"
   },
   "bugs": {
     "url": "https://github.com/KaminariOS/whip/issues"
@@ -21,7 +21,7 @@
     "cli"
   ],
   "bin": {
-    "whip-pair": "bin/whip-pair.js"
+    "whipair": "bin/whipair.js"
   },
   "files": [
     "bin/",

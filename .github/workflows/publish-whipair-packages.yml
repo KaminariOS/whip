@@ -1,15 +1,15 @@
-name: Publish whip-pair to PyPI and npm
+name: Publish whipair to PyPI and npm
 
 on:
   push:
     tags:
-      - 'whip-pair-v*'
+      - 'whipair-v*'
   workflow_dispatch:
     inputs:
       version:
-        description: Version from whip-pair/Cargo.toml, without a leading v
+        description: Version from whipair/Cargo.toml, without a leading v
         required: true
-        default: 0.1.0
+        default: 0.1.3
         type: string
       publish_pypi:
         description: Publish the PyPI wheels
@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-whip-pair-packages
+  group: publish-whipair-packages
   cancel-in-progress: false
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: whip-pair
+        working-directory: whipair
 
     steps:
       - name: Check out repository
@@ -66,12 +66,12 @@ jobs:
             | jq -r '.packages[0].version')"
           npm_version="$(node -p "require('./npm/package.json').version")"
           if [[ "$EVENT_NAME" == "push" ]]; then
-            expected_version="${RELEASE_TAG#whip-pair-v}"
+            expected_version="${RELEASE_TAG#whipair-v}"
           else
             expected_version="$MANUAL_VERSION"
           fi
           if [[ -z "$expected_version" || "$cargo_version" != "$expected_version" ]]; then
-            echo "Expected whip-pair version $expected_version, found $cargo_version" >&2
+            echo "Expected whipair version $expected_version, found $cargo_version" >&2
             exit 1
           fi
           if [[ "$npm_version" != "$cargo_version" ]]; then
@@ -90,7 +90,7 @@ jobs:
 
       - name: Check npm launcher syntax
         run: |
-          node --check npm/bin/whip-pair.js
+          node --check npm/bin/whipair.js
           node --check npm/scripts/verify-package.js
 
   build:
@@ -152,15 +152,15 @@ jobs:
             export "CARGO_TARGET_${target_key}_LINKER=musl-gcc"
           fi
           cargo build --release --locked \
-            --manifest-path whip-pair/Cargo.toml \
+            --manifest-path whipair/Cargo.toml \
             --target "$RUST_TARGET"
-          mkdir -p "whip-pair/npm/vendor/$PACKAGE_TARGET"
+          mkdir -p "whipair/npm/vendor/$PACKAGE_TARGET"
           install -m 755 \
-            "whip-pair/target/$RUST_TARGET/release/whip-pair" \
-            "whip-pair/npm/vendor/$PACKAGE_TARGET/whip-pair"
-          "whip-pair/npm/vendor/$PACKAGE_TARGET/whip-pair" --version
+            "whipair/target/$RUST_TARGET/release/whipair" \
+            "whipair/npm/vendor/$PACKAGE_TARGET/whipair"
+          "whipair/npm/vendor/$PACKAGE_TARGET/whipair" --version
           tar -czf "$RUNNER_TEMP/native-$PACKAGE_TARGET.tar.gz" \
-            -C whip-pair/npm "vendor/$PACKAGE_TARGET"
+            -C whipair/npm "vendor/$PACKAGE_TARGET"
 
       - name: Build manylinux wheel
         if: matrix.is_linux
@@ -168,7 +168,7 @@ jobs:
         with:
           target: ${{ matrix.wheel_target }}
           manylinux: '2014'
-          working-directory: whip-pair
+          working-directory: whipair
           args: --release --locked --out dist
 
       - name: Build macOS wheel
@@ -176,7 +176,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.wheel_target }}
-          working-directory: whip-pair
+          working-directory: whipair
           args: --release --locked --out dist
 
       - name: Upload native npm binary
@@ -191,7 +191,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: wheel-${{ matrix.package_target }}
-          path: whip-pair/dist/*.whl
+          path: whipair/dist/*.whl
           if-no-files-found: error
           retention-days: 3
 
@@ -251,23 +251,23 @@ jobs:
       - name: Assemble and verify npm package
         run: |
           for archive in native-dist/*.tar.gz; do
-            tar -xzf "$archive" -C whip-pair/npm
+            tar -xzf "$archive" -C whipair/npm
           done
-          chmod +x whip-pair/npm/bin/whip-pair.js whip-pair/npm/vendor/*/whip-pair
-          node whip-pair/npm/scripts/verify-package.js
-          node whip-pair/npm/bin/whip-pair.js --version
-          npm pack ./whip-pair/npm --dry-run
+          chmod +x whipair/npm/bin/whipair.js whipair/npm/vendor/*/whipair
+          node whipair/npm/scripts/verify-package.js
+          node whipair/npm/bin/whipair.js --version
+          npm pack ./whipair/npm --dry-run
 
       - name: Publish with npm trusted publishing
         if: github.event_name == 'push' || inputs.bootstrap_npm_with_token == false
         run: |
           package_version="$(node -p "require('./package.json').version")"
-          if npm view "whip-pair@$package_version" version >/dev/null 2>&1; then
-            echo "whip-pair@$package_version is already published to npm"
+          if npm view "whipair@$package_version" version >/dev/null 2>&1; then
+            echo "whipair@$package_version is already published to npm"
           else
             npm publish
           fi
-        working-directory: whip-pair/npm
+        working-directory: whipair/npm
 
       - name: Bootstrap first npm release with API token
         if: github.event_name == 'workflow_dispatch' && inputs.bootstrap_npm_with_token == true
@@ -279,9 +279,9 @@ jobs:
             exit 1
           fi
           package_version="$(node -p "require('./package.json').version")"
-          if npm view "whip-pair@$package_version" version >/dev/null 2>&1; then
-            echo "whip-pair@$package_version is already published to npm"
+          if npm view "whipair@$package_version" version >/dev/null 2>&1; then
+            echo "whipair@$package_version is already published to npm"
           else
             npm publish
           fi
-        working-directory: whip-pair/npm
+        working-directory: whipair/npm

@@ -1,10 +1,10 @@
-# whip-pair prototype
+# whipair prototype
 
-[![crates.io](https://img.shields.io/crates/v/whip-pair.svg)](https://crates.io/crates/whip-pair)
-[![PyPI](https://img.shields.io/pypi/v/whip-pair.svg)](https://pypi.org/project/whip-pair/)
-[![npm](https://img.shields.io/npm/v/whip-pair.svg)](https://www.npmjs.com/package/whip-pair)
+[![crates.io](https://img.shields.io/crates/v/whipair.svg)](https://crates.io/crates/whipair)
+[![PyPI](https://img.shields.io/pypi/v/whipair.svg)](https://pypi.org/project/whipair/)
+[![npm](https://img.shields.io/npm/v/whipair.svg)](https://www.npmjs.com/package/whipair)
 
-`whip-pair` is a direct, one-shot SSH public-key enrollment prototype for
+`whipair` is a direct, one-shot SSH public-key enrollment prototype for
 Whip. It uses the host's existing SSH port: no relay, TLS listener, additional
 firewall rule, pairing account, or `sshd_config` change is required.
 
@@ -12,7 +12,7 @@ The host creates a temporary Ed25519 credential and adds only its public half
 to the current user's `authorized_keys` with `restrict` and a forced command.
 The QR contains the private seed, SSH endpoint, username, and SSH host-key pin.
 Whip uses that credential for one restricted exchange, the host user approves
-the submitted permanent public key, and `whip-pair` removes the temporary
+the submitted permanent public key, and `whipair` removes the temporary
 authorization.
 
 ## Install
@@ -25,11 +25,11 @@ to be available on `PATH`.
 Run the native binary from PyPI without installing Rust:
 
 ```bash
-uvx whip-pair
+uvx whipair
 ```
 
 `uvx` is an alias for `uv tool run`; either form creates an isolated tool
-environment and runs `whip-pair`. Published wheels support macOS and Linux on
+environment and runs `whipair`. Published wheels support macOS and Linux on
 ARM64 and x64.
 
 ### npm
@@ -37,7 +37,7 @@ ARM64 and x64.
 Run the native binary from npm without installing Rust:
 
 ```bash
-npx whip-pair
+npx whipair
 ```
 
 The npm package is a dependency-free launcher containing the same four native
@@ -45,12 +45,12 @@ binaries. Node.js 18 or newer is required.
 
 ### Cargo
 
-Install the [published crate](https://crates.io/crates/whip-pair) with Rust 1.85
+Install the [published crate](https://crates.io/crates/whipair) with Rust 1.85
 or newer:
 
 ```bash
-cargo install --locked whip-pair
-whip-pair
+cargo install --locked whipair
+whipair
 ```
 
 ### Nix
@@ -58,10 +58,10 @@ whip-pair
 Run the public version:
 
 ```bash
-nix run github:KaminariOS/whip#whip-pair
+nix run github:KaminariOS/whip#whipair
 ```
 
-Without arguments, `whip-pair` lists the host's reachable interface addresses,
+Without arguments, `whipair` lists the host's reachable interface addresses,
 uses `ifconfig.me` to discover its public IP when `curl` is available, and also
 offers a manual public-address choice:
 
@@ -81,7 +81,7 @@ firewall. Choose **Public/other** to enter a DNS name or a different address, or
 select a specific reachable endpoint non-interactively:
 
 ```bash
-nix run github:KaminariOS/whip#whip-pair -- serve \
+nix run github:KaminariOS/whip#whipair -- serve \
   --advertise-host 192.168.1.10
 ```
 
@@ -89,7 +89,7 @@ If SSH is already listening on a nonstandard port, advertise it with
 `--ssh-port`:
 
 ```bash
-nix run github:KaminariOS/whip#whip-pair -- serve \
+nix run github:KaminariOS/whip#whipair -- serve \
   --advertise-host ssh.example.com \
   --ssh-port 2222
 ```
@@ -98,7 +98,7 @@ nix run github:KaminariOS/whip#whip-pair -- serve \
 existing SSH service reachable at the advertised host. When no
 `--advertise-host` is supplied, the interactive setup asks for the endpoint and
 port, offering `22` as the default. Passing both options skips those questions.
-`whip-pair` does not bind a TCP listener; Whip connects to the host's existing
+`whipair` does not bind a TCP listener; Whip connects to the host's existing
 SSH service.
 
 For a public endpoint behind NAT, forward the advertised public port to the
@@ -110,7 +110,7 @@ the local Ed25519 host-key fingerprint and pass it explicitly:
 ```bash
 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
 
-nix run github:KaminariOS/whip#whip-pair -- serve \
+nix run github:KaminariOS/whip#whipair -- serve \
   --advertise-host ssh.example.com \
   --ssh-port 2222 \
   --ssh-fingerprint 'SHA256:...'
@@ -119,7 +119,7 @@ nix run github:KaminariOS/whip#whip-pair -- serve \
 From a local checkout:
 
 ```bash
-nix run .#whip-pair
+nix run .#whipair
 ```
 
 The Nix app includes `ssh-keyscan`. Automatic discovery requests Ed25519,
@@ -129,13 +129,13 @@ ECDSA, and RSA host keys in Whip's `russh` preference order. Use
 During development, print the underlying envelope:
 
 ```bash
-nix run .#whip-pair -- serve --advertise-host 192.168.1.10 --print-code
+nix run .#whipair -- serve --advertise-host 192.168.1.10 --print-code
 ```
 
 Exercise the SSH-only protocol with a disposable public key:
 
 ```bash
-nix run .#whip-pair -- request \
+nix run .#whipair -- request \
   --code 'WP4:...' \
   --public-key ~/.ssh/id_ed25519.pub \
   --device-name 'Prototype client'
@@ -144,7 +144,7 @@ nix run .#whip-pair -- request \
 Inspect a copied envelope without exposing its temporary private seed:
 
 ```bash
-nix run .#whip-pair -- inspect 'WP4:...'
+nix run .#whipair -- inspect 'WP4:...'
 ```
 
 ## Prototype limitations
@@ -170,8 +170,8 @@ Render and validate the tracked SVG with:
 
 ```bash
 nix shell nixpkgs#mermaid-cli -c mmdc \
-  -i whip-pair/docs/wp4-sequence.mmd \
-  -o whip-pair/docs/wp4-sequence.svg
+  -i whipair/docs/wp4-sequence.mmd \
+  -o whipair/docs/wp4-sequence.svg
 ```
 
 ### QR bootstrap envelope
@@ -193,16 +193,16 @@ is enforced by the running host process and is intentionally omitted.
 
 ### Host authorization and exchange
 
-Before displaying the QR, `whip-pair` adds an entry equivalent to:
+Before displaying the QR, `whipair` adds an entry equivalent to:
 
 ```text
-restrict,command="whip-pair exchange --socket …" ssh-ed25519 AAAA… whip-pair-temporary
+restrict,command="whipair exchange --socket …" ssh-ed25519 AAAA… whipair-temporary
 ```
 
 `restrict` disables shell access, PTY allocation, forwarding, agent forwarding,
 X11, and user startup commands. The forced command accepts one bounded JSON
 `EnrollmentRequest` on SSH stdin and relays it through a Unix socket in a
-mode-`0700` temporary directory to the visible `whip-pair` process.
+mode-`0700` temporary directory to the visible `whipair` process.
 
 The parent process validates the submitted OpenSSH public key and displays a
 six-digit verification code derived from its SHA-256 fingerprint. Whip shows
@@ -238,15 +238,15 @@ prompt.
 
 ## Publishing
 
-The [`Publish whip-pair to crates.io`](https://github.com/KaminariOS/whip/actions/workflows/publish-whip-pair.yml)
+The [`Publish whipair to crates.io`](https://github.com/KaminariOS/whip/actions/workflows/publish-whipair.yml)
 workflow verifies the crate version, formatting, Clippy, tests, and package
-contents before publishing. Crates.io trusts only `publish-whip-pair.yml` in
+contents before publishing. Crates.io trusts only `publish-whipair.yml` in
 `KaminariOS/whip` with the protected `crates-io` environment. The workflow
 uses a short-lived OIDC credential; GitHub stores no crates.io API token.
 
-The [`Publish whip-pair to PyPI and npm`](https://github.com/KaminariOS/whip/actions/workflows/publish-whip-pair-packages.yml)
+The [`Publish whipair to PyPI and npm`](https://github.com/KaminariOS/whip/actions/workflows/publish-whipair-packages.yml)
 workflow builds native PyPI wheels and npm binaries for macOS and Linux on
-ARM64 and x64. PyPI should trust `publish-whip-pair-packages.yml` with the
+ARM64 and x64. PyPI should trust `publish-whipair-packages.yml` with the
 `pypi` environment. After the first npm release, npm should trust the same
 workflow with the `npm` environment. Both registries then publish with
 short-lived GitHub OIDC credentials and provenance instead of stored tokens.
@@ -258,23 +258,23 @@ the workflow once with **Publish the npm package** and **Bootstrap the first
 npm release with NPM_TOKEN** enabled, configure npm trusted publishing, and
 then delete the secret.
 
-To release a version, update `version` in `whip-pair/Cargo.toml`,
-`whip-pair/npm/package.json`, and the `mkWhipPair` version in `flake.nix`,
-refresh `whip-pair/Cargo.lock`, and run:
+To release a version, update `version` in `whipair/Cargo.toml`,
+`whipair/npm/package.json`, and the `mkWhipair` version in `flake.nix`,
+refresh `whipair/Cargo.lock`, and run:
 
 ```bash
-nix develop -c cargo test --locked --manifest-path whip-pair/Cargo.toml
+nix develop -c cargo test --locked --manifest-path whipair/Cargo.toml
 nix develop -c cargo publish --locked --dry-run \
-  --manifest-path whip-pair/Cargo.toml
+  --manifest-path whipair/Cargo.toml
 nix develop -c uvx maturin build --release --locked \
-  --manifest-path whip-pair/Cargo.toml \
-  --out whip-pair/dist
+  --manifest-path whipair/Cargo.toml \
+  --out whipair/dist
 ```
 
 Commit those changes, then push a tag whose version matches `Cargo.toml`
 exactly:
 
 ```bash
-git tag whip-pair-v0.1.3
-git push origin whip-pair-v0.1.3
+git tag whipair-v0.1.3
+git push origin whipair-v0.1.3
 ```

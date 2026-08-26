@@ -157,7 +157,7 @@ pub async fn pair_host(
     }
 
     let mut channel = handle.channel_open_session().await?;
-    channel.exec(true, "whip-pair").await?;
+    channel.exec(true, "whipair").await?;
     let device_name = printable_device_name(device_name);
     let mut encoded = serde_json::to_vec(&EnrollmentRequest {
         device_name: &device_name,

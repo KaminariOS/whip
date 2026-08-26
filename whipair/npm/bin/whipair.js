@@ -16,16 +16,16 @@ const supportedTargets = new Set([
 
 if (!supportedTargets.has(target)) {
   console.error(
-    `whip-pair does not provide a binary for ${target}. ` +
+    `whipair does not provide a binary for ${target}. ` +
       "Supported targets: macOS and Linux on ARM64 or x64.",
   );
   process.exit(1);
 }
 
-const binary = path.join(__dirname, "..", "vendor", target, "whip-pair");
+const binary = path.join(__dirname, "..", "vendor", target, "whipair");
 if (!fs.existsSync(binary)) {
   console.error(
-    `The whip-pair package is missing its ${target} binary. ` +
+    `The whipair package is missing its ${target} binary. ` +
       "Reinstall the package and try again.",
   );
   process.exit(1);
@@ -33,7 +33,7 @@ if (!fs.existsSync(binary)) {
 
 const result = spawnSync(binary, process.argv.slice(2), { stdio: "inherit" });
 if (result.error) {
-  console.error(`Unable to start whip-pair: ${result.error.message}`);
+  console.error(`Unable to start whipair: ${result.error.message}`);
   process.exit(1);
 }
 

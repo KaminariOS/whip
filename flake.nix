@@ -64,50 +64,50 @@
       darwinPkgs
       "aarch64-apple-darwin"
       "sha256-ajj+Fm0XpnQmnUNzJWwLa9k6zCVT4S3gUXy57Mc8nAI=";
-    mkWhipPair = pkgs:
+    mkWhipair = pkgs:
       pkgs.rustPlatform.buildRustPackage {
-        pname = "whip-pair";
+        pname = "whipair";
         version = "0.1.3";
         src = pkgs.lib.cleanSourceWith {
-          src = ./whip-pair;
+          src = ./whipair;
           filter = path: type:
             type != "directory" || builtins.baseNameOf path != "target";
         };
-        cargoLock.lockFile = ./whip-pair/Cargo.lock;
+        cargoLock.lockFile = ./whipair/Cargo.lock;
         nativeBuildInputs = [pkgs.makeWrapper];
 
         postInstall = ''
-          wrapProgram $out/bin/whip-pair \
+          wrapProgram $out/bin/whipair \
             --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.curl pkgs.openssh]}
         '';
 
         meta = {
           description = "Direct, QR-based SSH public-key enrollment prototype for Whip";
           license = pkgs.lib.licenses.agpl3Plus;
-          mainProgram = "whip-pair";
+          mainProgram = "whipair";
           platforms = pkgs.lib.platforms.unix;
         };
       };
-    linuxWhipPair = mkWhipPair androidPkgs;
-    darwinWhipPair = mkWhipPair darwinPkgs;
+    linuxWhipair = mkWhipair androidPkgs;
+    darwinWhipair = mkWhipair darwinPkgs;
   in {
     packages.${androidSystem} = {
-      whip-pair = linuxWhipPair;
+      whipair = linuxWhipair;
       cargo-about = linuxCargoAbout;
     };
     packages.${darwinSystem} = {
-      whip-pair = darwinWhipPair;
+      whipair = darwinWhipair;
       cargo-about = darwinCargoAbout;
     };
 
-    apps.${androidSystem}.whip-pair = {
+    apps.${androidSystem}.whipair = {
       type = "app";
-      program = "${linuxWhipPair}/bin/whip-pair";
+      program = "${linuxWhipair}/bin/whipair";
       meta.description = "Run the Whip SSH pairing prototype";
     };
-    apps.${darwinSystem}.whip-pair = {
+    apps.${darwinSystem}.whipair = {
       type = "app";
-      program = "${darwinWhipPair}/bin/whip-pair";
+      program = "${darwinWhipair}/bin/whipair";
       meta.description = "Run the Whip SSH pairing prototype";
     };
 
