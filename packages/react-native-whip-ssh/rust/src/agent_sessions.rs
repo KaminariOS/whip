@@ -610,7 +610,7 @@ impl AgentSessionManager {
                 let mut state = self.inner.state.lock();
                 current_session_mut(&mut state, &key, host_generation, operation_epoch).and_then(
                     |session| match &mut session.core {
-                        AgentSessionCore::Codex(core) => Some(core.mark_live()),
+                        AgentSessionCore::Codex(core) => core.mark_live().then(|| core.state()),
                         AgentSessionCore::OpenCode(_) => None,
                     },
                 )
@@ -687,13 +687,17 @@ impl AgentSessionManager {
                 let mut state = self.inner.state.lock();
                 current_session_mut(&mut state, &key, host_generation, operation_epoch).and_then(
                     |session| match &mut session.core {
-                        AgentSessionCore::OpenCode(core) => Some(core.mark_live()),
+                        AgentSessionCore::OpenCode(core) => {
+                            Some(core.mark_live().then(|| core.state()))
+                        }
                         AgentSessionCore::Codex(_) => None,
                     },
                 )
             };
             if let Some(snapshot) = snapshot {
-                emit(&self.inner, key.clone(), snapshot, None);
+                if let Some(snapshot) = snapshot {
+                    emit(&self.inner, key.clone(), snapshot, None);
+                }
                 self.schedule_opencode_poll(key, host_generation, operation_epoch, session_id);
             }
             return;
@@ -789,13 +793,14 @@ impl AgentSessionManager {
                 let AgentSessionCore::OpenCode(core) = &mut session.core else {
                     return Err("OpenCode transcript was rebound to another agent".to_owned());
                 };
-                if full {
+                let transcript_changed = if full {
                     core.bootstrap(remote_cursor, payload)
                 } else {
                     core.apply_events(remote_cursor, payload)
                 }
                 .map_err(|error| error.to_string())?;
-                let snapshot = core.mark_live();
+                let status_changed = core.mark_live();
+                let visible_changed = transcript_changed || status_changed;
                 let cursor = core.cursor().unwrap_or(remote_cursor);
                 let new_checkpoint = session
                     .pending_cache_offset
@@ -807,6 +812,7 @@ impl AgentSessionManager {
                         session.pending_cache_offset = Some(cursor);
                         (blob, core.source_generation(), cursor)
                     });
+                let snapshot = (visible_changed || cache.is_some()).then(|| core.state());
                 (snapshot, cache)
             };
             let cache = cache_candidate.map(|(blob, source_generation, cursor)| {
@@ -827,9 +833,11 @@ impl AgentSessionManager {
                     confirmation_token: token,
                 }
             });
-            (snapshot, cache)
+            snapshot.map(|snapshot| (snapshot, cache))
         };
-        emit(&self.inner, key.to_owned(), emission.0, emission.1);
+        if let Some((snapshot, cache)) = emission {
+            emit(&self.inner, key.to_owned(), snapshot, cache);
+        }
         Ok(())
     }
 
@@ -970,7 +978,7 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
     };
     let emission = {
         let mut state = manager.state.lock();
-        let (snapshot, cache_candidate, changed) = {
+        let (snapshot, cache_candidate) = {
             let Some(session) = current_session_mut(
                 &mut state,
                 &context_value.session_key,
@@ -984,9 +992,11 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
             };
             match core.ingest(context_value.source_generation, &bytes) {
                 Ok(result) => {
-                    let previous_revision = core.revision();
-                    let snapshot = core.mark_live();
-                    let new_checkpoint = result.committable_offset > core.committed_offset()
+                    let current_generation = result.source_generation == core.source_generation();
+                    let status_changed = current_generation && core.mark_live();
+                    let visible_changed = result.changed || status_changed;
+                    let new_checkpoint = visible_changed
+                        && result.committable_offset > core.committed_offset()
                         && session
                             .pending_cache_offset
                             .is_none_or(|offset| result.committable_offset > offset);
@@ -997,10 +1007,10 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
                             session.pending_cache_offset = Some(result.committable_offset);
                             (blob, result.committable_offset)
                         });
-                    let changed = snapshot.revision != previous_revision;
-                    (snapshot, cache, changed)
+                    let snapshot = (visible_changed || cache.is_some()).then(|| core.state());
+                    (snapshot, cache)
                 }
-                Err(error) => (session.core.mark_stale(error.to_string()), None, true),
+                Err(error) => (Some(session.core.mark_stale(error.to_string())), None),
             }
         };
         let cache = cache_candidate.map(|(blob, offset)| {
@@ -1021,7 +1031,7 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
                 confirmation_token: token,
             }
         });
-        (changed || cache.is_some()).then_some((snapshot, cache))
+        snapshot.map(|snapshot| (snapshot, cache))
     };
     if let Some((state, cache)) = emission {
         emit(&manager, context_value.session_key, state, cache);

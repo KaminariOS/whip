@@ -1,6 +1,6 @@
 //! Rust-owned lifecycle for one connected Whip/Herdr host.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     Arc, OnceLock, Weak,
     atomic::{AtomicU64, Ordering},
@@ -1727,29 +1727,68 @@ fn schedule_terminal_retry(inner: Arc<RuntimeInner>, terminal_id: String, reason
     }
 }
 
-/// Called by the typed event decoder before forwarding a current-generation event.
-pub(crate) fn deliver_herdr_event(client_key: &str, event: HerdrEvent) -> bool {
+#[derive(Debug, Default)]
+struct HerdrEventBatchResult {
+    changed: bool,
+    changed_agent_pane_ids: Vec<String>,
+    resync_reason: Option<String>,
+}
+
+fn apply_herdr_event_batch(
+    state: &mut RuntimeState,
+    events: impl IntoIterator<Item = HerdrEvent>,
+) -> HerdrEventBatchResult {
+    let mut result = HerdrEventBatchResult::default();
+    let mut changed_agent_pane_ids = HashSet::new();
+    let generation = state.generation;
+    for event in events {
+        let agent_pane_id = match &event {
+            HerdrEvent::PaneAgentStatusChanged { pane_id, .. } => Some(pane_id.clone()),
+            _ => None,
+        };
+        let outcome = state.host_state.apply_event(generation, event, now_ms());
+        if matches!(outcome, ApplyResult::IgnoredStale) {
+            continue;
+        }
+        result.changed = true;
+        if let Some(pane_id) = agent_pane_id {
+            changed_agent_pane_ids.insert(pane_id);
+        }
+        if let ApplyResult::NeedsResync(reason) = outcome
+            && result.resync_reason.is_none()
+        {
+            result.resync_reason = Some(reason);
+        }
+    }
+    result.changed_agent_pane_ids = changed_agent_pane_ids.into_iter().collect();
+    result.changed_agent_pane_ids.sort_unstable();
+    result
+}
+
+/// Called by the typed event decoder with all events parsed from one transport
+/// read. Rust applies the entire burst authoritatively before projecting once.
+pub(crate) fn deliver_herdr_events(
+    client_key: &str,
+    events: Vec<HerdrEvent>,
+) -> Option<Vec<HerdrEvent>> {
     let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
-    let Some(runtime) = runtime else { return false };
-    let changed_agent_pane_ids = match &event {
-        HerdrEvent::PaneAgentStatusChanged { pane_id, .. } => vec![pane_id.clone()],
-        _ => Vec::new(),
+    let Some(runtime) = runtime else {
+        return Some(events);
     };
-    let outcome = {
+    let result = {
         let mut state = runtime.state.lock();
         if state.connection != HostConnectionState::Connected || state.event.is_none() {
-            return true;
+            return None;
         }
-        let generation = state.generation;
-        state.host_state.apply_event(generation, event, now_ms())
+        apply_herdr_event_batch(&mut state, events)
     };
-    if !matches!(outcome, ApplyResult::IgnoredStale) {
-        emit_host_state(&runtime, changed_agent_pane_ids);
+    if result.changed {
+        emit_host_state(&runtime, result.changed_agent_pane_ids);
     }
-    if let ApplyResult::NeedsResync(reason) = outcome {
+    if let Some(reason) = result.resync_reason {
         schedule_state_resync(runtime, reason);
     }
-    true
+    None
 }
 
 pub(crate) fn event_subscription_closed(client_key: &str, reason: String) -> bool {
@@ -2956,6 +2995,11 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+    use crate::herdr_api::{
+        HerdrAgentStatus, HerdrPaneInfo, HerdrSessionSnapshot, HerdrTabInfo, HerdrWorkspaceInfo,
+    };
+
+    static EVENT_SINK_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     struct ReentrantRuntimeSink {
         inner: Arc<RuntimeInner>,
@@ -2971,6 +3015,17 @@ mod tests {
                 .store(self.inner.state.try_lock().is_some(), Ordering::SeqCst);
             self.registry_unlocked
                 .store(event_sink().try_write().is_some(), Ordering::SeqCst);
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingRuntimeSink {
+        events: Mutex<Vec<HostRuntimeEvent>>,
+    }
+
+    impl HostRuntimeEventSink for RecordingRuntimeSink {
+        fn event(&self, event: HostRuntimeEvent) {
+            self.events.lock().push(event);
         }
     }
 
@@ -2990,6 +3045,73 @@ mod tests {
             session_name: "main".to_owned(),
             socket_path: None,
             cached_socket_path: None,
+        }
+    }
+
+    fn batch_test_snapshot() -> HerdrSessionSnapshot {
+        let pane = |id: &str| HerdrPaneInfo {
+            pane_id: id.to_owned(),
+            terminal_id: format!("terminal-{id}"),
+            workspace_id: "workspace".to_owned(),
+            tab_id: "tab".to_owned(),
+            focused: id == "pane-1",
+            cwd: None,
+            foreground_cwd: None,
+            label: None,
+            agent: None,
+            title: None,
+            terminal_title: None,
+            terminal_title_stripped: None,
+            display_agent: None,
+            agent_status: HerdrAgentStatus::Idle,
+            state_labels: None,
+            tokens: None,
+            agent_session: None,
+            scroll: None,
+            revision: 0.0,
+        };
+        HerdrSessionSnapshot {
+            version: "test".to_owned(),
+            protocol: 22,
+            focused_workspace_id: Some("workspace".to_owned()),
+            focused_tab_id: Some("tab".to_owned()),
+            focused_pane_id: Some("pane-1".to_owned()),
+            agents: Vec::new(),
+            workspaces: vec![HerdrWorkspaceInfo {
+                workspace_id: "workspace".to_owned(),
+                number: 1.0,
+                label: "workspace".to_owned(),
+                focused: true,
+                pane_count: 2.0,
+                tab_count: 1.0,
+                active_tab_id: "tab".to_owned(),
+                agent_status: HerdrAgentStatus::Idle,
+                tokens: None,
+                worktree: None,
+            }],
+            tabs: vec![HerdrTabInfo {
+                tab_id: "tab".to_owned(),
+                workspace_id: "workspace".to_owned(),
+                number: 1.0,
+                label: "tab".to_owned(),
+                focused: true,
+                pane_count: 2.0,
+                agent_status: HerdrAgentStatus::Idle,
+            }],
+            panes: vec![pane("pane-1"), pane("pane-2")],
+            layouts: Vec::new(),
+        }
+    }
+
+    fn agent_status_event(pane_id: &str, status: HerdrAgentStatus) -> HerdrEvent {
+        HerdrEvent::PaneAgentStatusChanged {
+            workspace_id: "workspace".to_owned(),
+            pane_id: pane_id.to_owned(),
+            agent_status: status,
+            agent: Some("codex".to_owned()),
+            title: None,
+            display_agent: None,
+            state_labels: None,
         }
     }
 
@@ -3025,6 +3147,7 @@ mod tests {
 
     #[test]
     fn host_state_callback_can_synchronously_reenter_runtime() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
         let (cancellation, _) = watch::channel(0);
         let ssh = Arc::new(RwLock::new(None));
         let inner = Arc::new(RuntimeInner {
@@ -3052,6 +3175,92 @@ mod tests {
         assert!(sink.called.load(Ordering::SeqCst));
         assert!(sink.runtime_unlocked.load(Ordering::SeqCst));
         assert!(sink.registry_unlocked.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn herdr_event_burst_is_fully_applied_before_one_projection() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        let (cancellation, _) = watch::channel(0);
+        let ssh = Arc::new(RwLock::new(None));
+        let mut state = RuntimeState::new(&config());
+        state.connection = HostConnectionState::Connected;
+        state.generation = 1;
+        state.event = Some(EventSubscriptionRuntime {
+            pane_ids: vec!["pane-1".to_owned(), "pane-2".to_owned()],
+            operation_epoch: 1,
+            retry_running: false,
+        });
+        state.host_state.connection_installed(1);
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, batch_test_snapshot(), 1);
+        let inner = Arc::new(RuntimeInner {
+            id: "batch-delivery-test".to_owned(),
+            config: config(),
+            state: Mutex::new(state),
+            agents: AgentSessionManager::new("batch-delivery-test".to_owned(), ssh.clone()),
+            operations: RemoteOperationManager::default(),
+            ssh,
+            jump_sessions: Mutex::new(Vec::new()),
+            cancellation,
+            settled: Notify::new(),
+        });
+        runtimes()
+            .write()
+            .insert(inner.id.clone(), Arc::downgrade(&inner));
+        let sink = Arc::new(RecordingRuntimeSink::default());
+        set_host_runtime_event_sink(sink.clone());
+
+        let forwarded = deliver_herdr_events(
+            &inner.id,
+            vec![
+                agent_status_event("pane-1", HerdrAgentStatus::Blocked),
+                agent_status_event("pane-2", HerdrAgentStatus::Working),
+                agent_status_event("pane-1", HerdrAgentStatus::Idle),
+            ],
+        );
+        clear_host_runtime_event_sink();
+        runtimes().write().remove(&inner.id);
+
+        assert!(forwarded.is_none());
+        let events = sink.events.lock();
+        assert_eq!(events.len(), 1);
+        let HostRuntimeEvent::HostStateChanged {
+            state,
+            changed_agent_pane_ids,
+            ..
+        } = &events[0]
+        else {
+            panic!("event burst emitted an unexpected runtime event");
+        };
+        assert_eq!(changed_agent_pane_ids, &["pane-1", "pane-2"]);
+        let snapshot = state.snapshot.as_ref().unwrap();
+        assert_eq!(snapshot.panes[0].agent_status, HerdrAgentStatus::Idle);
+        assert_eq!(snapshot.panes[1].agent_status, HerdrAgentStatus::Working);
+    }
+
+    #[test]
+    fn herdr_event_batch_preserves_resync_requests() {
+        let mut state = RuntimeState::new(&config());
+        state.connection = HostConnectionState::Connected;
+        state.generation = 1;
+        state.host_state.connection_installed(1);
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, batch_test_snapshot(), 1);
+
+        let result = apply_herdr_event_batch(
+            &mut state,
+            [agent_status_event(
+                "missing-pane",
+                HerdrAgentStatus::Working,
+            )],
+        );
+        assert!(result.changed);
+        assert!(result.resync_reason.is_some());
+        assert!(state.host_state.projection().needs_resync);
     }
 
     #[test]

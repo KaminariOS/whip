@@ -37,10 +37,57 @@ use tokio::{
 use self::known_hosts::{HostKeyDecision, KnownHosts};
 
 type Sessions = RwLock<HashMap<String, Arc<Session>>>;
-type Shells = RwLock<HashMap<(String, String), mpsc::Sender<ShellCommand>>>;
 type SftpSessions = RwLock<HashMap<String, Arc<SftpSession>>>;
-type ExecChannels = RwLock<HashMap<(String, String), mpsc::Sender<StreamCommand>>>;
-type UnixSocketChannels = RwLock<HashMap<(String, String), UnixSocketChannelHandle>>;
+
+#[derive(Debug)]
+struct GroupedChannels<T>(HashMap<String, HashMap<String, T>>);
+
+impl<T> Default for GroupedChannels<T> {
+    fn default() -> Self {
+        Self(HashMap::new())
+    }
+}
+
+impl<T> GroupedChannels<T> {
+    fn contains(&self, owner: &str, id: &str) -> bool {
+        self.get(owner, id).is_some()
+    }
+
+    fn get(&self, owner: &str, id: &str) -> Option<&T> {
+        self.0.get(owner)?.get(id)
+    }
+
+    fn insert(&mut self, owner: String, id: String, value: T) -> Option<T> {
+        self.0.entry(owner).or_default().insert(id, value)
+    }
+
+    fn remove(&mut self, owner: &str, id: &str) -> Option<T> {
+        let (removed, owner_is_empty) = {
+            let channels = self.0.get_mut(owner)?;
+            let removed = channels.remove(id);
+            (removed, channels.is_empty())
+        };
+        if owner_is_empty {
+            self.0.remove(owner);
+        }
+        removed
+    }
+
+    fn remove_if(&mut self, owner: &str, id: &str, predicate: impl FnOnce(&T) -> bool) {
+        let should_remove = self.get(owner, id).is_some_and(predicate);
+        if should_remove {
+            self.remove(owner, id);
+        }
+    }
+
+    fn remove_owner(&mut self, owner: &str) -> Option<HashMap<String, T>> {
+        self.0.remove(owner)
+    }
+}
+
+type Shells = RwLock<GroupedChannels<mpsc::Sender<ShellCommand>>>;
+type ExecChannels = RwLock<GroupedChannels<mpsc::Sender<StreamCommand>>>;
+type UnixSocketChannels = RwLock<GroupedChannels<UnixSocketChannelHandle>>;
 
 const TERMINAL_INBOUND_RUST_FRAME_DELIVERY: &CStr = c"Whip terminal inbound Rust frame delivery";
 const TERMINAL_INBOUND_RUST_FRAME_RECEIVED: &CStr = c"Whip terminal inbound Rust frame received";
@@ -507,7 +554,7 @@ fn known_hosts() -> &'static RwLock<KnownHosts> {
 }
 
 fn shells() -> &'static Shells {
-    SHELLS.get_or_init(|| RwLock::new(HashMap::new()))
+    SHELLS.get_or_init(|| RwLock::new(GroupedChannels::default()))
 }
 
 fn uniffi_event_sink() -> &'static RwLock<Option<Arc<dyn WhipSshEventSink>>> {
@@ -517,10 +564,10 @@ fn sftp_sessions() -> &'static SftpSessions {
     SFTP_SESSIONS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 fn exec_channels() -> &'static ExecChannels {
-    EXEC_CHANNELS.get_or_init(|| RwLock::new(HashMap::new()))
+    EXEC_CHANNELS.get_or_init(|| RwLock::new(GroupedChannels::default()))
 }
 fn unix_socket_channels() -> &'static UnixSocketChannels {
-    UNIX_SOCKET_CHANNELS.get_or_init(|| RwLock::new(HashMap::new()))
+    UNIX_SOCKET_CHANNELS.get_or_init(|| RwLock::new(GroupedChannels::default()))
 }
 fn forwards() -> &'static Forwards {
     FORWARDS.get_or_init(|| RwLock::new(HashMap::new()))
@@ -960,8 +1007,7 @@ async fn start_shell_on(
     rows: u32,
     delivery: ShellDelivery,
 ) -> Result<(), TransportError> {
-    let map_key = (key.clone(), shell_id.clone());
-    if shells().read().contains_key(&map_key) {
+    if shells().read().contains(&key, &shell_id) {
         return Err(TransportError::InvalidRequest(format!(
             "shell '{shell_id}' is already open"
         )));
@@ -973,7 +1019,15 @@ async fn start_shell_on(
     request_agent_forwarding(&session, &channel).await?;
     channel.request_shell(true).await?;
     let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
-    shells().write().insert(map_key.clone(), sender.clone());
+    {
+        let mut shells = shells().write();
+        if shells.contains(&key, &shell_id) {
+            return Err(TransportError::InvalidRequest(format!(
+                "shell '{shell_id}' is already open"
+            )));
+        }
+        shells.insert(key.clone(), shell_id.clone(), sender.clone());
+    }
     tokio::spawn(async move {
         let mut close_reason = "remote shell closed".to_owned();
         loop {
@@ -1020,13 +1074,9 @@ async fn start_shell_on(
                 }
             }
         }
-        let should_remove = shells()
-            .read()
-            .get(&map_key)
-            .is_some_and(|current| current.same_channel(&sender));
-        if should_remove {
-            shells().write().remove(&map_key);
-        }
+        shells()
+            .write()
+            .remove_if(&key, &shell_id, |current| current.same_channel(&sender));
         match delivery {
             ShellDelivery::ReactNative => emit_event(json!({ "name": "ShellClosed", "key": key })),
             ShellDelivery::Rust { closed, .. } => closed(close_reason),
@@ -1052,7 +1102,7 @@ fn shell_command_for_id(
 ) -> Result<(), TransportError> {
     let sender = shells()
         .read()
-        .get(&(key.to_owned(), shell_id.to_owned()))
+        .get(key, shell_id)
         .cloned()
         .ok_or(TransportError::UnknownClient)?;
     sender.try_send(command).map_err(|error| {
@@ -2028,8 +2078,7 @@ async fn open_unix_socket_channel_with_framing(
             "channelId must contain 1 through 128 printable characters".to_owned(),
         ));
     }
-    let map_key = (key.clone(), channel_id.clone());
-    if unix_socket_channels().read().contains_key(&map_key) {
+    if unix_socket_channels().read().contains(&key, &channel_id) {
         return Err(TransportError::InvalidRequest(format!(
             "Unix-socket channel '{channel_id}' is already open"
         )));
@@ -2042,13 +2091,14 @@ async fn open_unix_socket_channel_with_framing(
     let (sender, receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
     {
         let mut channels = unix_socket_channels().write();
-        if channels.contains_key(&map_key) {
+        if channels.contains(&key, &channel_id) {
             return Err(TransportError::InvalidRequest(format!(
                 "Unix-socket channel '{channel_id}' is already open"
             )));
         }
         channels.insert(
-            map_key.clone(),
+            key.clone(),
+            channel_id.clone(),
             UnixSocketChannelHandle {
                 sender: sender.clone(),
                 framing,
@@ -2095,13 +2145,11 @@ async fn open_unix_socket_channel_with_framing(
                 }
             },
         };
-        let should_remove = unix_socket_channels()
-            .read()
-            .get(&map_key)
-            .is_some_and(|current| current.sender.same_channel(&sender));
-        if should_remove {
-            unix_socket_channels().write().remove(&map_key);
-        }
+        unix_socket_channels()
+            .write()
+            .remove_if(&key, &channel_id, |current| {
+                current.sender.same_channel(&sender)
+            });
         // Dropping/aborting the reader closes delivery_sender. Drain all owned
         // frames before reporting closure so data and close ordering is stable.
         let delivery_reason = match delivery_task.await {
@@ -2170,7 +2218,7 @@ fn unix_socket_channel_command_for_key(
 ) -> Result<(), TransportError> {
     let handle = unix_socket_channels()
         .read()
-        .get(&(key.to_owned(), channel_id.to_owned()))
+        .get(key, channel_id)
         .cloned()
         .ok_or_else(|| {
             TransportError::ChannelUnavailable(format!(
@@ -2193,7 +2241,7 @@ fn write_unix_socket_channel_for_key(
 ) -> Result<(), TransportError> {
     let handle = unix_socket_channels()
         .read()
-        .get(&(key.to_owned(), channel_id.to_owned()))
+        .get(key, channel_id)
         .cloned()
         .ok_or_else(|| {
             TransportError::ChannelUnavailable(format!(
@@ -2639,8 +2687,7 @@ async fn open_exec_channel_with_delivery(
             "channelId must contain 1 through 128 printable characters".to_owned(),
         ));
     }
-    let map_key = (key.clone(), channel_id.clone());
-    if exec_channels().read().contains_key(&map_key) {
+    if exec_channels().read().contains(&key, &channel_id) {
         return Err(TransportError::InvalidRequest(format!(
             "exec channel '{channel_id}' is already open"
         )));
@@ -2651,12 +2698,12 @@ async fn open_exec_channel_with_delivery(
     let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
     {
         let mut channels = exec_channels().write();
-        if channels.contains_key(&map_key) {
+        if channels.contains(&key, &channel_id) {
             return Err(TransportError::InvalidRequest(format!(
                 "exec channel '{channel_id}' is already open"
             )));
         }
-        channels.insert(map_key.clone(), sender.clone());
+        channels.insert(key.clone(), channel_id.clone(), sender.clone());
     }
     tokio::spawn(async move {
         let (mut reader, writer) = channel.split();
@@ -2706,13 +2753,9 @@ async fn open_exec_channel_with_delivery(
                 }
             }
         };
-        let should_remove = exec_channels()
-            .read()
-            .get(&map_key)
-            .is_some_and(|current| current.same_channel(&sender));
-        if should_remove {
-            exec_channels().write().remove(&map_key);
-        }
+        exec_channels()
+            .write()
+            .remove_if(&key, &channel_id, |current| current.same_channel(&sender));
         match delivery {
             ExecDelivery::ReactNative => emit_event(json!({
                 "name": "ExecChannel",
@@ -2762,7 +2805,7 @@ fn exec_channel_command_for_key(
 ) -> Result<(), TransportError> {
     let sender = exec_channels()
         .read()
-        .get(&(key.to_owned(), channel_id.to_owned()))
+        .get(key, channel_id)
         .cloned()
         .ok_or_else(|| {
             TransportError::ChannelUnavailable(format!("exec channel '{channel_id}' is not open"))
@@ -2782,28 +2825,13 @@ fn close_exec_channel(params: &Value) -> Result<Value, TransportError> {
 }
 
 async fn disconnect_key(key: String) {
-    let channel_ids = unix_socket_channels()
-        .read()
-        .keys()
-        .filter_map(|(owner, channel_id)| (owner == &key).then_some(channel_id.clone()))
-        .collect::<Vec<_>>();
-    for channel_id in channel_ids {
-        if let Some(handle) = unix_socket_channels()
-            .write()
-            .remove(&(key.clone(), channel_id))
-        {
-            let _ = handle.sender.try_send(StreamCommand::Close);
-        }
+    let unix_channels = unix_socket_channels().write().remove_owner(&key);
+    for handle in unix_channels.into_iter().flat_map(HashMap::into_values) {
+        let _ = handle.sender.try_send(StreamCommand::Close);
     }
-    let exec_channel_ids = exec_channels()
-        .read()
-        .keys()
-        .filter_map(|(owner, channel_id)| (owner == &key).then_some(channel_id.clone()))
-        .collect::<Vec<_>>();
-    for channel_id in exec_channel_ids {
-        if let Some(sender) = exec_channels().write().remove(&(key.clone(), channel_id)) {
-            let _ = sender.try_send(StreamCommand::Close);
-        }
+    let exec_channels = exec_channels().write().remove_owner(&key);
+    for sender in exec_channels.into_iter().flat_map(HashMap::into_values) {
+        let _ = sender.try_send(StreamCommand::Close);
     }
     if let Some(cancel) = transfers().read().get(&(key.clone(), "upload")) {
         let _ = cancel.send(true);
@@ -2811,15 +2839,9 @@ async fn disconnect_key(key: String) {
     if let Some(cancel) = transfers().read().get(&(key.clone(), "download")) {
         let _ = cancel.send(true);
     }
-    let shell_ids = shells()
-        .read()
-        .keys()
-        .filter_map(|(owner, shell_id)| (owner == &key).then_some(shell_id.clone()))
-        .collect::<Vec<_>>();
-    for shell_id in shell_ids {
-        if let Some(sender) = shells().write().remove(&(key.clone(), shell_id)) {
-            let _ = sender.try_send(ShellCommand::Close);
-        }
+    let shells = shells().write().remove_owner(&key);
+    for sender in shells.into_iter().flat_map(HashMap::into_values) {
+        let _ = sender.try_send(ShellCommand::Close);
     }
     let file_server_ports = sftp_file_servers()
         .read()

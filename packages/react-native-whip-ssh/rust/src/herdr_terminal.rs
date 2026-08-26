@@ -123,7 +123,32 @@ struct Bridge {
 struct Registry {
     bridges: HashMap<u64, Arc<Bridge>>,
     prepared: HashMap<String, u64>,
-    active: HashMap<(String, String), u64>,
+    active: HashMap<String, HashMap<String, u64>>,
+}
+
+impl Registry {
+    fn active_id(&self, client_key: &str, terminal_id: &str) -> Option<u64> {
+        self.active.get(client_key)?.get(terminal_id).copied()
+    }
+
+    fn insert_active(&mut self, client_key: String, terminal_id: String, bridge_id: u64) {
+        self.active
+            .entry(client_key)
+            .or_default()
+            .insert(terminal_id, bridge_id);
+    }
+
+    fn remove_active(&mut self, client_key: &str, terminal_id: &str) -> Option<u64> {
+        let (removed, client_is_empty) = {
+            let terminals = self.active.get_mut(client_key)?;
+            let removed = terminals.remove(terminal_id);
+            (removed, terminals.is_empty())
+        };
+        if client_is_empty {
+            self.active.remove(client_key);
+        }
+        removed
+    }
 }
 
 static NEXT_BRIDGE_ID: AtomicU64 = AtomicU64::new(1);
@@ -145,16 +170,18 @@ fn bridge_for_id(id: u64) -> Option<Arc<Bridge>> {
 fn active_bridge(client_key: &str, terminal_id: &str) -> Option<Arc<Bridge>> {
     let registry = registry().lock();
     registry
-        .active
-        .get(&(client_key.to_owned(), terminal_id.to_owned()))
-        .and_then(|id| registry.bridges.get(id))
+        .active_id(client_key, terminal_id)
+        .and_then(|id| registry.bridges.get(&id))
         .cloned()
 }
 
 fn remove_bridge(id: u64) {
     let mut registry = registry().lock();
     registry.prepared.retain(|_, bridge_id| *bridge_id != id);
-    registry.active.retain(|_, bridge_id| *bridge_id != id);
+    registry.active.retain(|_, terminals| {
+        terminals.retain(|_, bridge_id| *bridge_id != id);
+        !terminals.is_empty()
+    });
     registry.bridges.remove(&id);
 }
 
@@ -560,8 +587,7 @@ pub(crate) async fn start_bridge_on_runtime(
     *bridge.state.lock() = ProtocolState::Attached(terminal_id.clone());
     registry()
         .lock()
-        .active
-        .insert((client_key.clone(), terminal_id.clone()), bridge.id);
+        .insert_active(client_key.clone(), terminal_id.clone(), bridge.id);
     if let Err(error) = bridge
         .ssh
         .as_ref()
@@ -726,7 +752,7 @@ pub fn close_herdr_terminal_bridge(client_key: String, terminal_id: String) {
     };
     {
         let mut registry = registry().lock();
-        registry.active.remove(&(client_key.clone(), terminal_id));
+        registry.remove_active(&client_key, &terminal_id);
     }
     *bridge.state.lock() = ProtocolState::Closing;
     let _ = bridge
@@ -763,6 +789,22 @@ pub fn close_all_herdr_terminal_bridges(client_key: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn active_registry_scopes_shared_terminal_ids_and_prunes_clients() {
+        let mut registry = Registry::default();
+        registry.insert_active("client-a".into(), "shared".into(), 1);
+        registry.insert_active("client-b".into(), "shared".into(), 2);
+        registry.insert_active("client-a".into(), "other".into(), 3);
+        assert_eq!(registry.active_id("client-a", "shared"), Some(1));
+        assert_eq!(registry.active_id("client-b", "shared"), Some(2));
+
+        assert_eq!(registry.remove_active("client-a", "shared"), Some(1));
+        assert!(registry.active.contains_key("client-a"));
+        assert_eq!(registry.remove_active("client-a", "other"), Some(3));
+        assert!(!registry.active.contains_key("client-a"));
+        assert_eq!(registry.active_id("client-b", "shared"), Some(2));
+    }
 
     #[derive(Default)]
     struct RecordingSink {

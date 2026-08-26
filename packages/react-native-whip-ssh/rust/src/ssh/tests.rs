@@ -1,5 +1,39 @@
 use super::*;
 
+#[test]
+fn grouped_channels_scope_shared_ids_by_owner_and_prune_empty_owners() {
+    let mut channels = GroupedChannels::default();
+    assert_eq!(
+        channels.insert("session-a".into(), "shared".into(), 1),
+        None
+    );
+    assert_eq!(
+        channels.insert("session-b".into(), "shared".into(), 2),
+        None
+    );
+    assert_eq!(channels.insert("session-a".into(), "other".into(), 3), None);
+    assert_eq!(channels.get("session-a", "shared"), Some(&1));
+    assert_eq!(channels.get("session-b", "shared"), Some(&2));
+
+    assert_eq!(
+        channels.insert("session-a".into(), "shared".into(), 4),
+        Some(1)
+    );
+    channels.remove_if("session-a", "shared", |value| *value == 1);
+    assert_eq!(channels.get("session-a", "shared"), Some(&4));
+    channels.remove_if("session-a", "shared", |value| *value == 4);
+    assert!(!channels.contains("session-a", "shared"));
+    assert!(channels.0.contains_key("session-a"));
+
+    assert_eq!(channels.remove("session-a", "other"), Some(3));
+    assert!(!channels.0.contains_key("session-a"));
+    assert_eq!(channels.get("session-b", "shared"), Some(&2));
+
+    let removed = channels.remove_owner("session-b").unwrap();
+    assert_eq!(removed.get("shared"), Some(&2));
+    assert!(channels.0.is_empty());
+}
+
 async fn live_call(operation: &str, params: Value) -> Value {
     dispatch(Request {
         operation: operation.to_owned(),

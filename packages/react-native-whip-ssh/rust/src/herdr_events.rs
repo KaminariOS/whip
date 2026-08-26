@@ -711,23 +711,28 @@ fn transport_frame(id: u64, bytes: Vec<u8>) {
         return;
     };
     let items = subscription.parser.lock().push(&bytes);
+    let mut events = Vec::new();
     for item in items {
         match item {
             StreamItem::Acknowledged => subscription.finish_acknowledgement(Ok(())),
-            StreamItem::Event(event) => {
-                let event = *event;
-                if !crate::host_runtime::deliver_herdr_event(
-                    &subscription.client_key,
-                    event.clone(),
-                ) && let Some(sink) = event_sink().read().clone()
-                {
-                    sink.event(subscription.client_key.clone(), event);
-                }
-            }
+            StreamItem::Event(event) => events.push(*event),
             StreamItem::ServerError(reason) => {
+                forward_events(&subscription.client_key, std::mem::take(&mut events));
                 fail_subscription(&subscription, reason);
                 break;
             }
+        }
+    }
+    forward_events(&subscription.client_key, events);
+}
+
+fn forward_events(client_key: &str, events: Vec<HerdrEvent>) {
+    let Some(events) = crate::host_runtime::deliver_herdr_events(client_key, events) else {
+        return;
+    };
+    if let Some(sink) = event_sink().read().clone() {
+        for event in events {
+            sink.event(client_key.to_owned(), event);
         }
     }
 }

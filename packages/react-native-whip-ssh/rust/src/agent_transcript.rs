@@ -1638,38 +1638,64 @@ fn apply_patch_files(source: &str) -> Vec<AgentFileDiff> {
     result
 }
 
-fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurn> {
-    let mut turns = Vec::<AgentTranscriptTurn>::new();
-    let mut by_user = HashMap::<String, usize>::new();
+#[derive(Serialize)]
+struct AgentTranscriptTurnRef<'a> {
+    id: &'a str,
+    user_message_id: Option<&'a str>,
+    assistant_message_ids: Vec<&'a str>,
+    status: AgentTurnStatus,
+    started_at_ms: Option<u64>,
+    completed_at_ms: Option<u64>,
+    diffs: Vec<&'a AgentFileDiff>,
+}
+
+impl From<AgentTranscriptTurnRef<'_>> for AgentTranscriptTurn {
+    fn from(turn: AgentTranscriptTurnRef<'_>) -> Self {
+        Self {
+            id: turn.id.to_owned(),
+            user_message_id: turn.user_message_id.map(str::to_owned),
+            assistant_message_ids: turn
+                .assistant_message_ids
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            status: turn.status,
+            started_at_ms: turn.started_at_ms,
+            completed_at_ms: turn.completed_at_ms,
+            diffs: turn.diffs.into_iter().cloned().collect(),
+        }
+    }
+}
+
+fn project_turn_refs(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurnRef<'_>> {
+    let mut turns = Vec::<AgentTranscriptTurnRef<'_>>::new();
+    let mut by_user = HashMap::<&str, usize>::new();
     let mut latest = None;
     for message in messages {
         if message.role == AgentMessageRole::User {
             let index = turns.len();
-            turns.push(AgentTranscriptTurn {
-                id: message.id.clone(),
-                user_message_id: Some(message.id.clone()),
+            turns.push(AgentTranscriptTurnRef {
+                id: &message.id,
+                user_message_id: Some(&message.id),
                 assistant_message_ids: Vec::new(),
                 status: AgentTurnStatus::Idle,
                 started_at_ms: message.created_at_ms,
                 completed_at_ms: message.completed_at_ms,
-                diffs: message.diffs.clone(),
+                diffs: message.diffs.iter().collect(),
             });
-            by_user.insert(message.id.clone(), index);
+            by_user.insert(&message.id, index);
             latest = Some(index);
             continue;
         }
         let index = message
             .parent_id
             .as_ref()
-            .and_then(|parent| by_user.get(parent).copied())
+            .and_then(|parent| by_user.get(parent.as_str()).copied())
             .or(latest)
             .unwrap_or_else(|| {
                 let index = turns.len();
-                turns.push(AgentTranscriptTurn {
-                    id: message
-                        .parent_id
-                        .clone()
-                        .unwrap_or_else(|| message.id.clone()),
+                turns.push(AgentTranscriptTurnRef {
+                    id: message.parent_id.as_deref().unwrap_or(&message.id),
                     user_message_id: None,
                     assistant_message_ids: Vec::new(),
                     status: AgentTurnStatus::Idle,
@@ -1681,7 +1707,7 @@ fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurn
             });
         latest = Some(index);
         let turn = &mut turns[index];
-        turn.assistant_message_ids.push(message.id.clone());
+        turn.assistant_message_ids.push(&message.id);
         turn.started_at_ms = turn.started_at_ms.or(message.created_at_ms);
         if let Some(completed) = message.completed_at_ms {
             turn.completed_at_ms = Some(turn.completed_at_ms.unwrap_or(0).max(completed));
@@ -1692,9 +1718,9 @@ fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurn
                 .iter_mut()
                 .find(|current| current.file == diff.file)
             {
-                *current = diff.clone();
+                *current = diff;
             } else {
-                turn.diffs.push(diff.clone());
+                turn.diffs.push(diff);
             }
         }
     }
@@ -1731,6 +1757,13 @@ fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurn
     turns
 }
 
+fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurn> {
+    project_turn_refs(messages)
+        .into_iter()
+        .map(AgentTranscriptTurn::from)
+        .collect()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct CachedCodexLine {
     raw_line: String,
@@ -1745,6 +1778,49 @@ struct CachedCodexSession {
     committed_offset: u64,
     lines: Vec<CachedCodexLine>,
     transcript: AgentTranscriptState,
+}
+
+#[derive(Serialize)]
+struct AgentTranscriptInfoRef<'a> {
+    id: &'a str,
+    title: Option<&'a str>,
+    directory: Option<&'a str>,
+    created_at_ms: Option<u64>,
+    updated_at_ms: Option<u64>,
+}
+
+impl<'a> From<&'a AgentTranscriptInfo> for AgentTranscriptInfoRef<'a> {
+    fn from(info: &'a AgentTranscriptInfo) -> Self {
+        Self {
+            id: &info.id,
+            title: info.title.as_deref(),
+            directory: info.directory.as_deref(),
+            created_at_ms: info.created_at_ms,
+            updated_at_ms: info.updated_at_ms,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct AgentTranscriptStateRef<'a> {
+    session_id: &'a str,
+    agent: AgentTranscriptKind,
+    revision: u64,
+    status: AgentTranscriptStatus,
+    info: Option<AgentTranscriptInfoRef<'a>>,
+    messages: &'a [AgentTranscriptMessage],
+    turns: Vec<AgentTranscriptTurnRef<'a>>,
+    error: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct CachedCodexSessionRef<'a> {
+    schema_version: u32,
+    requested_session_id: &'a str,
+    source: Option<&'a CodexSourceIdentity>,
+    committed_offset: u64,
+    lines: &'a [CachedCodexLine],
+    transcript: AgentTranscriptStateRef<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -1849,13 +1925,15 @@ impl CodexSessionCore {
         self.state()
     }
 
-    pub fn mark_live(&mut self) -> AgentTranscriptState {
+    pub fn mark_live(&mut self) -> bool {
         if self.status != AgentTranscriptStatus::Live || self.error.is_some() {
             self.status = AgentTranscriptStatus::Live;
             self.error = None;
             self.bump_revision();
+            true
+        } else {
+            false
         }
-        self.state()
     }
 
     pub fn close(&mut self) -> AgentTranscriptState {
@@ -1920,20 +1998,31 @@ impl CodexSessionCore {
 
     pub fn cache_blob(&self) -> Result<Vec<u8>, AgentCacheError> {
         let committable = self.framer.committable_offset();
-        let lines = self
+        let committed_line_count = self
             .cached_lines
-            .iter()
-            .filter(|line| line.end_offset <= committable)
-            .cloned()
-            .collect::<Vec<_>>();
-        let transcript = self.state();
-        serde_json::to_vec(&CachedCodexSession {
+            .partition_point(|line| line.end_offset <= committable);
+        serde_json::to_vec(&CachedCodexSessionRef {
             schema_version: 1,
-            requested_session_id: self.requested_session_id.clone(),
-            source: self.source.clone(),
+            requested_session_id: &self.requested_session_id,
+            source: self.source.as_ref(),
             committed_offset: committable,
-            lines,
-            transcript,
+            lines: &self.cached_lines[..committed_line_count],
+            transcript: AgentTranscriptStateRef {
+                session_id: &self.adapter.session_id,
+                agent: AgentTranscriptKind::Codex,
+                revision: self.revision,
+                status: self.status,
+                info: Some(AgentTranscriptInfoRef {
+                    id: &self.adapter.session_id,
+                    title: None,
+                    directory: self.adapter.directory.as_deref(),
+                    created_at_ms: None,
+                    updated_at_ms: None,
+                }),
+                messages: &self.adapter.messages,
+                turns: project_turn_refs(&self.adapter.messages),
+                error: self.error.as_deref(),
+            },
         })
         .map_err(|error| AgentCacheError::Malformed(error.to_string()))
     }
@@ -2041,6 +2130,14 @@ struct CachedOpenCodeSession {
     transcript: AgentTranscriptState,
 }
 
+#[derive(Serialize)]
+struct CachedOpenCodeSessionRef<'a> {
+    schema_version: u32,
+    session_id: &'a str,
+    cursor: u64,
+    transcript: AgentTranscriptStateRef<'a>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum OpenCodeTranscriptError {
     #[error("OpenCode returned an invalid session export")]
@@ -2140,13 +2237,15 @@ impl OpenCodeSessionCore {
         self.state()
     }
 
-    pub fn mark_live(&mut self) -> AgentTranscriptState {
+    pub fn mark_live(&mut self) -> bool {
         if self.status != AgentTranscriptStatus::Live || self.error.is_some() {
             self.status = AgentTranscriptStatus::Live;
             self.error = None;
             self.bump_revision();
+            true
+        } else {
+            false
         }
-        self.state()
     }
 
     pub fn close(&mut self) -> AgentTranscriptState {
@@ -2194,11 +2293,20 @@ impl OpenCodeSessionCore {
         let cursor = self.cursor.ok_or_else(|| {
             AgentCacheError::Malformed("OpenCode cursor is unavailable".to_owned())
         })?;
-        serde_json::to_vec(&CachedOpenCodeSession {
+        serde_json::to_vec(&CachedOpenCodeSessionRef {
             schema_version: 1,
-            session_id: self.session_id.clone(),
+            session_id: &self.session_id,
             cursor,
-            transcript: self.state(),
+            transcript: AgentTranscriptStateRef {
+                session_id: &self.session_id,
+                agent: AgentTranscriptKind::OpenCode,
+                revision: self.revision,
+                status: self.status,
+                info: self.info.as_ref().map(AgentTranscriptInfoRef::from),
+                messages: &self.messages,
+                turns: project_turn_refs(&self.messages),
+                error: self.error.as_deref(),
+            },
         })
         .map_err(|error| AgentCacheError::Malformed(error.to_string()))
     }
@@ -2807,6 +2915,62 @@ mod tests {
     }
 
     #[test]
+    fn codex_ingest_only_requests_projection_for_visible_current_changes() {
+        let mut core = CodexSessionCore::new("thread");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        assert!(core.mark_live());
+
+        let revision = core.revision();
+        let ignored = core
+            .ingest(binding.source_generation, b"{\"type\":\"unknown\"}\n")
+            .unwrap();
+        let should_emit = ignored.changed || core.mark_live();
+        assert!(!should_emit);
+        assert_eq!(core.revision(), revision);
+
+        let changed = core
+            .ingest(
+                binding.source_generation,
+                &record(
+                    "event_msg",
+                    serde_json::json!({"type":"user_message","message":"visible"}),
+                ),
+            )
+            .unwrap();
+        let should_emit = changed.changed || core.mark_live();
+        assert!(should_emit);
+        assert!(core.revision() > revision);
+        assert_eq!(
+            text_parts(&core.state(), AgentMessageRole::User),
+            ["visible"]
+        );
+
+        let old_generation = binding.source_generation;
+        core.bind_source("/rollout".into(), "1:2".into(), core.received_offset());
+        let revision = core.revision();
+        let stale = core.ingest(old_generation, b"ignored").unwrap();
+        let current_generation = stale.source_generation == core.source_generation();
+        let should_emit = stale.changed || (current_generation && core.mark_live());
+        assert!(!should_emit);
+        assert_eq!(core.revision(), revision);
+        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+    }
+
+    #[test]
+    fn current_ingest_can_make_live_status_the_only_visible_change() {
+        let mut core = CodexSessionCore::new("thread");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        let revision = core.revision();
+        let ignored = core
+            .ingest(binding.source_generation, b"{\"type\":\"unknown\"}\n")
+            .unwrap();
+        assert!(!ignored.changed);
+        assert!(core.mark_live());
+        assert_eq!(core.revision(), revision + 1);
+        assert_eq!(core.state().status, AgentTranscriptStatus::Live);
+    }
+
+    #[test]
     fn cache_round_trip_replays_raw_lines_and_resumes_incrementally() {
         let first = record(
             "event_msg",
@@ -2843,6 +3007,50 @@ mod tests {
             .unwrap();
         assert_eq!(restored.state().messages, full.state().messages);
         assert_eq!(restored.state().turns, full.state().turns);
+    }
+
+    #[test]
+    fn codex_cache_keeps_schema_and_serializes_only_the_complete_prefix() {
+        let complete = record(
+            "event_msg",
+            serde_json::json!({"type":"user_message","message":"cached"}),
+        );
+        let malformed = b"not-json\n";
+        let partial = b"{\"partial\":";
+        let mut core = CodexSessionCore::new("thread");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        core.ingest(binding.source_generation, &complete).unwrap();
+        core.ingest(binding.source_generation, malformed).unwrap();
+        core.ingest(binding.source_generation, partial).unwrap();
+        core.mark_live();
+
+        let blob = core.cache_blob().unwrap();
+        let cached: CachedCodexSession = serde_json::from_slice(&blob).unwrap();
+        assert_eq!(cached.schema_version, 1);
+        assert_eq!(cached.lines.len(), 1);
+        assert_eq!(
+            cached.lines[0].raw_line,
+            std::str::from_utf8(&complete).unwrap().trim_end()
+        );
+        assert_eq!(cached.committed_offset, complete.len() as u64);
+        assert_eq!(
+            serde_json::to_value(&cached.transcript).unwrap(),
+            serde_json::to_value(core.state()).unwrap()
+        );
+
+        let legacy_blob = serde_json::to_vec(&CachedCodexSession {
+            schema_version: 1,
+            requested_session_id: core.requested_session_id.clone(),
+            source: core.source.clone(),
+            committed_offset: cached.committed_offset,
+            lines: cached.lines.clone(),
+            transcript: core.state(),
+        })
+        .unwrap();
+        let mut restored = CodexSessionCore::new("thread");
+        let restored_state = restored.restore_cache(&legacy_blob).unwrap();
+        assert_eq!(restored_state.messages, core.state().messages);
+        assert_eq!(restored_state.turns, core.state().turns);
     }
 
     #[test]
@@ -2936,7 +3144,8 @@ mod tests {
         let mut core = OpenCodeSessionCore::new("ses_abc123");
         core.begin_sync_generation();
         core.bootstrap(7, &export.to_string()).unwrap();
-        let state = core.mark_live();
+        assert!(core.mark_live());
+        let state = core.state();
         assert_eq!(state.agent, AgentTranscriptKind::OpenCode);
         assert_eq!(
             state.info.as_ref().unwrap().directory.as_deref(),

@@ -236,9 +236,7 @@ impl SshSession {
     }
 
     pub(crate) fn has_shell(&self, shell_id: &str) -> bool {
-        shells()
-            .read()
-            .contains_key(&(self.resource_key.clone(), shell_id.to_owned()))
+        shells().read().contains(&self.resource_key, shell_id)
     }
 
     pub(crate) async fn request_unix_socket(
