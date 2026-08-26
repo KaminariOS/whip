@@ -98,6 +98,7 @@ import {
   type EventRefreshScheduler,
 } from './src/lib/eventRefreshScheduler';
 import { nextHostLivenessFailure } from './src/lib/hostLiveness';
+import { launchCommandAndOpenCreatedTab } from './src/lib/herdrCreationFlows';
 import {
   applyLiveHostAgentStatus,
   applyLiveHostFocus,
@@ -105,6 +106,8 @@ import {
   applyLiveHostLatency,
   applyLiveHostPaneUpdate,
   applyLiveHostSnapshot,
+  applyLiveHostTabCreation,
+  applyLiveHostWorkspaceCreation,
   aggregateAgentStatus,
   beginLiveHostSync,
   canRefreshLiveHostSession,
@@ -148,7 +151,7 @@ import {
   type LanguagePreference,
   type TerminalPreferences,
 } from './src/services/devicePreferences';
-import { HerdrClient } from './src/services/HerdrClient';
+import { HerdrClient, type TabCreationResult } from './src/services/HerdrClient';
 import {
   flushLatencyDiagnosticWrites,
   isSlowHostLatency,
@@ -2251,8 +2254,9 @@ function AppContent() {
   const createHerdWorkspace = async (sessionId: string, name: string, cwd: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
-    await runtime.client.createWorkspace(name, cwd);
-    await refreshHost(sessionId);
+    const created = await runtime.client.createWorkspace(name, cwd);
+    setLiveSessions(current => applyLiveHostWorkspaceCreation(current, sessionId, created));
+    return created.workspace;
   };
 
   const renameHerdWorkspace = async (sessionId: string, workspaceId: string, name: string) => {
@@ -2276,12 +2280,22 @@ function AppContent() {
     await refreshHost(sessionId);
   };
 
-  const openCreatedHerdPane = async (sessionId: string, paneId: string) => {
-    const refreshedSnapshot = await refreshHostSnapshot(sessionId);
-    const pane = refreshedSnapshot?.panes.find(item => item.pane_id === paneId);
-    if (pane) openPaneTerminal(sessionId, pane);
-    else selectLiveHost(sessionId, 'terminal');
-  };
+  const acceptCreatedTab = useCallback((
+    sessionId: string,
+    created: TabCreationResult,
+    navigate: boolean,
+  ) => {
+    setSelectedPaneId(null);
+    setLiveSessions(current => {
+      const projected = applyLiveHostTabCreation(current, sessionId, created);
+      return updateLiveHostTerminals(
+        projected,
+        sessionId,
+        terminals => openTerminalSession(terminals, created.root_pane),
+      );
+    });
+    if (navigate) selectLiveHost(sessionId, 'terminal');
+  }, [selectLiveHost]);
 
   const runHerdCommand = async (
     sessionId: string,
@@ -2291,9 +2305,14 @@ function AppContent() {
   ) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
-    const paneId = await runtime.client.runCommand(workspaceId, tabName, command);
+    await launchCommandAndOpenCreatedTab(
+      runtime.client,
+      workspaceId,
+      tabName,
+      command,
+      created => acceptCreatedTab(sessionId, created, true),
+    );
     recordTerminalHistoryEntry(command);
-    await openCreatedHerdPane(sessionId, paneId);
   };
 
   const startServer = async (sessionId: string) => {
@@ -2533,6 +2552,7 @@ function AppContent() {
             }}
             onExit={() => exitTerminalToHerd(activeSession.id)}
             onRefresh={refreshHost}
+            onTabCreated={(sessionId, created) => acceptCreatedTab(sessionId, created, false)}
             onOpenPane={(sessionId, pane) => {
               setLiveSessions(current => selectLiveHostSession(current, sessionId));
               setSelectedPaneId(pane.pane_id);
@@ -2742,6 +2762,7 @@ function LiveSessionView({
   onInteraction,
   onExit,
   onRefresh,
+  onTabCreated,
   onOpenPane,
   onActivateTerminal,
   onCloseTerminal,
@@ -2766,6 +2787,7 @@ function LiveSessionView({
   onInteraction: (sessionId: string, tabId: string) => void;
   onExit: () => void;
   onRefresh: (sessionId: string) => Promise<void>;
+  onTabCreated: (sessionId: string, created: TabCreationResult) => void;
   onOpenPane: (sessionId: string, pane: PaneInfo) => void;
   onActivateTerminal: (sessionId: string, pane: PaneInfo) => void;
   onCloseTerminal: (sessionId: string, terminalId: string) => void;
@@ -2774,6 +2796,10 @@ function LiveSessionView({
 }) {
   const sessionId = session.id;
   const refresh = useCallback(() => onRefresh(sessionId), [onRefresh, sessionId]);
+  const tabCreated = useCallback(
+    (created: TabCreationResult) => onTabCreated(sessionId, created),
+    [onTabCreated, sessionId],
+  );
   const openPane = useCallback((pane: PaneInfo) => onOpenPane(sessionId, pane), [onOpenPane, sessionId]);
   const activateTerminal = useCallback((pane: PaneInfo) => onActivateTerminal(sessionId, pane), [onActivateTerminal, sessionId]);
   const closeTerminal = useCallback((terminalId: string) => onCloseTerminal(sessionId, terminalId), [onCloseTerminal, sessionId]);
@@ -2801,6 +2827,7 @@ function LiveSessionView({
       latencyMs={session.status === 'ready' ? session.sync.latencyMs : null}
       latencyWarningActive={session.status === 'ready' && session.sync.latencyWarning.active}
       onRefresh={refresh}
+      onTabCreated={tabCreated}
       onOpenPane={openPane}
       onActivateTerminal={activateTerminal}
       onCloseTerminal={closeTerminal}

@@ -54,6 +54,8 @@ import {
   shouldCloseHerdTabSwipe,
 } from '@/src/lib/herdTabSwipeActions';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
+import { createWorkspaceAndSelect } from '@/src/lib/herdrCreationFlows';
+import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
@@ -84,7 +86,7 @@ interface Props {
   onCloseHost: (hostId: string) => void;
   onNewHost: () => void;
   onSelectWorkspace: (hostId: string, workspaceId: string) => void;
-  onCreateWorkspace: (hostId: string, name: string, cwd: string) => Promise<void>;
+  onCreateWorkspace: (hostId: string, name: string, cwd: string) => Promise<WorkspaceInfo>;
   onRenameWorkspace: (hostId: string, workspaceId: string, name: string) => Promise<void>;
   onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
   onCloseTab: (hostId: string, tabId: string) => Promise<void>;
@@ -166,6 +168,7 @@ export function HerdScreen({
   } = useKeyboardInset(commandComposerRef, { enabled: Platform.OS === 'android' });
   const commandInputRef = useRef<TextInputHandle | null>(null);
   const workspaceCwdInputRef = useRef<TextInputHandle | null>(null);
+  const workspaceActionInFlight = useRef(false);
 
   const showHerdrError = useCallback((error: unknown) => {
     setAppAlert({ title: t('herd.commandFailed'), message: String(error) });
@@ -215,15 +218,18 @@ export function HerdScreen({
   };
 
   const runWorkspaceAction = async (action: () => Promise<void>): Promise<boolean> => {
-    setWorkspaceBusy(true);
     try {
-      await action();
-      return true;
+      return await runWithInFlightGuard(workspaceActionInFlight, async () => {
+        setWorkspaceBusy(true);
+        try {
+          await action();
+        } finally {
+          setWorkspaceBusy(false);
+        }
+      });
     } catch (error) {
       showHerdrError(error);
       return false;
-    } finally {
-      setWorkspaceBusy(false);
     }
   };
 
@@ -255,7 +261,11 @@ export function HerdScreen({
   const saveWorkspace = async () => {
     if (!selectedQueue) return;
     const succeeded = workspaceEditorMode === 'create'
-      ? await runWorkspaceAction(() => onCreateWorkspace(selectedQueue.id, workspaceName, workspaceCwd))
+      ? await runWorkspaceAction(() => createWorkspaceAndSelect(
+          () => onCreateWorkspace(selectedQueue.id, workspaceName, workspaceCwd),
+          workspaceId => onWorkspaceFilterChange(selectedQueue.id, workspaceId),
+          workspaceId => onSelectWorkspace(selectedQueue.id, workspaceId),
+        ).then(() => undefined))
       : selectedWorkspace
         ? await runWorkspaceAction(() => onRenameWorkspace(selectedQueue.id, selectedWorkspace.workspace_id, workspaceName))
         : false;

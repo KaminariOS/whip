@@ -1,6 +1,7 @@
 import SSHClient from 'react-native-whip-ssh';
 
 import {
+  classifyAgentCommand,
   clearHerdrSocketPathCache,
   HerdrClient,
 } from '../src/services/HerdrClient';
@@ -46,6 +47,30 @@ function apiClient(responseFor: (request: { method: string; params: Record<strin
     off: jest.fn(),
     disconnect: jest.fn(),
   } as unknown as SSHClient;
+}
+
+function tabCreated(paneId: string, label: string) {
+  return {
+    type: 'tab_created',
+    tab: {
+      tab_id: `tab-${paneId}`,
+      workspace_id: 'space-1',
+      number: 2,
+      label,
+      focused: true,
+      pane_count: 1,
+      agent_status: 'idle',
+    },
+    root_pane: {
+      pane_id: paneId,
+      terminal_id: `terminal-${paneId}`,
+      workspace_id: 'space-1',
+      tab_id: `tab-${paneId}`,
+      focused: true,
+      agent_status: 'idle',
+      revision: 0,
+    },
+  };
 }
 
 describe('direct Herdr API requests', () => {
@@ -169,49 +194,71 @@ describe('direct Herdr API requests', () => {
     expect(native.writeHerdrEventStream).toHaveBeenCalledTimes(1);
   });
 
-  test('starts an agent in a new tab in the selected workspace', async () => {
-    const native = apiClient(request => request.method === 'tab.create'
-      ? { type: 'tab_created', root_pane: { pane_id: 'pane-new' } }
-      : { type: 'ok' });
+  test('returns authoritative workspace creation resources', async () => {
+    const created = {
+      type: 'workspace_created',
+      workspace: { workspace_id: 'space-new' },
+      tab: { tab_id: 'tab-new' },
+      root_pane: { pane_id: 'pane-new' },
+    };
+    const native = apiClient(() => created);
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await client.startAgent('space-1', ' Codex ', ' codex ');
-
-    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
-    expect(requests.map(request => request.method)).toEqual([
-      'tab.create',
-      'pane.rename',
-      'pane.send_input',
-    ]);
-    expect(requests[0].params).toEqual({
-      workspace_id: 'space-1',
-      label: 'Codex',
-      focus: true,
-    });
-    expect(requests[1].params).toEqual({ pane_id: 'pane-new', label: 'Codex' });
-    expect(requests[2].params).toEqual({
-      pane_id: 'pane-new',
-      text: 'codex',
-      keys: ['enter'],
+    await expect(client.createWorkspace(' New space ', ' /repo ')).resolves.toEqual(created);
+    const request = JSON.parse(jest.mocked(native.requestHerdrApi).mock.calls[0][1]);
+    expect(request).toMatchObject({
+      method: 'workspace.create',
+      params: { label: 'New space', cwd: '/repo', focus: true },
     });
   });
 
-  test('runs an arbitrary command in a new command tab', async () => {
+  test('starts the recognized default OpenCode agent in a named tab without renaming its root pane', async () => {
     const native = apiClient(request => request.method === 'tab.create'
-      ? { type: 'tab_created', root_pane: { pane_id: 'pane-command' } }
+      ? tabCreated('pane-new', 'Review')
+      : request.method === 'agent.start'
+        ? { type: 'agent_started', agent: {}, argv: ['opencode'] }
+        : { type: 'ok' });
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await expect(client.createTabAndLaunchCommand(
+      'space-1',
+      ' Review ',
+      ' opencode --model "current model" ',
+    )).resolves.toMatchObject({ root_pane: { pane_id: 'pane-new' } });
+
+    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
+    expect(requests.map(request => request.method)).toEqual(['tab.create', 'agent.start']);
+    expect(requests[0].params).toEqual({
+      workspace_id: 'space-1',
+      label: 'Review',
+      focus: true,
+    });
+    expect(requests[1].params).toEqual({
+      name: 'review',
+      kind: 'opencode',
+      pane_id: 'pane-new',
+      args: ['--model', 'current model'],
+    });
+  });
+
+  test('returns authoritative tab resources and sends arbitrary commands as pane input', async () => {
+    const created = tabCreated('pane-command', 'Checks');
+    const native = apiClient(request => request.method === 'tab.create'
+      ? created
       : { type: 'ok' });
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await expect(client.runCommand('space-1', ' Checks ', '  npm test  ')).resolves.toBe('pane-command');
+    await expect(client.createTabAndLaunchCommand('space-1', ' Checks ', '  npm test  ')).resolves.toEqual(created);
 
     const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
     expect(requests.map(request => request.method)).toEqual([
       'tab.create',
-      'pane.rename',
       'pane.send_input',
     ]);
     expect(requests[0].params).toEqual({
@@ -219,32 +266,74 @@ describe('direct Herdr API requests', () => {
       label: 'Checks',
       focus: true,
     });
-    expect(requests[1].params).toEqual({ pane_id: 'pane-command', label: 'Checks' });
-    expect(requests[2].params).toEqual({
+    expect(requests[1].params).toEqual({
       pane_id: 'pane-command',
       text: 'npm test',
       keys: ['enter'],
     });
   });
 
+  test('keeps shell-dependent agent-like commands on pane input', () => {
+    expect(classifyAgentCommand('opencode --model "$MODEL"')).toEqual({
+      type: 'shell',
+      command: 'opencode --model "$MODEL"',
+    });
+    expect(classifyAgentCommand('opencode && echo done')).toEqual({
+      type: 'shell',
+      command: 'opencode && echo done',
+    });
+  });
+
+  test('createTab focuses and returns the created tab and root pane', async () => {
+    const created = tabCreated('pane-tab', 'Notes');
+    const native = apiClient(() => created);
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await expect(client.createTab('space-1', ' Notes ')).resolves.toEqual(created);
+    const request = JSON.parse(jest.mocked(native.requestHerdrApi).mock.calls[0][1]);
+    expect(request).toMatchObject({
+      method: 'tab.create',
+      params: { workspace_id: 'space-1', label: 'Notes', focus: true },
+    });
+  });
+
   test('lets Herdr choose the generated tab name when the run label is blank', async () => {
     const native = apiClient(request => request.method === 'tab.create'
-      ? { type: 'tab_created', root_pane: { pane_id: 'pane-default-name' } }
+      ? tabCreated('pane-default-name', 'shell')
       : { type: 'ok' });
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await expect(client.runCommand('space-1', '   ', '  npm test  ')).resolves.toBe('pane-default-name');
+    await expect(client.createTabAndLaunchCommand('space-1', '   ', '  npm test  '))
+      .resolves.toMatchObject({ root_pane: { pane_id: 'pane-default-name' } });
 
     const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, line]) => JSON.parse(line));
     expect(requests.map(request => request.method)).toEqual(['tab.create', 'pane.send_input']);
-    expect(requests[0].params).toEqual({ workspace_id: 'space-1', focus: true });
+    expect(requests[0].params).toEqual({ workspace_id: 'space-1', label: null, focus: true });
     expect(requests[1].params).toEqual({
       pane_id: 'pane-default-name',
       text: 'npm test',
       keys: ['enter'],
     });
+  });
+
+  test('reports partial success with the created pane when command input fails', async () => {
+    const native = apiClient(request => request.method === 'tab.create'
+      ? tabCreated('pane-partial', 'Checks')
+      : new Error('input transport closed'));
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    await expect(client.createTabAndLaunchCommand('space-1', 'Checks', 'npm test')).rejects.toMatchObject({
+      name: 'CommandLaunchPartialFailure',
+      message: expect.stringContaining('Tab Checks was created, but command input failed'),
+      created: { root_pane: { pane_id: 'pane-partial' } },
+    });
+    expect(native.requestHerdrApi).toHaveBeenCalledTimes(2);
   });
 
   test('sends paste events through the pane input API in submission order', async () => {

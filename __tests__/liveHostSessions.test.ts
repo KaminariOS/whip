@@ -5,6 +5,8 @@ import {
   applyLiveHostLatency,
   applyLiveHostPaneUpdate,
   applyLiveHostSnapshot,
+  applyLiveHostTabCreation,
+  applyLiveHostWorkspaceCreation,
   aggregateAgentStatus,
   beginLiveHostSync,
   canRefreshLiveHostSession,
@@ -110,6 +112,52 @@ function syncSnapshot(
 }
 
 describe('live host session state', () => {
+  test('projects authoritative workspace creation resources and focus immediately', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const synced = syncSnapshot(opened, 'live-1', snapshot('old'));
+    const createdWorkspace = workspace('workspace-new', 'tab-new', true);
+    const createdTab = tab('tab-new', 'workspace-new', true);
+    const rootPane = pane('pane-new', 'terminal-new', 'workspace-new', 'tab-new', true);
+
+    const updated = applyLiveHostWorkspaceCreation(synced, 'live-1', {
+      workspace: createdWorkspace,
+      tab: createdTab,
+      root_pane: rootPane,
+    });
+    const session = findLiveHostSession(updated, 'live-1')!;
+
+    expect(session.selection).toEqual({
+      workspaceId: 'workspace-new',
+      tabId: 'tab-new',
+      paneId: 'pane-new',
+    });
+    expect(session.snapshot.workspaces).toContainEqual(createdWorkspace);
+    expect(session.snapshot.tabs).toContainEqual(createdTab);
+    expect(session.snapshot.panes).toContainEqual(rootPane);
+  });
+
+  test('projects authoritative tab creation resources and focus immediately', () => {
+    const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
+    const synced = syncSnapshot(opened, 'live-1', snapshot('old'));
+    const createdTab = tab('tab-new', 'old-workspace', true);
+    const rootPane = pane('pane-new', 'terminal-new', 'old-workspace', 'tab-new', true);
+
+    const updated = applyLiveHostTabCreation(synced, 'live-1', {
+      tab: createdTab,
+      root_pane: rootPane,
+    });
+    const session = findLiveHostSession(updated, 'live-1')!;
+
+    expect(session.selection).toEqual({
+      workspaceId: 'old-workspace',
+      tabId: 'tab-new',
+      paneId: 'pane-new',
+    });
+    expect(session.snapshot.workspaces[0].active_tab_id).toBe('tab-new');
+    expect(session.snapshot.tabs).toContainEqual(createdTab);
+    expect(session.snapshot.panes).toContainEqual(rootPane);
+  });
+
   test('aggregates agent attention with native-client priority', () => {
     expect(aggregateAgentStatus([])).toBe('unknown');
     expect(aggregateAgentStatus(['idle', 'working'])).toBe('working');

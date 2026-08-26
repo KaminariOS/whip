@@ -15,6 +15,17 @@ import type {
   WorkspaceInfo,
 } from './types';
 
+export interface CreatedWorkspaceResources {
+  workspace: WorkspaceInfo;
+  tab: TabInfo;
+  root_pane: PaneInfo;
+}
+
+export interface CreatedTabResources {
+  tab: TabInfo;
+  root_pane: PaneInfo;
+}
+
 export type LiveHostConnectionStatus =
   | 'connecting'
   | 'connected'
@@ -396,6 +407,84 @@ export function applyLiveHostFocus(
       snapshot,
       selection: serverFocusSelection(snapshot),
     };
+  });
+}
+
+function upsertById<T>(items: T[], item: T, id: (value: T) => string): T[] {
+  return items.some(current => id(current) === id(item))
+    ? items.map(current => id(current) === id(item) ? item : current)
+    : [...items, item];
+}
+
+/** Project workspace.create's authoritative topology before event reconciliation. */
+export function applyLiveHostWorkspaceCreation(
+  state: LiveHostSessionsState,
+  sessionId: string,
+  created: CreatedWorkspaceResources,
+): LiveHostSessionsState {
+  return updateSession(state, sessionId, session => {
+    const workspace = { ...created.workspace, focused: true };
+    const tab = { ...created.tab, focused: true };
+    const rootPane = { ...created.root_pane, focused: true };
+    const snapshot: HerdrSnapshot = {
+      ...session.snapshot,
+      focused_workspace_id: workspace.workspace_id,
+      focused_tab_id: tab.tab_id,
+      focused_pane_id: rootPane.pane_id,
+      workspaces: upsertById(
+        session.snapshot.workspaces.map(item => ({ ...item, focused: false })),
+        workspace,
+        item => item.workspace_id,
+      ),
+      tabs: upsertById(
+        session.snapshot.tabs.map(item => ({ ...item, focused: false })),
+        tab,
+        item => item.tab_id,
+      ),
+      panes: upsertById(
+        session.snapshot.panes.map(item => ({ ...item, focused: false })),
+        rootPane,
+        item => item.pane_id,
+      ),
+    };
+    return { ...session, snapshot, selection: serverFocusSelection(snapshot) };
+  });
+}
+
+/** Project tab.create's authoritative objects before event reconciliation. */
+export function applyLiveHostTabCreation(
+  state: LiveHostSessionsState,
+  sessionId: string,
+  created: CreatedTabResources,
+): LiveHostSessionsState {
+  return updateSession(state, sessionId, session => {
+    const tab = { ...created.tab, focused: true };
+    const rootPane = { ...created.root_pane, focused: true };
+    const snapshot: HerdrSnapshot = {
+      ...session.snapshot,
+      focused_workspace_id: tab.workspace_id,
+      focused_tab_id: tab.tab_id,
+      focused_pane_id: rootPane.pane_id,
+      workspaces: session.snapshot.workspaces.map(item => ({
+        ...item,
+        focused: item.workspace_id === tab.workspace_id,
+        active_tab_id: item.workspace_id === tab.workspace_id ? tab.tab_id : item.active_tab_id,
+        tab_count: item.workspace_id === tab.workspace_id
+          ? Math.max(item.tab_count, session.snapshot.tabs.filter(existing => existing.workspace_id === tab.workspace_id && existing.tab_id !== tab.tab_id).length + 1)
+          : item.tab_count,
+      })),
+      tabs: upsertById(
+        session.snapshot.tabs.map(item => ({ ...item, focused: false })),
+        tab,
+        item => item.tab_id,
+      ),
+      panes: upsertById(
+        session.snapshot.panes.map(item => ({ ...item, focused: false })),
+        rootPane,
+        item => item.pane_id,
+      ),
+    };
+    return { ...session, snapshot, selection: serverFocusSelection(snapshot) };
   });
 }
 

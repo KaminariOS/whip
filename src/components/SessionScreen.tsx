@@ -20,6 +20,7 @@ import WebView from 'react-native-webview';
 
 import { orderByAgentStatusPriority, tabAgentStateChangeSequence } from '@/src/herdQueue';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
+import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { cn } from '@/src/lib/utils';
 import {
   serverFocusMatchesPendingPane,
@@ -40,7 +41,7 @@ import type { TerminalControlId, TerminalControlUsage } from '../lib/terminalCon
 import { chatAgentForPane, openCodeSessionIdForPane, type ChatAgent } from '../lib/agentChatSession';
 import { codexChatAction, codexMissingIdentityAction, codexSessionIdForPane, type CodexIntegrationStatus } from '../lib/codexSession';
 import { emptyTranscript, type AgentChatState } from '../agentChat';
-import type { HerdrClient } from '../services/HerdrClient';
+import type { HerdrClient, TabCreationResult } from '../services/HerdrClient';
 import { codexTranscriptService } from '../services/CodexTranscriptService';
 import { openCodeTranscriptService } from '../services/OpenCodeTranscriptService';
 import { terminalTabSelectionStarted } from '../services/performanceTrace';
@@ -82,6 +83,7 @@ interface Props {
   latencyMs: number | null;
   latencyWarningActive: boolean;
   onRefresh: () => Promise<void>;
+  onTabCreated: (created: TabCreationResult) => void;
   onOpenPane: (pane: PaneInfo) => void;
   onActivateTerminal: (pane: PaneInfo) => void;
   onCloseTerminal: (terminalId: string) => void;
@@ -150,6 +152,7 @@ export function SessionScreen({
   latencyMs,
   latencyWarningActive,
   onRefresh,
+  onTabCreated,
   onActivateTerminal,
   onCloseTerminal,
   onTerminalStatus,
@@ -225,6 +228,7 @@ export function SessionScreen({
   const codexIntegrationInstallingRef = useRef(false);
   const codexIntegrationInstallRequestRef = useRef(0);
   const chatViewsRef = useRef(chatViews);
+  const mutationInFlight = useRef(false);
 
   const showAppAlert = useCallback((title: string, error: unknown) => {
     setAppAlert({ title, message: String(error) });
@@ -623,17 +627,20 @@ export function SessionScreen({
     activateServerPane(serverPaneId);
   }, [followServerFocus, serverPaneId]);
 
-  const run = async (action: () => Promise<void>): Promise<boolean> => {
-    setBusy(true);
+  const run = async (action: () => Promise<void>, refresh = true): Promise<boolean> => {
     try {
-      await action();
-      await onRefresh();
-      return true;
+      return await runWithInFlightGuard(mutationInFlight, async () => {
+        setBusy(true);
+        try {
+          await action();
+          if (refresh) await onRefresh();
+        } finally {
+          setBusy(false);
+        }
+      });
     } catch (error) {
       showHerdrError(error);
       return false;
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -773,6 +780,7 @@ export function SessionScreen({
   };
 
   const create = async () => {
+    if (mutationInFlight.current) return;
     let succeeded = true;
     if (editorMode === 'rename-tab' && selectedTab) {
       succeeded = await run(() => client.renameTab(selectedTab.tab_id, name));
@@ -782,11 +790,13 @@ export function SessionScreen({
       // Creating a focused tab intentionally replaces the current pane choice.
       // Do not let the old pane's pending-focus guard reject the new server pane.
       pendingPaneFocus.current = null;
-      pendingFocus.current = {
-        mode: 'create',
-        previousId: snapshot.tabs.find(item => item.focused)?.tab_id || selectedTab?.tab_id || null,
-      };
-      succeeded = await run(() => client.createTab(workspace.workspace_id, name));
+      pendingFocus.current = null;
+      succeeded = await run(async () => {
+        const created = await client.createTab(workspace.workspace_id, name);
+        setWorkspaceId(created.tab.workspace_id);
+        setTabId(created.tab.tab_id);
+        onTabCreated(created);
+      }, false);
     }
     if (!succeeded) pendingFocus.current = null;
     setName('');

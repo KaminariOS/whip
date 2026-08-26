@@ -1,5 +1,6 @@
 import SSHClient, { type HerdrBridgeEvent, type HerdrEventStreamEvent, type LsResult, type OpenSSHExecChannel, PtyType } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
+import type { ResponseResult } from '../generated/herdrApi';
 
 import { normalizePrivateKey } from '../lib/privateKey';
 import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
@@ -58,6 +59,85 @@ type HerdrApiParams<Method extends HerdrApiMethod> = Extract<
 >['params'];
 
 export const CODEX_INTEGRATION_INSTALL_TIMEOUT_MS = 30_000;
+
+export type WorkspaceCreationResult = Extract<ResponseResult, { type: 'workspace_created' }>;
+export type TabCreationResult = Extract<ResponseResult, { type: 'tab_created' }>;
+
+export type ClassifiedAgentCommand =
+  | { type: 'agent'; kind: 'claude' | 'codex' | 'opencode'; args: string[] }
+  | { type: 'shell'; command: string };
+
+const DIRECT_AGENT_KINDS = new Set(['claude', 'codex', 'opencode']);
+
+/**
+ * Parse only direct, shell-independent agent invocations. Anything whose shell
+ * interpretation could change is intentionally left on pane.send_input.
+ */
+export function classifyAgentCommand(command: string): ClassifiedAgentCommand {
+  const trimmed = command.trim();
+  const shell = (): ClassifiedAgentCommand => ({ type: 'shell', command: trimmed });
+  if (!trimmed || /[\\\n\r$`]/.test(trimmed)) return shell();
+
+  const argv: string[] = [];
+  let token = '';
+  let quote: "'" | '"' | null = null;
+  let tokenStarted = false;
+  for (const character of trimmed) {
+    if (quote) {
+      if (character === quote) quote = null;
+      else token += character;
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      tokenStarted = true;
+      continue;
+    }
+    if (/\s/.test(character)) {
+      if (tokenStarted) {
+        argv.push(token);
+        token = '';
+        tokenStarted = false;
+      }
+      continue;
+    }
+    if (/[|&;<>()[\]{}*?!#~]/.test(character)) return shell();
+    token += character;
+    tokenStarted = true;
+  }
+  if (quote) return shell();
+  if (tokenStarted) argv.push(token);
+  const kind = argv[0];
+  if (!DIRECT_AGENT_KINDS.has(kind)) return shell();
+  return {
+    type: 'agent',
+    kind: kind as Extract<ClassifiedAgentCommand, { type: 'agent' }>['kind'],
+    args: argv.slice(1),
+  };
+}
+
+function managedAgentName(label: string, kind: string, tabNumber: number): string {
+  const normalized = label
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^[^a-z]+/, '')
+    .replace(/-+$/g, '');
+  return (normalized || `${kind}-${tabNumber}`).slice(0, 32);
+}
+
+export class CommandLaunchPartialFailure extends Error {
+  constructor(
+    readonly created: TabCreationResult,
+    readonly launchType: 'agent' | 'shell',
+    cause: unknown,
+  ) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    const action = launchType === 'agent' ? 'agent launch' : 'command input';
+    super(`Tab ${created.tab.label || created.tab.tab_id} was created, but ${action} failed: ${detail}`);
+    this.name = 'CommandLaunchPartialFailure';
+  }
+}
 
 export { clearHerdrSocketPathCache } from './herdrSocketPathCache';
 
@@ -1066,40 +1146,40 @@ export class HerdrClient {
     await this.apiFocus('agent.focus', { target });
   }
 
-  async startAgent(workspaceId: string, name: string, command: string): Promise<string> {
-    const label = name.trim();
-    const created = await this.apiRequest<{
-      type: 'tab_created';
-      root_pane: { pane_id: string };
-    }>('tab.create', {
-      workspace_id: workspaceId,
-      ...(label ? { label } : {}),
-      focus: true,
-    });
-    if (label) {
-      await this.apiRequest('pane.rename', {
-        pane_id: created.root_pane.pane_id,
-        label,
-      });
+  async createTabAndLaunchCommand(
+    workspaceId: string,
+    name: string,
+    command: string,
+  ): Promise<TabCreationResult> {
+    const created = await this.createTab(workspaceId, name);
+    const launch = classifyAgentCommand(command);
+    try {
+      if (launch.type === 'agent') {
+        await this.apiRequest('agent.start', {
+          name: managedAgentName(created.tab.label, launch.kind, created.tab.number),
+          kind: launch.kind,
+          pane_id: created.root_pane.pane_id,
+          ...(launch.args.length ? { args: launch.args } : {}),
+        });
+      } else {
+        await this.apiRequest('pane.send_input', {
+          pane_id: created.root_pane.pane_id,
+          text: launch.command,
+          keys: ['enter'],
+        });
+      }
+      return created;
+    } catch (error) {
+      throw new CommandLaunchPartialFailure(created, launch.type, error);
     }
-    await this.apiRequest('pane.send_input', {
-      pane_id: created.root_pane.pane_id,
-      text: command.trim(),
-      keys: ['enter'],
-    });
-    return created.root_pane.pane_id;
-  }
-
-  async runCommand(workspaceId: string, name: string, command: string): Promise<string> {
-    return this.startAgent(workspaceId, name, command);
   }
 
   async focusWorkspace(workspaceId: string): Promise<void> {
     await this.apiFocus('workspace.focus', { workspace_id: workspaceId });
   }
 
-  async createWorkspace(label: string, cwd: string): Promise<void> {
-    await this.apiRequest('workspace.create', {
+  async createWorkspace(label: string, cwd: string): Promise<WorkspaceCreationResult> {
+    return this.apiRequest<WorkspaceCreationResult>('workspace.create', {
       label: label.trim() || null,
       cwd: cwd.trim() || null,
       focus: true,
@@ -1117,8 +1197,8 @@ export class HerdrClient {
     await this.apiRequest('workspace.close', { workspace_id: workspaceId });
   }
 
-  async createTab(workspaceId: string, label: string): Promise<void> {
-    await this.apiRequest('tab.create', {
+  async createTab(workspaceId: string, label: string): Promise<TabCreationResult> {
+    return this.apiRequest<TabCreationResult>('tab.create', {
       workspace_id: workspaceId,
       label: label.trim() || null,
       focus: true,
