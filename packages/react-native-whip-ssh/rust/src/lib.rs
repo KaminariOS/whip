@@ -1,6 +1,11 @@
 //! Private QR-pinned bootstrap SSH connection used for WP4 pairing.
 
+mod herdr_codec;
+mod herdr_terminal;
 mod pairing;
+mod russh_transport;
+
+pub use herdr_terminal::*;
 
 use std::sync::OnceLock;
 

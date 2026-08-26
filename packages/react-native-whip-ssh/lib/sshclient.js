@@ -2,17 +2,6 @@
 /* eslint-disable no-bitwise */
 
 import BaseSSHClient, { PtyType } from 'react-native-russh';
-import {
-  MAX_FRAME_BYTES,
-  attach,
-  decode,
-  detach,
-  encodeUtf8,
-  hello,
-  input,
-  resize,
-  scroll,
-} from './herdr-codec';
 
 export * from 'react-native-russh';
 export { PtyType };
@@ -62,39 +51,10 @@ function createUtf8Decoder() {
   };
 }
 
-function terminalInboundTrace() {
-  return globalThis.__whipTerminalInboundTrace;
-}
-
-function herdrPerformanceTrace() {
-  return globalThis.__whipHerdrPerformanceTrace;
-}
-
-function bridgeEvent(message, terminalId, inboundTraceCookie) {
-  const event = { type: message.kind, terminalId, inboundTraceCookie };
-  if (message.kind === 'terminal') {
-    Object.assign(event, {
-      seq: message.sequence,
-      width: message.width,
-      height: message.height,
-      full: message.full,
-      bytes: message.bytes,
-      final: true,
-    });
-  } else if (message.kind === 'graphics') event.bytes = message.bytes;
-  else if (message.kind === 'closed' || message.kind === 'title') event.text = message.text;
-  else if (message.kind === 'notify') {
-    event.kind = message.notificationKind;
-    event.text = message.text;
-    event.body = message.body;
-  } else if (message.kind === 'clipboard') event.text = message.text;
-  else if (
-    message.kind === 'mouse_capture'
-    || message.kind === 'kitty_keyboard_report_all'
-    || message.kind === 'prefix_input_source'
-  ) event.flag = message.flag;
-  else if (message.kind === 'terminal_bell') event.count = message.count;
-  return event;
+function encodeUtf8(value) {
+  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(value);
+  const encoded = unescape(encodeURIComponent(value));
+  return Uint8Array.from(encoded, character => character.charCodeAt(0));
 }
 
 /** Whip's private Herdr adapter over the public product-neutral SSH client. */
@@ -103,8 +63,6 @@ class SSHClient extends BaseSSHClient {
     super(...args);
     this._activeStream.herdrEventStream = false;
     this._activeStream.herdrCommandStream = false;
-    this._preparedHerdrBridge = null;
-    this._herdrBridges = new Map();
     this._herdrEventChannel = null;
     this._herdrEventHandler = null;
     this._herdrEventDecode = null;
@@ -122,128 +80,18 @@ class SSHClient extends BaseSSHClient {
     return privateNativeClient().pairHost(code, publicKey, deviceName);
   }
 
-  async _openHerdrBridge(
-    socketPath,
-    protocol,
-    columns,
-    rows,
-    cellWidthPx,
-    cellHeightPx,
-    terminalAttachLaunchMode = 1,
-  ) {
-    let resolveWelcome;
-    let rejectWelcome;
-    let settled = false;
-    const welcome = new Promise((resolvePromise, rejectPromise) => {
-      resolveWelcome = resolvePromise;
-      rejectWelcome = rejectPromise;
-    });
-    const state = { channel: null, protocol, terminalId: null, handler: null, closing: false };
-    const fail = error => {
-      if (settled) return;
-      settled = true;
-      rejectWelcome(error instanceof Error ? error : new Error(String(error)));
-    };
-    const channelTrace = herdrPerformanceTrace()?.begin('Whip Herdr bridge channel open') || null;
-    const channelOpening = this.openLengthPrefixedUnixSocketChannel(
-      socketPath,
-      { lengthFormat: 'u32le', maxFrameBytes: MAX_FRAME_BYTES },
-      event => {
-        if (event.type === 'closed') {
-          if (!settled) fail(new Error(`Herdr bridge closed before Welcome: ${event.reason}`));
-          if (state.terminalId && !state.closing) {
-            state.handler?.({ type: 'closed', terminalId: state.terminalId, text: event.reason });
-            this._herdrBridges.delete(state.terminalId);
-          }
-          return;
-        }
-        let message;
-        const inboundTraceCookie = Number.isInteger(event.inboundTraceCookie)
-          ? event.inboundTraceCookie
-          : null;
-        try {
-          message = decode(event.bytes, protocol);
-        } catch (error) {
-          terminalInboundTrace()?.abandon(inboundTraceCookie);
-          if (!settled) fail(error);
-          else if (state.terminalId) {
-            state.handler?.({ type: 'closed', terminalId: state.terminalId, text: String(error) });
-          }
-          state.channel?.close().catch(() => {});
-          return;
-        }
-        if (message.kind === 'terminal' && settled && state.terminalId) {
-          terminalInboundTrace()?.decodeComplete(inboundTraceCookie);
-        } else {
-          terminalInboundTrace()?.abandon(inboundTraceCookie);
-        }
-        if (!settled) {
-          if (message.kind !== 'welcome') return fail(new Error('Herdr bridge did not send Welcome first'));
-          if (message.error) return fail(new Error(`Herdr bridge rejected protocol ${protocol}: ${message.error}`));
-          if (message.sequence !== protocol || message.encoding !== 1) {
-            return fail(new Error(
-              `Herdr bridge negotiation mismatch (protocol ${message.sequence}, encoding ${message.encoding})`,
-            ));
-          }
-          settled = true;
-          resolveWelcome();
-          return;
-        }
-        if (!state.terminalId || message.kind === 'welcome') return;
-        state.handler?.(bridgeEvent(message, state.terminalId, inboundTraceCookie));
-        if (message.kind === 'closed') {
-          state.closing = true;
-          this._herdrBridges.delete(state.terminalId);
-          state.channel?.close().catch(() => {});
-        }
-      },
-    );
-    try {
-      state.channel = await channelOpening;
-    } finally {
-      herdrPerformanceTrace()?.end(channelTrace);
-    }
-    try {
-      const helloTrace = herdrPerformanceTrace()?.begin('Whip Herdr bridge hello to welcome') || null;
-      try {
-        await state.channel.write(hello(
-          protocol,
-          columns,
-          rows,
-          cellWidthPx,
-          cellHeightPx,
-          terminalAttachLaunchMode,
-        ));
-        let timer;
-        try {
-          await Promise.race([
-            welcome,
-            new Promise((_, reject) => {
-              timer = setTimeout(() => reject(new Error('timed out waiting for Herdr Welcome')), 15_000);
-            }),
-          ]);
-        } finally {
-          clearTimeout(timer);
-        }
-      } finally {
-        herdrPerformanceTrace()?.end(helloTrace);
-      }
-      return state;
-    } catch (error) {
-      state.closing = true;
-      state.channel?.close().catch(() => {});
-      throw error;
-    }
-  }
-
   prepareHerdrBridge(socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
-    if (this._preparedHerdrBridge) {
-      if (callback) callback();
-      return Promise.resolve();
-    }
-    return this._openHerdrBridge(socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx)
-      .then(state => {
-        this._preparedHerdrBridge = state;
+    return privateNativeClient()
+      .prepareHerdrBridge(
+        this._key,
+        socketPath,
+        protocol,
+        columns,
+        rows,
+        cellWidthPx,
+        cellHeightPx,
+      )
+      .then(() => {
         if (callback) callback();
       })
       .catch(error => {
@@ -252,7 +100,7 @@ class SSHClient extends BaseSSHClient {
       });
   }
 
-  async startHerdrBridge(
+  startHerdrBridge(
     socketPath,
     protocol,
     terminalId,
@@ -265,92 +113,62 @@ class SSHClient extends BaseSSHClient {
     terminalAttachLaunchMode = 1,
     callback,
   ) {
-    const active = this._herdrBridges.get(terminalId);
-    if (active) {
-      active.handler = handler;
-      if (callback) callback();
-      return;
-    }
-    let state = this._preparedHerdrBridge;
-    this._preparedHerdrBridge = null;
-    try {
-      if (state && state.protocol !== protocol) {
-        state.closing = true;
-        await state.channel.close();
-        state = null;
-      }
-      if (!state) {
-        state = await this._openHerdrBridge(
-          socketPath,
-          protocol,
-          columns,
-          rows,
-          cellWidthPx,
-          cellHeightPx,
-          terminalAttachLaunchMode,
-        );
-      }
-      state.terminalId = terminalId;
-      state.handler = handler;
-      this._herdrBridges.set(terminalId, state);
-      const attachTrace = herdrPerformanceTrace()?.begin('Whip Herdr terminal attach') || null;
-      try {
-        await state.channel.write(attach(terminalId, takeover));
-      } finally {
-        herdrPerformanceTrace()?.end(attachTrace);
-      }
-      if (callback) callback();
-    } catch (error) {
-      if (state) {
-        state.closing = true;
-        state.channel.close().catch(() => {});
-      }
-      this._herdrBridges.delete(terminalId);
-      if (callback) callback(error);
-      throw error;
-    }
-  }
-
-  _herdrBridge(terminalId) {
-    const state = this._herdrBridges.get(terminalId);
-    if (!state) throw new Error(`Herdr bridge is not active for terminal ${terminalId}`);
-    return state;
+    return privateNativeClient()
+      .startHerdrBridge(
+        this._key,
+        socketPath,
+        protocol,
+        terminalId,
+        takeover,
+        columns,
+        rows,
+        cellWidthPx,
+        cellHeightPx,
+        terminalAttachLaunchMode,
+        handler,
+      )
+      .then(() => {
+        if (callback) callback();
+      })
+      .catch(error => {
+        if (callback) callback(error);
+        throw error;
+      });
   }
 
   herdrBridgeInput(terminalId, text) {
-    return this._herdrBridge(terminalId).channel.write(input(text));
+    return privateNativeClient().herdrBridgeInput(this._key, terminalId, text);
   }
 
   herdrBridgeResize(terminalId, columns, rows, cellWidthPx = 0, cellHeightPx = 0) {
-    return this._herdrBridge(terminalId).channel.write(
-      resize(columns, rows, cellWidthPx, cellHeightPx),
+    return privateNativeClient().herdrBridgeResize(
+      this._key,
+      terminalId,
+      columns,
+      rows,
+      cellWidthPx,
+      cellHeightPx,
     );
   }
 
   herdrBridgeScroll(terminalId, direction, lines, column, row, modifiers = 0) {
-    return this._herdrBridge(terminalId).channel.write(
-      scroll(direction === 'up', lines, column, row, modifiers),
+    return privateNativeClient().herdrBridgeScroll(
+      this._key,
+      terminalId,
+      direction === 'up',
+      lines,
+      column,
+      row,
+      modifiers,
     );
   }
 
   closeHerdrBridge(terminalId) {
-    const state = this._herdrBridges.get(terminalId);
-    if (!state) return;
-    this._herdrBridges.delete(terminalId);
-    state.closing = true;
-    state.channel.write(detach())
-      .catch(() => {})
-      .finally(() => state.channel.close().catch(() => {}));
+    privateNativeClient().closeHerdrBridge(this._key, terminalId);
   }
 
   closeAllHerdrBridges() {
-    const prepared = this._preparedHerdrBridge;
-    this._preparedHerdrBridge = null;
-    if (prepared) {
-      prepared.closing = true;
-      prepared.channel.close().catch(() => {});
-    }
-    for (const terminalId of [...this._herdrBridges.keys()]) this.closeHerdrBridge(terminalId);
+    privateNativeClient().closeAllHerdrBridges(this._key);
   }
 
   startHerdrEventStream(socketPath, handler, callback) {

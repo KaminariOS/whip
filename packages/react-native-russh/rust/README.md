@@ -20,6 +20,8 @@ Implemented:
 - loopback TCP forwarding through SSH direct-tcpip channels
 - concurrent OpenSSH direct-streamlocal channels with raw byte input/output
 - length-prefixed direct-streamlocal channels for binary protocols
+- product-neutral native length-prefixed channel callbacks for native protocol
+  adapters that must avoid a JavaScript frame round trip
 - persistent exec channels with binary stdin/stdout
 - bounded delimiter-based requests over remote Unix-domain sockets
 

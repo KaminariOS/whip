@@ -49,10 +49,15 @@ cached path stops accepting channels.
 ### Terminal plane
 
 Each opened Herdr terminal owns an independent SSH stream-local channel to the
-server's client-protocol socket. The shared Rust codec performs the binary
-`Hello` / `Welcome` handshake and sends `AttachTerminal` for the selected
-terminal. Herdr emits terminal frames and accepts input, resize, scroll, and
-detach messages over that connection. Do not substitute the human-facing
+server's client-protocol socket. The product-specific Rust bridge in
+`react-native-whip-ssh` owns protocol validation, binary encoding/decoding, the
+`Hello` / `Welcome` / `AttachTerminal` state machine, prepared connections, and
+protocol-level cleanup. It composes directly with a product-neutral native
+length-prefixed channel in `react-native-russh`; terminal frames do not travel
+through a JavaScript codec or generic JSON event path. React Native sends
+semantic input, resize, scroll, and close operations and receives typed control
+events plus raw binary terminal/graphics payloads for the renderer. Do not
+substitute the human-facing
 `terminal attach` command: nesting that interface inside an SSH PTY leaks shell
 chrome and breaks application-level input and resize behavior.
 

@@ -22,7 +22,7 @@ export interface HerdrBridgeEvent {
   height?: number;
   full?: boolean;
   /** A view into the received frame; honor its byteOffset and byteLength. */
-  bytes?: string | ArrayBufferView;
+  bytes?: string | ArrayBuffer | ArrayBufferView;
   final?: boolean;
   text?: string;
   body?: string;

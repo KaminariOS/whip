@@ -310,8 +310,9 @@ npm install react-native-russh
 Its public package root exposes generic SSH, PTY, forwarding, `known_hosts`,
 SFTP, persistent exec, and raw/length-prefixed OpenSSH Unix-socket channels.
 Whip imports the unpublished `react-native-whip-ssh` subclass: all Herdr codec,
-negotiation, terminal event, and command/event wrapper behavior lives there,
-along with a small private native crate for QR-pinned WP4 pairing.
+negotiation, and terminal protocol lifecycle lives in its private Rust crate;
+the JavaScript subclass supplies semantic calls and UI callbacks. The same
+private crate also implements QR-pinned WP4 pairing.
 
 After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 

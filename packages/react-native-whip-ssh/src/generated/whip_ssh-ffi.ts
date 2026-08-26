@@ -164,13 +164,125 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_ffi_whip_ssh_rust_future_free_void(handle: bigint): void;
+  ubrn_uniffi_whip_ssh_fn_clone_herdrterminaleventsink(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_herdrterminaleventsink(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdrterminaleventsink(
+    vtable: UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_clear_herdr_terminal_event_sink(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_close_all_herdr_terminal_bridges(
+    clientKey: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_close_herdr_terminal_bridge(
+    clientKey: Uint8Array,
+    terminalId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_herdr_terminal_input(
+    clientKey: Uint8Array,
+    terminalId: Uint8Array,
+    text: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_herdr_terminal_resize(
+    clientKey: Uint8Array,
+    terminalId: Uint8Array,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_herdr_terminal_scroll(
+    clientKey: Uint8Array,
+    terminalId: Uint8Array,
+    up: number,
+    lines: number,
+    column: Uint8Array,
+    row: Uint8Array,
+    modifiers: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_func_pair_host(
     code: Uint8Array,
     publicKey: Uint8Array,
     deviceName: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_prepare_herdr_terminal_bridge(
+    clientKey: Uint8Array,
+    socketPath: Uint8Array,
+    protocol: number,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_set_herdr_terminal_event_sink(
+    sink: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_start_herdr_terminal_bridge(
+    clientKey: Uint8Array,
+    socketPath: Uint8Array,
+    protocol: number,
+    terminalId: Uint8Array,
+    takeover: number,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    terminalAttachLaunchMode: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_terminal_frame(
+    uniffiSelf: bigint,
+    clientKey: Uint8Array,
+    terminalId: Uint8Array,
+    sequence: bigint,
+    width: number,
+    height: number,
+    full: number,
+    bytes: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_graphics_frame(
+    uniffiSelf: bigint,
+    clientKey: Uint8Array,
+    terminalId: Uint8Array,
+    bytes: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_control(
+    uniffiSelf: bigint,
+    event: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_ffi_whip_ssh_uniffi_contract_version(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_clear_herdr_terminal_event_sink(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_close_all_herdr_terminal_bridges(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_close_herdr_terminal_bridge(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll(): number;
   ubrn_uniffi_whip_ssh_checksum_func_pair_host(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_set_herdr_terminal_event_sink(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_graphics_frame(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control(): number;
+  ubrn_uniffi_internal_fn_method_herdrterminaleventsink_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
   // Codegen call sites use these via `nativeModule().rustbuffer_alloc(...)`
   // and `nativeModule().rustbuffer_free(...)`. The JSI host object exposes
   // them as properties; see `props["rustbuffer_alloc"]` / `props["rustbuffer_free"]`
@@ -192,6 +304,39 @@ export type UniffiForeignFutureDroppedCallback = (handle: bigint) => void;
 export type UniffiForeignFutureDroppedCallbackStruct = {
   handle: bigint;
   free: UniffiForeignFutureDroppedCallback;
+};
+type UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod0 = (
+  uniffiHandle: bigint,
+  clientKey: Uint8Array,
+  terminalId: Uint8Array,
+  sequence: bigint,
+  width: number,
+  height: number,
+  full: number,
+  bytes: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod1 = (
+  uniffiHandle: bigint,
+  clientKey: Uint8Array,
+  terminalId: Uint8Array,
+  bytes: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod2 = (
+  uniffiHandle: bigint,
+  event: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshHerdrTerminalEventSink = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshHerdrTerminalEventSink = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshHerdrTerminalEventSink;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshHerdrTerminalEventSink;
+  terminal_frame: UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod0;
+  graphics_frame: UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod1;
+  control: UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod2;
 };
 
 // UniffiRustFutureContinuationCallback is generated as part of the component interface's

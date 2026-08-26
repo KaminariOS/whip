@@ -5,17 +5,20 @@ It exposes WP4 QR pairing and Herdr bridge/stream behavior while keeping those
 product protocols out of the public transport API.
 
 The adapter subclasses the public `SSHClient`. Direct Herdr API requests and
-the long-lived event feed use raw OpenSSH Unix-socket channels. Herdr terminal
-negotiation and codec behavior use the public length-prefixed channel API, and
-the command wrapper uses the public persistent exec-channel API.
+the long-lived event feed use raw OpenSSH Unix-socket channels. The private Rust
+crate owns the Herdr terminal codec, Welcome/Attach handshake, prepared bridge,
+and protocol-level terminal lifecycle. It uses the generic transport's internal
+native length-prefixed channel callbacks so inbound frames are decoded without
+crossing JavaScript first. The command wrapper uses the public persistent
+exec-channel API.
 
-Herdr terminal events expose their binary payload as an `ArrayBufferView` into
-the received frame. Consumers must honor the view's `byteOffset` and
-`byteLength`; Whip converts that view only at the WebView renderer boundary.
+Terminal and graphics payloads cross the Whip UniFFI/JSI boundary as binary
+`ArrayBuffer` values. Metadata and low-frequency controls use typed arguments
+and records; terminal bytes are never JSON, base64, or UTF-8 decoded in the
+adapter.
 
-WP4 pairing is the package's only native Rust implementation. It opens a
-separate QR-pinned bootstrap SSH connection and is intentionally not exposed by
-the public transport package.
+WP4 pairing remains a separate QR-pinned bootstrap SSH connection and is
+intentionally not exposed by the public transport package.
 
 ## App API
 

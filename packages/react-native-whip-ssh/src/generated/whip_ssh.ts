@@ -8,14 +8,42 @@ import {
   type UniffiRustFutureContinuationCallback,
   type UniffiForeignFutureDroppedCallback,
   type UniffiForeignFutureDroppedCallbackStruct,
+  type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
 } from './whip_ssh-ffi';
 import {
+  type FfiConverter,
   type UniffiByteArray,
+  type UniffiGcObject,
+  type UniffiHandle,
+  type UniffiObjectFactory,
+  type UniffiReferenceHolder,
+  type UniffiRustCallStatus,
+  AbstractFfiConverterByteArray,
+  FfiConverterArrayBuffer,
+  FfiConverterBool,
+  FfiConverterFloat64,
+  FfiConverterInt32,
+  FfiConverterObject,
+  FfiConverterObjectWithCallbacks,
+  FfiConverterOptional,
+  FfiConverterUInt16,
+  FfiConverterUInt32,
+  FfiConverterUInt64,
+  FfiConverterUInt8,
   RustBuffer,
+  UniffiAbstractObject,
+  UniffiError,
   UniffiInternalError,
+  UniffiResult,
   UniffiRustCaller,
+  destructorGuardSymbol,
+  pointerLiteralSymbol,
   uniffiCreateFfiConverterString,
+  uniffiCreateRecord,
   uniffiRustCallAsync,
+  uniffiTraitInterfaceCall,
+  uniffiTypeNameSymbol,
+  variantOrdinalSymbol,
 } from '@ubjs/core';
 const uniffiCaller = new UniffiRustCaller(() => ({ code: 0 }));
 
@@ -27,6 +55,125 @@ const uniffiIsDebug =
   false;
 
 // Public interface members begin here.
+
+export function clearHerdrTerminalEventSink(): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_clear_herdr_terminal_event_sink(
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function closeAllHerdrTerminalBridges(clientKey: string): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_close_all_herdr_terminal_bridges(
+        FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function closeHerdrTerminalBridge(
+  clientKey: string,
+  terminalId: string,
+): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_close_herdr_terminal_bridge(
+        FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function herdrTerminalInput(
+  clientKey: string,
+  terminalId: string,
+  text: string,
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeHerdrBridgeError.lift.bind(
+      FfiConverterTypeHerdrBridgeError,
+    ),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_herdr_terminal_input(
+        FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function herdrTerminalResize(
+  clientKey: string,
+  terminalId: string,
+  columns: number,
+  rows: number,
+  cellWidthPx: number,
+  cellHeightPx: number,
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeHerdrBridgeError.lift.bind(
+      FfiConverterTypeHerdrBridgeError,
+    ),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_herdr_terminal_resize(
+        FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt32.lower(cellWidthPx, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt32.lower(cellHeightPx, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function herdrTerminalScroll(
+  clientKey: string,
+  terminalId: string,
+  up: boolean,
+  lines: number,
+  column: number | undefined,
+  row: number | undefined,
+  modifiers: number,
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeHerdrBridgeError.lift.bind(
+      FfiConverterTypeHerdrBridgeError,
+    ),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_herdr_terminal_scroll(
+        FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+        FfiConverterBool.lower(up, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt32.lower(lines, nativeModule().rustbuffer_alloc),
+        FfiConverterOptionalFloat64.lower(
+          column,
+          nativeModule().rustbuffer_alloc,
+        ),
+        FfiConverterOptionalFloat64.lower(row, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt8.lower(modifiers, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
 
 export async function pairHost(
   code: string,
@@ -61,6 +208,132 @@ export async function pairHost(
       /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function prepareHerdrTerminalBridge(
+  clientKey: string,
+  socketPath: string,
+  protocol: number,
+  columns: number,
+  rows: number,
+  cellWidthPx: number,
+  cellHeightPx: number,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_prepare_herdr_terminal_bridge(
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(socketPath, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(protocol, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(
+            cellWidthPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt32.lower(
+            cellHeightPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeHerdrBridgeError.lift.bind(
+        FfiConverterTypeHerdrBridgeError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export function setHerdrTerminalEventSink(sink: HerdrTerminalEventSink): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_herdr_terminal_event_sink(
+        FfiConverterTypeHerdrTerminalEventSink.lower(
+          sink,
+          nativeModule().rustbuffer_alloc,
+        ),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export async function startHerdrTerminalBridge(
+  clientKey: string,
+  socketPath: string,
+  protocol: number,
+  terminalId: string,
+  takeover: boolean,
+  columns: number,
+  rows: number,
+  cellWidthPx: number,
+  cellHeightPx: number,
+  terminalAttachLaunchMode: number,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_start_herdr_terminal_bridge(
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(socketPath, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(protocol, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(takeover, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(
+            cellWidthPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt32.lower(
+            cellHeightPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt8.lower(
+            terminalAttachLaunchMode,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeHerdrBridgeError.lift.bind(
+        FfiConverterTypeHerdrBridgeError,
+      ),
     );
   } catch (__error: any) {
     if (uniffiIsDebug && __error instanceof Error) {
@@ -132,6 +405,922 @@ const stringConverter = (() => {
 })();
 const FfiConverterString = uniffiCreateFfiConverterString(stringConverter);
 
+export type HerdrTerminalControlEvent = {
+  clientKey: string;
+  terminalId: string;
+  kind: string;
+  text?: string;
+  body?: string;
+  flag?: boolean;
+  notificationKind?: number;
+  count?: number;
+};
+
+/**
+ * Generated factory for {@link HerdrTerminalControlEvent} record objects.
+ */
+export const HerdrTerminalControlEvent = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrTerminalControlEvent,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<HerdrTerminalControlEvent>,
+  });
+})();
+
+const FfiConverterTypeHerdrTerminalControlEvent = (() => {
+  type TypeName = HerdrTerminalControlEvent;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        clientKey: FfiConverterString.read(from),
+        terminalId: FfiConverterString.read(from),
+        kind: FfiConverterString.read(from),
+        text: FfiConverterOptionalString.read(from),
+        body: FfiConverterOptionalString.read(from),
+        flag: FfiConverterOptionalBoolean.read(from),
+        notificationKind: FfiConverterOptionalUInt32.read(from),
+        count: FfiConverterOptionalUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.clientKey, into);
+      FfiConverterString.write(value.terminalId, into);
+      FfiConverterString.write(value.kind, into);
+      FfiConverterOptionalString.write(value.text, into);
+      FfiConverterOptionalString.write(value.body, into);
+      FfiConverterOptionalBoolean.write(value.flag, into);
+      FfiConverterOptionalUInt32.write(value.notificationKind, into);
+      FfiConverterOptionalUInt32.write(value.count, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.clientKey) +
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterString.allocationSize(value.kind) +
+        FfiConverterOptionalString.allocationSize(value.text) +
+        FfiConverterOptionalString.allocationSize(value.body) +
+        FfiConverterOptionalBoolean.allocationSize(value.flag) +
+        FfiConverterOptionalUInt32.allocationSize(value.notificationKind) +
+        FfiConverterOptionalUInt32.allocationSize(value.count)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: HerdrBridgeError
+export enum HerdrBridgeError_Tags {
+  UnsupportedProtocol = 'UnsupportedProtocol',
+  MalformedServerFrame = 'MalformedServerFrame',
+  WelcomeTimeout = 'WelcomeTimeout',
+  WelcomeProtocolMismatch = 'WelcomeProtocolMismatch',
+  UnsupportedEncoding = 'UnsupportedEncoding',
+  ServerRejectedWelcome = 'ServerRejectedWelcome',
+  ClosedBeforeHandshake = 'ClosedBeforeHandshake',
+  BridgeUnavailable = 'BridgeUnavailable',
+  BridgeClosed = 'BridgeClosed',
+}
+export const HerdrBridgeError = (() => {
+  type UnsupportedProtocol__interface = {
+    tag: HerdrBridgeError_Tags.UnsupportedProtocol;
+    inner: Readonly<[string]>;
+  };
+  class UnsupportedProtocol_
+    extends UniffiError
+    implements UnsupportedProtocol__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.UnsupportedProtocol;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'UnsupportedProtocol');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): UnsupportedProtocol_ {
+      return new UnsupportedProtocol_(v0);
+    }
+
+    static instanceOf(obj: any): obj is UnsupportedProtocol_ {
+      return obj.tag === HerdrBridgeError_Tags.UnsupportedProtocol;
+    }
+    static hasInner(obj: any): obj is UnsupportedProtocol_ {
+      return UnsupportedProtocol_.instanceOf(obj);
+    }
+
+    static getInner(obj: UnsupportedProtocol_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type MalformedServerFrame__interface = {
+    tag: HerdrBridgeError_Tags.MalformedServerFrame;
+    inner: Readonly<[string]>;
+  };
+  class MalformedServerFrame_
+    extends UniffiError
+    implements MalformedServerFrame__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.MalformedServerFrame;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'MalformedServerFrame');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): MalformedServerFrame_ {
+      return new MalformedServerFrame_(v0);
+    }
+
+    static instanceOf(obj: any): obj is MalformedServerFrame_ {
+      return obj.tag === HerdrBridgeError_Tags.MalformedServerFrame;
+    }
+    static hasInner(obj: any): obj is MalformedServerFrame_ {
+      return MalformedServerFrame_.instanceOf(obj);
+    }
+
+    static getInner(obj: MalformedServerFrame_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type WelcomeTimeout__interface = {
+    tag: HerdrBridgeError_Tags.WelcomeTimeout;
+    inner: Readonly<[string]>;
+  };
+  class WelcomeTimeout_
+    extends UniffiError
+    implements WelcomeTimeout__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.WelcomeTimeout;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'WelcomeTimeout');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): WelcomeTimeout_ {
+      return new WelcomeTimeout_(v0);
+    }
+
+    static instanceOf(obj: any): obj is WelcomeTimeout_ {
+      return obj.tag === HerdrBridgeError_Tags.WelcomeTimeout;
+    }
+    static hasInner(obj: any): obj is WelcomeTimeout_ {
+      return WelcomeTimeout_.instanceOf(obj);
+    }
+
+    static getInner(obj: WelcomeTimeout_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type WelcomeProtocolMismatch__interface = {
+    tag: HerdrBridgeError_Tags.WelcomeProtocolMismatch;
+    inner: Readonly<[string]>;
+  };
+  class WelcomeProtocolMismatch_
+    extends UniffiError
+    implements WelcomeProtocolMismatch__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.WelcomeProtocolMismatch;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'WelcomeProtocolMismatch');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): WelcomeProtocolMismatch_ {
+      return new WelcomeProtocolMismatch_(v0);
+    }
+
+    static instanceOf(obj: any): obj is WelcomeProtocolMismatch_ {
+      return obj.tag === HerdrBridgeError_Tags.WelcomeProtocolMismatch;
+    }
+    static hasInner(obj: any): obj is WelcomeProtocolMismatch_ {
+      return WelcomeProtocolMismatch_.instanceOf(obj);
+    }
+
+    static getInner(obj: WelcomeProtocolMismatch_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type UnsupportedEncoding__interface = {
+    tag: HerdrBridgeError_Tags.UnsupportedEncoding;
+    inner: Readonly<[string]>;
+  };
+  class UnsupportedEncoding_
+    extends UniffiError
+    implements UnsupportedEncoding__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.UnsupportedEncoding;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'UnsupportedEncoding');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): UnsupportedEncoding_ {
+      return new UnsupportedEncoding_(v0);
+    }
+
+    static instanceOf(obj: any): obj is UnsupportedEncoding_ {
+      return obj.tag === HerdrBridgeError_Tags.UnsupportedEncoding;
+    }
+    static hasInner(obj: any): obj is UnsupportedEncoding_ {
+      return UnsupportedEncoding_.instanceOf(obj);
+    }
+
+    static getInner(obj: UnsupportedEncoding_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type ServerRejectedWelcome__interface = {
+    tag: HerdrBridgeError_Tags.ServerRejectedWelcome;
+    inner: Readonly<[string]>;
+  };
+  class ServerRejectedWelcome_
+    extends UniffiError
+    implements ServerRejectedWelcome__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.ServerRejectedWelcome;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'ServerRejectedWelcome');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): ServerRejectedWelcome_ {
+      return new ServerRejectedWelcome_(v0);
+    }
+
+    static instanceOf(obj: any): obj is ServerRejectedWelcome_ {
+      return obj.tag === HerdrBridgeError_Tags.ServerRejectedWelcome;
+    }
+    static hasInner(obj: any): obj is ServerRejectedWelcome_ {
+      return ServerRejectedWelcome_.instanceOf(obj);
+    }
+
+    static getInner(obj: ServerRejectedWelcome_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type ClosedBeforeHandshake__interface = {
+    tag: HerdrBridgeError_Tags.ClosedBeforeHandshake;
+    inner: Readonly<[string]>;
+  };
+  class ClosedBeforeHandshake_
+    extends UniffiError
+    implements ClosedBeforeHandshake__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.ClosedBeforeHandshake;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'ClosedBeforeHandshake');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): ClosedBeforeHandshake_ {
+      return new ClosedBeforeHandshake_(v0);
+    }
+
+    static instanceOf(obj: any): obj is ClosedBeforeHandshake_ {
+      return obj.tag === HerdrBridgeError_Tags.ClosedBeforeHandshake;
+    }
+    static hasInner(obj: any): obj is ClosedBeforeHandshake_ {
+      return ClosedBeforeHandshake_.instanceOf(obj);
+    }
+
+    static getInner(obj: ClosedBeforeHandshake_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type BridgeUnavailable__interface = {
+    tag: HerdrBridgeError_Tags.BridgeUnavailable;
+    inner: Readonly<[string]>;
+  };
+  class BridgeUnavailable_
+    extends UniffiError
+    implements BridgeUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.BridgeUnavailable;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'BridgeUnavailable');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): BridgeUnavailable_ {
+      return new BridgeUnavailable_(v0);
+    }
+
+    static instanceOf(obj: any): obj is BridgeUnavailable_ {
+      return obj.tag === HerdrBridgeError_Tags.BridgeUnavailable;
+    }
+    static hasInner(obj: any): obj is BridgeUnavailable_ {
+      return BridgeUnavailable_.instanceOf(obj);
+    }
+
+    static getInner(obj: BridgeUnavailable_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type BridgeClosed__interface = {
+    tag: HerdrBridgeError_Tags.BridgeClosed;
+    inner: Readonly<[string]>;
+  };
+  class BridgeClosed_ extends UniffiError implements BridgeClosed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.BridgeClosed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HerdrBridgeError', 'BridgeClosed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): BridgeClosed_ {
+      return new BridgeClosed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is BridgeClosed_ {
+      return obj.tag === HerdrBridgeError_Tags.BridgeClosed;
+    }
+    static hasInner(obj: any): obj is BridgeClosed_ {
+      return BridgeClosed_.instanceOf(obj);
+    }
+
+    static getInner(obj: BridgeClosed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HerdrBridgeError {
+    return obj[uniffiTypeNameSymbol] === 'HerdrBridgeError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    UnsupportedProtocol: UnsupportedProtocol_,
+    MalformedServerFrame: MalformedServerFrame_,
+    WelcomeTimeout: WelcomeTimeout_,
+    WelcomeProtocolMismatch: WelcomeProtocolMismatch_,
+    UnsupportedEncoding: UnsupportedEncoding_,
+    ServerRejectedWelcome: ServerRejectedWelcome_,
+    ClosedBeforeHandshake: ClosedBeforeHandshake_,
+    BridgeUnavailable: BridgeUnavailable_,
+    BridgeClosed: BridgeClosed_,
+  });
+})();
+export type HerdrBridgeError = InstanceType<
+  (typeof HerdrBridgeError)[
+    | 'UnsupportedProtocol'
+    | 'MalformedServerFrame'
+    | 'WelcomeTimeout'
+    | 'WelcomeProtocolMismatch'
+    | 'UnsupportedEncoding'
+    | 'ServerRejectedWelcome'
+    | 'ClosedBeforeHandshake'
+    | 'BridgeUnavailable'
+    | 'BridgeClosed']
+>;
+
+// FfiConverter for enum HerdrBridgeError
+const FfiConverterTypeHerdrBridgeError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrBridgeError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HerdrBridgeError.UnsupportedProtocol(
+            FfiConverterString.read(from),
+          );
+        case 2:
+          return new HerdrBridgeError.MalformedServerFrame(
+            FfiConverterString.read(from),
+          );
+        case 3:
+          return new HerdrBridgeError.WelcomeTimeout(
+            FfiConverterString.read(from),
+          );
+        case 4:
+          return new HerdrBridgeError.WelcomeProtocolMismatch(
+            FfiConverterString.read(from),
+          );
+        case 5:
+          return new HerdrBridgeError.UnsupportedEncoding(
+            FfiConverterString.read(from),
+          );
+        case 6:
+          return new HerdrBridgeError.ServerRejectedWelcome(
+            FfiConverterString.read(from),
+          );
+        case 7:
+          return new HerdrBridgeError.ClosedBeforeHandshake(
+            FfiConverterString.read(from),
+          );
+        case 8:
+          return new HerdrBridgeError.BridgeUnavailable(
+            FfiConverterString.read(from),
+          );
+        case 9:
+          return new HerdrBridgeError.BridgeClosed(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HerdrBridgeError_Tags.UnsupportedProtocol: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrBridgeError_Tags.MalformedServerFrame: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrBridgeError_Tags.WelcomeTimeout: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrBridgeError_Tags.WelcomeProtocolMismatch: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrBridgeError_Tags.UnsupportedEncoding: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrBridgeError_Tags.ServerRejectedWelcome: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrBridgeError_Tags.ClosedBeforeHandshake: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrBridgeError_Tags.BridgeUnavailable: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HerdrBridgeError_Tags.BridgeClosed: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that HerdrBridgeError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HerdrBridgeError_Tags.UnsupportedProtocol: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrBridgeError_Tags.MalformedServerFrame: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrBridgeError_Tags.WelcomeTimeout: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrBridgeError_Tags.WelcomeProtocolMismatch: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrBridgeError_Tags.UnsupportedEncoding: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrBridgeError_Tags.ServerRejectedWelcome: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrBridgeError_Tags.ClosedBeforeHandshake: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrBridgeError_Tags.BridgeUnavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HerdrBridgeError_Tags.BridgeClosed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export interface HerdrTerminalEventSink {
+  terminalFrame(
+    clientKey: string,
+    terminalId: string,
+    sequence: bigint,
+    width: number,
+    height: number,
+    full: boolean,
+    bytes: ArrayBuffer,
+  ): void;
+  graphicsFrame(
+    clientKey: string,
+    terminalId: string,
+    bytes: ArrayBuffer,
+  ): void;
+  control(event: HerdrTerminalControlEvent): void;
+}
+
+export class HerdrTerminalEventSinkImpl
+  extends UniffiAbstractObject
+  implements HerdrTerminalEventSink
+{
+  readonly [uniffiTypeNameSymbol] = 'HerdrTerminalEventSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.bless(pointer);
+  }
+
+  terminalFrame(
+    clientKey: string,
+    terminalId: string,
+    sequence: bigint,
+    width: number,
+    height: number,
+    full: boolean,
+    bytes: ArrayBuffer,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_terminal_frame(
+          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(sequence, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt16.lower(width, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt16.lower(height, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(full, nativeModule().rustbuffer_alloc),
+          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  graphicsFrame(
+    clientKey: string,
+    terminalId: string,
+    bytes: ArrayBuffer,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_graphics_frame(
+          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  control(event: HerdrTerminalControlEvent): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_control(
+          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterTypeHerdrTerminalControlEvent.lower(
+            event,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeHerdrTerminalEventSinkImplObjectFactory.pointer(this);
+      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HerdrTerminalEventSinkImpl {
+    return uniffiTypeHerdrTerminalEventSinkImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeHerdrTerminalEventSinkImplObjectFactory: UniffiObjectFactory<HerdrTerminalEventSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HerdrTerminalEventSink {
+        const instance = Object.create(HerdrTerminalEventSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HerdrTerminalEventSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_herdrterminaleventsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HerdrTerminalEventSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HerdrTerminalEventSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_herdrterminaleventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_herdrterminaleventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HerdrTerminalEventSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HerdrTerminalEventSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHerdrTerminalEventSink =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeHerdrTerminalEventSinkImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in HerdrTerminalEventSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceHerdrTerminalEventSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    terminal_frame: (
+      uniffiHandle: bigint,
+      clientKey: Uint8Array,
+      terminalId: Uint8Array,
+      sequence: bigint,
+      width: number,
+      height: number,
+      full: number,
+      bytes: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+        return jsCallback.terminalFrame(
+          FfiConverterString.lift(clientKey),
+          FfiConverterString.lift(terminalId),
+          FfiConverterUInt64.lift(sequence),
+          FfiConverterUInt16.lift(width),
+          FfiConverterUInt16.lift(height),
+          FfiConverterBool.lift(full),
+          FfiConverterArrayBuffer.lift(bytes),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    graphics_frame: (
+      uniffiHandle: bigint,
+      clientKey: Uint8Array,
+      terminalId: Uint8Array,
+      bytes: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+        return jsCallback.graphicsFrame(
+          FfiConverterString.lift(clientKey),
+          FfiConverterString.lift(terminalId),
+          FfiConverterArrayBuffer.lift(bytes),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    control: (uniffiHandle: bigint, event: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+        return jsCallback.control(
+          FfiConverterTypeHerdrTerminalControlEvent.lift(event),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeHerdrTerminalEventSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeHerdrTerminalEventSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdrterminaleventsink(
+      uniffiCallbackInterfaceHerdrTerminalEventSink.vtable,
+    );
+  },
+};
+
+// FfiConverter for string | undefined
+const FfiConverterOptionalString = new FfiConverterOptional(FfiConverterString);
+
+// FfiConverter for boolean | undefined
+const FfiConverterOptionalBoolean = new FfiConverterOptional(FfiConverterBool);
+
+// FfiConverter for number | undefined
+const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
+
+// FfiConverter for number | undefined
+const FfiConverterOptionalFloat64 = new FfiConverterOptional(
+  FfiConverterFloat64,
+);
+
 /**
  * This should be called before anything else.
  *
@@ -154,13 +1343,116 @@ function uniffiEnsureInitialized() {
       bindingsContractVersion,
     );
   }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_clear_herdr_terminal_event_sink() !==
+    57772
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_clear_herdr_terminal_event_sink',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_all_herdr_terminal_bridges() !==
+    44248
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_close_all_herdr_terminal_bridges',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_herdr_terminal_bridge() !==
+    43120
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_close_herdr_terminal_bridge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input() !==
+    38968
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_herdr_terminal_input',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize() !==
+    54330
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_herdr_terminal_resize',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll() !==
+    52695
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_herdr_terminal_scroll',
+    );
+  }
   if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_pair_host() !== 50253) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_pair_host',
     );
   }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge() !==
+    21564
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_herdr_terminal_event_sink() !==
+    152
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_herdr_terminal_event_sink',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge() !==
+    4369
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame() !==
+    7747
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_graphics_frame() !==
+    158
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrterminaleventsink_graphics_frame',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control() !==
+    65304
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control',
+    );
+  }
+
+  uniffiCallbackInterfaceHerdrTerminalEventSink.register();
 }
 
 export default Object.freeze({
   initialize: uniffiEnsureInitialized,
+  converters: {
+    FfiConverterTypeHerdrBridgeError,
+    FfiConverterTypeHerdrTerminalControlEvent,
+    FfiConverterTypeHerdrTerminalEventSink,
+  },
 });

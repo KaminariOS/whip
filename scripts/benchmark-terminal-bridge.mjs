@@ -1,39 +1,19 @@
 /* global globalThis */
-/* eslint-disable no-bitwise */
-
 import { performance } from 'node:perf_hooks';
 
-import { decode } from '../packages/react-native-whip-ssh/lib/herdr-codec.js';
-
-const PROTOCOL = 20;
 const TARGET_BYTES = 256 * 1024 * 1024;
 
-// The previous native codec extracted terminal bytes with
-// `decoder.bytes()?.to_vec()`. `slice()` models that payload-sized ownership
-// copy; the optimized operation calls the current decoder and retains its view.
-// This intentionally excludes SSH decryption, UniFFI ownership, and WebView IO.
+// Models the JavaScript portion of terminal delivery. The old path copied or
+// sliced bytes after decoding a Herdr frame in JS; the Rust bridge now delivers
+// the already-decoded payload ArrayBuffer directly. SSH decryption, Rust codec
+// work, UniFFI ownership transfer, and WebView IO are intentionally excluded.
 
-function unsigned(value) {
-  if (value <= 250) return Uint8Array.of(value);
-  if (value <= 0xffff) return Uint8Array.of(251, value & 0xff, (value >>> 8) & 0xff);
-  return Uint8Array.of(
-    252,
-    value & 0xff,
-    (value >>> 8) & 0xff,
-    (value >>> 16) & 0xff,
-    (value >>> 24) & 0xff
-  );
-}
-
-function terminalFrame(payloadBytes) {
-  const length = unsigned(payloadBytes);
-  const header = Uint8Array.of(2, 42, 80, 24, 1, ...length);
-  const frame = new Uint8Array(header.byteLength + payloadBytes);
-  frame.set(header);
-  for (let index = header.byteLength; index < frame.byteLength; index += 1) {
-    frame[index] = index % 251;
+function terminalPayload(payloadBytes) {
+  const payload = new Uint8Array(payloadBytes);
+  for (let index = 0; index < payload.byteLength; index += 1) {
+    payload[index] = index % 251;
   }
-  return { frame, payloadOffset: header.byteLength };
+  return payload;
 }
 
 function measure(name, payloadBytes, iterations, operation) {
@@ -54,19 +34,15 @@ function measure(name, payloadBytes, iterations, operation) {
   return { name, elapsedMs, mibPerSecond, checksum };
 }
 
-console.log('Terminal bridge codec benchmark (copy-equivalent native baseline)');
+console.log('Terminal bridge JS-boundary benchmark');
 console.log('Node', process.version);
-console.log('size\tprevious native copy\tgeneric + JS view\tspeedup');
+console.log('size\tJS payload copy\tRust-decoded direct binary\tspeedup');
 
 for (const payloadBytes of [4 * 1024, 64 * 1024, 1024 * 1024]) {
-  const { frame, payloadOffset } = terminalFrame(payloadBytes);
+  const payload = terminalPayload(payloadBytes);
   const iterations = Math.max(256, Math.floor(TARGET_BYTES / payloadBytes));
-  const previous = measure('previous', payloadBytes, iterations, () => (
-    frame.slice(payloadOffset)
-  ));
-  const optimized = measure('optimized', payloadBytes, iterations, () => (
-    decode(frame, PROTOCOL).bytes
-  ));
+  const previous = measure('previous', payloadBytes, iterations, () => payload.slice());
+  const optimized = measure('optimized', payloadBytes, iterations, () => payload);
   if (previous.checksum !== optimized.checksum) {
     throw new Error(`benchmark paths disagreed for ${payloadBytes} bytes`);
   }
