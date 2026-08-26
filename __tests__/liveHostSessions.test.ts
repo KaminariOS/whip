@@ -136,16 +136,25 @@ describe('live host session state', () => {
     expect(session.snapshot.panes).toContainEqual(rootPane);
   });
 
-  test('projects authoritative tab creation resources and focus immediately', () => {
+  test('selects a created tab and activates its returned root terminal together', () => {
     const opened = openLiveHostSession(emptyLiveHostSessions, host('savior'), 'live-1');
     const synced = syncSnapshot(opened, 'live-1', snapshot('old'));
+    const withOldTerminal = updateLiveHostTerminals(synced, 'live-1', terminals => (
+      openTerminalSession(
+        terminals,
+        pane('old-pane', 'old-terminal', 'old-workspace', 'old-tab', true),
+      )
+    ));
     const createdTab = tab('tab-new', 'old-workspace', true);
     const rootPane = pane('pane-new', 'terminal-new', 'old-workspace', 'tab-new', true);
 
-    const updated = applyLiveHostTabCreation(synced, 'live-1', {
+    const projected = applyLiveHostTabCreation(withOldTerminal, 'live-1', {
       tab: createdTab,
       root_pane: rootPane,
     });
+    const updated = updateLiveHostTerminals(projected, 'live-1', terminals => (
+      openTerminalSession(terminals, rootPane)
+    ));
     const session = findLiveHostSession(updated, 'live-1')!;
 
     expect(session.selection).toEqual({
@@ -156,6 +165,11 @@ describe('live host session state', () => {
     expect(session.snapshot.workspaces[0].active_tab_id).toBe('tab-new');
     expect(session.snapshot.tabs).toContainEqual(createdTab);
     expect(session.snapshot.panes).toContainEqual(rootPane);
+    expect(session.terminals.activeTerminalId).toBe('terminal-new');
+    expect(session.terminals.sessions.map(item => item.terminalId)).toEqual([
+      'old-terminal',
+      'terminal-new',
+    ]);
   });
 
   test('aggregates agent attention with native-client priority', () => {

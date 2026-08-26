@@ -23,6 +23,7 @@ import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { cn } from '@/src/lib/utils';
 import {
+  activateCreatedTabLocally,
   serverFocusMatchesPendingPane,
   shouldFollowServerTerminalFocus,
 } from '@/src/lib/terminalFocus';
@@ -110,7 +111,6 @@ interface Props {
 
 type EditorMode = 'tab' | 'rename-tab' | 'rename-pane';
 type PendingFocus = {
-  mode: 'create' | 'close';
   previousId: string | null;
 };
 
@@ -572,8 +572,7 @@ export function SessionScreen({
       const nextTab = serverTabs.find(item => item.focused)
         || serverTabs.find(item => item.tab_id === focusedServerWorkspace?.active_tab_id)
         || serverTabs[0];
-      const focusUnchanged = nextTab?.tab_id === pending.previousId;
-      if ((pending.mode === 'create' && focusUnchanged) || (pending.mode === 'close' && previousStillPresent)) return;
+      if (previousStillPresent) return;
       if (focusedServerWorkspace) setWorkspaceId(focusedServerWorkspace.workspace_id);
       setTabId(nextTab?.tab_id || '');
       pendingFocus.current = null;
@@ -793,9 +792,15 @@ export function SessionScreen({
       pendingFocus.current = null;
       succeeded = await run(async () => {
         const created = await client.createTab(workspace.workspace_id, name);
-        setWorkspaceId(created.tab.workspace_id);
-        setTabId(created.tab.tab_id);
-        onTabCreated(created);
+        activateCreatedTabLocally(created, {
+          select: (workspaceId, createdTabId) => {
+            setWorkspaceId(workspaceId);
+            setTabId(createdTabId);
+          },
+          terminalSelectionStarted: terminalTabSelectionStarted,
+          project: onTabCreated,
+          activateTerminal: onActivateTerminal,
+        });
       }, false);
     }
     if (!succeeded) pendingFocus.current = null;
@@ -816,7 +821,7 @@ export function SessionScreen({
     if (!item) return;
     // Herdr focuses a surviving tab after closing the current one.
     pendingPaneFocus.current = null;
-    pendingFocus.current = { mode: 'close', previousId: item.tab_id };
+    pendingFocus.current = { previousId: item.tab_id };
     if (!await run(() => client.closeTab(item.tab_id))) pendingFocus.current = null;
   };
 

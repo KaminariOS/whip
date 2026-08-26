@@ -2297,6 +2297,10 @@ function AppContent() {
     if (navigate) selectLiveHost(sessionId, 'terminal');
   }, [selectLiveHost]);
 
+  const projectCreatedTab = useCallback((sessionId: string, created: TabCreationResult) => {
+    setLiveSessions(current => applyLiveHostTabCreation(current, sessionId, created));
+  }, []);
+
   const runHerdCommand = async (
     sessionId: string,
     workspaceId: string,
@@ -2552,7 +2556,7 @@ function AppContent() {
             }}
             onExit={() => exitTerminalToHerd(activeSession.id)}
             onRefresh={refreshHost}
-            onTabCreated={(sessionId, created) => acceptCreatedTab(sessionId, created, false)}
+            onTabCreated={projectCreatedTab}
             onOpenPane={(sessionId, pane) => {
               setLiveSessions(current => selectLiveHostSession(current, sessionId));
               setSelectedPaneId(pane.pane_id);
