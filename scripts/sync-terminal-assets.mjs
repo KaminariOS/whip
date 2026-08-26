@@ -1134,11 +1134,19 @@ const terminalSessionHtml = `<!doctype html>
       pinch = null;
       lastTap = null;
     }, { capture: true });
+    const terminalSessionRoot = () => document.getElementById('terminal')?.closest('.terminal-session');
+    const terminalIsPresented = () => {
+      const sessionRoot = terminalSessionRoot();
+      return !sessionRoot || sessionRoot.classList.contains('presented');
+    };
+    const resizePresentedTerminal = () => {
+      if (terminalIsPresented()) resize();
+    };
     const usesNativeWindowImeResize = /Android/i.test(navigator.userAgent);
-    window.addEventListener('resize', resize);
+    window.addEventListener('resize', resizePresentedTerminal);
     if (!usesNativeWindowImeResize) {
-      window.visualViewport?.addEventListener('resize', resize);
-      window.visualViewport?.addEventListener('scroll', resize);
+      window.visualViewport?.addEventListener('resize', resizePresentedTerminal);
+      window.visualViewport?.addEventListener('scroll', resizePresentedTerminal);
     }
     let readySent = false;
     const announceReady = () => {
@@ -1179,16 +1187,16 @@ const terminalSessionScript = terminalSessionHtml
   .replaceAll("document.getElementById('", "root.querySelector('#")
   .replaceAll('window.herdr', 'api.herdr')
   .replace(
-    "    window.visualViewport?.addEventListener('scroll', resize);\n    }",
-    `    window.visualViewport?.addEventListener('scroll', resize);
+    "    window.visualViewport?.addEventListener('scroll', resizePresentedTerminal);\n    }",
+    `    window.visualViewport?.addEventListener('scroll', resizePresentedTerminal);
     }
     api.herdrDispose = () => {
       disposed = true;
       offlineCache.dispose();
-      window.removeEventListener('resize', resize);
+      window.removeEventListener('resize', resizePresentedTerminal);
       if (!usesNativeWindowImeResize) {
-        window.visualViewport?.removeEventListener('resize', resize);
-        window.visualViewport?.removeEventListener('scroll', resize);
+        window.visualViewport?.removeEventListener('resize', resizePresentedTerminal);
+        window.visualViewport?.removeEventListener('scroll', resizePresentedTerminal);
       }
       terminal.dispose();
     };`,

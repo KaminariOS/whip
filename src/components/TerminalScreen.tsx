@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useEffectEvent, useImperativeHandle
 import { Portal } from '@rn-primitives/portal';
 import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, BookOpen, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, MessageCircle, Minimize2, Option, Paperclip, Search, Send, SquareTerminal, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
 import { ActivityIndicator, AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
-import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
+import Animated, { cancelAnimation, useAnimatedKeyboard, useAnimatedReaction, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -166,6 +166,27 @@ const TERMINAL_CONTROL_LABEL_STYLE = {
   textAlignVertical: 'center',
 } as const;
 const MAX_RECONNECT_ATTEMPTS = 5;
+
+function AndroidDirectKeyboardAnimation({ inset }: { inset: SharedValue<number> }) {
+  const keyboard = useAnimatedKeyboard({
+    isNavigationBarTranslucentAndroid: true,
+    isStatusBarTranslucentAndroid: true,
+  });
+
+  useAnimatedReaction(
+    () => keyboard.height.value,
+    height => {
+      inset.value = height;
+    },
+    [inset],
+  );
+
+  useEffect(() => () => {
+    inset.value = 0;
+  }, [inset]);
+
+  return null;
+}
 
 export function TerminalBackground({ preferences }: { preferences: TerminalPreferences }) {
   if (!preferences.backgroundImageUri) return null;
@@ -350,6 +371,19 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const composerKeyboardEnabled = composeOpen && keyboardEnabled;
   const keyboardControlDisabled = status !== 'connected' && !composeOpen;
   const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
+  const animatedKeyboardInset = useSharedValue(0);
+  const directKeyboardAnimationMounted = Platform.OS === 'android'
+    && visible
+    && !composeOpen
+    && (keyboardEnabled || keyboardVisible);
+  const usesAnimatedDirectKeyboard = Platform.OS === 'android' && !composeOpen;
+  const fallbackKeyboardInset = usesAnimatedDirectKeyboard ? 0 : keyboardInset;
+  const animatedTerminalViewportStyle = useAnimatedStyle(() => ({
+    paddingBottom: animatedKeyboardInset.value,
+  }));
+  const animatedTerminalControlsStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -animatedKeyboardInset.value }],
+  }));
   activeTargetRef.current = activeTarget;
   targetsRef.current = targets;
 
@@ -1242,6 +1276,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
         !visible && session && 'absolute inset-0',
         !session && 'absolute inset-0 opacity-0',
       )}>
+      {directKeyboardAnimationMounted && (
+        <AndroidDirectKeyboardAnimation inset={animatedKeyboardInset} />
+      )}
       {!compact && <TerminalBackground preferences={preferences} />}
       {!compact && (
         <View className="h-[30px] flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-3">
@@ -1277,10 +1314,15 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           <Button accessibilityLabel={t('terminal.closeSearch')} className="h-[31px] w-7 rounded-none px-0" variant="ghost" onPress={closeSearch}><X size={17} color={colors.text} /></Button>
         </View>
       )}
-      <View
+      <Animated.View
         pointerEvents={composeOpen ? 'none' : 'auto'}
         className="relative flex-1"
-        style={keyboardInset > 0 && !composeOpen ? { paddingBottom: keyboardInset } : undefined}
+        style={[
+          fallbackKeyboardInset > 0 && !composeOpen
+            ? { paddingBottom: fallbackKeyboardInset }
+            : undefined,
+          usesAnimatedDirectKeyboard ? animatedTerminalViewportStyle : undefined,
+        ]}
         {...(!terminalSelectionActive ? terminalPanHandlers : undefined)}
       >
         <TerminalRendererHost
@@ -1365,7 +1407,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
             />
           </View>
         )}
-      </View>
+      </Animated.View>
       <TerminalLatencyWarning
         latencyMs={latencyMs}
         top={topOverlayInset}
@@ -1458,11 +1500,16 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           </View>
         </Portal>
       )}
-      <View
+      <Animated.View
         ref={controlsRef}
         collapsable={false}
         className="relative z-10"
-        style={keyboardInset > 0 ? { transform: [{ translateY: -keyboardInset }] } : undefined}>
+        style={[
+          fallbackKeyboardInset > 0
+            ? { transform: [{ translateY: -fallbackKeyboardInset }] }
+            : undefined,
+          usesAnimatedDirectKeyboard ? animatedTerminalControlsStyle : undefined,
+        ]}>
         <ScrollView
           horizontal
           keyboardShouldPersistTaps="always"
@@ -1472,7 +1519,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}>
           {controlOrder.map(renderTerminalControl)}
         </ScrollView>
-      </View>
+      </Animated.View>
       {composeOpen && composeExpanded && (
         <Modal
           animationType="slide"
