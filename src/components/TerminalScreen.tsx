@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
 import { cn } from '@/src/lib/utils';
-import { MAX_RECONNECT_ATTEMPTS, reconnectDelay } from '../lib/reconnectPolicy';
+import { retryDelay } from '../lib/retryDelay';
 import {
   orderTerminalControls,
   type TerminalControlId,
@@ -656,7 +656,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
 
   const scheduleQueuedRetry = useCallback((targetKey: string, attempts: number) => {
     if (queueRetryTimersRef.current.has(targetKey)) return;
-    const delayMs = reconnectDelay(attempts);
+    const delayMs = retryDelay(attempts);
     const timer = setTimeout(() => {
       queueRetryTimersRef.current.delete(targetKey);
       const target = targetsRef.current.find(item => item.key === targetKey);
@@ -1430,7 +1430,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
               </Text>
               <Text numberOfLines={1} className="text-[9px] text-terminal-muted">
                 {status === 'disconnected' && session.reconnectAttempt > 0
-                  ? t('terminal.attempt', { attempt: session.reconnectAttempt, total: MAX_RECONNECT_ATTEMPTS })
+                  ? t('terminal.attempt', { attempt: session.reconnectAttempt, total: 5 })
                   : session.error || error || t('terminal.opening', { title })}
               </Text>
             </View>

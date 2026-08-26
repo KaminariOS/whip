@@ -10,6 +10,7 @@ import {
   type UniffiForeignFutureDroppedCallbackStruct,
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
+  type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
 } from './whip_ssh-ffi';
 import {
   type FfiConverter,
@@ -82,6 +83,17 @@ export function clearHerdrTerminalEventSink(): void {
   );
 }
 
+export function clearHostRuntimeEventSink(): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_clear_host_runtime_event_sink(
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export function closeAllHerdrTerminalBridges(clientKey: string): void {
   uniffiCaller.rustCall(
     /*caller:*/ callStatus => {
@@ -119,6 +131,28 @@ export function closeHerdrTerminalBridge(
       );
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function createHostRuntime(
+  config: HostRuntimeConfig,
+): HostRuntimeLike /*throws*/ {
+  return FfiConverterTypeHostRuntime.lift(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_create_host_runtime(
+          FfiConverterTypeHostRuntimeConfig.lower(
+            config,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
   );
 }
 
@@ -365,6 +399,21 @@ export function setHerdrTerminalEventSink(sink: HerdrTerminalEventSink): void {
     /*caller:*/ callStatus => {
       nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_herdr_terminal_event_sink(
         FfiConverterTypeHerdrTerminalEventSink.lower(
+          sink,
+          nativeModule().rustbuffer_alloc,
+        ),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function setHostRuntimeEventSink(sink: HostRuntimeEventSink): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_host_runtime_event_sink(
+        FfiConverterTypeHostRuntimeEventSink.lower(
           sink,
           nativeModule().rustbuffer_alloc,
         ),
@@ -1631,6 +1680,366 @@ const FfiConverterTypeHerdrWorktreeInfo = (() => {
         FfiConverterString.allocationSize(value.label) +
         FfiConverterOptionalString.allocationSize(value.openWorkspaceId) +
         FfiConverterString.allocationSize(value.path)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: HostSshCredential
+export enum HostSshCredential_Tags {
+  Password = 'Password',
+  Key = 'Key',
+}
+export const HostSshCredential = (() => {
+  type Password__interface = {
+    tag: HostSshCredential_Tags.Password;
+    inner: Readonly<{ password: string }>;
+  };
+  class Password_ extends UniffiEnum implements Password__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostSshCredential';
+    readonly tag = HostSshCredential_Tags.Password;
+    readonly inner: Readonly<{ password: string }>;
+    constructor(inner: { password: string }) {
+      super('HostSshCredential', 'Password');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { password: string }): Password_ {
+      return new Password_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Password_ {
+      return obj.tag === HostSshCredential_Tags.Password;
+    }
+  }
+
+  type Key__interface = {
+    tag: HostSshCredential_Tags.Key;
+    inner: Readonly<{ privateKey: string; passphrase?: string }>;
+  };
+  class Key_ extends UniffiEnum implements Key__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostSshCredential';
+    readonly tag = HostSshCredential_Tags.Key;
+    readonly inner: Readonly<{ privateKey: string; passphrase?: string }>;
+    constructor(inner: { privateKey: string; passphrase?: string }) {
+      super('HostSshCredential', 'Key');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { privateKey: string; passphrase?: string }): Key_ {
+      return new Key_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Key_ {
+      return obj.tag === HostSshCredential_Tags.Key;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HostSshCredential {
+    return obj[uniffiTypeNameSymbol] === 'HostSshCredential';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Password: Password_,
+    Key: Key_,
+  });
+})();
+export type HostSshCredential = InstanceType<
+  (typeof HostSshCredential)['Password' | 'Key']
+>;
+
+// FfiConverter for enum HostSshCredential
+const FfiConverterTypeHostSshCredential = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostSshCredential;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HostSshCredential.Password({
+            password: FfiConverterString.read(from),
+          });
+        case 2:
+          return new HostSshCredential.Key({
+            privateKey: FfiConverterString.read(from),
+            passphrase: FfiConverterOptionalString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HostSshCredential_Tags.Password: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.password, into);
+          return;
+        }
+        case HostSshCredential_Tags.Key: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.privateKey, into);
+          FfiConverterOptionalString.write(inner.passphrase, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HostSshCredential_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HostSshCredential_Tags.Password: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.password);
+          return size;
+        }
+        case HostSshCredential_Tags.Key: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.privateKey);
+          size += FfiConverterOptionalString.allocationSize(inner.passphrase);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostSshConfig = {
+  host: string;
+  port: number;
+  username: string;
+  credential: HostSshCredential;
+  forwardAgent: boolean;
+};
+
+/**
+ * Generated factory for {@link HostSshConfig} record objects.
+ */
+export const HostSshConfig = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostSshConfig, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostSshConfig>,
+  });
+})();
+
+const FfiConverterTypeHostSshConfig = (() => {
+  type TypeName = HostSshConfig;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        host: FfiConverterString.read(from),
+        port: FfiConverterUInt16.read(from),
+        username: FfiConverterString.read(from),
+        credential: FfiConverterTypeHostSshCredential.read(from),
+        forwardAgent: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.host, into);
+      FfiConverterUInt16.write(value.port, into);
+      FfiConverterString.write(value.username, into);
+      FfiConverterTypeHostSshCredential.write(value.credential, into);
+      FfiConverterBool.write(value.forwardAgent, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.host) +
+        FfiConverterUInt16.allocationSize(value.port) +
+        FfiConverterString.allocationSize(value.username) +
+        FfiConverterTypeHostSshCredential.allocationSize(value.credential) +
+        FfiConverterBool.allocationSize(value.forwardAgent)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostRuntimeConfig = {
+  runtimeId: string;
+  ssh: HostSshConfig;
+  jumpHosts: Array<HostSshConfig>;
+  sessionName: string;
+  socketPath?: string;
+  cachedSocketPath?: string;
+};
+
+/**
+ * Generated factory for {@link HostRuntimeConfig} record objects.
+ */
+export const HostRuntimeConfig = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostRuntimeConfig, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostRuntimeConfig>,
+  });
+})();
+
+const FfiConverterTypeHostRuntimeConfig = (() => {
+  type TypeName = HostRuntimeConfig;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        runtimeId: FfiConverterString.read(from),
+        ssh: FfiConverterTypeHostSshConfig.read(from),
+        jumpHosts: FfiConverterSequenceTypeHostSshConfig.read(from),
+        sessionName: FfiConverterString.read(from),
+        socketPath: FfiConverterOptionalString.read(from),
+        cachedSocketPath: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.runtimeId, into);
+      FfiConverterTypeHostSshConfig.write(value.ssh, into);
+      FfiConverterSequenceTypeHostSshConfig.write(value.jumpHosts, into);
+      FfiConverterString.write(value.sessionName, into);
+      FfiConverterOptionalString.write(value.socketPath, into);
+      FfiConverterOptionalString.write(value.cachedSocketPath, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.runtimeId) +
+        FfiConverterTypeHostSshConfig.allocationSize(value.ssh) +
+        FfiConverterSequenceTypeHostSshConfig.allocationSize(value.jumpHosts) +
+        FfiConverterString.allocationSize(value.sessionName) +
+        FfiConverterOptionalString.allocationSize(value.socketPath) +
+        FfiConverterOptionalString.allocationSize(value.cachedSocketPath)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HostConnectionState {
+  Disconnected,
+  Connecting,
+  Connected,
+  Reconnecting,
+  Disconnecting,
+  Failed,
+}
+
+const FfiConverterTypeHostConnectionState = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostConnectionState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostConnectionState.Disconnected;
+        case 2:
+          return HostConnectionState.Connecting;
+        case 3:
+          return HostConnectionState.Connected;
+        case 4:
+          return HostConnectionState.Reconnecting;
+        case 5:
+          return HostConnectionState.Disconnecting;
+        case 6:
+          return HostConnectionState.Failed;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostConnectionState.Disconnected:
+          return ordinalConverter.write(1, into);
+        case HostConnectionState.Connecting:
+          return ordinalConverter.write(2, into);
+        case HostConnectionState.Connected:
+          return ordinalConverter.write(3, into);
+        case HostConnectionState.Reconnecting:
+          return ordinalConverter.write(4, into);
+        case HostConnectionState.Disconnecting:
+          return ordinalConverter.write(5, into);
+        case HostConnectionState.Failed:
+          return ordinalConverter.write(6, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostRuntimeStatus = {
+  state: HostConnectionState;
+  generation: bigint;
+  reconnectAttempt: number;
+  error?: string;
+};
+
+/**
+ * Generated factory for {@link HostRuntimeStatus} record objects.
+ */
+export const HostRuntimeStatus = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostRuntimeStatus, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostRuntimeStatus>,
+  });
+})();
+
+const FfiConverterTypeHostRuntimeStatus = (() => {
+  type TypeName = HostRuntimeStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        state: FfiConverterTypeHostConnectionState.read(from),
+        generation: FfiConverterUInt64.read(from),
+        reconnectAttempt: FfiConverterUInt32.read(from),
+        error: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeHostConnectionState.write(value.state, into);
+      FfiConverterUInt64.write(value.generation, into);
+      FfiConverterUInt32.write(value.reconnectAttempt, into);
+      FfiConverterOptionalString.write(value.error, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeHostConnectionState.allocationSize(value.state) +
+        FfiConverterUInt64.allocationSize(value.generation) +
+        FfiConverterUInt32.allocationSize(value.reconnectAttempt) +
+        FfiConverterOptionalString.allocationSize(value.error)
       );
     }
   }
@@ -5671,6 +6080,1193 @@ const FfiConverterTypeHerdrEventError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: HostRuntimeError
+export enum HostRuntimeError_Tags {
+  AuthenticationFailure = 'AuthenticationFailure',
+  HostKeyFailure = 'HostKeyFailure',
+  SshTransportFailure = 'SshTransportFailure',
+  HerdrUnavailable = 'HerdrUnavailable',
+  ControlConnectionFailure = 'ControlConnectionFailure',
+  ReconnectExhausted = 'ReconnectExhausted',
+  RuntimeDisconnected = 'RuntimeDisconnected',
+  TerminalUnavailable = 'TerminalUnavailable',
+  StaleOperation = 'StaleOperation',
+  InvalidConfiguration = 'InvalidConfiguration',
+}
+export const HostRuntimeError = (() => {
+  type AuthenticationFailure__interface = {
+    tag: HostRuntimeError_Tags.AuthenticationFailure;
+    inner: Readonly<[string]>;
+  };
+  class AuthenticationFailure_
+    extends UniffiError
+    implements AuthenticationFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.AuthenticationFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'AuthenticationFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): AuthenticationFailure_ {
+      return new AuthenticationFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is AuthenticationFailure_ {
+      return obj.tag === HostRuntimeError_Tags.AuthenticationFailure;
+    }
+    static hasInner(obj: any): obj is AuthenticationFailure_ {
+      return AuthenticationFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: AuthenticationFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type HostKeyFailure__interface = {
+    tag: HostRuntimeError_Tags.HostKeyFailure;
+    inner: Readonly<[string]>;
+  };
+  class HostKeyFailure_
+    extends UniffiError
+    implements HostKeyFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.HostKeyFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'HostKeyFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): HostKeyFailure_ {
+      return new HostKeyFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is HostKeyFailure_ {
+      return obj.tag === HostRuntimeError_Tags.HostKeyFailure;
+    }
+    static hasInner(obj: any): obj is HostKeyFailure_ {
+      return HostKeyFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: HostKeyFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type SshTransportFailure__interface = {
+    tag: HostRuntimeError_Tags.SshTransportFailure;
+    inner: Readonly<[string]>;
+  };
+  class SshTransportFailure_
+    extends UniffiError
+    implements SshTransportFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.SshTransportFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'SshTransportFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): SshTransportFailure_ {
+      return new SshTransportFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is SshTransportFailure_ {
+      return obj.tag === HostRuntimeError_Tags.SshTransportFailure;
+    }
+    static hasInner(obj: any): obj is SshTransportFailure_ {
+      return SshTransportFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: SshTransportFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type HerdrUnavailable__interface = {
+    tag: HostRuntimeError_Tags.HerdrUnavailable;
+    inner: Readonly<[string]>;
+  };
+  class HerdrUnavailable_
+    extends UniffiError
+    implements HerdrUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.HerdrUnavailable;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'HerdrUnavailable');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): HerdrUnavailable_ {
+      return new HerdrUnavailable_(v0);
+    }
+
+    static instanceOf(obj: any): obj is HerdrUnavailable_ {
+      return obj.tag === HostRuntimeError_Tags.HerdrUnavailable;
+    }
+    static hasInner(obj: any): obj is HerdrUnavailable_ {
+      return HerdrUnavailable_.instanceOf(obj);
+    }
+
+    static getInner(obj: HerdrUnavailable_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type ControlConnectionFailure__interface = {
+    tag: HostRuntimeError_Tags.ControlConnectionFailure;
+    inner: Readonly<[string]>;
+  };
+  class ControlConnectionFailure_
+    extends UniffiError
+    implements ControlConnectionFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.ControlConnectionFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'ControlConnectionFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): ControlConnectionFailure_ {
+      return new ControlConnectionFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is ControlConnectionFailure_ {
+      return obj.tag === HostRuntimeError_Tags.ControlConnectionFailure;
+    }
+    static hasInner(obj: any): obj is ControlConnectionFailure_ {
+      return ControlConnectionFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: ControlConnectionFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type ReconnectExhausted__interface = {
+    tag: HostRuntimeError_Tags.ReconnectExhausted;
+    inner: Readonly<[string]>;
+  };
+  class ReconnectExhausted_
+    extends UniffiError
+    implements ReconnectExhausted__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.ReconnectExhausted;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'ReconnectExhausted');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): ReconnectExhausted_ {
+      return new ReconnectExhausted_(v0);
+    }
+
+    static instanceOf(obj: any): obj is ReconnectExhausted_ {
+      return obj.tag === HostRuntimeError_Tags.ReconnectExhausted;
+    }
+    static hasInner(obj: any): obj is ReconnectExhausted_ {
+      return ReconnectExhausted_.instanceOf(obj);
+    }
+
+    static getInner(obj: ReconnectExhausted_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type RuntimeDisconnected__interface = {
+    tag: HostRuntimeError_Tags.RuntimeDisconnected;
+    inner: Readonly<[string]>;
+  };
+  class RuntimeDisconnected_
+    extends UniffiError
+    implements RuntimeDisconnected__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.RuntimeDisconnected;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'RuntimeDisconnected');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): RuntimeDisconnected_ {
+      return new RuntimeDisconnected_(v0);
+    }
+
+    static instanceOf(obj: any): obj is RuntimeDisconnected_ {
+      return obj.tag === HostRuntimeError_Tags.RuntimeDisconnected;
+    }
+    static hasInner(obj: any): obj is RuntimeDisconnected_ {
+      return RuntimeDisconnected_.instanceOf(obj);
+    }
+
+    static getInner(obj: RuntimeDisconnected_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type TerminalUnavailable__interface = {
+    tag: HostRuntimeError_Tags.TerminalUnavailable;
+    inner: Readonly<[string]>;
+  };
+  class TerminalUnavailable_
+    extends UniffiError
+    implements TerminalUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.TerminalUnavailable;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'TerminalUnavailable');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): TerminalUnavailable_ {
+      return new TerminalUnavailable_(v0);
+    }
+
+    static instanceOf(obj: any): obj is TerminalUnavailable_ {
+      return obj.tag === HostRuntimeError_Tags.TerminalUnavailable;
+    }
+    static hasInner(obj: any): obj is TerminalUnavailable_ {
+      return TerminalUnavailable_.instanceOf(obj);
+    }
+
+    static getInner(obj: TerminalUnavailable_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type StaleOperation__interface = {
+    tag: HostRuntimeError_Tags.StaleOperation;
+    inner: Readonly<[string]>;
+  };
+  class StaleOperation_
+    extends UniffiError
+    implements StaleOperation__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.StaleOperation;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'StaleOperation');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): StaleOperation_ {
+      return new StaleOperation_(v0);
+    }
+
+    static instanceOf(obj: any): obj is StaleOperation_ {
+      return obj.tag === HostRuntimeError_Tags.StaleOperation;
+    }
+    static hasInner(obj: any): obj is StaleOperation_ {
+      return StaleOperation_.instanceOf(obj);
+    }
+
+    static getInner(obj: StaleOperation_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type InvalidConfiguration__interface = {
+    tag: HostRuntimeError_Tags.InvalidConfiguration;
+    inner: Readonly<[string]>;
+  };
+  class InvalidConfiguration_
+    extends UniffiError
+    implements InvalidConfiguration__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.InvalidConfiguration;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'InvalidConfiguration');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): InvalidConfiguration_ {
+      return new InvalidConfiguration_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidConfiguration_ {
+      return obj.tag === HostRuntimeError_Tags.InvalidConfiguration;
+    }
+    static hasInner(obj: any): obj is InvalidConfiguration_ {
+      return InvalidConfiguration_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidConfiguration_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HostRuntimeError {
+    return obj[uniffiTypeNameSymbol] === 'HostRuntimeError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    AuthenticationFailure: AuthenticationFailure_,
+    HostKeyFailure: HostKeyFailure_,
+    SshTransportFailure: SshTransportFailure_,
+    HerdrUnavailable: HerdrUnavailable_,
+    ControlConnectionFailure: ControlConnectionFailure_,
+    ReconnectExhausted: ReconnectExhausted_,
+    RuntimeDisconnected: RuntimeDisconnected_,
+    TerminalUnavailable: TerminalUnavailable_,
+    StaleOperation: StaleOperation_,
+    InvalidConfiguration: InvalidConfiguration_,
+  });
+})();
+export type HostRuntimeError = InstanceType<
+  (typeof HostRuntimeError)[
+    | 'AuthenticationFailure'
+    | 'HostKeyFailure'
+    | 'SshTransportFailure'
+    | 'HerdrUnavailable'
+    | 'ControlConnectionFailure'
+    | 'ReconnectExhausted'
+    | 'RuntimeDisconnected'
+    | 'TerminalUnavailable'
+    | 'StaleOperation'
+    | 'InvalidConfiguration']
+>;
+
+// FfiConverter for enum HostRuntimeError
+const FfiConverterTypeHostRuntimeError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostRuntimeError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HostRuntimeError.AuthenticationFailure(
+            FfiConverterString.read(from),
+          );
+        case 2:
+          return new HostRuntimeError.HostKeyFailure(
+            FfiConverterString.read(from),
+          );
+        case 3:
+          return new HostRuntimeError.SshTransportFailure(
+            FfiConverterString.read(from),
+          );
+        case 4:
+          return new HostRuntimeError.HerdrUnavailable(
+            FfiConverterString.read(from),
+          );
+        case 5:
+          return new HostRuntimeError.ControlConnectionFailure(
+            FfiConverterString.read(from),
+          );
+        case 6:
+          return new HostRuntimeError.ReconnectExhausted(
+            FfiConverterString.read(from),
+          );
+        case 7:
+          return new HostRuntimeError.RuntimeDisconnected(
+            FfiConverterString.read(from),
+          );
+        case 8:
+          return new HostRuntimeError.TerminalUnavailable(
+            FfiConverterString.read(from),
+          );
+        case 9:
+          return new HostRuntimeError.StaleOperation(
+            FfiConverterString.read(from),
+          );
+        case 10:
+          return new HostRuntimeError.InvalidConfiguration(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HostRuntimeError_Tags.AuthenticationFailure: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.HostKeyFailure: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.SshTransportFailure: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.HerdrUnavailable: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.ControlConnectionFailure: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.ReconnectExhausted: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.RuntimeDisconnected: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.TerminalUnavailable: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.StaleOperation: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.InvalidConfiguration: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that HostRuntimeError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HostRuntimeError_Tags.AuthenticationFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.HostKeyFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.SshTransportFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.HerdrUnavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.ControlConnectionFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.ReconnectExhausted: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.RuntimeDisconnected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.TerminalUnavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.StaleOperation: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.InvalidConfiguration: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HostTerminalState {
+  Opening,
+  Attached,
+  Restoring,
+  Closed,
+  Failed,
+}
+
+const FfiConverterTypeHostTerminalState = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostTerminalState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostTerminalState.Opening;
+        case 2:
+          return HostTerminalState.Attached;
+        case 3:
+          return HostTerminalState.Restoring;
+        case 4:
+          return HostTerminalState.Closed;
+        case 5:
+          return HostTerminalState.Failed;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostTerminalState.Opening:
+          return ordinalConverter.write(1, into);
+        case HostTerminalState.Attached:
+          return ordinalConverter.write(2, into);
+        case HostTerminalState.Restoring:
+          return ordinalConverter.write(3, into);
+        case HostTerminalState.Closed:
+          return ordinalConverter.write(4, into);
+        case HostTerminalState.Failed:
+          return ordinalConverter.write(5, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: HostRuntimeEvent
+export enum HostRuntimeEvent_Tags {
+  ConnectionStateChanged = 'ConnectionStateChanged',
+  ReconnectScheduled = 'ReconnectScheduled',
+  Reconnected = 'Reconnected',
+  TerminalStateChanged = 'TerminalStateChanged',
+  Herdr = 'Herdr',
+  EventSubscriptionClosed = 'EventSubscriptionClosed',
+  EventSubscriptionRestored = 'EventSubscriptionRestored',
+  FatalError = 'FatalError',
+}
+export const HostRuntimeEvent = (() => {
+  type ConnectionStateChanged__interface = {
+    tag: HostRuntimeEvent_Tags.ConnectionStateChanged;
+    inner: Readonly<{ runtimeId: string; status: HostRuntimeStatus }>;
+  };
+  class ConnectionStateChanged_
+    extends UniffiEnum
+    implements ConnectionStateChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.ConnectionStateChanged;
+    readonly inner: Readonly<{ runtimeId: string; status: HostRuntimeStatus }>;
+    constructor(inner: { runtimeId: string; status: HostRuntimeStatus }) {
+      super('HostRuntimeEvent', 'ConnectionStateChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      status: HostRuntimeStatus;
+    }): ConnectionStateChanged_ {
+      return new ConnectionStateChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ConnectionStateChanged_ {
+      return obj.tag === HostRuntimeEvent_Tags.ConnectionStateChanged;
+    }
+  }
+
+  type ReconnectScheduled__interface = {
+    tag: HostRuntimeEvent_Tags.ReconnectScheduled;
+    inner: Readonly<{
+      runtimeId: string;
+      attempt: number;
+      delayMs: bigint;
+      reason: string;
+    }>;
+  };
+  class ReconnectScheduled_
+    extends UniffiEnum
+    implements ReconnectScheduled__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.ReconnectScheduled;
+    readonly inner: Readonly<{
+      runtimeId: string;
+      attempt: number;
+      delayMs: bigint;
+      reason: string;
+    }>;
+    constructor(inner: {
+      runtimeId: string;
+      attempt: number;
+      delayMs: bigint;
+      reason: string;
+    }) {
+      super('HostRuntimeEvent', 'ReconnectScheduled');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      attempt: number;
+      delayMs: bigint;
+      reason: string;
+    }): ReconnectScheduled_ {
+      return new ReconnectScheduled_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ReconnectScheduled_ {
+      return obj.tag === HostRuntimeEvent_Tags.ReconnectScheduled;
+    }
+  }
+
+  type Reconnected__interface = {
+    tag: HostRuntimeEvent_Tags.Reconnected;
+    inner: Readonly<{
+      runtimeId: string;
+      generation: bigint;
+      restoredTerminals: number;
+    }>;
+  };
+  class Reconnected_ extends UniffiEnum implements Reconnected__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.Reconnected;
+    readonly inner: Readonly<{
+      runtimeId: string;
+      generation: bigint;
+      restoredTerminals: number;
+    }>;
+    constructor(inner: {
+      runtimeId: string;
+      generation: bigint;
+      restoredTerminals: number;
+    }) {
+      super('HostRuntimeEvent', 'Reconnected');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      generation: bigint;
+      restoredTerminals: number;
+    }): Reconnected_ {
+      return new Reconnected_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Reconnected_ {
+      return obj.tag === HostRuntimeEvent_Tags.Reconnected;
+    }
+  }
+
+  type TerminalStateChanged__interface = {
+    tag: HostRuntimeEvent_Tags.TerminalStateChanged;
+    inner: Readonly<{
+      runtimeId: string;
+      terminalId: string;
+      state: HostTerminalState;
+      error?: string;
+    }>;
+  };
+  class TerminalStateChanged_
+    extends UniffiEnum
+    implements TerminalStateChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.TerminalStateChanged;
+    readonly inner: Readonly<{
+      runtimeId: string;
+      terminalId: string;
+      state: HostTerminalState;
+      error?: string;
+    }>;
+    constructor(inner: {
+      runtimeId: string;
+      terminalId: string;
+      state: HostTerminalState;
+      error?: string;
+    }) {
+      super('HostRuntimeEvent', 'TerminalStateChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      terminalId: string;
+      state: HostTerminalState;
+      error?: string;
+    }): TerminalStateChanged_ {
+      return new TerminalStateChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TerminalStateChanged_ {
+      return obj.tag === HostRuntimeEvent_Tags.TerminalStateChanged;
+    }
+  }
+
+  type Herdr__interface = {
+    tag: HostRuntimeEvent_Tags.Herdr;
+    inner: Readonly<{
+      runtimeId: string;
+      generation: bigint;
+      event: HerdrEvent;
+    }>;
+  };
+  class Herdr_ extends UniffiEnum implements Herdr__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.Herdr;
+    readonly inner: Readonly<{
+      runtimeId: string;
+      generation: bigint;
+      event: HerdrEvent;
+    }>;
+    constructor(inner: {
+      runtimeId: string;
+      generation: bigint;
+      event: HerdrEvent;
+    }) {
+      super('HostRuntimeEvent', 'Herdr');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      generation: bigint;
+      event: HerdrEvent;
+    }): Herdr_ {
+      return new Herdr_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Herdr_ {
+      return obj.tag === HostRuntimeEvent_Tags.Herdr;
+    }
+  }
+
+  type EventSubscriptionClosed__interface = {
+    tag: HostRuntimeEvent_Tags.EventSubscriptionClosed;
+    inner: Readonly<{ runtimeId: string; reason: string }>;
+  };
+  class EventSubscriptionClosed_
+    extends UniffiEnum
+    implements EventSubscriptionClosed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.EventSubscriptionClosed;
+    readonly inner: Readonly<{ runtimeId: string; reason: string }>;
+    constructor(inner: { runtimeId: string; reason: string }) {
+      super('HostRuntimeEvent', 'EventSubscriptionClosed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      reason: string;
+    }): EventSubscriptionClosed_ {
+      return new EventSubscriptionClosed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is EventSubscriptionClosed_ {
+      return obj.tag === HostRuntimeEvent_Tags.EventSubscriptionClosed;
+    }
+  }
+
+  type EventSubscriptionRestored__interface = {
+    tag: HostRuntimeEvent_Tags.EventSubscriptionRestored;
+    inner: Readonly<{ runtimeId: string; generation: bigint }>;
+  };
+  class EventSubscriptionRestored_
+    extends UniffiEnum
+    implements EventSubscriptionRestored__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.EventSubscriptionRestored;
+    readonly inner: Readonly<{ runtimeId: string; generation: bigint }>;
+    constructor(inner: { runtimeId: string; generation: bigint }) {
+      super('HostRuntimeEvent', 'EventSubscriptionRestored');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      generation: bigint;
+    }): EventSubscriptionRestored_ {
+      return new EventSubscriptionRestored_(inner);
+    }
+
+    static instanceOf(obj: any): obj is EventSubscriptionRestored_ {
+      return obj.tag === HostRuntimeEvent_Tags.EventSubscriptionRestored;
+    }
+  }
+
+  type FatalError__interface = {
+    tag: HostRuntimeEvent_Tags.FatalError;
+    inner: Readonly<{ runtimeId: string; message: string }>;
+  };
+  class FatalError_ extends UniffiEnum implements FatalError__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.FatalError;
+    readonly inner: Readonly<{ runtimeId: string; message: string }>;
+    constructor(inner: { runtimeId: string; message: string }) {
+      super('HostRuntimeEvent', 'FatalError');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { runtimeId: string; message: string }): FatalError_ {
+      return new FatalError_(inner);
+    }
+
+    static instanceOf(obj: any): obj is FatalError_ {
+      return obj.tag === HostRuntimeEvent_Tags.FatalError;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HostRuntimeEvent {
+    return obj[uniffiTypeNameSymbol] === 'HostRuntimeEvent';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    ConnectionStateChanged: ConnectionStateChanged_,
+    ReconnectScheduled: ReconnectScheduled_,
+    Reconnected: Reconnected_,
+    TerminalStateChanged: TerminalStateChanged_,
+    Herdr: Herdr_,
+    EventSubscriptionClosed: EventSubscriptionClosed_,
+    EventSubscriptionRestored: EventSubscriptionRestored_,
+    FatalError: FatalError_,
+  });
+})();
+export type HostRuntimeEvent = InstanceType<
+  (typeof HostRuntimeEvent)[
+    | 'ConnectionStateChanged'
+    | 'ReconnectScheduled'
+    | 'Reconnected'
+    | 'TerminalStateChanged'
+    | 'Herdr'
+    | 'EventSubscriptionClosed'
+    | 'EventSubscriptionRestored'
+    | 'FatalError']
+>;
+
+// FfiConverter for enum HostRuntimeEvent
+const FfiConverterTypeHostRuntimeEvent = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostRuntimeEvent;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HostRuntimeEvent.ConnectionStateChanged({
+            runtimeId: FfiConverterString.read(from),
+            status: FfiConverterTypeHostRuntimeStatus.read(from),
+          });
+        case 2:
+          return new HostRuntimeEvent.ReconnectScheduled({
+            runtimeId: FfiConverterString.read(from),
+            attempt: FfiConverterUInt32.read(from),
+            delayMs: FfiConverterUInt64.read(from),
+            reason: FfiConverterString.read(from),
+          });
+        case 3:
+          return new HostRuntimeEvent.Reconnected({
+            runtimeId: FfiConverterString.read(from),
+            generation: FfiConverterUInt64.read(from),
+            restoredTerminals: FfiConverterUInt32.read(from),
+          });
+        case 4:
+          return new HostRuntimeEvent.TerminalStateChanged({
+            runtimeId: FfiConverterString.read(from),
+            terminalId: FfiConverterString.read(from),
+            state: FfiConverterTypeHostTerminalState.read(from),
+            error: FfiConverterOptionalString.read(from),
+          });
+        case 5:
+          return new HostRuntimeEvent.Herdr({
+            runtimeId: FfiConverterString.read(from),
+            generation: FfiConverterUInt64.read(from),
+            event: FfiConverterTypeHerdrEvent.read(from),
+          });
+        case 6:
+          return new HostRuntimeEvent.EventSubscriptionClosed({
+            runtimeId: FfiConverterString.read(from),
+            reason: FfiConverterString.read(from),
+          });
+        case 7:
+          return new HostRuntimeEvent.EventSubscriptionRestored({
+            runtimeId: FfiConverterString.read(from),
+            generation: FfiConverterUInt64.read(from),
+          });
+        case 8:
+          return new HostRuntimeEvent.FatalError({
+            runtimeId: FfiConverterString.read(from),
+            message: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HostRuntimeEvent_Tags.ConnectionStateChanged: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterTypeHostRuntimeStatus.write(inner.status, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.ReconnectScheduled: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterUInt32.write(inner.attempt, into);
+          FfiConverterUInt64.write(inner.delayMs, into);
+          FfiConverterString.write(inner.reason, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.Reconnected: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterUInt64.write(inner.generation, into);
+          FfiConverterUInt32.write(inner.restoredTerminals, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.TerminalStateChanged: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterString.write(inner.terminalId, into);
+          FfiConverterTypeHostTerminalState.write(inner.state, into);
+          FfiConverterOptionalString.write(inner.error, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.Herdr: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterUInt64.write(inner.generation, into);
+          FfiConverterTypeHerdrEvent.write(inner.event, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterString.write(inner.reason, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.EventSubscriptionRestored: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterUInt64.write(inner.generation, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.FatalError: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterString.write(inner.message, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HostRuntimeEvent_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HostRuntimeEvent_Tags.ConnectionStateChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterTypeHostRuntimeStatus.allocationSize(
+            inner.status,
+          );
+          return size;
+        }
+        case HostRuntimeEvent_Tags.ReconnectScheduled: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterUInt32.allocationSize(inner.attempt);
+          size += FfiConverterUInt64.allocationSize(inner.delayMs);
+          size += FfiConverterString.allocationSize(inner.reason);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.Reconnected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterUInt64.allocationSize(inner.generation);
+          size += FfiConverterUInt32.allocationSize(inner.restoredTerminals);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.TerminalStateChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterString.allocationSize(inner.terminalId);
+          size += FfiConverterTypeHostTerminalState.allocationSize(inner.state);
+          size += FfiConverterOptionalString.allocationSize(inner.error);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.Herdr: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterUInt64.allocationSize(inner.generation);
+          size += FfiConverterTypeHerdrEvent.allocationSize(inner.event);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterString.allocationSize(inner.reason);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.EventSubscriptionRestored: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterUInt64.allocationSize(inner.generation);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.FatalError: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 export interface HerdrEventSink {
   event(clientKey: string, event: HerdrEvent): void;
   closed(clientKey: string, reason: string): void;
@@ -6173,6 +7769,852 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
   },
 };
 
+export interface HostRuntimeLike {
+  closeAllTerminals(): void;
+  closeTerminal(terminalId: string): void;
+  connect(asyncOpts_?: { signal: AbortSignal }): /*throws*/ Promise<void>;
+  controlRequest(
+    request: HerdrControlRequest,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<HerdrControlResult>;
+  disconnect(asyncOpts_?: { signal: AbortSignal }): /*throws*/ Promise<void>;
+  hasTerminal(terminalId: string): boolean;
+  isTerminalOpening(terminalId: string): boolean;
+  openTerminal(
+    terminalId: string,
+    takeover: boolean,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<void>;
+  recover(
+    immediate: boolean,
+    reason: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<void>;
+  resizeTerminal(
+    terminalId: string,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+  ): /*throws*/ void;
+  resolveControlSocket(asyncOpts_?: {
+    signal: AbortSignal;
+  }): /*throws*/ Promise<string>;
+  resolvedSocketPath(): string | undefined;
+  runtimeId(): string;
+  scrollTerminal(
+    terminalId: string,
+    up: boolean,
+    lines: number,
+    column: number | undefined,
+    row: number | undefined,
+    modifiers: number,
+  ): /*throws*/ void;
+  status(): HostRuntimeStatus;
+  subscribeEvents(
+    paneIds: Array<string>,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<void>;
+  terminalInput(terminalId: string, text: string): /*throws*/ void;
+  /**
+   * Private-package compatibility handle for independent exec/SFTP features.
+   */
+  transportKey(): string;
+  unsubscribeEvents(): void;
+}
+/**
+ * @deprecated Use `HostRuntimeLike` instead.
+ */
+export type HostRuntimeInterface = HostRuntimeLike;
+
+export class HostRuntime
+  extends UniffiAbstractObject
+  implements HostRuntimeLike
+{
+  readonly [uniffiTypeNameSymbol] = 'HostRuntime';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHostRuntimeObjectFactory.bless(pointer);
+  }
+
+  closeAllTerminals(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_all_terminals(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  closeTerminal(terminalId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_terminal(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  async connect(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_connect(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async controlRequest(
+    request: HerdrControlRequest,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<HerdrControlResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_control_request(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeHerdrControlRequest.lower(
+              request,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeHerdrControlResult.lift.bind(
+          FfiConverterTypeHerdrControlResult,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async disconnect(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_disconnect(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  hasTerminal(terminalId: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_has_terminal(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  isTerminalOpening(terminalId: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_is_terminal_opening(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async openTerminal(
+    terminalId: string,
+    takeover: boolean,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_terminal(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(takeover, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(
+              cellWidthPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(
+              cellHeightPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async recover(
+    immediate: boolean,
+    reason: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_recover(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterBool.lower(immediate, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(reason, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  resizeTerminal(
+    terminalId: string,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+  ): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_terminal(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(
+            cellWidthPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt32.lower(
+            cellHeightPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  async resolveControlSocket(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_resolve_control_socket(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  resolvedSocketPath(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_resolved_socket_path(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  runtimeId(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_runtime_id(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  scrollTerminal(
+    terminalId: string,
+    up: boolean,
+    lines: number,
+    column: number | undefined,
+    row: number | undefined,
+    modifiers: number,
+  ): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_scroll_terminal(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(up, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(lines, nativeModule().rustbuffer_alloc),
+          FfiConverterOptionalFloat64.lower(
+            column,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterOptionalFloat64.lower(
+            row,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt8.lower(modifiers, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  status(): HostRuntimeStatus {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostRuntimeStatus.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_status(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async subscribeEvents(
+    paneIds: Array<string>,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_subscribe_events(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterSequenceString.lower(
+              paneIds,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrEventError.lift.bind(
+          FfiConverterTypeHerdrEventError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  terminalInput(terminalId: string, text: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_terminal_input(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Private-package compatibility handle for independent exec/SFTP features.
+   */
+  transportKey(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_transport_key(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  unsubscribeEvents(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_unsubscribe_events(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeHostRuntimeObjectFactory.pointer(this);
+      uniffiTypeHostRuntimeObjectFactory.freePointer(pointer);
+      uniffiTypeHostRuntimeObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HostRuntime {
+    return uniffiTypeHostRuntimeObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHostRuntimeObjectFactory: UniffiObjectFactory<HostRuntimeLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HostRuntimeLike {
+        const instance = Object.create(HostRuntime.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HostRuntime';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_hostruntime_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HostRuntimeLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HostRuntimeLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_hostruntime(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_hostruntime(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HostRuntimeLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HostRuntime'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHostRuntime = new FfiConverterObject(
+  uniffiTypeHostRuntimeObjectFactory,
+);
+
+export interface HostRuntimeEventSink {
+  event(event: HostRuntimeEvent): void;
+}
+
+export class HostRuntimeEventSinkImpl
+  extends UniffiAbstractObject
+  implements HostRuntimeEventSink
+{
+  readonly [uniffiTypeNameSymbol] = 'HostRuntimeEventSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHostRuntimeEventSinkImplObjectFactory.bless(pointer);
+  }
+
+  event(event: HostRuntimeEvent): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntimeeventsink_event(
+          uniffiTypeHostRuntimeEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterTypeHostRuntimeEvent.lower(
+            event,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeHostRuntimeEventSinkImplObjectFactory.pointer(this);
+      uniffiTypeHostRuntimeEventSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeHostRuntimeEventSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HostRuntimeEventSinkImpl {
+    return uniffiTypeHostRuntimeEventSinkImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHostRuntimeEventSinkImplObjectFactory: UniffiObjectFactory<HostRuntimeEventSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HostRuntimeEventSink {
+        const instance = Object.create(HostRuntimeEventSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HostRuntimeEventSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_hostruntimeeventsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HostRuntimeEventSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HostRuntimeEventSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_hostruntimeeventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_hostruntimeeventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HostRuntimeEventSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HostRuntimeEventSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHostRuntimeEventSink =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeHostRuntimeEventSinkImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in HostRuntimeEventSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceHostRuntimeEventSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    event: (uniffiHandle: bigint, event: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeHostRuntimeEventSink.lift(uniffiHandle);
+        return jsCallback.event(FfiConverterTypeHostRuntimeEvent.lift(event));
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeHostRuntimeEventSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeHostRuntimeEventSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_hostruntimeeventsink(
+      uniffiCallbackInterfaceHostRuntimeEventSink.vtable,
+    );
+  },
+};
+
 // FfiConverter for string | undefined
 const FfiConverterOptionalString = new FfiConverterOptional(FfiConverterString);
 
@@ -6280,6 +8722,11 @@ const FfiConverterOptionalSequenceString = new FfiConverterOptional(
   FfiConverterSequenceString,
 );
 
+// FfiConverter for Array<HostSshConfig>
+const FfiConverterSequenceTypeHostSshConfig = new FfiConverterArray(
+  FfiConverterTypeHostSshConfig,
+);
+
 /**
  * This should be called before anything else.
  *
@@ -6319,6 +8766,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_clear_host_runtime_event_sink() !==
+    20492
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_clear_host_runtime_event_sink',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_all_herdr_terminal_bridges() !==
     44248
   ) {
@@ -6340,6 +8795,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_close_herdr_terminal_bridge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime() !==
+    51482
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_create_host_runtime',
     );
   }
   if (
@@ -6404,6 +8867,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink() !==
+    54238
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_start_herdr_event_subscription() !==
     36264
   ) {
@@ -6459,9 +8930,170 @@ function uniffiEnsureInitialized() {
       'uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control',
     );
   }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals() !==
+    40182
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_terminal() !==
+    45305
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_close_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_connect() !==
+    7137
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_connect',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_control_request() !==
+    60091
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_control_request',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_disconnect() !==
+    57121
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_disconnect',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal() !==
+    41108
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_has_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening() !==
+    28716
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_terminal() !==
+    45520
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_open_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_recover() !==
+    12011
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_recover',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal() !==
+    15050
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket() !==
+    44671
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path() !==
+    807
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_id() !==
+    23810
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_runtime_id',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal() !==
+    52084
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_status() !==
+    25276
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_status',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_subscribe_events() !==
+    30013
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_subscribe_events',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_input() !==
+    28669
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_terminal_input',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_transport_key() !==
+    65078
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_transport_key',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_unsubscribe_events() !==
+    54310
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_unsubscribe_events',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event() !==
+    54699
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event',
+    );
+  }
 
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
+  uniffiCallbackInterfaceHostRuntimeEventSink.register();
 }
 
 export default Object.freeze({
@@ -6489,5 +9121,15 @@ export default Object.freeze({
     FfiConverterTypeHerdrWorkspaceInfo,
     FfiConverterTypeHerdrWorkspaceWorktreeInfo,
     FfiConverterTypeHerdrWorktreeInfo,
+    FfiConverterTypeHostConnectionState,
+    FfiConverterTypeHostRuntime,
+    FfiConverterTypeHostRuntimeConfig,
+    FfiConverterTypeHostRuntimeError,
+    FfiConverterTypeHostRuntimeEvent,
+    FfiConverterTypeHostRuntimeEventSink,
+    FfiConverterTypeHostRuntimeStatus,
+    FfiConverterTypeHostSshConfig,
+    FfiConverterTypeHostSshCredential,
+    FfiConverterTypeHostTerminalState,
   },
 });

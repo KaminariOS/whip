@@ -44,6 +44,37 @@ export type HerdrEventStreamEvent =
   | { type: 'event'; event: { event: string; data: Record<string, unknown> } }
   | { type: 'closed'; reason?: string };
 
+export type HostRuntimeLifecycleEvent =
+  | { type: 'connection-state'; state: string; generation: number; reconnectAttempt: number; error?: string }
+  | { type: 'reconnect-scheduled'; attempt: number; delayMs: number; reason: string }
+  | { type: 'reconnected'; generation: number; restoredTerminals: number }
+  | { type: 'terminal-state'; terminalId: string; state: string; error?: string }
+  | { type: 'event-stream-closed'; reason: string }
+  | { type: 'event-stream-restored'; generation: number }
+  | { type: 'fatal-error'; message: string };
+
+export interface HostRuntimeConnection {
+  readonly runtimeId: string;
+  readonly transportKey: string;
+  transportClient: SSHClient;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  recover(immediate: boolean, reason: string): Promise<void>;
+  requestHerdrApi(request: { method: string; params: object }): Promise<Record<string, unknown>>;
+  startHerdrEventStream(paneIds: string[], handler: (event: HerdrEventStreamEvent) => void): Promise<void>;
+  closeHerdrEventStream(): void;
+  startHerdrBridge(terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, launchMode: number, handler: (event: HerdrBridgeEvent) => void): Promise<void>;
+  herdrBridgeInput(terminalId: string, text: string): Promise<void>;
+  herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number): Promise<void>;
+  herdrBridgeScroll(terminalId: string, up: boolean, lines: number, column?: number, row?: number, modifiers?: number): Promise<void>;
+  closeHerdrBridge(terminalId: string): void;
+  closeAllHerdrBridges(): void;
+  hasHerdrBridge(terminalId: string): boolean;
+  isHerdrBridgeOpening(terminalId: string): boolean;
+  resolvedSocketPath(): string | undefined;
+  resolveHerdrSocketPath(): Promise<string>;
+}
+
 export interface HerdrApiRequest {
   method: string;
   params: object;
@@ -62,6 +93,14 @@ export interface PairHostResult {
 
 /** Whip's private product adapter over the public react-native-russh client. */
 export default class SSHClient extends BaseSSHClient {
+  static createHostRuntime(config: {
+    runtimeId: string;
+    ssh: { host: string; port: number; username: string; authMode: 'password' | 'key'; secret: string; passphrase?: string; forwardAgent?: boolean };
+    jumpHosts: Array<{ host: string; port: number; username: string; authMode: 'password' | 'key'; secret: string; passphrase?: string; forwardAgent?: boolean }>;
+    sessionName: string;
+    socketPath?: string;
+    cachedSocketPath?: string;
+  }, lifecycleHandler?: (event: HostRuntimeLifecycleEvent) => void): HostRuntimeConnection;
   static pairHost(
     code: string,
     publicKey: string,

@@ -7,11 +7,15 @@ import {
   herdrTerminalResize,
   herdrTerminalScroll,
   HerdrControlRequest,
+  HostRuntimeEvent_Tags,
+  HostSshCredential,
+  createHostRuntime as createHostRuntimeRust,
   HerdrEvent_Tags,
   pairHost as pairHostRust,
   prepareHerdrTerminalBridge,
   setHerdrEventSink,
   setHerdrTerminalEventSink,
+  setHostRuntimeEventSink,
   startHerdrEventSubscription,
   startHerdrTerminalBridge,
   type HerdrBridgeError,
@@ -32,6 +36,8 @@ import {
   type HerdrWorkspaceInfo,
   type HerdrWorkspaceWorktreeInfo,
   type HerdrWorktreeInfo,
+  type HostRuntimeEvent,
+  type HostRuntimeLike,
 } from './generated-entry';
 
 type PairingResponse = {
@@ -54,6 +60,47 @@ type WhipTerminalInboundTrace = {
 
 const bridgeHandlers = new Map<string, Map<string, BridgeHandler>>();
 const eventHandlers = new Map<string, EventHandler>();
+const runtimeHandlers = new Map<string, (event: RuntimeLifecycleEvent) => void>();
+
+export type RuntimeSshConfig = {
+  host: string;
+  port: number;
+  username: string;
+  authMode: 'password' | 'key';
+  secret: string;
+  passphrase?: string;
+  forwardAgent?: boolean;
+};
+
+export type RuntimeConfig = {
+  runtimeId: string;
+  ssh: RuntimeSshConfig;
+  jumpHosts: RuntimeSshConfig[];
+  sessionName: string;
+  socketPath?: string;
+  cachedSocketPath?: string;
+};
+
+export type RuntimeLifecycleEvent =
+  | { type: 'connection-state'; state: string; generation: number; reconnectAttempt: number; error?: string }
+  | { type: 'reconnect-scheduled'; attempt: number; delayMs: number; reason: string }
+  | { type: 'reconnected'; generation: number; restoredTerminals: number }
+  | { type: 'terminal-state'; terminalId: string; state: string; error?: string }
+  | { type: 'event-stream-closed'; reason: string }
+  | { type: 'event-stream-restored'; generation: number }
+  | { type: 'fatal-error'; message: string };
+
+function runtimeSshConfig(value: RuntimeSshConfig) {
+  return {
+    host: value.host,
+    port: value.port,
+    username: value.username,
+    credential: value.authMode === 'password'
+      ? HostSshCredential.Password.new({ password: value.secret })
+      : HostSshCredential.Key.new({ privateKey: value.secret, passphrase: value.passphrase }),
+    forwardAgent: Boolean(value.forwardAgent),
+  };
+}
 
 function terminalInboundTrace(): WhipTerminalInboundTrace | undefined {
   return (globalThis as typeof globalThis & {
@@ -538,10 +585,168 @@ const herdrEventSink: HerdrEventSink = {
   },
 };
 
+const hostRuntimeEventSink = {
+  event(event: HostRuntimeEvent): void {
+    const { tag, inner } = event;
+    if (tag === HostRuntimeEvent_Tags.Herdr) {
+      eventHandlers.get(inner.runtimeId)?.({ type: 'event', event: apiEvent(inner.event) });
+      return;
+    }
+    const handler = runtimeHandlers.get(inner.runtimeId);
+    if (!handler) return;
+    switch (tag) {
+      case HostRuntimeEvent_Tags.ConnectionStateChanged:
+        handler({
+          type: 'connection-state',
+          state: String(inner.status.state).toLowerCase(),
+          generation: Number(inner.status.generation),
+          reconnectAttempt: inner.status.reconnectAttempt,
+          error: inner.status.error,
+        });
+        break;
+      case HostRuntimeEvent_Tags.ReconnectScheduled:
+        handler({ type: 'reconnect-scheduled', attempt: inner.attempt, delayMs: Number(inner.delayMs), reason: inner.reason });
+        break;
+      case HostRuntimeEvent_Tags.Reconnected:
+        handler({ type: 'reconnected', generation: Number(inner.generation), restoredTerminals: inner.restoredTerminals });
+        break;
+      case HostRuntimeEvent_Tags.TerminalStateChanged:
+        handler({ type: 'terminal-state', terminalId: inner.terminalId, state: String(inner.state).toLowerCase(), error: inner.error });
+        break;
+      case HostRuntimeEvent_Tags.EventSubscriptionClosed:
+        eventHandlers.get(inner.runtimeId)?.({ type: 'closed', reason: inner.reason });
+        handler({ type: 'event-stream-closed', reason: inner.reason });
+        break;
+      case HostRuntimeEvent_Tags.EventSubscriptionRestored:
+        handler({ type: 'event-stream-restored', generation: Number(inner.generation) });
+        break;
+      case HostRuntimeEvent_Tags.FatalError:
+        handler({ type: 'fatal-error', message: inner.message });
+        break;
+    }
+  },
+};
+
 setHerdrTerminalEventSink(herdrTerminalEventSink);
 setHerdrEventSink(herdrEventSink);
+setHostRuntimeEventSink(hostRuntimeEventSink);
+
+export class NativeHostRuntime {
+  readonly runtimeId: string;
+  readonly transportKey: string;
+
+  constructor(
+    private readonly runtime: HostRuntimeLike,
+    lifecycleHandler?: (event: RuntimeLifecycleEvent) => void,
+  ) {
+    this.runtimeId = runtime.runtimeId();
+    this.transportKey = runtime.transportKey();
+    if (lifecycleHandler) runtimeHandlers.set(this.runtimeId, lifecycleHandler);
+  }
+
+  connect(): Promise<void> { return this.runtime.connect(); }
+
+  async disconnect(): Promise<void> {
+    runtimeHandlers.delete(this.runtimeId);
+    eventHandlers.delete(this.runtimeId);
+    bridgeHandlers.delete(this.transportKey);
+    await this.runtime.disconnect();
+  }
+
+  recover(immediate: boolean, reason: string): Promise<void> {
+    return this.runtime.recover(immediate, reason);
+  }
+
+  status() { return this.runtime.status(); }
+
+  resolvedSocketPath(): string | undefined { return this.runtime.resolvedSocketPath(); }
+
+  resolveHerdrSocketPath(): Promise<string> { return this.runtime.resolveControlSocket(); }
+
+  async requestHerdrApi(request: ApiRequest): Promise<ApiResult> {
+    try {
+      return apiResult(await this.runtime.controlRequest(controlRequest(request)));
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async startHerdrEventStream(paneIds: string[], handler: EventHandler): Promise<void> {
+    eventHandlers.set(this.runtimeId, handler);
+    try {
+      await this.runtime.subscribeEvents(paneIds);
+    } catch (error) {
+      eventHandlers.delete(this.runtimeId);
+      throw eventError(error);
+    }
+  }
+
+  closeHerdrEventStream(): void {
+    eventHandlers.delete(this.runtimeId);
+    this.runtime.unsubscribeEvents();
+  }
+
+  async startHerdrBridge(
+    terminalId: string,
+    takeover: boolean,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    launchMode: number,
+    handler: BridgeHandler,
+  ): Promise<void> {
+    setBridgeHandler(this.transportKey, terminalId, handler);
+    try {
+      await this.runtime.openTerminal(terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx);
+    } catch (error) {
+      removeBridgeHandler(this.transportKey, terminalId);
+      throw bridgeError(error);
+    }
+  }
+
+  herdrBridgeInput(terminalId: string, text: string): Promise<void> {
+    try { this.runtime.terminalInput(terminalId, text); return Promise.resolve(); }
+    catch (error) { return Promise.reject(bridgeError(error)); }
+  }
+
+  herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number): Promise<void> {
+    try { this.runtime.resizeTerminal(terminalId, columns, rows, cellWidthPx, cellHeightPx); return Promise.resolve(); }
+    catch (error) { return Promise.reject(bridgeError(error)); }
+  }
+
+  herdrBridgeScroll(terminalId: string, up: boolean, lines: number, column?: number, row?: number, modifiers = 0): Promise<void> {
+    try { this.runtime.scrollTerminal(terminalId, up, lines, column, row, modifiers); return Promise.resolve(); }
+    catch (error) { return Promise.reject(bridgeError(error)); }
+  }
+
+  closeHerdrBridge(terminalId: string): void {
+    removeBridgeHandler(this.transportKey, terminalId);
+    this.runtime.closeTerminal(terminalId);
+  }
+
+  closeAllHerdrBridges(): void {
+    bridgeHandlers.delete(this.transportKey);
+    this.runtime.closeAllTerminals();
+  }
+
+  hasHerdrBridge(terminalId: string): boolean { return this.runtime.hasTerminal(terminalId); }
+
+  isHerdrBridgeOpening(terminalId: string): boolean { return this.runtime.isTerminalOpening(terminalId); }
+}
 
 const nativeClient = {
+  createHostRuntime(config: RuntimeConfig, handler?: (event: RuntimeLifecycleEvent) => void): NativeHostRuntime {
+    const runtime = createHostRuntimeRust({
+      runtimeId: config.runtimeId,
+      ssh: runtimeSshConfig(config.ssh),
+      jumpHosts: config.jumpHosts.map(runtimeSshConfig),
+      sessionName: config.sessionName,
+      socketPath: config.socketPath,
+      cachedSocketPath: config.cachedSocketPath,
+    });
+    return new NativeHostRuntime(runtime, handler);
+  },
   async pairHost(code: string, publicKey: string, deviceName: string): Promise<unknown> {
     const response = JSON.parse(await pairHostRust(code, publicKey, deviceName)) as PairingResponse;
     if (!response.ok) throw new Error(response.error || 'WP4 pairing failed');

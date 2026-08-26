@@ -189,6 +189,8 @@ export default class SSHClient {
     * @returns A Promise that resolves to the details of the key, including its fingerprint, type and size.
     */
     static getKeyDetails(key: string, passphrase?: string): Promise<KeyDetails>;
+    /** @internal Bind wrappers to a Rust-owned authenticated session. */
+    static fromNativeSession(host: string, port: number, username: string, key: string): SSHClient;
     static generateKeyPair(type: string, passphrase?: string, keySize?: number, comment?: string): Promise<GeneratedKeyPair>;
     /**
      * Connects to an SSH server using a private key for authentication.

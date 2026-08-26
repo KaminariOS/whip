@@ -6,6 +6,21 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrTerminalResize: jest.fn(),
   herdrTerminalScroll: jest.fn(),
   herdrControlRequest: jest.fn().mockResolvedValue({ kind: 'ok' }),
+  createHostRuntime: jest.fn(),
+  HostSshCredential: {
+    Password: { new: jest.fn(inner => ({ tag: 'Password', inner })) },
+    Key: { new: jest.fn(inner => ({ tag: 'Key', inner })) },
+  },
+  HostRuntimeEvent_Tags: {
+    ConnectionStateChanged: 'ConnectionStateChanged',
+    ReconnectScheduled: 'ReconnectScheduled',
+    Reconnected: 'Reconnected',
+    TerminalStateChanged: 'TerminalStateChanged',
+    Herdr: 'Herdr',
+    EventSubscriptionClosed: 'EventSubscriptionClosed',
+    EventSubscriptionRestored: 'EventSubscriptionRestored',
+    FatalError: 'FatalError',
+  },
   HerdrControlRequest: {
     WorkspaceFocus: { new: jest.fn(inner => ({ tag: 'WorkspaceFocus', inner })) },
     AgentFocus: { new: jest.fn(inner => ({ tag: 'AgentFocus', inner })) },
@@ -28,6 +43,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   prepareHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
   setHerdrEventSink: jest.fn(),
   setHerdrTerminalEventSink: jest.fn(),
+  setHostRuntimeEventSink: jest.fn(),
   startHerdrEventSubscription: jest.fn().mockResolvedValue(undefined),
   startHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
 }));
@@ -39,6 +55,7 @@ const mockGenerated = jest.requireMock(
 );
 const mockEventSink = mockGenerated.setHerdrTerminalEventSink.mock.calls[0][0];
 const mockApiEventSink = mockGenerated.setHerdrEventSink.mock.calls[0][0];
+const mockRuntimeEventSink = mockGenerated.setHostRuntimeEventSink.mock.calls[0][0];
 
 describe('native Herdr bridge adapter', () => {
   beforeEach(() => {
@@ -156,5 +173,45 @@ describe('native Herdr bridge adapter', () => {
     expect(mockGenerated.startHerdrEventSubscription).toHaveBeenCalledWith(
       'client-1', '/tmp/herdr.sock', 20, ['p1'],
     );
+  });
+
+  it('exposes semantic HostRuntime operations and typed lifecycle events', async () => {
+    const rustRuntime = {
+      runtimeId: jest.fn(() => 'runtime-1'),
+      transportKey: jest.fn(() => 'transport-1'),
+      connect: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+      controlRequest: jest.fn().mockResolvedValue({ kind: 'ok' }),
+      resolveControlSocket: jest.fn().mockResolvedValue('/tmp/herdr.sock'),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const handler = jest.fn();
+    const runtime = nativeClient.createHostRuntime({
+      runtimeId: 'runtime-1',
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
+      },
+      jumpHosts: [],
+      sessionName: 'main',
+    }, handler);
+
+    await runtime.connect();
+    await expect(runtime.resolveHerdrSocketPath()).resolves.toBe('/tmp/herdr.sock');
+    await expect(runtime.requestHerdrApi({
+      method: 'workspace.focus', params: { workspace_id: 'w1' },
+    })).resolves.toEqual({ type: 'ok' });
+    mockRuntimeEventSink.event({
+      tag: 'ConnectionStateChanged',
+      inner: {
+        runtimeId: 'runtime-1',
+        status: { state: 'Connected', generation: 3n, reconnectAttempt: 0 },
+      },
+    });
+
+    expect(rustRuntime.connect).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({
+      type: 'connection-state', state: 'connected', generation: 3,
+      reconnectAttempt: 0, error: undefined,
+    });
   });
 });

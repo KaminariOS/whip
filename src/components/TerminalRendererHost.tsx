@@ -34,7 +34,6 @@ import {
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
 import { prepareTerminalPaste } from '../lib/terminalPaste';
-import { nextReconnect } from '../lib/reconnectPolicy';
 import { terminalSubmissionWrites } from '../lib/terminalSubmission';
 import {
   terminalRendererEvictionKeys,
@@ -108,8 +107,6 @@ interface RendererEntry {
   contentState: TerminalRendererContentState;
   frameSequence: TerminalFrameSequence;
   repaintRequested: boolean;
-  reconnectAttempt: number;
-  reconnectTimer: ReturnType<typeof setTimeout> | null;
   fontPreference: number;
   fontSize: number;
   protocolState: TerminalProtocolState;
@@ -245,8 +242,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   ) => {
     abandonTerminalRendererReadinessTrace(entry.readinessTrace);
     entry.readinessTrace = null;
-    if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-    entry.reconnectTimer = null;
     entry.controllerAttached = false;
     entry.connecting = false;
     for (const waiter of entry.writableWaiters.splice(0)) {
@@ -438,7 +433,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.frameSequence.reset();
       entry.repaintRequested = false;
       if (showConnecting) {
-        reportStatus(entry.target, 'connecting', undefined, entry.reconnectAttempt);
+        reportStatus(entry.target, 'connecting', undefined, 0);
       }
     }
     const scheduleReconnect = (reason: string, displacement: boolean) => {
@@ -451,8 +446,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         && entry.target.session.kind !== 'ssh'
         && entry.arbitration.recordDisplacement()
       ) {
-        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-        entry.reconnectTimer = null;
         recordNetworkDiagnostic('info', 'terminal-reconnect-yielded', {
           sessionId: entry.target.hostSessionId,
           terminalId,
@@ -466,37 +459,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         entry.target.client.releaseTerminal(terminalId).catch(() => undefined);
         return;
       }
-      const decision = nextReconnect(entry.reconnectAttempt);
-      if (decision.action === 'stop') {
-        recordNetworkDiagnostic('error', 'terminal-reconnect-exhausted', {
-          sessionId: entry.target.hostSessionId,
-          terminalId,
-          attempts: entry.reconnectAttempt,
-          reason: networkErrorMessage(reason),
-        });
-        reportStatus(entry.target, 'error', reason, entry.reconnectAttempt);
-        for (const waiter of entry.writableWaiters.splice(0)) {
-          waiter.reject(new Error(reason));
-        }
-        return;
-      }
-      entry.reconnectAttempt = decision.attempt;
-      recordNetworkDiagnostic('warn', 'terminal-reconnect-scheduled', {
+      // HostRuntime owns terminal retry/backoff and native bridge generations.
+      recordNetworkDiagnostic('error', 'terminal-recovery-native-failed', {
         sessionId: entry.target.hostSessionId,
         terminalId,
-        attempt: decision.attempt,
-        delayMs: decision.delayMs,
         reason: networkErrorMessage(reason),
       });
-      reportStatus(entry.target, 'disconnected', reason, decision.attempt);
-      if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-      entry.reconnectTimer = setTimeout(
-        () => {
-          entry.reconnectTimer = null;
-          connectEntry(entry);
-        },
-        decision.delayMs,
-      );
+      reportStatus(entry.target, 'error', reason, 0);
+      for (const waiter of entry.writableWaiters.splice(0)) waiter.reject(new Error(reason));
     };
     client.openTerminal(
       terminalId,
@@ -515,9 +485,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     ).then(() => {
       if (entries.current.get(entry.target.key) !== entry) return;
       if (!entry.controllerAttached) return;
-      const recoveryAttempt = entry.reconnectAttempt;
       entry.connecting = false;
-      entry.reconnectAttempt = 0;
       reportStatus(entry.target, 'connected', undefined, 0);
       for (const waiter of entry.writableWaiters.splice(0)) waiter.resolve();
       if (
@@ -527,13 +495,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       ) {
         entry.frameSequence.reset();
         requestFullFrame(entry);
-      }
-      if (recoveryAttempt > 0) {
-        recordNetworkDiagnostic('info', 'terminal-reconnect-recovered', {
-          sessionId: entry.target.hostSessionId,
-          terminalId,
-          attempt: recoveryAttempt,
-        });
       }
     }).catch(reason => {
       if (entries.current.get(entry.target.key) !== entry) return;
@@ -561,8 +522,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         contentState: new TerminalRendererContentState(),
         frameSequence: new TerminalFrameSequence(),
         repaintRequested: false,
-        reconnectAttempt: target.session.reconnectAttempt || 0,
-        reconnectTimer: null,
         fontPreference: preferences.fontSize,
         fontSize: target.session.fontSize ?? preferences.fontSize,
         protocolState: {
@@ -620,9 +579,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     return entry.arbitration.queueUserInput({
       newUserInput,
       onActivity: () => {
-        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-        entry.reconnectTimer = null;
-        entry.reconnectAttempt = 0;
         connectEntry(entry);
       },
       prepare: async (activity: TerminalInputActivity, dimensions: TerminalDimensions | null) => {
@@ -705,11 +661,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const key = activeKey.current;
       const entry = key ? entries.current.get(key) : null;
       if (!entry) return;
-      if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-      entry.reconnectTimer = null;
       entry.controllerAttached = false;
       entry.connecting = false;
-      entry.reconnectAttempt = 0;
       entry.arbitration.resumeManually();
       entry.target.client.closeTerminal(entry.target.session.terminalId);
       recordNetworkDiagnostic('info', 'terminal-manual-retry', {
@@ -871,8 +824,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         }
         if (wasActive && preferences.pauseResizeInBackground) {
           for (const entry of entries.current.values()) {
-            if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
-            entry.reconnectTimer = null;
             entry.controllerAttached = false;
             entry.connecting = false;
             entry.target.client.releaseTerminal(entry.target.session.terminalId).catch(() => undefined);
@@ -888,7 +839,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         ) {
           entry.controllerAttached = false;
           entry.connecting = false;
-          entry.reconnectAttempt = 0;
           connectEntry(entry, !preferences.pauseResizeInBackground);
         }
       }
@@ -901,7 +851,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   useEffect(() => () => {
     for (const entry of entries.current.values()) {
-      if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
       if (
         hostReady.current
         && entry.target.session.kind !== 'ssh'

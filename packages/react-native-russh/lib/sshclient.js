@@ -280,6 +280,26 @@ class SSHClient {
         return `ssh_${Date.now().toString(36)}_${(++this._keyCounter).toString(36)}_${random}`;
     }
     /**
+     * Bind a product-specific native runtime facade to an already-authenticated
+     * generic Rust session. The returned object never owns reconnection or
+     * disconnect; it only preserves independent exec/SFTP feature wrappers.
+     * @internal
+     */
+    static fromNativeSession(host, port, username, key) {
+        const client = Object.create(this.prototype);
+        client._key = key;
+        client._listeners = {};
+        client._counters = { download: 0, upload: 0 };
+        client._activeStream = { sftp: false, shell: false };
+        client._handlers = {};
+        client._unixSocketChannels = new Map();
+        client._execChannels = new Map();
+        client.host = host;
+        client.port = port;
+        client.username = username;
+        return client;
+    }
+    /**
      * Handles a native event (callback).
      *
      * @param event The native event to handle.

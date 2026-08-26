@@ -4,12 +4,14 @@ mod herdr_api;
 mod herdr_codec;
 mod herdr_events;
 mod herdr_terminal;
+mod host_runtime;
 mod pairing;
 mod russh_transport;
 
 pub use herdr_api::*;
 pub use herdr_events::*;
 pub use herdr_terminal::*;
+pub use host_runtime::*;
 
 use std::sync::OnceLock;
 

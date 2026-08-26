@@ -5,14 +5,8 @@ import { SSH_SHELL_TERMINAL_ID } from '../src/terminalSessions';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => ({
-  __esModule: true,
-  default: {
-    connectWithPassword: jest.fn(),
-    connectWithKey: jest.fn(),
-  },
-  PtyType: {
-    XTERM: 'xterm',
-  },
+  ...require('./mockWhipSsh').createMockWhipSshModule(),
+  PtyType: { XTERM: 'xterm' },
 }));
 
 const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);

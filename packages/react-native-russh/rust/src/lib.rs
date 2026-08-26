@@ -675,7 +675,7 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
     if let Some(private_key) = forwarding_key {
         initialize_agent(private_key, agent.clone()).await?;
     }
-    sessions().write().insert(
+    let previous = sessions().write().insert(
         key,
         Arc::new(Session {
             handle,
@@ -684,6 +684,15 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
             agent,
         }),
     );
+    // Native product runtimes reconnect under a stable logical session key so
+    // existing typed channels never need to expose transport identities to JS.
+    // Install the authenticated replacement first, then retire the old handle.
+    if let Some(previous) = previous {
+        let _ = previous
+            .handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+    }
     Ok(Value::Null)
 }
 

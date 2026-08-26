@@ -3,15 +3,9 @@ import SSHClient from 'react-native-whip-ssh';
 import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
 
-jest.mock('react-native-whip-ssh', () => ({
-  __esModule: true,
-  default: {
-    connectWithPassword: jest.fn(),
-    connectWithPasswordViaJump: jest.fn(),
-    connectWithKey: jest.fn(),
-    connectWithKeyViaJump: jest.fn(),
-  },
-}));
+jest.mock('react-native-whip-ssh', () => (
+  require('./mockWhipSsh').createMockWhipSshModule()
+));
 
 const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
 const connectWithPasswordViaJump = jest.mocked(SSHClient.connectWithPasswordViaJump);

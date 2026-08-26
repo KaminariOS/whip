@@ -688,7 +688,7 @@ fn transport_error(message: String) -> HerdrControlError {
     }
 }
 
-async fn request_on_runtime(
+pub(crate) async fn request_on_runtime(
     client_key: String,
     socket_path: String,
     request: HerdrControlRequest,

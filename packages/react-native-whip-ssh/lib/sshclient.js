@@ -77,6 +77,23 @@ class SSHClient extends BaseSSHClient {
     return privateNativeClient().pairHost(code, publicKey, deviceName);
   }
 
+  static createHostRuntime(config, lifecycleHandler) {
+    const runtime = privateNativeClient().createHostRuntime(config, lifecycleHandler);
+    const client = this.fromNativeSession(
+      config.ssh.host,
+      config.ssh.port,
+      config.ssh.username,
+      runtime.transportKey,
+    );
+    client._activeStream.herdrEventStream = false;
+    client._activeStream.herdrCommandStream = false;
+    client._herdrCommandChannel = null;
+    client._herdrCommandHandler = null;
+    client._herdrCommandDecode = null;
+    runtime.transportClient = client;
+    return runtime;
+  }
+
   prepareHerdrBridge(socketPath, protocol, columns, rows, cellWidthPx, cellHeightPx, callback) {
     return privateNativeClient()
       .prepareHerdrBridge(

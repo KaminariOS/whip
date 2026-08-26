@@ -70,11 +70,6 @@ import { allSettledWithConcurrency } from './src/lib/promisePool';
 import { parentRemotePath } from './src/lib/remoteFiles';
 import type { TranscriptFileLinkTarget } from './src/lib/transcriptLinks';
 import {
-  nextReconnect,
-  shouldRestartReconnect,
-  type ReconnectRecoveryTrigger,
-} from './src/lib/reconnectPolicy';
-import {
   incrementTerminalControlUsage,
   type TerminalControlId,
   type TerminalControlUsage,
@@ -232,10 +227,10 @@ const guiFontAssets = {
 
 const LIVE_HOST_HEALTHCHECK_MS = 15_000;
 const LIVE_HOST_RECONCILE_MS = 120_000;
-const LIVE_HOST_RECONNECT_COOLDOWN_MS = 30_000;
 const NETWORK_CHANGE_DEBOUNCE_MS = 750;
 const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;
 const BACKGROUND_HOST_RESTORE_CONCURRENCY = 2;
+type ReconnectRecoveryTrigger = 'app-resume' | 'network-change';
 
 function recordLatencyMeasurement(
   sessionId: string,
@@ -286,12 +281,8 @@ interface LiveRuntime {
   profile: ConnectionProfile;
   refresh: RefreshCoordinator<SnapshotMeasurement>;
   previousStatuses: Map<string, AgentStatus> | null;
-  reconnectAttempts: number;
-  reconnectTimer: ReturnType<typeof setTimeout> | null;
   eventPaneKey: string | null;
   eventStatus: 'closed' | 'opening' | 'open';
-  eventReconnectAttempts: number;
-  eventReconnectTimer: ReturnType<typeof setTimeout> | null;
   eventRefresh: EventRefreshScheduler;
   latencyFailureActive: boolean;
   latencyFailures: number;
@@ -336,8 +327,6 @@ let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;
 
 function disposeRuntimes(target: Map<string, LiveRuntime>): void {
   for (const runtime of target.values()) {
-    if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
-    if (runtime.eventReconnectTimer) clearTimeout(runtime.eventReconnectTimer);
     runtime.eventRefresh.cancel();
     runtime.refresh.invalidate();
     runtime.client.releaseAllTerminals()
@@ -769,56 +758,20 @@ function AppContent() {
     disposeRuntimes(runtimes.current);
   }, []);
 
-  const clearReconnect = (runtime: LiveRuntime) => {
-    if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
-    runtime.reconnectTimer = null;
-  };
-
   const clearEventTimers = (runtime: LiveRuntime) => {
-    if (runtime.eventReconnectTimer) clearTimeout(runtime.eventReconnectTimer);
-    runtime.eventReconnectTimer = null;
     runtime.eventRefresh.cancel();
   };
 
   const scheduleEventReconnect = (sessionId: string, cause: unknown) => {
     const runtime = runtimes.current.get(sessionId);
-    if (!runtime || runtime.eventReconnectTimer) return;
-    const decision = nextReconnect(runtime.eventReconnectAttempts);
-    if (decision.action === 'stop') {
-      recordNetworkDiagnostic('error', 'event-stream-reconnect-exhausted', {
-        sessionId,
-        attempts: decision.attempts,
-        cause: networkErrorMessage(cause),
-      });
-      runtime.eventReconnectAttempts = 0;
-      refreshHost(sessionId).catch(() => undefined);
-      return;
-    }
-    runtime.eventReconnectAttempts = decision.attempt;
-    recordNetworkDiagnostic('warn', 'event-stream-reconnect-scheduled', {
+    if (!runtime) return;
+    // Rust owns retry/backoff and subscription generations. This notification
+    // only keeps low-volume diagnostics and UI-derived stream status current.
+    runtime.eventStatus = 'closed';
+    recordNetworkDiagnostic('warn', 'event-stream-recovery-native', {
       sessionId,
-      attempt: decision.attempt,
-      delayMs: decision.delayMs,
       cause: networkErrorMessage(cause),
     });
-    runtime.eventReconnectTimer = setTimeout(async () => {
-      runtime.eventReconnectTimer = null;
-      const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-      if (!session || runtimes.current.get(sessionId) !== runtime) return;
-      try {
-        await ensureEventStream(sessionId, session.snapshot, true);
-        // Events emitted while the stream was down cannot be replayed. Reconcile
-        // immediately so closed tabs and completed agents do not remain stale.
-        await refreshHost(sessionId);
-      } catch (error) {
-        recordNetworkDiagnostic('warn', 'event-stream-reconnect-failed', {
-          sessionId,
-          attempt: decision.attempt,
-          error: networkErrorMessage(error),
-        });
-        scheduleEventReconnect(sessionId, error || cause);
-      }
-    }, decision.delayMs);
   };
 
   const recordHostDisconnect = (hostId: string) => {
@@ -844,8 +797,6 @@ function AppContent() {
     const paneIds = snapshot.panes.map(pane => pane.pane_id).sort();
     const paneKey = paneIds.join('\n');
     if (!force && runtime.eventPaneKey === paneKey && runtime.eventStatus !== 'closed') return;
-    const recoveryAttempt = runtime.eventReconnectAttempts;
-
     clearEventTimers(runtime);
     runtime.client.closeEventStream();
     runtime.eventPaneKey = paneKey;
@@ -931,11 +882,9 @@ function AppContent() {
     );
     if (runtimes.current.get(sessionId) !== runtime) return;
     runtime.eventStatus = 'open';
-    runtime.eventReconnectAttempts = 0;
-    if (force || recoveryAttempt > 0) {
+    if (force) {
       recordNetworkDiagnostic('info', 'event-stream-recovered', {
         sessionId,
-        attempt: recoveryAttempt,
         paneCount: paneIds.length,
       });
     }
@@ -947,7 +896,6 @@ function AppContent() {
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
     if (session?.status === 'connected' || session?.status === 'ready') recordHostDisconnect(sessionId);
     if (isHerdrProtocolMismatch(cause)) {
-      clearReconnect(runtime);
       recordNetworkDiagnostic('error', 'control-reconnect-protocol-mismatch', {
         sessionId,
         error: networkErrorMessage(cause),
@@ -958,70 +906,22 @@ function AppContent() {
       }));
       return;
     }
-    if (runtime.reconnectTimer) return;
-    const decision = nextReconnect(runtime.reconnectAttempts);
-    if (decision.action === 'stop') {
-      recordNetworkDiagnostic('error', 'control-reconnect-exhausted', {
-        sessionId,
-        attempts: decision.attempts,
-        cause: networkErrorMessage(cause),
-      });
-      setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
-        status: 'error',
-        error: String(cause),
-        reconnectAttempt: decision.attempts,
-      }));
-      runtime.reconnectTimer = setTimeout(() => {
-        runtime.reconnectTimer = null;
-        if (runtimes.current.get(sessionId) !== runtime) return;
-        runtime.reconnectAttempts = 0;
-        scheduleReconnect(sessionId, cause);
-      }, LIVE_HOST_RECONNECT_COOLDOWN_MS);
-      return;
-    }
-
-    runtime.reconnectAttempts = decision.attempt;
-    recordNetworkDiagnostic('warn', 'control-reconnect-scheduled', {
+    recordNetworkDiagnostic('warn', 'control-recovery-requested', {
       sessionId,
-      attempt: decision.attempt,
-      delayMs: decision.delayMs,
       cause: networkErrorMessage(cause),
     });
     setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
       status: 'reconnecting',
       error: String(cause),
-      reconnectAttempt: decision.attempt,
     }));
-    runtime.reconnectTimer = setTimeout(async () => {
-      runtime.reconnectTimer = null;
+    runtime.refresh.invalidate();
+    runtime.client.reconnectControl(runtime.profile).catch(error => {
       if (runtimes.current.get(sessionId) !== runtime) return;
-      runtime.refresh.invalidate();
-      try {
-        recordNetworkDiagnostic('info', 'control-reconnect-started', {
-          sessionId,
-          attempt: decision.attempt,
-        });
-        await runtime.client.reconnectControl(runtime.profile);
-        runtime.reconnectAttempts = 0;
-        runtime.latencyFailures = 0;
-        runtime.latencyFailureActive = false;
-        setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
-        const refreshed = await refreshHostSnapshot(sessionId);
-        if (refreshed) {
-          recordNetworkDiagnostic('info', 'control-reconnect-recovered', {
-            sessionId,
-            attempt: decision.attempt,
-          });
-        }
-      } catch (error) {
-        recordNetworkDiagnostic('warn', 'control-reconnect-failed', {
-          sessionId,
-          attempt: decision.attempt,
-          error: networkErrorMessage(error),
-        });
-        scheduleReconnect(sessionId, error);
-      }
-    }, decision.delayMs);
+      recordNetworkDiagnostic('warn', 'control-recovery-native-failed', {
+        sessionId,
+        error: networkErrorMessage(error),
+      });
+    });
   };
 
   const createRuntime = (sessionId: string, profile: ConnectionProfile): LiveRuntime => {
@@ -1029,18 +929,77 @@ function AppContent() {
       client: new HerdrClient(),
       profile,
       previousStatuses: null,
-      reconnectAttempts: 0,
-      reconnectTimer: null,
       eventPaneKey: null,
       eventStatus: 'closed',
-      eventReconnectAttempts: 0,
-      eventReconnectTimer: null,
       latencyFailureActive: false,
       latencyFailures: 0,
       eventRefresh: createEventRefreshScheduler(() => {
         refreshHost(sessionId).catch(() => undefined);
       }),
     } as LiveRuntime;
+    runtime.client.setRuntimeEventHandler(event => {
+      if (runtimes.current.get(sessionId) !== runtime) return;
+      if (event.type === 'connection-state') {
+        if (event.state === 'reconnecting' || event.state === 'connecting') {
+          setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
+            status: 'reconnecting',
+            error: event.error,
+            reconnectAttempt: event.reconnectAttempt,
+          }));
+        } else if (event.state === 'failed') {
+          setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
+            status: 'error',
+            error: event.error,
+            reconnectAttempt: event.reconnectAttempt,
+          }));
+        }
+        return;
+      }
+      if (event.type === 'reconnect-scheduled') {
+        recordNetworkDiagnostic('warn', 'control-reconnect-scheduled', {
+          sessionId,
+          attempt: event.attempt,
+          delayMs: event.delayMs,
+          reason: event.reason,
+        });
+        return;
+      }
+      if (event.type === 'reconnected') {
+        runtime.latencyFailures = 0;
+        runtime.latencyFailureActive = false;
+        setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'connected' }));
+        recordNetworkDiagnostic('info', 'control-reconnect-recovered', {
+          sessionId,
+          generation: event.generation,
+          restoredTerminals: event.restoredTerminals,
+        });
+        refreshHostSnapshot(sessionId).catch(() => undefined);
+        return;
+      }
+      if (event.type === 'event-stream-closed') {
+        scheduleEventReconnect(sessionId, event.reason);
+        return;
+      }
+      if (event.type === 'event-stream-restored') {
+        runtime.eventStatus = 'open';
+        refreshHost(sessionId).catch(() => undefined);
+        return;
+      }
+      if (event.type === 'terminal-state' && event.state === 'failed' && event.error?.includes('recovery exhausted')) {
+        recordNetworkDiagnostic('error', 'terminal-recovery-exhausted', {
+          sessionId,
+          terminalId: event.terminalId,
+          error: event.error,
+        });
+        return;
+      }
+      if (event.type === 'fatal-error') {
+        setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
+          status: 'error',
+          error: event.message,
+        }));
+      }
+    });
     runtime.refresh = createRefreshCoordinator(
       async () => {
         startTransition(() => {
@@ -1148,8 +1107,6 @@ function AppContent() {
     try {
       const result = await runtime.refresh.request();
       if (result.status === 'applied') {
-        clearReconnect(runtime);
-        runtime.reconnectAttempts = 0;
         setConnectError(null);
         setLiveSessions(current => updateLiveHostConnection(current, sessionId, { status: 'ready' }));
         try {
@@ -1203,13 +1160,9 @@ function AppContent() {
   const restartLiveConnections = useEffectEvent((trigger: ReconnectRecoveryTrigger) => {
     for (const session of liveSessionsRef.current.sessions) {
       const runtime = runtimes.current.get(session.id);
-      if (
-        !runtime
-        || !shouldRestartReconnect(runtime.reconnectAttempts, trigger)
-      ) continue;
+      if (!runtime) continue;
+      if (trigger === 'app-resume' && session.status !== 'error' && session.status !== 'reconnecting') continue;
 
-      clearReconnect(runtime);
-      runtime.reconnectAttempts = 0;
       runtime.refresh.invalidate();
       scheduleReconnect(
         session.id,
@@ -1510,7 +1463,6 @@ function AppContent() {
     }
     const runtime = runtimes.current.get(sessionId);
     if (runtime) {
-      clearReconnect(runtime);
       clearEventTimers(runtime);
       runtime.refresh.invalidate();
       runtime.client.releaseAllTerminals()

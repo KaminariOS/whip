@@ -393,6 +393,13 @@ impl Bridge {
         let Some(terminal_id) = self.terminal_id() else {
             return;
         };
+        if crate::host_runtime::terminal_bridge_closed(
+            &self.client_key,
+            &terminal_id,
+            reason.clone(),
+        ) {
+            return;
+        }
         if let Some(sink) = event_sink().read().clone() {
             sink.control(self.control(
                 &terminal_id,
@@ -564,7 +571,7 @@ async fn prepare_bridge_on_runtime(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn start_bridge_on_runtime(
+pub(crate) async fn start_bridge_on_runtime(
     client_key: String,
     socket_path: String,
     protocol: u32,

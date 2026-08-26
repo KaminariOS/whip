@@ -682,8 +682,13 @@ unsafe extern "C" fn transport_frame(id: u64, bytes: *const u8, length: usize) {
     for item in items {
         match item {
             StreamItem::Event(event) => {
-                if let Some(sink) = event_sink().read().clone() {
-                    sink.event(subscription.client_key.clone(), *event);
+                let event = *event;
+                if !crate::host_runtime::deliver_herdr_event(
+                    &subscription.client_key,
+                    event.clone(),
+                ) && let Some(sink) = event_sink().read().clone()
+                {
+                    sink.event(subscription.client_key.clone(), event);
                 }
             }
             StreamItem::ServerError(reason) => {
@@ -704,24 +709,29 @@ unsafe extern "C" fn transport_closed(id: u64, reason: *const c_char) {
             c_error(reason)
                 .unwrap_or_else(|| "Herdr event subscription closed during startup".to_owned()),
         )));
-    } else if let Some(sink) = event_sink().read().clone() {
-        sink.closed(
-            subscription.client_key.clone(),
-            c_error(reason).unwrap_or_else(|| "Herdr event subscription closed".to_owned()),
-        );
+    } else {
+        let reason =
+            c_error(reason).unwrap_or_else(|| "Herdr event subscription closed".to_owned());
+        if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
+            && let Some(sink) = event_sink().read().clone()
+        {
+            sink.closed(subscription.client_key.clone(), reason);
+        }
     }
     remove_subscription(id);
 }
 
 fn fail_subscription(subscription: &EventSubscription, reason: String) {
-    if let Some(sink) = event_sink().read().clone() {
+    if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
+        && let Some(sink) = event_sink().read().clone()
+    {
         sink.closed(subscription.client_key.clone(), reason);
     }
     let _ = russh_transport::close(&subscription.client_key, &subscription.channel_id);
     remove_subscription(subscription.id);
 }
 
-async fn start_on_runtime(
+pub(crate) async fn start_on_runtime(
     client_key: String,
     socket_path: String,
     protocol: u32,

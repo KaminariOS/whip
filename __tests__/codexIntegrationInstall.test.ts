@@ -4,10 +4,9 @@ import { codexChatAction, codexMissingIdentityAction, parseCodexIntegrationStatu
 import { CODEX_INTEGRATION_INSTALL_TIMEOUT_MS, HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile, PaneInfo } from '../src/types';
 
-jest.mock('react-native-whip-ssh', () => ({
-  __esModule: true,
-  default: { connectWithPassword: jest.fn(), connectWithKey: jest.fn() },
-}));
+jest.mock('react-native-whip-ssh', () => (
+  require('./mockWhipSsh').createMockWhipSshModule()
+));
 
 const id = '11111111-1111-4111-8111-111111111111';
 const profile: ConnectionProfile = {
