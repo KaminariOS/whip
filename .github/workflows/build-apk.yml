@@ -60,11 +60,6 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci --include=dev
 
-      - name: Build Android Rust static libraries
-        run: >-
-          nix develop .#default -c bash
-          scripts/build-android-rust.sh
-
       - name: Check license notices
         run: nix develop .#default -c npm run check:license-notices
 
@@ -100,11 +95,11 @@ jobs:
           chmod 600 .eas-secrets/*
 
       - name: Build signed release APK
-        working-directory: android
         env:
           WHIP_UPLOAD_KEYSTORE_PROPERTIES: ${{ github.workspace }}/.eas-secrets/upload-keystore.properties
         run: >-
-          ./gradlew app:assembleRelease
+          nix develop .#default -c
+          android/gradlew -p android app:assembleRelease
           -PreactNativeArchitectures=arm64-v8a
           --no-daemon
 
