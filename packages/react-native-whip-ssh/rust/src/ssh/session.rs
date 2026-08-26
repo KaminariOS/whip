@@ -69,6 +69,47 @@ impl SshSession {
         sftp_list_on(&sftp, path).await.map_err(Into::into)
     }
 
+    pub(crate) async fn sftp_stat(&self, path: &str) -> Result<SftpMetadata, SshFailure> {
+        let sftp = self.ensure_sftp().await?;
+        let metadata = sftp.metadata(path).await.map_err(TransportError::from)?;
+        Ok(SftpMetadata::from(metadata))
+    }
+
+    pub(crate) async fn sftp_read_limited(
+        &self,
+        path: &str,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, SshFailure> {
+        let sftp = self.ensure_sftp().await?;
+        let file = sftp.open(path).await.map_err(TransportError::from)?;
+        let size = file.metadata().await.map_err(TransportError::from)?.size;
+        if size.is_some_and(|size| size > max_bytes) {
+            return Err(SshFailure {
+                code: "OUTPUT_LIMIT".to_owned(),
+                message: format!("remote file exceeds the {max_bytes}-byte read limit"),
+            });
+        }
+        let capacity = usize::try_from(size.unwrap_or_default().min(max_bytes)).unwrap_or_default();
+        let mut bytes = Vec::with_capacity(capacity);
+        file.take(max_bytes.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(TransportError::from)?;
+        if bytes.len() as u64 > max_bytes {
+            return Err(SshFailure {
+                code: "OUTPUT_LIMIT".to_owned(),
+                message: format!("remote file exceeds the {max_bytes}-byte read limit"),
+            });
+        }
+        Ok(bytes)
+    }
+
+    pub(crate) async fn sftp_rename(&self, from: &str, to: &str) -> Result<(), SshFailure> {
+        let sftp = self.ensure_sftp().await?;
+        sftp.rename(from, to).await.map_err(TransportError::from)?;
+        Ok(())
+    }
+
     pub(crate) async fn sftp_remove(&self, path: &str, directory: bool) -> Result<(), SshFailure> {
         let sftp = self.ensure_sftp().await?;
         if directory {
@@ -86,50 +127,44 @@ impl SshSession {
             .map_err(Into::into)
     }
 
-    pub(crate) async fn sftp_upload(
+    pub(crate) async fn transfer_upload(
         &self,
         local_path: &str,
-        remote_path: &str,
-        exact_path: bool,
-    ) -> Result<(), SshFailure> {
-        let sftp = self.ensure_sftp().await?;
-        sftp_transfer_on(
-            self.resource_key.clone(),
-            sftp,
-            local_path.to_owned(),
-            remote_path.to_owned(),
-            true,
-            exact_path,
-        )
-        .await?;
-        Ok(())
-    }
-
-    pub(crate) async fn sftp_download(
-        &self,
-        remote_path: &str,
-        local_directory: &str,
+        destination_path: &str,
+        cancel: watch::Receiver<bool>,
+        progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
     ) -> Result<String, SshFailure> {
         let sftp = self.ensure_sftp().await?;
-        sftp_transfer_on(
-            self.resource_key.clone(),
+        sftp_transfer_managed_on(
             sftp,
-            local_directory.to_owned(),
-            remote_path.to_owned(),
-            false,
-            false,
+            local_path.to_owned(),
+            destination_path.to_owned(),
+            true,
+            cancel,
+            progress,
         )
         .await
         .map_err(Into::into)
     }
 
-    pub(crate) fn cancel_sftp_upload(&self) {
-        if let Some(cancel) = transfers()
-            .read()
-            .get(&(self.resource_key.clone(), "upload"))
-        {
-            let _ = cancel.send(true);
-        }
+    pub(crate) async fn transfer_download(
+        &self,
+        remote_path: &str,
+        destination_path: &str,
+        cancel: watch::Receiver<bool>,
+        progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
+    ) -> Result<String, SshFailure> {
+        let sftp = self.ensure_sftp().await?;
+        sftp_transfer_managed_on(
+            sftp,
+            destination_path.to_owned(),
+            remote_path.to_owned(),
+            false,
+            cancel,
+            progress,
+        )
+        .await
+        .map_err(Into::into)
     }
 
     pub(crate) async fn start_sftp_file_server(

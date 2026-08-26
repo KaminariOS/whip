@@ -138,6 +138,46 @@ boundary already include OpenCode so its persistence adapter can migrate without
 changing the renderer. Chat composer submissions return to the same Herdr pane
 and PTY used by the mounted terminal.
 
+### Rust-owned remote operations
+
+`HostRuntime` owns Whip's non-UI remote-operation services. Its remote-filesystem
+methods normalize Unix paths against the remote home directory and provide typed
+directory entries and bounded UTF-8 reads over a generation-scoped lazy SFTP
+session. Missing metadata remains absent; failed reads remain errors. React
+Native receives absolute entry paths and does not parse `ls` output or assemble
+operation paths from strings.
+
+The runtime's `RemoteOperationManager` accepts native local file paths produced
+by the Expo picker cache, streams bytes directly between the local file and SFTP, and exposes only
+a stable `TransferId`, throttled byte progress, cancellation, and a typed final
+result. Uploads write a unique temporary sibling, close it, then rename it into
+place. When replacing a file, the previous destination is temporarily preserved
+and restored if finalization or cancellation fails. Downloads likewise use a
+temporary local sibling and rename only after a complete stream. Connection
+replacement fails current transfers instead of attempting an unsafe implicit
+resume; stale or cancelled completions cannot become successful. At most four
+transfers run per host.
+
+Attachment placement (`~/.whip/uploads`, collision-resistant naming, directory
+creation, atomic transfer, and cleanup) is a Rust workflow. React Native retains
+file/camera/photo/clipboard selection, preview chips, progress rendering, and
+cancel intent. Picker inputs are copied by Expo to an app cache `file://`
+location on Android and iOS before Rust opens them, so platform content handles
+never become JavaScript/base64 transfer payloads.
+
+The Git operation layer continues to run the remote `git` executable through
+SSH, but Rust owns command construction, centralized POSIX shell quoting, exit/output
+validation, porcelain `-z` parsing, absolute changed-file paths, and bounded
+unified-diff parsing. React Native receives `GitRepository`, typed status entries,
+and typed diff rows; it retains only tree grouping and rendering preferences.
+
+The preview portion of `RemoteOperationManager` owns OS-assigned local listeners,
+SSH forward/file-server resources, remote HTML server process metadata, cleanup, and idempotent stop.
+React Native receives a `PreviewId` and local/display URLs, never a local port or
+transport handle. Reconnect marks open previews disconnected and closes their
+resources; previews are reopened explicitly instead of silently presenting a
+dead URL. At most eight previews are open per host.
+
 ## React Native state ownership
 
 - **Server profiles:** persistent metadata, keyed credentials, last-used state.
@@ -145,6 +185,7 @@ and PTY used by the mounted terminal.
 - **Runtime registry:** one thin non-serializable `HerdrClient` facade per live host. Its native `HostRuntime` owns transport identity, reconnect attempts, subscriptions, terminals, refresh coalescing, and authoritative domain state.
 - **Herdr host state:** normalized workspaces, tabs, panes, layouts, agents, server focus, synchronization, and freshness are authoritative in Rust; React retains only the latest projection for rendering.
 - **Codex transcript state:** one Rust `AgentSessionManager` per `HostRuntime` owns remote source identity, incremental parsing/checkpoints, reconnect rebind, and normalized revisioned chat state. React retains a typed render projection and opaque cache storage only.
+- **Remote operations:** Rust filesystem, transfer, Git, and preview services own SFTP/forward resources, generation checks, cancellation, parsing, and cleanup. React retains picker/share/WebView presentation and confirmation state.
 - **Terminal sessions:** ordered open terminals plus active `terminal_id` per live host; terminal WebViews stay mounted across tab and host changes.
 - **Virtual Herdr terminals:** in-memory cached ANSI snapshots and logical scroll state per terminal while its live transport is offline; xterm reports measured viewport geometry and remains responsible for rendering and gestures.
 - **Navigation:** native destinations and sheets; terminal navigation is separate from Herdr workspace/tab focus.
@@ -214,7 +255,7 @@ Implemented:
 - persisted terminal font, scrollback, cursor, notification, speech, language, appearance, security, and navigation preferences;
 - multiple saved host profiles with platform-protected credentials and last-used ordering;
 - strict host-key verification, nested jump hosts, restricted agent forwarding, and SSH-backed private-network browser tunnels;
-- SFTP browsing, transfer, editing, deletion, and previews for text, code, Markdown, images, SVG, Mermaid, PDF, audio, video, and sandboxed HTML;
+- Rust-owned typed SFTP browsing, atomic native-file transfer, attachment placement, deletion, Git status/diffs, and `PreviewId`-managed forwards for text, code, Markdown, images, SVG, Mermaid, PDF, audio, video, and sandboxed HTML;
 - shared Rust/Russh SSH behavior on Android and iOS through UniFFI, with typed binary terminal frames on the hot path;
 - native Herdr control request/response handling and typed event-stream framing, validation, and normalization shared by Android and iOS;
 - a shared Android/iOS Rust `HostRuntime` with explicit connection states,

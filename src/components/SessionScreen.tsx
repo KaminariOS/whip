@@ -215,7 +215,7 @@ export function SessionScreen({
   } | null>(null);
   const terminalWidthRef = useRef(0);
   const browserWebView = useRef<BrowserWebViewHandle | null>(null);
-  const tunnelPortRef = useRef<number | null>(null);
+  const tunnelPreviewRef = useRef<string | null>(null);
   const browserRequestRef = useRef(0);
   const tabSwipeTranslateX = useSharedValue(0);
   const tabSwipeRef = useRef<TerminalTabSwipe | null>(null);
@@ -321,9 +321,9 @@ export function SessionScreen({
   };
 
   const closeActiveTunnel = async () => {
-    const localPort = tunnelPortRef.current;
-    tunnelPortRef.current = null;
-    if (localPort !== null) await client.closeWebTunnel(localPort).catch(() => undefined);
+    const previewId = tunnelPreviewRef.current;
+    tunnelPreviewRef.current = null;
+    if (previewId !== null) await client.closeWebTunnel(previewId).catch(() => undefined);
   };
 
   const scanTerminalLinks = () => {
@@ -366,10 +366,10 @@ export function SessionScreen({
       }
       const tunnel = await client.openWebTunnel(target.url);
       if (request !== browserRequestRef.current) {
-        if (tunnel) await client.closeWebTunnel(tunnel.localPort).catch(() => undefined);
+        if (tunnel) await client.closeWebTunnel(tunnel.previewId).catch(() => undefined);
         return;
       }
-      if (tunnel) tunnelPortRef.current = tunnel.localPort;
+      if (tunnel) tunnelPreviewRef.current = tunnel.previewId;
       setBrowserDisplayUrl(target.url);
       setBrowserUrl(tunnel?.url || target.url);
       setBrowserCanGoBack(false);
@@ -383,9 +383,9 @@ export function SessionScreen({
 
   useEffect(() => () => {
     browserRequestRef.current += 1;
-    const localPort = tunnelPortRef.current;
-    tunnelPortRef.current = null;
-    if (localPort !== null) client.closeWebTunnel(localPort).catch(() => undefined);
+    const previewId = tunnelPreviewRef.current;
+    tunnelPreviewRef.current = null;
+    if (previewId !== null) client.closeWebTunnel(previewId).catch(() => undefined);
   }, [client]);
 
   useEffect(() => {

@@ -1110,12 +1110,36 @@ fn sftp_for_key(key: &str) -> Result<Arc<SftpSession>, TransportError> {
 pub(crate) struct SftpEntry {
     pub filename: String,
     pub is_directory: bool,
-    pub modification_date: String,
-    pub last_access: String,
-    pub file_size: u64,
-    pub owner_user_id: u32,
-    pub owner_group_id: u32,
-    pub permissions: String,
+    pub metadata: SftpMetadata,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SftpMetadata {
+    pub is_directory: bool,
+    pub is_regular: bool,
+    pub is_symlink: bool,
+    pub size: Option<u64>,
+    pub modified_at: Option<u64>,
+    pub accessed_at: Option<u64>,
+    pub owner_user_id: Option<u32>,
+    pub owner_group_id: Option<u32>,
+    pub permissions: Option<u32>,
+}
+
+impl From<russh_sftp::protocol::FileAttributes> for SftpMetadata {
+    fn from(metadata: russh_sftp::protocol::FileAttributes) -> Self {
+        Self {
+            is_directory: metadata.is_dir(),
+            is_regular: metadata.is_regular(),
+            is_symlink: metadata.is_symlink(),
+            size: metadata.size,
+            modified_at: metadata.mtime.map(u64::from),
+            accessed_at: metadata.atime.map(u64::from),
+            owner_user_id: metadata.uid,
+            owner_group_id: metadata.gid,
+            permissions: metadata.permissions,
+        }
+    }
 }
 
 async fn sftp_list(params: &Value) -> Result<Value, TransportError> {
@@ -1128,12 +1152,12 @@ async fn sftp_list(params: &Value) -> Result<Value, TransportError> {
             .map(|entry| json!({
                 "filename": entry.filename,
                 "isDirectory": if entry.is_directory { 1 } else { 0 },
-                "modificationDate": entry.modification_date,
-                "lastAccess": entry.last_access,
-                "fileSize": entry.file_size,
-                "ownerUserID": entry.owner_user_id,
-                "ownerGroupID": entry.owner_group_id,
-                "permissions": entry.permissions,
+                "modificationDate": entry.metadata.modified_at.unwrap_or_default().to_string(),
+                "lastAccess": entry.metadata.accessed_at.unwrap_or_default().to_string(),
+                "fileSize": entry.metadata.size.unwrap_or_default(),
+                "ownerUserID": entry.metadata.owner_user_id.unwrap_or_default(),
+                "ownerGroupID": entry.metadata.owner_group_id.unwrap_or_default(),
+                "permissions": entry.metadata.permissions.unwrap_or_default().to_string(),
                 "flags": 0,
             }))
             .collect::<Vec<_>>()
@@ -1147,19 +1171,15 @@ async fn sftp_list_on(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>, 
         .map(|entry| {
             let metadata = entry.metadata();
             let mut filename = entry.file_name();
-            let is_directory = metadata.is_dir();
+            let metadata = SftpMetadata::from(metadata);
+            let is_directory = metadata.is_directory;
             if is_directory {
                 filename.push('/');
             }
             SftpEntry {
                 filename,
                 is_directory,
-                modification_date: metadata.mtime.unwrap_or_default().to_string(),
-                last_access: metadata.atime.unwrap_or_default().to_string(),
-                file_size: metadata.size.unwrap_or_default(),
-                owner_user_id: metadata.uid.unwrap_or_default(),
-                owner_group_id: metadata.gid.unwrap_or_default(),
-                permissions: metadata.permissions.unwrap_or_default().to_string(),
+                metadata,
             }
         })
         .collect::<Vec<_>>();
@@ -1326,6 +1346,152 @@ async fn copy_sftp_stream(
         emit_event(json!({ "name": event, "key": key, "value": "100" }));
     }
     Ok(())
+}
+
+async fn copy_sftp_stream_managed(
+    mut source: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
+    mut destination: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
+    total: Option<u64>,
+    direction: &str,
+    cancel: &mut watch::Receiver<bool>,
+    progress: &Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
+) -> Result<(), TransportError> {
+    let mut copied = 0u64;
+    let mut last_reported_bytes = 0u64;
+    let mut last_report = Instant::now();
+    let mut buffer = vec![0u8; 64 * 1024];
+    progress(0, total);
+    loop {
+        let count = cancellable_transfer_io(cancel, direction, source.read(&mut buffer)).await?;
+        if count == 0 {
+            break;
+        }
+        cancellable_transfer_io(cancel, direction, destination.write_all(&buffer[..count])).await?;
+        copied = copied.saturating_add(count as u64);
+        if copied.saturating_sub(last_reported_bytes) >= 256 * 1024
+            || last_report.elapsed() >= Duration::from_millis(100)
+        {
+            progress(copied, total);
+            last_reported_bytes = copied;
+            last_report = Instant::now();
+        }
+    }
+    cancellable_transfer_io(cancel, direction, destination.shutdown()).await?;
+    progress(copied, total);
+    Ok(())
+}
+
+async fn sftp_transfer_managed_on(
+    sftp: Arc<SftpSession>,
+    local_path: String,
+    remote_path: String,
+    upload: bool,
+    mut cancel: watch::Receiver<bool>,
+    progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
+) -> Result<String, TransportError> {
+    let direction = if upload { "upload" } else { "download" };
+    if *cancel.borrow() {
+        return Err(transfer_cancelled(direction));
+    }
+    if upload {
+        let source = fs::File::open(&local_path).await?;
+        let total = Some(source.metadata().await?.len());
+        let transfer_id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let temp_path = format!("{remote_path}.whip-upload-{transfer_id}");
+        let destination = sftp.create(temp_path.clone()).await?;
+        let copied = copy_sftp_stream_managed(
+            Box::new(source),
+            Box::new(destination),
+            total,
+            direction,
+            &mut cancel,
+            &progress,
+        )
+        .await;
+        if let Err(error) = copied {
+            let _ = sftp.remove_file(temp_path).await;
+            return Err(error);
+        }
+        if *cancel.borrow() {
+            let _ = sftp.remove_file(temp_path).await;
+            return Err(transfer_cancelled(direction));
+        }
+        let backup_path = format!("{remote_path}.whip-backup-{transfer_id}");
+        let prior_metadata = sftp.metadata(remote_path.clone()).await.ok();
+        if prior_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.is_dir())
+        {
+            let _ = sftp.remove_file(temp_path).await;
+            return Err(TransportError::InvalidRequest(
+                "upload destination is a directory".to_owned(),
+            ));
+        }
+        let had_prior_file = prior_metadata.is_some();
+        if had_prior_file {
+            sftp.rename(remote_path.clone(), backup_path.clone())
+                .await?;
+        }
+        if *cancel.borrow() {
+            if had_prior_file {
+                let _ = sftp.rename(backup_path, remote_path).await;
+            }
+            let _ = sftp.remove_file(temp_path).await;
+            return Err(transfer_cancelled(direction));
+        }
+        if let Err(error) = sftp.rename(temp_path.clone(), remote_path.clone()).await {
+            let _ = sftp.remove_file(temp_path).await;
+            if had_prior_file {
+                let _ = sftp.rename(backup_path, remote_path).await;
+            }
+            return Err(error.into());
+        }
+        if *cancel.borrow() {
+            let _ = sftp.remove_file(remote_path.clone()).await;
+            if had_prior_file {
+                let _ = sftp.rename(backup_path, remote_path).await;
+            }
+            return Err(transfer_cancelled(direction));
+        }
+        if had_prior_file {
+            let _ = sftp.remove_file(backup_path).await;
+        }
+        Ok(remote_path)
+    } else {
+        let source = sftp.open(&remote_path).await?;
+        let total = source.metadata().await?.size;
+        let temp_path = format!(
+            "{local_path}.whip-download-{}",
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let destination = fs::File::create(&temp_path).await?;
+        let copied = copy_sftp_stream_managed(
+            Box::new(source),
+            Box::new(destination),
+            total,
+            direction,
+            &mut cancel,
+            &progress,
+        )
+        .await;
+        if let Err(error) = copied {
+            let _ = fs::remove_file(temp_path).await;
+            return Err(error);
+        }
+        if *cancel.borrow() {
+            let _ = fs::remove_file(temp_path).await;
+            return Err(transfer_cancelled(direction));
+        }
+        if let Err(error) = fs::rename(&temp_path, &local_path).await {
+            let _ = fs::remove_file(temp_path).await;
+            return Err(error.into());
+        }
+        if *cancel.borrow() {
+            let _ = fs::remove_file(local_path).await;
+            return Err(transfer_cancelled(direction));
+        }
+        Ok(local_path)
+    }
 }
 
 async fn sftp_transfer(

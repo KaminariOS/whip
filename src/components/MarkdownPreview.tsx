@@ -50,9 +50,9 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
           }
           const filename = path.slice(path.lastIndexOf('/') + 1);
           const entry = listing.entries.find(candidate => remoteEntryName(candidate) === filename);
-          if (!entry || entry.isDirectory || remotePreviewKind(filename, entry.fileSize) !== 'image') continue;
-          if (entry.fileSize > remainingBytes) continue;
-          remainingBytes -= entry.fileSize;
+          if (!entry || entry.kind === 'directory' || remotePreviewKind(filename, entry.size) !== 'image') continue;
+          if (entry.size === undefined || entry.size > remainingBytes) continue;
+          remainingBytes -= entry.size;
           const cached = await cacheRemoteFile(client, path);
           if (disposed) {
             cached.dispose();

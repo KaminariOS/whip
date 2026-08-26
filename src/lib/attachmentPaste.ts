@@ -37,12 +37,3 @@ export function attachmentUploadName(
   const stamp = now.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
   return `${stamp}-${stem}.${extension}`;
 }
-
-export function uniqueRemoteAttachmentName(localFilePath: string, uniqueId: string): string {
-  const filename = localFilePath.replace(/\\/g, '/').split('/').pop();
-  if (!filename) throw new Error('The selected attachment has no filename');
-  const { extension, stem } = safeAttachmentNameParts(filename, null);
-  const safeId = uniqueId.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
-  if (!safeId) throw new Error('The attachment upload ID is invalid');
-  return `${stem}-${safeId}.${extension}`;
-}

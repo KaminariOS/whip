@@ -1,4 +1,4 @@
-import type { LsResult } from 'react-native-whip-ssh';
+import type { RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -7,11 +7,11 @@ import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
-import { formatRemoteFileSize, isRemoteHiddenPath, joinRemotePath, nextRemoteFileSort, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortDirection, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
+import { formatRemoteFileSize, isRemoteHiddenPath, nextRemoteFileSort, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortDirection, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
 import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '@/src/lib/remoteFileSwipeActions';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
-import { absoluteRemoteGitPath, buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
-import type { HerdrClient, RemoteHtmlPreviewHandle, RemoteSftpFileServerHandle } from '@/src/services/HerdrClient';
+import { buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
+import type { HerdrClient, RemoteFilePreviewHandle, RemoteHtmlPreviewHandle } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { defaultRemoteFilePreferences, loadRemoteFilePreferences, saveRemoteFilePreferences } from '@/src/services/remoteFilePreferences';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
@@ -45,7 +45,7 @@ interface Props {
 }
 
 interface FilePreview {
-  entry: LsResult;
+  entry: RuntimeRemoteFileEntry;
   path: string;
   kind: RemotePreviewKind;
   cached: CachedRemoteFile | null;
@@ -54,7 +54,7 @@ interface FilePreview {
   editing: boolean;
   error: string | null;
   htmlPreview: RemoteHtmlPreviewHandle | null;
-  sftpFileServer: RemoteSftpFileServerHandle | null;
+  filePreview: RemoteFilePreviewHandle | null;
   htmlRevision: number;
   gitDiff: RemoteGitDiff | null;
   gitStatus: RemoteGitStatusEntry | null;
@@ -75,11 +75,11 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
   const [path, setPath] = useState('');
-  const [entries, setEntries] = useState<LsResult[]>([]);
+  const [entries, setEntries] = useState<RuntimeRemoteFileEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ directoryPath: string; entry: LsResult } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ directoryPath: string; entry: RuntimeRemoteFileEntry } | null>(null);
   const [discardAction, setDiscardAction] = useState<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
@@ -126,8 +126,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (previous?.htmlPreview && previous.htmlPreview !== next?.htmlPreview) {
         client.closeRemoteHtmlPreview(previous.htmlPreview).catch(() => undefined);
       }
-      if (previous?.sftpFileServer && previous.sftpFileServer !== next?.sftpFileServer) {
-        client.closeRemoteSftpFileServer(previous.sftpFileServer).catch(() => undefined);
+      if (previous?.filePreview && previous.filePreview !== next?.filePreview) {
+        client.closeRemoteFilePreview(previous.filePreview).catch(() => undefined);
       }
       previewRef.current = next;
       setPreview(next);
@@ -196,7 +196,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       const current = previewRef.current;
       current?.cached?.dispose();
       if (current?.htmlPreview) client.closeRemoteHtmlPreview(current.htmlPreview).catch(() => undefined);
-      if (current?.sftpFileServer) client.closeRemoteSftpFileServer(current.sftpFileServer).catch(() => undefined);
+      if (current?.filePreview) client.closeRemoteFilePreview(current.filePreview).catch(() => undefined);
       previewRef.current = null;
     },
     [client],
@@ -307,19 +307,19 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const openGitChange = async (status: RemoteGitStatusEntry) => {
     if (!gitRepository) return;
     const request = ++requestRef.current;
-    const entryPath = absoluteRemoteGitPath(gitRepository.root, status.path);
+    const entryPath = status.absolutePath;
     const entry = remoteGitStatusEntry(status);
     const loadingPreview: FilePreview = {
       entry,
       path: entryPath,
-      kind: remotePreviewKind(remoteEntryName(entry), entry.fileSize),
+      kind: remotePreviewKind(remoteEntryName(entry), entry.size),
       cached: null,
       content: null,
       draft: '',
       editing: false,
       error: null,
       htmlPreview: null,
-      sftpFileServer: null,
+      filePreview: null,
       htmlRevision: 0,
       gitDiff: null,
       gitStatus: status,
@@ -335,15 +335,15 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     }
   };
 
-  const openEntry = async (entry: LsResult, directoryPath = path, targetLine?: number) => {
+  const openEntry = async (entry: RuntimeRemoteFileEntry, targetLine?: number) => {
     const name = remoteEntryName(entry);
-    const entryPath = joinRemotePath(directoryPath, name);
-    if (entry.isDirectory) {
+    const entryPath = entry.path;
+    if (entry.kind === 'directory') {
       await loadDirectory(entryPath);
       return;
     }
 
-    const kind = remotePreviewKind(name, entry.fileSize);
+    const kind = remotePreviewKind(name, entry.size);
     const request = ++requestRef.current;
     const loadingPreview: FilePreview = {
       entry,
@@ -355,7 +355,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       editing: false,
       error: null,
       htmlPreview: null,
-      sftpFileServer: null,
+      filePreview: null,
       htmlRevision: 0,
       gitDiff: null,
       gitStatus: null,
@@ -366,25 +366,25 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
 
     let cached: CachedRemoteFile | null = null;
     let htmlPreview: RemoteHtmlPreviewHandle | null = null;
-    let sftpFileServer: RemoteSftpFileServerHandle | null = null;
+    let filePreview: RemoteFilePreviewHandle | null = null;
     try {
       let content: string | null = null;
       if (isSftpStreamPreview(kind)) {
-        sftpFileServer = await client.openRemoteSftpFileServer(entryPath);
+        filePreview = await client.openRemoteFilePreview(entryPath);
       } else {
         cached = await cacheRemoteFile(client, entryPath);
         content = isTextPreview(kind) ? await cached.file.text() : null;
       }
       if (request !== requestRef.current) {
         cached?.dispose();
-        if (sftpFileServer) await client.closeRemoteSftpFileServer(sftpFileServer).catch(() => undefined);
+        if (filePreview) await client.closeRemoteFilePreview(filePreview).catch(() => undefined);
         return;
       }
       if (kind === 'html') htmlPreview = await client.openRemoteHtmlPreview(entryPath);
       if (request !== requestRef.current) {
         cached?.dispose();
         if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
-        if (sftpFileServer) await client.closeRemoteSftpFileServer(sftpFileServer).catch(() => undefined);
+        if (filePreview) await client.closeRemoteFilePreview(filePreview).catch(() => undefined);
         return;
       }
       replacePreview({
@@ -393,13 +393,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         content,
         draft: content || '',
         htmlPreview,
-        sftpFileServer,
+        filePreview,
       });
-      if (kind === 'pdf' && sftpFileServer) await openPdfBrowser(sftpFileServer.url, request);
+      if (kind === 'pdf' && filePreview) await openPdfBrowser(filePreview.url, request);
     } catch (reason) {
       cached?.dispose();
       if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
-      if (sftpFileServer) await client.closeRemoteSftpFileServer(sftpFileServer).catch(() => undefined);
+      if (filePreview) await client.closeRemoteFilePreview(filePreview).catch(() => undefined);
       if (request === requestRef.current) {
         replacePreview({ ...loadingPreview, error: String(reason) });
       }
@@ -418,7 +418,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     onPathChangeRef.current(listing.path);
     const entry = listing.entries.find(candidate => remoteEntryName(candidate) === filename);
     if (!entry) throw new Error(`Remote file not found: ${remotePath}`);
-    await openEntry(entry, listing.path, targetLine);
+    await openEntry(entry, targetLine);
   };
 
   const openInitialFile = useEffectEvent(async (remotePath: string, targetLine?: number) => {
@@ -531,12 +531,12 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     }
   };
 
-  const deleteEntry = async (entry: LsResult, directoryPath: string) => {
+  const deleteEntry = async (entry: RuntimeRemoteFileEntry, directoryPath: string) => {
     const name = remoteEntryName(entry);
-    const entryPath = joinRemotePath(directoryPath, name);
+    const entryPath = entry.path;
     setDeletingPath(entryPath);
     try {
-      await client.deleteRemoteEntry(entryPath, Boolean(entry.isDirectory));
+      await client.deleteRemoteEntry(entryPath, entry.kind === 'directory');
       if (pathRef.current === directoryPath) {
         setEntries(current => current.filter(candidate => remoteEntryName(candidate) !== name));
       }
@@ -547,17 +547,17 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     }
   };
 
-  const confirmDeleteEntry = (entry: LsResult) => {
+  const confirmDeleteEntry = (entry: RuntimeRemoteFileEntry) => {
     setDeleteTarget({ entry, directoryPath: path });
   };
 
-  const previewLoading = preview && !preview.error && (preview.gitStatus ? !preview.gitDiff : preview.kind !== 'unsupported' && (isSftpStreamPreview(preview.kind) ? !preview.sftpFileServer : !preview.cached));
+  const previewLoading = preview && !preview.error && (preview.gitStatus ? !preview.gitDiff : preview.kind !== 'unsupported' && (isSftpStreamPreview(preview.kind) ? !preview.filePreview : !preview.cached));
   const canEdit = preview && !preview.gitStatus && isTextPreview(preview.kind) && Boolean(preview.cached) && preview.content !== null;
   const previewProgressIdentity = preview ? {
     hostId,
     remotePath: preview.path,
-    fileSize: preview.entry.fileSize,
-    modificationDate: preview.entry.modificationDate,
+    fileSize: preview.entry.size ?? 0,
+    modificationDate: preview.entry.modifiedAt?.toString() || '',
   } : null;
 
   return (
@@ -624,7 +624,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
               <FileErrorState
                 error={preview.error}
                 title={t('files.openFailed')}
-                onRetry={() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry, parentRemotePath(preview.path), preview.initialLine))}
+                onRetry={() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry, preview.initialLine))}
               />
             ) : previewLoading ? (
               <FileLoadingState label={t('files.opening')} />
@@ -650,7 +650,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 <Text className="mt-4 text-center text-[15px] font-semibold">{t('files.previewUnavailable')}</Text>
                 <Text className="mt-2 text-center text-[12px] leading-[18px] text-muted-foreground">
                   {t('files.previewUnavailableCopy', {
-                    size: formatRemoteFileSize(preview.entry.fileSize),
+                    size: formatRemoteFileSize(preview.entry.size ?? -1),
                   })}
                 </Text>
               </View>
@@ -658,11 +658,11 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
               <View className="flex-1 bg-terminal-canvas p-3">
                 <ZoomableImagePreview accessibilityLabel={remoteEntryName(preview.entry)} uri={preview.cached.uri} />
               </View>
-            ) : preview.kind === 'video' && preview.sftpFileServer ? (
-              <RemoteVideoPreview filename={remoteEntryName(preview.entry)} progressIdentity={previewProgressIdentity!} uri={preview.sftpFileServer.url} />
-            ) : preview.kind === 'audio' && preview.sftpFileServer ? (
-              <RemoteAudioPreview filename={remoteEntryName(preview.entry)} progressIdentity={previewProgressIdentity!} uri={preview.sftpFileServer.url} />
-            ) : preview.kind === 'pdf' && preview.sftpFileServer ? (
+            ) : preview.kind === 'video' && preview.filePreview ? (
+              <RemoteVideoPreview filename={remoteEntryName(preview.entry)} progressIdentity={previewProgressIdentity!} uri={preview.filePreview.url} />
+            ) : preview.kind === 'audio' && preview.filePreview ? (
+              <RemoteAudioPreview filename={remoteEntryName(preview.entry)} progressIdentity={previewProgressIdentity!} uri={preview.filePreview.url} />
+            ) : preview.kind === 'pdf' && preview.filePreview ? (
               <View className="flex-1 items-center justify-center p-8">
                 <FileText size={34} color={colors.textSecondary} />
                 <Text className="mt-4 text-center text-[16px] font-semibold">{t('files.pdfBrowserTitle')}</Text>
@@ -671,7 +671,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   className="mt-5 rounded-full"
                   variant="secondary"
                   onPress={hapticPress(() => {
-                    openPdfBrowser(preview.sftpFileServer!.url, requestRef.current).catch(reason => {
+                    openPdfBrowser(preview.filePreview!.url, requestRef.current).catch(reason => {
                       Alert.alert(t('files.openFailed'), String(reason));
                     });
                   })}
@@ -828,10 +828,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
               <ScrollView className="flex-1" contentContainerClassName="px-3 py-1">
                 {sortedEntries.map(entry => {
                   const name = remoteEntryName(entry);
-                  const directory = Boolean(entry.isDirectory);
-                  const kind = remotePreviewKind(name, entry.fileSize);
+                  const directory = entry.kind === 'directory';
+                  const kind = remotePreviewKind(name, entry.size);
                   return (
-                    <SwipeableRemoteFileRow key={`${name}-${entry.flags}`} deleting={deletingPath === joinRemotePath(path, name)} disabled={Boolean(deletingPath)} name={name} onDelete={() => confirmDeleteEntry(entry)}>
+                    <SwipeableRemoteFileRow key={entry.path} deleting={deletingPath === entry.path} disabled={Boolean(deletingPath)} name={name} onDelete={() => confirmDeleteEntry(entry)}>
                       {({ actionsOpen, closeActions }) => (
                         <Button
                           accessibilityLabel={t(directory ? 'files.openDirectory' : 'files.openFile', { name })}
@@ -863,8 +863,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                               {name}
                             </Text>
                             <Text numberOfLines={1} className="mt-0.5 text-[8px] text-muted-foreground">
-                              {directory ? t('files.directory') : formatRemoteFileSize(entry.fileSize)}
-                              {formatRemoteModificationDate(entry.modificationDate) ? ` · ${formatRemoteModificationDate(entry.modificationDate)}` : ''}
+                              {directory ? t('files.directory') : formatRemoteFileSize(entry.size ?? -1)}
+                              {formatRemoteModificationDate(entry.modifiedAt) ? ` · ${formatRemoteModificationDate(entry.modifiedAt)}` : ''}
                             </Text>
                           </View>
                           <ChevronRight size={17} color={colors.textTertiary} />
@@ -951,11 +951,11 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       />
       <ConfirmationPopup
         confirmLabel={t('common.delete')}
-        copy={t(deleteTarget?.entry.isDirectory ? 'files.deleteDirectoryCopy' : 'files.deleteFileCopy')}
+        copy={t(deleteTarget?.entry.kind === 'directory' ? 'files.deleteDirectoryCopy' : 'files.deleteFileCopy')}
         detail={deleteTarget
-          ? joinRemotePath(deleteTarget.directoryPath, remoteEntryName(deleteTarget.entry))
+          ? deleteTarget.entry.path
           : undefined}
-        detailIcon={deleteTarget?.entry.isDirectory ? Folder : FileText}
+        detailIcon={deleteTarget?.entry.kind === 'directory' ? Folder : FileText}
         icon={Trash2}
         title={t('files.deleteTitle', {
           name: deleteTarget ? remoteEntryName(deleteTarget.entry) : '',
@@ -1074,16 +1074,12 @@ function isSftpStreamPreview(kind: RemotePreviewKind): boolean {
   return kind === 'audio' || kind === 'pdf' || kind === 'video';
 }
 
-function remoteGitStatusEntry(status: RemoteGitStatusEntry): LsResult {
+function remoteGitStatusEntry(status: RemoteGitStatusEntry): RuntimeRemoteFileEntry {
   return {
-    filename: status.path.split('/').pop() || status.path,
-    isDirectory: false,
-    modificationDate: '',
-    lastAccess: '',
-    fileSize: 0,
-    ownerUserID: 0,
-    ownerGroupID: 0,
-    flags: 0,
+    name: status.path.split('/').pop() || status.path,
+    path: status.path,
+    kind: 'file',
+    size: 0,
   };
 }
 
@@ -1101,9 +1097,8 @@ function isPickerCancellation(reason: unknown): boolean {
   return message.includes('cancel') || message.includes('dismiss');
 }
 
-function formatRemoteModificationDate(value: string): string {
-  if (!value) return '';
-  const numeric = Number(value);
-  const date = Number.isFinite(numeric) ? new Date(numeric * 1000) : new Date(value);
+function formatRemoteModificationDate(value: number | undefined): string {
+  if (value === undefined) return '';
+  const date = new Date(value * 1000);
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
 }

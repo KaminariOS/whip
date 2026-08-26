@@ -9,6 +9,8 @@ mod herdr_terminal;
 mod host_runtime;
 mod host_state;
 mod pairing;
+mod remote_ops;
+mod remote_preview;
 mod ssh;
 
 pub use agent_sessions::*;
@@ -18,6 +20,7 @@ pub use herdr_events::*;
 pub use herdr_terminal::*;
 pub use host_runtime::*;
 pub use host_state::*;
+pub use remote_ops::*;
 
 use std::sync::OnceLock;
 

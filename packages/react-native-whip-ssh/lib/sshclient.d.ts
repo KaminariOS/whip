@@ -52,7 +52,32 @@ export type HostRuntimeLifecycleEvent =
   | { type: 'host-state'; state: HostRuntimeState; changedAgentPaneIds: string[] }
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
+  | { type: 'transfer-progress'; progress: RuntimeTransferProgress }
+  | { type: 'preview-state'; previewId: string; state: RuntimePreviewState; error?: string }
   | { type: 'fatal-error'; message: string };
+
+export type RuntimeTransferState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type RuntimePreviewState = 'running' | 'disconnected' | 'stopped';
+export interface RuntimeTransferProgress { transferId: string; bytesTransferred: number; totalBytes?: number; state: RuntimeTransferState }
+export interface RuntimeTransferResult { transferId: string; localPath?: string; remotePath?: string }
+export interface RuntimeTransfer { id: string; result: Promise<RuntimeTransferResult> }
+export interface RuntimeRemoteFileEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'directory' | 'symlink' | 'other';
+  size?: number;
+  modifiedAt?: number;
+  permissions?: number;
+}
+export interface RuntimeRemoteDirectoryListing { path: string; entries: RuntimeRemoteFileEntry[] }
+export interface RuntimeGitRepository { root: string; hasHead: boolean }
+export interface RuntimeGitStatusEntry { indexStatus: string; worktreeStatus: string; path: string; originalPath: string | null; absolutePath: string }
+export interface RuntimeGitDiff {
+  kind: 'text' | 'binary' | 'empty';
+  rows: Array<{ key: string; kind: 'header' | 'hunk' | 'context' | 'addition' | 'deletion' | 'meta'; content: string; marker: string; oldLine: number | null; newLine: number | null }>;
+  truncated: boolean;
+}
+export interface RuntimePreviewInfo { id: string; kind: 'web-forward' | 'html' | 'remote-file'; state: RuntimePreviewState; url: string; displayUrl?: string }
 
 export interface HostRuntimeState {
   revision: number;
@@ -130,16 +155,24 @@ export interface HostRuntimeConnection {
   execute(command: string): Promise<string>;
   remoteHome(): Promise<string>;
   measureHostLatency(): Promise<number>;
-  openLocalForward(remoteHost: string, remotePort: number): Promise<number>;
-  closeLocalForward(localPort: number): void;
-  sftpLs(path: string): Promise<LsResult[]>;
-  sftpRemove(path: string, directory: boolean): Promise<void>;
-  sftpCreateDirAll(path: string): Promise<void>;
-  sftpUpload(localPath: string, remotePath: string, exactPath?: boolean): Promise<void>;
-  sftpDownload(remotePath: string, localDirectory: string): Promise<string>;
-  cancelSftpUpload(): void;
-  startSftpFileServer(remotePath: string): Promise<{ localPort: number; token: string }>;
-  closeSftpFileServer(localPort: number): void;
+  listDirectory(path?: string): Promise<RuntimeRemoteDirectoryListing>;
+  statRemotePath(path: string): Promise<RuntimeRemoteFileEntry>;
+  readRemoteText(path: string, maxBytes?: number): Promise<string>;
+  createRemoteDirectory(path: string): Promise<void>;
+  renameRemotePath(from: string, to: string): Promise<void>;
+  removeRemotePath(path: string, directory: boolean): Promise<void>;
+  startUpload(localPath: string, remoteDirectory: string): RuntimeTransfer;
+  startAttachmentUpload(localPath: string): RuntimeTransfer;
+  startDownload(remotePath: string, localDirectory: string): RuntimeTransfer;
+  transferProgress(transferId: string): RuntimeTransferProgress | undefined;
+  cancelTransfer(transferId: string): boolean;
+  discoverGitRepository(path: string): Promise<RuntimeGitRepository | null>;
+  gitStatus(root: string): Promise<RuntimeGitStatusEntry[]>;
+  gitDiff(repository: RuntimeGitRepository, status: RuntimeGitStatusEntry): Promise<RuntimeGitDiff>;
+  startWebPreview(remoteUrl: string): Promise<RuntimePreviewInfo>;
+  startHtmlPreview(remotePath: string): Promise<RuntimePreviewInfo>;
+  startRemoteFilePreview(remotePath: string): Promise<RuntimePreviewInfo>;
+  stopPreview(previewId: string): Promise<void>;
   resolvedSocketPath(): string | undefined;
   resolveHerdrSocketPath(): Promise<string>;
 }

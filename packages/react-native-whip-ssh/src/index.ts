@@ -23,6 +23,12 @@ import {
   HerdrTerminalNotificationKind,
   HerdrTerminalControlEvent_Tags,
   HostFreshness,
+  GitDiffKind,
+  GitDiffRowKind,
+  PreviewKind,
+  PreviewState,
+  RemoteFileKind,
+  TransferState,
   HostRuntimeEvent_Tags,
   HostSyncStatus,
   HostSshCredential,
@@ -57,6 +63,13 @@ import {
   type HostRuntimeEvent,
   type HostRuntimeLike,
   type HostStateSnapshot,
+  type GitDiff as NativeGitDiff,
+  type GitRepository as NativeGitRepository,
+  type GitStatusEntry as NativeGitStatusEntry,
+  type PreviewInfo as NativePreviewInfo,
+  type RemoteDirectoryListing as NativeRemoteDirectoryListing,
+  type TransferProgress as NativeTransferProgress,
+  type TransferResult as NativeTransferResult,
   type AgentTranscriptEvent,
   type AgentTranscriptState,
 } from './generated-entry';
@@ -156,7 +169,75 @@ export type RuntimeLifecycleEvent =
   | { type: 'host-state'; state: RuntimeHostState; changedAgentPaneIds: string[] }
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
+  | { type: 'transfer-progress'; progress: RuntimeTransferProgress }
+  | { type: 'preview-state'; previewId: string; state: RuntimePreviewState; error?: string }
   | { type: 'fatal-error'; message: string };
+
+export type RuntimeTransferState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type RuntimePreviewState = 'running' | 'disconnected' | 'stopped';
+export type RuntimeRemoteFileKind = 'file' | 'directory' | 'symlink' | 'other';
+
+export type RuntimeTransferProgress = {
+  transferId: string;
+  bytesTransferred: number;
+  totalBytes?: number;
+  state: RuntimeTransferState;
+};
+
+export type RuntimeTransferResult = {
+  transferId: string;
+  localPath?: string;
+  remotePath?: string;
+};
+
+export type RuntimeTransfer = {
+  id: string;
+  result: Promise<RuntimeTransferResult>;
+};
+
+export type RuntimeRemoteFileEntry = {
+  name: string;
+  path: string;
+  kind: RuntimeRemoteFileKind;
+  size?: number;
+  modifiedAt?: number;
+  permissions?: number;
+};
+
+export type RuntimeRemoteDirectoryListing = {
+  path: string;
+  entries: RuntimeRemoteFileEntry[];
+};
+
+export type RuntimeGitRepository = { root: string; hasHead: boolean };
+export type RuntimeGitStatusEntry = {
+  indexStatus: string;
+  worktreeStatus: string;
+  path: string;
+  originalPath: string | null;
+  absolutePath: string;
+};
+export type RuntimeGitDiffRowKind = 'header' | 'hunk' | 'context' | 'addition' | 'deletion' | 'meta';
+export type RuntimeGitDiff = {
+  kind: 'text' | 'binary' | 'empty';
+  rows: Array<{
+    key: string;
+    kind: RuntimeGitDiffRowKind;
+    content: string;
+    marker: string;
+    oldLine: number | null;
+    newLine: number | null;
+  }>;
+  truncated: boolean;
+};
+
+export type RuntimePreviewInfo = {
+  id: string;
+  kind: 'web-forward' | 'html' | 'remote-file';
+  state: RuntimePreviewState;
+  url: string;
+  displayUrl?: string;
+};
 
 export type RuntimeSshShellHandler = {
   data: (bytes: ArrayBuffer) => void;
@@ -624,6 +705,118 @@ function hostSyncStatus(value: HostSyncStatus): RuntimeHostState['syncStatus'] {
   }
 }
 
+function runtimeTransferState(value: TransferState): RuntimeTransferState {
+  switch (value) {
+    case TransferState.Pending: return 'pending';
+    case TransferState.Running: return 'running';
+    case TransferState.Completed: return 'completed';
+    case TransferState.Failed: return 'failed';
+    case TransferState.Cancelled: return 'cancelled';
+  }
+}
+
+function runtimePreviewState(value: PreviewState): RuntimePreviewState {
+  switch (value) {
+    case PreviewState.Running: return 'running';
+    case PreviewState.Disconnected: return 'disconnected';
+    case PreviewState.Stopped: return 'stopped';
+  }
+}
+
+function runtimeTransferProgress(value: NativeTransferProgress): RuntimeTransferProgress {
+  return {
+    transferId: value.transferId,
+    bytesTransferred: Number(value.bytesTransferred),
+    totalBytes: value.totalBytes === undefined ? undefined : Number(value.totalBytes),
+    state: runtimeTransferState(value.state),
+  };
+}
+
+function runtimeRemoteFileKind(value: RemoteFileKind): RuntimeRemoteFileKind {
+  switch (value) {
+    case RemoteFileKind.File: return 'file';
+    case RemoteFileKind.Directory: return 'directory';
+    case RemoteFileKind.Symlink: return 'symlink';
+    case RemoteFileKind.Other: return 'other';
+  }
+}
+
+function runtimeDirectory(value: NativeRemoteDirectoryListing): RuntimeRemoteDirectoryListing {
+  return {
+    path: value.path,
+    entries: value.entries.map(runtimeRemoteEntry),
+  };
+}
+
+function runtimeRemoteEntry(entry: NativeRemoteDirectoryListing['entries'][number]): RuntimeRemoteFileEntry {
+  return {
+    name: entry.name,
+    path: entry.path,
+    kind: runtimeRemoteFileKind(entry.kind),
+    size: entry.size === undefined ? undefined : Number(entry.size),
+    modifiedAt: entry.modifiedAt === undefined ? undefined : Number(entry.modifiedAt),
+    permissions: entry.permissions,
+  };
+}
+
+function runtimeGitStatus(value: NativeGitStatusEntry): RuntimeGitStatusEntry {
+  return {
+    indexStatus: value.indexStatus,
+    worktreeStatus: value.worktreeStatus,
+    path: value.path,
+    originalPath: value.originalPath ?? null,
+    absolutePath: value.absolutePath,
+  };
+}
+
+function nativeGitStatus(value: RuntimeGitStatusEntry): NativeGitStatusEntry {
+  return {
+    indexStatus: value.indexStatus,
+    worktreeStatus: value.worktreeStatus,
+    path: value.path,
+    originalPath: value.originalPath ?? undefined,
+    absolutePath: value.absolutePath,
+  };
+}
+
+function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
+  const kind = value.kind === GitDiffKind.Binary ? 'binary'
+    : value.kind === GitDiffKind.Empty ? 'empty' : 'text';
+  const rowKind = (rowKindValue: GitDiffRowKind): RuntimeGitDiffRowKind => {
+    switch (rowKindValue) {
+      case GitDiffRowKind.Header: return 'header';
+      case GitDiffRowKind.Hunk: return 'hunk';
+      case GitDiffRowKind.Context: return 'context';
+      case GitDiffRowKind.Addition: return 'addition';
+      case GitDiffRowKind.Deletion: return 'deletion';
+      case GitDiffRowKind.Meta: return 'meta';
+    }
+  };
+  return {
+    kind,
+    rows: value.rows.map(row => ({
+      key: row.key,
+      kind: rowKind(row.kind),
+      content: row.content,
+      marker: row.marker,
+      oldLine: row.oldLine ?? null,
+      newLine: row.newLine ?? null,
+    })),
+    truncated: value.truncated,
+  };
+}
+
+function runtimePreview(value: NativePreviewInfo): RuntimePreviewInfo {
+  return {
+    id: value.previewId,
+    kind: value.kind === PreviewKind.Html ? 'html'
+      : value.kind === PreviewKind.RemoteFile ? 'remote-file' : 'web-forward',
+    state: runtimePreviewState(value.state),
+    url: value.localUrl,
+    displayUrl: value.displayUrl,
+  };
+}
+
 function hostFreshness(value: HostFreshness): RuntimeHostState['freshness'] {
   switch (value) {
     case HostFreshness.Loading: return 'loading';
@@ -943,6 +1136,17 @@ const hostRuntimeEventSink = {
       case HostRuntimeEvent_Tags.EventSubscriptionRestored:
         handler({ type: 'event-stream-restored', generation: Number(inner.generation) });
         break;
+      case HostRuntimeEvent_Tags.TransferProgressChanged:
+        handler({ type: 'transfer-progress', progress: runtimeTransferProgress(inner.progress) });
+        break;
+      case HostRuntimeEvent_Tags.PreviewStateChanged:
+        handler({
+          type: 'preview-state',
+          previewId: inner.previewId,
+          state: runtimePreviewState(inner.state),
+          error: inner.error,
+        });
+        break;
       case HostRuntimeEvent_Tags.FatalError:
         handler({ type: 'fatal-error', message: inner.message });
         break;
@@ -1139,55 +1343,89 @@ export class NativeHostRuntime {
 
   measureHostLatency(): Promise<number> { return this.runtime.measureHostLatency(); }
 
-  openLocalForward(remoteHost: string, remotePort: number): Promise<number> {
-    return this.runtime.openLocalForward(remoteHost, remotePort);
+  async listDirectory(path?: string): Promise<RuntimeRemoteDirectoryListing> {
+    return runtimeDirectory(await this.runtime.listDirectory(path));
   }
 
-  closeLocalForward(localPort: number): void { this.runtime.closeLocalForward(localPort); }
-
-  async sftpLs(path: string): Promise<Array<{
-    filename: string;
-    isDirectory: boolean;
-    modificationDate: string;
-    lastAccess: string;
-    fileSize: number;
-    ownerUserID: number;
-    ownerGroupID: number;
-    flags: number;
-  }>> {
-    return (await this.runtime.sftpList(path)).map(entry => ({
-      filename: entry.filename,
-      isDirectory: entry.isDirectory,
-      modificationDate: entry.modificationDate,
-      lastAccess: entry.lastAccess,
-      fileSize: Number(entry.fileSize),
-      ownerUserID: entry.ownerUserId,
-      ownerGroupID: entry.ownerGroupId,
-      flags: 0,
-    }));
+  async statRemotePath(path: string): Promise<RuntimeRemoteFileEntry> {
+    return runtimeRemoteEntry(await this.runtime.statRemotePath(path));
   }
 
-  sftpRemove(path: string, directory: boolean): Promise<void> {
-    return this.runtime.sftpRemove(path, directory);
+  readRemoteText(path: string, maxBytes?: number): Promise<string> {
+    return this.runtime.readRemoteText(path, maxBytes === undefined ? undefined : BigInt(maxBytes));
   }
 
-  sftpCreateDirAll(path: string): Promise<void> { return this.runtime.sftpCreateDirAll(path); }
-
-  sftpUpload(localPath: string, remotePath: string, exactPath = false): Promise<void> {
-    return this.runtime.sftpUpload(localPath, remotePath, exactPath);
+  createRemoteDirectory(path: string): Promise<void> {
+    return this.runtime.createRemoteDirectory(path);
   }
 
-  sftpDownload(remotePath: string, localDirectory: string): Promise<string> {
-    return this.runtime.sftpDownload(remotePath, localDirectory);
+  renameRemotePath(from: string, to: string): Promise<void> {
+    return this.runtime.renameRemotePath(from, to);
   }
 
-  cancelSftpUpload(): void { this.runtime.cancelSftpUpload(); }
-
-  startSftpFileServer(remotePath: string): Promise<{ localPort: number; token: string }> {
-    return this.runtime.startSftpFileServer(remotePath);
+  removeRemotePath(path: string, directory: boolean): Promise<void> {
+    return this.runtime.removeRemotePath(path, directory);
   }
 
-  closeSftpFileServer(localPort: number): void { this.runtime.closeSftpFileServer(localPort); }
+  private transfer(id: string): RuntimeTransfer {
+    return {
+      id,
+      result: this.runtime.awaitTransfer(id).then((result: NativeTransferResult) => ({
+        transferId: result.transferId,
+        localPath: result.localPath,
+        remotePath: result.remotePath,
+      })),
+    };
+  }
+
+  startUpload(localPath: string, remoteDirectory: string): RuntimeTransfer {
+    return this.transfer(this.runtime.startUpload(localPath, remoteDirectory));
+  }
+
+  startAttachmentUpload(localPath: string): RuntimeTransfer {
+    return this.transfer(this.runtime.startAttachmentUpload(localPath));
+  }
+
+  startDownload(remotePath: string, localDirectory: string): RuntimeTransfer {
+    return this.transfer(this.runtime.startDownload(remotePath, localDirectory));
+  }
+
+  transferProgress(transferId: string): RuntimeTransferProgress | undefined {
+    const progress = this.runtime.transferProgress(transferId);
+    return progress && runtimeTransferProgress(progress);
+  }
+
+  cancelTransfer(transferId: string): boolean { return this.runtime.cancelTransfer(transferId); }
+
+  async discoverGitRepository(path: string): Promise<RuntimeGitRepository | null> {
+    return await this.runtime.discoverGitRepository(path) ?? null;
+  }
+
+  async gitStatus(root: string): Promise<RuntimeGitStatusEntry[]> {
+    return (await this.runtime.gitStatus(root)).map(runtimeGitStatus);
+  }
+
+  async gitDiff(repository: RuntimeGitRepository, status: RuntimeGitStatusEntry): Promise<RuntimeGitDiff> {
+    return runtimeGitDiff(await this.runtime.gitDiff(
+      repository as NativeGitRepository,
+      nativeGitStatus(status),
+    ));
+  }
+
+  async startWebPreview(remoteUrl: string): Promise<RuntimePreviewInfo> {
+    return runtimePreview(await this.runtime.startWebPreview(remoteUrl));
+  }
+
+  async startHtmlPreview(remotePath: string): Promise<RuntimePreviewInfo> {
+    return runtimePreview(await this.runtime.startHtmlPreview(remotePath));
+  }
+
+  async startRemoteFilePreview(remotePath: string): Promise<RuntimePreviewInfo> {
+    return runtimePreview(await this.runtime.startRemoteFilePreview(remotePath));
+  }
+
+  stopPreview(previewId: string): Promise<void> { return this.runtime.stopPreview(previewId); }
+
 }
 
 const nativeClient = {

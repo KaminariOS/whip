@@ -11,15 +11,11 @@ import {
   sortRemoteEntries,
 } from '../src/lib/remoteFiles';
 
-const entry = (filename: string, isDirectory = false) => ({
-  filename,
-  isDirectory,
-  modificationDate: '',
-  lastAccess: '',
-  fileSize: 0,
-  ownerUserID: 0,
-  ownerGroupID: 0,
-  flags: 0,
+const entry = (name: string, isDirectory = false) => ({
+  name: name.replace(/\/$/, ''),
+  path: `/${name.replace(/\/$/, '')}`,
+  kind: isDirectory ? 'directory' as const : 'file' as const,
+  size: 0,
 });
 
 describe('remote file paths', () => {
@@ -55,23 +51,23 @@ describe('remote file paths', () => {
   it('sorts remote entries by size or modification date in either direction', () => {
     const oldSmall = {
       ...entry('old-small.txt'),
-      fileSize: 10,
-      modificationDate: '100',
+      size: 10,
+      modifiedAt: 100,
     };
     const newLarge = {
       ...entry('new-large.txt'),
-      fileSize: 200,
-      modificationDate: '300',
+      size: 200,
+      modifiedAt: 300,
     };
     const middle = {
       ...entry('middle.txt'),
-      fileSize: 50,
-      modificationDate: '200',
+      size: 50,
+      modifiedAt: 200,
     };
     const directory = {
       ...entry('folder/', true),
-      fileSize: 999,
-      modificationDate: '50',
+      size: 999,
+      modifiedAt: 50,
     };
 
     expect(

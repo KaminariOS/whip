@@ -42,6 +42,9 @@ function createMockWhipSshModule() {
     let socketFromCache = Boolean(config.cachedSocketPath && !config.socketPath);
     const bridges = new Map();
     const sshShells = new Map();
+    const transfers = new Map();
+    let transferSequence = 0;
+    let previewSequence = 0;
     let hostState = {
       revision: 0,
       connectionGeneration: 0,
@@ -278,6 +281,78 @@ function createMockWhipSshModule() {
       execute(command) { return runtime.controlClient.execute(command); },
       remoteHome() { return runtime.controlClient.getRemoteHome(); },
       measureHostLatency() { return runtime.controlClient.measureHostLatency(); },
+      async listDirectory(path) {
+        const home = await runtime.controlClient.getRemoteHome();
+        const resolved = path || home;
+        const entries = await runtime.controlClient.sftpLs(resolved);
+        return {
+          path: resolved,
+          entries: entries.map(entry => {
+            const name = entry.filename.replace(/\/+$/, '');
+            return {
+              name,
+              path: `${resolved.replace(/\/$/, '')}/${name}`,
+              kind: entry.isDirectory ? 'directory' : 'file',
+              size: entry.fileSize,
+              modifiedAt: Number(entry.modificationDate) || undefined,
+            };
+          }),
+        };
+      },
+      removeRemotePath(path, directory) {
+        return directory ? runtime.controlClient.sftpRmdir(path) : runtime.controlClient.sftpRm(path);
+      },
+      startUpload(local, remoteDirectory) {
+        const id = `transfer-${++transferSequence}`;
+        const result = runtime.controlClient.sftpUpload(local, remoteDirectory).then(() => ({ transferId: id }));
+        transfers.set(id, result);
+        return { id, result };
+      },
+      startAttachmentUpload(local) {
+        const id = `transfer-${++transferSequence}`;
+        const source = local.split('/').pop();
+        const dot = source.lastIndexOf('.');
+        const stem = (dot > 0 ? source.slice(0, dot) : source).replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '');
+        const extension = dot > 0 ? source.slice(dot) : '';
+        const result = (async () => {
+          const home = await runtime.controlClient.getRemoteHome();
+          const directory = `${home}/.whip/uploads`;
+          await runtime.controlClient.sftpCreateDirAll(directory);
+          const remotePath = `${directory}/${stem}-${id}${extension}`;
+          await runtime.controlClient.sftpUploadToPath(local, remotePath);
+          return { transferId: id, localPath: local, remotePath };
+        })();
+        transfers.set(id, result);
+        return { id, result };
+      },
+      startDownload(remote, localDirectory) {
+        const id = `transfer-${++transferSequence}`;
+        const result = runtime.controlClient.sftpDownload(remote, localDirectory)
+          .then(localPath => ({ transferId: id, localPath, remotePath: remote }));
+        transfers.set(id, result);
+        return { id, result };
+      },
+      cancelTransfer(id) {
+        if (!transfers.has(id)) return false;
+        runtime.controlClient.sftpCancelUpload();
+        return true;
+      },
+      discoverGitRepository: jest.fn(async () => null),
+      gitStatus: jest.fn(async () => []),
+      gitDiff: jest.fn(),
+      async startWebPreview(url) {
+        const parsed = new URL(url);
+        const port = await runtime.controlClient.openLocalForward(parsed.hostname, Number(parsed.port) || 80);
+        parsed.hostname = '127.0.0.1';
+        parsed.port = String(port);
+        return { id: `preview-${++previewSequence}`, kind: 'web-forward', state: 'running', url: parsed.toString() };
+      },
+      async startHtmlPreview() { throw new Error('HTML previews are not implemented by the unit mock'); },
+      async startRemoteFilePreview(path) {
+        const server = await runtime.controlClient.startSftpFileServer(path);
+        return { id: `preview-${++previewSequence}`, kind: 'remote-file', state: 'running', url: `http://127.0.0.1:${server.localPort}/${server.token}/file` };
+      },
+      async stopPreview() {},
       async openLocalForward(host, port) { return runtime.controlClient.openLocalForward(host, port); },
       closeLocalForward(port) { return runtime.controlClient.closeLocalForward(port); },
       sftpLs(path) { return runtime.controlClient.sftpLs(path); },

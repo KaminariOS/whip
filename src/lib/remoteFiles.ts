@@ -1,4 +1,4 @@
-import type { LsResult } from 'react-native-whip-ssh';
+import type { RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 
 export const MAX_REMOTE_TEXT_PREVIEW_BYTES = 512 * 1024;
 export const MAX_REMOTE_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
@@ -77,8 +77,8 @@ const CODE_LANGUAGE_BY_FILENAME: Record<string, string> = {
   makefile: 'makefile',
 };
 
-export function remoteEntryName(entry: Pick<LsResult, 'filename'>): string {
-  return entry.filename.replace(/\/+$/, '');
+export function remoteEntryName(entry: Pick<RuntimeRemoteFileEntry, 'name'>): string {
+  return entry.name;
 }
 
 export function normalizeRemotePath(path: string | undefined, home: string): string {
@@ -124,29 +124,22 @@ export function nextRemoteFileSort(currentField: RemoteFileSortField, currentDir
   };
 }
 
-export function sortRemoteEntries(entries: LsResult[], field: RemoteFileSortField = 'name', direction: RemoteFileSortDirection = 'ascending'): LsResult[] {
+export function sortRemoteEntries(entries: RuntimeRemoteFileEntry[], field: RemoteFileSortField = 'name', direction: RemoteFileSortDirection = 'ascending'): RuntimeRemoteFileEntry[] {
   return [...entries].sort((left, right) => {
-    const directoryOrder = Number(Boolean(right.isDirectory)) - Number(Boolean(left.isDirectory));
+    const directoryOrder = Number(right.kind === 'directory') - Number(left.kind === 'directory');
     if (directoryOrder) return directoryOrder;
 
     const nameOrder = remoteEntryName(left).localeCompare(remoteEntryName(right), undefined, {
       numeric: true,
       sensitivity: 'base',
     });
-    const fieldOrder = field === 'size' ? left.fileSize - right.fileSize : field === 'modified' ? remoteModificationTime(left.modificationDate) - remoteModificationTime(right.modificationDate) : nameOrder;
+    const fieldOrder = field === 'size' ? (left.size ?? 0) - (right.size ?? 0) : field === 'modified' ? (left.modifiedAt ?? 0) - (right.modifiedAt ?? 0) : nameOrder;
     return fieldOrder * (direction === 'ascending' ? 1 : -1) || nameOrder;
   });
 }
 
-function remoteModificationTime(value: string): number {
-  const numeric = Number(value);
-  if (value.trim() && Number.isFinite(numeric)) return numeric;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-export function remotePreviewKind(filename: string, fileSize: number): RemotePreviewKind {
-  if (!Number.isFinite(fileSize) || fileSize < 0) return 'unsupported';
+export function remotePreviewKind(filename: string, fileSize: number | undefined): RemotePreviewKind {
+  if (fileSize === undefined || !Number.isFinite(fileSize) || fileSize < 0) return 'unsupported';
   const lower = filename.toLowerCase();
   const base = lower.split('/').pop() || lower;
   const extension = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1) : '';

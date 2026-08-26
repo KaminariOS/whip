@@ -657,4 +657,13 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseName: "MPL-2.0",
     licenseAsset: require("../../assets/licenses/generated/9a45483453dc8226.txt"),
   },
+  {
+    id: "cargo-url-2-5-8",
+    category: "cargo",
+    projectName: "url",
+    sourceUrl: "https://github.com/servo/rust-url",
+    attribution: "Direct Rust dependency · version 2.5.8 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
+  },
 ] as const;

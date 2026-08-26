@@ -2251,6 +2251,309 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
   return new FFIConverter();
 })();
 
+export enum GitDiffKind {
+  Text,
+  Binary,
+  Empty,
+}
+
+const FfiConverterTypeGitDiffKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GitDiffKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GitDiffKind.Text;
+        case 2:
+          return GitDiffKind.Binary;
+        case 3:
+          return GitDiffKind.Empty;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GitDiffKind.Text:
+          return ordinalConverter.write(1, into);
+        case GitDiffKind.Binary:
+          return ordinalConverter.write(2, into);
+        case GitDiffKind.Empty:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GitDiffRowKind {
+  Header,
+  Hunk,
+  Context,
+  Addition,
+  Deletion,
+  Meta,
+}
+
+const FfiConverterTypeGitDiffRowKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GitDiffRowKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GitDiffRowKind.Header;
+        case 2:
+          return GitDiffRowKind.Hunk;
+        case 3:
+          return GitDiffRowKind.Context;
+        case 4:
+          return GitDiffRowKind.Addition;
+        case 5:
+          return GitDiffRowKind.Deletion;
+        case 6:
+          return GitDiffRowKind.Meta;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GitDiffRowKind.Header:
+          return ordinalConverter.write(1, into);
+        case GitDiffRowKind.Hunk:
+          return ordinalConverter.write(2, into);
+        case GitDiffRowKind.Context:
+          return ordinalConverter.write(3, into);
+        case GitDiffRowKind.Addition:
+          return ordinalConverter.write(4, into);
+        case GitDiffRowKind.Deletion:
+          return ordinalConverter.write(5, into);
+        case GitDiffRowKind.Meta:
+          return ordinalConverter.write(6, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitDiffRow = {
+  key: string;
+  kind: GitDiffRowKind;
+  content: string;
+  marker: string;
+  oldLine?: number;
+  newLine?: number;
+};
+
+/**
+ * Generated factory for {@link GitDiffRow} record objects.
+ */
+export const GitDiffRow = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitDiffRow, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitDiffRow>,
+  });
+})();
+
+const FfiConverterTypeGitDiffRow = (() => {
+  type TypeName = GitDiffRow;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        kind: FfiConverterTypeGitDiffRowKind.read(from),
+        content: FfiConverterString.read(from),
+        marker: FfiConverterString.read(from),
+        oldLine: FfiConverterOptionalUInt32.read(from),
+        newLine: FfiConverterOptionalUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterTypeGitDiffRowKind.write(value.kind, into);
+      FfiConverterString.write(value.content, into);
+      FfiConverterString.write(value.marker, into);
+      FfiConverterOptionalUInt32.write(value.oldLine, into);
+      FfiConverterOptionalUInt32.write(value.newLine, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterTypeGitDiffRowKind.allocationSize(value.kind) +
+        FfiConverterString.allocationSize(value.content) +
+        FfiConverterString.allocationSize(value.marker) +
+        FfiConverterOptionalUInt32.allocationSize(value.oldLine) +
+        FfiConverterOptionalUInt32.allocationSize(value.newLine)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitDiff = {
+  kind: GitDiffKind;
+  rows: Array<GitDiffRow>;
+  truncated: boolean;
+};
+
+/**
+ * Generated factory for {@link GitDiff} record objects.
+ */
+export const GitDiff = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitDiff, ReturnType<typeof defaults>>(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitDiff>,
+  });
+})();
+
+const FfiConverterTypeGitDiff = (() => {
+  type TypeName = GitDiff;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        kind: FfiConverterTypeGitDiffKind.read(from),
+        rows: FfiConverterSequenceTypeGitDiffRow.read(from),
+        truncated: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeGitDiffKind.write(value.kind, into);
+      FfiConverterSequenceTypeGitDiffRow.write(value.rows, into);
+      FfiConverterBool.write(value.truncated, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeGitDiffKind.allocationSize(value.kind) +
+        FfiConverterSequenceTypeGitDiffRow.allocationSize(value.rows) +
+        FfiConverterBool.allocationSize(value.truncated)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitRepository = {
+  root: string;
+  hasHead: boolean;
+};
+
+/**
+ * Generated factory for {@link GitRepository} record objects.
+ */
+export const GitRepository = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitRepository, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitRepository>,
+  });
+})();
+
+const FfiConverterTypeGitRepository = (() => {
+  type TypeName = GitRepository;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        root: FfiConverterString.read(from),
+        hasHead: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.root, into);
+      FfiConverterBool.write(value.hasHead, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.root) +
+        FfiConverterBool.allocationSize(value.hasHead)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitStatusEntry = {
+  indexStatus: string;
+  worktreeStatus: string;
+  path: string;
+  originalPath?: string;
+  absolutePath: string;
+};
+
+/**
+ * Generated factory for {@link GitStatusEntry} record objects.
+ */
+export const GitStatusEntry = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitStatusEntry, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitStatusEntry>,
+  });
+})();
+
+const FfiConverterTypeGitStatusEntry = (() => {
+  type TypeName = GitStatusEntry;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        indexStatus: FfiConverterString.read(from),
+        worktreeStatus: FfiConverterString.read(from),
+        path: FfiConverterString.read(from),
+        originalPath: FfiConverterOptionalString.read(from),
+        absolutePath: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.indexStatus, into);
+      FfiConverterString.write(value.worktreeStatus, into);
+      FfiConverterString.write(value.path, into);
+      FfiConverterOptionalString.write(value.originalPath, into);
+      FfiConverterString.write(value.absolutePath, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.indexStatus) +
+        FfiConverterString.allocationSize(value.worktreeStatus) +
+        FfiConverterString.allocationSize(value.path) +
+        FfiConverterOptionalString.allocationSize(value.originalPath) +
+        FfiConverterString.allocationSize(value.absolutePath)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum HerdrAgentStatus {
   Idle,
   Working,
@@ -3976,120 +4279,6 @@ const FfiConverterTypeHostServerFocus = (() => {
   return new FFIConverter();
 })();
 
-export type HostSftpEntry = {
-  filename: string;
-  isDirectory: boolean;
-  modificationDate: string;
-  lastAccess: string;
-  fileSize: bigint;
-  ownerUserId: number;
-  ownerGroupId: number;
-  permissions: string;
-};
-
-/**
- * Generated factory for {@link HostSftpEntry} record objects.
- */
-export const HostSftpEntry = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HostSftpEntry, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HostSftpEntry>,
-  });
-})();
-
-const FfiConverterTypeHostSftpEntry = (() => {
-  type TypeName = HostSftpEntry;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        filename: FfiConverterString.read(from),
-        isDirectory: FfiConverterBool.read(from),
-        modificationDate: FfiConverterString.read(from),
-        lastAccess: FfiConverterString.read(from),
-        fileSize: FfiConverterUInt64.read(from),
-        ownerUserId: FfiConverterUInt32.read(from),
-        ownerGroupId: FfiConverterUInt32.read(from),
-        permissions: FfiConverterString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.filename, into);
-      FfiConverterBool.write(value.isDirectory, into);
-      FfiConverterString.write(value.modificationDate, into);
-      FfiConverterString.write(value.lastAccess, into);
-      FfiConverterUInt64.write(value.fileSize, into);
-      FfiConverterUInt32.write(value.ownerUserId, into);
-      FfiConverterUInt32.write(value.ownerGroupId, into);
-      FfiConverterString.write(value.permissions, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.filename) +
-        FfiConverterBool.allocationSize(value.isDirectory) +
-        FfiConverterString.allocationSize(value.modificationDate) +
-        FfiConverterString.allocationSize(value.lastAccess) +
-        FfiConverterUInt64.allocationSize(value.fileSize) +
-        FfiConverterUInt32.allocationSize(value.ownerUserId) +
-        FfiConverterUInt32.allocationSize(value.ownerGroupId) +
-        FfiConverterString.allocationSize(value.permissions)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HostSftpFileServer = {
-  localPort: number;
-  token: string;
-};
-
-/**
- * Generated factory for {@link HostSftpFileServer} record objects.
- */
-export const HostSftpFileServer = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HostSftpFileServer, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HostSftpFileServer>,
-  });
-})();
-
-const FfiConverterTypeHostSftpFileServer = (() => {
-  type TypeName = HostSftpFileServer;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        localPort: FfiConverterUInt16.read(from),
-        token: FfiConverterString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterUInt16.write(value.localPort, into);
-      FfiConverterString.write(value.token, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterUInt16.allocationSize(value.localPort) +
-        FfiConverterString.allocationSize(value.token)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
 export enum HostSyncStatus {
   Idle,
   Syncing,
@@ -4255,6 +4444,444 @@ const FfiConverterTypeHostStateSnapshot = (() => {
         FfiConverterOptionalTypeHerdrSessionSnapshot.allocationSize(
           value.snapshot,
         )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum PreviewKind {
+  WebForward,
+  Html,
+  RemoteFile,
+}
+
+const FfiConverterTypePreviewKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = PreviewKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return PreviewKind.WebForward;
+        case 2:
+          return PreviewKind.Html;
+        case 3:
+          return PreviewKind.RemoteFile;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case PreviewKind.WebForward:
+          return ordinalConverter.write(1, into);
+        case PreviewKind.Html:
+          return ordinalConverter.write(2, into);
+        case PreviewKind.RemoteFile:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum PreviewState {
+  Running,
+  Disconnected,
+  Stopped,
+}
+
+const FfiConverterTypePreviewState = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = PreviewState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return PreviewState.Running;
+        case 2:
+          return PreviewState.Disconnected;
+        case 3:
+          return PreviewState.Stopped;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case PreviewState.Running:
+          return ordinalConverter.write(1, into);
+        case PreviewState.Disconnected:
+          return ordinalConverter.write(2, into);
+        case PreviewState.Stopped:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type PreviewInfo = {
+  previewId: string;
+  kind: PreviewKind;
+  state: PreviewState;
+  localUrl: string;
+  displayUrl?: string;
+};
+
+/**
+ * Generated factory for {@link PreviewInfo} record objects.
+ */
+export const PreviewInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<PreviewInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<PreviewInfo>,
+  });
+})();
+
+const FfiConverterTypePreviewInfo = (() => {
+  type TypeName = PreviewInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        previewId: FfiConverterString.read(from),
+        kind: FfiConverterTypePreviewKind.read(from),
+        state: FfiConverterTypePreviewState.read(from),
+        localUrl: FfiConverterString.read(from),
+        displayUrl: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.previewId, into);
+      FfiConverterTypePreviewKind.write(value.kind, into);
+      FfiConverterTypePreviewState.write(value.state, into);
+      FfiConverterString.write(value.localUrl, into);
+      FfiConverterOptionalString.write(value.displayUrl, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.previewId) +
+        FfiConverterTypePreviewKind.allocationSize(value.kind) +
+        FfiConverterTypePreviewState.allocationSize(value.state) +
+        FfiConverterString.allocationSize(value.localUrl) +
+        FfiConverterOptionalString.allocationSize(value.displayUrl)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum RemoteFileKind {
+  File,
+  Directory,
+  Symlink,
+  Other,
+}
+
+const FfiConverterTypeRemoteFileKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = RemoteFileKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return RemoteFileKind.File;
+        case 2:
+          return RemoteFileKind.Directory;
+        case 3:
+          return RemoteFileKind.Symlink;
+        case 4:
+          return RemoteFileKind.Other;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case RemoteFileKind.File:
+          return ordinalConverter.write(1, into);
+        case RemoteFileKind.Directory:
+          return ordinalConverter.write(2, into);
+        case RemoteFileKind.Symlink:
+          return ordinalConverter.write(3, into);
+        case RemoteFileKind.Other:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type RemoteFileEntry = {
+  name: string;
+  path: string;
+  kind: RemoteFileKind;
+  size?: bigint;
+  modifiedAt?: bigint;
+  permissions?: number;
+};
+
+/**
+ * Generated factory for {@link RemoteFileEntry} record objects.
+ */
+export const RemoteFileEntry = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<RemoteFileEntry, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<RemoteFileEntry>,
+  });
+})();
+
+const FfiConverterTypeRemoteFileEntry = (() => {
+  type TypeName = RemoteFileEntry;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        name: FfiConverterString.read(from),
+        path: FfiConverterString.read(from),
+        kind: FfiConverterTypeRemoteFileKind.read(from),
+        size: FfiConverterOptionalUInt64.read(from),
+        modifiedAt: FfiConverterOptionalUInt64.read(from),
+        permissions: FfiConverterOptionalUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.name, into);
+      FfiConverterString.write(value.path, into);
+      FfiConverterTypeRemoteFileKind.write(value.kind, into);
+      FfiConverterOptionalUInt64.write(value.size, into);
+      FfiConverterOptionalUInt64.write(value.modifiedAt, into);
+      FfiConverterOptionalUInt32.write(value.permissions, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterString.allocationSize(value.path) +
+        FfiConverterTypeRemoteFileKind.allocationSize(value.kind) +
+        FfiConverterOptionalUInt64.allocationSize(value.size) +
+        FfiConverterOptionalUInt64.allocationSize(value.modifiedAt) +
+        FfiConverterOptionalUInt32.allocationSize(value.permissions)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type RemoteDirectoryListing = {
+  path: string;
+  entries: Array<RemoteFileEntry>;
+};
+
+/**
+ * Generated factory for {@link RemoteDirectoryListing} record objects.
+ */
+export const RemoteDirectoryListing = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      RemoteDirectoryListing,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<RemoteDirectoryListing>,
+  });
+})();
+
+const FfiConverterTypeRemoteDirectoryListing = (() => {
+  type TypeName = RemoteDirectoryListing;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        path: FfiConverterString.read(from),
+        entries: FfiConverterSequenceTypeRemoteFileEntry.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.path, into);
+      FfiConverterSequenceTypeRemoteFileEntry.write(value.entries, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.path) +
+        FfiConverterSequenceTypeRemoteFileEntry.allocationSize(value.entries)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum TransferState {
+  Pending,
+  Running,
+  Completed,
+  Failed,
+  Cancelled,
+}
+
+const FfiConverterTypeTransferState = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = TransferState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return TransferState.Pending;
+        case 2:
+          return TransferState.Running;
+        case 3:
+          return TransferState.Completed;
+        case 4:
+          return TransferState.Failed;
+        case 5:
+          return TransferState.Cancelled;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case TransferState.Pending:
+          return ordinalConverter.write(1, into);
+        case TransferState.Running:
+          return ordinalConverter.write(2, into);
+        case TransferState.Completed:
+          return ordinalConverter.write(3, into);
+        case TransferState.Failed:
+          return ordinalConverter.write(4, into);
+        case TransferState.Cancelled:
+          return ordinalConverter.write(5, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TransferProgress = {
+  transferId: string;
+  bytesTransferred: bigint;
+  totalBytes?: bigint;
+  state: TransferState;
+};
+
+/**
+ * Generated factory for {@link TransferProgress} record objects.
+ */
+export const TransferProgress = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<TransferProgress, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<TransferProgress>,
+  });
+})();
+
+const FfiConverterTypeTransferProgress = (() => {
+  type TypeName = TransferProgress;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        transferId: FfiConverterString.read(from),
+        bytesTransferred: FfiConverterUInt64.read(from),
+        totalBytes: FfiConverterOptionalUInt64.read(from),
+        state: FfiConverterTypeTransferState.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.transferId, into);
+      FfiConverterUInt64.write(value.bytesTransferred, into);
+      FfiConverterOptionalUInt64.write(value.totalBytes, into);
+      FfiConverterTypeTransferState.write(value.state, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.transferId) +
+        FfiConverterUInt64.allocationSize(value.bytesTransferred) +
+        FfiConverterOptionalUInt64.allocationSize(value.totalBytes) +
+        FfiConverterTypeTransferState.allocationSize(value.state)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TransferResult = {
+  transferId: string;
+  localPath?: string;
+  remotePath?: string;
+};
+
+/**
+ * Generated factory for {@link TransferResult} record objects.
+ */
+export const TransferResult = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<TransferResult, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<TransferResult>,
+  });
+})();
+
+const FfiConverterTypeTransferResult = (() => {
+  type TypeName = TransferResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        transferId: FfiConverterString.read(from),
+        localPath: FfiConverterOptionalString.read(from),
+        remotePath: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.transferId, into);
+      FfiConverterOptionalString.write(value.localPath, into);
+      FfiConverterOptionalString.write(value.remotePath, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.transferId) +
+        FfiConverterOptionalString.allocationSize(value.localPath) +
+        FfiConverterOptionalString.allocationSize(value.remotePath)
       );
     }
   }
@@ -10056,6 +10683,11 @@ export enum HostRuntimeError_Tags {
   TerminalUnavailable = 'TerminalUnavailable',
   StaleOperation = 'StaleOperation',
   InvalidConfiguration = 'InvalidConfiguration',
+  RemoteFileFailure = 'RemoteFileFailure',
+  TransferFailure = 'TransferFailure',
+  TransferCancelled = 'TransferCancelled',
+  GitFailure = 'GitFailure',
+  PreviewFailure = 'PreviewFailure',
 }
 export const HostRuntimeError = (() => {
   type AuthenticationFailure__interface = {
@@ -10418,6 +11050,183 @@ export const HostRuntimeError = (() => {
     }
   }
 
+  type RemoteFileFailure__interface = {
+    tag: HostRuntimeError_Tags.RemoteFileFailure;
+    inner: Readonly<[string]>;
+  };
+  class RemoteFileFailure_
+    extends UniffiError
+    implements RemoteFileFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.RemoteFileFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'RemoteFileFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): RemoteFileFailure_ {
+      return new RemoteFileFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is RemoteFileFailure_ {
+      return obj.tag === HostRuntimeError_Tags.RemoteFileFailure;
+    }
+    static hasInner(obj: any): obj is RemoteFileFailure_ {
+      return RemoteFileFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: RemoteFileFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type TransferFailure__interface = {
+    tag: HostRuntimeError_Tags.TransferFailure;
+    inner: Readonly<[string]>;
+  };
+  class TransferFailure_
+    extends UniffiError
+    implements TransferFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.TransferFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'TransferFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): TransferFailure_ {
+      return new TransferFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is TransferFailure_ {
+      return obj.tag === HostRuntimeError_Tags.TransferFailure;
+    }
+    static hasInner(obj: any): obj is TransferFailure_ {
+      return TransferFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: TransferFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type TransferCancelled__interface = {
+    tag: HostRuntimeError_Tags.TransferCancelled;
+    inner: Readonly<[string]>;
+  };
+  class TransferCancelled_
+    extends UniffiError
+    implements TransferCancelled__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.TransferCancelled;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'TransferCancelled');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): TransferCancelled_ {
+      return new TransferCancelled_(v0);
+    }
+
+    static instanceOf(obj: any): obj is TransferCancelled_ {
+      return obj.tag === HostRuntimeError_Tags.TransferCancelled;
+    }
+    static hasInner(obj: any): obj is TransferCancelled_ {
+      return TransferCancelled_.instanceOf(obj);
+    }
+
+    static getInner(obj: TransferCancelled_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type GitFailure__interface = {
+    tag: HostRuntimeError_Tags.GitFailure;
+    inner: Readonly<[string]>;
+  };
+  class GitFailure_ extends UniffiError implements GitFailure__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.GitFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'GitFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): GitFailure_ {
+      return new GitFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is GitFailure_ {
+      return obj.tag === HostRuntimeError_Tags.GitFailure;
+    }
+    static hasInner(obj: any): obj is GitFailure_ {
+      return GitFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: GitFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type PreviewFailure__interface = {
+    tag: HostRuntimeError_Tags.PreviewFailure;
+    inner: Readonly<[string]>;
+  };
+  class PreviewFailure_
+    extends UniffiError
+    implements PreviewFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.PreviewFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostRuntimeError', 'PreviewFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): PreviewFailure_ {
+      return new PreviewFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is PreviewFailure_ {
+      return obj.tag === HostRuntimeError_Tags.PreviewFailure;
+    }
+    static hasInner(obj: any): obj is PreviewFailure_ {
+      return PreviewFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: PreviewFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
   function instanceOf(obj: any): obj is HostRuntimeError {
     return obj[uniffiTypeNameSymbol] === 'HostRuntimeError';
   }
@@ -10434,6 +11243,11 @@ export const HostRuntimeError = (() => {
     TerminalUnavailable: TerminalUnavailable_,
     StaleOperation: StaleOperation_,
     InvalidConfiguration: InvalidConfiguration_,
+    RemoteFileFailure: RemoteFileFailure_,
+    TransferFailure: TransferFailure_,
+    TransferCancelled: TransferCancelled_,
+    GitFailure: GitFailure_,
+    PreviewFailure: PreviewFailure_,
   });
 })();
 export type HostRuntimeError = InstanceType<
@@ -10447,7 +11261,12 @@ export type HostRuntimeError = InstanceType<
     | 'RuntimeDisconnected'
     | 'TerminalUnavailable'
     | 'StaleOperation'
-    | 'InvalidConfiguration']
+    | 'InvalidConfiguration'
+    | 'RemoteFileFailure'
+    | 'TransferFailure'
+    | 'TransferCancelled'
+    | 'GitFailure'
+    | 'PreviewFailure']
 >;
 
 // FfiConverter for enum HostRuntimeError
@@ -10495,6 +11314,24 @@ const FfiConverterTypeHostRuntimeError = (() => {
           );
         case 10:
           return new HostRuntimeError.InvalidConfiguration(
+            FfiConverterString.read(from),
+          );
+        case 11:
+          return new HostRuntimeError.RemoteFileFailure(
+            FfiConverterString.read(from),
+          );
+        case 12:
+          return new HostRuntimeError.TransferFailure(
+            FfiConverterString.read(from),
+          );
+        case 13:
+          return new HostRuntimeError.TransferCancelled(
+            FfiConverterString.read(from),
+          );
+        case 14:
+          return new HostRuntimeError.GitFailure(FfiConverterString.read(from));
+        case 15:
+          return new HostRuntimeError.PreviewFailure(
             FfiConverterString.read(from),
           );
         default:
@@ -10559,6 +11396,36 @@ const FfiConverterTypeHostRuntimeError = (() => {
         }
         case HostRuntimeError_Tags.InvalidConfiguration: {
           ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.RemoteFileFailure: {
+          ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.TransferFailure: {
+          ordinalConverter.write(12, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.TransferCancelled: {
+          ordinalConverter.write(13, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.GitFailure: {
+          ordinalConverter.write(14, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.PreviewFailure: {
+          ordinalConverter.write(15, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
@@ -10630,6 +11497,36 @@ const FfiConverterTypeHostRuntimeError = (() => {
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
+        case HostRuntimeError_Tags.RemoteFileFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.TransferFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(12);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.TransferCancelled: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(13);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.GitFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(14);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.PreviewFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(15);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -10698,6 +11595,8 @@ export enum HostRuntimeEvent_Tags {
   HostStateChanged = 'HostStateChanged',
   EventSubscriptionClosed = 'EventSubscriptionClosed',
   EventSubscriptionRestored = 'EventSubscriptionRestored',
+  TransferProgressChanged = 'TransferProgressChanged',
+  PreviewStateChanged = 'PreviewStateChanged',
   FatalError = 'FatalError',
 }
 export const HostRuntimeEvent = (() => {
@@ -11065,6 +11964,87 @@ export const HostRuntimeEvent = (() => {
     }
   }
 
+  type TransferProgressChanged__interface = {
+    tag: HostRuntimeEvent_Tags.TransferProgressChanged;
+    inner: Readonly<{ runtimeId: string; progress: TransferProgress }>;
+  };
+  class TransferProgressChanged_
+    extends UniffiEnum
+    implements TransferProgressChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.TransferProgressChanged;
+    readonly inner: Readonly<{ runtimeId: string; progress: TransferProgress }>;
+    constructor(inner: { runtimeId: string; progress: TransferProgress }) {
+      super('HostRuntimeEvent', 'TransferProgressChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      progress: TransferProgress;
+    }): TransferProgressChanged_ {
+      return new TransferProgressChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TransferProgressChanged_ {
+      return obj.tag === HostRuntimeEvent_Tags.TransferProgressChanged;
+    }
+  }
+
+  type PreviewStateChanged__interface = {
+    tag: HostRuntimeEvent_Tags.PreviewStateChanged;
+    inner: Readonly<{
+      runtimeId: string;
+      previewId: string;
+      state: PreviewState;
+      error?: string;
+    }>;
+  };
+  class PreviewStateChanged_
+    extends UniffiEnum
+    implements PreviewStateChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.PreviewStateChanged;
+    readonly inner: Readonly<{
+      runtimeId: string;
+      previewId: string;
+      state: PreviewState;
+      error?: string;
+    }>;
+    constructor(inner: {
+      runtimeId: string;
+      previewId: string;
+      state: PreviewState;
+      error?: string;
+    }) {
+      super('HostRuntimeEvent', 'PreviewStateChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      previewId: string;
+      state: PreviewState;
+      error?: string;
+    }): PreviewStateChanged_ {
+      return new PreviewStateChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PreviewStateChanged_ {
+      return obj.tag === HostRuntimeEvent_Tags.PreviewStateChanged;
+    }
+  }
+
   type FatalError__interface = {
     tag: HostRuntimeEvent_Tags.FatalError;
     inner: Readonly<{ runtimeId: string; message: string }>;
@@ -11106,6 +12086,8 @@ export const HostRuntimeEvent = (() => {
     HostStateChanged: HostStateChanged_,
     EventSubscriptionClosed: EventSubscriptionClosed_,
     EventSubscriptionRestored: EventSubscriptionRestored_,
+    TransferProgressChanged: TransferProgressChanged_,
+    PreviewStateChanged: PreviewStateChanged_,
     FatalError: FatalError_,
   });
 })();
@@ -11120,6 +12102,8 @@ export type HostRuntimeEvent = InstanceType<
     | 'HostStateChanged'
     | 'EventSubscriptionClosed'
     | 'EventSubscriptionRestored'
+    | 'TransferProgressChanged'
+    | 'PreviewStateChanged'
     | 'FatalError']
 >;
 
@@ -11184,6 +12168,18 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             generation: FfiConverterUInt64.read(from),
           });
         case 10:
+          return new HostRuntimeEvent.TransferProgressChanged({
+            runtimeId: FfiConverterString.read(from),
+            progress: FfiConverterTypeTransferProgress.read(from),
+          });
+        case 11:
+          return new HostRuntimeEvent.PreviewStateChanged({
+            runtimeId: FfiConverterString.read(from),
+            previewId: FfiConverterString.read(from),
+            state: FfiConverterTypePreviewState.read(from),
+            error: FfiConverterOptionalString.read(from),
+          });
+        case 12:
           return new HostRuntimeEvent.FatalError({
             runtimeId: FfiConverterString.read(from),
             message: FfiConverterString.read(from),
@@ -11265,8 +12261,24 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           FfiConverterUInt64.write(inner.generation, into);
           return;
         }
-        case HostRuntimeEvent_Tags.FatalError: {
+        case HostRuntimeEvent_Tags.TransferProgressChanged: {
           ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterTypeTransferProgress.write(inner.progress, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.PreviewStateChanged: {
+          ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterString.write(inner.previewId, into);
+          FfiConverterTypePreviewState.write(inner.state, into);
+          FfiConverterOptionalString.write(inner.error, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.FatalError: {
+          ordinalConverter.write(12, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.message, into);
@@ -11354,9 +12366,27 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           size += FfiConverterUInt64.allocationSize(inner.generation);
           return size;
         }
-        case HostRuntimeEvent_Tags.FatalError: {
+        case HostRuntimeEvent_Tags.TransferProgressChanged: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterTypeTransferProgress.allocationSize(
+            inner.progress,
+          );
+          return size;
+        }
+        case HostRuntimeEvent_Tags.PreviewStateChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterString.allocationSize(inner.previewId);
+          size += FfiConverterTypePreviewState.allocationSize(inner.state);
+          size += FfiConverterOptionalString.allocationSize(inner.error);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.FatalError: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(12);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.message);
           return size;
@@ -12061,12 +13091,14 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
 
 export interface HostRuntimeLike {
   agentTranscript(key: string): /*throws*/ AgentTranscriptState;
-  cancelSftpUpload(): void;
+  awaitTransfer(
+    transferId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<TransferResult>;
+  cancelTransfer(transferId: string): boolean;
   closeAgentSession(key: string): void;
   closeAgentTerminal(terminalId: string): void;
   closeAllTerminals(): void;
-  closeLocalForward(localPort: number): void;
-  closeSftpFileServer(localPort: number): void;
   closeSshShell(terminalId: string): void;
   closeTerminal(terminalId: string): void;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
@@ -12075,15 +13107,36 @@ export interface HostRuntimeLike {
     request: HerdrControlRequest,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<HerdrControlResult>;
+  createRemoteDirectory(
+    path: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<void>;
   disconnect(asyncOpts_?: { signal: AbortSignal }): /*throws*/ Promise<void>;
+  discoverGitRepository(
+    path: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<GitRepository | undefined>;
   execute(
     command: string,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<string>;
+  gitDiff(
+    repository: GitRepository,
+    status: GitStatusEntry,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<GitDiff>;
+  gitStatus(
+    root: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<Array<GitStatusEntry>>;
   hasSshShell(terminalId: string): boolean;
   hasTerminal(terminalId: string): boolean;
   hostState(): HostStateSnapshot;
   isTerminalOpening(terminalId: string): boolean;
+  listDirectory(
+    path: string | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<RemoteDirectoryListing>;
   measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
   }): /*throws*/ Promise<number>;
@@ -12093,11 +13146,6 @@ export interface HostRuntimeLike {
     sessionId: string,
     cacheBlob: ArrayBuffer | undefined,
   ): /*throws*/ AgentSessionOpenResult;
-  openLocalForward(
-    remoteHost: string,
-    remotePort: number,
-    asyncOpts_?: { signal: AbortSignal },
-  ): /*throws*/ Promise<number>;
   openSshShell(
     terminalId: string,
     columns: number,
@@ -12113,6 +13161,11 @@ export interface HostRuntimeLike {
     cellHeightPx: number,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<void>;
+  readRemoteText(
+    path: string,
+    maxBytes: bigint | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<string>;
   recover(
     immediate: boolean,
     reason: string,
@@ -12122,6 +13175,16 @@ export interface HostRuntimeLike {
     signal: AbortSignal;
   }): /*throws*/ Promise<HostStateSnapshot>;
   remoteHome(asyncOpts_?: { signal: AbortSignal }): /*throws*/ Promise<string>;
+  removeRemotePath(
+    path: string,
+    directory: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<void>;
+  renameRemotePath(
+    from: string,
+    to: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<void>;
   resizeSshShell(
     terminalId: string,
     columns: number,
@@ -12147,41 +13210,37 @@ export interface HostRuntimeLike {
     row: number | undefined,
     modifiers: number,
   ): /*throws*/ void;
-  sftpCreateDirAll(
-    path: string,
-    asyncOpts_?: { signal: AbortSignal },
-  ): /*throws*/ Promise<void>;
-  sftpDownload(
-    remotePath: string,
-    localDirectory: string,
-    asyncOpts_?: { signal: AbortSignal },
-  ): /*throws*/ Promise<string>;
-  sftpList(
-    path: string,
-    asyncOpts_?: { signal: AbortSignal },
-  ): /*throws*/ Promise<Array<HostSftpEntry>>;
-  sftpRemove(
-    path: string,
-    directory: boolean,
-    asyncOpts_?: { signal: AbortSignal },
-  ): /*throws*/ Promise<void>;
-  sftpUpload(
-    localPath: string,
-    remotePath: string,
-    exactPath: boolean,
-    asyncOpts_?: { signal: AbortSignal },
-  ): /*throws*/ Promise<void>;
   sshShellInput(terminalId: string, bytes: ArrayBuffer): /*throws*/ void;
-  startSftpFileServer(
+  startAttachmentUpload(localPath: string): /*throws*/ string;
+  startDownload(remotePath: string, localDirectory: string): /*throws*/ string;
+  startHtmlPreview(
     remotePath: string,
     asyncOpts_?: { signal: AbortSignal },
-  ): /*throws*/ Promise<HostSftpFileServer>;
+  ): /*throws*/ Promise<PreviewInfo>;
+  startRemoteFilePreview(
+    remotePath: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<PreviewInfo>;
+  startUpload(localPath: string, remoteDirectory: string): /*throws*/ string;
+  startWebPreview(
+    remoteUrl: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<PreviewInfo>;
+  statRemotePath(
+    path: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<RemoteFileEntry>;
   status(): HostRuntimeStatus;
+  stopPreview(
+    previewId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<void>;
   subscribeEvents(
     paneIds: Array<string>,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<void>;
   terminalInput(terminalId: string, text: string): /*throws*/ void;
+  transferProgress(transferId: string): TransferProgress | undefined;
   unsubscribeEvents(): void;
 }
 /**
@@ -12228,15 +13287,68 @@ export class HostRuntime
     );
   }
 
-  cancelSftpUpload(): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_cancel_sftp_upload(
-          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  async awaitTransfer(
+    transferId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<TransferResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              transferId,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeTransferResult.lift.bind(
+          FfiConverterTypeTransferResult,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  cancelTransfer(transferId: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              transferId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -12271,32 +13383,6 @@ export class HostRuntime
       /*caller:*/ callStatus => {
         nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_all_terminals(
           uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
-  }
-
-  closeLocalForward(localPort: number): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_local_forward(
-          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-          FfiConverterUInt16.lower(localPort, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
-  }
-
-  closeSftpFileServer(localPort: number): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_sftp_file_server(
-          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-          FfiConverterUInt16.lower(localPort, nativeModule().rustbuffer_alloc),
           callStatus,
         );
       },
@@ -12428,6 +13514,41 @@ export class HostRuntime
     }
   }
 
+  async createRemoteDirectory(
+    path: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_remote_directory(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   async disconnect(asyncOpts_?: {
     signal: AbortSignal;
   }): Promise<void> /*throws*/ {
@@ -12447,6 +13568,50 @@ export class HostRuntime
           .ubrn_ffi_whip_ssh_rust_future_complete_void,
         /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
         /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async discoverGitRepository(
+    path: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GitRepository | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_discover_git_repository(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterOptionalTypeGitRepository.lift.bind(
+          FfiConverterOptionalTypeGitRepository,
+        ),
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -12489,6 +13654,102 @@ export class HostRuntime
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
         /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async gitDiff(
+    repository: GitRepository,
+    status: GitStatusEntry,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GitDiff> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_diff(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGitRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeGitStatusEntry.lower(
+              status,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeGitDiff.lift.bind(
+          FfiConverterTypeGitDiff,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async gitStatus(
+    root: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<Array<GitStatusEntry>> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_status(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(root, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterSequenceTypeGitStatusEntry.lift.bind(
+          FfiConverterSequenceTypeGitStatusEntry,
+        ),
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -12577,6 +13838,53 @@ export class HostRuntime
     );
   }
 
+  async listDirectory(
+    path: string | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<RemoteDirectoryListing> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_list_directory(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterOptionalString.lower(
+              path,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeRemoteDirectoryListing.lift.bind(
+          FfiConverterTypeRemoteDirectoryListing,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   async measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
   }): Promise<number> /*throws*/ {
@@ -12656,53 +13964,6 @@ export class HostRuntime
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
     );
-  }
-
-  async openLocalForward(
-    remoteHost: string,
-    remotePort: number,
-    asyncOpts_?: { signal: AbortSignal },
-  ): Promise<number> /*throws*/ {
-    const __stack = uniffiIsDebug ? new Error().stack : undefined;
-    try {
-      return await uniffiRustCallAsync(
-        /*rustCaller:*/ uniffiCaller,
-        /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_local_forward(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(
-              remoteHost,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterUInt16.lower(
-              remotePort,
-              nativeModule().rustbuffer_alloc,
-            ),
-          );
-        },
-        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_u16,
-        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_u16,
-        /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_u16,
-        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_u16,
-        // Async returns always go through the JS-side converter: the
-        // FFI symbol returns the future handle (u64), and the user-level
-        // RustBuffer comes back via the shared `rust_future_complete_*`
-        // export. The bytes the runtime hands back must be deserialized
-        // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterUInt16.lift.bind(FfiConverterUInt16),
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*asyncOpts:*/ asyncOpts_,
-        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-          FfiConverterTypeHostRuntimeError,
-        ),
-      );
-    } catch (__error: any) {
-      if (uniffiIsDebug && __error instanceof Error) {
-        __error.stack = __stack;
-      }
-      throw __error;
-    }
   }
 
   async openSshShell(
@@ -12787,6 +14048,53 @@ export class HostRuntime
           .ubrn_ffi_whip_ssh_rust_future_complete_void,
         /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
         /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async readRemoteText(
+    path: string,
+    maxBytes: bigint | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_read_remote_text(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalUInt64.lower(
+              maxBytes,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -12906,6 +14214,80 @@ export class HostRuntime
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
         /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async removeRemotePath(
+    path: string,
+    directory: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_remove_remote_path(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(directory, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async renameRemotePath(
+    from: string,
+    to: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_rename_remote_path(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(from, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(to, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -13088,217 +14470,6 @@ export class HostRuntime
     );
   }
 
-  async sftpCreateDirAll(
-    path: string,
-    asyncOpts_?: { signal: AbortSignal },
-  ): Promise<void> /*throws*/ {
-    const __stack = uniffiIsDebug ? new Error().stack : undefined;
-    try {
-      return await uniffiRustCallAsync(
-        /*rustCaller:*/ uniffiCaller,
-        /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_sftp_create_dir_all(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
-          );
-        },
-        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
-        /*cancelFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
-        /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_void,
-        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
-        /*liftFunc:*/ _v => {},
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*asyncOpts:*/ asyncOpts_,
-        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-          FfiConverterTypeHostRuntimeError,
-        ),
-      );
-    } catch (__error: any) {
-      if (uniffiIsDebug && __error instanceof Error) {
-        __error.stack = __stack;
-      }
-      throw __error;
-    }
-  }
-
-  async sftpDownload(
-    remotePath: string,
-    localDirectory: string,
-    asyncOpts_?: { signal: AbortSignal },
-  ): Promise<string> /*throws*/ {
-    const __stack = uniffiIsDebug ? new Error().stack : undefined;
-    try {
-      return await uniffiRustCallAsync(
-        /*rustCaller:*/ uniffiCaller,
-        /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_sftp_download(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(
-              remotePath,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterString.lower(
-              localDirectory,
-              nativeModule().rustbuffer_alloc,
-            ),
-          );
-        },
-        /*pollFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
-        /*cancelFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
-        /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
-        /*freeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
-        // Async returns always go through the JS-side converter: the
-        // FFI symbol returns the future handle (u64), and the user-level
-        // RustBuffer comes back via the shared `rust_future_complete_*`
-        // export. The bytes the runtime hands back must be deserialized
-        // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*asyncOpts:*/ asyncOpts_,
-        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-          FfiConverterTypeHostRuntimeError,
-        ),
-      );
-    } catch (__error: any) {
-      if (uniffiIsDebug && __error instanceof Error) {
-        __error.stack = __stack;
-      }
-      throw __error;
-    }
-  }
-
-  async sftpList(
-    path: string,
-    asyncOpts_?: { signal: AbortSignal },
-  ): Promise<Array<HostSftpEntry>> /*throws*/ {
-    const __stack = uniffiIsDebug ? new Error().stack : undefined;
-    try {
-      return await uniffiRustCallAsync(
-        /*rustCaller:*/ uniffiCaller,
-        /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_sftp_list(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
-          );
-        },
-        /*pollFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
-        /*cancelFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
-        /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
-        /*freeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
-        // Async returns always go through the JS-side converter: the
-        // FFI symbol returns the future handle (u64), and the user-level
-        // RustBuffer comes back via the shared `rust_future_complete_*`
-        // export. The bytes the runtime hands back must be deserialized
-        // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterSequenceTypeHostSftpEntry.lift.bind(
-          FfiConverterSequenceTypeHostSftpEntry,
-        ),
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*asyncOpts:*/ asyncOpts_,
-        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-          FfiConverterTypeHostRuntimeError,
-        ),
-      );
-    } catch (__error: any) {
-      if (uniffiIsDebug && __error instanceof Error) {
-        __error.stack = __stack;
-      }
-      throw __error;
-    }
-  }
-
-  async sftpRemove(
-    path: string,
-    directory: boolean,
-    asyncOpts_?: { signal: AbortSignal },
-  ): Promise<void> /*throws*/ {
-    const __stack = uniffiIsDebug ? new Error().stack : undefined;
-    try {
-      return await uniffiRustCallAsync(
-        /*rustCaller:*/ uniffiCaller,
-        /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_sftp_remove(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
-            FfiConverterBool.lower(directory, nativeModule().rustbuffer_alloc),
-          );
-        },
-        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
-        /*cancelFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
-        /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_void,
-        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
-        /*liftFunc:*/ _v => {},
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*asyncOpts:*/ asyncOpts_,
-        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-          FfiConverterTypeHostRuntimeError,
-        ),
-      );
-    } catch (__error: any) {
-      if (uniffiIsDebug && __error instanceof Error) {
-        __error.stack = __stack;
-      }
-      throw __error;
-    }
-  }
-
-  async sftpUpload(
-    localPath: string,
-    remotePath: string,
-    exactPath: boolean,
-    asyncOpts_?: { signal: AbortSignal },
-  ): Promise<void> /*throws*/ {
-    const __stack = uniffiIsDebug ? new Error().stack : undefined;
-    try {
-      return await uniffiRustCallAsync(
-        /*rustCaller:*/ uniffiCaller,
-        /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_sftp_upload(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(
-              localPath,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterString.lower(
-              remotePath,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterBool.lower(exactPath, nativeModule().rustbuffer_alloc),
-          );
-        },
-        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
-        /*cancelFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
-        /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_void,
-        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
-        /*liftFunc:*/ _v => {},
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*asyncOpts:*/ asyncOpts_,
-        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-          FfiConverterTypeHostRuntimeError,
-        ),
-      );
-    } catch (__error: any) {
-      if (uniffiIsDebug && __error instanceof Error) {
-        __error.stack = __stack;
-      }
-      throw __error;
-    }
-  }
-
   sshShellInput(terminalId: string, bytes: ArrayBuffer): void /*throws*/ {
     uniffiCaller.rustCallWithError(
       /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -13316,16 +14487,74 @@ export class HostRuntime
     );
   }
 
-  async startSftpFileServer(
+  startAttachmentUpload(localPath: string): string /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_attachment_upload(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              localPath,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  startDownload(remotePath: string, localDirectory: string): string /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_download(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              remotePath,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              localDirectory,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async startHtmlPreview(
     remotePath: string,
     asyncOpts_?: { signal: AbortSignal },
-  ): Promise<HostSftpFileServer> /*throws*/ {
+  ): Promise<PreviewInfo> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
       return await uniffiRustCallAsync(
         /*rustCaller:*/ uniffiCaller,
         /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_sftp_file_server(
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_html_preview(
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             FfiConverterString.lower(
               remotePath,
@@ -13346,8 +14575,177 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeHostSftpFileServer.lift.bind(
-          FfiConverterTypeHostSftpFileServer,
+        /*liftFunc:*/ FfiConverterTypePreviewInfo.lift.bind(
+          FfiConverterTypePreviewInfo,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async startRemoteFilePreview(
+    remotePath: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<PreviewInfo> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_remote_file_preview(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              remotePath,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypePreviewInfo.lift.bind(
+          FfiConverterTypePreviewInfo,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  startUpload(localPath: string, remoteDirectory: string): string /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_upload(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              localPath,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              remoteDirectory,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async startWebPreview(
+    remoteUrl: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<PreviewInfo> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_web_preview(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              remoteUrl,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypePreviewInfo.lift.bind(
+          FfiConverterTypePreviewInfo,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async statRemotePath(
+    path: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<RemoteFileEntry> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_stat_remote_path(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeRemoteFileEntry.lift.bind(
+          FfiConverterTypeRemoteFileEntry,
         ),
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
@@ -13381,6 +14779,44 @@ export class HostRuntime
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
     );
+  }
+
+  async stopPreview(
+    previewId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_stop_preview(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              previewId,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
   }
 
   async subscribeEvents(
@@ -13435,6 +14871,30 @@ export class HostRuntime
         );
       },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  transferProgress(transferId: string): TransferProgress | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeTransferProgress.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_transfer_progress(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              transferId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -14002,6 +15462,11 @@ const FfiConverterSequenceTypeAgentTranscriptTurn = new FfiConverterArray(
 const FfiConverterOptionalTypeAgentTranscriptCacheWrite =
   new FfiConverterOptional(FfiConverterTypeAgentTranscriptCacheWrite);
 
+// FfiConverter for Array<GitDiffRow>
+const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
+  FfiConverterTypeGitDiffRow,
+);
+
 // FfiConverter for boolean | undefined
 const FfiConverterOptionalBoolean = new FfiConverterOptional(FfiConverterBool);
 
@@ -14085,6 +15550,11 @@ const FfiConverterOptionalTypeHerdrSessionSnapshot = new FfiConverterOptional(
   FfiConverterTypeHerdrSessionSnapshot,
 );
 
+// FfiConverter for Array<RemoteFileEntry>
+const FfiConverterSequenceTypeRemoteFileEntry = new FfiConverterArray(
+  FfiConverterTypeRemoteFileEntry,
+);
+
 // FfiConverter for HerdrWorkspaceInfo | undefined
 const FfiConverterOptionalTypeHerdrWorkspaceInfo = new FfiConverterOptional(
   FfiConverterTypeHerdrWorkspaceInfo,
@@ -14100,14 +15570,24 @@ const FfiConverterOptionalTypeHerdrAgentStatus = new FfiConverterOptional(
   FfiConverterTypeHerdrAgentStatus,
 );
 
+// FfiConverter for GitRepository | undefined
+const FfiConverterOptionalTypeGitRepository = new FfiConverterOptional(
+  FfiConverterTypeGitRepository,
+);
+
+// FfiConverter for Array<GitStatusEntry>
+const FfiConverterSequenceTypeGitStatusEntry = new FfiConverterArray(
+  FfiConverterTypeGitStatusEntry,
+);
+
 // FfiConverter for ArrayBuffer | undefined
 const FfiConverterOptionalBytes = new FfiConverterOptional(
   FfiConverterArrayBuffer,
 );
 
-// FfiConverter for Array<HostSftpEntry>
-const FfiConverterSequenceTypeHostSftpEntry = new FfiConverterArray(
-  FfiConverterTypeHostSftpEntry,
+// FfiConverter for TransferProgress | undefined
+const FfiConverterOptionalTypeTransferProgress = new FfiConverterOptional(
+  FfiConverterTypeTransferProgress,
 );
 
 /**
@@ -14418,11 +15898,19 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_sftp_upload() !==
-    25430
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer() !==
+    41916
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_cancel_sftp_upload',
+      'uniffi_whip_ssh_checksum_method_hostruntime_await_transfer',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer() !==
+    6066
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer',
     );
   }
   if (
@@ -14447,22 +15935,6 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_local_forward() !==
-    26347
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_close_local_forward',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_sftp_file_server() !==
-    23304
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_close_sftp_file_server',
     );
   }
   if (
@@ -14506,6 +15978,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_remote_directory() !==
+    65270
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_create_remote_directory',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_disconnect() !==
     57121
   ) {
@@ -14514,11 +15994,35 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository() !==
+    24249
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute() !==
     6864
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_execute',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff() !==
+    47424
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_git_diff',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_status() !==
+    29464
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_git_status',
     );
   }
   if (
@@ -14554,6 +16058,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_list_directory() !==
+    32503
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_list_directory',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency() !==
     62744
   ) {
@@ -14570,14 +16082,6 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_local_forward() !==
-    45137
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_open_local_forward',
-    );
-  }
-  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell() !==
     64073
   ) {
@@ -14591,6 +16095,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_open_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_remote_text() !==
+    33842
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_read_remote_text',
     );
   }
   if (
@@ -14615,6 +16127,22 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_remote_home',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_remove_remote_path() !==
+    28913
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_remove_remote_path',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_rename_remote_path() !==
+    5957
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_rename_remote_path',
     );
   }
   if (
@@ -14666,46 +16194,6 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_sftp_create_dir_all() !==
-    64665
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_sftp_create_dir_all',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_sftp_download() !==
-    30688
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_sftp_download',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_sftp_list() !==
-    41342
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_sftp_list',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_sftp_remove() !==
-    57115
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_sftp_remove',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_sftp_upload() !==
-    65051
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_sftp_upload',
-    );
-  }
-  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input() !==
     40088
   ) {
@@ -14714,11 +16202,59 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_sftp_file_server() !==
-    37842
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_upload() !==
+    54588
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_start_sftp_file_server',
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_upload',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_download() !==
+    2324
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_download',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_html_preview() !==
+    54439
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_html_preview',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_remote_file_preview() !==
+    11715
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_remote_file_preview',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_upload() !==
+    51590
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_upload',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_web_preview() !==
+    37621
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_web_preview',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stat_remote_path() !==
+    2749
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_stat_remote_path',
     );
   }
   if (
@@ -14727,6 +16263,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_status',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stop_preview() !==
+    8419
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_stop_preview',
     );
   }
   if (
@@ -14743,6 +16287,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_terminal_input',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_transfer_progress() !==
+    8605
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_transfer_progress',
     );
   }
   if (
@@ -14816,6 +16368,12 @@ export default Object.freeze({
     FfiConverterTypeAgentTranscriptStatus,
     FfiConverterTypeAgentTranscriptTurn,
     FfiConverterTypeAgentTurnStatus,
+    FfiConverterTypeGitDiff,
+    FfiConverterTypeGitDiffKind,
+    FfiConverterTypeGitDiffRow,
+    FfiConverterTypeGitDiffRowKind,
+    FfiConverterTypeGitRepository,
+    FfiConverterTypeGitStatusEntry,
     FfiConverterTypeHerdrAgentInfo,
     FfiConverterTypeHerdrAgentSessionInfo,
     FfiConverterTypeHerdrAgentSessionKind,
@@ -14857,13 +16415,20 @@ export default Object.freeze({
     FfiConverterTypeHostRuntimeEventSink,
     FfiConverterTypeHostRuntimeStatus,
     FfiConverterTypeHostServerFocus,
-    FfiConverterTypeHostSftpEntry,
-    FfiConverterTypeHostSftpFileServer,
     FfiConverterTypeHostSshConfig,
     FfiConverterTypeHostSshCredential,
     FfiConverterTypeHostStateSnapshot,
     FfiConverterTypeHostSyncStatus,
     FfiConverterTypeHostTerminalState,
+    FfiConverterTypePreviewInfo,
+    FfiConverterTypePreviewKind,
+    FfiConverterTypePreviewState,
+    FfiConverterTypeRemoteDirectoryListing,
+    FfiConverterTypeRemoteFileEntry,
+    FfiConverterTypeRemoteFileKind,
+    FfiConverterTypeTransferProgress,
+    FfiConverterTypeTransferResult,
+    FfiConverterTypeTransferState,
     FfiConverterTypeWhipSshEventSink,
   },
 });

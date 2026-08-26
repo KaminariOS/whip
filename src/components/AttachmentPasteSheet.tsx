@@ -27,7 +27,7 @@ export interface PastedAttachment {
 
 interface SelectionOperation {
   cancelled: boolean;
-  uploading: boolean;
+  transferId: string | null;
   client: HerdrClient;
 }
 
@@ -46,7 +46,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
     const operation = activeOperation.current;
     if (operation && !operation.cancelled) {
       operation.cancelled = true;
-      if (operation.uploading) operation.client.cancelTerminalAttachmentUpload();
+      if (operation.transferId) operation.client.cancelTransfer(operation.transferId);
       if (mounted.current) setUploadState('cancelling');
     }
     if (close) onClose();
@@ -59,7 +59,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
       const operation = activeOperation.current;
       if (operation && !operation.cancelled) {
         operation.cancelled = true;
-        if (operation.uploading) operation.client.cancelTerminalAttachmentUpload();
+        if (operation.transferId) operation.client.cancelTransfer(operation.transferId);
       }
     };
   }, []);
@@ -82,7 +82,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
     if (activeOperation.current) return;
     const operation: SelectionOperation = {
       cancelled: false,
-      uploading: false,
+      transferId: null,
       client,
     };
     activeOperation.current = operation;
@@ -91,9 +91,13 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
     try {
       attachment = await pickLocalAttachment(source);
       if (!attachment || operation.cancelled || activeOperation.current !== operation) return;
-      operation.uploading = true;
-      const remotePath = await client.uploadTerminalAttachment(attachment.nativePath);
-      operation.uploading = false;
+      const transfer = client.startTerminalAttachmentUpload(attachment.nativePath);
+      operation.transferId = transfer.id;
+      if (operation.cancelled) client.cancelTransfer(transfer.id);
+      const result = await transfer.result;
+      operation.transferId = null;
+      const remotePath = result.remotePath;
+      if (!remotePath) throw new Error('Native attachment upload returned no remote path');
       if (operation.cancelled || activeOperation.current !== operation) return;
       activeOperation.current = null;
       if (mounted.current) setUploadState('idle');
@@ -105,7 +109,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
       attachment = null;
       onClose();
     } catch (reason) {
-      operation.uploading = false;
+      operation.transferId = null;
       if (
         !operation.cancelled
         && activeOperation.current === operation
