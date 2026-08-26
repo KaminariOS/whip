@@ -8,7 +8,7 @@ use std::sync::{
 };
 
 use parking_lot::Mutex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use tokio::sync::oneshot;
 
@@ -17,11 +17,59 @@ use crate::russh_transport;
 const CONTROL_TIMEOUT_MS: u64 = 15_000;
 const MAX_CONTROL_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum HerdrAgentStatus {
+    Idle,
+    Working,
+    Blocked,
+    Done,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum HerdrAgentSessionKind {
+    Id,
+    Path,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum HerdrSplitDirection {
+    Right,
+    Down,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum HerdrPaneReadSource {
+    Visible,
+    Recent,
+    RecentUnwrapped,
+    Detection,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum HerdrPaneReadFormat {
+    Text,
+    Ansi,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum HerdrPaneZoomReason {
+    SinglePane,
+    AlreadyZoomed,
+    AlreadyUnzoomed,
+}
+
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct HerdrAgentSessionInfo {
     pub source: String,
     pub agent: String,
-    pub kind: String,
+    pub kind: HerdrAgentSessionKind,
     pub value: String,
 }
 
@@ -50,7 +98,7 @@ pub struct HerdrWorkspaceInfo {
     pub pane_count: f64,
     pub tab_count: f64,
     pub active_tab_id: String,
-    pub agent_status: String,
+    pub agent_status: HerdrAgentStatus,
     pub tokens: Option<HashMap<String, String>>,
     pub worktree: Option<HerdrWorkspaceWorktreeInfo>,
 }
@@ -75,7 +123,7 @@ pub struct HerdrTabInfo {
     pub label: String,
     pub focused: bool,
     pub pane_count: f64,
-    pub agent_status: String,
+    pub agent_status: HerdrAgentStatus,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -93,7 +141,7 @@ pub struct HerdrPaneInfo {
     pub terminal_title: Option<String>,
     pub terminal_title_stripped: Option<String>,
     pub display_agent: Option<String>,
-    pub agent_status: String,
+    pub agent_status: HerdrAgentStatus,
     pub state_labels: Option<HashMap<String, String>>,
     pub tokens: Option<HashMap<String, String>>,
     pub agent_session: Option<HerdrAgentSessionInfo>,
@@ -108,7 +156,7 @@ pub struct HerdrAgentInfo {
     pub workspace_id: String,
     pub tab_id: String,
     pub focused: bool,
-    pub agent_status: String,
+    pub agent_status: HerdrAgentStatus,
     pub revision: f64,
     pub cwd: Option<String>,
     pub foreground_cwd: Option<String>,
@@ -145,7 +193,7 @@ pub struct HerdrPaneLayoutPane {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct HerdrPaneLayoutSplit {
     pub id: String,
-    pub direction: String,
+    pub direction: HerdrSplitDirection,
     pub ratio: f64,
     pub rect: HerdrPaneLayoutRect,
 }
@@ -176,36 +224,76 @@ pub struct HerdrSessionSnapshot {
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
-pub struct HerdrControlResult {
-    pub kind: String,
-    pub version: Option<String>,
-    pub protocol: Option<u32>,
-    pub snapshot: Option<HerdrSessionSnapshot>,
-    pub workspace: Option<HerdrWorkspaceInfo>,
-    pub tab: Option<HerdrTabInfo>,
-    pub pane: Option<HerdrPaneInfo>,
-    pub root_pane: Option<HerdrPaneInfo>,
-    pub agent: Option<HerdrAgentInfo>,
-    pub argv: Option<Vec<String>>,
-    pub read_text: Option<String>,
+pub struct HerdrPaneReadResult {
+    pub pane_id: String,
+    pub workspace_id: String,
+    pub tab_id: String,
+    pub source: HerdrPaneReadSource,
+    pub format: HerdrPaneReadFormat,
+    pub text: String,
+    pub revision: f64,
+    pub truncated: bool,
 }
 
-impl HerdrControlResult {
-    fn empty(kind: &str) -> Self {
-        Self {
-            kind: kind.to_owned(),
-            version: None,
-            protocol: None,
-            snapshot: None,
-            workspace: None,
-            tab: None,
-            pane: None,
-            root_pane: None,
-            agent: None,
-            argv: None,
-            read_text: None,
-        }
-    }
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct HerdrPaneZoomResult {
+    pub changed: bool,
+    pub zoom_changed: bool,
+    pub focus_changed: bool,
+    pub reason: Option<HerdrPaneZoomReason>,
+    pub pane_id: String,
+    pub focused_pane_id: String,
+    pub zoomed: bool,
+    pub layout: HerdrPaneLayoutSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+// UniFFI data enums cannot box associated records. Keeping the result typed is
+// preferable to recreating the former string discriminator plus option bag.
+#[allow(clippy::large_enum_variant)]
+pub enum HerdrControlResult {
+    Pong {
+        version: String,
+        protocol: u32,
+    },
+    SessionSnapshot {
+        snapshot: HerdrSessionSnapshot,
+    },
+    WorkspaceCreated {
+        workspace: HerdrWorkspaceInfo,
+        tab: HerdrTabInfo,
+        root_pane: HerdrPaneInfo,
+    },
+    WorkspaceInfo {
+        workspace: HerdrWorkspaceInfo,
+    },
+    TabCreated {
+        tab: HerdrTabInfo,
+        root_pane: HerdrPaneInfo,
+    },
+    TabInfo {
+        tab: HerdrTabInfo,
+    },
+    PaneInfo {
+        pane: HerdrPaneInfo,
+    },
+    PaneRead {
+        read: HerdrPaneReadResult,
+    },
+    AgentStarted {
+        agent: HerdrAgentInfo,
+        argv: Vec<String>,
+    },
+    AgentInfo {
+        agent: HerdrAgentInfo,
+    },
+    AgentPrompted {
+        agent: HerdrAgentInfo,
+    },
+    PaneZoom {
+        zoom: HerdrPaneZoomResult,
+    },
+    Ok,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -253,7 +341,7 @@ pub enum HerdrControlRequest {
     },
     PaneSplit {
         pane_id: String,
-        direction: String,
+        direction: HerdrSplitDirection,
     },
     PaneZoom {
         pane_id: String,
@@ -360,7 +448,7 @@ struct PaneRenameParams<'a> {
 #[derive(Serialize)]
 struct PaneSplitParams<'a> {
     target_pane_id: &'a str,
-    direction: &'a str,
+    direction: HerdrSplitDirection,
     focus: bool,
 }
 #[derive(Serialize)]
@@ -371,9 +459,9 @@ struct PaneZoomParams<'a> {
 #[derive(Serialize)]
 struct PaneReadParams<'a> {
     pane_id: &'a str,
-    source: &'a str,
+    source: HerdrPaneReadSource,
     lines: u32,
-    format: &'a str,
+    format: HerdrPaneReadFormat,
     strip_ansi: bool,
 }
 #[derive(Serialize)]
@@ -514,9 +602,9 @@ impl HerdrControlRequest {
                 method,
                 params: PaneReadParams {
                     pane_id,
-                    source: "recent",
+                    source: HerdrPaneReadSource::Recent,
                     lines: *lines,
-                    format: "ansi",
+                    format: HerdrPaneReadFormat::Ansi,
                     strip_ansi: false,
                 },
             }),
@@ -533,22 +621,15 @@ impl HerdrControlRequest {
                     label: label.as_deref(),
                 },
             }),
-            Self::PaneSplit { pane_id, direction } => {
-                if direction != "right" && direction != "down" {
-                    return Err(HerdrControlError::InvalidField(
-                        "pane split direction must be right or down".to_owned(),
-                    ));
-                }
-                line(WireRequest {
-                    id,
-                    method,
-                    params: PaneSplitParams {
-                        target_pane_id: pane_id,
-                        direction,
-                        focus: true,
-                    },
-                })
-            }
+            Self::PaneSplit { pane_id, direction } => line(WireRequest {
+                id,
+                method,
+                params: PaneSplitParams {
+                    target_pane_id: pane_id,
+                    direction: *direction,
+                    focus: true,
+                },
+            }),
             Self::PaneZoom { pane_id } => line(WireRequest {
                 id,
                 method,
@@ -608,28 +689,68 @@ impl HerdrControlRequest {
         }
     }
 
-    fn expected_result(&self) -> &'static str {
+    fn expected_result(&self) -> HerdrControlResultKind {
         match self {
-            Self::Ping => "pong",
-            Self::SessionSnapshot => "session_snapshot",
-            Self::WorkspaceCreate { .. } => "workspace_created",
-            Self::WorkspaceFocus { .. } | Self::WorkspaceRename { .. } => "workspace_info",
+            Self::Ping => HerdrControlResultKind::Pong,
+            Self::SessionSnapshot => HerdrControlResultKind::SessionSnapshot,
+            Self::WorkspaceCreate { .. } => HerdrControlResultKind::WorkspaceCreated,
+            Self::WorkspaceFocus { .. } | Self::WorkspaceRename { .. } => {
+                HerdrControlResultKind::WorkspaceInfo
+            }
             Self::WorkspaceClose { .. }
             | Self::TabClose { .. }
             | Self::PaneClose { .. }
             | Self::PaneSendInput { .. }
             | Self::PaneSendText { .. }
-            | Self::PaneSendKeys { .. } => "ok",
-            Self::TabCreate { .. } => "tab_created",
-            Self::TabFocus { .. } | Self::TabRename { .. } => "tab_info",
-            Self::PaneRead { .. } => "pane_read",
+            | Self::PaneSendKeys { .. } => HerdrControlResultKind::Ok,
+            Self::TabCreate { .. } => HerdrControlResultKind::TabCreated,
+            Self::TabFocus { .. } | Self::TabRename { .. } => HerdrControlResultKind::TabInfo,
+            Self::PaneRead { .. } => HerdrControlResultKind::PaneRead,
             Self::PaneFocus { .. } | Self::PaneRename { .. } | Self::PaneSplit { .. } => {
-                "pane_info"
+                HerdrControlResultKind::PaneInfo
             }
-            Self::PaneZoom { .. } => "pane_zoom",
-            Self::AgentStart { .. } => "agent_started",
-            Self::AgentFocus { .. } => "agent_info",
-            Self::AgentPrompt { .. } => "agent_prompted",
+            Self::PaneZoom { .. } => HerdrControlResultKind::PaneZoom,
+            Self::AgentStart { .. } => HerdrControlResultKind::AgentStarted,
+            Self::AgentFocus { .. } => HerdrControlResultKind::AgentInfo,
+            Self::AgentPrompt { .. } => HerdrControlResultKind::AgentPrompted,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum HerdrControlResultKind {
+    Pong,
+    SessionSnapshot,
+    WorkspaceCreated,
+    WorkspaceInfo,
+    TabCreated,
+    TabInfo,
+    PaneInfo,
+    PaneRead,
+    AgentStarted,
+    AgentInfo,
+    AgentPrompted,
+    PaneZoom,
+    Ok,
+}
+
+impl HerdrControlResultKind {
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Pong => "pong",
+            Self::SessionSnapshot => "session_snapshot",
+            Self::WorkspaceCreated => "workspace_created",
+            Self::WorkspaceInfo => "workspace_info",
+            Self::TabCreated => "tab_created",
+            Self::TabInfo => "tab_info",
+            Self::PaneInfo => "pane_info",
+            Self::PaneRead => "pane_read",
+            Self::AgentStarted => "agent_started",
+            Self::AgentInfo => "agent_info",
+            Self::AgentPrompted => "agent_prompted",
+            Self::PaneZoom => "pane_zoom",
+            Self::Ok => "ok",
         }
     }
 }
@@ -761,131 +882,141 @@ fn parse_response(
         )
     })?;
     let result = object(result, "result").map_err(HerdrControlError::InvalidField)?;
-    let kind =
+    let raw_kind =
         required_string(result, "type", "result.type").map_err(HerdrControlError::InvalidField)?;
+    let kind =
+        parse_wire_str::<HerdrControlResultKind>(&raw_kind, "result.type").map_err(|_| {
+            HerdrControlError::UnsupportedResponse(format!(
+                "Herdr API returned unsupported response type {raw_kind}"
+            ))
+        })?;
     let expected = request.expected_result();
     if kind != expected {
         return Err(HerdrControlError::UnsupportedResponse(format!(
-            "Herdr API returned {kind} for {}, expected {expected}",
-            request.method()
+            "Herdr API returned {raw_kind} for {}, expected {}",
+            request.method(),
+            expected.wire_name(),
         )));
     }
-    decode_result(kind.as_str(), result).map_err(HerdrControlError::InvalidField)
+    decode_result(kind, result).map_err(HerdrControlError::InvalidField)
 }
 
-fn decode_result(kind: &str, result: &Map<String, Value>) -> Result<HerdrControlResult, String> {
-    let mut decoded = HerdrControlResult::empty(kind);
+fn decode_result(
+    kind: HerdrControlResultKind,
+    result: &Map<String, Value>,
+) -> Result<HerdrControlResult, String> {
     match kind {
-        "pong" => {
-            decoded.version = Some(required_string(result, "version", "result.version")?);
-            decoded.protocol = Some(required_u32(result, "protocol", "result.protocol")?);
-        }
-        "session_snapshot" => {
-            decoded.snapshot = Some(session_snapshot(required(
-                result,
-                "snapshot",
-                "result.snapshot",
-            )?)?);
-        }
-        "workspace_created" => {
-            decoded.workspace = Some(workspace(
+        HerdrControlResultKind::Pong => Ok(HerdrControlResult::Pong {
+            version: required_string(result, "version", "result.version")?,
+            protocol: required_u32(result, "protocol", "result.protocol")?,
+        }),
+        HerdrControlResultKind::SessionSnapshot => Ok(HerdrControlResult::SessionSnapshot {
+            snapshot: session_snapshot(required(result, "snapshot", "result.snapshot")?)?,
+        }),
+        HerdrControlResultKind::WorkspaceCreated => Ok(HerdrControlResult::WorkspaceCreated {
+            workspace: workspace(
                 required(result, "workspace", "result.workspace")?,
                 "workspace",
-            )?);
-            decoded.tab = Some(tab(required(result, "tab", "result.tab")?, "tab")?);
-            decoded.root_pane = Some(pane(
+            )?,
+            tab: tab(required(result, "tab", "result.tab")?, "tab")?,
+            root_pane: pane(
                 required(result, "root_pane", "result.root_pane")?,
                 "root_pane",
-            )?);
-        }
-        "workspace_info" => {
-            decoded.workspace = Some(workspace(
+            )?,
+        }),
+        HerdrControlResultKind::WorkspaceInfo => Ok(HerdrControlResult::WorkspaceInfo {
+            workspace: workspace(
                 required(result, "workspace", "result.workspace")?,
                 "workspace",
-            )?);
-        }
-        "tab_created" => {
-            decoded.tab = Some(tab(required(result, "tab", "result.tab")?, "tab")?);
-            decoded.root_pane = Some(pane(
+            )?,
+        }),
+        HerdrControlResultKind::TabCreated => Ok(HerdrControlResult::TabCreated {
+            tab: tab(required(result, "tab", "result.tab")?, "tab")?,
+            root_pane: pane(
                 required(result, "root_pane", "result.root_pane")?,
                 "root_pane",
-            )?);
-        }
-        "tab_info" => decoded.tab = Some(tab(required(result, "tab", "result.tab")?, "tab")?),
-        "pane_info" => decoded.pane = Some(pane(required(result, "pane", "result.pane")?, "pane")?),
-        "pane_read" => {
+            )?,
+        }),
+        HerdrControlResultKind::TabInfo => Ok(HerdrControlResult::TabInfo {
+            tab: tab(required(result, "tab", "result.tab")?, "tab")?,
+        }),
+        HerdrControlResultKind::PaneInfo => Ok(HerdrControlResult::PaneInfo {
+            pane: pane(required(result, "pane", "result.pane")?, "pane")?,
+        }),
+        HerdrControlResultKind::PaneRead => {
             let read = object(required(result, "read", "result.read")?, "read")?;
-            non_empty_string_value(required(read, "pane_id", "read.pane_id")?, "read.pane_id")?;
-            non_empty_string_value(
-                required(read, "workspace_id", "read.workspace_id")?,
-                "read.workspace_id",
-            )?;
-            non_empty_string_value(required(read, "tab_id", "read.tab_id")?, "read.tab_id")?;
-            enum_string(
-                required(read, "source", "read.source")?,
-                "read.source",
-                &["visible", "recent", "recent_unwrapped", "detection"],
-            )?;
-            enum_string(
-                required(read, "format", "read.format")?,
-                "read.format",
-                &["text", "ansi"],
-            )?;
-            decoded.read_text = Some(string_value(
-                required(read, "text", "read.text")?,
-                "read.text",
-            )?);
-            non_negative_number(
-                required(read, "revision", "read.revision")?,
-                "read.revision",
-            )?;
-            bool_value(
-                required(read, "truncated", "read.truncated")?,
-                "read.truncated",
-            )?;
+            Ok(HerdrControlResult::PaneRead {
+                read: HerdrPaneReadResult {
+                    pane_id: non_empty_string_value(
+                        required(read, "pane_id", "read.pane_id")?,
+                        "read.pane_id",
+                    )?,
+                    workspace_id: non_empty_string_value(
+                        required(read, "workspace_id", "read.workspace_id")?,
+                        "read.workspace_id",
+                    )?,
+                    tab_id: non_empty_string_value(
+                        required(read, "tab_id", "read.tab_id")?,
+                        "read.tab_id",
+                    )?,
+                    source: enum_value(required(read, "source", "read.source")?, "read.source")?,
+                    format: enum_value(required(read, "format", "read.format")?, "read.format")?,
+                    text: string_value(required(read, "text", "read.text")?, "read.text")?,
+                    revision: non_negative_number(
+                        required(read, "revision", "read.revision")?,
+                        "read.revision",
+                    )?,
+                    truncated: bool_value(
+                        required(read, "truncated", "read.truncated")?,
+                        "read.truncated",
+                    )?,
+                },
+            })
         }
-        "agent_started" => {
-            decoded.agent = Some(agent(required(result, "agent", "result.agent")?, "agent")?);
-            decoded.argv = Some(string_array(
-                required(result, "argv", "result.argv")?,
-                "argv",
-            )?);
-        }
-        "agent_info" => {
-            decoded.agent = Some(agent(required(result, "agent", "result.agent")?, "agent")?);
-        }
-        "agent_prompted" => {
-            decoded.agent = Some(agent(required(result, "agent", "result.agent")?, "agent")?);
-        }
-        "pane_zoom" => validate_pane_zoom(required(result, "zoom", "result.zoom")?)?,
-        "ok" => {}
-        _ => return Err(format!("unsupported Herdr response type {kind}")),
+        HerdrControlResultKind::AgentStarted => Ok(HerdrControlResult::AgentStarted {
+            agent: agent(required(result, "agent", "result.agent")?, "agent")?,
+            argv: string_array(required(result, "argv", "result.argv")?, "argv")?,
+        }),
+        HerdrControlResultKind::AgentInfo => Ok(HerdrControlResult::AgentInfo {
+            agent: agent(required(result, "agent", "result.agent")?, "agent")?,
+        }),
+        HerdrControlResultKind::AgentPrompted => Ok(HerdrControlResult::AgentPrompted {
+            agent: agent(required(result, "agent", "result.agent")?, "agent")?,
+        }),
+        HerdrControlResultKind::PaneZoom => Ok(HerdrControlResult::PaneZoom {
+            zoom: pane_zoom(required(result, "zoom", "result.zoom")?)?,
+        }),
+        HerdrControlResultKind::Ok => Ok(HerdrControlResult::Ok),
     }
-    Ok(decoded)
 }
 
-fn validate_pane_zoom(value: &Value) -> Result<(), String> {
+fn pane_zoom(value: &Value) -> Result<HerdrPaneZoomResult, String> {
     let item = object(value, "zoom")?;
-    for field in ["changed", "zoom_changed", "focus_changed", "zoomed"] {
-        bool_value(
-            required(item, field, &format!("zoom.{field}"))?,
-            &format!("zoom.{field}"),
-        )?;
-    }
-    non_empty_string_value(required(item, "pane_id", "zoom.pane_id")?, "zoom.pane_id")?;
-    non_empty_string_value(
-        required(item, "focused_pane_id", "zoom.focused_pane_id")?,
-        "zoom.focused_pane_id",
-    )?;
-    if let Some(reason) = item.get("reason") {
-        enum_string(
-            reason,
-            "zoom.reason",
-            &["single_pane", "already_zoomed", "already_unzoomed"],
-        )?;
-    }
-    pane_layout(required(item, "layout", "zoom.layout")?, "zoom.layout")?;
-    Ok(())
+    Ok(HerdrPaneZoomResult {
+        changed: bool_value(required(item, "changed", "zoom.changed")?, "zoom.changed")?,
+        zoom_changed: bool_value(
+            required(item, "zoom_changed", "zoom.zoom_changed")?,
+            "zoom.zoom_changed",
+        )?,
+        focus_changed: bool_value(
+            required(item, "focus_changed", "zoom.focus_changed")?,
+            "zoom.focus_changed",
+        )?,
+        reason: item
+            .get("reason")
+            .map(|value| enum_value(value, "zoom.reason"))
+            .transpose()?,
+        pane_id: non_empty_string_value(
+            required(item, "pane_id", "zoom.pane_id")?,
+            "zoom.pane_id",
+        )?,
+        focused_pane_id: non_empty_string_value(
+            required(item, "focused_pane_id", "zoom.focused_pane_id")?,
+            "zoom.focused_pane_id",
+        )?,
+        zoomed: bool_value(required(item, "zoomed", "zoom.zoomed")?, "zoom.zoomed")?,
+        layout: pane_layout(required(item, "layout", "zoom.layout")?, "zoom.layout")?,
+    })
 }
 
 pub(crate) fn object<'a>(value: &'a Value, label: &str) -> Result<&'a Map<String, Value>, String> {
@@ -1018,21 +1149,20 @@ pub(crate) fn string_array(value: &Value, label: &str) -> Result<Vec<String>, St
         .collect()
 }
 
-fn enum_string(value: &Value, label: &str, allowed: &[&str]) -> Result<String, String> {
-    let value = string_value(value, label)?;
-    if allowed.contains(&value.as_str()) {
-        Ok(value)
-    } else {
-        Err(format!("{label} is invalid"))
-    }
+fn parse_wire_str<T: DeserializeOwned>(value: &str, label: &str) -> Result<T, String> {
+    serde_json::from_value(Value::String(value.to_owned()))
+        .map_err(|_| format!("{label} is invalid"))
 }
 
-pub(crate) fn agent_status(value: &Value, label: &str) -> Result<String, String> {
-    enum_string(
-        value,
-        label,
-        &["idle", "working", "blocked", "done", "unknown"],
-    )
+fn enum_value<T: DeserializeOwned>(value: &Value, label: &str) -> Result<T, String> {
+    let value = value
+        .as_str()
+        .ok_or_else(|| format!("{label} must be a string"))?;
+    parse_wire_str(value, label)
+}
+
+pub(crate) fn agent_status(value: &Value, label: &str) -> Result<HerdrAgentStatus, String> {
+    enum_value(value, label)
 }
 
 fn agent_session(value: &Value, label: &str) -> Result<HerdrAgentSessionInfo, String> {
@@ -1046,10 +1176,9 @@ fn agent_session(value: &Value, label: &str) -> Result<HerdrAgentSessionInfo, St
             required(item, "agent", &format!("{label}.agent"))?,
             &format!("{label}.agent"),
         )?,
-        kind: enum_string(
+        kind: enum_value(
             required(item, "kind", &format!("{label}.kind"))?,
             &format!("{label}.kind"),
-            &["id", "path"],
         )
         .map_err(|_| format!("{label}.kind must be id or path"))?,
         value: string_value(
@@ -1428,10 +1557,9 @@ pub(crate) fn pane_layout(value: &Value, label: &str) -> Result<HerdrPaneLayoutS
         .map(|(index, value)| {
             let split_label = format!("{label}.splits[{index}]");
             let split = object(value, &split_label)?;
-            let direction = enum_string(
+            let direction = enum_value(
                 required(split, "direction", &format!("{split_label}.direction"))?,
                 &format!("{split_label}.direction"),
-                &["right", "down"],
             )
             .map_err(|_| format!("{split_label}.direction must be right or down"))?;
             Ok(HerdrPaneLayoutSplit {
@@ -1553,6 +1681,114 @@ fn optional_nullable_string(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::de::DeserializeOwned;
+
+    fn assert_wire_enum<T>(variants: &[(T, &str)])
+    where
+        T: Copy + std::fmt::Debug + PartialEq + Serialize + DeserializeOwned,
+    {
+        for (variant, wire) in variants {
+            assert_eq!(
+                serde_json::to_string(variant).unwrap(),
+                format!("\"{wire}\"")
+            );
+            assert_eq!(
+                serde_json::from_str::<T>(&format!("\"{wire}\"")).unwrap(),
+                *variant
+            );
+        }
+        assert!(serde_json::from_str::<T>("\"future_value\"").is_err());
+    }
+
+    fn workspace_value() -> Value {
+        serde_json::json!({
+            "workspace_id": "w1", "number": 1, "label": "Workspace", "focused": true,
+            "pane_count": 1, "tab_count": 1, "active_tab_id": "t1", "agent_status": "idle"
+        })
+    }
+
+    fn tab_value() -> Value {
+        serde_json::json!({
+            "tab_id": "t1", "workspace_id": "w1", "number": 1, "label": "Tab",
+            "focused": true, "pane_count": 1, "agent_status": "working"
+        })
+    }
+
+    fn pane_value() -> Value {
+        serde_json::json!({
+            "pane_id": "p1", "terminal_id": "term1", "workspace_id": "w1", "tab_id": "t1",
+            "focused": true, "agent_status": "blocked", "revision": 4,
+            "agent_session": {"source":"herdr:test", "agent":"future-agent", "kind":"path", "value":"/tmp/session"}
+        })
+    }
+
+    fn agent_value() -> Value {
+        serde_json::json!({
+            "pane_id": "p1", "terminal_id": "term1", "workspace_id": "w1", "tab_id": "t1",
+            "focused": true, "agent_status": "done", "revision": 5
+        })
+    }
+
+    fn layout_value() -> Value {
+        serde_json::json!({
+            "workspace_id":"w1", "tab_id":"t1", "zoomed":false,
+            "area":{"x":0,"y":0,"width":80,"height":24}, "focused_pane_id":"p1",
+            "panes":[{"pane_id":"p1","focused":true,"rect":{"x":0,"y":0,"width":80,"height":24}}],
+            "splits":[{"id":"s1","direction":"right","ratio":0.5,"rect":{"x":0,"y":0,"width":80,"height":24}}]
+        })
+    }
+
+    #[test]
+    fn closed_wire_enums_round_trip_and_reject_unknown_values() {
+        assert_wire_enum(&[
+            (HerdrAgentStatus::Idle, "idle"),
+            (HerdrAgentStatus::Working, "working"),
+            (HerdrAgentStatus::Blocked, "blocked"),
+            (HerdrAgentStatus::Done, "done"),
+            (HerdrAgentStatus::Unknown, "unknown"),
+        ]);
+        assert_wire_enum(&[
+            (HerdrAgentSessionKind::Id, "id"),
+            (HerdrAgentSessionKind::Path, "path"),
+        ]);
+        assert_wire_enum(&[
+            (HerdrSplitDirection::Right, "right"),
+            (HerdrSplitDirection::Down, "down"),
+        ]);
+        assert_wire_enum(&[
+            (HerdrPaneReadSource::Visible, "visible"),
+            (HerdrPaneReadSource::Recent, "recent"),
+            (HerdrPaneReadSource::RecentUnwrapped, "recent_unwrapped"),
+            (HerdrPaneReadSource::Detection, "detection"),
+        ]);
+        assert_wire_enum(&[
+            (HerdrPaneReadFormat::Text, "text"),
+            (HerdrPaneReadFormat::Ansi, "ansi"),
+        ]);
+        assert_wire_enum(&[
+            (HerdrPaneZoomReason::SinglePane, "single_pane"),
+            (HerdrPaneZoomReason::AlreadyZoomed, "already_zoomed"),
+            (HerdrPaneZoomReason::AlreadyUnzoomed, "already_unzoomed"),
+        ]);
+    }
+
+    #[test]
+    fn nested_domain_decoders_retain_enum_types() {
+        let pane = pane(&pane_value(), "pane").unwrap();
+        assert_eq!(pane.agent_status, HerdrAgentStatus::Blocked);
+        assert_eq!(
+            pane.agent_session.unwrap().kind,
+            HerdrAgentSessionKind::Path
+        );
+
+        let layout = pane_layout(&layout_value(), "layout").unwrap();
+        assert_eq!(layout.splits[0].direction, HerdrSplitDirection::Right);
+
+        let mut invalid_layout = layout_value();
+        invalid_layout["splits"][0]["direction"] = Value::String("left".into());
+        assert!(pane_layout(&invalid_layout, "layout").is_err());
+        assert!(agent_status(&Value::String("busy".into()), "agent_status").is_err());
+    }
 
     #[test]
     fn representative_requests_match_typescript_fixtures() {
@@ -1584,6 +1820,18 @@ mod tests {
             )
             .unwrap(),
             "{\"id\":\"android_3\",\"method\":\"pane.send_input\",\"params\":{\"pane_id\":\"w1:p1\",\"text\":\"hello\",\"keys\":[\"enter\"]}}\n"
+        );
+        assert_eq!(
+            String::from_utf8(
+                HerdrControlRequest::PaneSplit {
+                    pane_id: "w1:p1".into(),
+                    direction: HerdrSplitDirection::Down,
+                }
+                .encode("android_4")
+                .unwrap()
+            )
+            .unwrap(),
+            "{\"id\":\"android_4\",\"method\":\"pane.split\",\"params\":{\"target_pane_id\":\"w1:p1\",\"direction\":\"down\",\"focus\":true}}\n"
         );
     }
 
@@ -1620,9 +1868,13 @@ mod tests {
             br#"{"id":"android_1","result":{"type":"pong","version":"1.2.3","protocol":20}}"#,
         )
         .unwrap();
-        assert_eq!(pong.kind, "pong");
-        assert_eq!(pong.version.as_deref(), Some("1.2.3"));
-        assert_eq!(pong.protocol, Some(20));
+        assert_eq!(
+            pong,
+            HerdrControlResult::Pong {
+                version: "1.2.3".into(),
+                protocol: 20,
+            }
+        );
         assert_eq!(
             parse_response(
                 &HerdrControlRequest::Ping,
@@ -1655,6 +1907,114 @@ mod tests {
         assert!(matches!(
             parse_response(&HerdrControlRequest::Ping, br#"{"result":{"type":"ok"}}"#),
             Err(HerdrControlError::UnsupportedResponse(_))
+        ));
+    }
+
+    #[test]
+    fn every_supported_control_result_maps_to_a_data_carrying_variant() {
+        let snapshot = serde_json::json!({
+            "version":"1.0", "protocol":20,
+            "focused_workspace_id":"w1", "focused_tab_id":"t1", "focused_pane_id":"p1",
+            "agents":[agent_value()], "workspaces":[workspace_value()], "tabs":[tab_value()],
+            "panes":[pane_value()], "layouts":[layout_value()]
+        });
+        let cases = vec![
+            (
+                HerdrControlResultKind::Pong,
+                serde_json::json!({"version":"1.0","protocol":20}),
+            ),
+            (
+                HerdrControlResultKind::SessionSnapshot,
+                serde_json::json!({"snapshot":snapshot}),
+            ),
+            (
+                HerdrControlResultKind::WorkspaceCreated,
+                serde_json::json!({"workspace":workspace_value(),"tab":tab_value(),"root_pane":pane_value()}),
+            ),
+            (
+                HerdrControlResultKind::WorkspaceInfo,
+                serde_json::json!({"workspace":workspace_value()}),
+            ),
+            (
+                HerdrControlResultKind::TabCreated,
+                serde_json::json!({"tab":tab_value(),"root_pane":pane_value()}),
+            ),
+            (
+                HerdrControlResultKind::TabInfo,
+                serde_json::json!({"tab":tab_value()}),
+            ),
+            (
+                HerdrControlResultKind::PaneInfo,
+                serde_json::json!({"pane":pane_value()}),
+            ),
+            (
+                HerdrControlResultKind::PaneRead,
+                serde_json::json!({"read":{
+                    "pane_id":"p1","workspace_id":"w1","tab_id":"t1","source":"recent_unwrapped",
+                    "format":"ansi","text":"\u{001b}[31mred","revision":8,"truncated":true
+                }}),
+            ),
+            (
+                HerdrControlResultKind::AgentStarted,
+                serde_json::json!({"agent":agent_value(),"argv":["codex","--resume"]}),
+            ),
+            (
+                HerdrControlResultKind::AgentInfo,
+                serde_json::json!({"agent":agent_value()}),
+            ),
+            (
+                HerdrControlResultKind::AgentPrompted,
+                serde_json::json!({"agent":agent_value()}),
+            ),
+            (
+                HerdrControlResultKind::PaneZoom,
+                serde_json::json!({"zoom":{
+                    "changed":false,"zoom_changed":false,"focus_changed":false,"reason":"single_pane",
+                    "pane_id":"p1","focused_pane_id":"p1","zoomed":false,"layout":layout_value()
+                }}),
+            ),
+            (HerdrControlResultKind::Ok, serde_json::json!({})),
+        ];
+        for (kind, value) in cases {
+            let result = decode_result(kind, value.as_object().unwrap()).unwrap();
+            let decoded_kind = match result {
+                HerdrControlResult::Pong { .. } => HerdrControlResultKind::Pong,
+                HerdrControlResult::SessionSnapshot { .. } => {
+                    HerdrControlResultKind::SessionSnapshot
+                }
+                HerdrControlResult::WorkspaceCreated { .. } => {
+                    HerdrControlResultKind::WorkspaceCreated
+                }
+                HerdrControlResult::WorkspaceInfo { .. } => HerdrControlResultKind::WorkspaceInfo,
+                HerdrControlResult::TabCreated { .. } => HerdrControlResultKind::TabCreated,
+                HerdrControlResult::TabInfo { .. } => HerdrControlResultKind::TabInfo,
+                HerdrControlResult::PaneInfo { .. } => HerdrControlResultKind::PaneInfo,
+                HerdrControlResult::PaneRead { .. } => HerdrControlResultKind::PaneRead,
+                HerdrControlResult::AgentStarted { .. } => HerdrControlResultKind::AgentStarted,
+                HerdrControlResult::AgentInfo { .. } => HerdrControlResultKind::AgentInfo,
+                HerdrControlResult::AgentPrompted { .. } => HerdrControlResultKind::AgentPrompted,
+                HerdrControlResult::PaneZoom { .. } => HerdrControlResultKind::PaneZoom,
+                HerdrControlResult::Ok => HerdrControlResultKind::Ok,
+            };
+            assert_eq!(decoded_kind, kind);
+        }
+
+        let read = decode_result(
+            HerdrControlResultKind::PaneRead,
+            serde_json::json!({"read":{
+                "pane_id":"p1","workspace_id":"w1","tab_id":"t1","source":"detection",
+                "format":"text","text":"hello","revision":9,"truncated":false
+            }})
+            .as_object()
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            read,
+            HerdrControlResult::PaneRead { read }
+                if read.source == HerdrPaneReadSource::Detection
+                    && read.format == HerdrPaneReadFormat::Text
+                    && read.revision == 9.0
         ));
     }
 }

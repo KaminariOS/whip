@@ -7,6 +7,13 @@ import {
   herdrTerminalResize,
   herdrTerminalScroll,
   HerdrControlRequest,
+  HerdrControlResult_Tags,
+  HerdrAgentSessionKind,
+  HerdrAgentStatus,
+  HerdrSplitDirection,
+  HerdrTerminalAttachLaunchMode,
+  HerdrTerminalNotificationKind,
+  HerdrTerminalControlEvent_Tags,
   HostRuntimeEvent_Tags,
   HostSshCredential,
   createHostRuntime as createHostRuntimeRust,
@@ -186,6 +193,44 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+function splitDirection(value: unknown): HerdrSplitDirection {
+  if (value === 'right') return HerdrSplitDirection.Right;
+  if (value === 'down') return HerdrSplitDirection.Down;
+  throw new Error('pane split direction must be right or down');
+}
+
+function splitDirectionString(value: HerdrSplitDirection): 'right' | 'down' {
+  return value === HerdrSplitDirection.Down ? 'down' : 'right';
+}
+
+function agentStatus(value: HerdrAgentStatus): 'idle' | 'working' | 'blocked' | 'done' | 'unknown' {
+  switch (value) {
+    case HerdrAgentStatus.Idle: return 'idle';
+    case HerdrAgentStatus.Working: return 'working';
+    case HerdrAgentStatus.Blocked: return 'blocked';
+    case HerdrAgentStatus.Done: return 'done';
+    case HerdrAgentStatus.Unknown: return 'unknown';
+  }
+}
+
+function agentSessionKind(value: HerdrAgentSessionKind): 'id' | 'path' {
+  return value === HerdrAgentSessionKind.Path ? 'path' : 'id';
+}
+
+function nativeTerminalAttachLaunchMode(value: number): HerdrTerminalAttachLaunchMode {
+  if (value === 1) return HerdrTerminalAttachLaunchMode.LegacyTerminalAttach;
+  if (value === 2) return HerdrTerminalAttachLaunchMode.TerminalAttach;
+  throw new Error(`unsupported Herdr terminal attach launch mode ${value}`);
+}
+
+function terminalNotificationKind(value: HerdrTerminalNotificationKind): 0 | 1 | 2 {
+  switch (value) {
+    case HerdrTerminalNotificationKind.Sound: return 0;
+    case HerdrTerminalNotificationKind.Toast: return 1;
+    case HerdrTerminalNotificationKind.SystemToast: return 2;
+  }
+}
+
 function controlRequest(request: ApiRequest): HerdrControlRequest {
   const params = request.params || {};
   const text = (key: string): string => String(params[key] ?? '');
@@ -206,7 +251,7 @@ function controlRequest(request: ApiRequest): HerdrControlRequest {
     case 'pane.read': return HerdrControlRequest.PaneRead.new({ paneId: text('pane_id'), lines: Number(params.lines) });
     case 'pane.focus': return HerdrControlRequest.PaneFocus.new({ paneId: text('pane_id') });
     case 'pane.rename': return HerdrControlRequest.PaneRename.new({ paneId: text('pane_id'), label: optionalString(params.label) });
-    case 'pane.split': return HerdrControlRequest.PaneSplit.new({ paneId: text('target_pane_id'), direction: text('direction') });
+    case 'pane.split': return HerdrControlRequest.PaneSplit.new({ paneId: text('target_pane_id'), direction: splitDirection(params.direction) });
     case 'pane.zoom': return HerdrControlRequest.PaneZoom.new({ paneId: text('pane_id') });
     case 'pane.close': return HerdrControlRequest.PaneClose.new({ paneId: text('pane_id') });
     case 'pane.send_input': return HerdrControlRequest.PaneSendInput.new({ paneId: text('pane_id'), text: text('text'), keys: stringArray(params.keys) });
@@ -233,7 +278,7 @@ function assignOptional(target: Record<string, unknown>, key: string, value: unk
 }
 
 function agentSession(value: HerdrAgentSessionInfo | undefined): Record<string, unknown> | undefined {
-  return value && { source: value.source, agent: value.agent, kind: value.kind, value: value.value };
+  return value && { source: value.source, agent: value.agent, kind: agentSessionKind(value.kind), value: value.value };
 }
 
 function paneScroll(value: HerdrPaneScrollInfo | undefined): Record<string, unknown> | undefined {
@@ -263,7 +308,7 @@ function workspace(value: HerdrWorkspaceInfo): Record<string, unknown> {
     pane_count: value.paneCount,
     tab_count: value.tabCount,
     active_tab_id: value.activeTabId,
-    agent_status: value.agentStatus,
+    agent_status: agentStatus(value.agentStatus),
   };
   assignOptional(result, 'tokens', stringRecord(value.tokens));
   assignOptional(result, 'worktree', workspaceWorktree(value.worktree));
@@ -292,7 +337,7 @@ function tab(value: HerdrTabInfo): Record<string, unknown> {
     label: value.label,
     focused: value.focused,
     pane_count: value.paneCount,
-    agent_status: value.agentStatus,
+    agent_status: agentStatus(value.agentStatus),
   };
 }
 
@@ -303,7 +348,7 @@ function pane(value: HerdrPaneInfo): Record<string, unknown> {
     workspace_id: value.workspaceId,
     tab_id: value.tabId,
     focused: value.focused,
-    agent_status: value.agentStatus,
+    agent_status: agentStatus(value.agentStatus),
     revision: value.revision,
   };
   for (const [key, field] of [
@@ -330,7 +375,7 @@ function agent(value: HerdrAgentInfo): Record<string, unknown> {
     workspace_id: value.workspaceId,
     tab_id: value.tabId,
     focused: value.focused,
-    agent_status: value.agentStatus,
+    agent_status: agentStatus(value.agentStatus),
     revision: value.revision,
   };
   for (const [key, field] of [
@@ -358,7 +403,7 @@ function layout(value: HerdrPaneLayoutSnapshot): Record<string, unknown> {
     area: rect(value.area),
     focused_pane_id: value.focusedPaneId,
     panes: value.panes.map(item => ({ pane_id: item.paneId, focused: item.focused, rect: rect(item.rect) })),
-    splits: value.splits.map(item => ({ id: item.id, direction: item.direction, ratio: item.ratio, rect: rect(item.rect) })),
+    splits: value.splits.map(item => ({ id: item.id, direction: splitDirectionString(item.direction), ratio: item.ratio, rect: rect(item.rect) })),
   };
 }
 
@@ -378,18 +423,39 @@ function snapshot(value: HerdrSessionSnapshot): Record<string, unknown> {
 }
 
 function apiResult(value: HerdrControlResult): ApiResult {
-  const result: ApiResult = { type: value.kind };
-  assignOptional(result, 'version', value.version);
-  assignOptional(result, 'protocol', value.protocol);
-  assignOptional(result, 'snapshot', value.snapshot && snapshot(value.snapshot));
-  assignOptional(result, 'workspace', value.workspace && workspace(value.workspace));
-  assignOptional(result, 'tab', value.tab && tab(value.tab));
-  assignOptional(result, 'pane', value.pane && pane(value.pane));
-  assignOptional(result, 'root_pane', value.rootPane && pane(value.rootPane));
-  assignOptional(result, 'agent', value.agent && agent(value.agent));
-  assignOptional(result, 'argv', value.argv);
-  if (value.readText !== undefined) result.read = { text: value.readText };
-  return result;
+  switch (value.tag) {
+    case HerdrControlResult_Tags.Pong:
+      return { type: 'pong', version: value.inner.version, protocol: value.inner.protocol };
+    case HerdrControlResult_Tags.SessionSnapshot:
+      return { type: 'session_snapshot', snapshot: snapshot(value.inner.snapshot) };
+    case HerdrControlResult_Tags.WorkspaceCreated:
+      return {
+        type: 'workspace_created',
+        workspace: workspace(value.inner.workspace),
+        tab: tab(value.inner.tab),
+        root_pane: pane(value.inner.rootPane),
+      };
+    case HerdrControlResult_Tags.WorkspaceInfo:
+      return { type: 'workspace_info', workspace: workspace(value.inner.workspace) };
+    case HerdrControlResult_Tags.TabCreated:
+      return { type: 'tab_created', tab: tab(value.inner.tab), root_pane: pane(value.inner.rootPane) };
+    case HerdrControlResult_Tags.TabInfo:
+      return { type: 'tab_info', tab: tab(value.inner.tab) };
+    case HerdrControlResult_Tags.PaneInfo:
+      return { type: 'pane_info', pane: pane(value.inner.pane) };
+    case HerdrControlResult_Tags.PaneRead:
+      return { type: 'pane_read', read: { text: value.inner.read.text } };
+    case HerdrControlResult_Tags.AgentStarted:
+      return { type: 'agent_started', agent: agent(value.inner.agent), argv: value.inner.argv };
+    case HerdrControlResult_Tags.AgentInfo:
+      return { type: 'agent_info', agent: agent(value.inner.agent) };
+    case HerdrControlResult_Tags.AgentPrompted:
+      return { type: 'agent_prompted', agent: agent(value.inner.agent) };
+    case HerdrControlResult_Tags.PaneZoom:
+      return { type: 'pane_zoom' };
+    case HerdrControlResult_Tags.Ok:
+      return { type: 'ok' };
+  }
 }
 
 function apiEvent(value: HerdrEvent): ApiEvent {
@@ -499,14 +565,14 @@ function apiEvent(value: HerdrEvent): ApiEvent {
         released: inner.released,
       };
       assignOptional(data, 'agent', inner.agent);
-      assignOptional(data, 'final_status', inner.finalStatus);
+      assignOptional(data, 'final_status', inner.finalStatus === undefined ? undefined : agentStatus(inner.finalStatus));
       return { event: 'pane.agent_detected', data };
     }
     case HerdrEvent_Tags.PaneAgentStatusChanged: {
       const data: Record<string, unknown> = {
         workspace_id: inner.workspaceId,
         pane_id: inner.paneId,
-        agent_status: inner.agentStatus,
+        agent_status: agentStatus(inner.agentStatus),
       };
       assignOptional(data, 'agent', inner.agent);
       assignOptional(data, 'title', inner.title);
@@ -523,23 +589,35 @@ function apiEvent(value: HerdrEvent): ApiEvent {
   }
 }
 
-function controlEvent(event: HerdrTerminalControlEvent): BridgeEvent {
-  const result: BridgeEvent = {
-    type: event.kind,
-    terminalId: event.terminalId,
-  };
-  if (['closed', 'title', 'clipboard', 'notify'].includes(event.kind)) result.text = event.text;
-  if (event.kind === 'notify') {
-    result.body = event.body;
-    result.kind = event.notificationKind;
+function controlEvent(terminalId: string, event: HerdrTerminalControlEvent): BridgeEvent {
+  switch (event.tag) {
+    case HerdrTerminalControlEvent_Tags.Closed:
+      return { type: 'closed', terminalId, text: event.inner.reason };
+    case HerdrTerminalControlEvent_Tags.Notify:
+      return {
+        type: 'notify',
+        terminalId,
+        text: event.inner.text,
+        body: event.inner.body,
+        kind: terminalNotificationKind(event.inner.kind),
+      };
+    case HerdrTerminalControlEvent_Tags.Clipboard:
+      return { type: 'clipboard', terminalId, text: event.inner.text };
+    case HerdrTerminalControlEvent_Tags.Title:
+      return { type: 'title', terminalId, text: event.inner.title };
+    case HerdrTerminalControlEvent_Tags.ReloadSoundConfig:
+      return { type: 'reload_sound_config', terminalId };
+    case HerdrTerminalControlEvent_Tags.MouseCapture:
+      return { type: 'mouse_capture', terminalId, flag: event.inner.enabled };
+    case HerdrTerminalControlEvent_Tags.KittyKeyboardReportAll:
+      return { type: 'kitty_keyboard_report_all', terminalId, flag: event.inner.enabled };
+    case HerdrTerminalControlEvent_Tags.PrefixInputSource:
+      return { type: 'prefix_input_source', terminalId, flag: event.inner.enabled };
+    case HerdrTerminalControlEvent_Tags.TerminalBell:
+      return { type: 'terminal_bell', terminalId, count: event.inner.count };
+    case HerdrTerminalControlEvent_Tags.Ignored:
+      return { type: 'ignored', terminalId };
   }
-  if (
-    event.kind === 'mouse_capture'
-    || event.kind === 'kitty_keyboard_report_all'
-    || event.kind === 'prefix_input_source'
-  ) result.flag = event.flag;
-  if (event.kind === 'terminal_bell') result.count = event.count;
-  return result;
 }
 
 const herdrTerminalEventSink: HerdrTerminalEventSink = {
@@ -567,10 +645,10 @@ const herdrTerminalEventSink: HerdrTerminalEventSink = {
       bytes,
     });
   },
-  control(event): void {
-    const handler = bridgeHandler(event.clientKey, event.terminalId);
-    handler?.(controlEvent(event));
-    if (event.kind === 'closed') removeBridgeHandler(event.clientKey, event.terminalId);
+  control(clientKey, terminalId, event): void {
+    const handler = bridgeHandler(clientKey, terminalId);
+    handler?.(controlEvent(terminalId, event));
+    if (event.tag === HerdrTerminalControlEvent_Tags.Closed) removeBridgeHandler(clientKey, terminalId);
   },
 };
 
@@ -835,7 +913,7 @@ const nativeClient = {
         rows,
         cellWidthPx,
         cellHeightPx,
-        terminalAttachLaunchMode,
+        nativeTerminalAttachLaunchMode(terminalAttachLaunchMode),
       );
     } catch (error) {
       removeBridgeHandler(clientKey, terminalId);

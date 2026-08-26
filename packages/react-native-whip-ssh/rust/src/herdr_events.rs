@@ -13,10 +13,10 @@ use serde_json::{Map, Value};
 use tokio::sync::oneshot;
 
 use crate::herdr_api::{
-    HerdrPaneInfo, HerdrPaneLayoutSnapshot, HerdrTabInfo, HerdrWorkspaceInfo, HerdrWorktreeInfo,
-    agent_status, bool_value, non_empty_string_value, non_negative_number, object, optional_string,
-    pane, pane_layout, required, required_string, string_array, string_map, tab, workspace,
-    worktree,
+    HerdrAgentStatus, HerdrPaneInfo, HerdrPaneLayoutSnapshot, HerdrTabInfo, HerdrWorkspaceInfo,
+    HerdrWorktreeInfo, agent_status, bool_value, non_empty_string_value, non_negative_number,
+    object, optional_string, pane, pane_layout, required, required_string, string_array,
+    string_map, tab, workspace, worktree,
 };
 use crate::{herdr_codec, russh_transport};
 
@@ -189,12 +189,12 @@ pub enum HerdrEvent {
         pane_id: String,
         agent: Option<String>,
         released: bool,
-        final_status: Option<String>,
+        final_status: Option<HerdrAgentStatus>,
     },
     PaneAgentStatusChanged {
         workspace_id: String,
         pane_id: String,
-        agent_status: String,
+        agent_status: HerdrAgentStatus,
         agent: Option<String>,
         title: Option<String>,
         display_agent: Option<String>,
@@ -1127,7 +1127,7 @@ mod tests {
         else {
             panic!("agent status event")
         };
-        assert_eq!(agent_status, "done");
+        assert_eq!(agent_status, HerdrAgentStatus::Done);
         assert_eq!(
             state_labels.unwrap().get("phase").map(String::as_str),
             Some("review")

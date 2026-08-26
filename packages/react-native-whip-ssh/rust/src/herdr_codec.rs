@@ -11,9 +11,81 @@ pub const MIN_PROTOCOL: u32 = 17;
 pub const MAX_PROTOCOL: u32 = 20;
 pub const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
 
-const TERMINAL_ANSI_ENCODING: u64 = 1;
 const SERVER_KEYBINDINGS: u64 = 0;
 const MAX_SAFE_INTEGER: u64 = (1_u64 << 53) - 1;
+
+/// The terminal-attach variant moved from bincode discriminant 1 to 2 when
+/// protocol 20 inserted `AppDirectGraphics` into Herdr's `ClientLaunchMode`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum HerdrTerminalAttachLaunchMode {
+    LegacyTerminalAttach,
+    TerminalAttach,
+}
+
+impl HerdrTerminalAttachLaunchMode {
+    const fn wire_value(self) -> u8 {
+        match self {
+            Self::LegacyTerminalAttach => 1,
+            Self::TerminalAttach => 2,
+        }
+    }
+}
+
+impl TryFrom<u8> for HerdrTerminalAttachLaunchMode {
+    type Error = CodecError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::LegacyTerminalAttach),
+            2 => Ok(Self::TerminalAttach),
+            value => Err(CodecError::UnsupportedLaunchMode(value)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum HerdrTerminalNotificationKind {
+    Sound,
+    Toast,
+    SystemToast,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HerdrTerminalEncoding {
+    TerminalAnsi,
+}
+
+impl HerdrTerminalEncoding {
+    const fn wire_value(self) -> u32 {
+        match self {
+            Self::TerminalAnsi => 1,
+        }
+    }
+}
+
+impl TryFrom<u32> for HerdrTerminalEncoding {
+    type Error = u32;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::TerminalAnsi),
+            value => Err(value),
+        }
+    }
+}
+
+impl TryFrom<u64> for HerdrTerminalNotificationKind {
+    type Error = CodecError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Sound),
+            1 => Ok(Self::Toast),
+            2 => Ok(Self::SystemToast),
+            value => Err(CodecError::InvalidNotificationKind(value)),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CodecError {
@@ -25,6 +97,7 @@ pub enum CodecError {
     IntegerOverflow,
     InvalidBoolean(u8),
     InvalidOptionTag(u8),
+    InvalidNotificationKind(u64),
     InvalidBellCount(u64),
 }
 
@@ -51,6 +124,9 @@ impl fmt::Display for CodecError {
             }
             Self::InvalidBoolean(value) => write!(formatter, "invalid bincode bool {value}"),
             Self::InvalidOptionTag(tag) => write!(formatter, "invalid bincode option tag {tag}"),
+            Self::InvalidNotificationKind(kind) => {
+                write!(formatter, "invalid Herdr terminal notification kind {kind}")
+            }
             Self::InvalidBellCount(count) => {
                 write!(formatter, "invalid Herdr terminal bell count {count}")
             }
@@ -81,7 +157,7 @@ pub enum ServerMessage {
         reason: Option<String>,
     },
     Notify {
-        kind: u32,
+        kind: HerdrTerminalNotificationKind,
         text: String,
         body: Option<String>,
     },
@@ -260,16 +336,11 @@ pub fn hello(
     rows: u32,
     cell_width_px: u32,
     cell_height_px: u32,
-    terminal_attach_launch_mode: u8,
+    terminal_attach_launch_mode: HerdrTerminalAttachLaunchMode,
 ) -> Result<Vec<u8>, CodecError> {
     validate_protocol(protocol)?;
     let columns = u16::try_from(columns).map_err(|_| CodecError::InvalidValue("column count"))?;
     let rows = u16::try_from(rows).map_err(|_| CodecError::InvalidValue("row count"))?;
-    if !matches!(terminal_attach_launch_mode, 1 | 2) {
-        return Err(CodecError::UnsupportedLaunchMode(
-            terminal_attach_launch_mode,
-        ));
-    }
     let mut encoder = Encoder::default();
     encoder.unsigned(0);
     encoder.unsigned(u64::from(protocol));
@@ -277,9 +348,9 @@ pub fn hello(
     encoder.unsigned(u64::from(rows));
     encoder.unsigned(u64::from(cell_width_px));
     encoder.unsigned(u64::from(cell_height_px));
-    encoder.unsigned(TERMINAL_ANSI_ENCODING);
+    encoder.unsigned(u64::from(HerdrTerminalEncoding::TerminalAnsi.wire_value()));
     encoder.unsigned(SERVER_KEYBINDINGS);
-    encoder.unsigned(u64::from(terminal_attach_launch_mode));
+    encoder.unsigned(u64::from(terminal_attach_launch_mode.wire_value()));
     Ok(encoder.finish())
 }
 
@@ -386,7 +457,7 @@ pub fn decode(bytes: &[u8], protocol: u32) -> Result<ServerMessage, CodecError> 
             reason: decoder.option_string()?,
         }),
         5 => Ok(ServerMessage::Notify {
-            kind: decoder.u32("notification kind")?,
+            kind: HerdrTerminalNotificationKind::try_from(decoder.unsigned()?)?,
             text: decoder.string()?,
             body: decoder.option_string()?,
         }),
@@ -427,11 +498,27 @@ mod tests {
     fn hello_matches_js_fixtures_at_supported_boundaries() {
         for protocol in [MIN_PROTOCOL, MAX_PROTOCOL] {
             assert_eq!(
-                hello(protocol, 80, 24, 8, 16, 1).unwrap(),
+                hello(
+                    protocol,
+                    80,
+                    24,
+                    8,
+                    16,
+                    HerdrTerminalAttachLaunchMode::LegacyTerminalAttach,
+                )
+                .unwrap(),
                 vec![0, protocol as u8, 80, 24, 8, 16, 1, 0, 1]
             );
             assert_eq!(
-                hello(protocol, 80, 24, 8, 16, 2).unwrap(),
+                hello(
+                    protocol,
+                    80,
+                    24,
+                    8,
+                    16,
+                    HerdrTerminalAttachLaunchMode::TerminalAttach,
+                )
+                .unwrap(),
                 vec![0, protocol as u8, 80, 24, 8, 16, 1, 0, 2]
             );
         }
@@ -535,7 +622,7 @@ mod tests {
             )
             .unwrap(),
             ServerMessage::Notify {
-                kind: 2,
+                kind: HerdrTerminalNotificationKind::SystemToast,
                 text: "done".to_owned(),
                 body: Some("body".to_owned()),
             }
@@ -586,6 +673,10 @@ mod tests {
             Err(CodecError::InvalidOptionTag(2))
         );
         assert_eq!(
+            decode(&[5, 3], 20),
+            Err(CodecError::InvalidNotificationKind(3))
+        );
+        assert_eq!(
             decode(&[254], 20),
             Err(CodecError::InvalidIntegerMarker(254))
         );
@@ -598,13 +689,20 @@ mod tests {
     #[test]
     fn invalid_and_oversized_client_values_return_errors() {
         assert!(matches!(
-            hello(16, 80, 24, 8, 16, 1),
+            hello(
+                16,
+                80,
+                24,
+                8,
+                16,
+                HerdrTerminalAttachLaunchMode::LegacyTerminalAttach,
+            ),
             Err(CodecError::UnsupportedProtocol(16))
         ));
-        assert!(matches!(
-            hello(20, 80, 24, 8, 16, 3),
+        assert_eq!(
+            HerdrTerminalAttachLaunchMode::try_from(3),
             Err(CodecError::UnsupportedLaunchMode(3))
-        ));
+        );
         assert!(resize(u32::from(u16::MAX) + 1, 24, 0, 0).is_err());
         assert!(scroll(true, u32::from(u16::MAX) + 1, None, None, 0).is_err());
         assert!(scroll(true, 1, Some(70_000.0), None, 0).is_err());

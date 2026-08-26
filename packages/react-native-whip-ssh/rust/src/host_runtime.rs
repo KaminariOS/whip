@@ -18,8 +18,8 @@ use crate::herdr_events::{
     HerdrEvent, HerdrEventError, close_herdr_event_subscription, start_on_runtime as start_events,
 };
 use crate::herdr_terminal::{
-    close_all_herdr_terminal_bridges, close_herdr_terminal_bridge, herdr_terminal_input,
-    herdr_terminal_resize, herdr_terminal_scroll, start_bridge_on_runtime,
+    HerdrTerminalAttachLaunchMode, close_all_herdr_terminal_bridges, close_herdr_terminal_bridge,
+    herdr_terminal_input, herdr_terminal_resize, herdr_terminal_scroll, start_bridge_on_runtime,
 };
 use crate::russh_transport::{self, CallError};
 
@@ -682,9 +682,11 @@ fn safe_socket_path_replay(request: &HerdrControlRequest) -> bool {
 }
 
 fn update_server_from_result(inner: &RuntimeInner, socket: String, result: &HerdrControlResult) {
-    let protocol = result
-        .protocol
-        .or_else(|| result.snapshot.as_ref().map(|snapshot| snapshot.protocol));
+    let protocol = match result {
+        HerdrControlResult::Pong { protocol, .. } => Some(*protocol),
+        HerdrControlResult::SessionSnapshot { snapshot } => Some(snapshot.protocol),
+        _ => None,
+    };
     if let Some(protocol) = protocol {
         let mut state = inner.state.lock();
         state.socket_path = Some(socket);
@@ -851,7 +853,11 @@ async fn open_terminal_inner(
         terminal.rows,
         terminal.cell_width_px,
         terminal.cell_height_px,
-        if protocol >= 20 { 2 } else { 1 },
+        if protocol >= 20 {
+            HerdrTerminalAttachLaunchMode::TerminalAttach
+        } else {
+            HerdrTerminalAttachLaunchMode::LegacyTerminalAttach
+        },
     )
     .await;
     let mut state = inner.state.lock();

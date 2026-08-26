@@ -303,7 +303,7 @@ interface NativeModuleInterface {
     rows: number,
     cellWidthPx: number,
     cellHeightPx: number,
-    terminalAttachLaunchMode: number,
+    terminalAttachLaunchMode: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_herdreventsink_event(
     uniffiSelf: bigint,
@@ -337,6 +337,8 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_control(
     uniffiSelf: bigint,
+    clientKey: Uint8Array,
+    terminalId: Uint8Array,
     event: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
@@ -562,6 +564,8 @@ type UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod1 = (
 ) => UniffiResult<void>;
 type UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod2 = (
   uniffiHandle: bigint,
+  clientKey: Uint8Array,
+  terminalId: Uint8Array,
   event: Uint8Array,
 ) => UniffiResult<void>;
 type UniffiCallbackInterfaceCloneWhipSshHerdrTerminalEventSink = (

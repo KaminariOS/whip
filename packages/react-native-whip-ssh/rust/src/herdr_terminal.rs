@@ -12,22 +12,45 @@ use parking_lot::{Mutex, RwLock};
 use tokio::sync::oneshot;
 
 use crate::herdr_codec::{
-    self, CodecError, MAX_FRAME_BYTES, ServerMessage, decode, validate_protocol,
+    self, CodecError, HerdrTerminalEncoding, MAX_FRAME_BYTES, ServerMessage, decode,
+    validate_protocol,
 };
 use crate::russh_transport;
 
+pub use crate::herdr_codec::{HerdrTerminalAttachLaunchMode, HerdrTerminalNotificationKind};
+
 const WELCOME_TIMEOUT: Duration = Duration::from_secs(15);
 
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct HerdrTerminalControlEvent {
-    pub client_key: String,
-    pub terminal_id: String,
-    pub kind: String,
-    pub text: Option<String>,
-    pub body: Option<String>,
-    pub flag: Option<bool>,
-    pub notification_kind: Option<u32>,
-    pub count: Option<u32>,
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum HerdrTerminalControlEvent {
+    Closed {
+        reason: Option<String>,
+    },
+    Notify {
+        kind: HerdrTerminalNotificationKind,
+        text: String,
+        body: Option<String>,
+    },
+    Clipboard {
+        text: String,
+    },
+    Title {
+        title: Option<String>,
+    },
+    ReloadSoundConfig,
+    MouseCapture {
+        enabled: bool,
+    },
+    KittyKeyboardReportAll {
+        enabled: bool,
+    },
+    PrefixInputSource {
+        enabled: bool,
+    },
+    TerminalBell {
+        count: u16,
+    },
+    Ignored,
 }
 
 #[uniffi::export(with_foreign)]
@@ -44,7 +67,7 @@ pub trait HerdrTerminalEventSink: Send + Sync {
         bytes: Vec<u8>,
     );
     fn graphics_frame(&self, client_key: String, terminal_id: String, bytes: Vec<u8>);
-    fn control(&self, event: HerdrTerminalControlEvent);
+    fn control(&self, client_key: String, terminal_id: String, event: HerdrTerminalControlEvent);
 }
 
 #[derive(Clone, Debug, thiserror::Error, uniffi::Error, PartialEq, Eq)]
@@ -246,12 +269,14 @@ impl Bridge {
             Err(HerdrBridgeError::WelcomeProtocolMismatch(format!(
                 "Herdr bridge negotiation mismatch (protocol {protocol}, encoding {encoding})"
             )))
-        } else if encoding != 1 {
-            Err(HerdrBridgeError::UnsupportedEncoding(format!(
-                "Herdr bridge negotiation mismatch (protocol {protocol}, encoding {encoding})"
-            )))
         } else {
-            Ok(())
+            HerdrTerminalEncoding::try_from(encoding)
+                .map(|HerdrTerminalEncoding::TerminalAnsi| ())
+                .map_err(|encoding| {
+                    HerdrBridgeError::UnsupportedEncoding(format!(
+                        "Herdr bridge negotiation mismatch (protocol {protocol}, encoding {encoding})"
+                    ))
+                })
         };
         match result {
             Ok(()) => {
@@ -270,6 +295,15 @@ impl Bridge {
             }
             return;
         };
+        self.dispatch_to(terminal_id, message, sink.as_ref());
+    }
+
+    fn dispatch_to(
+        &self,
+        terminal_id: &str,
+        message: ServerMessage,
+        sink: &dyn HerdrTerminalEventSink,
+    ) {
         match message {
             ServerMessage::Terminal {
                 sequence,
@@ -290,103 +324,67 @@ impl Bridge {
                 sink.graphics_frame(self.client_key.clone(), terminal_id.to_owned(), bytes)
             }
             ServerMessage::Closed { reason } => {
-                sink.control(self.control(terminal_id, "closed", reason, None, None, None, None));
+                self.emit_control(
+                    sink,
+                    terminal_id,
+                    HerdrTerminalControlEvent::Closed { reason },
+                );
                 self.close_transport();
             }
-            ServerMessage::Notify { kind, text, body } => sink.control(self.control(
+            ServerMessage::Notify { kind, text, body } => self.emit_control(
+                sink,
                 terminal_id,
-                "notify",
-                Some(text),
-                body,
-                None,
-                Some(kind),
-                None,
-            )),
-            ServerMessage::Clipboard { text } => sink.control(self.control(
+                HerdrTerminalControlEvent::Notify { kind, text, body },
+            ),
+            ServerMessage::Clipboard { text } => self.emit_control(
+                sink,
                 terminal_id,
-                "clipboard",
-                Some(text),
-                None,
-                None,
-                None,
-                None,
-            )),
-            ServerMessage::Title { title } => {
-                sink.control(self.control(terminal_id, "title", title, None, None, None, None))
-            }
-            ServerMessage::ReloadSoundConfig => sink.control(self.control(
+                HerdrTerminalControlEvent::Clipboard { text },
+            ),
+            ServerMessage::Title { title } => self.emit_control(
+                sink,
                 terminal_id,
-                "reload_sound_config",
-                None,
-                None,
-                None,
-                None,
-                None,
-            )),
-            ServerMessage::MouseCapture { enabled } => sink.control(self.control(
+                HerdrTerminalControlEvent::Title { title },
+            ),
+            ServerMessage::ReloadSoundConfig => self.emit_control(
+                sink,
                 terminal_id,
-                "mouse_capture",
-                None,
-                None,
-                Some(enabled),
-                None,
-                None,
-            )),
-            ServerMessage::KittyKeyboardReportAll { enabled } => sink.control(self.control(
+                HerdrTerminalControlEvent::ReloadSoundConfig,
+            ),
+            ServerMessage::MouseCapture { enabled } => self.emit_control(
+                sink,
                 terminal_id,
-                "kitty_keyboard_report_all",
-                None,
-                None,
-                Some(enabled),
-                None,
-                None,
-            )),
-            ServerMessage::PrefixInputSource { enabled } => sink.control(self.control(
+                HerdrTerminalControlEvent::MouseCapture { enabled },
+            ),
+            ServerMessage::KittyKeyboardReportAll { enabled } => self.emit_control(
+                sink,
                 terminal_id,
-                "prefix_input_source",
-                None,
-                None,
-                Some(enabled),
-                None,
-                None,
-            )),
-            ServerMessage::TerminalBell { count } => sink.control(self.control(
+                HerdrTerminalControlEvent::KittyKeyboardReportAll { enabled },
+            ),
+            ServerMessage::PrefixInputSource { enabled } => self.emit_control(
+                sink,
                 terminal_id,
-                "terminal_bell",
-                None,
-                None,
-                None,
-                None,
-                Some(u32::from(count)),
-            )),
+                HerdrTerminalControlEvent::PrefixInputSource { enabled },
+            ),
+            ServerMessage::TerminalBell { count } => self.emit_control(
+                sink,
+                terminal_id,
+                HerdrTerminalControlEvent::TerminalBell { count },
+            ),
             ServerMessage::Ignored { .. } => {
-                sink.control(self.control(terminal_id, "ignored", None, None, None, None, None))
+                self.emit_control(sink, terminal_id, HerdrTerminalControlEvent::Ignored)
             }
             ServerMessage::Welcome { .. } => {}
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn control(
+    fn emit_control(
         &self,
+        sink: &dyn HerdrTerminalEventSink,
         terminal_id: &str,
-        kind: &str,
-        text: Option<String>,
-        body: Option<String>,
-        flag: Option<bool>,
-        notification_kind: Option<u32>,
-        count: Option<u32>,
-    ) -> HerdrTerminalControlEvent {
-        HerdrTerminalControlEvent {
-            client_key: self.client_key.clone(),
-            terminal_id: terminal_id.to_owned(),
-            kind: kind.to_owned(),
-            text,
-            body,
-            flag,
-            notification_kind,
-            count,
-        }
+        event: HerdrTerminalControlEvent,
+    ) {
+        sink.control(self.client_key.clone(), terminal_id.to_owned(), event);
     }
 
     fn emit_closed(&self, reason: String) {
@@ -401,15 +399,13 @@ impl Bridge {
             return;
         }
         if let Some(sink) = event_sink().read().clone() {
-            sink.control(self.control(
+            self.emit_control(
+                sink.as_ref(),
                 &terminal_id,
-                "closed",
-                Some(reason),
-                None,
-                None,
-                None,
-                None,
-            ));
+                HerdrTerminalControlEvent::Closed {
+                    reason: Some(reason),
+                },
+            );
         }
     }
 
@@ -462,7 +458,7 @@ async fn open_bridge(
     rows: u32,
     cell_width_px: u32,
     cell_height_px: u32,
-    terminal_attach_launch_mode: u8,
+    terminal_attach_launch_mode: HerdrTerminalAttachLaunchMode,
 ) -> Result<Arc<Bridge>, HerdrBridgeError> {
     validate_protocol(protocol)?;
     let hello = herdr_codec::hello(
@@ -563,7 +559,7 @@ async fn prepare_bridge_on_runtime(
         rows,
         cell_width_px,
         cell_height_px,
-        1,
+        HerdrTerminalAttachLaunchMode::LegacyTerminalAttach,
     )
     .await?;
     registry().lock().prepared.insert(client_key, bridge.id);
@@ -581,7 +577,7 @@ pub(crate) async fn start_bridge_on_runtime(
     rows: u32,
     cell_width_px: u32,
     cell_height_px: u32,
-    terminal_attach_launch_mode: u8,
+    terminal_attach_launch_mode: HerdrTerminalAttachLaunchMode,
 ) -> Result<(), HerdrBridgeError> {
     if active_bridge(&client_key, &terminal_id).is_some() {
         return Ok(());
@@ -667,7 +663,7 @@ pub async fn start_herdr_terminal_bridge(
     rows: u32,
     cell_width_px: u32,
     cell_height_px: u32,
-    terminal_attach_launch_mode: u8,
+    terminal_attach_launch_mode: HerdrTerminalAttachLaunchMode,
 ) -> Result<(), HerdrBridgeError> {
     let runtime = crate::runtime().map_err(HerdrBridgeError::BridgeUnavailable)?;
     runtime
@@ -786,6 +782,36 @@ pub fn close_all_herdr_terminal_bridges(client_key: String) {
 mod tests {
     use super::*;
 
+    #[derive(Default)]
+    struct RecordingSink {
+        controls: Mutex<Vec<(String, String, HerdrTerminalControlEvent)>>,
+    }
+
+    impl HerdrTerminalEventSink for RecordingSink {
+        fn terminal_frame(
+            &self,
+            _client_key: String,
+            _terminal_id: String,
+            _sequence: u64,
+            _width: u16,
+            _height: u16,
+            _full: bool,
+            _bytes: Vec<u8>,
+        ) {
+        }
+
+        fn graphics_frame(&self, _client_key: String, _terminal_id: String, _bytes: Vec<u8>) {}
+
+        fn control(
+            &self,
+            client_key: String,
+            terminal_id: String,
+            event: HerdrTerminalControlEvent,
+        ) {
+            self.controls.lock().push((client_key, terminal_id, event));
+        }
+    }
+
     fn test_bridge(
         protocol: u32,
     ) -> (Arc<Bridge>, oneshot::Receiver<Result<(), HerdrBridgeError>>) {
@@ -892,5 +918,80 @@ mod tests {
         bridge.handle_frame(&[0, 20, 1, 0]);
         assert_eq!(received(receiver), Ok(()));
         assert!(matches!(*bridge.state.lock(), ProtocolState::Ready));
+    }
+
+    #[test]
+    fn server_control_messages_map_to_typed_events_without_option_bags() {
+        let (bridge, _) = test_bridge(20);
+        *bridge.state.lock() = ProtocolState::Attached("term1".into());
+        let sink = RecordingSink::default();
+        let cases = [
+            (
+                ServerMessage::Notify {
+                    kind: HerdrTerminalNotificationKind::SystemToast,
+                    text: "title".into(),
+                    body: Some("body".into()),
+                },
+                HerdrTerminalControlEvent::Notify {
+                    kind: HerdrTerminalNotificationKind::SystemToast,
+                    text: "title".into(),
+                    body: Some("body".into()),
+                },
+            ),
+            (
+                ServerMessage::Clipboard {
+                    text: "clip".into(),
+                },
+                HerdrTerminalControlEvent::Clipboard {
+                    text: "clip".into(),
+                },
+            ),
+            (
+                ServerMessage::Title { title: None },
+                HerdrTerminalControlEvent::Title { title: None },
+            ),
+            (
+                ServerMessage::ReloadSoundConfig,
+                HerdrTerminalControlEvent::ReloadSoundConfig,
+            ),
+            (
+                ServerMessage::MouseCapture { enabled: true },
+                HerdrTerminalControlEvent::MouseCapture { enabled: true },
+            ),
+            (
+                ServerMessage::KittyKeyboardReportAll { enabled: false },
+                HerdrTerminalControlEvent::KittyKeyboardReportAll { enabled: false },
+            ),
+            (
+                ServerMessage::PrefixInputSource { enabled: true },
+                HerdrTerminalControlEvent::PrefixInputSource { enabled: true },
+            ),
+            (
+                ServerMessage::TerminalBell { count: 3 },
+                HerdrTerminalControlEvent::TerminalBell { count: 3 },
+            ),
+            (
+                ServerMessage::Ignored { variant: 99 },
+                HerdrTerminalControlEvent::Ignored,
+            ),
+            (
+                ServerMessage::Closed {
+                    reason: Some("done".into()),
+                },
+                HerdrTerminalControlEvent::Closed {
+                    reason: Some("done".into()),
+                },
+            ),
+        ];
+        for (message, _) in &cases {
+            bridge.dispatch_to("term1", message.clone(), &sink);
+        }
+        let events = sink.controls.lock();
+        assert_eq!(events.len(), cases.len());
+        for ((client_key, terminal_id, event), (_, expected)) in events.iter().zip(cases) {
+            assert_eq!(client_key, "test");
+            assert_eq!(terminal_id, "term1");
+            assert_eq!(event, &expected);
+        }
     }
 }

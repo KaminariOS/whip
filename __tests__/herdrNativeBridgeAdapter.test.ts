@@ -5,7 +5,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrTerminalInput: jest.fn(),
   herdrTerminalResize: jest.fn(),
   herdrTerminalScroll: jest.fn(),
-  herdrControlRequest: jest.fn().mockResolvedValue({ kind: 'ok' }),
+  herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
   HostSshCredential: {
     Password: { new: jest.fn(inner => ({ tag: 'Password', inner })) },
@@ -24,6 +24,23 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   HerdrControlRequest: {
     WorkspaceFocus: { new: jest.fn(inner => ({ tag: 'WorkspaceFocus', inner })) },
     AgentFocus: { new: jest.fn(inner => ({ tag: 'AgentFocus', inner })) },
+  },
+  HerdrControlResult_Tags: {
+    Pong: 'Pong', SessionSnapshot: 'SessionSnapshot', WorkspaceCreated: 'WorkspaceCreated',
+    WorkspaceInfo: 'WorkspaceInfo', TabCreated: 'TabCreated', TabInfo: 'TabInfo',
+    PaneInfo: 'PaneInfo', PaneRead: 'PaneRead', AgentStarted: 'AgentStarted',
+    AgentInfo: 'AgentInfo', AgentPrompted: 'AgentPrompted', PaneZoom: 'PaneZoom', Ok: 'Ok',
+  },
+  HerdrAgentSessionKind: { Id: 0, Path: 1 },
+  HerdrAgentStatus: { Idle: 0, Working: 1, Blocked: 2, Done: 3, Unknown: 4 },
+  HerdrSplitDirection: { Right: 0, Down: 1 },
+  HerdrTerminalAttachLaunchMode: { LegacyTerminalAttach: 0, TerminalAttach: 1 },
+  HerdrTerminalNotificationKind: { Sound: 0, Toast: 1, SystemToast: 2 },
+  HerdrTerminalControlEvent_Tags: {
+    Closed: 'Closed', Notify: 'Notify', Clipboard: 'Clipboard', Title: 'Title',
+    ReloadSoundConfig: 'ReloadSoundConfig', MouseCapture: 'MouseCapture',
+    KittyKeyboardReportAll: 'KittyKeyboardReportAll', PrefixInputSource: 'PrefixInputSource',
+    TerminalBell: 'TerminalBell', Ignored: 'Ignored',
   },
   HerdrEvent_Tags: {
     WorkspaceCreated: 'WorkspaceCreated', WorkspaceUpdated: 'WorkspaceUpdated',
@@ -111,13 +128,9 @@ describe('native Herdr bridge adapter', () => {
       handler,
     );
 
-    mockEventSink.control({
-      clientKey: 'client-1',
-      terminalId: 'terminal-1',
-      kind: 'notify',
-      text: 'done',
-      body: 'body',
-      notificationKind: 2,
+    mockEventSink.control('client-1', 'terminal-1', {
+      tag: 'Notify',
+      inner: { kind: 2, text: 'done', body: 'body' },
     });
 
     expect(handler).toHaveBeenCalledWith({
@@ -130,7 +143,7 @@ describe('native Herdr bridge adapter', () => {
   });
 
   it('sends semantic control requests and returns typed native results', async () => {
-    mockGenerated.herdrControlRequest.mockResolvedValueOnce({ kind: 'ok' });
+    mockGenerated.herdrControlRequest.mockResolvedValueOnce({ tag: 'Ok' });
 
     await expect(nativeClient.requestHerdrApi(
       'client-1',
@@ -181,7 +194,7 @@ describe('native Herdr bridge adapter', () => {
       transportKey: jest.fn(() => 'transport-1'),
       connect: jest.fn().mockResolvedValue(undefined),
       disconnect: jest.fn().mockResolvedValue(undefined),
-      controlRequest: jest.fn().mockResolvedValue({ kind: 'ok' }),
+      controlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
       resolveControlSocket: jest.fn().mockResolvedValue('/tmp/herdr.sock'),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
