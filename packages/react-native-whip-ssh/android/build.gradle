@@ -32,6 +32,33 @@ if (isNewArchitectureEnabled()) {
   apply plugin: "com.facebook.react"
 }
 
+def rustDirectory = file("../rust")
+def rustBuildScript = file("${rustDirectory}/build-android.sh")
+def rustArchive = file("src/main/jniLibs/arm64-v8a/libwhip_ssh.a")
+
+def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
+  description = "Builds the arm64 Rust static library"
+  group = "build"
+
+  workingDir rustDirectory
+  commandLine "bash", rustBuildScript.absolutePath
+
+  inputs.files(
+    fileTree("${rustDirectory}/src") {
+      include "**/*.rs"
+    },
+    file("${rustDirectory}/Cargo.toml"),
+    file("${rustDirectory}/Cargo.lock"),
+    file("${rustDirectory}/rust-toolchain.toml"),
+    rustBuildScript,
+  )
+  outputs.file(rustArchive)
+}
+
+tasks.named("preBuild").configure {
+  dependsOn buildRustArm64
+}
+
 def getExtOrDefault(name) {
   return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties["WhipSsh_" + name]
 }
