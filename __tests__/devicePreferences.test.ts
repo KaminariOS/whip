@@ -393,6 +393,52 @@ test('persists new preferences under the v3 key', async () => {
   );
 });
 
+test('logs preference read failure while preserving the startup fallback', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('read unavailable');
+  mockGetItem.mockRejectedValueOnce(error);
+
+  const preferences = await loadDevicePreferences().catch(() => defaultDevicePreferences);
+
+  expect(preferences).toBe(defaultDevicePreferences);
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-read-failed',
+  ));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '"store":"device-preferences"',
+  ));
+  consoleError.mockRestore();
+});
+
+test('logs malformed preference JSON and keeps returning defaults', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  mockGetItem.mockResolvedValueOnce('{not json');
+
+  await expect(loadDevicePreferences()).resolves.toBe(defaultDevicePreferences);
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-parse-failed',
+  ));
+  expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining('{not json'));
+  consoleError.mockRestore();
+});
+
+test('logs preference write rejection and preserves rejection behavior', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('write unavailable');
+  mockSetItem.mockRejectedValueOnce(error);
+
+  await expect(saveDevicePreferences(defaultDevicePreferences)).rejects.toBe(error);
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-write-failed',
+  ));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '"store":"device-preferences"',
+  ));
+  consoleError.mockRestore();
+});
+
 test('sanitizes persisted terminal control usage', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({
     terminalControlUsage: {

@@ -20,6 +20,11 @@ import {
   recoverCredentialForHost,
   removeCredentialBackup,
 } from './credentialVault';
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
 
 interface StoredCredential {
   secret?: string;
@@ -31,7 +36,19 @@ export const CREDENTIAL_BACKUP_MIGRATION_VERSION = '1';
 let credentialBackupMigration: Promise<void> | null = null;
 
 export async function loadHostProfiles(): Promise<HostProfile[]> {
-  const entries = await AsyncStorage.multiGet([HOSTS_STORAGE_KEY, LEGACY_PROFILE_KEY]);
+  let entries: readonly [string, string | null][];
+  try {
+    entries = await AsyncStorage.multiGet([HOSTS_STORAGE_KEY, LEGACY_PROFILE_KEY]);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'host-profiles',
+      phase: 'startup-fallback',
+      operation: 'multiGet',
+      fallbackUsed: 'empty-hosts',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
   const values = new Map(entries);
   const hosts = await loadHostProfilesFromStorage(
     values.get(HOSTS_STORAGE_KEY) ?? null,
@@ -47,10 +64,14 @@ export async function loadHostProfilesFromStorage(
   legacyValue: string | null,
 ): Promise<HostProfile[]> {
   if (stored !== null) {
-    return parseHosts(stored);
+    return parseHosts(stored, error => {
+      recordHostProfilesParseFailure(error, HOSTS_STORAGE_KEY, 'empty-hosts');
+    });
   }
 
-  const legacy = migrateLegacyProfile(legacyValue);
+  const legacy = migrateLegacyProfile(legacyValue, error => {
+    recordHostProfilesParseFailure(error, LEGACY_PROFILE_KEY, 'empty-hosts');
+  });
   if (!legacy) return [];
 
   const credential = await Keychain.getGenericPassword({ service: LEGACY_CREDENTIAL_SERVICE });
@@ -58,7 +79,7 @@ export async function loadHostProfilesFromStorage(
   const migrated = { ...legacy, ...secrets };
   const host = toHostProfile(migrated);
 
-  await AsyncStorage.setItem(HOSTS_STORAGE_KEY, JSON.stringify([host]));
+  await writeHostProfiles(JSON.stringify([host]), 'startup-migration');
   if (migrated.secret) {
     await writeCredential(migrated);
   }
@@ -76,7 +97,21 @@ export function scheduleCredentialBackupMigration(hosts: readonly HostProfile[])
 }
 
 export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfile[]): Promise<void> {
-  if (await AsyncStorage.getItem(CREDENTIAL_BACKUP_MIGRATION_KEY) === CREDENTIAL_BACKUP_MIGRATION_VERSION) return;
+  let migrationVersion: string | null;
+  try {
+    migrationVersion = await AsyncStorage.getItem(CREDENTIAL_BACKUP_MIGRATION_KEY);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'credential-backup-migration',
+      storageKey: CREDENTIAL_BACKUP_MIGRATION_KEY,
+      phase: 'startup-migration',
+      operation: 'getItem',
+      fallbackUsed: 'retry-next-launch',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
+  if (migrationVersion === CREDENTIAL_BACKUP_MIGRATION_VERSION) return;
   let complete = true;
   for (const host of hosts) {
     try {
@@ -88,7 +123,19 @@ export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfi
     }
   }
   if (complete) {
-    await AsyncStorage.setItem(CREDENTIAL_BACKUP_MIGRATION_KEY, CREDENTIAL_BACKUP_MIGRATION_VERSION);
+    try {
+      await AsyncStorage.setItem(CREDENTIAL_BACKUP_MIGRATION_KEY, CREDENTIAL_BACKUP_MIGRATION_VERSION);
+    } catch (error) {
+      recordStorageDiagnostic('error', 'storage-write-failed', {
+        store: 'credential-backup-migration',
+        storageKey: CREDENTIAL_BACKUP_MIGRATION_KEY,
+        phase: 'startup-migration',
+        operation: 'setItem',
+        fallbackUsed: 'retry-next-launch',
+        ...storageErrorDetails(error),
+      });
+      throw error;
+    }
   }
 }
 
@@ -118,7 +165,7 @@ export async function saveConnectionProfile(
   const previous = hosts.find(host => host.id === profile.id);
   const host = toHostProfile(profile, previous);
   const nextHosts = upsertHost(hosts, host);
-  await AsyncStorage.setItem(HOSTS_STORAGE_KEY, JSON.stringify(nextHosts));
+  await writeHostProfiles(JSON.stringify(nextHosts), 'profile-save');
 
   if (profile.secret) {
     await writeCredential(profile);
@@ -135,7 +182,7 @@ export async function markHostDisconnected(hosts: HostProfile[], id: string): Pr
   const next = sortHosts(hosts.map(host => (
     host.id === id ? { ...host, lastConnectedAt: now, updatedAt: now } : host
   )));
-  await AsyncStorage.setItem(HOSTS_STORAGE_KEY, JSON.stringify(next));
+  await writeHostProfiles(JSON.stringify(next), 'disconnect-persistence');
   return next;
 }
 
@@ -146,7 +193,7 @@ export async function deleteHostProfile(hosts: HostProfile[], id: string): Promi
     .map(host => host.jumpHostId === id
       ? { ...host, jumpHostId: undefined, updatedAt: now }
       : host);
-  await AsyncStorage.setItem(HOSTS_STORAGE_KEY, JSON.stringify(next));
+  await writeHostProfiles(JSON.stringify(next), 'profile-delete');
   await Keychain.resetGenericPassword({ service: hostCredentialService(id) });
   await removeCredentialBackup(id);
   return next;
@@ -163,6 +210,36 @@ async function writeCredential(profile: ConnectionProfile): Promise<void> {
   await backupCredential(profile.id, {
     secret: profile.secret,
     passphrase: profile.passphrase,
+  });
+}
+
+async function writeHostProfiles(value: string, phase: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(HOSTS_STORAGE_KEY, value);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-write-failed', {
+      store: 'host-profiles',
+      storageKey: HOSTS_STORAGE_KEY,
+      phase,
+      operation: 'setItem',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
+}
+
+function recordHostProfilesParseFailure(
+  error: unknown,
+  storageKey: string,
+  fallbackUsed: string,
+): void {
+  recordStorageDiagnostic('error', 'storage-parse-failed', {
+    store: 'host-profiles',
+    storageKey,
+    phase: 'startup',
+    operation: 'parse',
+    fallbackUsed,
+    ...storageParseErrorDetails(error),
   });
 }
 

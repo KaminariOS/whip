@@ -107,3 +107,56 @@ test('persists each pane font zoom with its restored terminal', async () => {
     }),
   );
 });
+
+test('logs persisted-terminal getItem rejection without changing rejection behavior', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('read unavailable');
+  mockGetItem.mockRejectedValueOnce(error);
+
+  await expect(loadPersistedTerminals('thinker', snapshot)).rejects.toBe(error);
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-read-failed',
+  ));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    'herdr.terminal.sessions.v1.thinker',
+  ));
+  consoleError.mockRestore();
+});
+
+test('logs malformed persisted-terminal JSON and keeps returning empty state', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  mockGetItem.mockResolvedValueOnce('{not json');
+
+  await expect(loadPersistedTerminals('thinker', snapshot)).resolves.toEqual({
+    sessions: [],
+    activeTerminalId: null,
+  });
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-parse-failed',
+  ));
+  consoleError.mockRestore();
+});
+
+test('logs persisted-terminal write rejection without terminal titles', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('write unavailable');
+  mockSetItem.mockRejectedValueOnce(error);
+
+  await expect(savePersistedTerminals('thinker', {
+    activeTerminalId: 'term-grok',
+    sessions: [{
+      terminalId: 'term-grok',
+      paneId: 'p-grok',
+      title: 'sensitive terminal title',
+      kind: 'herdr',
+      status: 'connected',
+      reconnectAttempt: 0,
+    }],
+  })).rejects.toBe(error);
+
+  const diagnostic = String(consoleError.mock.calls[0]?.[0]);
+  expect(diagnostic).toContain('[StorageDiagnostics] storage-write-failed');
+  expect(diagnostic).not.toContain('sensitive terminal title');
+  consoleError.mockRestore();
+});

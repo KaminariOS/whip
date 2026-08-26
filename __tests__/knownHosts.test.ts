@@ -4,6 +4,7 @@ import {
   KNOWN_HOSTS_STORAGE_KEY,
   deleteKnownHost,
   hostKeyErrorHost,
+  knownHostsFromStorage,
   loadKnownHosts,
   parseUnknownHostKey,
   serializeKnownHosts,
@@ -53,6 +54,33 @@ test('loads the global list into the native strict host-key repository', async (
   expect(SSHClient.setKnownHosts).toHaveBeenCalledWith(
     'savior.tailnet.ts.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest',
   );
+});
+
+test('logs known-host read rejection without changing rejection behavior', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('read unavailable');
+  jest.mocked(AsyncStorage.getItem).mockRejectedValueOnce(error);
+
+  await expect(loadKnownHosts()).rejects.toBe(error);
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-read-failed',
+  ));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '"store":"known-hosts"',
+  ));
+  consoleError.mockRestore();
+});
+
+test('logs malformed known-host JSON without exposing key material', () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+
+  expect(knownHostsFromStorage('{AAAASensitiveKey')).toEqual([]);
+
+  const diagnostic = String(consoleError.mock.calls[0]?.[0]);
+  expect(diagnostic).toContain('[StorageDiagnostics] storage-parse-failed');
+  expect(diagnostic).not.toContain('AAAASensitiveKey');
+  consoleError.mockRestore();
 });
 
 test('stores a confirmed host globally and uses OpenSSH nonstandard-port syntax', async () => {
@@ -158,4 +186,17 @@ test('forgetting a host immediately replaces the native repository', async () =>
   await expect(deleteKnownHost([knownHost], knownHost.id)).resolves.toEqual([]);
   expect(mockStoredKnownHosts).toBe('[]');
   expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith('');
+});
+
+test('logs known-host write rejection without exposing public-key material', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('write unavailable');
+  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(error);
+
+  await expect(deleteKnownHost([knownHost], knownHost.id)).rejects.toBe(error);
+
+  const diagnostic = String(consoleError.mock.calls[0]?.[0]);
+  expect(diagnostic).toContain('[StorageDiagnostics] storage-write-failed');
+  expect(diagnostic).not.toContain(knownHost.publicKey);
+  consoleError.mockRestore();
 });

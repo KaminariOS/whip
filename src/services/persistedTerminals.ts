@@ -2,6 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { HerdrSnapshot } from '../types';
 import { openTerminalSession, type TerminalSessionsState } from '../terminalSessions';
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
 
 const PREFIX = 'herdr.terminal.sessions.v1.';
 
@@ -19,10 +24,27 @@ function persistedFontSize(value: unknown): number | undefined {
 }
 
 export async function loadPersistedTerminals(hostId: string, snapshot: HerdrSnapshot): Promise<TerminalSessionsState> {
-  const value = await AsyncStorage.getItem(`${PREFIX}${hostId}`);
+  const storageKey = `${PREFIX}${hostId}`;
+  let value: string | null;
+  try {
+    value = await AsyncStorage.getItem(storageKey);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'persisted-terminal-sessions',
+      storageKey,
+      phase: 'session-restore',
+      operation: 'getItem',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
   if (!value) return { sessions: [], activeTerminalId: null };
   try {
-    const parsed = JSON.parse(value) as { sessions?: PersistedTerminal[]; activeTerminalId?: string | null };
+    const parsedValue = JSON.parse(value) as unknown;
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      throw new TypeError('Stored terminal sessions must be an object');
+    }
+    const parsed = parsedValue as { sessions?: PersistedTerminal[]; activeTerminalId?: string | null };
     const validIds = new Set(snapshot.panes.map(pane => pane.terminal_id));
     const sessions = (parsed.sessions || [])
       .filter(session => validIds.has(session.terminalId))
@@ -39,23 +61,43 @@ export async function loadPersistedTerminals(hostId: string, snapshot: HerdrSnap
     const focusedPane = snapshot.panes.find(pane => pane.pane_id === snapshot.focused_pane_id)
       ?? snapshot.panes.find(pane => pane.focused);
     return focusedPane ? openTerminalSession(restored, focusedPane) : restored;
-  } catch {
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-parse-failed', {
+      store: 'persisted-terminal-sessions',
+      storageKey,
+      phase: 'session-restore',
+      operation: 'parse',
+      fallbackUsed: 'empty-terminal-sessions',
+      ...storageParseErrorDetails(error),
+    });
     return { sessions: [], activeTerminalId: null };
   }
 }
 
 export async function savePersistedTerminals(hostId: string, state: TerminalSessionsState): Promise<void> {
+  const storageKey = `${PREFIX}${hostId}`;
   const sessions = state.sessions.filter(session => session.kind !== 'ssh');
   const activeTerminalId = sessions.some(session => session.terminalId === state.activeTerminalId)
     ? state.activeTerminalId
     : sessions[0]?.terminalId ?? null;
-  await AsyncStorage.setItem(`${PREFIX}${hostId}`, JSON.stringify({
-    activeTerminalId,
-    sessions: sessions.map(({ terminalId, paneId, title, fontSize }) => ({
-      terminalId,
-      paneId,
-      title,
-      fontSize: persistedFontSize(fontSize),
-    })),
-  }));
+  try {
+    await AsyncStorage.setItem(storageKey, JSON.stringify({
+      activeTerminalId,
+      sessions: sessions.map(({ terminalId, paneId, title, fontSize }) => ({
+        terminalId,
+        paneId,
+        title,
+        fontSize: persistedFontSize(fontSize),
+      })),
+    }));
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-write-failed', {
+      store: 'persisted-terminal-sessions',
+      storageKey,
+      phase: 'persistence',
+      operation: 'setItem',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
 }

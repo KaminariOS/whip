@@ -30,3 +30,47 @@ test('persists the live host rail', async () => {
   await savePersistedLiveHosts(state);
   expect(mockSetItem).toHaveBeenCalledWith('herdr.live.hosts.v1', JSON.stringify(state));
 });
+
+test('logs live-host read failure while preserving the empty startup fallback', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  mockGetItem.mockRejectedValueOnce(new Error('read unavailable'));
+
+  const state = await loadPersistedLiveHosts()
+    .catch(() => ({ hostIds: [], activeHostId: null }));
+
+  expect(state).toEqual({ hostIds: [], activeHostId: null });
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-read-failed',
+  ));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '"store":"persisted-live-hosts"',
+  ));
+  consoleError.mockRestore();
+});
+
+test('logs malformed live-host JSON and keeps returning empty state', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  mockGetItem.mockResolvedValueOnce('{not json');
+
+  await expect(loadPersistedLiveHosts()).resolves.toEqual({
+    hostIds: [],
+    activeHostId: null,
+  });
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-parse-failed',
+  ));
+  consoleError.mockRestore();
+});
+
+test('logs live-host write rejection', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('write unavailable');
+  mockSetItem.mockRejectedValueOnce(error);
+
+  await expect(savePersistedLiveHosts({ hostIds: [], activeHostId: null })).rejects.toBe(error);
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-write-failed',
+  ));
+  consoleError.mockRestore();
+});

@@ -3,6 +3,11 @@ import SSHClient from 'react-native-whip-ssh';
 
 import { createSecureId } from '../lib/secureId';
 import type { KnownHost } from '../types';
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
 
 export const KNOWN_HOSTS_STORAGE_KEY = 'herdr.known-hosts.v1';
 export const UNKNOWN_HOST_KEY_PREFIX = 'E_HOST_KEY_UNKNOWN:';
@@ -19,7 +24,20 @@ export interface UnknownHostKeyChallenge {
 let knownHostsMutation = Promise.resolve();
 
 export async function loadKnownHosts(): Promise<KnownHost[]> {
-  const value = await AsyncStorage.getItem(KNOWN_HOSTS_STORAGE_KEY);
+  let value: string | null;
+  try {
+    value = await AsyncStorage.getItem(KNOWN_HOSTS_STORAGE_KEY);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'known-hosts',
+      storageKey: KNOWN_HOSTS_STORAGE_KEY,
+      phase: 'startup',
+      operation: 'getItem',
+      fallbackUsed: 'empty-known-hosts',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
   return knownHostsFromStorage(value);
 }
 
@@ -180,7 +198,18 @@ function configureNativeKnownHosts(hosts: KnownHost[]): void {
 
 async function replaceKnownHosts(hosts: KnownHost[]): Promise<void> {
   const operation = knownHostsMutation.then(async () => {
-    await AsyncStorage.setItem(KNOWN_HOSTS_STORAGE_KEY, JSON.stringify(hosts));
+    try {
+      await AsyncStorage.setItem(KNOWN_HOSTS_STORAGE_KEY, JSON.stringify(hosts));
+    } catch (error) {
+      recordStorageDiagnostic('error', 'storage-write-failed', {
+        store: 'known-hosts',
+        storageKey: KNOWN_HOSTS_STORAGE_KEY,
+        phase: 'persistence',
+        operation: 'setItem',
+        ...storageErrorDetails(error),
+      });
+      throw error;
+    }
     configureNativeKnownHosts(hosts);
   });
   knownHostsMutation = operation.catch(() => undefined);
@@ -191,9 +220,17 @@ function parseKnownHosts(value: string | null): KnownHost[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) throw new TypeError('Stored known hosts must be an array');
     return parsed.filter(isKnownHost).sort(compareKnownHosts);
-  } catch {
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-parse-failed', {
+      store: 'known-hosts',
+      storageKey: KNOWN_HOSTS_STORAGE_KEY,
+      phase: 'startup',
+      operation: 'parse',
+      fallbackUsed: 'empty-known-hosts',
+      ...storageParseErrorDetails(error),
+    });
     return [];
   }
 }

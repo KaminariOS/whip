@@ -8,6 +8,7 @@ import {
 import { KNOWN_HOSTS_STORAGE_KEY } from './knownHosts';
 import { HERDR_SOCKET_PATH_CACHE_KEY } from './herdrSocketPathStorage';
 import { LIVE_HOSTS_KEY } from './persistedLiveHosts';
+import { recordStorageDiagnostic, storageErrorDetails } from './storageDiagnostics';
 import { TERMINAL_HISTORY_STORAGE_KEY } from './terminalHistory';
 
 export const STARTUP_STORAGE_KEYS = [
@@ -34,7 +35,19 @@ export type StartupStorageSnapshot = {
 
 /** Reads every startup AsyncStorage value through a single native bridge call. */
 export async function readStartupStorage(): Promise<StartupStorageSnapshot> {
-  const entries = await AsyncStorage.multiGet([...STARTUP_STORAGE_KEYS]);
+  let entries: readonly [string, string | null][];
+  try {
+    entries = await AsyncStorage.multiGet([...STARTUP_STORAGE_KEYS]);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'startup-storage-multiget-failed', {
+      store: 'startup-storage',
+      phase: 'startup',
+      operation: 'multiGet',
+      fallbackUsed: 'individual-reads',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
   const values = new Map(entries);
   const value = (key: string) => values.get(key) ?? null;
   return {

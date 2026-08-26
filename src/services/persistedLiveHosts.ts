@@ -1,5 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
+
 export const LIVE_HOSTS_KEY = 'herdr.live.hosts.v1';
 
 export interface PersistedLiveHosts {
@@ -8,14 +14,31 @@ export interface PersistedLiveHosts {
 }
 
 export async function loadPersistedLiveHosts(): Promise<PersistedLiveHosts> {
-  const value = await AsyncStorage.getItem(LIVE_HOSTS_KEY);
+  let value: string | null;
+  try {
+    value = await AsyncStorage.getItem(LIVE_HOSTS_KEY);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'persisted-live-hosts',
+      storageKey: LIVE_HOSTS_KEY,
+      phase: 'startup',
+      operation: 'getItem',
+      fallbackUsed: 'empty-live-hosts',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
   return persistedLiveHostsFromStorage(value);
 }
 
 export function persistedLiveHostsFromStorage(value: string | null): PersistedLiveHosts {
   if (!value) return { hostIds: [], activeHostId: null };
   try {
-    const parsed = JSON.parse(value) as Partial<PersistedLiveHosts>;
+    const parsedValue = JSON.parse(value) as unknown;
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      throw new TypeError('Stored live hosts must be an object');
+    }
+    const parsed = parsedValue as Partial<PersistedLiveHosts>;
     const hostIds = Array.isArray(parsed.hostIds)
       ? [...new Set(parsed.hostIds.filter((id): id is string => typeof id === 'string' && Boolean(id)))]
       : [];
@@ -25,11 +48,30 @@ export function persistedLiveHostsFromStorage(value: string | null): PersistedLi
         ? parsed.activeHostId
         : hostIds[0] || null,
     };
-  } catch {
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-parse-failed', {
+      store: 'persisted-live-hosts',
+      storageKey: LIVE_HOSTS_KEY,
+      phase: 'startup',
+      operation: 'parse',
+      fallbackUsed: 'empty-live-hosts',
+      ...storageParseErrorDetails(error),
+    });
     return { hostIds: [], activeHostId: null };
   }
 }
 
 export async function savePersistedLiveHosts(state: PersistedLiveHosts): Promise<void> {
-  await AsyncStorage.setItem(LIVE_HOSTS_KEY, JSON.stringify(state));
+  try {
+    await AsyncStorage.setItem(LIVE_HOSTS_KEY, JSON.stringify(state));
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-write-failed', {
+      store: 'persisted-live-hosts',
+      storageKey: LIVE_HOSTS_KEY,
+      phase: 'persistence',
+      operation: 'setItem',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
 }

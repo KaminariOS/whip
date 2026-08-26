@@ -16,6 +16,10 @@ import {
   readStartupStorage,
 } from '../src/services/startupStorage';
 
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
 test('reads every startup value through one AsyncStorage bridge call', async () => {
   jest.mocked(AsyncStorage.multiGet).mockResolvedValueOnce(
     STARTUP_STORAGE_KEYS.map(key => [key, `value:${key}`]),
@@ -31,4 +35,21 @@ test('reads every startup value through one AsyncStorage bridge call', async () 
   expect(snapshot.liveHosts).toBe('value:herdr.live.hosts.v1');
   expect(snapshot.terminalHistory).toBe('value:herdr.terminal.history.v1');
   expect(snapshot.herdrSocketPaths).toBe('value:herdr.api-socket-paths.v1');
+});
+
+test('logs a startup diagnostic before multiGet failure falls back to individual reads', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = Object.assign(new Error('database unavailable'), { code: 'E_DB' });
+  jest.mocked(AsyncStorage.multiGet).mockRejectedValueOnce(error);
+
+  await expect(readStartupStorage()).rejects.toBe(error);
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] startup-storage-multiget-failed',
+  ));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '"fallbackUsed":"individual-reads"',
+  ));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('"errorCode":"E_DB"'));
+  consoleError.mockRestore();
 });

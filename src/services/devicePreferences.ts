@@ -22,6 +22,11 @@ import {
   migrateTerminalBackgroundImage,
   removeTerminalBackgroundImage,
 } from './terminalBackground';
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
 
 export const DEVICE_PREFERENCES_KEY = 'herdr.device.preferences.v3';
 export const LEGACY_DEVICE_PREFERENCES_KEYS = [
@@ -116,11 +121,11 @@ export const defaultDevicePreferences: DevicePreferences = {
 };
 
 export async function loadDevicePreferences(): Promise<DevicePreferences> {
-  const current = await AsyncStorage.getItem(DEVICE_PREFERENCES_KEY);
+  const current = await readDevicePreferencesValue(DEVICE_PREFERENCES_KEY);
   if (current) return devicePreferencesFromStorage(current, []);
   const legacyValues: Array<string | null> = [];
   for (const key of LEGACY_DEVICE_PREFERENCES_KEYS) {
-    const value = await AsyncStorage.getItem(key);
+    const value = await readDevicePreferencesValue(key);
     legacyValues.push(value);
     if (value) break;
   }
@@ -131,10 +136,35 @@ export async function devicePreferencesFromStorage(
   current: string | null,
   legacyValues: readonly (string | null)[],
 ): Promise<DevicePreferences> {
-  if (current) return migrateDevicePreferences(parseDevicePreferences(current));
-  const legacy = legacyValues.find((value): value is string => Boolean(value));
-  if (legacy) return migrateDevicePreferences(parseDevicePreferences(legacy, true));
+  if (current) {
+    return migrateDevicePreferences(parseDevicePreferences(current, DEVICE_PREFERENCES_KEY));
+  }
+  const legacyIndex = legacyValues.findIndex(value => Boolean(value));
+  const legacy = legacyValues[legacyIndex];
+  if (legacy) {
+    return migrateDevicePreferences(parseDevicePreferences(
+      legacy,
+      LEGACY_DEVICE_PREFERENCES_KEYS[legacyIndex],
+      true,
+    ));
+  }
   return defaultDevicePreferences;
+}
+
+async function readDevicePreferencesValue(storageKey: string): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(storageKey);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'device-preferences',
+      storageKey,
+      phase: 'startup',
+      operation: 'getItem',
+      fallbackUsed: 'default-preferences',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
 }
 
 async function migrateDevicePreferences(preferences: DevicePreferences): Promise<DevicePreferences> {
@@ -155,7 +185,12 @@ async function migrateDevicePreferences(preferences: DevicePreferences): Promise
       appBackgroundImageUri,
       terminal: { ...preferences.terminal, backgroundImageUri: terminalBackgroundImageUri },
     };
-    await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(migrated));
+    try {
+      await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(migrated));
+    } catch (error) {
+      recordDevicePreferencesWriteFailure(error, 'startup-migration');
+      throw error;
+    }
     if (terminalBackgroundImageUri !== previousTerminalUri) {
       await removeTerminalBackgroundImage(previousTerminalUri);
     }
@@ -169,9 +204,17 @@ async function migrateDevicePreferences(preferences: DevicePreferences): Promise
   }
 }
 
-function parseDevicePreferences(value: string, migratingLegacy = false): DevicePreferences {
+function parseDevicePreferences(
+  value: string,
+  storageKey: string,
+  migratingLegacy = false,
+): DevicePreferences {
   try {
-    const parsed = JSON.parse(value) as Partial<DevicePreferences>;
+    const parsedValue = JSON.parse(value) as unknown;
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      throw new TypeError('Stored device preferences must be an object');
+    }
+    const parsed = parsedValue as Partial<DevicePreferences>;
     const terminal = (parsed.terminal || {}) as StoredTerminalPreferences;
     const fontSize = migratingLegacy && terminal.fontSize === 11
       ? defaultDevicePreferences.terminal.fontSize
@@ -253,13 +296,36 @@ function parseDevicePreferences(value: string, migratingLegacy = false): DeviceP
         ),
       },
     };
-  } catch {
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-parse-failed', {
+      store: 'device-preferences',
+      storageKey,
+      phase: 'startup',
+      operation: 'parse',
+      fallbackUsed: 'default-preferences',
+      ...storageParseErrorDetails(error),
+    });
     return defaultDevicePreferences;
   }
 }
 
 export async function saveDevicePreferences(preferences: DevicePreferences): Promise<void> {
-  await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(preferences));
+  try {
+    await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(preferences));
+  } catch (error) {
+    recordDevicePreferencesWriteFailure(error, 'persistence');
+    throw error;
+  }
+}
+
+function recordDevicePreferencesWriteFailure(error: unknown, phase: string): void {
+  recordStorageDiagnostic('error', 'storage-write-failed', {
+    store: 'device-preferences',
+    storageKey: DEVICE_PREFERENCES_KEY,
+    phase,
+    operation: 'setItem',
+    ...storageErrorDetails(error),
+  });
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

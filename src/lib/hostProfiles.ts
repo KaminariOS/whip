@@ -86,11 +86,17 @@ export function sortHosts(hosts: HostProfile[]): HostProfile[] {
   });
 }
 
-export function parseHosts(value: string | null): HostProfile[] {
+export function parseHosts(
+  value: string | null,
+  onParseError?: (error: unknown) => void,
+): HostProfile[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) {
+      onParseError?.(new TypeError('Stored host profiles must be an array'));
+      return [];
+    }
     return sortHosts(parsed.filter(isHostProfile).map(profile => {
       const host = { ...profile } as HostProfile & { rememberCredentials?: boolean };
       delete host.rememberCredentials;
@@ -99,7 +105,8 @@ export function parseHosts(value: string | null): HostProfile[] {
         forwardAgent: host.authMode === 'key' && Boolean(host.forwardAgent),
       };
     }));
-  } catch {
+  } catch (error) {
+    onParseError?.(error);
     return [];
   }
 }
@@ -141,11 +148,17 @@ export function jumpHostCandidates(hosts: HostProfile[], profileId: string): Hos
   });
 }
 
-export function migrateLegacyProfile(value: string | null): ConnectionProfile | null {
+export function migrateLegacyProfile(
+  value: string | null,
+  onParseError?: (error: unknown) => void,
+): ConnectionProfile | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as Partial<ConnectionProfile>;
-    if (!parsed.host || !parsed.username) return null;
+    if (!parsed?.host || !parsed.username) {
+      onParseError?.(new TypeError('Stored legacy host profile is invalid'));
+      return null;
+    }
     const now = new Date().toISOString();
     return {
       id: 'host-legacy-default',
@@ -164,7 +177,8 @@ export function migrateLegacyProfile(value: string | null): ConnectionProfile | 
       createdAt: now,
       updatedAt: now,
     };
-  } catch {
+  } catch (error) {
+    onParseError?.(error);
     return null;
   }
 }

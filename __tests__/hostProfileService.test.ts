@@ -6,6 +6,7 @@ import {
   CREDENTIAL_BACKUP_MIGRATION_KEY,
   CREDENTIAL_BACKUP_MIGRATION_VERSION,
   deleteHostProfile,
+  loadHostProfiles,
   loadHostProfilesFromStorage,
   migrateCredentialBackupsIfNeeded,
   saveConnectionProfile,
@@ -17,6 +18,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
     getItem: jest.fn(() => Promise.resolve(null)),
+    multiGet: jest.fn(() => Promise.resolve([])),
     setItem: jest.fn(() => Promise.resolve()),
   },
 }));
@@ -61,6 +63,33 @@ test('returns current host metadata without touching Keychain', async () => {
 
   await expect(loadHostProfilesFromStorage(stored, null)).resolves.toEqual([hostProfile]);
   expect(Keychain.getGenericPassword).not.toHaveBeenCalled();
+});
+
+test('logs host metadata fallback read failure without changing rejection behavior', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('read unavailable');
+  jest.mocked(AsyncStorage.multiGet).mockRejectedValueOnce(error);
+
+  await expect(loadHostProfiles()).rejects.toBe(error);
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] storage-read-failed',
+  ));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '"store":"host-profiles"',
+  ));
+  consoleError.mockRestore();
+});
+
+test('logs malformed host metadata without exposing its contents', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+
+  await expect(loadHostProfilesFromStorage('{private host metadata', null)).resolves.toEqual([]);
+
+  const diagnostic = String(consoleError.mock.calls[0]?.[0]);
+  expect(diagnostic).toContain('[StorageDiagnostics] storage-parse-failed');
+  expect(diagnostic).not.toContain('private host metadata');
+  consoleError.mockRestore();
 });
 
 test('runs credential backup migration once per recorded version', async () => {
@@ -111,6 +140,24 @@ test('always stores a provided credential', async () => {
     secret: 'PRIVATE KEY',
     passphrase: 'key phrase',
   });
+});
+
+test('logs host metadata write failure without exposing credentials', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const error = new Error('write unavailable');
+  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(error);
+
+  await expect(saveConnectionProfile([], {
+    ...profile,
+    secret: 'PRIVATE KEY CONTENT',
+    passphrase: 'secret phrase',
+  })).rejects.toBe(error);
+
+  const diagnostic = String(consoleError.mock.calls[0]?.[0]);
+  expect(diagnostic).toContain('[StorageDiagnostics] storage-write-failed');
+  expect(diagnostic).not.toContain('PRIVATE KEY CONTENT');
+  expect(diagnostic).not.toContain('secret phrase');
+  consoleError.mockRestore();
 });
 
 test('removes a saved credential when its private key is cleared', async () => {
