@@ -405,7 +405,6 @@ function AppContent() {
   const [appBackgroundDimming, setAppBackgroundDimming] = useState(defaultDevicePreferences.appBackgroundDimming);
   const [appGlassEnabled, setAppGlassEnabled] = useState(defaultDevicePreferences.appGlassEnabled);
   const [developerOptionsEnabled, setDeveloperOptionsEnabled] = useState(defaultDevicePreferences.developerOptionsEnabled);
-  const [sshQrPairingEnabled, setSshQrPairingEnabled] = useState(defaultDevicePreferences.sshQrPairingEnabled);
   const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
   const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
   const [reopenTerminalOnLaunch, setReopenTerminalOnLaunch] = useState(defaultDevicePreferences.reopenTerminalOnLaunch);
@@ -436,7 +435,6 @@ function AppContent() {
     setAppBackgroundDimming(preferences.appBackgroundDimming);
     setAppGlassEnabled(preferences.appGlassEnabled);
     setDeveloperOptionsEnabled(preferences.developerOptionsEnabled);
-    setSshQrPairingEnabled(preferences.sshQrPairingEnabled);
     setLanguage(preferences.language);
     setKeepScreenOn(preferences.keepScreenOn);
     setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
@@ -671,7 +669,6 @@ function AppContent() {
       appBackgroundDimming,
       appGlassEnabled,
       developerOptionsEnabled,
-      sshQrPairingEnabled,
       language,
       keepScreenOn,
       reopenTerminalOnLaunch,
@@ -680,7 +677,7 @@ function AppContent() {
       terminal: terminalPreferences,
       terminalControlUsage,
     }).catch(() => undefined);
-  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, appGlassEnabled, biometricForKeys, biometricOnResume, developerOptionsEnabled, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, sshQrPairingEnabled, terminalControlUsage, terminalPreferences, ttsEnabled]);
+  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, appGlassEnabled, biometricForKeys, biometricOnResume, developerOptionsEnabled, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -2110,8 +2107,7 @@ function AppContent() {
               credentialRecoveryBusy={credentialRecoveryBusy}
               onAdd={() => {
                 setConnectError(null);
-                if (sshQrPairingEnabled) setNewHostOpen(true);
-                else setEditorProfile(emptyConnectionProfile());
+                setNewHostOpen(true);
               }}
               onConnect={host => connectSavedHost(host).catch(error => setConnectError(String(error)))}
               onDelete={confirmDeleteHost}
@@ -2181,7 +2177,6 @@ function AppContent() {
               appBackgroundDimming={appBackgroundDimming}
               appGlassEnabled={appGlassEnabled}
               developerOptionsEnabled={developerOptionsEnabled}
-              sshQrPairingEnabled={sshQrPairingEnabled}
               language={language}
               keepScreenOn={keepScreenOn}
               reopenTerminalOnLaunch={reopenTerminalOnLaunch}
@@ -2220,7 +2215,6 @@ function AppContent() {
               onAppBackgroundDimmingChange={setAppBackgroundDimming}
               onAppGlassEnabledChange={setAppGlassEnabled}
               onDeveloperOptionsEnabledChange={setDeveloperOptionsEnabled}
-              onSshQrPairingEnabledChange={setSshQrPairingEnabled}
               onLanguageChange={setLanguage}
               onKeepScreenOnChange={setKeepScreenOn}
               onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}

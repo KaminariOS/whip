@@ -70,7 +70,6 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.appBackgroundDimming).toBe(60);
   expect(defaultDevicePreferences.appGlassEnabled).toBe(false);
   expect(defaultDevicePreferences.developerOptionsEnabled).toBe(false);
-  expect(defaultDevicePreferences.sshQrPairingEnabled).toBe(false);
   expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.biometricForKeys).toBe(false);
   expect(defaultDevicePreferences.biometricOnResume).toBe(false);
@@ -102,7 +101,6 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     appBackgroundDimming: 60,
     appGlassEnabled: false,
     developerOptionsEnabled: false,
-    sshQrPairingEnabled: false,
     language: 'system',
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
@@ -160,14 +158,6 @@ test('loads biometric key protection only when explicitly enabled', async () => 
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ biometricForKeys: 'yes' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ biometricForKeys: false });
-});
-
-test('enables SSH QR pairing only after explicit opt-in', async () => {
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({ sshQrPairingEnabled: true }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({ sshQrPairingEnabled: true });
-
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({ sshQrPairingEnabled: 'yes' }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({ sshQrPairingEnabled: false });
 });
 
 test('loads biometric-on-resume protection only when explicitly enabled', async () => {

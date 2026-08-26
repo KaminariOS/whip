@@ -319,8 +319,6 @@ export const ja = {
   'settings.globalKeychainCopy': '{{count}} 保存されたキー · 生体認証認証が必要です',
   'settings.knownHosts': '既知の SSH ホスト',
   'settings.knownHostsCopy': '{{count}} 信頼できるホスト キー · すべての接続に使用されます',
-  'settings.sshQrPairing': 'QR ホストペアリング · 実験的',
-  'settings.sshQrPairingCopy': 'ホストを追加するとき、ローカルのワンタイム QR コードをスキャンして SSH 鍵を許可します。',
   'settings.biometricForKeys': 'キーの生体認証',
   'settings.biometricForKeysCopy': '保存された SSH キーを使用する前に生体認証が必要です。',
   'settings.biometricForKeysCopyIos': '保存された SSH キーを使用する前に Face ID、Touch ID、またはデバイス認証が必要です。',

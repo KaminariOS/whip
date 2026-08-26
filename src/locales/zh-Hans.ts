@@ -319,8 +319,6 @@ export const zhHans = {
   'settings.globalKeychainCopy': '{{count}} 已保存密钥·需要生物识别验证',
   'settings.knownHosts': '已知 SSH 主机',
   'settings.knownHostsCopy': '{{count}} 可信主机密钥·用于每个连接',
-  'settings.sshQrPairing': '二维码主机配对 · 实验性',
-  'settings.sshQrPairingCopy': '允许“添加主机”扫描本地一次性二维码来授权 SSH 密钥。',
   'settings.biometricForKeys': '钥匙生物识别',
   'settings.biometricForKeysCopy': '在使用保存的 SSH 密钥之前需要生物识别身份验证。',
   'settings.biometricForKeysCopyIos': '使用已保存的 SSH 密钥前需要 Face ID、Touch ID 或设备认证。',

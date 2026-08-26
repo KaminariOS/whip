@@ -329,8 +329,6 @@ export const en = {
   'settings.globalKeychainCopy': '{{count}} saved keys · biometric verification required',
   'settings.knownHosts': 'Known SSH hosts',
   'settings.knownHostsCopy': '{{count}} trusted host keys · used for every connection',
-  'settings.sshQrPairing': 'QR host pairing · Experimental',
-  'settings.sshQrPairingCopy': 'Allow Add Host to authorize an SSH key by scanning a one-time local QR code.',
   'settings.biometricForKeys': 'Biometric for Keys',
   'settings.biometricForKeysCopy': 'Require biometric authentication before using saved SSH keys.',
   'settings.biometricForKeysCopyIos': 'Require Face ID, Touch ID, or device authentication before using saved SSH keys.',

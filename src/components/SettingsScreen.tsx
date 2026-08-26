@@ -1,7 +1,7 @@
 import Slider from '@react-native-community/slider';
 import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Clipboard, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
+import { Alert, Clipboard, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -50,8 +50,6 @@ import { Text } from './ui/text';
 
 const DOUBLE_TAP_MENU_EXPAND_DURATION = 280;
 const DOUBLE_TAP_MENU_COLLAPSE_DURATION = 220;
-export const WHIP_PAIR_REPOSITORY_URL = 'https://github.com/KaminariOS/whip/blob/main/whip-pair/README.md';
-
 const SettingsDetailsContext = createContext<{ showDetails: (copy: string, y: number) => void }>({
   showDetails: (_copy: string, _y: number) => undefined,
 });
@@ -111,7 +109,6 @@ export interface SettingsSectionProps {
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
   developerOptionsEnabled: boolean;
-  sshQrPairingEnabled: boolean;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -131,7 +128,6 @@ export interface SettingsSectionProps {
   onAppBackgroundDimmingChange: (value: number) => void;
   onAppGlassEnabledChange: (value: boolean) => void;
   onDeveloperOptionsEnabledChange: (value: boolean) => void;
-  onSshQrPairingEnabledChange: (value: boolean) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
   onReopenTerminalOnLaunchChange: (value: boolean) => void;
@@ -211,12 +207,6 @@ export function SettingsSection(props: SettingsSectionProps) {
     }
   };
 
-  const openWhipPairRepository = () => {
-    Linking.openURL(WHIP_PAIR_REPOSITORY_URL).catch(error => {
-      Alert.alert(t('about.githubError'), String(error));
-    });
-  };
-
   return (
     <View className="px-4 py-5">
       <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
@@ -268,14 +258,6 @@ export function SettingsSection(props: SettingsSectionProps) {
           copy={t('settings.knownHostsCopy', { count: props.knownHostCount })}
           icon={Fingerprint}
           onPress={props.onManageKnownHosts}
-          divided
-        />
-        <SettingRow
-          title={t('settings.sshQrPairing')}
-          copy={t('settings.sshQrPairingCopy')}
-          value={props.sshQrPairingEnabled}
-          onChange={props.onSshQrPairingEnabledChange}
-          onDetailsPress={openWhipPairRepository}
           divided
         />
         <SettingRow title={t('settings.biometricForKeys')} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />

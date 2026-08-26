@@ -319,8 +319,6 @@ export const es = {
   'settings.globalKeychainCopy': '{{count}} claves guardadas · se requiere verificación biométrica',
   'settings.knownHosts': 'Hosts SSH conocidos',
   'settings.knownHostsCopy': '{{count}} claves de host confiables · utilizadas para cada conexión',
-  'settings.sshQrPairing': 'Emparejamiento QR · Experimental',
-  'settings.sshQrPairingCopy': 'Permite que Añadir host autorice una clave SSH escaneando un código QR local de un solo uso.',
   'settings.biometricForKeys': 'Biométrico para llaves',
   'settings.biometricForKeysCopy': 'Requerir autenticación biométrica antes de usar claves SSH guardadas.',
   'settings.biometricForKeysCopyIos': 'Requerir Face ID, Touch ID o la autenticación del dispositivo antes de usar claves SSH guardadas.',

@@ -319,8 +319,6 @@ export const zhHant: Record<string, string> = {
   'settings.globalKeychainCopy': '已儲存 {{count}} 把金鑰 · 需要生物辨識驗證',
   'settings.knownHosts': '已知 SSH 主機',
   'settings.knownHostsCopy': '{{count}} 個受信任的主機金鑰 · 套用於每次連線',
-  'settings.sshQrPairing': 'QR 主機配對 · 實驗性',
-  'settings.sshQrPairingCopy': '允許「新增主機」掃描本機一次性 QR 碼來授權 SSH 金鑰。',
   'settings.biometricForKeys': '金鑰生物辨識',
   'settings.biometricForKeysCopy': '使用已儲存的 SSH 金鑰前要求進行生物辨識驗證。',
   'settings.biometricForKeysCopyIos': '使用已儲存的 SSH 金鑰前要求 Face ID、Touch ID 或裝置驗證。',
