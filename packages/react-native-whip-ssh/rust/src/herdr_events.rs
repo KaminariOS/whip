@@ -5,6 +5,7 @@ use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
+use std::time::Duration;
 
 use crate::herdr_api::{
     HerdrAgentStatus, HerdrPaneInfo, HerdrPaneLayoutSnapshot, HerdrTabInfo, HerdrWorkspaceInfo,
@@ -16,9 +17,12 @@ use crate::{herdr_codec, ssh::SshSession};
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
 use serde_json::{Map, Value};
+use tokio::sync::oneshot;
 
 const MAX_EVENT_LINE_BYTES: usize = 1024 * 1024;
 const EVENT_READ_CHUNK_BYTES: usize = 32 * 1024;
+const SUBSCRIPTION_ACK_TIMEOUT: Duration = Duration::from_secs(15);
+const SUBSCRIPTION_REQUEST_ID: &str = "android_events";
 
 const LIFECYCLE_SUBSCRIPTIONS: &[&str] = &[
     "workspace.created",
@@ -232,6 +236,7 @@ struct JsonlEventParser {
 }
 
 enum StreamItem {
+    Acknowledged,
     Event(Box<HerdrEvent>),
     ServerError(String),
 }
@@ -296,6 +301,32 @@ fn parse_stream_line(bytes: &[u8]) -> Option<StreamItem> {
         } else {
             message
         }));
+    }
+    if let Some(result) = message.get("result") {
+        let response_id = match required_string(message, "id", "id") {
+            Ok(response_id) => response_id,
+            Err(reason) => return Some(StreamItem::ServerError(reason)),
+        };
+        if response_id != SUBSCRIPTION_REQUEST_ID {
+            return Some(StreamItem::ServerError(format!(
+                "event subscription response id must be {SUBSCRIPTION_REQUEST_ID}"
+            )));
+        }
+        let result = match object(result, "subscription result") {
+            Ok(result) => result,
+            Err(reason) => return Some(StreamItem::ServerError(reason)),
+        };
+        let result_type = match required_string(result, "type", "result.type") {
+            Ok(result_type) => result_type,
+            Err(reason) => return Some(StreamItem::ServerError(reason)),
+        };
+        return Some(if result_type == "subscription_started" {
+            StreamItem::Acknowledged
+        } else {
+            StreamItem::ServerError(format!(
+                "Herdr returned {result_type} for events.subscribe, expected subscription_started"
+            ))
+        });
     }
     let (raw_event, data) = match message.get("event") {
         Some(Value::String(event)) => (event.as_str(), message.get("data").unwrap_or(&Value::Null)),
@@ -592,7 +623,7 @@ fn subscription_request(protocol: u32, pane_ids: &[String]) -> Result<Vec<u8>, H
         pane_id: Some(pane_id),
     }));
     let mut bytes = serde_json::to_vec(&SubscribeRequest {
-        id: "android_events",
+        id: SUBSCRIPTION_REQUEST_ID,
         method: "events.subscribe",
         params: SubscribeParams { subscriptions },
     })
@@ -611,6 +642,15 @@ struct EventSubscription {
     channel_id: String,
     ssh: Arc<SshSession>,
     parser: Mutex<JsonlEventParser>,
+    acknowledgement: Mutex<Option<oneshot::Sender<Result<(), HerdrEventError>>>>,
+}
+
+impl EventSubscription {
+    fn finish_acknowledgement(&self, result: Result<(), HerdrEventError>) {
+        if let Some(sender) = self.acknowledgement.lock().take() {
+            let _ = sender.send(result);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -646,6 +686,7 @@ fn transport_frame(id: u64, bytes: Vec<u8>) {
     let items = subscription.parser.lock().push(&bytes);
     for item in items {
         match item {
+            StreamItem::Acknowledged => subscription.finish_acknowledgement(Ok(())),
             StreamItem::Event(event) => {
                 let event = *event;
                 if !crate::host_runtime::deliver_herdr_event(
@@ -669,6 +710,9 @@ fn transport_closed(id: u64, reason: String) {
         return;
     };
     subscription.parser.lock().end();
+    subscription.finish_acknowledgement(Err(HerdrEventError::TransportDisconnected(format!(
+        "Herdr event subscription closed before acknowledgement: {reason}"
+    ))));
     if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
         && let Some(sink) = event_sink().read().clone()
     {
@@ -678,6 +722,9 @@ fn transport_closed(id: u64, reason: String) {
 }
 
 fn fail_subscription(subscription: &EventSubscription, reason: String) {
+    subscription.finish_acknowledgement(Err(HerdrEventError::SubscriptionUnavailable(
+        reason.clone(),
+    )));
     if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
         && let Some(sink) = event_sink().read().clone()
     {
@@ -700,12 +747,14 @@ pub(crate) async fn start_on_runtime(
     let request = subscription_request(protocol, &pane_ids)?;
     let id = NEXT_SUBSCRIPTION_ID.fetch_add(1, Ordering::Relaxed);
     let channel_id = format!("whip-herdr-events-{id}");
+    let (acknowledgement_sender, acknowledgement_receiver) = oneshot::channel();
     let subscription = Arc::new(EventSubscription {
         id,
         client_key: client_key.clone(),
         channel_id: channel_id.clone(),
         ssh: ssh.clone(),
         parser: Mutex::new(JsonlEventParser::default()),
+        acknowledgement: Mutex::new(Some(acknowledgement_sender)),
     });
     {
         let mut registry = registry().lock();
@@ -732,7 +781,19 @@ pub(crate) async fn start_on_runtime(
         remove_subscription(id);
         return Err(HerdrEventError::TransportDisconnected(error.to_string()));
     }
-    Ok(())
+    match tokio::time::timeout(SUBSCRIPTION_ACK_TIMEOUT, acknowledgement_receiver).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err(HerdrEventError::SubscriptionUnavailable(
+            "Herdr event subscription acknowledgement was cancelled".to_owned(),
+        )),
+        Err(_) => {
+            remove_subscription(id);
+            let _ = ssh.close_unix_socket(&channel_id);
+            Err(HerdrEventError::SubscriptionUnavailable(
+                "timed out waiting for Herdr event subscription acknowledgement".to_owned(),
+            ))
+        }
+    }
 }
 
 #[uniffi::export]
@@ -782,6 +843,9 @@ pub fn close_herdr_event_subscription(client_key: String) {
             .cloned()
     };
     if let Some(subscription) = subscription {
+        subscription.finish_acknowledgement(Err(HerdrEventError::SubscriptionUnavailable(
+            "Herdr event subscription was closed before acknowledgement".to_owned(),
+        )));
         remove_subscription(subscription.id);
         let _ = subscription.ssh.close_unix_socket(&subscription.channel_id);
     }
@@ -829,7 +893,7 @@ mod tests {
             .into_iter()
             .filter_map(|item| match item {
                 StreamItem::Event(event) => Some(*event),
-                StreamItem::ServerError(_) => None,
+                StreamItem::Acknowledged | StreamItem::ServerError(_) => None,
             })
             .collect()
     }
@@ -998,6 +1062,47 @@ mod tests {
         assert!(line.ends_with("{\"type\":\"pane.agent_status_changed\",\"pane_id\":\"w1:p1\"},{\"type\":\"pane.agent_status_changed\",\"pane_id\":\"w1:p2\"}]}}\n"));
         let v17 = String::from_utf8(subscription_request(17, &[]).unwrap()).unwrap();
         assert!(!v17.contains("workspace.reordered"));
+    }
+
+    #[test]
+    fn subscription_started_response_is_an_explicit_acknowledgement() {
+        assert!(matches!(
+            parse_stream_line(
+                br#"{"id":"android_events","result":{"type":"subscription_started"}}"#
+            ),
+            Some(StreamItem::Acknowledged)
+        ));
+    }
+
+    #[test]
+    fn acknowledgement_and_following_event_survive_fragmented_frames() {
+        let mut parser = JsonlEventParser::default();
+        assert!(
+            parser
+                .push(br#"{"id":"android_events","result":{"type":"subscription_"#)
+                .is_empty()
+        );
+        let items = parser.push(
+            b"started\"}}\n{\"event\":\"pane.focused\",\"data\":{\"workspace_id\":\"w1\",\"pane_id\":\"p1\"}}\n",
+        );
+        assert!(matches!(items.first(), Some(StreamItem::Acknowledged)));
+        assert!(
+            matches!(items.get(1), Some(StreamItem::Event(event)) if event_kind(event) == "pane.focused")
+        );
+    }
+
+    #[test]
+    fn malformed_subscription_acknowledgements_fail_the_handshake() {
+        assert!(matches!(
+            parse_stream_line(
+                br#"{"id":"other","result":{"type":"subscription_started"}}"#
+            ),
+            Some(StreamItem::ServerError(reason)) if reason.contains("response id")
+        ));
+        assert!(matches!(
+            parse_stream_line(br#"{"id":"android_events","result":{"type":"ok"}}"#),
+            Some(StreamItem::ServerError(reason)) if reason.contains("expected subscription_started")
+        ));
     }
 
     #[test]

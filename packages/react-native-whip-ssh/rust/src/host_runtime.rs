@@ -22,7 +22,7 @@ use crate::herdr_terminal::{
     HerdrTerminalAttachLaunchMode, close_all_herdr_terminal_bridges, close_herdr_terminal_bridge,
     herdr_terminal_input, herdr_terminal_resize, herdr_terminal_scroll, start_bridge_on_runtime,
 };
-use crate::host_state::{ApplyResult, HostState, HostStateSnapshot, now_ms};
+use crate::host_state::{ApplyResult, HostState, HostStateSnapshot, SnapshotToken, now_ms};
 use crate::ssh::{SshConnectionConfig, SshCredential, SshFailure, SshSession};
 
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
@@ -737,19 +737,39 @@ fn update_server_from_result(inner: &RuntimeInner, socket: String, result: &Herd
     }
 }
 
-async fn ensure_herdr_server(inner: &RuntimeInner) -> Result<(), HostRuntimeError> {
+async fn ensure_herdr_server(inner: &Arc<RuntimeInner>) -> Result<(), HostRuntimeError> {
     if inner.state.lock().protocol.is_some() {
         return Ok(());
     }
-    let socket = resolve_socket_path(inner).await?;
-    let result = request_on_runtime(
+    let mut socket = resolve_socket_path(inner).await?;
+    let mut result = request_on_runtime(
         inner.id.clone(),
         current_ssh(inner)?,
         socket.clone(),
         HerdrControlRequest::Ping,
     )
-    .await
-    .map_err(|error| HostRuntimeError::HerdrUnavailable(error.to_string()))?;
+    .await;
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(is_transport_control_error)
+        && inner.state.lock().socket_from_cache
+    {
+        {
+            let mut state = inner.state.lock();
+            state.socket_path = None;
+            state.socket_from_cache = false;
+        }
+        socket = resolve_socket_path(inner).await?;
+        result = request_on_runtime(
+            inner.id.clone(),
+            current_ssh(inner)?,
+            socket.clone(),
+            HerdrControlRequest::Ping,
+        )
+        .await;
+    }
+    let result = result.map_err(|error| HostRuntimeError::HerdrUnavailable(error.to_string()))?;
     update_server_from_result(inner, socket, &result);
     if inner.state.lock().protocol.is_none() {
         return Err(HostRuntimeError::HerdrUnavailable(
@@ -871,14 +891,21 @@ fn reconcile_control_result(
     }
 }
 
-async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostStateSnapshot {
+fn begin_host_state_sync(inner: &RuntimeInner) -> (u64, SnapshotToken) {
     let (connection_generation, token) = {
         let mut state = inner.state.lock();
         let generation = state.generation;
         let token = state.host_state.begin_sync(generation);
         (generation, token)
     };
-    emit_host_state(&inner, Vec::new());
+    emit_host_state(inner, Vec::new());
+    (connection_generation, token)
+}
+
+async fn request_host_state_snapshot(
+    inner: Arc<RuntimeInner>,
+    token: SnapshotToken,
+) -> ApplyResult {
     let response = control_request_inner(inner.clone(), HerdrControlRequest::SessionSnapshot).await;
     let response = match response {
         Err(error) if is_transport_control_error(&error) => {
@@ -905,16 +932,78 @@ async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostStateSnapshot
             .fail_sync(token, error.to_string()),
     };
     emit_host_state(&inner, Vec::new());
+    outcome
+}
+
+fn event_subscription_needs_update(inner: &RuntimeInner) -> bool {
+    let state = inner.state.lock();
+    let pane_ids = state.host_state.pane_ids();
+    state
+        .event
+        .as_ref()
+        .is_none_or(|event| event.pane_ids != pane_ids || event.retry_running)
+}
+
+fn event_subscription_start_failed(inner: Arc<RuntimeInner>, reason: String) {
+    inner
+        .state
+        .lock()
+        .host_state
+        .mark_needs_resync(format!("event subscription unavailable: {reason}"));
+    emit_host_state(&inner, Vec::new());
+    emit(HostRuntimeEvent::EventSubscriptionClosed {
+        runtime_id: inner.id.clone(),
+        reason: reason.clone(),
+    });
+    schedule_event_retry(inner, reason);
+}
+
+async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostStateSnapshot {
+    if let Err(error) = ensure_herdr_server(&inner).await {
+        let (_, token) = begin_host_state_sync(&inner);
+        inner
+            .state
+            .lock()
+            .host_state
+            .fail_sync(token, error.to_string());
+        emit_host_state(&inner, Vec::new());
+        return inner.state.lock().host_state.projection();
+    }
+
+    let (connection_generation, token) = begin_host_state_sync(&inner);
+    let outcome = request_host_state_snapshot(inner.clone(), token).await;
     if matches!(outcome, ApplyResult::Applied)
         && inner.state.lock().generation == connection_generation
-        && let Err(error) = start_or_update_state_events(inner.clone()).await
+        && event_subscription_needs_update(&inner)
     {
-        let reason = error.to_string();
-        emit(HostRuntimeEvent::EventSubscriptionClosed {
-            runtime_id: inner.id.clone(),
-            reason: reason.clone(),
-        });
-        schedule_event_retry(inner.clone(), reason);
+        // Start the reconciliation generation before opening the subscription.
+        // Events can then be buffered as soon as Herdr acknowledges the stream,
+        // including events delivered before the follow-up snapshot request.
+        let (reconciliation_generation, reconciliation_token) = begin_host_state_sync(&inner);
+        match start_or_update_state_events(inner.clone()).await {
+            Ok(()) => {
+                let reconciliation =
+                    request_host_state_snapshot(inner.clone(), reconciliation_token).await;
+                if matches!(reconciliation, ApplyResult::Applied)
+                    && inner.state.lock().generation == reconciliation_generation
+                    && event_subscription_needs_update(&inner)
+                {
+                    schedule_state_resync(
+                        inner.clone(),
+                        "pane subscription set changed during snapshot reconciliation".to_owned(),
+                    );
+                }
+            }
+            Err(error) => {
+                let reason = error.to_string();
+                inner
+                    .state
+                    .lock()
+                    .host_state
+                    .fail_sync(reconciliation_token, reason.clone());
+                event_subscription_start_failed(inner.clone(), reason);
+            }
+        }
     }
     inner.state.lock().host_state.projection()
 }

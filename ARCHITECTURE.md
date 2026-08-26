@@ -59,13 +59,15 @@ Herdr's Unix API accepts one normal request and then closes that socket
 connection; only subscriptions remain open. Control requests therefore use
 separate short-lived stream-local channels. Do not treat the API socket itself
 as a multiplexed transport.
-The first `session.snapshot` response also supplies the version and protocol, so
-cold connections use it as the availability handshake instead of opening a
-separate ping channel. Whip caches each resolved absolute socket path for the
-life of the app process. `HostRuntime` validates a cached path and re-resolves it
-through its current SSH session if the cached path stops accepting channels.
-Opening a terminal before a snapshot asks Rust to probe the protocol first;
-Rust selects the protocol-specific terminal attach variant.
+A cold connection uses `ping` as the availability handshake and reads the
+Herdr version and protocol from its `pong` response. Rust then takes a bootstrap
+snapshot to obtain the current pane IDs, opens the complete lifecycle and
+per-pane event subscription, waits for Herdr's `subscription_started`
+acknowledgement, and takes a reconciliation snapshot while buffering events.
+Whip caches each resolved absolute socket path for the life of the app process.
+`HostRuntime` validates a cached path and re-resolves it through its current SSH
+session if the cached path stops accepting channels. Rust selects the
+protocol-specific terminal attach variant from the ping result.
 
 ### Terminal plane
 
