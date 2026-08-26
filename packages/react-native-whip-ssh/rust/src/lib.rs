@@ -2,6 +2,7 @@
 
 mod agent_sessions;
 mod agent_transcript;
+mod codex;
 mod herdr_api;
 mod herdr_codec;
 mod herdr_events;
