@@ -300,11 +300,12 @@ terminal and remote-host paths.
 [Edit the SSH transport diagram](docs/whip-ssh-architecture.mmd).
 
 `react-native-whip-ssh` exposes the single New Architecture module and links a
-single Rust static library. Its core owns generic SSH, PTY, forwarding,
-`known_hosts`, SFTP, persistent exec, stream-local channels, Herdr protocol and
-state, reconnect restoration, and QR-pinned WP4 pairing. Existing generic
-JavaScript utilities used by key management and native diagnostics share that
-same module; the Whip host path calls typed `HostRuntime` operations directly.
+single Rust static library. Its `HostRuntime` owns the authenticated SSH session,
+Herdr control/state reconciliation, terminal protocol and lifecycle, agent
+transcript acquisition and normalization, remote-operation lifecycles, and
+reconnect restoration. QR-pinned WP4 pairing and generic JavaScript utilities
+used by key management and native diagnostics share that same module; the Whip
+host path calls typed `HostRuntime` operations directly.
 
 After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 

@@ -1,40 +1,66 @@
-%%{init: {"theme":"base","flowchart":{"curve":"basis","htmlLabels":true}}}%%
+%%{init: {"theme":"base","flowchart":{"curve":"basis","htmlLabels":true,"nodeSpacing":26,"rankSpacing":42}}}%%
 flowchart TB
-  subgraph UI["React Native mobile app"]
-    Screens["Hosts · Herd · Terminal · Files · Settings"]
-    Client["HerdrClient<br/>UI coordination and projections"]
-    Renderer["TerminalRendererHost<br/>xterm lifecycle and rendering"]
-    Screens <--> Client
-    Client <--> Renderer
+  subgraph UI["React Native / TypeScript · presentation"]
+    direction TB
+    Navigation["Primary navigation<br/>Hosts · Herd · Terminal · More"]
+    Projections["Mobile UI projections<br/>host status · workspaces · tabs · panes · agents"]
+    SessionViews["Pane/session presentation<br/>Terminal View ⇄ Chat View<br/>same pane/session · composer"]
+    Secondary["Secondary surfaces<br/>Files/Git · previews · pickers · sheets/forms"]
+    Client["HerdrClient + thin UI facades<br/>semantic operations · typed/versioned render projections<br/>presentation preferences · opaque cache persistence"]
+    Renderer["TerminalRendererHost<br/>xterm lifecycle · renderer state · scrolling/gestures"]
+    Xterm["WebView + xterm.js<br/>ANSI/TUI rendering"]
+
+    Navigation --> Projections
+    Navigation --> SessionViews
+    Projections <--> Client
+    SessionViews <--> Client
+    Secondary <--> Client
+    SessionViews --> Secondary
+    SessionViews <--> Renderer
+    Renderer <--> Xterm
   end
 
-  subgraph Boundary["One native boundary"]
-    Module["WhipSsh TurboModule<br/>TypeScript bindings · C++ JSI · UniFFI"]
+  subgraph Boundary["One React Native ↔ Rust boundary"]
+    Module["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary terminal buffers"]
   end
 
   subgraph Rust["Whip Rust core · one Tokio runtime"]
-    Host["HostRuntime<br/>connection generation · reconnect · resource restore"]
-    State["Herdr HostState<br/>snapshot/event reconciliation"]
-    Transport["Owned SSH session<br/>russh · ProxyJump · known_hosts · SFTP"]
-    Protocol["Herdr API/events/terminal<br/>binary terminal hot path"]
-    Pairing["WP4 pairing"]
-    Host --> State
-    Host --> Transport
-    Host --> Protocol
-    Protocol <--> Transport
+    direction TB
+    subgraph Runtime["HostRuntime · authoritative per-host runtime"]
+      direction TB
+      Lifecycle["Runtime coordinator<br/>generation guards · reconnect/lifecycle · resource restoration"]
+
+      subgraph Services["HostRuntime-owned services"]
+        direction LR
+        Control["Herdr control + HostState<br/>API requests · subscriptions/events<br/>snapshot/event reconciliation"]
+        Agents["AgentSessionManager<br/>Codex rollout · OpenCode export/events<br/>cursors/checkpoints · retries · AgentTranscript"]
+        Operations["Remote operations<br/>filesystem/SFTP · transfers/attachments<br/>Git · previews/forwarding"]
+        Terminals["Terminal registry + Herdr terminal protocol<br/>binary codec · attach/lifecycle"]
+      end
+
+      Transport["HostRuntime-owned SshSession<br/>russh · ProxyJump · known_hosts<br/>shell · exec · SFTP · forwarding · stream-local"]
+
+      Lifecycle --> Control
+      Lifecycle --> Agents
+      Lifecycle --> Operations
+      Lifecycle --> Terminals
+      Control --> Transport
+      Agents --> Transport
+      Operations --> Transport
+      Terminals --> Transport
+    end
+
+    Pairing["WP4 pairing<br/>separate QR-pinned bootstrap"]
   end
 
-  Xterm["WebView + xterm.js"]
-
-  Client <-->|"typed lifecycle, state, and actions"| Module
-  Renderer <-->|"terminal/graphics buffers once across JSI"| Module
-  Module <--> Host
+  Client <-->|"semantic operations and typed projections"| Module
+  Renderer <-->|"binary terminal/graphics buffers"| Module
+  Module <--> Lifecycle
   Module --> Pairing
-  Renderer <--> Xterm
 
   classDef react fill:#e9f1ff,stroke:#3772c5,color:#172033
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
-  class Screens,Client,Renderer,Xterm react
+  class Navigation,Projections,SessionViews,Secondary,Client,Renderer,Xterm react
   class Module native
-  class Host,State,Transport,Protocol,Pairing rust
+  class Lifecycle,Control,Agents,Operations,Terminals,Transport,Pairing rust

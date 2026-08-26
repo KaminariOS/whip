@@ -4,10 +4,11 @@
 
 Whip is a mobile client for a Herdr server running on another machine. It never starts a local Herdr runtime, shell, or PTY on the device.
 
-The app has two presentation modes:
+The app has three presentation surfaces:
 
 - **Herdr control surfaces become mobile UI.** Herd status, workspaces, tabs, panes, agent actions, settings, notifications, and connection state are React Native screens and sheets backed by structured Herdr state.
 - **Pane terminals remain terminals.** When a user opens a shell or agent pane, the app attaches to that pane's terminal stream and renders its ANSI/TUI output faithfully in the terminal renderer.
+- **Chat View is another projection of an agent pane.** It renders the Rust-owned normalized transcript for the same pane/session; it does not introduce a separate remote execution path.
 
 The app must not render the full Herdr management TUI in a terminal and place mobile controls around it. Herdr's TUI is one client presentation; Whip is another presentation over the same server-owned state.
 
@@ -95,11 +96,12 @@ The renderer is responsible for ANSI color, alternate screen applications, curso
 
 ### Rust-owned agent transcripts
 
-Codex panes can expose two presentations of the same live process. The existing
+Codex and OpenCode panes can expose two presentations of the same live process. The existing
 Herdr terminal stream continues to feed the mounted xterm Terminal View. After
 the user explicitly opens Chat, the Rust `HostRuntime` uses the pane's Herdr
 `agent_session` ID to open an `AgentSessionManager` entry and resolve that exact
-Codex rollout over the existing authenticated SSH transport:
+Codex rollout or OpenCode export/event source over the existing authenticated
+SSH transport:
 
 ```text
 Herdr terminal stream       Codex rollout JSONL       OpenCode export + event DB
@@ -199,9 +201,9 @@ Herdr server focus locally.
 
 ## Mobile information architecture
 
-### Servers
+### Hosts
 
-A Termius-style saved-server list is the entry surface. It shows identity, address, last connection result, and a primary connect action. Editing authentication is separate from operating a connected Herdr session.
+A saved-host list is the entry surface. It shows identity, address, last connection result, and a primary connect action. Editing authentication is separate from operating a connected Herdr session.
 
 ### Herd
 
@@ -211,11 +213,11 @@ The attention surface can scope the queue to one live host or merge every live h
 
 Native workspace, tab, and pane navigation replaces the corresponding Herdr TUI chrome. Selection changes client navigation first; explicit focus actions change server focus. Closing a tab takes effect immediately, while other destructive operations require confirmation.
 
-### Terminals
+### Terminal
 
 An immersive terminal surface keeps a slim scrollable session rail, connection status, close/new actions, and a horizontally scrollable mobile key rail. Switching back to Herd, Hosts, or More must not disconnect or recreate terminal sessions.
 
-### Settings
+### More
 
 Connection details, notifications, speech, terminal preferences, known hosts, diagnostics, and disconnect are device-local settings. Server-owned Herdr settings should be clearly distinguished from mobile preferences.
 
