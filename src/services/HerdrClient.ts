@@ -1,18 +1,13 @@
-import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type LsResult, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate } from 'react-native-whip-ssh';
+import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, type RuntimeGitDiff, type RuntimeGitRepository, type RuntimeGitStatusEntry, type RuntimeRemoteDirectoryListing, type RuntimeTransfer } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
 import type { ResponseResult } from '../generated/herdrApi';
 
 import { normalizePrivateKey } from '../lib/privateKey';
-import { normalizeRemotePath, sortRemoteEntries } from '../lib/remoteFiles';
-import { uniqueRemoteAttachmentName } from '../lib/attachmentPaste';
-import { createSecureId } from '../lib/secureId';
 import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import { errorCode } from '../lib/connectionErrors';
 import { type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
 import { parseCodexIntegrationStatus, type CodexIntegrationStatus } from '../lib/codexSession';
-import { parseRemoteGitDiff, parseRemoteGitRepository, parseRemoteGitStatus, remoteGitDiffCommand, remoteGitRepositoryCommand, remoteGitStatusCommand, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '../lib/remoteGit';
-import { parseRemoteHtmlPreviewStart, remoteHtmlPreviewPageUrl, remoteHtmlPreviewStartCommand, remoteHtmlPreviewStopCommand, type RemoteHtmlServerProcess } from '../lib/remoteHtmlPreview';
 import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
 import {
@@ -21,7 +16,7 @@ import {
   openCodeExportCommand,
   parseOpenCodeEventCursor,
 } from '../lib/openCodeTranscript';
-import { localTunnelUrl, terminalWebLinkTarget } from '../lib/terminalLinks';
+import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 import {
   cachedHerdrSocketPath,
@@ -56,10 +51,9 @@ type HerdrApiParams<Method extends HerdrApiMethod> = Extract<
   { method: Method }
 >['params'];
 
-export const CODEX_INTEGRATION_INSTALL_TIMEOUT_MS = 30_000;
-
 export type WorkspaceCreationResult = Extract<ResponseResult, { type: 'workspace_created' }>;
 export type TabCreationResult = Extract<ResponseResult, { type: 'tab_created' }>;
+export type IntegrationInstall = Extract<ResponseResult, { type: 'integration_install' }>;
 
 export type ClassifiedAgentCommand =
   | { type: 'agent'; kind: 'claude' | 'codex' | 'opencode'; args: string[] }
@@ -181,35 +175,20 @@ function terminalSizesEqual(left: TerminalSize | undefined, right: TerminalSize)
 }
 
 export interface RemoteHtmlPreviewHandle {
+  id: string;
   url: string;
   displayUrl: string;
-  localPort: number;
 }
 
-export interface RemoteSftpFileServerHandle {
+export interface RemoteFilePreviewHandle {
+  id: string;
   url: string;
-  localPort: number;
-}
-
-export class TerminalAttachmentUploadCancelledError extends Error {
-  constructor() {
-    super('Attachment upload cancelled');
-    this.name = 'TerminalAttachmentUploadCancelledError';
-  }
 }
 
 export function isTerminalAttachmentUploadCancelled(error: unknown): boolean {
-  return error instanceof TerminalAttachmentUploadCancelledError;
+  const value = error as { tag?: string; message?: string };
+  return value.tag === 'TransferCancelled' || /transfer cancelled/i.test(value.message || String(error));
 }
-
-interface TerminalAttachmentUpload {
-  cancelled: boolean;
-  cancellation: Promise<void>;
-  signalCancellation: () => void;
-  transferStarted: boolean;
-}
-
-type RemoteHtmlPreviewProcess = RemoteHtmlServerProcess;
 
 export class HerdrClient {
   static addNetworkChangeListener(listener: () => void): {
@@ -232,13 +211,6 @@ export class HerdrClient {
   private apiServer: ServerInfo | null = null;
   private resolvedApiSocketPath: string | null = null;
   private resolvedApiSocketPathFromCache = false;
-  private remoteHome: string | null = null;
-  private localForwards = new Set<number>();
-  private remoteHtmlPreviews = new Map<number, RemoteHtmlPreviewProcess>();
-  private remoteHtmlPreviewSequence = 0;
-  private remoteSftpFileServers = new Set<number>();
-  private activeSftpUpload: object | null = null;
-  private terminalAttachmentUpload: TerminalAttachmentUpload | null = null;
 
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
     const port = Number(profile.port);
@@ -268,7 +240,6 @@ export class HerdrClient {
     this.apiServer = null;
     this.resolvedApiSocketPath = profile.herdrSocketPath?.trim() ? null : cachedSocketPath || null;
     this.resolvedApiSocketPathFromCache = Boolean(this.resolvedApiSocketPath);
-    this.remoteHome = null;
     try {
       await runtime.connect();
     } catch (error) {
@@ -307,197 +278,77 @@ export class HerdrClient {
     this.apiServer = null;
     this.resolvedApiSocketPath = null;
     this.resolvedApiSocketPathFromCache = false;
-    this.remoteHome = null;
     this.terminalOpenings.clear();
     this.terminalConnections.clear();
     this.terminalSizes.clear();
     this.clearAllTerminalBridgeState();
-    this.localForwards.clear();
-    this.remoteHtmlPreviews.clear();
-    this.remoteSftpFileServers.clear();
   }
 
-  async openWebTunnel(value: string): Promise<{ url: string; localPort: number } | null> {
+  async openWebTunnel(value: string): Promise<{ url: string; previewId: string } | null> {
     const target = terminalWebLinkTarget(value);
     if (!target.requiresSshTunnel) return null;
-    const localPort = await this.requireRuntime().openLocalForward(target.hostname, target.port);
-    this.localForwards.add(localPort);
-    return { url: localTunnelUrl(target.url, localPort), localPort };
+    const preview = await this.requireRuntime().startWebPreview(target.url);
+    return { url: preview.url, previewId: preview.id };
   }
 
-  async closeWebTunnel(localPort: number): Promise<void> {
-    const forwarded = this.localForwards.delete(localPort);
-    const preview = this.remoteHtmlPreviews.get(localPort);
-    this.remoteHtmlPreviews.delete(localPort);
-    if (preview) {
-      await this.requireRuntime().execute(remoteHtmlPreviewStopCommand(preview)).catch(() => undefined);
-    }
-    if (forwarded) this.requireRuntime().closeLocalForward(localPort);
+  closeWebTunnel(previewId: string): Promise<void> {
+    return this.requireRuntime().stopPreview(previewId);
   }
 
   async openRemoteHtmlPreview(remotePath: string): Promise<RemoteHtmlPreviewHandle> {
-    const runtime = this.requireRuntime();
-    const normalizedPath = remotePath.replace(/\\/g, '/');
-    const separator = normalizedPath.lastIndexOf('/');
-    const directory = separator > 0 ? normalizedPath.slice(0, separator) : '/';
-    const filename = normalizedPath.slice(separator + 1);
-    if (!filename) throw new Error('The remote HTML preview path has no filename');
-
-    const token = `${Date.now().toString(36)}-${(++this.remoteHtmlPreviewSequence).toString(36)}`;
-    const output = await runtime.execute(remoteHtmlPreviewStartCommand(directory, token));
-    const process = parseRemoteHtmlPreviewStart(output, token);
-    let localPort: number | null = null;
-    try {
-      localPort = await runtime.openLocalForward('127.0.0.1', process.port);
-      this.localForwards.add(localPort);
-      this.remoteHtmlPreviews.set(localPort, process);
-      const displayUrl = remoteHtmlPreviewPageUrl(process.port, filename);
-      return {
-        displayUrl,
-        localPort,
-        url: localTunnelUrl(displayUrl, localPort),
-      };
-    } catch (error) {
-      if (localPort !== null) {
-        this.localForwards.delete(localPort);
-        runtime.closeLocalForward(localPort);
-      }
-      await runtime.execute(remoteHtmlPreviewStopCommand(process)).catch(() => undefined);
-      throw error;
-    }
+    const preview = await this.requireRuntime().startHtmlPreview(remotePath);
+    return { id: preview.id, url: preview.url, displayUrl: preview.displayUrl || remotePath };
   }
 
   closeRemoteHtmlPreview(preview: RemoteHtmlPreviewHandle): Promise<void> {
-    return this.closeWebTunnel(preview.localPort);
+    return this.requireRuntime().stopPreview(preview.id);
   }
 
-  async openRemoteSftpFileServer(remotePath: string): Promise<RemoteSftpFileServerHandle> {
-    const server = await this.requireRuntime().startSftpFileServer(remotePath);
-    const filename = remotePath.replace(/\\/g, '/').split('/').pop() || 'file';
-    this.remoteSftpFileServers.add(server.localPort);
-    return {
-      localPort: server.localPort,
-      url: `http://127.0.0.1:${server.localPort}/${server.token}/${encodeURIComponent(filename)}`,
-    };
+  async openRemoteFilePreview(remotePath: string): Promise<RemoteFilePreviewHandle> {
+    const preview = await this.requireRuntime().startRemoteFilePreview(remotePath);
+    return { id: preview.id, url: preview.url };
   }
 
-  async closeRemoteSftpFileServer(server: RemoteSftpFileServerHandle): Promise<void> {
-    if (this.remoteSftpFileServers.delete(server.localPort)) {
-      this.requireRuntime().closeSftpFileServer(server.localPort);
-    }
+  async closeRemoteFilePreview(preview: RemoteFilePreviewHandle): Promise<void> {
+    await this.requireRuntime().stopPreview(preview.id);
   }
 
-  async listRemoteDirectory(path?: string): Promise<{ path: string; entries: LsResult[] }> {
-    const resolvedPath = normalizeRemotePath(path, await this.remoteHomeDirectory());
-    const entries = await this.requireRuntime().sftpLs(resolvedPath);
-    return { path: resolvedPath, entries: sortRemoteEntries(entries) };
+  listRemoteDirectory(path?: string): Promise<RuntimeRemoteDirectoryListing> {
+    return this.requireRuntime().listDirectory(path);
   }
 
-  async discoverRemoteGitRepository(path: string): Promise<RemoteGitRepository | null> {
-    const output = await this.requireRuntime().execute(remoteGitRepositoryCommand(path));
-    return parseRemoteGitRepository(output);
+  discoverRemoteGitRepository(path: string): Promise<RuntimeGitRepository | null> {
+    return this.requireRuntime().discoverGitRepository(path);
   }
 
-  async listRemoteGitChanges(root: string): Promise<RemoteGitStatusEntry[]> {
-    const output = await this.requireRuntime().execute(remoteGitStatusCommand(root));
-    return parseRemoteGitStatus(output);
+  listRemoteGitChanges(root: string): Promise<RuntimeGitStatusEntry[]> {
+    return this.requireRuntime().gitStatus(root);
   }
 
-  async loadRemoteGitDiff(repository: RemoteGitRepository, status: RemoteGitStatusEntry): Promise<RemoteGitDiff> {
-    const output = await this.requireRuntime().execute(remoteGitDiffCommand(repository, status));
-    return parseRemoteGitDiff(output);
+  loadRemoteGitDiff(repository: RuntimeGitRepository, status: RuntimeGitStatusEntry): Promise<RuntimeGitDiff> {
+    return this.requireRuntime().gitDiff(repository, status);
   }
 
-  downloadRemoteFile(path: string, localDirectoryPath: string): Promise<string> {
-    return this.requireRuntime().sftpDownload(path, localDirectoryPath);
+  async downloadRemoteFile(path: string, localDirectoryPath: string): Promise<string> {
+    const result = await this.requireRuntime().startDownload(path, localDirectoryPath).result;
+    if (!result.localPath) throw new Error('Native download returned no local path');
+    return result.localPath;
   }
 
   async uploadRemoteFile(localFilePath: string, remoteDirectoryPath: string): Promise<void> {
-    const upload = {};
-    this.reserveSftpUpload(upload);
-    try {
-      await this.requireRuntime().sftpUpload(localFilePath, remoteDirectoryPath);
-    } finally {
-      if (this.activeSftpUpload === upload) this.activeSftpUpload = null;
-    }
+    await this.requireRuntime().startUpload(localFilePath, remoteDirectoryPath).result;
   }
 
   deleteRemoteEntry(path: string, isDirectory: boolean): Promise<void> {
-    return this.requireRuntime().sftpRemove(path, isDirectory);
+    return this.requireRuntime().removeRemotePath(path, isDirectory);
   }
 
-  private reserveSftpUpload(upload: object): void {
-    if (this.activeSftpUpload) {
-      throw new Error('An SFTP upload is already in progress for this client');
-    }
-    this.activeSftpUpload = upload;
+  startTerminalAttachmentUpload(localFilePath: string): RuntimeTransfer {
+    return this.requireRuntime().startAttachmentUpload(localFilePath);
   }
 
-  private throwIfAttachmentUploadCancelled(upload: TerminalAttachmentUpload): void {
-    if (upload.cancelled) throw new TerminalAttachmentUploadCancelledError();
-  }
-
-  private waitForAttachmentUploadSetup<T>(
-    upload: TerminalAttachmentUpload,
-    setup: Promise<T>,
-  ): Promise<T> {
-    return Promise.race([
-      setup,
-      upload.cancellation.then(() => {
-        throw new TerminalAttachmentUploadCancelledError();
-      }),
-    ]);
-  }
-
-  async uploadTerminalAttachment(localFilePath: string): Promise<string> {
-    let signalCancellation!: () => void;
-    const upload: TerminalAttachmentUpload = {
-      cancelled: false,
-      cancellation: new Promise(resolve => { signalCancellation = resolve; }),
-      signalCancellation: () => signalCancellation(),
-      transferStarted: false,
-    };
-    this.reserveSftpUpload(upload);
-    this.terminalAttachmentUpload = upload;
-    try {
-      const sourceFilename = localFilePath.replace(/\\/g, '/').split('/').pop();
-      if (!sourceFilename) throw new Error('The selected attachment has no filename');
-      const home = await this.waitForAttachmentUploadSetup(upload, this.remoteHomeDirectory());
-      this.throwIfAttachmentUploadCancelled(upload);
-      const appDirectory = `${home}/.whip`;
-      const uploadDirectory = `${appDirectory}/uploads`;
-      await this.waitForAttachmentUploadSetup(
-        upload,
-        this.requireRuntime().sftpCreateDirAll(uploadDirectory),
-      );
-      this.throwIfAttachmentUploadCancelled(upload);
-      const uploadId = createSecureId('attachment');
-      const remoteFilename = uniqueRemoteAttachmentName(sourceFilename, uploadId);
-      const remotePath = `${uploadDirectory}/${remoteFilename}`;
-      upload.transferStarted = true;
-      await this.requireRuntime().sftpUpload(localFilePath, remotePath, true);
-      upload.transferStarted = false;
-      if (upload.cancelled) {
-        await this.requireRuntime().sftpRemove(remotePath, false).catch(() => undefined);
-        throw new TerminalAttachmentUploadCancelledError();
-      }
-      return remotePath;
-    } catch (error) {
-      if (upload.cancelled) throw new TerminalAttachmentUploadCancelledError();
-      throw error;
-    } finally {
-      upload.transferStarted = false;
-      if (this.terminalAttachmentUpload === upload) this.terminalAttachmentUpload = null;
-      if (this.activeSftpUpload === upload) this.activeSftpUpload = null;
-    }
-  }
-
-  cancelTerminalAttachmentUpload(): void {
-    const upload = this.terminalAttachmentUpload;
-    if (!upload || upload.cancelled) return;
-    upload.cancelled = true;
-    upload.signalCancellation();
-    if (upload.transferStarted) this.requireRuntime().cancelSftpUpload();
+  cancelTransfer(transferId: string): boolean {
+    return this.requireRuntime().cancelTransfer(transferId);
   }
 
   openCodexAgentTranscript(
@@ -541,22 +392,8 @@ export class HerdrClient {
   }
 
   /** Explicit user-approved host integration setup; never called during connect. */
-  async installCodexIntegration(): Promise<void> {
-    const command = `${shellQuote(this.requireProfile().herdrCommand.trim() || 'herdr')} integration install codex`;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        this.requireRuntime().execute(this.loginShellCommand(command)),
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(
-            () => reject(new Error('Codex integration installation timed out after 30 seconds. It will not be retried automatically.')),
-            CODEX_INTEGRATION_INSTALL_TIMEOUT_MS,
-          );
-        }),
-      ]);
-    } finally {
-      if (timeout) clearTimeout(timeout);
-    }
+  installCodexIntegration(): Promise<IntegrationInstall> {
+    return this.apiRequest<IntegrationInstall>('integration.install', { target: 'codex' });
   }
 
   /** Lazily check setup only after the user requests Chat. */
@@ -1136,12 +973,6 @@ export class HerdrClient {
     if (this.resolvedApiSocketPath) forgetHerdrSocketPath(profile, this.resolvedApiSocketPath);
     this.resolvedApiSocketPath = null;
     this.resolvedApiSocketPathFromCache = false;
-    this.remoteHome = null;
-  }
-
-  private async remoteHomeDirectory(): Promise<string> {
-    if (!this.remoteHome) this.remoteHome = await this.requireRuntime().remoteHome();
-    return this.remoteHome;
   }
 
   private async probeServer(): Promise<ServerInfo> {

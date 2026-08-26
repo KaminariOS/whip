@@ -1,7 +1,7 @@
 import SSHClient from 'react-native-whip-ssh';
 
 import { codexChatAction, codexMissingIdentityAction, parseCodexIntegrationStatus } from '../src/lib/codexSession';
-import { CODEX_INTEGRATION_INSTALL_TIMEOUT_MS, HerdrClient } from '../src/services/HerdrClient';
+import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile, PaneInfo } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => (
@@ -29,42 +29,52 @@ describe('Codex integration installation flow', () => {
     expect(codexChatAction(pane('shell'))).toBe('unavailable');
   });
 
-  test('remote install only occurs when explicitly invoked and runs the integration command', async () => {
-    const native = { execute: jest.fn(async () => ''), off: jest.fn(), disconnect: jest.fn() } as unknown as SSHClient;
+  test('remote install only occurs when explicitly invoked and returns the socket API result', async () => {
+    const response = {
+      type: 'integration_install' as const,
+      target: 'codex' as const,
+      details: { messages: ['Installed Codex integration'] },
+    };
+    const native = {
+      execute: jest.fn(async () => ''),
+      requestHerdrApi: jest.fn(async (_socketPath: string, request: { method: string }) => (
+        request.method === 'integration.install' ? response : { type: 'ok' }
+      )),
+      off: jest.fn(),
+      disconnect: jest.fn(),
+    } as unknown as SSHClient;
     jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
     const client = new HerdrClient();
     await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
+
     expect(native.execute).not.toHaveBeenCalled(); // Cancel/no confirmation makes no remote change.
-    await client.installCodexIntegration();
-    expect(native.execute).toHaveBeenCalledTimes(1);
-    expect(jest.mocked(native.execute).mock.calls[0][0]).toContain('integration install codex');
+    await expect(client.installCodexIntegration()).resolves.toEqual(response);
+    expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
+    expect(native.requestHerdrApi).toHaveBeenCalledWith(
+      '/home/me/.config/herdr/sessions/main/herdr.sock',
+      { method: 'integration.install', params: { target: 'codex' } },
+    );
+    expect(native.execute).not.toHaveBeenCalled();
   });
 
-  test('times out a stalled install once without retrying it', async () => {
-    jest.useFakeTimers();
-    try {
-      const native = {
-        execute: jest.fn(() => new Promise<string>(() => undefined)),
-        off: jest.fn(),
-        disconnect: jest.fn(),
-      } as unknown as SSHClient;
-      jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
-      const client = new HerdrClient();
-      await client.connect(profile);
+  test('forwards a socket install failure without retrying it', async () => {
+    const native = {
+      execute: jest.fn(async () => ''),
+      requestHerdrApi: jest.fn(async (_socketPath: string, request: { method: string }) => {
+        if (request.method === 'integration.install') throw new Error('installation failed');
+        return { type: 'ok' };
+      }),
+      off: jest.fn(),
+      disconnect: jest.fn(),
+    } as unknown as SSHClient;
+    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
 
-      let installError: unknown;
-      const install = client.installCodexIntegration().catch(error => {
-        installError = error;
-      });
-      await jest.advanceTimersByTimeAsync(CODEX_INTEGRATION_INSTALL_TIMEOUT_MS);
-      await install;
-      expect(installError).toEqual(expect.objectContaining({
-        message: expect.stringContaining('timed out after 30 seconds'),
-      }));
-      expect(native.execute).toHaveBeenCalledTimes(1);
-    } finally {
-      jest.useRealTimers();
-    }
+    await expect(client.installCodexIntegration()).rejects.toThrow('installation failed');
+    expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
   });
 
   test.each([
