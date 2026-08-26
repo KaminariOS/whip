@@ -1,5 +1,7 @@
 //! Private QR-pinned bootstrap SSH connection used for WP4 pairing.
 
+mod agent_sessions;
+mod agent_transcript;
 mod herdr_api;
 mod herdr_codec;
 mod herdr_events;
@@ -9,6 +11,8 @@ mod host_state;
 mod pairing;
 mod russh_transport;
 
+pub use agent_sessions::*;
+pub use agent_transcript::*;
 pub use herdr_api::*;
 pub use herdr_events::*;
 pub use herdr_terminal::*;

@@ -63,6 +63,16 @@ type OpenFn = unsafe extern "C" fn(
     Option<ClosedCallback>,
 );
 #[cfg(any(target_os = "android", target_os = "ios"))]
+type ExecOpenFn = unsafe extern "C" fn(
+    u64,
+    *const c_char,
+    *const c_char,
+    *const c_char,
+    Option<OpenedCallback>,
+    Option<FrameCallback>,
+    Option<ClosedCallback>,
+);
+#[cfg(any(target_os = "android", target_os = "ios"))]
 type WriteFn = unsafe extern "C" fn(*const c_char, *const c_char, *const u8, usize) -> *mut c_char;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 type CloseFn = unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char;
@@ -94,7 +104,7 @@ mod platform {
 
     use libloading::Library;
 
-    use super::{CallFn, CloseFn, FreeFn, OpenFn, RequestFn, WriteFn};
+    use super::{CallFn, CloseFn, ExecOpenFn, FreeFn, OpenFn, RequestFn, WriteFn};
 
     pub struct Api {
         _library: Library,
@@ -102,9 +112,11 @@ mod platform {
         pub call: CallFn,
         pub open_raw: OpenFn,
         pub open_framed: OpenFn,
+        pub open_exec: ExecOpenFn,
         pub write_raw: WriteFn,
         pub write_framed: WriteFn,
         pub close: CloseFn,
+        pub close_exec: CloseFn,
         pub free: FreeFn,
     }
 
@@ -134,6 +146,9 @@ mod platform {
                     b"react_native_russh_open_native_length_prefixed_unix_socket_channel\0",
                 )
                 .map_err(|error| error.to_string())?;
+            let open_exec = *library
+                .get::<ExecOpenFn>(b"react_native_russh_open_native_exec_channel\0")
+                .map_err(|error| error.to_string())?;
             let write_raw = *library
                 .get::<WriteFn>(b"react_native_russh_write_native_unix_socket_channel\0")
                 .map_err(|error| error.to_string())?;
@@ -145,6 +160,9 @@ mod platform {
             let close = *library
                 .get::<CloseFn>(b"react_native_russh_close_native_unix_socket_channel\0")
                 .map_err(|error| error.to_string())?;
+            let close_exec = *library
+                .get::<CloseFn>(b"react_native_russh_close_native_exec_channel\0")
+                .map_err(|error| error.to_string())?;
             let free = *library
                 .get::<FreeFn>(b"react_native_russh_string_free\0")
                 .map_err(|error| error.to_string())?;
@@ -154,9 +172,11 @@ mod platform {
                 call,
                 open_raw,
                 open_framed,
+                open_exec,
                 write_raw,
                 write_framed,
                 close,
+                close_exec,
                 free,
             })
         })
@@ -167,7 +187,7 @@ mod platform {
 
 #[cfg(target_os = "ios")]
 mod platform {
-    use super::{CallFn, CloseFn, FreeFn, OpenFn, RequestFn, WriteFn};
+    use super::{CallFn, CloseFn, ExecOpenFn, FreeFn, OpenFn, RequestFn, WriteFn};
 
     unsafe extern "C" {
         fn react_native_russh_request_native_unix_socket(
@@ -206,6 +226,15 @@ mod platform {
             frame: Option<super::FrameCallback>,
             closed: Option<super::ClosedCallback>,
         );
+        fn react_native_russh_open_native_exec_channel(
+            context: u64,
+            key: *const std::ffi::c_char,
+            channel_id: *const std::ffi::c_char,
+            command: *const std::ffi::c_char,
+            opened: Option<super::OpenedCallback>,
+            data: Option<super::FrameCallback>,
+            closed: Option<super::ClosedCallback>,
+        );
         fn react_native_russh_write_native_length_prefixed_unix_socket_channel(
             key: *const std::ffi::c_char,
             channel_id: *const std::ffi::c_char,
@@ -222,6 +251,10 @@ mod platform {
             key: *const std::ffi::c_char,
             channel_id: *const std::ffi::c_char,
         ) -> *mut std::ffi::c_char;
+        fn react_native_russh_close_native_exec_channel(
+            key: *const std::ffi::c_char,
+            channel_id: *const std::ffi::c_char,
+        ) -> *mut std::ffi::c_char;
         fn react_native_russh_string_free(value: *mut std::ffi::c_char);
     }
 
@@ -230,9 +263,11 @@ mod platform {
         pub call: CallFn,
         pub open_raw: OpenFn,
         pub open_framed: OpenFn,
+        pub open_exec: ExecOpenFn,
         pub write_raw: WriteFn,
         pub write_framed: WriteFn,
         pub close: CloseFn,
+        pub close_exec: CloseFn,
         pub free: FreeFn,
     }
 
@@ -241,9 +276,11 @@ mod platform {
         call: react_native_russh_call_async,
         open_raw: react_native_russh_open_native_unix_socket_channel,
         open_framed: react_native_russh_open_native_length_prefixed_unix_socket_channel,
+        open_exec: react_native_russh_open_native_exec_channel,
         write_raw: react_native_russh_write_native_unix_socket_channel,
         write_framed: react_native_russh_write_native_length_prefixed_unix_socket_channel,
         close: react_native_russh_close_native_unix_socket_channel,
+        close_exec: react_native_russh_close_native_exec_channel,
         free: react_native_russh_string_free,
     };
 
@@ -361,6 +398,41 @@ pub fn open_raw(
     )
 }
 
+pub fn open_exec(
+    context: u64,
+    key: &str,
+    channel_id: &str,
+    command: &str,
+    opened: OpenedCallback,
+    data: FrameCallback,
+    closed: ClosedCallback,
+) -> Result<(), String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let key = c_string(key, "SSH client key")?;
+        let channel_id = c_string(channel_id, "channel id")?;
+        let command = c_string(command, "exec command")?;
+        let api = platform::api()?;
+        unsafe {
+            (api.open_exec)(
+                context,
+                key.as_ptr(),
+                channel_id.as_ptr(),
+                command.as_ptr(),
+                Some(opened),
+                Some(data),
+                Some(closed),
+            );
+        }
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let _ = (context, key, channel_id, command, opened, data, closed);
+        Err(platform::unavailable())
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn request(
     context: u64,
@@ -473,6 +545,22 @@ pub fn close(key: &str, channel_id: &str) -> Result<(), String> {
         let channel_id = c_string(channel_id, "channel id")?;
         let api = platform::api()?;
         let error = unsafe { (api.close)(key.as_ptr(), channel_id.as_ptr()) };
+        take_result(api, error)
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let _ = (key, channel_id);
+        Err(platform::unavailable())
+    }
+}
+
+pub fn close_exec(key: &str, channel_id: &str) -> Result<(), String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let key = c_string(key, "SSH client key")?;
+        let channel_id = c_string(channel_id, "channel id")?;
+        let api = platform::api()?;
+        let error = unsafe { (api.close_exec)(key.as_ptr(), channel_id.as_ptr()) };
         take_result(api, error)
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

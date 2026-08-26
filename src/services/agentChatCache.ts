@@ -15,11 +15,6 @@ export interface AgentChatCacheKey {
   sessionId: string;
 }
 
-export interface CodexCachedLine {
-  rawLine: string;
-  endOffset: number;
-}
-
 export interface AgentChatCacheEntry extends AgentChatCacheKey {
   transcript: AgentTranscript;
   cursor: number;
@@ -27,23 +22,15 @@ export interface AgentChatCacheEntry extends AgentChatCacheKey {
   schemaVersion: number;
   updatedAt: number;
   checkpoint: Record<string, unknown>;
-  codexLines: CodexCachedLine[];
 }
 
 export interface AgentChatCache {
   load(key: AgentChatCacheKey): Promise<AgentChatCacheEntry | null>;
-  loadCodexLines(key: AgentChatCacheKey): Promise<CodexCachedLine[]>;
-  save(entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>): Promise<void>;
-  replaceCodex(
-    entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
-    lines: readonly CodexCachedLine[],
-  ): Promise<void>;
-  appendCodex(
-    entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
-    lines: readonly CodexCachedLine[],
-  ): Promise<void>;
+  save(entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt'>): Promise<void>;
   deleteSession(key: AgentChatCacheKey): Promise<void>;
   deleteHost(hostProfileId: string): Promise<void>;
+  loadNative(key: AgentChatCacheKey): Promise<ArrayBuffer | null>;
+  saveNative(key: AgentChatCacheKey, blob: ArrayBuffer): Promise<void>;
 }
 
 interface SessionRow {
@@ -55,19 +42,18 @@ interface SessionRow {
   checkpoint_json: string;
 }
 
-interface LineRow {
-  raw_line: string;
-  end_offset: number;
+interface NativeCacheRow {
+  cache_blob: Uint8Array | ArrayBuffer;
 }
 
 type SQLiteTransaction = {
-  runAsync: (source: string, params: readonly (string | number | null)[]) => Promise<unknown>;
+  runAsync: (source: string, params: readonly unknown[]) => Promise<unknown>;
 };
 
 type SQLiteDatabase = SQLiteTransaction & {
   execAsync: (source: string) => Promise<void>;
-  getFirstAsync: <T>(source: string, params: readonly (string | number | null)[]) => Promise<T | null>;
-  getAllAsync: <T>(source: string, params: readonly (string | number | null)[]) => Promise<T[]>;
+  getFirstAsync: <T>(source: string, params: readonly unknown[]) => Promise<T | null>;
+  getAllAsync: <T>(source: string, params: readonly unknown[]) => Promise<T[]>;
   withExclusiveTransactionAsync: (task: (transaction: SQLiteTransaction) => Promise<void>) => Promise<void>;
 };
 
@@ -92,7 +78,7 @@ function values(key: AgentChatCacheKey): [string, AgentChatCacheAgent, string] {
 }
 
 function sessionValues(
-  entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
+  entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt'>,
 ): readonly (string | number)[] {
   return [
     entry.hostProfileId,
@@ -144,19 +130,16 @@ export class SQLiteAgentChatCache implements AgentChatCache {
             checkpoint_json TEXT NOT NULL DEFAULT '{}',
             PRIMARY KEY (host_profile_id, agent, agent_session_id)
           );
-          CREATE TABLE IF NOT EXISTS codex_chat_line (
-            host_profile_id TEXT NOT NULL,
-            agent TEXT NOT NULL DEFAULT 'codex' CHECK(agent = 'codex'),
-            agent_session_id TEXT NOT NULL,
-            end_offset INTEGER NOT NULL,
-            raw_line TEXT NOT NULL,
-            PRIMARY KEY (host_profile_id, agent_session_id, end_offset),
-            FOREIGN KEY (host_profile_id, agent, agent_session_id)
-              REFERENCES agent_chat_session(host_profile_id, agent, agent_session_id)
-              ON DELETE CASCADE
-          );
           CREATE INDEX IF NOT EXISTS agent_chat_session_host
             ON agent_chat_session(host_profile_id);
+          CREATE TABLE IF NOT EXISTS native_agent_chat_cache (
+            host_profile_id TEXT NOT NULL,
+            agent TEXT NOT NULL CHECK(agent IN ('codex', 'opencode')),
+            agent_session_id TEXT NOT NULL,
+            cache_blob BLOB NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (host_profile_id, agent, agent_session_id)
+          );
         `);
         return database;
       });
@@ -191,7 +174,6 @@ export class SQLiteAgentChatCache implements AgentChatCache {
           schemaVersion: row.schema_version,
           updatedAt: row.updated_at,
           checkpoint: checkpoint as Record<string, unknown>,
-          codexLines: [],
         };
       } catch {
         await this.deleteSession(key);
@@ -200,61 +182,10 @@ export class SQLiteAgentChatCache implements AgentChatCache {
     });
   }
 
-  async loadCodexLines(key: AgentChatCacheKey): Promise<CodexCachedLine[]> {
-    const db = await this.db();
-    return (await db.getAllAsync<LineRow>(`
-      SELECT raw_line, end_offset FROM codex_chat_line
-      WHERE host_profile_id = ? AND agent_session_id = ? ORDER BY end_offset
-    `, [key.hostProfileId, key.sessionId])).map(line => ({
-      rawLine: line.raw_line,
-      endOffset: line.end_offset,
-    }));
-  }
-
-  async save(entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>): Promise<void> {
+  async save(entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt'>): Promise<void> {
     await trace('Whip chat cache persist', async () => {
       const db = await this.db();
       await db.withExclusiveTransactionAsync(transaction => transaction.runAsync(UPSERT_SESSION, sessionValues(entry)).then(() => undefined));
-    });
-  }
-
-  async replaceCodex(
-    entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
-    lines: readonly CodexCachedLine[],
-  ): Promise<void> {
-    await this.writeCodex(entry, lines, true);
-  }
-
-  async appendCodex(
-    entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
-    lines: readonly CodexCachedLine[],
-  ): Promise<void> {
-    await this.writeCodex(entry, lines, false);
-  }
-
-  private async writeCodex(
-    entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
-    lines: readonly CodexCachedLine[],
-    replace: boolean,
-  ): Promise<void> {
-    await trace('Whip chat cache persist', async () => {
-      const db = await this.db();
-      await db.withExclusiveTransactionAsync(async transaction => {
-        await transaction.runAsync(UPSERT_SESSION, sessionValues(entry));
-        if (replace) {
-          await transaction.runAsync(
-            'DELETE FROM codex_chat_line WHERE host_profile_id = ? AND agent_session_id = ?',
-            [entry.hostProfileId, entry.sessionId],
-          );
-        }
-        for (const line of lines) {
-          await transaction.runAsync(`
-            INSERT OR REPLACE INTO codex_chat_line
-              (host_profile_id, agent, agent_session_id, end_offset, raw_line)
-            VALUES (?, 'codex', ?, ?, ?)
-          `, [entry.hostProfileId, entry.sessionId, line.endOffset, line.rawLine]);
-        }
-      });
     });
   }
 
@@ -264,17 +195,47 @@ export class SQLiteAgentChatCache implements AgentChatCache {
       'DELETE FROM agent_chat_session WHERE host_profile_id = ? AND agent = ? AND agent_session_id = ?',
       values(key),
     );
+    await db.runAsync(
+      'DELETE FROM native_agent_chat_cache WHERE host_profile_id = ? AND agent = ? AND agent_session_id = ?',
+      values(key),
+    );
   }
 
   async deleteHost(hostProfileId: string): Promise<void> {
     const db = await this.db();
     await db.runAsync('DELETE FROM agent_chat_session WHERE host_profile_id = ?', [hostProfileId]);
+    await db.runAsync('DELETE FROM native_agent_chat_cache WHERE host_profile_id = ?', [hostProfileId]);
+  }
+
+  async loadNative(key: AgentChatCacheKey): Promise<ArrayBuffer | null> {
+    const db = await this.db();
+    const row = await db.getFirstAsync<NativeCacheRow>(`
+      SELECT cache_blob FROM native_agent_chat_cache
+      WHERE host_profile_id = ? AND agent = ? AND agent_session_id = ?
+    `, values(key));
+    if (!row) return null;
+    const bytes = row.cache_blob instanceof ArrayBuffer
+      ? new Uint8Array(row.cache_blob)
+      : new Uint8Array(row.cache_blob.buffer, row.cache_blob.byteOffset, row.cache_blob.byteLength);
+    return bytes.slice().buffer;
+  }
+
+  async saveNative(key: AgentChatCacheKey, blob: ArrayBuffer): Promise<void> {
+    const db = await this.db();
+    await db.runAsync(`
+      INSERT INTO native_agent_chat_cache (host_profile_id, agent, agent_session_id, cache_blob, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(host_profile_id, agent, agent_session_id) DO UPDATE SET
+        cache_blob = excluded.cache_blob,
+        updated_at = excluded.updated_at
+    `, [...values(key), new Uint8Array(blob), Date.now()]);
   }
 }
 
 /** Deterministic cache used by transcript service tests. */
 export class MemoryAgentChatCache implements AgentChatCache {
   private readonly entries = new Map<string, AgentChatCacheEntry>();
+  private readonly nativeEntries = new Map<string, ArrayBuffer>();
 
   private id(key: AgentChatCacheKey): string {
     return `${key.hostProfileId}\n${key.agent}\n${key.sessionId}`;
@@ -290,61 +251,37 @@ export class MemoryAgentChatCache implements AgentChatCache {
       this.entries.delete(this.id(key));
       return null;
     }
-    return { ...structuredClone(entry), codexLines: [] };
+    return structuredClone(entry);
   }
 
-  async loadCodexLines(key: AgentChatCacheKey): Promise<CodexCachedLine[]> {
-    return structuredClone(this.entries.get(this.id(key))?.codexLines || []);
-  }
-
-  async save(entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>): Promise<void> {
-    const previous = this.entries.get(this.id(entry));
+  async save(entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt'>): Promise<void> {
     this.entries.set(this.id(entry), {
       ...structuredClone(entry),
       schemaVersion: AGENT_CHAT_CACHE_SCHEMA_VERSION,
       updatedAt: Date.now(),
-      codexLines: previous?.codexLines || [],
-    });
-  }
-
-  async replaceCodex(
-    entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
-    lines: readonly CodexCachedLine[],
-  ): Promise<void> {
-    await this.putCodex(entry, lines, true);
-  }
-
-  async appendCodex(
-    entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
-    lines: readonly CodexCachedLine[],
-  ): Promise<void> {
-    await this.putCodex(entry, lines, false);
-  }
-
-  private async putCodex(
-    entry: Omit<AgentChatCacheEntry, 'schemaVersion' | 'updatedAt' | 'codexLines'>,
-    lines: readonly CodexCachedLine[],
-    replace: boolean,
-  ): Promise<void> {
-    const prior = replace ? [] : this.entries.get(this.id(entry))?.codexLines || [];
-    const merged = new Map(prior.map(line => [line.endOffset, line]));
-    for (const line of lines) merged.set(line.endOffset, structuredClone(line));
-    this.entries.set(this.id(entry), {
-      ...structuredClone(entry),
-      schemaVersion: AGENT_CHAT_CACHE_SCHEMA_VERSION,
-      updatedAt: Date.now(),
-      codexLines: [...merged.values()].sort((a, b) => a.endOffset - b.endOffset),
     });
   }
 
   async deleteSession(key: AgentChatCacheKey): Promise<void> {
     this.entries.delete(this.id(key));
+    this.nativeEntries.delete(this.id(key));
   }
 
   async deleteHost(hostProfileId: string): Promise<void> {
     for (const [key, entry] of this.entries) {
       if (entry.hostProfileId === hostProfileId) this.entries.delete(key);
     }
+    for (const key of this.nativeEntries.keys()) {
+      if (key.startsWith(`${hostProfileId}\n`)) this.nativeEntries.delete(key);
+    }
+  }
+
+  async loadNative(key: AgentChatCacheKey): Promise<ArrayBuffer | null> {
+    return this.nativeEntries.get(this.id(key))?.slice(0) || null;
+  }
+
+  async saveNative(key: AgentChatCacheKey, blob: ArrayBuffer): Promise<void> {
+    this.nativeEntries.set(this.id(key), blob.slice(0));
   }
 
   /** Test-only corruption hook. */

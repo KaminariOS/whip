@@ -7,6 +7,16 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrTerminalScroll: jest.fn(),
   herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
+  AgentTranscriptKind: { Codex: 0, OpenCode: 1 },
+  AgentTranscriptStatus: { Loading: 0, Live: 1, Stale: 2, Unavailable: 3, Error: 4, Closed: 5 },
+  AgentMessageRole: { User: 0, Assistant: 1 },
+  AgentToolStatus: { Pending: 0, Running: 1, Completed: 2, Error: 3 },
+  AgentNoticeLevel: { Info: 0, Warning: 1, Error: 2 },
+  AgentTurnStatus: { Idle: 0, Working: 1, Interrupted: 2, Error: 3 },
+  AgentScalarValue_Tags: { String: 'String', Number: 'Number', Boolean: 'Boolean' },
+  AgentTranscriptPart_Tags: {
+    Text: 'Text', Reasoning: 'Reasoning', Tool: 'Tool', Plan: 'Plan', Notice: 'Notice',
+  },
   HostSshCredential: {
     Password: { new: jest.fn(inner => ({ tag: 'Password', inner })) },
     Key: { new: jest.fn(inner => ({ tag: 'Key', inner })) },
@@ -62,6 +72,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   pairHost: jest.fn(),
   prepareHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
   setHerdrEventSink: jest.fn(),
+  setAgentTranscriptEventSink: jest.fn(),
   setHerdrTerminalEventSink: jest.fn(),
   setHostRuntimeEventSink: jest.fn(),
   startHerdrEventSubscription: jest.fn().mockResolvedValue(undefined),
@@ -76,6 +87,7 @@ const mockGenerated = jest.requireMock(
 const mockEventSink = mockGenerated.setHerdrTerminalEventSink.mock.calls[0][0];
 const mockApiEventSink = mockGenerated.setHerdrEventSink.mock.calls[0][0];
 const mockRuntimeEventSink = mockGenerated.setHostRuntimeEventSink.mock.calls[0][0];
+const mockAgentEventSink = mockGenerated.setAgentTranscriptEventSink.mock.calls[0][0];
 
 describe('native Herdr bridge adapter', () => {
   beforeEach(() => {
@@ -267,5 +279,55 @@ describe('native Herdr bridge adapter', () => {
       state: runtime.hostState(),
       changedAgentPaneIds: ['p1'],
     });
+  });
+
+  it('projects typed native transcript snapshots and callbacks without JSON', () => {
+    const nativeState = {
+      sessionId: 'session-1', agent: 0, revision: 4n, status: 1,
+      messages: [{
+        id: 'assistant:1', role: 1,
+        parts: [{ tag: 'Text', inner: { id: 'text:1', text: 'hello', timestampMs: 12n } }],
+        diffs: [],
+      }],
+      turns: [{
+        id: 'turn:1', assistantMessageIds: ['assistant:1'], status: 0, diffs: [],
+      }],
+    };
+    const rustRuntime = {
+      runtimeId: jest.fn(() => 'runtime-agent'),
+      transportKey: jest.fn(() => 'transport-agent'),
+      openAgentSession: jest.fn(() => ({ key: 'codex:session-1', state: nativeState })),
+      agentTranscript: jest.fn(() => nativeState),
+      closeAgentSession: jest.fn(),
+      closeAgentTerminal: jest.fn(),
+      confirmAgentTranscriptCache: jest.fn(() => true),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = nativeClient.createHostRuntime({
+      runtimeId: 'runtime-agent',
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
+      },
+      jumpHosts: [], sessionName: 'main',
+    });
+    const handler = jest.fn();
+    const result = runtime.openAgentSession('codex', 'terminal-1', 'session-1', undefined, handler);
+
+    expect(result.state).toEqual(expect.objectContaining({
+      sessionId: 'session-1', revision: 4, status: 'live',
+      messages: [expect.objectContaining({
+        id: 'assistant:1', role: 'assistant',
+        parts: [{ type: 'text', id: 'text:1', text: 'hello', timestamp: 12 }],
+      })],
+    }));
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent', key: 'codex:session-1', state: nativeState,
+      cacheWrite: { key: 'cache', blob: new Uint8Array([1, 2]).buffer, confirmationToken: 'token' },
+    });
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'codex:session-1',
+      state: expect.objectContaining({ revision: 4 }),
+      cacheWrite: expect.objectContaining({ confirmationToken: 'token' }),
+    }));
   });
 });

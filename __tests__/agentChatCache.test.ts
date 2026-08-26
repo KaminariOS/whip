@@ -45,23 +45,6 @@ describe('agent chat cache contract', () => {
     expect(await cache.load({ ...openCodeKey, hostProfileId: 'new-connection-id' })).toBeNull();
   });
 
-  test('Codex line append commits raw reconstruction data and cursor together', async () => {
-    const cache = new MemoryAgentChatCache();
-    const transcript = emptyTranscript(codexKey.sessionId);
-    await cache.replaceCodex({
-      ...codexKey, transcript, cursor: 8, cursorType: 'codex-jsonl-byte-offset', checkpoint: { rolloutPath: '/one' },
-    }, [{ rawLine: '{"a":1}', endOffset: 8 }]);
-    await cache.appendCodex({
-      ...codexKey, transcript, cursor: 16, cursorType: 'codex-jsonl-byte-offset', checkpoint: { rolloutPath: '/one' },
-    }, [{ rawLine: '{"b":2}', endOffset: 16 }]);
-    const stored = await cache.load(codexKey);
-    expect(stored?.cursor).toBe(16);
-    expect(await cache.loadCodexLines(codexKey)).toEqual([
-      { rawLine: '{"a":1}', endOffset: 8 },
-      { rawLine: '{"b":2}', endOffset: 16 },
-    ]);
-  });
-
   test('corrupt entries and incompatible schema versions are dropped', async () => {
     const cache = new MemoryAgentChatCache();
     await cache.save({
@@ -92,5 +75,17 @@ describe('agent chat cache contract', () => {
     expect(await cache.load({ ...openCodeKey, sessionId: 'ses_other' })).not.toBeNull();
     await cache.deleteHost(openCodeKey.hostProfileId);
     expect(await cache.load({ ...openCodeKey, sessionId: 'ses_other' })).toBeNull();
+  });
+
+  test('stores native transcript checkpoints as opaque bytes', async () => {
+    const cache = new MemoryAgentChatCache();
+    const blob = new Uint8Array([0, 1, 2, 255]).buffer;
+    await cache.saveNative(codexKey, blob);
+    const stored = await cache.loadNative(codexKey);
+    expect([...new Uint8Array(stored!)]).toEqual([0, 1, 2, 255]);
+    new Uint8Array(blob)[0] = 9;
+    expect([...new Uint8Array((await cache.loadNative(codexKey))!)]).toEqual([0, 1, 2, 255]);
+    await cache.deleteSession(codexKey);
+    expect(await cache.loadNative(codexKey)).toBeNull();
   });
 });

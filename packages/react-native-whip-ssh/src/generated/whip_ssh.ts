@@ -8,6 +8,7 @@ import {
   type UniffiRustFutureContinuationCallback,
   type UniffiForeignFutureDroppedCallback,
   type UniffiForeignFutureDroppedCallbackStruct,
+  type UniffiVTableCallbackInterfaceWhipSshAgentTranscriptEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
@@ -26,6 +27,7 @@ import {
   FfiConverterBool,
   FfiConverterFloat64,
   FfiConverterInt32,
+  FfiConverterInt64,
   FfiConverterMap,
   FfiConverterObject,
   FfiConverterObjectWithCallbacks,
@@ -60,6 +62,17 @@ const uniffiIsDebug =
   false;
 
 // Public interface members begin here.
+
+export function clearAgentTranscriptEventSink(): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_clear_agent_transcript_event_sink(
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
 
 export function clearHerdrEventSink(): void {
   uniffiCaller.rustCall(
@@ -379,6 +392,23 @@ export async function prepareHerdrTerminalBridge(
   }
 }
 
+export function setAgentTranscriptEventSink(
+  sink: AgentTranscriptEventSink,
+): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_agent_transcript_event_sink(
+        FfiConverterTypeAgentTranscriptEventSink.lower(
+          sink,
+          nativeModule().rustbuffer_alloc,
+        ),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export function setHerdrEventSink(sink: HerdrEventSink): void {
   uniffiCaller.rustCall(
     /*caller:*/ callStatus => {
@@ -587,6 +617,1416 @@ const stringConverter = (() => {
   };
 })();
 const FfiConverterString = uniffiCreateFfiConverterString(stringConverter);
+
+// Enum: AgentScalarValue
+export enum AgentScalarValue_Tags {
+  String = 'String',
+  Number = 'Number',
+  Boolean = 'Boolean',
+}
+export const AgentScalarValue = (() => {
+  type String__interface = {
+    tag: AgentScalarValue_Tags.String;
+    inner: Readonly<{ value: string }>;
+  };
+  class String_ extends UniffiEnum implements String__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentScalarValue';
+    readonly tag = AgentScalarValue_Tags.String;
+    readonly inner: Readonly<{ value: string }>;
+    constructor(inner: { value: string }) {
+      super('AgentScalarValue', 'String');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { value: string }): String_ {
+      return new String_(inner);
+    }
+
+    static instanceOf(obj: any): obj is String_ {
+      return obj.tag === AgentScalarValue_Tags.String;
+    }
+  }
+
+  type Number__interface = {
+    tag: AgentScalarValue_Tags.Number;
+    inner: Readonly<{ value: number }>;
+  };
+  class Number_ extends UniffiEnum implements Number__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentScalarValue';
+    readonly tag = AgentScalarValue_Tags.Number;
+    readonly inner: Readonly<{ value: number }>;
+    constructor(inner: { value: number }) {
+      super('AgentScalarValue', 'Number');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { value: number }): Number_ {
+      return new Number_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Number_ {
+      return obj.tag === AgentScalarValue_Tags.Number;
+    }
+  }
+
+  type Boolean__interface = {
+    tag: AgentScalarValue_Tags.Boolean;
+    inner: Readonly<{ value: boolean }>;
+  };
+  class Boolean_ extends UniffiEnum implements Boolean__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentScalarValue';
+    readonly tag = AgentScalarValue_Tags.Boolean;
+    readonly inner: Readonly<{ value: boolean }>;
+    constructor(inner: { value: boolean }) {
+      super('AgentScalarValue', 'Boolean');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { value: boolean }): Boolean_ {
+      return new Boolean_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Boolean_ {
+      return obj.tag === AgentScalarValue_Tags.Boolean;
+    }
+  }
+
+  function instanceOf(obj: any): obj is AgentScalarValue {
+    return obj[uniffiTypeNameSymbol] === 'AgentScalarValue';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    String: String_,
+    Number: Number_,
+    Boolean: Boolean_,
+  });
+})();
+export type AgentScalarValue = InstanceType<
+  (typeof AgentScalarValue)['String' | 'Number' | 'Boolean']
+>;
+
+// FfiConverter for enum AgentScalarValue
+const FfiConverterTypeAgentScalarValue = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentScalarValue;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new AgentScalarValue.String({
+            value: FfiConverterString.read(from),
+          });
+        case 2:
+          return new AgentScalarValue.Number({
+            value: FfiConverterFloat64.read(from),
+          });
+        case 3:
+          return new AgentScalarValue.Boolean({
+            value: FfiConverterBool.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case AgentScalarValue_Tags.String: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.value, into);
+          return;
+        }
+        case AgentScalarValue_Tags.Number: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterFloat64.write(inner.value, into);
+          return;
+        }
+        case AgentScalarValue_Tags.Boolean: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterBool.write(inner.value, into);
+          return;
+        }
+        default:
+          // Throwing from here means that AgentScalarValue_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case AgentScalarValue_Tags.String: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.value);
+          return size;
+        }
+        case AgentScalarValue_Tags.Number: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterFloat64.allocationSize(inner.value);
+          return size;
+        }
+        case AgentScalarValue_Tags.Boolean: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterBool.allocationSize(inner.value);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentField = {
+  key: string;
+  value: AgentScalarValue;
+};
+
+/**
+ * Generated factory for {@link AgentField} record objects.
+ */
+export const AgentField = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentField, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentField>,
+  });
+})();
+
+const FfiConverterTypeAgentField = (() => {
+  type TypeName = AgentField;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        value: FfiConverterTypeAgentScalarValue.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterTypeAgentScalarValue.write(value.value, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterTypeAgentScalarValue.allocationSize(value.value)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentFileDiff = {
+  file: string;
+  patch?: string;
+  before?: string;
+  after?: string;
+  additions?: number;
+  deletions?: number;
+};
+
+/**
+ * Generated factory for {@link AgentFileDiff} record objects.
+ */
+export const AgentFileDiff = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentFileDiff, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentFileDiff>,
+  });
+})();
+
+const FfiConverterTypeAgentFileDiff = (() => {
+  type TypeName = AgentFileDiff;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        file: FfiConverterString.read(from),
+        patch: FfiConverterOptionalString.read(from),
+        before: FfiConverterOptionalString.read(from),
+        after: FfiConverterOptionalString.read(from),
+        additions: FfiConverterOptionalUInt32.read(from),
+        deletions: FfiConverterOptionalUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.file, into);
+      FfiConverterOptionalString.write(value.patch, into);
+      FfiConverterOptionalString.write(value.before, into);
+      FfiConverterOptionalString.write(value.after, into);
+      FfiConverterOptionalUInt32.write(value.additions, into);
+      FfiConverterOptionalUInt32.write(value.deletions, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.file) +
+        FfiConverterOptionalString.allocationSize(value.patch) +
+        FfiConverterOptionalString.allocationSize(value.before) +
+        FfiConverterOptionalString.allocationSize(value.after) +
+        FfiConverterOptionalUInt32.allocationSize(value.additions) +
+        FfiConverterOptionalUInt32.allocationSize(value.deletions)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentTranscriptKind {
+  Codex,
+  OpenCode,
+}
+
+const FfiConverterTypeAgentTranscriptKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentTranscriptKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentTranscriptKind.Codex;
+        case 2:
+          return AgentTranscriptKind.OpenCode;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentTranscriptKind.Codex:
+          return ordinalConverter.write(1, into);
+        case AgentTranscriptKind.OpenCode:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentTranscriptStatus {
+  Loading,
+  Live,
+  Stale,
+  Unavailable,
+  Error,
+  Closed,
+}
+
+const FfiConverterTypeAgentTranscriptStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentTranscriptStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentTranscriptStatus.Loading;
+        case 2:
+          return AgentTranscriptStatus.Live;
+        case 3:
+          return AgentTranscriptStatus.Stale;
+        case 4:
+          return AgentTranscriptStatus.Unavailable;
+        case 5:
+          return AgentTranscriptStatus.Error;
+        case 6:
+          return AgentTranscriptStatus.Closed;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentTranscriptStatus.Loading:
+          return ordinalConverter.write(1, into);
+        case AgentTranscriptStatus.Live:
+          return ordinalConverter.write(2, into);
+        case AgentTranscriptStatus.Stale:
+          return ordinalConverter.write(3, into);
+        case AgentTranscriptStatus.Unavailable:
+          return ordinalConverter.write(4, into);
+        case AgentTranscriptStatus.Error:
+          return ordinalConverter.write(5, into);
+        case AgentTranscriptStatus.Closed:
+          return ordinalConverter.write(6, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentTranscriptInfo = {
+  id: string;
+  title?: string;
+  directory?: string;
+  createdAtMs?: bigint;
+  updatedAtMs?: bigint;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptInfo} record objects.
+ */
+export const AgentTranscriptInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentTranscriptInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentTranscriptInfo>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptInfo = (() => {
+  type TypeName = AgentTranscriptInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        title: FfiConverterOptionalString.read(from),
+        directory: FfiConverterOptionalString.read(from),
+        createdAtMs: FfiConverterOptionalUInt64.read(from),
+        updatedAtMs: FfiConverterOptionalUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterOptionalString.write(value.title, into);
+      FfiConverterOptionalString.write(value.directory, into);
+      FfiConverterOptionalUInt64.write(value.createdAtMs, into);
+      FfiConverterOptionalUInt64.write(value.updatedAtMs, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterOptionalString.allocationSize(value.title) +
+        FfiConverterOptionalString.allocationSize(value.directory) +
+        FfiConverterOptionalUInt64.allocationSize(value.createdAtMs) +
+        FfiConverterOptionalUInt64.allocationSize(value.updatedAtMs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentMessageRole {
+  User,
+  Assistant,
+}
+
+const FfiConverterTypeAgentMessageRole = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentMessageRole;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentMessageRole.User;
+        case 2:
+          return AgentMessageRole.Assistant;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentMessageRole.User:
+          return ordinalConverter.write(1, into);
+        case AgentMessageRole.Assistant:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentToolStatus {
+  Pending,
+  Running,
+  Completed,
+  Error,
+}
+
+const FfiConverterTypeAgentToolStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentToolStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentToolStatus.Pending;
+        case 2:
+          return AgentToolStatus.Running;
+        case 3:
+          return AgentToolStatus.Completed;
+        case 4:
+          return AgentToolStatus.Error;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentToolStatus.Pending:
+          return ordinalConverter.write(1, into);
+        case AgentToolStatus.Running:
+          return ordinalConverter.write(2, into);
+        case AgentToolStatus.Completed:
+          return ordinalConverter.write(3, into);
+        case AgentToolStatus.Error:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentToolState = {
+  status: AgentToolStatus;
+  input: Array<AgentField>;
+  output?: string;
+  error?: string;
+  title?: string;
+  startedAtMs?: bigint;
+  completedAtMs?: bigint;
+  exitCode?: bigint;
+  files: Array<AgentFileDiff>;
+};
+
+/**
+ * Generated factory for {@link AgentToolState} record objects.
+ */
+export const AgentToolState = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentToolState, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentToolState>,
+  });
+})();
+
+const FfiConverterTypeAgentToolState = (() => {
+  type TypeName = AgentToolState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        status: FfiConverterTypeAgentToolStatus.read(from),
+        input: FfiConverterSequenceTypeAgentField.read(from),
+        output: FfiConverterOptionalString.read(from),
+        error: FfiConverterOptionalString.read(from),
+        title: FfiConverterOptionalString.read(from),
+        startedAtMs: FfiConverterOptionalUInt64.read(from),
+        completedAtMs: FfiConverterOptionalUInt64.read(from),
+        exitCode: FfiConverterOptionalInt64.read(from),
+        files: FfiConverterSequenceTypeAgentFileDiff.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeAgentToolStatus.write(value.status, into);
+      FfiConverterSequenceTypeAgentField.write(value.input, into);
+      FfiConverterOptionalString.write(value.output, into);
+      FfiConverterOptionalString.write(value.error, into);
+      FfiConverterOptionalString.write(value.title, into);
+      FfiConverterOptionalUInt64.write(value.startedAtMs, into);
+      FfiConverterOptionalUInt64.write(value.completedAtMs, into);
+      FfiConverterOptionalInt64.write(value.exitCode, into);
+      FfiConverterSequenceTypeAgentFileDiff.write(value.files, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeAgentToolStatus.allocationSize(value.status) +
+        FfiConverterSequenceTypeAgentField.allocationSize(value.input) +
+        FfiConverterOptionalString.allocationSize(value.output) +
+        FfiConverterOptionalString.allocationSize(value.error) +
+        FfiConverterOptionalString.allocationSize(value.title) +
+        FfiConverterOptionalUInt64.allocationSize(value.startedAtMs) +
+        FfiConverterOptionalUInt64.allocationSize(value.completedAtMs) +
+        FfiConverterOptionalInt64.allocationSize(value.exitCode) +
+        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.files)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentNoticeLevel {
+  Info,
+  Warning,
+  Error,
+}
+
+const FfiConverterTypeAgentNoticeLevel = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentNoticeLevel;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentNoticeLevel.Info;
+        case 2:
+          return AgentNoticeLevel.Warning;
+        case 3:
+          return AgentNoticeLevel.Error;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentNoticeLevel.Info:
+          return ordinalConverter.write(1, into);
+        case AgentNoticeLevel.Warning:
+          return ordinalConverter.write(2, into);
+        case AgentNoticeLevel.Error:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: AgentTranscriptPart
+export enum AgentTranscriptPart_Tags {
+  Text = 'Text',
+  Reasoning = 'Reasoning',
+  Tool = 'Tool',
+  Plan = 'Plan',
+  Notice = 'Notice',
+}
+export const AgentTranscriptPart = (() => {
+  type Text__interface = {
+    tag: AgentTranscriptPart_Tags.Text;
+    inner: Readonly<{ id: string; text: string; timestampMs?: bigint }>;
+  };
+  class Text_ extends UniffiEnum implements Text__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptPart';
+    readonly tag = AgentTranscriptPart_Tags.Text;
+    readonly inner: Readonly<{
+      id: string;
+      text: string;
+      timestampMs?: bigint;
+    }>;
+    constructor(inner: { id: string; text: string; timestampMs?: bigint }) {
+      super('AgentTranscriptPart', 'Text');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      text: string;
+      timestampMs?: bigint;
+    }): Text_ {
+      return new Text_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Text_ {
+      return obj.tag === AgentTranscriptPart_Tags.Text;
+    }
+  }
+
+  type Reasoning__interface = {
+    tag: AgentTranscriptPart_Tags.Reasoning;
+    inner: Readonly<{ id: string; text: string; timestampMs?: bigint }>;
+  };
+  class Reasoning_ extends UniffiEnum implements Reasoning__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptPart';
+    readonly tag = AgentTranscriptPart_Tags.Reasoning;
+    readonly inner: Readonly<{
+      id: string;
+      text: string;
+      timestampMs?: bigint;
+    }>;
+    constructor(inner: { id: string; text: string; timestampMs?: bigint }) {
+      super('AgentTranscriptPart', 'Reasoning');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      text: string;
+      timestampMs?: bigint;
+    }): Reasoning_ {
+      return new Reasoning_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Reasoning_ {
+      return obj.tag === AgentTranscriptPart_Tags.Reasoning;
+    }
+  }
+
+  type Tool__interface = {
+    tag: AgentTranscriptPart_Tags.Tool;
+    inner: Readonly<{
+      id: string;
+      callId: string;
+      tool: string;
+      timestampMs?: bigint;
+      state: AgentToolState;
+    }>;
+  };
+  class Tool_ extends UniffiEnum implements Tool__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptPart';
+    readonly tag = AgentTranscriptPart_Tags.Tool;
+    readonly inner: Readonly<{
+      id: string;
+      callId: string;
+      tool: string;
+      timestampMs?: bigint;
+      state: AgentToolState;
+    }>;
+    constructor(inner: {
+      id: string;
+      callId: string;
+      tool: string;
+      timestampMs?: bigint;
+      state: AgentToolState;
+    }) {
+      super('AgentTranscriptPart', 'Tool');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      callId: string;
+      tool: string;
+      timestampMs?: bigint;
+      state: AgentToolState;
+    }): Tool_ {
+      return new Tool_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Tool_ {
+      return obj.tag === AgentTranscriptPart_Tags.Tool;
+    }
+  }
+
+  type Plan__interface = {
+    tag: AgentTranscriptPart_Tags.Plan;
+    inner: Readonly<{ id: string; text: string; timestampMs?: bigint }>;
+  };
+  class Plan_ extends UniffiEnum implements Plan__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptPart';
+    readonly tag = AgentTranscriptPart_Tags.Plan;
+    readonly inner: Readonly<{
+      id: string;
+      text: string;
+      timestampMs?: bigint;
+    }>;
+    constructor(inner: { id: string; text: string; timestampMs?: bigint }) {
+      super('AgentTranscriptPart', 'Plan');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      text: string;
+      timestampMs?: bigint;
+    }): Plan_ {
+      return new Plan_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Plan_ {
+      return obj.tag === AgentTranscriptPart_Tags.Plan;
+    }
+  }
+
+  type Notice__interface = {
+    tag: AgentTranscriptPart_Tags.Notice;
+    inner: Readonly<{
+      id: string;
+      level: AgentNoticeLevel;
+      text: string;
+      timestampMs?: bigint;
+    }>;
+  };
+  class Notice_ extends UniffiEnum implements Notice__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptPart';
+    readonly tag = AgentTranscriptPart_Tags.Notice;
+    readonly inner: Readonly<{
+      id: string;
+      level: AgentNoticeLevel;
+      text: string;
+      timestampMs?: bigint;
+    }>;
+    constructor(inner: {
+      id: string;
+      level: AgentNoticeLevel;
+      text: string;
+      timestampMs?: bigint;
+    }) {
+      super('AgentTranscriptPart', 'Notice');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      level: AgentNoticeLevel;
+      text: string;
+      timestampMs?: bigint;
+    }): Notice_ {
+      return new Notice_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Notice_ {
+      return obj.tag === AgentTranscriptPart_Tags.Notice;
+    }
+  }
+
+  function instanceOf(obj: any): obj is AgentTranscriptPart {
+    return obj[uniffiTypeNameSymbol] === 'AgentTranscriptPart';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Text: Text_,
+    Reasoning: Reasoning_,
+    Tool: Tool_,
+    Plan: Plan_,
+    Notice: Notice_,
+  });
+})();
+export type AgentTranscriptPart = InstanceType<
+  (typeof AgentTranscriptPart)[
+    | 'Text'
+    | 'Reasoning'
+    | 'Tool'
+    | 'Plan'
+    | 'Notice']
+>;
+
+// FfiConverter for enum AgentTranscriptPart
+const FfiConverterTypeAgentTranscriptPart = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentTranscriptPart;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new AgentTranscriptPart.Text({
+            id: FfiConverterString.read(from),
+            text: FfiConverterString.read(from),
+            timestampMs: FfiConverterOptionalUInt64.read(from),
+          });
+        case 2:
+          return new AgentTranscriptPart.Reasoning({
+            id: FfiConverterString.read(from),
+            text: FfiConverterString.read(from),
+            timestampMs: FfiConverterOptionalUInt64.read(from),
+          });
+        case 3:
+          return new AgentTranscriptPart.Tool({
+            id: FfiConverterString.read(from),
+            callId: FfiConverterString.read(from),
+            tool: FfiConverterString.read(from),
+            timestampMs: FfiConverterOptionalUInt64.read(from),
+            state: FfiConverterTypeAgentToolState.read(from),
+          });
+        case 4:
+          return new AgentTranscriptPart.Plan({
+            id: FfiConverterString.read(from),
+            text: FfiConverterString.read(from),
+            timestampMs: FfiConverterOptionalUInt64.read(from),
+          });
+        case 5:
+          return new AgentTranscriptPart.Notice({
+            id: FfiConverterString.read(from),
+            level: FfiConverterTypeAgentNoticeLevel.read(from),
+            text: FfiConverterString.read(from),
+            timestampMs: FfiConverterOptionalUInt64.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case AgentTranscriptPart_Tags.Text: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.text, into);
+          FfiConverterOptionalUInt64.write(inner.timestampMs, into);
+          return;
+        }
+        case AgentTranscriptPart_Tags.Reasoning: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.text, into);
+          FfiConverterOptionalUInt64.write(inner.timestampMs, into);
+          return;
+        }
+        case AgentTranscriptPart_Tags.Tool: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.callId, into);
+          FfiConverterString.write(inner.tool, into);
+          FfiConverterOptionalUInt64.write(inner.timestampMs, into);
+          FfiConverterTypeAgentToolState.write(inner.state, into);
+          return;
+        }
+        case AgentTranscriptPart_Tags.Plan: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.text, into);
+          FfiConverterOptionalUInt64.write(inner.timestampMs, into);
+          return;
+        }
+        case AgentTranscriptPart_Tags.Notice: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterTypeAgentNoticeLevel.write(inner.level, into);
+          FfiConverterString.write(inner.text, into);
+          FfiConverterOptionalUInt64.write(inner.timestampMs, into);
+          return;
+        }
+        default:
+          // Throwing from here means that AgentTranscriptPart_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case AgentTranscriptPart_Tags.Text: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.text);
+          size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
+          return size;
+        }
+        case AgentTranscriptPart_Tags.Reasoning: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.text);
+          size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
+          return size;
+        }
+        case AgentTranscriptPart_Tags.Tool: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.callId);
+          size += FfiConverterString.allocationSize(inner.tool);
+          size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
+          size += FfiConverterTypeAgentToolState.allocationSize(inner.state);
+          return size;
+        }
+        case AgentTranscriptPart_Tags.Plan: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.text);
+          size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
+          return size;
+        }
+        case AgentTranscriptPart_Tags.Notice: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterTypeAgentNoticeLevel.allocationSize(inner.level);
+          size += FfiConverterString.allocationSize(inner.text);
+          size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentTranscriptMessage = {
+  id: string;
+  role: AgentMessageRole;
+  parentId?: string;
+  createdAtMs?: bigint;
+  completedAtMs?: bigint;
+  error?: string;
+  parts: Array<AgentTranscriptPart>;
+  diffs: Array<AgentFileDiff>;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptMessage} record objects.
+ */
+export const AgentTranscriptMessage = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentTranscriptMessage,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<AgentTranscriptMessage>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptMessage = (() => {
+  type TypeName = AgentTranscriptMessage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        role: FfiConverterTypeAgentMessageRole.read(from),
+        parentId: FfiConverterOptionalString.read(from),
+        createdAtMs: FfiConverterOptionalUInt64.read(from),
+        completedAtMs: FfiConverterOptionalUInt64.read(from),
+        error: FfiConverterOptionalString.read(from),
+        parts: FfiConverterSequenceTypeAgentTranscriptPart.read(from),
+        diffs: FfiConverterSequenceTypeAgentFileDiff.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterTypeAgentMessageRole.write(value.role, into);
+      FfiConverterOptionalString.write(value.parentId, into);
+      FfiConverterOptionalUInt64.write(value.createdAtMs, into);
+      FfiConverterOptionalUInt64.write(value.completedAtMs, into);
+      FfiConverterOptionalString.write(value.error, into);
+      FfiConverterSequenceTypeAgentTranscriptPart.write(value.parts, into);
+      FfiConverterSequenceTypeAgentFileDiff.write(value.diffs, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterTypeAgentMessageRole.allocationSize(value.role) +
+        FfiConverterOptionalString.allocationSize(value.parentId) +
+        FfiConverterOptionalUInt64.allocationSize(value.createdAtMs) +
+        FfiConverterOptionalUInt64.allocationSize(value.completedAtMs) +
+        FfiConverterOptionalString.allocationSize(value.error) +
+        FfiConverterSequenceTypeAgentTranscriptPart.allocationSize(
+          value.parts,
+        ) +
+        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.diffs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentTurnStatus {
+  Idle,
+  Working,
+  Interrupted,
+  Error,
+}
+
+const FfiConverterTypeAgentTurnStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentTurnStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentTurnStatus.Idle;
+        case 2:
+          return AgentTurnStatus.Working;
+        case 3:
+          return AgentTurnStatus.Interrupted;
+        case 4:
+          return AgentTurnStatus.Error;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentTurnStatus.Idle:
+          return ordinalConverter.write(1, into);
+        case AgentTurnStatus.Working:
+          return ordinalConverter.write(2, into);
+        case AgentTurnStatus.Interrupted:
+          return ordinalConverter.write(3, into);
+        case AgentTurnStatus.Error:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentTranscriptTurn = {
+  id: string;
+  userMessageId?: string;
+  assistantMessageIds: Array<string>;
+  status: AgentTurnStatus;
+  startedAtMs?: bigint;
+  completedAtMs?: bigint;
+  diffs: Array<AgentFileDiff>;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptTurn} record objects.
+ */
+export const AgentTranscriptTurn = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentTranscriptTurn, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentTranscriptTurn>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptTurn = (() => {
+  type TypeName = AgentTranscriptTurn;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        userMessageId: FfiConverterOptionalString.read(from),
+        assistantMessageIds: FfiConverterSequenceString.read(from),
+        status: FfiConverterTypeAgentTurnStatus.read(from),
+        startedAtMs: FfiConverterOptionalUInt64.read(from),
+        completedAtMs: FfiConverterOptionalUInt64.read(from),
+        diffs: FfiConverterSequenceTypeAgentFileDiff.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterOptionalString.write(value.userMessageId, into);
+      FfiConverterSequenceString.write(value.assistantMessageIds, into);
+      FfiConverterTypeAgentTurnStatus.write(value.status, into);
+      FfiConverterOptionalUInt64.write(value.startedAtMs, into);
+      FfiConverterOptionalUInt64.write(value.completedAtMs, into);
+      FfiConverterSequenceTypeAgentFileDiff.write(value.diffs, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterOptionalString.allocationSize(value.userMessageId) +
+        FfiConverterSequenceString.allocationSize(value.assistantMessageIds) +
+        FfiConverterTypeAgentTurnStatus.allocationSize(value.status) +
+        FfiConverterOptionalUInt64.allocationSize(value.startedAtMs) +
+        FfiConverterOptionalUInt64.allocationSize(value.completedAtMs) +
+        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.diffs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentTranscriptState = {
+  sessionId: string;
+  agent: AgentTranscriptKind;
+  revision: bigint;
+  status: AgentTranscriptStatus;
+  info?: AgentTranscriptInfo;
+  messages: Array<AgentTranscriptMessage>;
+  turns: Array<AgentTranscriptTurn>;
+  error?: string;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptState} record objects.
+ */
+export const AgentTranscriptState = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentTranscriptState,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentTranscriptState>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptState = (() => {
+  type TypeName = AgentTranscriptState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        sessionId: FfiConverterString.read(from),
+        agent: FfiConverterTypeAgentTranscriptKind.read(from),
+        revision: FfiConverterUInt64.read(from),
+        status: FfiConverterTypeAgentTranscriptStatus.read(from),
+        info: FfiConverterOptionalTypeAgentTranscriptInfo.read(from),
+        messages: FfiConverterSequenceTypeAgentTranscriptMessage.read(from),
+        turns: FfiConverterSequenceTypeAgentTranscriptTurn.read(from),
+        error: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.sessionId, into);
+      FfiConverterTypeAgentTranscriptKind.write(value.agent, into);
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterTypeAgentTranscriptStatus.write(value.status, into);
+      FfiConverterOptionalTypeAgentTranscriptInfo.write(value.info, into);
+      FfiConverterSequenceTypeAgentTranscriptMessage.write(
+        value.messages,
+        into,
+      );
+      FfiConverterSequenceTypeAgentTranscriptTurn.write(value.turns, into);
+      FfiConverterOptionalString.write(value.error, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.sessionId) +
+        FfiConverterTypeAgentTranscriptKind.allocationSize(value.agent) +
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterTypeAgentTranscriptStatus.allocationSize(value.status) +
+        FfiConverterOptionalTypeAgentTranscriptInfo.allocationSize(value.info) +
+        FfiConverterSequenceTypeAgentTranscriptMessage.allocationSize(
+          value.messages,
+        ) +
+        FfiConverterSequenceTypeAgentTranscriptTurn.allocationSize(
+          value.turns,
+        ) +
+        FfiConverterOptionalString.allocationSize(value.error)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentSessionOpenResult = {
+  key: string;
+  state: AgentTranscriptState;
+};
+
+/**
+ * Generated factory for {@link AgentSessionOpenResult} record objects.
+ */
+export const AgentSessionOpenResult = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentSessionOpenResult,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<AgentSessionOpenResult>,
+  });
+})();
+
+const FfiConverterTypeAgentSessionOpenResult = (() => {
+  type TypeName = AgentSessionOpenResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        state: FfiConverterTypeAgentTranscriptState.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterTypeAgentTranscriptState.write(value.state, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterTypeAgentTranscriptState.allocationSize(value.state)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentTranscriptCacheWrite = {
+  key: string;
+  blob: ArrayBuffer;
+  confirmationToken: string;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptCacheWrite} record objects.
+ */
+export const AgentTranscriptCacheWrite = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentTranscriptCacheWrite,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<AgentTranscriptCacheWrite>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptCacheWrite = (() => {
+  type TypeName = AgentTranscriptCacheWrite;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        blob: FfiConverterArrayBuffer.read(from),
+        confirmationToken: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterArrayBuffer.write(value.blob, into);
+      FfiConverterString.write(value.confirmationToken, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterArrayBuffer.allocationSize(value.blob) +
+        FfiConverterString.allocationSize(value.confirmationToken)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentTranscriptEvent = {
+  runtimeId: string;
+  key: string;
+  state: AgentTranscriptState;
+  cacheWrite?: AgentTranscriptCacheWrite;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptEvent} record objects.
+ */
+export const AgentTranscriptEvent = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentTranscriptEvent,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentTranscriptEvent>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptEvent = (() => {
+  type TypeName = AgentTranscriptEvent;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        runtimeId: FfiConverterString.read(from),
+        key: FfiConverterString.read(from),
+        state: FfiConverterTypeAgentTranscriptState.read(from),
+        cacheWrite:
+          FfiConverterOptionalTypeAgentTranscriptCacheWrite.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.runtimeId, into);
+      FfiConverterString.write(value.key, into);
+      FfiConverterTypeAgentTranscriptState.write(value.state, into);
+      FfiConverterOptionalTypeAgentTranscriptCacheWrite.write(
+        value.cacheWrite,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.runtimeId) +
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterTypeAgentTranscriptState.allocationSize(value.state) +
+        FfiConverterOptionalTypeAgentTranscriptCacheWrite.allocationSize(
+          value.cacheWrite,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
 
 export enum HerdrAgentStatus {
   Idle,
@@ -2479,6 +3919,484 @@ const FfiConverterTypeHostStateSnapshot = (() => {
           value.snapshot,
         )
       );
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: AgentSessionError
+export enum AgentSessionError_Tags {
+  UnsupportedAgent = 'UnsupportedAgent',
+  InvalidSession = 'InvalidSession',
+  SourceUnavailable = 'SourceUnavailable',
+  ReadFailed = 'ReadFailed',
+  CorruptedCache = 'CorruptedCache',
+  SessionClosed = 'SessionClosed',
+  StaleGeneration = 'StaleGeneration',
+  TransportDisconnected = 'TransportDisconnected',
+}
+export const AgentSessionError = (() => {
+  type UnsupportedAgent__interface = {
+    tag: AgentSessionError_Tags.UnsupportedAgent;
+    inner: Readonly<[string]>;
+  };
+  class UnsupportedAgent_
+    extends UniffiError
+    implements UnsupportedAgent__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.UnsupportedAgent;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'UnsupportedAgent');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): UnsupportedAgent_ {
+      return new UnsupportedAgent_(v0);
+    }
+
+    static instanceOf(obj: any): obj is UnsupportedAgent_ {
+      return obj.tag === AgentSessionError_Tags.UnsupportedAgent;
+    }
+    static hasInner(obj: any): obj is UnsupportedAgent_ {
+      return UnsupportedAgent_.instanceOf(obj);
+    }
+
+    static getInner(obj: UnsupportedAgent_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type InvalidSession__interface = {
+    tag: AgentSessionError_Tags.InvalidSession;
+    inner: Readonly<[string]>;
+  };
+  class InvalidSession_
+    extends UniffiError
+    implements InvalidSession__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.InvalidSession;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'InvalidSession');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): InvalidSession_ {
+      return new InvalidSession_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidSession_ {
+      return obj.tag === AgentSessionError_Tags.InvalidSession;
+    }
+    static hasInner(obj: any): obj is InvalidSession_ {
+      return InvalidSession_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidSession_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type SourceUnavailable__interface = {
+    tag: AgentSessionError_Tags.SourceUnavailable;
+    inner: Readonly<[string]>;
+  };
+  class SourceUnavailable_
+    extends UniffiError
+    implements SourceUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.SourceUnavailable;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'SourceUnavailable');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): SourceUnavailable_ {
+      return new SourceUnavailable_(v0);
+    }
+
+    static instanceOf(obj: any): obj is SourceUnavailable_ {
+      return obj.tag === AgentSessionError_Tags.SourceUnavailable;
+    }
+    static hasInner(obj: any): obj is SourceUnavailable_ {
+      return SourceUnavailable_.instanceOf(obj);
+    }
+
+    static getInner(obj: SourceUnavailable_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type ReadFailed__interface = {
+    tag: AgentSessionError_Tags.ReadFailed;
+    inner: Readonly<[string]>;
+  };
+  class ReadFailed_ extends UniffiError implements ReadFailed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.ReadFailed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'ReadFailed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): ReadFailed_ {
+      return new ReadFailed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is ReadFailed_ {
+      return obj.tag === AgentSessionError_Tags.ReadFailed;
+    }
+    static hasInner(obj: any): obj is ReadFailed_ {
+      return ReadFailed_.instanceOf(obj);
+    }
+
+    static getInner(obj: ReadFailed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type CorruptedCache__interface = {
+    tag: AgentSessionError_Tags.CorruptedCache;
+    inner: Readonly<[string]>;
+  };
+  class CorruptedCache_
+    extends UniffiError
+    implements CorruptedCache__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.CorruptedCache;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'CorruptedCache');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): CorruptedCache_ {
+      return new CorruptedCache_(v0);
+    }
+
+    static instanceOf(obj: any): obj is CorruptedCache_ {
+      return obj.tag === AgentSessionError_Tags.CorruptedCache;
+    }
+    static hasInner(obj: any): obj is CorruptedCache_ {
+      return CorruptedCache_.instanceOf(obj);
+    }
+
+    static getInner(obj: CorruptedCache_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type SessionClosed__interface = {
+    tag: AgentSessionError_Tags.SessionClosed;
+    inner: Readonly<[string]>;
+  };
+  class SessionClosed_ extends UniffiError implements SessionClosed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.SessionClosed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'SessionClosed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): SessionClosed_ {
+      return new SessionClosed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is SessionClosed_ {
+      return obj.tag === AgentSessionError_Tags.SessionClosed;
+    }
+    static hasInner(obj: any): obj is SessionClosed_ {
+      return SessionClosed_.instanceOf(obj);
+    }
+
+    static getInner(obj: SessionClosed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type StaleGeneration__interface = {
+    tag: AgentSessionError_Tags.StaleGeneration;
+    inner: Readonly<[string]>;
+  };
+  class StaleGeneration_
+    extends UniffiError
+    implements StaleGeneration__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.StaleGeneration;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'StaleGeneration');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): StaleGeneration_ {
+      return new StaleGeneration_(v0);
+    }
+
+    static instanceOf(obj: any): obj is StaleGeneration_ {
+      return obj.tag === AgentSessionError_Tags.StaleGeneration;
+    }
+    static hasInner(obj: any): obj is StaleGeneration_ {
+      return StaleGeneration_.instanceOf(obj);
+    }
+
+    static getInner(obj: StaleGeneration_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type TransportDisconnected__interface = {
+    tag: AgentSessionError_Tags.TransportDisconnected;
+    inner: Readonly<[string]>;
+  };
+  class TransportDisconnected_
+    extends UniffiError
+    implements TransportDisconnected__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.TransportDisconnected;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'TransportDisconnected');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): TransportDisconnected_ {
+      return new TransportDisconnected_(v0);
+    }
+
+    static instanceOf(obj: any): obj is TransportDisconnected_ {
+      return obj.tag === AgentSessionError_Tags.TransportDisconnected;
+    }
+    static hasInner(obj: any): obj is TransportDisconnected_ {
+      return TransportDisconnected_.instanceOf(obj);
+    }
+
+    static getInner(obj: TransportDisconnected_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is AgentSessionError {
+    return obj[uniffiTypeNameSymbol] === 'AgentSessionError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    UnsupportedAgent: UnsupportedAgent_,
+    InvalidSession: InvalidSession_,
+    SourceUnavailable: SourceUnavailable_,
+    ReadFailed: ReadFailed_,
+    CorruptedCache: CorruptedCache_,
+    SessionClosed: SessionClosed_,
+    StaleGeneration: StaleGeneration_,
+    TransportDisconnected: TransportDisconnected_,
+  });
+})();
+export type AgentSessionError = InstanceType<
+  (typeof AgentSessionError)[
+    | 'UnsupportedAgent'
+    | 'InvalidSession'
+    | 'SourceUnavailable'
+    | 'ReadFailed'
+    | 'CorruptedCache'
+    | 'SessionClosed'
+    | 'StaleGeneration'
+    | 'TransportDisconnected']
+>;
+
+// FfiConverter for enum AgentSessionError
+const FfiConverterTypeAgentSessionError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentSessionError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new AgentSessionError.UnsupportedAgent(
+            FfiConverterString.read(from),
+          );
+        case 2:
+          return new AgentSessionError.InvalidSession(
+            FfiConverterString.read(from),
+          );
+        case 3:
+          return new AgentSessionError.SourceUnavailable(
+            FfiConverterString.read(from),
+          );
+        case 4:
+          return new AgentSessionError.ReadFailed(
+            FfiConverterString.read(from),
+          );
+        case 5:
+          return new AgentSessionError.CorruptedCache(
+            FfiConverterString.read(from),
+          );
+        case 6:
+          return new AgentSessionError.SessionClosed(
+            FfiConverterString.read(from),
+          );
+        case 7:
+          return new AgentSessionError.StaleGeneration(
+            FfiConverterString.read(from),
+          );
+        case 8:
+          return new AgentSessionError.TransportDisconnected(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case AgentSessionError_Tags.UnsupportedAgent: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AgentSessionError_Tags.InvalidSession: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AgentSessionError_Tags.SourceUnavailable: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AgentSessionError_Tags.ReadFailed: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AgentSessionError_Tags.CorruptedCache: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AgentSessionError_Tags.SessionClosed: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AgentSessionError_Tags.StaleGeneration: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AgentSessionError_Tags.TransportDisconnected: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that AgentSessionError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case AgentSessionError_Tags.UnsupportedAgent: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AgentSessionError_Tags.InvalidSession: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AgentSessionError_Tags.SourceUnavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AgentSessionError_Tags.ReadFailed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AgentSessionError_Tags.CorruptedCache: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AgentSessionError_Tags.SessionClosed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AgentSessionError_Tags.StaleGeneration: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AgentSessionError_Tags.TransportDisconnected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
     }
   }
   return new FFIConverter();
@@ -8981,6 +10899,177 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
   return new FFIConverter();
 })();
 
+export interface AgentTranscriptEventSink {
+  event(event: AgentTranscriptEvent): void;
+}
+
+export class AgentTranscriptEventSinkImpl
+  extends UniffiAbstractObject
+  implements AgentTranscriptEventSink
+{
+  readonly [uniffiTypeNameSymbol] = 'AgentTranscriptEventSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeAgentTranscriptEventSinkImplObjectFactory.bless(pointer);
+  }
+
+  event(event: AgentTranscriptEvent): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_agenttranscripteventsink_event(
+          uniffiTypeAgentTranscriptEventSinkImplObjectFactory.clonePointer(
+            this,
+          ),
+          FfiConverterTypeAgentTranscriptEvent.lower(
+            event,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeAgentTranscriptEventSinkImplObjectFactory.pointer(this);
+      uniffiTypeAgentTranscriptEventSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeAgentTranscriptEventSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is AgentTranscriptEventSinkImpl {
+    return uniffiTypeAgentTranscriptEventSinkImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeAgentTranscriptEventSinkImplObjectFactory: UniffiObjectFactory<AgentTranscriptEventSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): AgentTranscriptEventSink {
+        const instance = Object.create(AgentTranscriptEventSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'AgentTranscriptEventSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_agenttranscripteventsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: AgentTranscriptEventSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: AgentTranscriptEventSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_agenttranscripteventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_agenttranscripteventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is AgentTranscriptEventSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'AgentTranscriptEventSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeAgentTranscriptEventSink =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeAgentTranscriptEventSinkImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in AgentTranscriptEventSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceAgentTranscriptEventSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    event: (uniffiHandle: bigint, event: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeAgentTranscriptEventSink.lift(uniffiHandle);
+        return jsCallback.event(
+          FfiConverterTypeAgentTranscriptEvent.lift(event),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeAgentTranscriptEventSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeAgentTranscriptEventSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_agenttranscripteventsink(
+      uniffiCallbackInterfaceAgentTranscriptEventSink.vtable,
+    );
+  },
+};
+
 export interface HerdrEventSink {
   event(clientKey: string, event: HerdrEvent): void;
   closed(clientKey: string, reason: string): void;
@@ -9501,8 +11590,12 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
 };
 
 export interface HostRuntimeLike {
+  agentTranscript(key: string): /*throws*/ AgentTranscriptState;
+  closeAgentSession(key: string): void;
+  closeAgentTerminal(terminalId: string): void;
   closeAllTerminals(): void;
   closeTerminal(terminalId: string): void;
+  confirmAgentTranscriptCache(confirmationToken: string): boolean;
   connect(asyncOpts_?: { signal: AbortSignal }): /*throws*/ Promise<void>;
   controlRequest(
     request: HerdrControlRequest,
@@ -9512,6 +11605,12 @@ export interface HostRuntimeLike {
   hasTerminal(terminalId: string): boolean;
   hostState(): HostStateSnapshot;
   isTerminalOpening(terminalId: string): boolean;
+  openAgentSession(
+    agent: AgentTranscriptKind,
+    terminalId: string,
+    sessionId: string,
+    cacheBlob: ArrayBuffer | undefined,
+  ): /*throws*/ AgentSessionOpenResult;
   openTerminal(
     terminalId: string,
     takeover: boolean,
@@ -9581,6 +11680,56 @@ export class HostRuntime
       uniffiTypeHostRuntimeObjectFactory.bless(pointer);
   }
 
+  agentTranscript(key: string): AgentTranscriptState /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAgentTranscriptState.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_transcript(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  closeAgentSession(key: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_agent_session(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  closeAgentTerminal(terminalId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
   closeAllTerminals(): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
@@ -9603,6 +11752,24 @@ export class HostRuntime
         );
       },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  confirmAgentTranscriptCache(confirmationToken: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_confirm_agent_transcript_cache(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              confirmationToken,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -9765,6 +11932,50 @@ export class HostRuntime
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             FfiConverterString.lower(
               terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  openAgentSession(
+    agent: AgentTranscriptKind,
+    terminalId: string,
+    sessionId: string,
+    cacheBlob: ArrayBuffer | undefined,
+  ): AgentSessionOpenResult /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAgentSessionOpenResult.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_agent_session(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeAgentTranscriptKind.lower(
+              agent,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalBytes.lower(
+              cacheBlob,
               nativeModule().rustbuffer_alloc,
             ),
             callStatus,
@@ -10415,6 +12626,52 @@ const uniffiCallbackInterfaceHostRuntimeEventSink: {
 // FfiConverter for string | undefined
 const FfiConverterOptionalString = new FfiConverterOptional(FfiConverterString);
 
+// FfiConverter for number | undefined
+const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
+
+// FfiConverter for bigint | undefined
+const FfiConverterOptionalUInt64 = new FfiConverterOptional(FfiConverterUInt64);
+
+// FfiConverter for AgentTranscriptInfo | undefined
+const FfiConverterOptionalTypeAgentTranscriptInfo = new FfiConverterOptional(
+  FfiConverterTypeAgentTranscriptInfo,
+);
+
+// FfiConverter for Array<AgentField>
+const FfiConverterSequenceTypeAgentField = new FfiConverterArray(
+  FfiConverterTypeAgentField,
+);
+
+// FfiConverter for bigint | undefined
+const FfiConverterOptionalInt64 = new FfiConverterOptional(FfiConverterInt64);
+
+// FfiConverter for Array<AgentFileDiff>
+const FfiConverterSequenceTypeAgentFileDiff = new FfiConverterArray(
+  FfiConverterTypeAgentFileDiff,
+);
+
+// FfiConverter for Array<AgentTranscriptPart>
+const FfiConverterSequenceTypeAgentTranscriptPart = new FfiConverterArray(
+  FfiConverterTypeAgentTranscriptPart,
+);
+
+// FfiConverter for Array<AgentTranscriptMessage>
+const FfiConverterSequenceTypeAgentTranscriptMessage = new FfiConverterArray(
+  FfiConverterTypeAgentTranscriptMessage,
+);
+
+// FfiConverter for Array<string>
+const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
+
+// FfiConverter for Array<AgentTranscriptTurn>
+const FfiConverterSequenceTypeAgentTranscriptTurn = new FfiConverterArray(
+  FfiConverterTypeAgentTranscriptTurn,
+);
+
+// FfiConverter for AgentTranscriptCacheWrite | undefined
+const FfiConverterOptionalTypeAgentTranscriptCacheWrite =
+  new FfiConverterOptional(FfiConverterTypeAgentTranscriptCacheWrite);
+
 // FfiConverter for boolean | undefined
 const FfiConverterOptionalBoolean = new FfiConverterOptional(FfiConverterBool);
 
@@ -10493,16 +12750,10 @@ const FfiConverterSequenceTypeHostSshConfig = new FfiConverterArray(
   FfiConverterTypeHostSshConfig,
 );
 
-// FfiConverter for bigint | undefined
-const FfiConverterOptionalUInt64 = new FfiConverterOptional(FfiConverterUInt64);
-
 // FfiConverter for HerdrSessionSnapshot | undefined
 const FfiConverterOptionalTypeHerdrSessionSnapshot = new FfiConverterOptional(
   FfiConverterTypeHerdrSessionSnapshot,
 );
-
-// FfiConverter for Array<string>
-const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
 
 // FfiConverter for HerdrWorkspaceInfo | undefined
 const FfiConverterOptionalTypeHerdrWorkspaceInfo = new FfiConverterOptional(
@@ -10517,6 +12768,11 @@ const FfiConverterOptionalTypeHerdrTabInfo = new FfiConverterOptional(
 // FfiConverter for HerdrAgentStatus | undefined
 const FfiConverterOptionalTypeHerdrAgentStatus = new FfiConverterOptional(
   FfiConverterTypeHerdrAgentStatus,
+);
+
+// FfiConverter for ArrayBuffer | undefined
+const FfiConverterOptionalBytes = new FfiConverterOptional(
+  FfiConverterArrayBuffer,
 );
 
 /**
@@ -10539,6 +12795,14 @@ function uniffiEnsureInitialized() {
     throw new UniffiInternalError.ContractVersionMismatch(
       scaffoldingContractVersion,
       bindingsContractVersion,
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_event_sink() !==
+    53028
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_clear_agent_transcript_event_sink',
     );
   }
   if (
@@ -10643,6 +12907,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_agent_transcript_event_sink() !==
+    34093
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_agent_transcript_event_sink',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_herdr_event_sink() !==
     53728
   ) {
@@ -10680,6 +12952,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_agenttranscripteventsink_event() !==
+    36150
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_agenttranscripteventsink_event',
     );
   }
   if (
@@ -10723,6 +13003,30 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript() !==
+    7698
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_session() !==
+    55525
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_close_agent_session',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_terminal() !==
+    63595
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_close_agent_terminal',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals() !==
     40182
   ) {
@@ -10736,6 +13040,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_close_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache() !==
+    16763
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache',
     );
   }
   if (
@@ -10784,6 +13096,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_session() !==
+    37278
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_open_agent_session',
     );
   }
   if (
@@ -10899,6 +13219,7 @@ function uniffiEnsureInitialized() {
     );
   }
 
+  uniffiCallbackInterfaceAgentTranscriptEventSink.register();
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostRuntimeEventSink.register();
@@ -10907,6 +13228,26 @@ function uniffiEnsureInitialized() {
 export default Object.freeze({
   initialize: uniffiEnsureInitialized,
   converters: {
+    FfiConverterTypeAgentField,
+    FfiConverterTypeAgentFileDiff,
+    FfiConverterTypeAgentMessageRole,
+    FfiConverterTypeAgentNoticeLevel,
+    FfiConverterTypeAgentScalarValue,
+    FfiConverterTypeAgentSessionError,
+    FfiConverterTypeAgentSessionOpenResult,
+    FfiConverterTypeAgentToolState,
+    FfiConverterTypeAgentToolStatus,
+    FfiConverterTypeAgentTranscriptCacheWrite,
+    FfiConverterTypeAgentTranscriptEvent,
+    FfiConverterTypeAgentTranscriptEventSink,
+    FfiConverterTypeAgentTranscriptInfo,
+    FfiConverterTypeAgentTranscriptKind,
+    FfiConverterTypeAgentTranscriptMessage,
+    FfiConverterTypeAgentTranscriptPart,
+    FfiConverterTypeAgentTranscriptState,
+    FfiConverterTypeAgentTranscriptStatus,
+    FfiConverterTypeAgentTranscriptTurn,
+    FfiConverterTypeAgentTurnStatus,
     FfiConverterTypeHerdrAgentInfo,
     FfiConverterTypeHerdrAgentSessionInfo,
     FfiConverterTypeHerdrAgentSessionKind,

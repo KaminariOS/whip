@@ -1,4 +1,3 @@
-import { shellQuote } from './shell';
 import type { PaneInfo } from '../types';
 
 const CODEX_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -53,46 +52,4 @@ export function codexMissingIdentityAction(status: CodexIntegrationStatus): Code
   if (status === 'current') return 'diagnose';
   if (status === 'unknown') return 'unknown';
   return 'install';
-}
-
-export function codexRolloutFindCommand(codexHome: string, sessionId: string): string {
-  if (!isValidCodexSessionId(sessionId)) throw new Error('Invalid Codex session ID');
-  const sessionsRoot = `${codexHome.replace(/\/+$/, '')}/sessions`;
-  return `find ${shellQuote(sessionsRoot)} -type f -name ${shellQuote(`rollout-*-${sessionId}.jsonl`)} -print`;
-}
-
-export function parseCodexRolloutResolution(output: string, sessionId: string): string | null {
-  if (!isValidCodexSessionId(sessionId)) throw new Error('Invalid Codex session ID');
-  const paths = output.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
-  if (!paths.length) return null;
-  const suffix = `-${sessionId}.jsonl`;
-  const exact = paths.filter(path => path.endsWith(suffix));
-  if (exact.length !== 1 || exact.length !== paths.length) {
-    throw new Error(exact.length > 1 ? 'Multiple rollout files matched the Codex session ID' : 'Codex returned an invalid rollout path');
-  }
-  return exact[0];
-}
-
-export function codexRolloutMetadataCommand(path: string): string {
-  const quotedPath = shellQuote(path);
-  return `stat -c '%d:%i %s' ${quotedPath} 2>/dev/null || stat -f '%d:%i %z' ${quotedPath}`;
-}
-
-export interface CodexRolloutMetadata {
-  fileId: string;
-  size: number;
-}
-
-export function parseCodexRolloutMetadata(output: string): CodexRolloutMetadata {
-  const match = output.trim().match(/^(\d+:\d+)\s+(\d+)$/);
-  if (!match) throw new Error('Codex returned invalid rollout metadata');
-  const size = Number(match[2]);
-  if (!Number.isSafeInteger(size)) throw new Error('Codex returned invalid rollout metadata');
-  return { fileId: match[1], size };
-}
-
-/** Streams only raw rollout bytes, starting immediately after the committed byte cursor. */
-export function codexRolloutStreamCommand(path: string, startOffset = 0): string {
-  if (!Number.isSafeInteger(startOffset) || startOffset < 0) throw new Error('Invalid Codex rollout cursor');
-  return `exec tail -c ${shellQuote(`+${startOffset + 1}`)} -F ${shellQuote(path)}`;
 }

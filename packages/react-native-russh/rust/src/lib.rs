@@ -391,6 +391,17 @@ enum UnixSocketDelivery {
     },
 }
 
+/// Product-neutral delivery target for an owned exec channel.
+#[derive(Clone, Copy)]
+enum ExecDelivery {
+    ReactNative,
+    Native {
+        context: u64,
+        data: NativeChannelFrameCallback,
+        closed: NativeChannelClosedCallback,
+    },
+}
+
 #[derive(Clone)]
 struct RusshHandler {
     host: String,
@@ -2185,7 +2196,11 @@ async fn start_sftp_file_server(params: &Value) -> Result<Value, TransportError>
     Ok(json!({ "localPort": local_port, "token": returned_token }))
 }
 
-fn emit_exec_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>) {
+fn emit_exec_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>, delivery: ExecDelivery) {
+    if let ExecDelivery::Native { context, data, .. } = delivery {
+        unsafe { data(context, bytes.as_ptr(), bytes.len()) };
+        return;
+    }
     let sink = uniffi_event_sink().read().clone();
     let callback = *event_callback().read();
     let legacy_json = callback.map(|_| {
@@ -2209,7 +2224,10 @@ fn emit_exec_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>) {
     }
 }
 
-async fn open_exec_channel(params: &Value) -> Result<Value, TransportError> {
+async fn open_exec_channel_with_delivery(
+    params: &Value,
+    delivery: ExecDelivery,
+) -> Result<Value, TransportError> {
     let key = required_string(params, "key")?;
     let channel_id = required_string(params, "channelId")?;
     if channel_id.is_empty() || channel_id.len() > 128 || channel_id.chars().any(char::is_control) {
@@ -2240,29 +2258,49 @@ async fn open_exec_channel(params: &Value) -> Result<Value, TransportError> {
         channels.insert(map_key.clone(), sender.clone());
     }
     tokio::spawn(async move {
-        let mut stream = channel.into_stream();
-        let mut buffer = vec![0u8; 8192];
+        let (mut reader, writer) = channel.split();
+        let mut stderr = Vec::new();
+        let mut exit_status = None;
         let (reason, closed_by_client) = loop {
             tokio::select! {
-                read = stream.read(&mut buffer) => match read {
-                    Ok(0) => break ("remote exec channel reached EOF".to_owned(), false),
-                    Err(error) => break (format!("remote exec-channel read failed: {error}"), false),
-                    Ok(count) => {
+                message = reader.wait() => match message {
+                    Some(russh::ChannelMsg::Data { data }) => {
                         {
                             let _trace = AndroidTraceSlice::begin(EXEC_INBOUND_RUST_CHUNK_RECEIVED);
                         }
                         emit_exec_channel_data(
                             &key,
                             &channel_id,
-                            buffer[..count].to_vec(),
+                            data.to_vec(),
+                            delivery,
                         );
-                    }
+                    },
+                    Some(russh::ChannelMsg::ExtendedData { data, ext: 1 }) => {
+                        const MAX_EXEC_STDERR_BYTES: usize = 4 * 1024;
+                        let remaining = MAX_EXEC_STDERR_BYTES.saturating_sub(stderr.len());
+                        stderr.extend_from_slice(&data[..data.len().min(remaining)]);
+                    },
+                    Some(russh::ChannelMsg::ExitStatus { exit_status: status }) => {
+                        exit_status = Some(status);
+                    },
+                    Some(russh::ChannelMsg::ExitSignal { error_message, .. }) => {
+                        if stderr.is_empty() {
+                            stderr.extend_from_slice(error_message.as_bytes());
+                        }
+                    },
+                    Some(russh::ChannelMsg::Close) | None => {
+                        break (exec_channel_close_reason(exit_status, &stderr), false);
+                    },
+                    Some(russh::ChannelMsg::Eof) | Some(_) => {},
                 },
                 command = receiver.recv() => match command {
-                    Some(StreamCommand::Write(data)) => if let Err(error) = stream.write_all(&data).await {
+                    Some(StreamCommand::Write(data)) => if let Err(error) = writer.data_bytes(data).await {
                         break (format!("remote exec-channel write failed: {error}"), false);
                     },
-                    Some(StreamCommand::Close) => break ("exec channel closed by client".to_owned(), true),
+                    Some(StreamCommand::Close) => {
+                        let _ = writer.close().await;
+                        break ("exec channel closed by client".to_owned(), true);
+                    },
                     None => break ("exec-channel control queue closed".to_owned(), true),
                 }
             }
@@ -2274,18 +2312,43 @@ async fn open_exec_channel(params: &Value) -> Result<Value, TransportError> {
         if should_remove {
             exec_channels().write().remove(&map_key);
         }
-        emit_event(json!({
-            "name": "ExecChannel",
-            "key": key,
-            "value": {
-                "type": "closed",
-                "channelId": channel_id,
-                "reason": reason,
-                "closedByClient": closed_by_client,
+        match delivery {
+            ExecDelivery::ReactNative => emit_event(json!({
+                "name": "ExecChannel",
+                "key": key,
+                "value": {
+                    "type": "closed",
+                    "channelId": channel_id,
+                    "reason": reason,
+                    "closedByClient": closed_by_client,
+                },
+            })),
+            ExecDelivery::Native {
+                context, closed, ..
+            } => match CString::new(reason) {
+                Ok(reason) => unsafe { closed(context, reason.as_ptr()) },
+                Err(_) => unsafe { closed(context, c"native exec channel closed".as_ptr()) },
             },
-        }));
+        }
     });
     Ok(Value::Null)
+}
+
+fn exec_channel_close_reason(exit_status: Option<u32>, stderr: &[u8]) -> String {
+    let stderr = String::from_utf8_lossy(stderr);
+    let stderr = stderr.trim().replace(['\r', '\n'], " ");
+    match (exit_status, stderr.is_empty()) {
+        (Some(0), true) | (None, true) => "remote exec channel reached EOF".to_owned(),
+        (Some(status), true) => format!("remote exec channel exited with status {status}"),
+        (Some(status), false) => {
+            format!("remote exec channel exited with status {status}: {stderr}")
+        }
+        (None, false) => format!("remote exec channel closed: {stderr}"),
+    }
+}
+
+async fn open_exec_channel(params: &Value) -> Result<Value, TransportError> {
+    open_exec_channel_with_delivery(params, ExecDelivery::ReactNative).await
 }
 
 fn exec_channel_command_for_key(
@@ -2942,6 +3005,107 @@ pub unsafe extern "C" fn react_native_russh_open_native_length_prefixed_unix_soc
     }
 }
 
+/// Opens a product-neutral SSH exec channel and delivers raw stdout/stderr
+/// bytes directly to native callbacks.
+///
+/// # Safety
+///
+/// String pointers must reference valid NUL-terminated UTF-8 for the duration
+/// of this call. Callback functions must remain valid until `closed` fires.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn react_native_russh_open_native_exec_channel(
+    context: u64,
+    key: *const c_char,
+    channel_id: *const c_char,
+    command: *const c_char,
+    opened: Option<NativeChannelOpenCallback>,
+    data: Option<NativeChannelFrameCallback>,
+    closed: Option<NativeChannelClosedCallback>,
+) {
+    let Some(opened) = opened else { return };
+    let (Some(data), Some(closed)) = (data, closed) else {
+        notify_native_channel_open(
+            opened,
+            context,
+            Err(TransportError::InvalidRequest(
+                "native exec callbacks are required".to_owned(),
+            )),
+        );
+        return;
+    };
+    let strings = [key, channel_id, command]
+        .into_iter()
+        .map(|value| {
+            if value.is_null() {
+                Err(TransportError::InvalidRequest(
+                    "native exec channel received a null string".to_owned(),
+                ))
+            } else {
+                Ok(unsafe { CStr::from_ptr(value) }
+                    .to_string_lossy()
+                    .into_owned())
+            }
+        })
+        .collect::<Result<Vec<_>, _>>();
+    let [key, channel_id, command] = match strings.and_then(|values| {
+        values.try_into().map_err(|_| {
+            TransportError::InvalidRequest("native exec arguments were invalid".to_owned())
+        })
+    }) {
+        Ok(values) => values,
+        Err(error) => {
+            notify_native_channel_open(opened, context, Err(error));
+            return;
+        }
+    };
+    let runtime = match runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            notify_native_channel_open(
+                opened,
+                context,
+                Err(TransportError::ChannelUnavailable(format!(
+                    "failed to initialize SSH runtime: {error}"
+                ))),
+            );
+            return;
+        }
+    };
+    runtime.spawn(async move {
+        let params = json!({ "key": key, "channelId": channel_id, "command": command });
+        let result = open_exec_channel_with_delivery(
+            &params,
+            ExecDelivery::Native {
+                context,
+                data,
+                closed,
+            },
+        )
+        .await;
+        notify_native_channel_open(opened, context, result);
+    });
+}
+
+/// Closes a native exec channel.
+///
+/// # Safety
+///
+/// String pointers must reference valid NUL-terminated UTF-8.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn react_native_russh_close_native_exec_channel(
+    key: *const c_char,
+    channel_id: *const c_char,
+) -> *mut c_char {
+    if key.is_null() || channel_id.is_null() {
+        return native_channel_result(Some("invalid native exec close arguments"));
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_string_lossy();
+    let channel_id = unsafe { CStr::from_ptr(channel_id) }.to_string_lossy();
+    native_channel_result(
+        exec_channel_command_for_key(&key, &channel_id, StreamCommand::Close).err(),
+    )
+}
+
 fn notify_native_unix_socket_request(
     callback: NativeUnixSocketRequestCallback,
     context: u64,
@@ -3237,6 +3401,22 @@ mod tests {
     #[test]
     fn remote_home_command_expands_without_literal_quotes() {
         assert_eq!(REMOTE_HOME_COMMAND, "printf %s \"$HOME\"");
+    }
+
+    #[test]
+    fn exec_close_reason_preserves_bounded_remote_diagnostics() {
+        assert_eq!(
+            exec_channel_close_reason(Some(127), b"sh: tail: not found\n"),
+            "remote exec channel exited with status 127: sh: tail: not found"
+        );
+        assert_eq!(
+            exec_channel_close_reason(Some(75), b"source replaced\r\ntry again"),
+            "remote exec channel exited with status 75: source replaced  try again"
+        );
+        assert_eq!(
+            exec_channel_close_reason(Some(0), b""),
+            "remote exec channel reached EOF"
+        );
     }
 
     #[test]

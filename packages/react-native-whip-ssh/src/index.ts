@@ -1,4 +1,12 @@
 import {
+  AgentMessageRole,
+  AgentNoticeLevel,
+  AgentScalarValue_Tags,
+  AgentToolStatus,
+  AgentTranscriptKind,
+  AgentTranscriptPart_Tags,
+  AgentTranscriptStatus,
+  AgentTurnStatus,
   closeHerdrEventSubscription,
   closeAllHerdrTerminalBridges,
   closeHerdrTerminalBridge,
@@ -23,6 +31,7 @@ import {
   pairHost as pairHostRust,
   prepareHerdrTerminalBridge,
   setHerdrEventSink,
+  setAgentTranscriptEventSink,
   setHerdrTerminalEventSink,
   setHostRuntimeEventSink,
   startHerdrEventSubscription,
@@ -48,6 +57,8 @@ import {
   type HostRuntimeEvent,
   type HostRuntimeLike,
   type HostStateSnapshot,
+  type AgentTranscriptEvent,
+  type AgentTranscriptState,
 } from './generated-entry';
 
 type PairingResponse = {
@@ -71,6 +82,50 @@ type WhipTerminalInboundTrace = {
 const bridgeHandlers = new Map<string, Map<string, BridgeHandler>>();
 const eventHandlers = new Map<string, EventHandler>();
 const runtimeHandlers = new Map<string, (event: RuntimeLifecycleEvent) => void>();
+const agentTranscriptHandlers = new Map<string, Map<string, (event: NativeAgentTranscriptUpdate) => void>>();
+
+export type NativeAgentTranscriptPart =
+  | { type: 'text'; id: string; text: string; timestamp?: number }
+  | { type: 'reasoning'; id: string; text: string; timestamp?: number }
+  | { type: 'plan'; id: string; text: string; timestamp?: number }
+  | { type: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string; timestamp?: number }
+  | {
+      type: 'tool'; id: string; callId: string; tool: string; timestamp?: number;
+      state: {
+        status: 'pending' | 'running' | 'completed' | 'error';
+        input: Record<string, string | number | boolean>;
+        output?: string; error?: string; title?: string;
+        startedAt?: number; completedAt?: number; exitCode?: number;
+        files: Array<{ file: string; patch?: string; before?: string; after?: string; additions?: number; deletions?: number }>;
+      };
+    };
+
+export type NativeAgentTranscriptState = {
+  sessionId: string;
+  agent: 'codex' | 'opencode';
+  revision: number;
+  status: 'loading' | 'live' | 'stale' | 'unavailable' | 'error' | 'closed';
+  info?: { id: string; title?: string; directory?: string; createdAt?: number; updatedAt?: number };
+  messages: Array<{
+    id: string; role: 'user' | 'assistant'; parentId?: string;
+    createdAt?: number; completedAt?: number; error?: string;
+    parts: NativeAgentTranscriptPart[];
+    diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions?: number; deletions?: number }>;
+  }>;
+  turns: Array<{
+    id: string; userMessageId?: string; assistantMessageIds: string[];
+    status: 'idle' | 'working' | 'interrupted' | 'error';
+    startedAt?: number; completedAt?: number;
+    diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions?: number; deletions?: number }>;
+  }>;
+  error?: string;
+};
+
+export type NativeAgentTranscriptUpdate = {
+  key: string;
+  state: NativeAgentTranscriptState;
+  cacheWrite?: { key: string; blob: ArrayBuffer; confirmationToken: string };
+};
 
 export type RuntimeSshConfig = {
   host: string;
@@ -209,6 +264,119 @@ function optionalString(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function nativeNumber(value: bigint | undefined): number | undefined {
+  return value === undefined ? undefined : Number(value);
+}
+
+function nativeAgentStatus(value: AgentTranscriptStatus): NativeAgentTranscriptState['status'] {
+  switch (value) {
+    case AgentTranscriptStatus.Live: return 'live';
+    case AgentTranscriptStatus.Stale: return 'stale';
+    case AgentTranscriptStatus.Unavailable: return 'unavailable';
+    case AgentTranscriptStatus.Error: return 'error';
+    case AgentTranscriptStatus.Closed: return 'closed';
+    default: return 'loading';
+  }
+}
+
+function nativeToolStatus(value: AgentToolStatus): 'pending' | 'running' | 'completed' | 'error' {
+  switch (value) {
+    case AgentToolStatus.Running: return 'running';
+    case AgentToolStatus.Completed: return 'completed';
+    case AgentToolStatus.Error: return 'error';
+    default: return 'pending';
+  }
+}
+
+function nativeAgentPart(part: AgentTranscriptState['messages'][number]['parts'][number]): NativeAgentTranscriptPart {
+  switch (part.tag) {
+    case AgentTranscriptPart_Tags.Text: {
+      const inner = part.inner as { id: string; text: string; timestampMs?: bigint };
+      return { type: 'text', id: inner.id, text: inner.text, timestamp: nativeNumber(inner.timestampMs) };
+    }
+    case AgentTranscriptPart_Tags.Reasoning: {
+      const inner = part.inner as { id: string; text: string; timestampMs?: bigint };
+      return { type: 'reasoning', id: inner.id, text: inner.text, timestamp: nativeNumber(inner.timestampMs) };
+    }
+    case AgentTranscriptPart_Tags.Plan: {
+      const inner = part.inner as { id: string; text: string; timestampMs?: bigint };
+      return { type: 'plan', id: inner.id, text: inner.text, timestamp: nativeNumber(inner.timestampMs) };
+    }
+    case AgentTranscriptPart_Tags.Notice: {
+      const inner = part.inner as { id: string; level: AgentNoticeLevel; text: string; timestampMs?: bigint };
+      return {
+        type: 'notice', id: inner.id, text: inner.text, timestamp: nativeNumber(inner.timestampMs),
+        level: inner.level === AgentNoticeLevel.Warning ? 'warning' : inner.level === AgentNoticeLevel.Error ? 'error' : 'info',
+      };
+    }
+    case AgentTranscriptPart_Tags.Tool: {
+      const inner = part.inner as Extract<AgentTranscriptState['messages'][number]['parts'][number], { tag: AgentTranscriptPart_Tags.Tool }>['inner'];
+      const input: Record<string, string | number | boolean> = {};
+      for (const field of inner.state.input) {
+        switch (field.value.tag) {
+          case AgentScalarValue_Tags.String: input[field.key] = field.value.inner.value; break;
+          case AgentScalarValue_Tags.Number: input[field.key] = field.value.inner.value; break;
+          case AgentScalarValue_Tags.Boolean: input[field.key] = field.value.inner.value; break;
+        }
+      }
+      return {
+        type: 'tool', id: inner.id, callId: inner.callId, tool: inner.tool,
+        timestamp: nativeNumber(inner.timestampMs),
+        state: {
+          status: nativeToolStatus(inner.state.status), input,
+          output: inner.state.output, error: inner.state.error, title: inner.state.title,
+          startedAt: nativeNumber(inner.state.startedAtMs), completedAt: nativeNumber(inner.state.completedAtMs),
+          exitCode: inner.state.exitCode === undefined ? undefined : Number(inner.state.exitCode),
+          files: inner.state.files.map(file => ({ ...file })),
+        },
+      };
+    }
+  }
+}
+
+function nativeAgentTranscript(value: AgentTranscriptState): NativeAgentTranscriptState {
+  return {
+    sessionId: value.sessionId,
+    agent: value.agent === AgentTranscriptKind.OpenCode ? 'opencode' : 'codex',
+    revision: Number(value.revision),
+    status: nativeAgentStatus(value.status),
+    info: value.info ? {
+      id: value.info.id, title: value.info.title, directory: value.info.directory,
+      createdAt: nativeNumber(value.info.createdAtMs), updatedAt: nativeNumber(value.info.updatedAtMs),
+    } : undefined,
+    messages: value.messages.map(message => ({
+      id: message.id,
+      role: message.role === AgentMessageRole.Assistant ? 'assistant' : 'user',
+      parentId: message.parentId,
+      createdAt: nativeNumber(message.createdAtMs), completedAt: nativeNumber(message.completedAtMs),
+      error: message.error,
+      parts: message.parts.map(nativeAgentPart),
+      diffs: message.diffs.map(file => ({ ...file })),
+    })),
+    turns: value.turns.map(turn => ({
+      id: turn.id, userMessageId: turn.userMessageId, assistantMessageIds: [...turn.assistantMessageIds],
+      status: turn.status === AgentTurnStatus.Working ? 'working'
+        : turn.status === AgentTurnStatus.Interrupted ? 'interrupted'
+          : turn.status === AgentTurnStatus.Error ? 'error' : 'idle',
+      startedAt: nativeNumber(turn.startedAtMs), completedAt: nativeNumber(turn.completedAtMs),
+      diffs: turn.diffs.map(file => ({ ...file })),
+    })),
+    error: value.error,
+  };
+}
+
+function nativeAgentUpdate(event: AgentTranscriptEvent): NativeAgentTranscriptUpdate {
+  return {
+    key: event.key,
+    state: nativeAgentTranscript(event.state),
+    cacheWrite: event.cacheWrite ? {
+      key: event.cacheWrite.key,
+      blob: event.cacheWrite.blob,
+      confirmationToken: event.cacheWrite.confirmationToken,
+    } : undefined,
+  };
 }
 
 function splitDirection(value: unknown): HerdrSplitDirection {
@@ -763,9 +931,17 @@ const hostRuntimeEventSink = {
   },
 };
 
+const agentTranscriptEventSink = {
+  event(event: AgentTranscriptEvent): void {
+    const handler = agentTranscriptHandlers.get(event.runtimeId)?.get(event.key);
+    handler?.(nativeAgentUpdate(event));
+  },
+};
+
 setHerdrTerminalEventSink(herdrTerminalEventSink);
 setHerdrEventSink(herdrEventSink);
 setHostRuntimeEventSink(hostRuntimeEventSink);
+setAgentTranscriptEventSink(agentTranscriptEventSink);
 
 export class NativeHostRuntime {
   readonly runtimeId: string;
@@ -784,6 +960,7 @@ export class NativeHostRuntime {
 
   async disconnect(): Promise<void> {
     runtimeHandlers.delete(this.runtimeId);
+    agentTranscriptHandlers.delete(this.runtimeId);
     eventHandlers.delete(this.runtimeId);
     bridgeHandlers.delete(this.transportKey);
     await this.runtime.disconnect();
@@ -799,6 +976,47 @@ export class NativeHostRuntime {
 
   async refreshState(): Promise<RuntimeHostState> {
     return runtimeHostState(await this.runtime.refreshState());
+  }
+
+  openAgentSession(
+    agentKind: 'codex' | 'opencode',
+    terminalId: string,
+    sessionId: string,
+    cacheBlob?: ArrayBuffer,
+    handler?: (event: NativeAgentTranscriptUpdate) => void,
+  ): { key: string; state: NativeAgentTranscriptState } {
+    const result = this.runtime.openAgentSession(
+      agentKind === 'opencode' ? AgentTranscriptKind.OpenCode : AgentTranscriptKind.Codex,
+      terminalId,
+      sessionId,
+      cacheBlob,
+    );
+    if (handler) {
+      let handlers = agentTranscriptHandlers.get(this.runtimeId);
+      if (!handlers) {
+        handlers = new Map();
+        agentTranscriptHandlers.set(this.runtimeId, handlers);
+      }
+      handlers.set(result.key, handler);
+    }
+    return { key: result.key, state: nativeAgentTranscript(result.state) };
+  }
+
+  agentTranscript(key: string): NativeAgentTranscriptState {
+    return nativeAgentTranscript(this.runtime.agentTranscript(key));
+  }
+
+  closeAgentSession(key: string): void {
+    agentTranscriptHandlers.get(this.runtimeId)?.delete(key);
+    this.runtime.closeAgentSession(key);
+  }
+
+  closeAgentTerminal(terminalId: string): void {
+    this.runtime.closeAgentTerminal(terminalId);
+  }
+
+  confirmAgentTranscriptCache(confirmationToken: string): boolean {
+    return this.runtime.confirmAgentTranscriptCache(confirmationToken);
   }
 
   resolvedSocketPath(): string | undefined { return this.runtime.resolvedSocketPath(); }

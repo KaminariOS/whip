@@ -11,6 +11,8 @@ use parking_lot::{Mutex, RwLock};
 use serde_json::{Value, json};
 use tokio::sync::{Notify, watch};
 
+use crate::agent_sessions::{AgentSessionError, AgentSessionManager, AgentSessionOpenResult};
+use crate::agent_transcript::{AgentTranscriptKind, AgentTranscriptState};
 use crate::herdr_api::{
     HerdrControlError, HerdrControlRequest, HerdrControlResult, request_on_runtime,
 };
@@ -302,6 +304,7 @@ struct RuntimeInner {
     transport_key: String,
     config: HostRuntimeConfig,
     state: Mutex<RuntimeState>,
+    agents: AgentSessionManager,
     cancellation: watch::Sender<u64>,
     settled: Notify,
 }
@@ -460,6 +463,8 @@ async fn finish_connection(
     for key in old_jump_keys.iter().rev() {
         disconnect_key(key).await;
     }
+    let generation = inner.state.lock().generation;
+    inner.agents.connected(generation);
     emit_status(&inner);
     emit_host_state(&inner, Vec::new());
     let restored = if restoring {
@@ -542,6 +547,7 @@ fn begin_reconnect(inner: Arc<RuntimeInner>, reason: String, immediate: bool) ->
         state.epoch
     };
     let _ = inner.cancellation.send(epoch);
+    inner.agents.disconnected(false, &reason);
     emit_status(&inner);
     emit_host_state(&inner, Vec::new());
     crate::runtime()
@@ -1448,10 +1454,12 @@ pub fn create_host_runtime(
     }
     let (cancellation, _) = watch::channel(0);
     let transport_nonce = NEXT_RUNTIME_ID.fetch_add(1, Ordering::Relaxed);
+    let transport_key = format!("whip-runtime-{id}-{transport_nonce}");
     let inner = Arc::new(RuntimeInner {
         id: id.clone(),
-        transport_key: format!("whip-runtime-{id}-{transport_nonce}"),
+        transport_key: transport_key.clone(),
         state: Mutex::new(RuntimeState::new(&config)),
+        agents: AgentSessionManager::new(id.clone(), transport_key),
         config,
         cancellation,
         settled: Notify::new(),
@@ -1480,6 +1488,45 @@ impl HostRuntime {
 
     pub fn host_state(&self) -> HostStateSnapshot {
         self.inner.state.lock().host_state.projection()
+    }
+
+    pub fn open_agent_session(
+        &self,
+        agent: AgentTranscriptKind,
+        terminal_id: String,
+        session_id: String,
+        cache_blob: Option<Vec<u8>>,
+    ) -> Result<AgentSessionOpenResult, AgentSessionError> {
+        match agent {
+            AgentTranscriptKind::Codex => {
+                let (key, state) =
+                    self.inner
+                        .agents
+                        .open_codex(terminal_id, session_id, cache_blob)?;
+                Ok(AgentSessionOpenResult { key, state })
+            }
+            AgentTranscriptKind::OpenCode => Err(AgentSessionError::UnsupportedAgent(
+                "OpenCode native session transport is not available yet".to_owned(),
+            )),
+        }
+    }
+
+    pub fn agent_transcript(&self, key: String) -> Result<AgentTranscriptState, AgentSessionError> {
+        self.inner.agents.state(&key).ok_or_else(|| {
+            AgentSessionError::SessionClosed(format!("agent transcript session {key} is closed"))
+        })
+    }
+
+    pub fn close_agent_session(&self, key: String) {
+        self.inner.agents.close_session(&key);
+    }
+
+    pub fn close_agent_terminal(&self, terminal_id: String) {
+        self.inner.agents.close_terminal(&terminal_id);
+    }
+
+    pub fn confirm_agent_transcript_cache(&self, confirmation_token: String) -> bool {
+        self.inner.agents.confirm_cache(&confirmation_token)
     }
 
     pub async fn refresh_state(&self) -> Result<HostStateSnapshot, HostRuntimeError> {
@@ -1549,6 +1596,7 @@ impl HostRuntime {
                 };
                 emit_status(&inner);
                 emit_host_state(&inner, Vec::new());
+                inner.agents.disconnected(true, "Host runtime disconnected");
                 close_herdr_event_subscription(inner.transport_key.clone());
                 close_all_herdr_terminal_bridges(inner.transport_key.clone());
                 disconnect_key(&inner.transport_key).await;
@@ -1848,6 +1896,7 @@ impl Drop for HostRuntime {
         runtimes().write().remove(&inner.transport_key);
         let epoch = inner.state.lock().disconnect();
         let _ = inner.cancellation.send(epoch);
+        inner.agents.disconnected(true, "Host runtime dropped");
         close_herdr_event_subscription(inner.transport_key.clone());
         close_all_herdr_terminal_bridges(inner.transport_key.clone());
         if let Ok(runtime) = crate::runtime() {
@@ -1908,6 +1957,10 @@ mod tests {
             transport_key: "reentrant-transport".to_owned(),
             config: config(),
             state: Mutex::new(RuntimeState::new(&config())),
+            agents: AgentSessionManager::new(
+                "reentrant-test".to_owned(),
+                "reentrant-transport".to_owned(),
+            ),
             cancellation,
             settled: Notify::new(),
         });

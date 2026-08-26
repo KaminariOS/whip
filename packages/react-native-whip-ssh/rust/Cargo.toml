@@ -10,6 +10,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 russh = { version = "0.62", default-features = false, features = ["flate2", "ring"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

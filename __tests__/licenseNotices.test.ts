@@ -45,10 +45,11 @@ describe('bundled direct dependency license notices', () => {
 });
 
 function directCargoDependencies(manifestPath: string) {
-  const dependencies = read(manifestPath)
-    .match(/\[dependencies\]\n([\s\S]*?)(?:\n\[|$)/)?.[1]
-    .matchAll(/^([\w-]+)\s*=/gm);
-  return [...(dependencies ?? [])].map(match => match[1]);
+  return [...read(manifestPath).matchAll(
+    /\[(?:dependencies|target\..+\.dependencies)\]\n([\s\S]*?)(?=\n\[|$)/g,
+  )].flatMap(section => (
+    [...section[1].matchAll(/^([\w-]+)\s*=/gm)].map(match => match[1])
+  ));
 }
 
 function read(relativePath: string) {

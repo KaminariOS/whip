@@ -208,6 +208,8 @@ export type AgentChatConnectionStatus = 'loading' | 'live' | 'stale' | 'unavaila
 export interface AgentChatState {
   sessionId: string;
   transcript: AgentTranscript;
+  /** Monotonic native transcript revision; absent for transitional adapters. */
+  revision?: number;
   status: AgentChatConnectionStatus;
   error?: string;
 }

@@ -88,32 +88,49 @@ Terminal sessions are identified by `terminal_id`, remain mounted while the user
 
 The renderer is responsible for ANSI color, alternate screen applications, cursor modes, bracketed paste, resize, selection, scrollback, clipboard, and mobile special keys. It does not interpret Herdr management state.
 
-### Native Codex chat projection
+### Rust-owned agent transcripts
 
 Codex panes can expose two presentations of the same live process. The existing
 Herdr terminal stream continues to feed the mounted xterm Terminal View. After
-the user explicitly opens Chat, Whip uses the pane's Herdr `agent_session` ID to
-resolve that exact Codex rollout over the existing authenticated SSH connection:
+the user explicitly opens Chat, the Rust `HostRuntime` uses the pane's Herdr
+`agent_session` ID to open an `AgentSessionManager` entry and resolve that exact
+Codex rollout over the existing authenticated SSH transport:
 
 ```text
 Herdr terminal stream              Codex rollout JSONL
         |                                  |
         v                                  v
-  Terminal View                      Codex adapter
+  Terminal View               Rust Codex source runtime
+                                            |
+                              framing / offsets / retry
                                             |
                                             v
-                                normalized AgentChatItem[]
+                                typed AgentTranscript
                                             |
                                             v
                                     Native Chat View
 ```
 
-The transcript is lazy-loaded on first Chat use, normalized and cached only in
-RAM, and followed while its associated terminal session remains open—even when
-Terminal View is in front. The remote rollout remains authoritative; reconnects
-rebuild normalized state from it. Whip does not persist complete transcripts,
-infer identity from cwd/titles/timestamps, parse ANSI into messages, or create a
-second Codex process. Chat composer submissions return to the same Herdr pane
+Rust owns rollout identity, byte-oriented JSONL framing, partial lines,
+received/committable/durable offsets, generation guards, source replacement and
+truncation detection, catch-up, retry/rebind, and incremental normalization.
+Each state projection has a monotonic revision and can be fetched in full, so a
+missed callback does not lose transcript correctness. The remote rollout remains
+authoritative. A versioned opaque Rust cache blob is stored by the existing
+platform SQLite layer; Rust validates and replays it before resuming, and only
+advances the durable checkpoint after the platform confirms the blob write.
+Transient source failure retains known content as stale rather than replacing it
+with an empty transcript.
+
+`AgentTranscript` is agent-neutral typed domain state: messages, turns, text,
+visible reasoning summaries, tools, plans, notices, file diffs, lifecycle status,
+and stable source-derived IDs. React Native mechanically projects those records
+into the existing render types and retains only UI concerns such as scrolling,
+expansion, composition, markdown, and navigation. It does not know rollout paths,
+offsets, JSONL records, or retry policy. OpenCode still uses its existing
+TypeScript export/event adapter for now, but the Rust model and session-kind
+boundary already include OpenCode so its persistence adapter can migrate without
+changing the renderer. Chat composer submissions return to the same Herdr pane
 and PTY used by the mounted terminal.
 
 ## React Native state ownership
@@ -122,6 +139,7 @@ and PTY used by the mounted terminal.
 - **Live host render cache:** the latest monotonic Rust `HostState` projection per host plus mobile-only workspace selection and connection/latency presentation.
 - **Runtime registry:** one thin non-serializable `HerdrClient` facade per live host. Its native `HostRuntime` owns transport identity, reconnect attempts, subscriptions, terminals, refresh coalescing, and authoritative domain state.
 - **Herdr host state:** normalized workspaces, tabs, panes, layouts, agents, server focus, synchronization, and freshness are authoritative in Rust; React retains only the latest projection for rendering.
+- **Codex transcript state:** one Rust `AgentSessionManager` per `HostRuntime` owns remote source identity, incremental parsing/checkpoints, reconnect rebind, and normalized revisioned chat state. React retains a typed render projection and opaque cache storage only.
 - **Terminal sessions:** ordered open terminals plus active `terminal_id` per live host; terminal WebViews stay mounted across tab and host changes.
 - **Virtual Herdr terminals:** in-memory cached ANSI snapshots and logical scroll state per terminal while its live transport is offline; xterm reports measured viewport geometry and remains responsible for rendering and gestures.
 - **Navigation:** native destinations and sheets; terminal navigation is separate from Herdr workspace/tab focus.
@@ -181,7 +199,7 @@ Implemented:
 - persistent Hosts, Herd, Terminal, and More navigation adapted to Android and iOS conventions;
 - a live-host rail plus nested Herdr workspace/tab/pane navigation;
 - multiple mounted, switchable terminal sessions per host with Rust-owned bounded reconnect and same-host restoration using the last native geometry;
-- lazy native Codex Chat projection from exact Herdr session identity and remote rollout JSONL, with RAM-only caching and live following;
+- Rust-owned Codex Chat sessions from exact Herdr session identity and remote rollout JSONL, with incremental parsing, durable opaque checkpoints, typed normalized projections, source-generation guards, and reconnect-safe live following;
 - Rust-owned snapshot/event reconciliation with in-flight event replay,
   generation-guarded stale-response rejection, monotonic projections, and
   coalesced repair syncs;

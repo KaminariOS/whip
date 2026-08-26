@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type LsResult, type OpenSSHExecChannel, PtyType } from 'react-native-whip-ssh';
+import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type LsResult, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, PtyType } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
 import type { ResponseResult } from '../generated/herdrApi';
 
@@ -10,8 +10,7 @@ import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import { errorCode } from '../lib/connectionErrors';
 import { type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
-import { codexRolloutFindCommand, codexRolloutMetadataCommand, codexRolloutStreamCommand, isValidCodexSessionId, parseCodexIntegrationStatus, parseCodexRolloutMetadata, parseCodexRolloutResolution, type CodexIntegrationStatus, type CodexRolloutMetadata } from '../lib/codexSession';
-import type { CodexTranscriptStream } from './CodexTranscriptService';
+import { parseCodexIntegrationStatus, type CodexIntegrationStatus } from '../lib/codexSession';
 import { parseRemoteGitDiff, parseRemoteGitRepository, parseRemoteGitStatus, remoteGitDiffCommand, remoteGitRepositoryCommand, remoteGitStatusCommand, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '../lib/remoteGit';
 import { parseRemoteHtmlPreviewStart, remoteHtmlPreviewPageUrl, remoteHtmlPreviewStartCommand, remoteHtmlPreviewStopCommand, type RemoteHtmlServerProcess } from '../lib/remoteHtmlPreview';
 import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
@@ -520,31 +519,29 @@ export class HerdrClient {
     if (upload.transferStarted) upload.client.sftpCancelUpload();
   }
 
-  /** Resolve only the rollout whose filename contains Herdr's exact native Codex ID. */
-  async resolveCodexRollout(sessionId: string, codexHome?: string): Promise<string | null> {
-    if (!isValidCodexSessionId(sessionId)) throw new Error('Invalid Codex session ID');
-    const home = codexHome || `${await this.remoteHomeDirectory()}/.codex`;
-    const output = await this.requireClient().execute(codexRolloutFindCommand(home, sessionId));
-    return parseCodexRolloutResolution(output, sessionId);
+  openCodexAgentTranscript(
+    terminalId: string,
+    sessionId: string,
+    cacheBlob: ArrayBuffer | undefined,
+    handler: (event: NativeAgentTranscriptUpdate) => void,
+  ): { key: string; state: NativeAgentTranscriptState } {
+    return this.requireRuntime().openAgentSession('codex', terminalId, sessionId, cacheBlob, handler);
   }
 
-  async openCodexRolloutStream(
-    path: string,
-    startOffset: number,
-    onChunk: (chunk: ArrayBuffer | ArrayBufferView) => void,
-    onClosed: (reason?: string) => void,
-  ): Promise<CodexTranscriptStream> {
-    let channel: OpenSSHExecChannel | null = null;
-    channel = await this.requireClient().openExecChannel(codexRolloutStreamCommand(path, startOffset), event => {
-      if (event.type === 'data') onChunk(event.bytes);
-      else onClosed(event.reason);
-    });
-    return { close: () => channel!.close() };
+  agentTranscript(key: string): NativeAgentTranscriptState {
+    return this.requireRuntime().agentTranscript(key);
   }
 
-  async loadCodexRolloutMetadata(path: string): Promise<CodexRolloutMetadata> {
-    const output = await this.requireClient().execute(codexRolloutMetadataCommand(path));
-    return parseCodexRolloutMetadata(output);
+  closeAgentTranscript(key: string): void {
+    this.runtime?.closeAgentSession(key);
+  }
+
+  closeAgentTranscriptTerminal(terminalId: string): void {
+    this.runtime?.closeAgentTerminal(terminalId);
+  }
+
+  confirmAgentTranscriptCache(confirmationToken: string): boolean {
+    return this.requireRuntime().confirmAgentTranscriptCache(confirmationToken);
   }
 
   async loadOpenCodeTranscript(sessionId: string): Promise<unknown> {
