@@ -3,7 +3,6 @@ import { ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-nativ
 import {
   ActivityIndicator,
   AppState,
-  BackHandler,
   Linking,
   Modal,
   PanResponder,
@@ -875,15 +874,6 @@ export function SessionScreen({
       return next;
     });
   }, [activeTerminalSession?.terminalId]);
-
-  useEffect(() => {
-    if (!visible || !chatVisible) return undefined;
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      closeActiveChat();
-      return true;
-    });
-    return () => subscription.remove();
-  }, [chatVisible, closeActiveChat, visible]);
 
   const promptCodexIntegrationInstall = (
     paneId: string,
