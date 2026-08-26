@@ -1,5 +1,7 @@
 /* global TextDecoder, TextEncoder */
 
+const LEGACY_TERMINAL_ATTACH_LAUNCH_MODE = 1;
+
 function unavailable(error) {
   const value = String(error?.message || error || '').toLowerCase();
   return value.includes('channel not open')
@@ -126,7 +128,7 @@ function createMockWhipSshModule() {
           await runtime.controlClient.startHerdrBridge(
             await socketPath(), protocol || 20, terminalId, bridge.takeover,
             bridge.columns, bridge.rows, bridge.cellWidthPx, bridge.cellHeightPx,
-            bridge.handler, (protocol || 20) >= 20 ? 2 : 1,
+            bridge.handler, LEGACY_TERMINAL_ATTACH_LAUNCH_MODE,
           );
         }
         lifecycleHandler?.({ type: 'reconnected', generation, restoredTerminals: bridges.size });
@@ -211,8 +213,8 @@ function createMockWhipSshModule() {
           return call();
         }
       },
-      async startHerdrBridge(terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, launchMode, handler) {
-        const bridge = { takeover, columns, rows, cellWidthPx, cellHeightPx, launchMode, handler, state: 'opening' };
+      async startHerdrBridge(terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, handler) {
+        const bridge = { takeover, columns, rows, cellWidthPx, cellHeightPx, handler, state: 'opening' };
         bridges.set(terminalId, bridge);
         if (!protocol) {
           const result = await runtime.controlClient.requestHerdrApi(
@@ -222,7 +224,7 @@ function createMockWhipSshModule() {
         }
         await runtime.controlClient.startHerdrBridge(
           await socketPath(), protocol || 20, terminalId, takeover, columns, rows,
-          cellWidthPx, cellHeightPx, handler, (protocol || 20) >= 20 ? 2 : 1,
+          cellWidthPx, cellHeightPx, handler, LEGACY_TERMINAL_ATTACH_LAUNCH_MODE,
         );
         bridge.state = 'attached';
       },

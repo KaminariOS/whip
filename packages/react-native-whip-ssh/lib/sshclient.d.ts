@@ -136,7 +136,7 @@ export interface HostRuntimeConnection {
   closeAgentTerminal(terminalId: string): void;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
   requestHerdrApi(request: { method: string; params: object }): Promise<Record<string, unknown>>;
-  startHerdrBridge(terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, launchMode: number, handler: (event: HerdrBridgeEvent) => void): Promise<void>;
+  startHerdrBridge(terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void): Promise<void>;
   herdrBridgeInput(terminalId: string, text: string): Promise<void>;
   herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number): Promise<void>;
   herdrBridgeScroll(terminalId: string, up: boolean, lines: number, column?: number, row?: number, modifiers?: number): Promise<void>;

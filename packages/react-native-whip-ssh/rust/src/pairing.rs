@@ -20,6 +20,8 @@ const ADDRESS_HOSTNAME: u8 = 3;
 const MAX_HOSTNAME_BYTES: usize = 253;
 const MAX_BASE45_BYTES: usize = 461;
 const MAX_MESSAGE_BYTES: usize = 16 * 1024;
+const ED25519_SEED_BYTES: usize = 32;
+const SHA256_BYTES: usize = 32;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -58,8 +60,8 @@ struct PairingPayload {
     ssh_host: String,
     ssh_port: u16,
     ssh_user: String,
-    temporary_private_key_seed: [u8; 32],
-    ssh_host_key_sha256: [u8; 32],
+    temporary_private_key_seed: [u8; ED25519_SEED_BYTES],
+    ssh_host_key_sha256: [u8; SHA256_BYTES],
 }
 
 #[derive(Serialize)]
@@ -79,7 +81,7 @@ struct EnrollmentResponse {
 
 #[derive(Clone)]
 struct PinnedSshHostKey {
-    expected_sha256: [u8; 32],
+    expected_sha256: [u8; SHA256_BYTES],
     accepted: Arc<Mutex<Option<AcceptedHostKey>>>,
 }
 
@@ -97,7 +99,7 @@ impl client::Handler for PinnedSshHostKey {
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
         let encoded = server_public_key.to_bytes()?;
-        let actual: [u8; 32] = Sha256::digest(&encoded).into();
+        let actual: [u8; SHA256_BYTES] = Sha256::digest(&encoded).into();
         if actual != self.expected_sha256 {
             return Err(PairingError::HostKeyMismatch);
         }
@@ -217,7 +219,7 @@ pub async fn pair_host(
     }))
 }
 
-fn temporary_private_key(seed: &[u8; 32]) -> PrivateKey {
+fn temporary_private_key(seed: &[u8; ED25519_SEED_BYTES]) -> PrivateKey {
     Ed25519Keypair::from_seed(seed).into()
 }
 
@@ -282,10 +284,10 @@ fn decode_pairing_code(code: &str) -> Result<PairingPayload, PairingError> {
     let user_length = usize::from(take_bytes(&decoded, &mut cursor, 1)?[0]);
     let ssh_user = String::from_utf8(take_bytes(&decoded, &mut cursor, user_length)?.to_vec())
         .map_err(|_| PairingError::BadEncoding)?;
-    let temporary_private_key_seed = take_bytes(&decoded, &mut cursor, 32)?
+    let temporary_private_key_seed = take_bytes(&decoded, &mut cursor, ED25519_SEED_BYTES)?
         .try_into()
         .map_err(|_| PairingError::BadEncoding)?;
-    let ssh_host_key_sha256 = take_bytes(&decoded, &mut cursor, 32)?
+    let ssh_host_key_sha256 = take_bytes(&decoded, &mut cursor, SHA256_BYTES)?
         .try_into()
         .map_err(|_| PairingError::BadEncoding)?;
     if cursor != decoded.len()

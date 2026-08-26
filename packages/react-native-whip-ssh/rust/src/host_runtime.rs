@@ -30,7 +30,7 @@ use crate::remote_ops::{
     git_diff_command, git_repository_command, git_status_command, join_remote_path,
     normalize_remote_path, parse_git_diff, parse_git_repository, parse_git_status, remote_filename,
 };
-use crate::ssh::{SshConnectionConfig, SshCredential, SshFailure, SshSession};
+use crate::ssh::{SshConnectionConfig, SshCredential, SshErrorCode, SshFailure, SshSession};
 
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
 const INITIAL_RECONNECT_DELAY_MS: u64 = 750;
@@ -210,9 +210,11 @@ pub enum HostRuntimeError {
 
 impl From<SshFailure> for HostRuntimeError {
     fn from(error: SshFailure) -> Self {
-        match error.code.as_str() {
-            "AUTHENTICATION_FAILED" => Self::AuthenticationFailure(error.message),
-            "HOST_KEY_UNKNOWN" | "HOST_KEY_CHANGED" => Self::HostKeyFailure(error.message),
+        match error.code {
+            SshErrorCode::AuthenticationFailed => Self::AuthenticationFailure(error.message),
+            SshErrorCode::HostKeyUnknown | SshErrorCode::HostKeyChanged => {
+                Self::HostKeyFailure(error.message)
+            }
             _ => Self::SshTransportFailure(error.message),
         }
     }
@@ -1390,11 +1392,7 @@ async fn open_terminal_inner(
         terminal.rows,
         terminal.cell_width_px,
         terminal.cell_height_px,
-        if protocol >= 20 {
-            HerdrTerminalAttachLaunchMode::TerminalAttach
-        } else {
-            HerdrTerminalAttachLaunchMode::LegacyTerminalAttach
-        },
+        HerdrTerminalAttachLaunchMode::for_protocol(protocol),
     )
     .await;
     let mut state = inner.state.lock();
@@ -2993,6 +2991,36 @@ mod tests {
             socket_path: None,
             cached_socket_path: None,
         }
+    }
+
+    #[test]
+    fn ssh_failures_are_classified_by_typed_code() {
+        let authentication = HostRuntimeError::from(SshFailure {
+            code: SshErrorCode::AuthenticationFailed,
+            message: "bad credentials".to_owned(),
+        });
+        assert!(matches!(
+            authentication,
+            HostRuntimeError::AuthenticationFailure(message) if message == "bad credentials"
+        ));
+
+        let host_key = HostRuntimeError::from(SshFailure {
+            code: SshErrorCode::HostKeyChanged,
+            message: "changed key".to_owned(),
+        });
+        assert!(matches!(
+            host_key,
+            HostRuntimeError::HostKeyFailure(message) if message == "changed key"
+        ));
+
+        let transport = HostRuntimeError::from(SshFailure {
+            code: SshErrorCode::ConnectionTimeout,
+            message: "timed out".to_owned(),
+        });
+        assert!(matches!(
+            transport,
+            HostRuntimeError::SshTransportFailure(message) if message == "timed out"
+        ));
     }
 
     #[test]

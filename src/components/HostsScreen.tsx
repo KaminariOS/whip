@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
 import { orderByConnectionAndAgentStatusPriority } from '@/src/herdQueue';
-import { hostDisplayName } from '@/src/lib/hostProfiles';
+import { DEFAULT_SSH_PORT, hostDisplayName } from '@/src/lib/hostProfiles';
 import type { HostRuntimeSummary } from '@/src/lib/hostRuntimeSummary';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import {
@@ -147,7 +147,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                             <View className="min-w-0 flex-1">
                               <View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{displayName}</Text><StatusBadge status={state} label={label} /></View>
                               <View className="mt-1 flex-row items-center gap-2">
-                                <Text className="min-w-0 flex-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== '22' ? `:${host.port}` : ''}</Text>
+                                <Text className="min-w-0 flex-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== DEFAULT_SSH_PORT ? `:${host.port}` : ''}</Text>
                                 <Text accessibilityLabel={latencyMs == null ? t('hosts.latencyUnavailable') : t('hosts.latency', { value: latencyMs })} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
                               </View>
                               <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>

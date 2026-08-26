@@ -1260,7 +1260,6 @@ export class NativeHostRuntime {
     rows: number,
     cellWidthPx: number,
     cellHeightPx: number,
-    launchMode: number,
     handler: BridgeHandler,
   ): Promise<void> {
     setBridgeHandler(this.runtimeId, terminalId, handler);

@@ -118,6 +118,11 @@ export interface TerminalScreenHandle {
 type TerminalKeyDefinition = readonly [label: string, input: string, face: 'text' | 'symbol'];
 
 const ENTER_INPUT = '\r';
+const TERMINAL_FIT_DEFER_MS = 40;
+const TERMINAL_FOCUS_DEFER_MS = 40;
+const COMPOSER_FOCUS_DEFER_MS = 40;
+const IOS_COMPOSER_FOCUS_DEFER_MS = 100;
+const COMPOSER_COLLAPSE_FOCUS_DEFER_MS = 80;
 
 const TERMINAL_KEYS: Partial<Record<TerminalControlId, TerminalKeyDefinition>> = {
   esc: ['ESC', '\u001b', 'text'],
@@ -560,7 +565,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     }
     const timer = setTimeout(() => {
       renderer.current?.fit();
-    }, 40);
+    }, TERMINAL_FIT_DEFER_MS);
     return () => clearTimeout(timer);
   }, [composeOpen, getComposerDraft, ready, terminalId, visible]);
 
@@ -789,7 +794,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     if (!ready || Platform.OS === 'android') return;
     const timer = setTimeout(() => {
       renderer.current?.fit();
-    }, 40);
+    }, TERMINAL_FIT_DEFER_MS);
     return () => clearTimeout(timer);
   }, [composeOpen, keyboardInset, ready]);
 
@@ -797,7 +802,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     if (!composeOpen || composeExpanded || !keyboardEnabled) return;
     const timer = setTimeout(() => {
       composeInputRef.current?.focus();
-    }, Platform.OS === 'ios' ? 100 : 40);
+    }, Platform.OS === 'ios' ? IOS_COMPOSER_FOCUS_DEFER_MS : COMPOSER_FOCUS_DEFER_MS);
     return () => clearTimeout(timer);
   }, [composeExpanded, composeOpen, keyboardEnabled]);
 
@@ -823,7 +828,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
 
   const closeSearch = () => {
     setSearchOpen(false);
-    if (keyboardEnabled) setTimeout(() => renderer.current?.focus(), 40);
+    if (keyboardEnabled) {
+      setTimeout(() => renderer.current?.focus(), TERMINAL_FOCUS_DEFER_MS);
+    }
   };
 
   const closeComposerKeyboard = async () => {
@@ -884,7 +891,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
 
   const collapseCompose = () => {
     setComposeExpanded(false);
-    if (keyboardEnabled) setTimeout(() => composeInputRef.current?.focus(), 80);
+    if (keyboardEnabled) {
+      setTimeout(() => composeInputRef.current?.focus(), COMPOSER_COLLAPSE_FOCUS_DEFER_MS);
+    }
   };
 
   const enqueueComposeMessage = (
@@ -1046,13 +1055,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
             }
             setKeyboardEnabled(enabled);
             if (enabled) {
-              setTimeout(() => {
-                if (composeOpen) {
-                  composeInputRef.current?.focus();
-                } else if (status === 'connected') {
-                  renderer.current?.focus();
-                }
-              }, 40);
+              if (composeOpen) {
+                setTimeout(() => composeInputRef.current?.focus(), COMPOSER_FOCUS_DEFER_MS);
+              } else if (status === 'connected') {
+                setTimeout(() => renderer.current?.focus(), TERMINAL_FOCUS_DEFER_MS);
+              }
             } else {
               Keyboard.dismiss();
               renderer.current?.blur();
@@ -1524,7 +1531,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           animationType="slide"
           onRequestClose={collapseCompose}
           onShow={() => {
-            setTimeout(() => composeInputRef.current?.focus(), 40);
+            setTimeout(() => composeInputRef.current?.focus(), COMPOSER_FOCUS_DEFER_MS);
           }}
           statusBarTranslucent
           visible>

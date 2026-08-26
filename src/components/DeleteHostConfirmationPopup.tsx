@@ -1,7 +1,7 @@
 import { Server, Trash2 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 
-import { hostDisplayName } from '../lib/hostProfiles';
+import { DEFAULT_SSH_PORT, hostDisplayName } from '../lib/hostProfiles';
 import type { HostProfile } from '../types';
 import { ConfirmationPopup } from './ConfirmationPopup';
 
@@ -17,7 +17,7 @@ function sshDestination(host: HostProfile | null): string {
   const hostname = host.host.includes(':') && !host.host.startsWith('[')
     ? `[${host.host}]`
     : host.host;
-  return `${host.username}@${hostname}${host.port === '22' ? '' : `:${host.port}`}`;
+  return `${host.username}@${hostname}${host.port === DEFAULT_SSH_PORT ? '' : `:${host.port}`}`;
 }
 
 export function DeleteHostConfirmationPopup({ busy, host, onCancel, onDelete }: Props) {

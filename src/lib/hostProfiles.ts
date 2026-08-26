@@ -5,6 +5,8 @@ export const HOSTS_STORAGE_KEY = 'herdr.hosts.v2';
 export const LEGACY_PROFILE_KEY = 'herdr.connection.v1';
 export const LEGACY_CREDENTIAL_SERVICE = 'io.github.kaminarios.whip.ssh';
 export const HOST_CREDENTIAL_SERVICE_PREFIX = 'io.github.kaminarios.whip.ssh.host.';
+export const DEFAULT_SSH_PORT = '22';
+export const DEFAULT_HERDR_COMMAND = 'herdr';
 
 export const emptyConnectionProfile = (): ConnectionProfile => {
   const now = new Date().toISOString();
@@ -12,14 +14,14 @@ export const emptyConnectionProfile = (): ConnectionProfile => {
     id: createHostId(),
     name: '',
     host: '',
-    port: '22',
+    port: DEFAULT_SSH_PORT,
     username: '',
     jumpHostId: undefined,
     forwardAgent: false,
     authMode: 'password',
     secret: '',
     passphrase: '',
-    herdrCommand: 'herdr',
+    herdrCommand: DEFAULT_HERDR_COMMAND,
     herdrSocketPath: '',
     sessionName: '',
     createdAt: now,
@@ -55,12 +57,12 @@ export function toHostProfile(profile: ConnectionProfile, previous?: HostProfile
     id: profile.id,
     name: profile.name.trim(),
     host: profile.host.trim(),
-    port: profile.port.trim() || '22',
+    port: profile.port.trim() || DEFAULT_SSH_PORT,
     username: profile.username.trim(),
     jumpHostId: profile.jumpHostId?.trim() || undefined,
     forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
     authMode: profile.authMode,
-    herdrCommand: profile.herdrCommand.trim() || 'herdr',
+    herdrCommand: profile.herdrCommand.trim() || DEFAULT_HERDR_COMMAND,
     herdrSocketPath: profile.herdrSocketPath?.trim() || '',
     sessionName: profile.sessionName.trim(),
     createdAt: previous?.createdAt || profile.createdAt || now,
@@ -164,14 +166,14 @@ export function migrateLegacyProfile(
       id: 'host-legacy-default',
       name: parsed.name?.trim() || legacyHostName(parsed.host),
       host: parsed.host,
-      port: parsed.port || '22',
+      port: parsed.port || DEFAULT_SSH_PORT,
       username: parsed.username,
       jumpHostId: undefined,
       forwardAgent: false,
       authMode: parsed.authMode === 'key' ? 'key' : 'password',
       secret: '',
       passphrase: '',
-      herdrCommand: parsed.herdrCommand || 'herdr',
+      herdrCommand: parsed.herdrCommand || DEFAULT_HERDR_COMMAND,
       herdrSocketPath: parsed.herdrSocketPath || '',
       sessionName: parsed.sessionName || '',
       createdAt: now,

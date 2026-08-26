@@ -24,61 +24,79 @@ const EVENT_READ_CHUNK_BYTES: usize = 32 * 1024;
 const SUBSCRIPTION_ACK_TIMEOUT: Duration = Duration::from_secs(15);
 const SUBSCRIPTION_REQUEST_ID: &str = "android_events";
 
-const LIFECYCLE_SUBSCRIPTIONS: &[&str] = &[
-    "workspace.created",
-    "workspace.updated",
-    "workspace.metadata_updated",
-    "workspace.renamed",
-    "workspace.moved",
-    "workspace.reordered",
-    "workspace.closed",
-    "workspace.focused",
-    "worktree.created",
-    "worktree.opened",
-    "worktree.removed",
-    "tab.created",
-    "tab.closed",
-    "tab.focused",
-    "tab.renamed",
-    "tab.moved",
-    "pane.created",
-    "pane.closed",
-    "pane.updated",
-    "pane.focused",
-    "pane.moved",
-    "pane.exited",
-    "pane.agent_detected",
-    "layout.updated",
-];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SubscriptionKind {
+    None,
+    Lifecycle,
+    PerPane,
+}
 
-const EVENT_NAMES: &[&str] = &[
-    "workspace.created",
-    "workspace.updated",
-    "workspace.metadata_updated",
-    "workspace.closed",
-    "workspace.renamed",
-    "workspace.moved",
-    "workspace.reordered",
-    "workspace.focused",
-    "worktree.created",
-    "worktree.opened",
-    "worktree.removed",
-    "tab.created",
-    "tab.closed",
-    "tab.renamed",
-    "tab.moved",
-    "tab.focused",
-    "pane.created",
-    "pane.updated",
-    "pane.closed",
-    "pane.focused",
-    "pane.exited",
-    "pane.moved",
-    "pane.output_changed",
-    "pane.agent_detected",
-    "pane.agent_status_changed",
-    "layout.updated",
-];
+macro_rules! herdr_event_kinds {
+    ($($variant:ident => ($name:literal, $min_protocol:literal, $subscription:ident)),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum HerdrEventKind {
+            $($variant),+
+        }
+
+        impl HerdrEventKind {
+            const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name),+
+                }
+            }
+
+            const fn min_protocol(self) -> u32 {
+                match self {
+                    $(Self::$variant => $min_protocol),+
+                }
+            }
+
+            const fn subscription(self) -> SubscriptionKind {
+                match self {
+                    $(Self::$variant => SubscriptionKind::$subscription),+
+                }
+            }
+
+            fn parse(value: &str) -> Option<Self> {
+                match value {
+                    $($name => Some(Self::$variant)),+,
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+herdr_event_kinds! {
+    WorkspaceCreated => ("workspace.created", 17, Lifecycle),
+    WorkspaceUpdated => ("workspace.updated", 17, Lifecycle),
+    WorkspaceMetadataUpdated => ("workspace.metadata_updated", 17, Lifecycle),
+    WorkspaceClosed => ("workspace.closed", 17, Lifecycle),
+    WorkspaceRenamed => ("workspace.renamed", 17, Lifecycle),
+    WorkspaceMoved => ("workspace.moved", 17, Lifecycle),
+    WorkspaceReordered => ("workspace.reordered", 18, Lifecycle),
+    WorkspaceFocused => ("workspace.focused", 17, Lifecycle),
+    WorktreeCreated => ("worktree.created", 17, Lifecycle),
+    WorktreeOpened => ("worktree.opened", 17, Lifecycle),
+    WorktreeRemoved => ("worktree.removed", 17, Lifecycle),
+    TabCreated => ("tab.created", 17, Lifecycle),
+    TabClosed => ("tab.closed", 17, Lifecycle),
+    TabFocused => ("tab.focused", 17, Lifecycle),
+    TabRenamed => ("tab.renamed", 17, Lifecycle),
+    TabMoved => ("tab.moved", 17, Lifecycle),
+    PaneCreated => ("pane.created", 17, Lifecycle),
+    PaneUpdated => ("pane.updated", 17, Lifecycle),
+    PaneClosed => ("pane.closed", 17, Lifecycle),
+    PaneFocused => ("pane.focused", 17, Lifecycle),
+    PaneExited => ("pane.exited", 17, Lifecycle),
+    PaneMoved => ("pane.moved", 17, Lifecycle),
+    PaneOutputChanged => ("pane.output_changed", 17, None),
+    PaneAgentDetected => ("pane.agent_detected", 17, Lifecycle),
+    PaneAgentStatusChanged => ("pane.agent_status_changed", 17, PerPane),
+    LayoutUpdated => ("layout.updated", 17, Lifecycle),
+}
 
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 // UniFFI data-carrying variants keep the JS boundary exhaustive. Boxing the
@@ -339,22 +357,21 @@ fn parse_stream_line(bytes: &[u8]) -> Option<StreamItem> {
     Some(StreamItem::Event(Box::new(decode_event(raw_event, data))))
 }
 
-fn normalize_event_name(raw_event: &str) -> Option<String> {
-    let event = if raw_event.contains('.') {
-        raw_event.to_owned()
-    } else {
-        raw_event.replacen('_', ".", 1)
-    };
-    EVENT_NAMES.contains(&event.as_str()).then_some(event)
+fn normalize_event_kind(raw_event: &str) -> Option<HerdrEventKind> {
+    HerdrEventKind::parse(raw_event).or_else(|| {
+        (!raw_event.contains('.'))
+            .then(|| raw_event.replacen('_', ".", 1))
+            .and_then(|event| HerdrEventKind::parse(&event))
+    })
 }
 
 fn decode_event(raw_event: &str, value: &Value) -> HerdrEvent {
-    let Some(kind) = normalize_event_name(raw_event) else {
+    let Some(kind) = normalize_event_kind(raw_event) else {
         return HerdrEvent::ProtocolUnknown {
             raw_event: raw_event.to_owned(),
         };
     };
-    match decode_known_event(&kind, value) {
+    match decode_known_event(kind, value) {
         Ok(event) => event,
         Err(reason) => HerdrEvent::ProtocolInvalid {
             raw_event: raw_event.to_owned(),
@@ -363,11 +380,11 @@ fn decode_event(raw_event: &str, value: &Value) -> HerdrEvent {
     }
 }
 
-fn validate_discriminator(data: &Map<String, Value>, kind: &str) -> Result<(), String> {
+fn validate_discriminator(data: &Map<String, Value>, kind: HerdrEventKind) -> Result<(), String> {
     let Some(value) = data.get("type") else {
         return Ok(());
     };
-    let expected = kind.replacen('.', "_", 1);
+    let expected = kind.as_str().replacen('.', "_", 1);
     if value.as_str() == Some(expected.as_str()) {
         Ok(())
     } else {
@@ -402,28 +419,28 @@ fn decoded_array<T>(
         .collect()
 }
 
-fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
+fn decode_known_event(kind: HerdrEventKind, value: &Value) -> Result<HerdrEvent, String> {
     let data = object(value, "event data")?;
     validate_discriminator(data, kind)?;
     Ok(match kind {
-        "workspace.created" => HerdrEvent::WorkspaceCreated {
+        HerdrEventKind::WorkspaceCreated => HerdrEvent::WorkspaceCreated {
             workspace: workspace(required(data, "workspace", "workspace")?, "workspace")?,
         },
-        "workspace.updated" => HerdrEvent::WorkspaceUpdated {
+        HerdrEventKind::WorkspaceUpdated => HerdrEvent::WorkspaceUpdated {
             workspace: workspace(required(data, "workspace", "workspace")?, "workspace")?,
         },
-        "workspace.metadata_updated" => HerdrEvent::WorkspaceMetadataUpdated {
+        HerdrEventKind::WorkspaceMetadataUpdated => HerdrEvent::WorkspaceMetadataUpdated {
             workspace: workspace(required(data, "workspace", "workspace")?, "workspace")?,
         },
-        "workspace.closed" => HerdrEvent::WorkspaceClosed {
+        HerdrEventKind::WorkspaceClosed => HerdrEvent::WorkspaceClosed {
             workspace_id: required_id(data, "workspace_id")?,
             workspace: optional_decoded(data, "workspace", "workspace", workspace)?,
         },
-        "workspace.renamed" => HerdrEvent::WorkspaceRenamed {
+        HerdrEventKind::WorkspaceRenamed => HerdrEvent::WorkspaceRenamed {
             workspace_id: required_id(data, "workspace_id")?,
             label: required_string(data, "label", "label")?,
         },
-        "workspace.moved" => HerdrEvent::WorkspaceMoved {
+        HerdrEventKind::WorkspaceMoved => HerdrEvent::WorkspaceMoved {
             workspace_id: required_id(data, "workspace_id")?,
             insert_index: non_negative_number(
                 required(data, "insert_index", "insert_index")?,
@@ -435,7 +452,7 @@ fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
                 workspace,
             )?,
         },
-        "workspace.reordered" => HerdrEvent::WorkspaceReordered {
+        HerdrEventKind::WorkspaceReordered => HerdrEvent::WorkspaceReordered {
             workspace_ids: string_array(
                 required(data, "workspace_ids", "workspace_ids")?,
                 "workspace_ids",
@@ -461,14 +478,14 @@ fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
                 "before_workspace_id",
             )?,
         },
-        "workspace.focused" => HerdrEvent::WorkspaceFocused {
+        HerdrEventKind::WorkspaceFocused => HerdrEvent::WorkspaceFocused {
             workspace_id: required_id(data, "workspace_id")?,
         },
-        "worktree.created" => HerdrEvent::WorktreeCreated {
+        HerdrEventKind::WorktreeCreated => HerdrEvent::WorktreeCreated {
             workspace: workspace(required(data, "workspace", "workspace")?, "workspace")?,
             worktree: worktree(required(data, "worktree", "worktree")?, "worktree")?,
         },
-        "worktree.opened" => HerdrEvent::WorktreeOpened {
+        HerdrEventKind::WorktreeOpened => HerdrEvent::WorktreeOpened {
             workspace: workspace(required(data, "workspace", "workspace")?, "workspace")?,
             worktree: worktree(required(data, "worktree", "worktree")?, "worktree")?,
             already_open: bool_value(
@@ -476,29 +493,29 @@ fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
                 "already_open",
             )?,
         },
-        "worktree.removed" => HerdrEvent::WorktreeRemoved {
+        HerdrEventKind::WorktreeRemoved => HerdrEvent::WorktreeRemoved {
             workspace_id: required_id(data, "workspace_id")?,
             workspace: optional_decoded(data, "workspace", "workspace", workspace)?,
             worktree: worktree(required(data, "worktree", "worktree")?, "worktree")?,
             forced: bool_value(required(data, "forced", "forced")?, "forced")?,
         },
-        "tab.created" => HerdrEvent::TabCreated {
+        HerdrEventKind::TabCreated => HerdrEvent::TabCreated {
             tab: tab(required(data, "tab", "tab")?, "tab")?,
         },
-        "tab.closed" => HerdrEvent::TabClosed {
+        HerdrEventKind::TabClosed => HerdrEvent::TabClosed {
             workspace_id: required_id(data, "workspace_id")?,
             tab_id: required_id(data, "tab_id")?,
         },
-        "tab.focused" => HerdrEvent::TabFocused {
+        HerdrEventKind::TabFocused => HerdrEvent::TabFocused {
             workspace_id: required_id(data, "workspace_id")?,
             tab_id: required_id(data, "tab_id")?,
         },
-        "tab.renamed" => HerdrEvent::TabRenamed {
+        HerdrEventKind::TabRenamed => HerdrEvent::TabRenamed {
             workspace_id: required_id(data, "workspace_id")?,
             tab_id: required_id(data, "tab_id")?,
             label: required_string(data, "label", "label")?,
         },
-        "tab.moved" => HerdrEvent::TabMoved {
+        HerdrEventKind::TabMoved => HerdrEvent::TabMoved {
             workspace_id: required_id(data, "workspace_id")?,
             tab_id: required_id(data, "tab_id")?,
             insert_index: non_negative_number(
@@ -507,25 +524,25 @@ fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
             )?,
             tabs: decoded_array(required(data, "tabs", "tabs")?, "tabs", tab)?,
         },
-        "pane.created" => HerdrEvent::PaneCreated {
+        HerdrEventKind::PaneCreated => HerdrEvent::PaneCreated {
             pane: pane(required(data, "pane", "pane")?, "pane")?,
         },
-        "pane.updated" => HerdrEvent::PaneUpdated {
+        HerdrEventKind::PaneUpdated => HerdrEvent::PaneUpdated {
             pane: pane(required(data, "pane", "pane")?, "pane")?,
         },
-        "pane.closed" => HerdrEvent::PaneClosed {
+        HerdrEventKind::PaneClosed => HerdrEvent::PaneClosed {
             workspace_id: required_id(data, "workspace_id")?,
             pane_id: required_id(data, "pane_id")?,
         },
-        "pane.focused" => HerdrEvent::PaneFocused {
+        HerdrEventKind::PaneFocused => HerdrEvent::PaneFocused {
             workspace_id: required_id(data, "workspace_id")?,
             pane_id: required_id(data, "pane_id")?,
         },
-        "pane.exited" => HerdrEvent::PaneExited {
+        HerdrEventKind::PaneExited => HerdrEvent::PaneExited {
             workspace_id: required_id(data, "workspace_id")?,
             pane_id: required_id(data, "pane_id")?,
         },
-        "pane.moved" => HerdrEvent::PaneMoved {
+        HerdrEventKind::PaneMoved => HerdrEvent::PaneMoved {
             previous_pane_id: required_id(data, "previous_pane_id")?,
             previous_workspace_id: required_id(data, "previous_workspace_id")?,
             previous_tab_id: required_id(data, "previous_tab_id")?,
@@ -544,12 +561,12 @@ fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
             )?,
             closed_tab_id: optional_string(data, "closed_tab_id", "closed_tab_id")?,
         },
-        "pane.output_changed" => HerdrEvent::PaneOutputChanged {
+        HerdrEventKind::PaneOutputChanged => HerdrEvent::PaneOutputChanged {
             workspace_id: required_id(data, "workspace_id")?,
             pane_id: required_id(data, "pane_id")?,
             revision: non_negative_number(required(data, "revision", "revision")?, "revision")?,
         },
-        "pane.agent_detected" => HerdrEvent::PaneAgentDetected {
+        HerdrEventKind::PaneAgentDetected => HerdrEvent::PaneAgentDetected {
             workspace_id: required_id(data, "workspace_id")?,
             pane_id: required_id(data, "pane_id")?,
             agent: optional_string(data, "agent", "agent")?,
@@ -562,7 +579,7 @@ fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
                 .map(|value| agent_status(value, "final_status"))
                 .transpose()?,
         },
-        "pane.agent_status_changed" => HerdrEvent::PaneAgentStatusChanged {
+        HerdrEventKind::PaneAgentStatusChanged => HerdrEvent::PaneAgentStatusChanged {
             workspace_id: required_id(data, "workspace_id")?,
             pane_id: required_id(data, "pane_id")?,
             agent_status: agent_status(
@@ -577,10 +594,9 @@ fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
                 .map(|value| string_map(value, "state_labels"))
                 .transpose()?,
         },
-        "layout.updated" => HerdrEvent::LayoutUpdated {
+        HerdrEventKind::LayoutUpdated => HerdrEvent::LayoutUpdated {
             layout: pane_layout(required(data, "layout", "layout")?, "layout")?,
         },
-        _ => return Err(format!("unsupported known event {kind}")),
     })
 }
 
@@ -588,39 +604,50 @@ fn decode_known_event(kind: &str, value: &Value) -> Result<HerdrEvent, String> {
 struct SubscribeRequest<'a> {
     id: &'a str,
     method: &'a str,
-    params: SubscribeParams,
+    params: SubscribeParams<'a>,
 }
 
 #[derive(Serialize)]
-struct SubscribeParams {
-    subscriptions: Vec<Subscription>,
+struct SubscribeParams<'a> {
+    subscriptions: Vec<Subscription<'a>>,
 }
 
 #[derive(Serialize)]
-struct Subscription {
+struct Subscription<'a> {
     #[serde(rename = "type")]
-    kind: String,
+    kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pane_id: Option<String>,
+    pane_id: Option<&'a str>,
 }
 
 fn subscription_request(protocol: u32, pane_ids: &[String]) -> Result<Vec<u8>, HerdrEventError> {
     herdr_codec::validate_protocol(protocol)
         .map_err(|error| HerdrEventError::UnsupportedProtocol(error.to_string()))?;
-    let mut subscriptions = LIFECYCLE_SUBSCRIPTIONS
+    let mut subscriptions = HerdrEventKind::ALL
         .iter()
-        .filter(|kind| protocol != 17 || **kind != "workspace.reordered")
+        .copied()
+        .filter(|kind| {
+            kind.subscription() == SubscriptionKind::Lifecycle && protocol >= kind.min_protocol()
+        })
         .map(|kind| Subscription {
-            kind: (*kind).to_owned(),
+            kind: kind.as_str(),
             pane_id: None,
         })
         .collect::<Vec<_>>();
     let mut pane_ids = pane_ids.to_vec();
     pane_ids.sort();
     pane_ids.dedup();
-    subscriptions.extend(pane_ids.into_iter().map(|pane_id| Subscription {
-        kind: "pane.agent_status_changed".to_owned(),
-        pane_id: Some(pane_id),
+    subscriptions.extend(pane_ids.iter().flat_map(|pane_id| {
+        HerdrEventKind::ALL
+            .iter()
+            .copied()
+            .filter(move |kind| {
+                kind.subscription() == SubscriptionKind::PerPane && protocol >= kind.min_protocol()
+            })
+            .map(move |kind| Subscription {
+                kind: kind.as_str(),
+                pane_id: Some(pane_id),
+            })
     }));
     let mut bytes = serde_json::to_vec(&SubscribeRequest {
         id: SUBSCRIPTION_REQUEST_ID,
@@ -855,36 +882,39 @@ pub fn close_herdr_event_subscription(client_key: String) {
 mod tests {
     use super::*;
 
-    fn event_kind(event: &HerdrEvent) -> &'static str {
+    fn event_kind(event: &HerdrEvent) -> Option<HerdrEventKind> {
         match event {
-            HerdrEvent::WorkspaceCreated { .. } => "workspace.created",
-            HerdrEvent::WorkspaceUpdated { .. } => "workspace.updated",
-            HerdrEvent::WorkspaceMetadataUpdated { .. } => "workspace.metadata_updated",
-            HerdrEvent::WorkspaceClosed { .. } => "workspace.closed",
-            HerdrEvent::WorkspaceRenamed { .. } => "workspace.renamed",
-            HerdrEvent::WorkspaceMoved { .. } => "workspace.moved",
-            HerdrEvent::WorkspaceReordered { .. } => "workspace.reordered",
-            HerdrEvent::WorkspaceFocused { .. } => "workspace.focused",
-            HerdrEvent::WorktreeCreated { .. } => "worktree.created",
-            HerdrEvent::WorktreeOpened { .. } => "worktree.opened",
-            HerdrEvent::WorktreeRemoved { .. } => "worktree.removed",
-            HerdrEvent::TabCreated { .. } => "tab.created",
-            HerdrEvent::TabClosed { .. } => "tab.closed",
-            HerdrEvent::TabFocused { .. } => "tab.focused",
-            HerdrEvent::TabRenamed { .. } => "tab.renamed",
-            HerdrEvent::TabMoved { .. } => "tab.moved",
-            HerdrEvent::PaneCreated { .. } => "pane.created",
-            HerdrEvent::PaneUpdated { .. } => "pane.updated",
-            HerdrEvent::PaneClosed { .. } => "pane.closed",
-            HerdrEvent::PaneFocused { .. } => "pane.focused",
-            HerdrEvent::PaneExited { .. } => "pane.exited",
-            HerdrEvent::PaneMoved { .. } => "pane.moved",
-            HerdrEvent::PaneOutputChanged { .. } => "pane.output_changed",
-            HerdrEvent::PaneAgentDetected { .. } => "pane.agent_detected",
-            HerdrEvent::PaneAgentStatusChanged { .. } => "pane.agent_status_changed",
-            HerdrEvent::LayoutUpdated { .. } => "layout.updated",
-            HerdrEvent::ProtocolUnknown { .. } => "protocol.unknown",
-            HerdrEvent::ProtocolInvalid { .. } => "protocol.invalid",
+            HerdrEvent::WorkspaceCreated { .. } => Some(HerdrEventKind::WorkspaceCreated),
+            HerdrEvent::WorkspaceUpdated { .. } => Some(HerdrEventKind::WorkspaceUpdated),
+            HerdrEvent::WorkspaceMetadataUpdated { .. } => {
+                Some(HerdrEventKind::WorkspaceMetadataUpdated)
+            }
+            HerdrEvent::WorkspaceClosed { .. } => Some(HerdrEventKind::WorkspaceClosed),
+            HerdrEvent::WorkspaceRenamed { .. } => Some(HerdrEventKind::WorkspaceRenamed),
+            HerdrEvent::WorkspaceMoved { .. } => Some(HerdrEventKind::WorkspaceMoved),
+            HerdrEvent::WorkspaceReordered { .. } => Some(HerdrEventKind::WorkspaceReordered),
+            HerdrEvent::WorkspaceFocused { .. } => Some(HerdrEventKind::WorkspaceFocused),
+            HerdrEvent::WorktreeCreated { .. } => Some(HerdrEventKind::WorktreeCreated),
+            HerdrEvent::WorktreeOpened { .. } => Some(HerdrEventKind::WorktreeOpened),
+            HerdrEvent::WorktreeRemoved { .. } => Some(HerdrEventKind::WorktreeRemoved),
+            HerdrEvent::TabCreated { .. } => Some(HerdrEventKind::TabCreated),
+            HerdrEvent::TabClosed { .. } => Some(HerdrEventKind::TabClosed),
+            HerdrEvent::TabFocused { .. } => Some(HerdrEventKind::TabFocused),
+            HerdrEvent::TabRenamed { .. } => Some(HerdrEventKind::TabRenamed),
+            HerdrEvent::TabMoved { .. } => Some(HerdrEventKind::TabMoved),
+            HerdrEvent::PaneCreated { .. } => Some(HerdrEventKind::PaneCreated),
+            HerdrEvent::PaneUpdated { .. } => Some(HerdrEventKind::PaneUpdated),
+            HerdrEvent::PaneClosed { .. } => Some(HerdrEventKind::PaneClosed),
+            HerdrEvent::PaneFocused { .. } => Some(HerdrEventKind::PaneFocused),
+            HerdrEvent::PaneExited { .. } => Some(HerdrEventKind::PaneExited),
+            HerdrEvent::PaneMoved { .. } => Some(HerdrEventKind::PaneMoved),
+            HerdrEvent::PaneOutputChanged { .. } => Some(HerdrEventKind::PaneOutputChanged),
+            HerdrEvent::PaneAgentDetected { .. } => Some(HerdrEventKind::PaneAgentDetected),
+            HerdrEvent::PaneAgentStatusChanged { .. } => {
+                Some(HerdrEventKind::PaneAgentStatusChanged)
+            }
+            HerdrEvent::LayoutUpdated { .. } => Some(HerdrEventKind::LayoutUpdated),
+            HerdrEvent::ProtocolUnknown { .. } | HerdrEvent::ProtocolInvalid { .. } => None,
         }
     }
 
@@ -948,106 +978,119 @@ mod tests {
         let layout = layout_fixture();
         let fixtures = vec![
             (
-                "workspace.created",
+                HerdrEventKind::WorkspaceCreated,
                 serde_json::json!({"workspace": workspace}),
             ),
             (
-                "workspace.updated",
+                HerdrEventKind::WorkspaceUpdated,
                 serde_json::json!({"workspace": workspace}),
             ),
             (
-                "workspace.metadata_updated",
+                HerdrEventKind::WorkspaceMetadataUpdated,
                 serde_json::json!({"workspace": workspace}),
             ),
             (
-                "workspace.closed",
+                HerdrEventKind::WorkspaceClosed,
                 serde_json::json!({"workspace_id": "w1", "workspace": workspace}),
             ),
             (
-                "workspace.renamed",
+                HerdrEventKind::WorkspaceRenamed,
                 serde_json::json!({"workspace_id": "w1", "label": "new"}),
             ),
             (
-                "workspace.moved",
+                HerdrEventKind::WorkspaceMoved,
                 serde_json::json!({"workspace_id": "w1", "insert_index": 0, "workspaces": [workspace]}),
             ),
             (
-                "workspace.reordered",
+                HerdrEventKind::WorkspaceReordered,
                 serde_json::json!({"workspace_ids": ["w1"], "workspaces": [workspace]}),
             ),
             (
-                "workspace.focused",
+                HerdrEventKind::WorkspaceFocused,
                 serde_json::json!({"workspace_id": "w1"}),
             ),
             (
-                "worktree.created",
+                HerdrEventKind::WorktreeCreated,
                 serde_json::json!({"workspace": workspace, "worktree": worktree}),
             ),
             (
-                "worktree.opened",
+                HerdrEventKind::WorktreeOpened,
                 serde_json::json!({"workspace": workspace, "worktree": worktree, "already_open": false}),
             ),
             (
-                "worktree.removed",
+                HerdrEventKind::WorktreeRemoved,
                 serde_json::json!({"workspace_id": "w1", "worktree": worktree, "forced": true}),
             ),
-            ("tab.created", serde_json::json!({"tab": tab})),
+            (HerdrEventKind::TabCreated, serde_json::json!({"tab": tab})),
             (
-                "tab.closed",
+                HerdrEventKind::TabClosed,
                 serde_json::json!({"workspace_id": "w1", "tab_id": "t1"}),
             ),
             (
-                "tab.focused",
+                HerdrEventKind::TabFocused,
                 serde_json::json!({"workspace_id": "w1", "tab_id": "t1"}),
             ),
             (
-                "tab.renamed",
+                HerdrEventKind::TabRenamed,
                 serde_json::json!({"workspace_id": "w1", "tab_id": "t1", "label": "new"}),
             ),
             (
-                "tab.moved",
+                HerdrEventKind::TabMoved,
                 serde_json::json!({"workspace_id": "w1", "tab_id": "t1", "insert_index": 0, "tabs": [tab]}),
             ),
-            ("pane.created", serde_json::json!({"pane": pane})),
-            ("pane.updated", serde_json::json!({"pane": pane})),
             (
-                "pane.closed",
+                HerdrEventKind::PaneCreated,
+                serde_json::json!({"pane": pane}),
+            ),
+            (
+                HerdrEventKind::PaneUpdated,
+                serde_json::json!({"pane": pane}),
+            ),
+            (
+                HerdrEventKind::PaneClosed,
                 serde_json::json!({"workspace_id": "w1", "pane_id": "p1"}),
             ),
             (
-                "pane.focused",
+                HerdrEventKind::PaneFocused,
                 serde_json::json!({"workspace_id": "w1", "pane_id": "p1"}),
             ),
             (
-                "pane.exited",
+                HerdrEventKind::PaneExited,
                 serde_json::json!({"workspace_id": "w1", "pane_id": "p1"}),
             ),
             (
-                "pane.moved",
+                HerdrEventKind::PaneMoved,
                 serde_json::json!({
                     "previous_pane_id": "p0", "previous_workspace_id": "w0", "previous_tab_id": "t0", "pane": pane
                 }),
             ),
             (
-                "pane.output_changed",
+                HerdrEventKind::PaneOutputChanged,
                 serde_json::json!({"workspace_id": "w1", "pane_id": "p1", "revision": 2}),
             ),
             (
-                "pane.agent_detected",
+                HerdrEventKind::PaneAgentDetected,
                 serde_json::json!({"workspace_id": "w1", "pane_id": "p1"}),
             ),
             (
-                "pane.agent_status_changed",
+                HerdrEventKind::PaneAgentStatusChanged,
                 serde_json::json!({
                     "workspace_id": "w1", "pane_id": "p1", "agent_status": "working"
                 }),
             ),
-            ("layout.updated", serde_json::json!({"layout": layout})),
+            (
+                HerdrEventKind::LayoutUpdated,
+                serde_json::json!({"layout": layout}),
+            ),
         ];
-        assert_eq!(fixtures.len(), EVENT_NAMES.len());
+        assert_eq!(fixtures.len(), HerdrEventKind::ALL.len());
         for (kind, data) in fixtures {
-            let decoded = decode_event(kind, &data);
-            assert_eq!(event_kind(&decoded), kind, "failed to decode {kind}");
+            let decoded = decode_event(kind.as_str(), &data);
+            assert_eq!(
+                event_kind(&decoded),
+                Some(kind),
+                "failed to decode {kind:?}"
+            );
         }
     }
 
@@ -1087,7 +1130,7 @@ mod tests {
         );
         assert!(matches!(items.first(), Some(StreamItem::Acknowledged)));
         assert!(
-            matches!(items.get(1), Some(StreamItem::Event(event)) if event_kind(event) == "pane.focused")
+            matches!(items.get(1), Some(StreamItem::Event(event)) if event_kind(event) == Some(HerdrEventKind::PaneFocused))
         );
     }
 
@@ -1117,8 +1160,8 @@ mod tests {
         assert!(parsed.is_empty());
         let parsed = events(parser.push(b"\"}}\r\n\n{\"event\":\"pane.focused\",\"data\":{\"workspace_id\":\"w1\",\"pane_id\":\"p2\"}}\n"));
         assert_eq!(parsed.len(), 2);
-        assert_eq!(event_kind(&parsed[0]), "tab.focused");
-        assert_eq!(event_kind(&parsed[1]), "pane.focused");
+        assert_eq!(event_kind(&parsed[0]), Some(HerdrEventKind::TabFocused));
+        assert_eq!(event_kind(&parsed[1]), Some(HerdrEventKind::PaneFocused));
     }
 
     #[test]
@@ -1131,7 +1174,7 @@ mod tests {
             b"{\"event\":\"pane.focused\",\"data\":{\"workspace_id\":\"w1\",\"pane_id\":\"p1\"}}\n",
         ));
         assert_eq!(parsed.len(), 1);
-        assert_eq!(event_kind(&parsed[0]), "pane.focused");
+        assert_eq!(event_kind(&parsed[0]), Some(HerdrEventKind::PaneFocused));
     }
 
     #[test]
@@ -1210,7 +1253,10 @@ mod tests {
             b"\"}}\n{\"event\":\"workspace.focused\",\"data\":{\"workspace_id\":\"w1\"}}\n",
         );
         let parsed = events(parser.push(&bytes));
-        assert_eq!(parsed.last().map(event_kind), Some("workspace.focused"));
+        assert_eq!(
+            parsed.last().and_then(event_kind),
+            Some(HerdrEventKind::WorkspaceFocused)
+        );
     }
 
     #[test]
@@ -1221,8 +1267,11 @@ mod tests {
             b"\n{\"event\":\"workspace.focused\",\"data\":{\"workspace_id\":\"w1\"}}\n",
         );
         let parsed = events(parser.push(&input));
-        assert_eq!(event_kind(&parsed[0]), "protocol.invalid");
-        assert_eq!(event_kind(&parsed[1]), "workspace.focused");
+        assert!(matches!(parsed[0], HerdrEvent::ProtocolInvalid { .. }));
+        assert_eq!(
+            event_kind(&parsed[1]),
+            Some(HerdrEventKind::WorkspaceFocused)
+        );
     }
 
     #[test]
@@ -1234,7 +1283,7 @@ mod tests {
             serde_json::json!({"type": 1}),
         ] {
             let event = decode_event("pane.agent_status_changed", &value);
-            assert_eq!(event_kind(&event), "protocol.invalid");
+            assert!(matches!(event, HerdrEvent::ProtocolInvalid { .. }));
         }
     }
 }

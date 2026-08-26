@@ -13,6 +13,40 @@ pub const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
 
 const SERVER_KEYBINDINGS: u64 = 0;
 const MAX_SAFE_INTEGER: u64 = (1_u64 << 53) - 1;
+const SERVER_WELCOME: u64 = 0;
+const SERVER_TERMINAL: u64 = 2;
+const SERVER_GRAPHICS: u64 = 3;
+const SERVER_CLOSED: u64 = 4;
+const SERVER_NOTIFY: u64 = 5;
+const SERVER_CLIPBOARD: u64 = 6;
+const SERVER_TITLE: u64 = 7;
+const SERVER_RELOAD_SOUND_CONFIG: u64 = 8;
+const SERVER_MOUSE_CAPTURE: u64 = 9;
+const SERVER_PREFIX_INPUT_SOURCE_V17: u64 = 10;
+const SERVER_KITTY_KEYBOARD_REPORT_ALL: u64 = 10;
+const SERVER_PREFIX_INPUT_SOURCE: u64 = 11;
+const SERVER_TERMINAL_BELL: u64 = 12;
+
+#[repr(u64)]
+enum ClientMessageTag {
+    Hello = 0,
+    Input = 1,
+    Resize = 3,
+    Detach = 4,
+    Attach = 5,
+    Scroll = 6,
+}
+
+#[repr(u64)]
+enum AttachScrollSource {
+    Wheel = 0,
+}
+
+#[repr(u64)]
+enum AttachScrollDirection {
+    Up = 0,
+    Down = 1,
+}
 
 /// The terminal-attach variant moved from bincode discriminant 1 to 2 when
 /// protocol 20 inserted `AppDirectGraphics` into Herdr's `ClientLaunchMode`.
@@ -23,6 +57,14 @@ pub enum HerdrTerminalAttachLaunchMode {
 }
 
 impl HerdrTerminalAttachLaunchMode {
+    pub(crate) const fn for_protocol(protocol: u32) -> Self {
+        if protocol >= 20 {
+            Self::TerminalAttach
+        } else {
+            Self::LegacyTerminalAttach
+        }
+    }
+
     const fn wire_value(self) -> u8 {
         match self {
             Self::LegacyTerminalAttach => 1,
@@ -342,7 +384,7 @@ pub fn hello(
     let columns = u16::try_from(columns).map_err(|_| CodecError::InvalidValue("column count"))?;
     let rows = u16::try_from(rows).map_err(|_| CodecError::InvalidValue("row count"))?;
     let mut encoder = Encoder::default();
-    encoder.unsigned(0);
+    encoder.unsigned(ClientMessageTag::Hello as u64);
     encoder.unsigned(u64::from(protocol));
     encoder.unsigned(u64::from(columns));
     encoder.unsigned(u64::from(rows));
@@ -356,7 +398,7 @@ pub fn hello(
 
 pub fn input(data: &[u8]) -> Vec<u8> {
     let mut encoder = Encoder::default();
-    encoder.unsigned(1);
+    encoder.unsigned(ClientMessageTag::Input as u64);
     encoder.byte_string(data);
     encoder.finish()
 }
@@ -370,7 +412,7 @@ pub fn resize(
     let columns = u16::try_from(columns).map_err(|_| CodecError::InvalidValue("column count"))?;
     let rows = u16::try_from(rows).map_err(|_| CodecError::InvalidValue("row count"))?;
     let mut encoder = Encoder::default();
-    encoder.unsigned(3);
+    encoder.unsigned(ClientMessageTag::Resize as u64);
     encoder.unsigned(u64::from(columns));
     encoder.unsigned(u64::from(rows));
     encoder.unsigned(u64::from(cell_width_px));
@@ -379,12 +421,12 @@ pub fn resize(
 }
 
 pub fn detach() -> Vec<u8> {
-    vec![4]
+    vec![ClientMessageTag::Detach as u8]
 }
 
 pub fn attach(terminal_id: &str, takeover: bool) -> Vec<u8> {
     let mut encoder = Encoder::default();
-    encoder.unsigned(5);
+    encoder.unsigned(ClientMessageTag::Attach as u64);
     encoder.byte_string(terminal_id.as_bytes());
     encoder.boolean(takeover);
     encoder.finish()
@@ -411,9 +453,13 @@ pub fn scroll(
     let column = coordinate(column, "scroll column")?;
     let row = coordinate(row, "scroll row")?;
     let mut encoder = Encoder::default();
-    encoder.unsigned(6);
-    encoder.unsigned(0); // AttachScrollSource::Wheel
-    encoder.unsigned(u64::from(!up)); // Up = 0, Down = 1
+    encoder.unsigned(ClientMessageTag::Scroll as u64);
+    encoder.unsigned(AttachScrollSource::Wheel as u64);
+    encoder.unsigned(if up {
+        AttachScrollDirection::Up as u64
+    } else {
+        AttachScrollDirection::Down as u64
+    });
     encoder.unsigned(u64::from(lines));
     match column {
         Some(value) => {
@@ -438,49 +484,49 @@ pub fn decode(bytes: &[u8], protocol: u32) -> Result<ServerMessage, CodecError> 
     let mut decoder = Decoder::new(bytes);
     let variant = decoder.unsigned()?;
     match variant {
-        0 => Ok(ServerMessage::Welcome {
+        SERVER_WELCOME => Ok(ServerMessage::Welcome {
             protocol: decoder.u32("Welcome protocol")?,
             encoding: decoder.u32("Welcome encoding")?,
             error: decoder.option_string()?,
         }),
-        2 => Ok(ServerMessage::Terminal {
+        SERVER_TERMINAL => Ok(ServerMessage::Terminal {
             sequence: decoder.unsigned()?,
             width: decoder.u16("terminal frame width")?,
             height: decoder.u16("terminal frame height")?,
             full: decoder.boolean()?,
             bytes: decoder.owned_bytes()?,
         }),
-        3 => Ok(ServerMessage::Graphics {
+        SERVER_GRAPHICS => Ok(ServerMessage::Graphics {
             bytes: decoder.owned_bytes()?,
         }),
-        4 => Ok(ServerMessage::Closed {
+        SERVER_CLOSED => Ok(ServerMessage::Closed {
             reason: decoder.option_string()?,
         }),
-        5 => Ok(ServerMessage::Notify {
+        SERVER_NOTIFY => Ok(ServerMessage::Notify {
             kind: HerdrTerminalNotificationKind::try_from(decoder.unsigned()?)?,
             text: decoder.string()?,
             body: decoder.option_string()?,
         }),
-        6 => Ok(ServerMessage::Clipboard {
+        SERVER_CLIPBOARD => Ok(ServerMessage::Clipboard {
             text: decoder.string()?,
         }),
-        7 => Ok(ServerMessage::Title {
+        SERVER_TITLE => Ok(ServerMessage::Title {
             title: decoder.option_string()?,
         }),
-        8 => Ok(ServerMessage::ReloadSoundConfig),
-        9 => Ok(ServerMessage::MouseCapture {
+        SERVER_RELOAD_SOUND_CONFIG => Ok(ServerMessage::ReloadSoundConfig),
+        SERVER_MOUSE_CAPTURE => Ok(ServerMessage::MouseCapture {
             enabled: decoder.boolean()?,
         }),
-        10 if protocol == 17 => Ok(ServerMessage::PrefixInputSource {
+        SERVER_PREFIX_INPUT_SOURCE_V17 if protocol == 17 => Ok(ServerMessage::PrefixInputSource {
             enabled: decoder.boolean()?,
         }),
-        10 => Ok(ServerMessage::KittyKeyboardReportAll {
+        SERVER_KITTY_KEYBOARD_REPORT_ALL => Ok(ServerMessage::KittyKeyboardReportAll {
             enabled: decoder.boolean()?,
         }),
-        11 if protocol >= 18 => Ok(ServerMessage::PrefixInputSource {
+        SERVER_PREFIX_INPUT_SOURCE if protocol >= 18 => Ok(ServerMessage::PrefixInputSource {
             enabled: decoder.boolean()?,
         }),
-        12 if protocol >= 20 => {
+        SERVER_TERMINAL_BELL if protocol >= 20 => {
             let count = decoder.unsigned()?;
             Ok(ServerMessage::TerminalBell {
                 count: u16::try_from(count).map_err(|_| CodecError::InvalidBellCount(count))?,
@@ -522,6 +568,18 @@ mod tests {
                 vec![0, protocol as u8, 80, 24, 8, 16, 1, 0, 2]
             );
         }
+    }
+
+    #[test]
+    fn terminal_attach_launch_mode_follows_protocol() {
+        assert_eq!(
+            HerdrTerminalAttachLaunchMode::for_protocol(19),
+            HerdrTerminalAttachLaunchMode::LegacyTerminalAttach
+        );
+        assert_eq!(
+            HerdrTerminalAttachLaunchMode::for_protocol(20),
+            HerdrTerminalAttachLaunchMode::TerminalAttach
+        );
     }
 
     #[test]

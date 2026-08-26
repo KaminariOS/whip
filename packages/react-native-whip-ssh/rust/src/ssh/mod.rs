@@ -148,7 +148,7 @@ enum TransportError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-enum SshErrorCode {
+pub(crate) enum SshErrorCode {
     AuthenticationFailed,
     HostKeyUnknown,
     HostKeyChanged,
@@ -160,6 +160,7 @@ enum SshErrorCode {
     InvalidPrivateKey,
     SftpFailure,
     InvalidRequest,
+    OutputLimit,
     Unknown,
 }
 
@@ -337,7 +338,7 @@ pub(crate) struct SshConnectionConfig {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SshFailure {
-    pub code: String,
+    pub code: SshErrorCode,
     pub message: String,
 }
 
@@ -351,12 +352,8 @@ impl std::error::Error for SshFailure {}
 
 impl From<TransportError> for SshFailure {
     fn from(error: TransportError) -> Self {
-        let code = serde_json::to_value(transport_error_code(&error))
-            .ok()
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .unwrap_or_else(|| "UNKNOWN".to_owned());
         Self {
-            code,
+            code: transport_error_code(&error),
             message: error.to_string(),
         }
     }

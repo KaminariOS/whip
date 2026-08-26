@@ -6,15 +6,6 @@ export const HERDR_PROTOCOL_VERSION = HERDR_PROTOCOL_VERSIONS.at(-1)!;
 export const HERDR_PROTOCOL_VERSIONS_LABEL = `${HERDR_PROTOCOL_VERSIONS[0]}–${HERDR_PROTOCOL_VERSION}`;
 export type HerdrProtocolVersion = typeof HERDR_PROTOCOL_VERSIONS[number];
 
-export type HerdrTerminalAttachLaunchMode = 1 | 2;
-
-/** Published Herdr protocols 17–19 use TerminalAttach = 1; protocol 20 uses 2. */
-export function herdrTerminalAttachLaunchMode(
-  protocol: number,
-): HerdrTerminalAttachLaunchMode {
-  return protocol >= 20 ? 2 : 1;
-}
-
 export class HerdrProtocolMismatchError extends Error {
   readonly expected: string;
   readonly received: number | undefined;

@@ -61,6 +61,8 @@ interface Props {
   onOpenFile: (target: TranscriptFileLinkTarget) => void;
 }
 
+const COPY_FEEDBACK_MS = 1_500;
+
 function ThinkingIndicator() {
   const reduceMotion = useReducedMotion();
   const progress = useSharedValue(0);
@@ -745,7 +747,7 @@ function UserPrompt({ message }: { message: TranscriptMessage }) {
       {(meta || text) && (
         <View className="mt-1 flex-row items-center gap-1 px-1">
           {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
-          {text && <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={() => { Clipboard.setString(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>}
+          {text && <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={() => { Clipboard.setString(text); setCopied(true); setTimeout(() => setCopied(false), COPY_FEEDBACK_MS); }}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>}
         </View>
       )}
       <Modal animationType="fade" onRequestClose={() => setPreview(null)} statusBarTranslucent transparent visible={Boolean(preview)}>
@@ -789,7 +791,7 @@ function TurnMeta({ turn }: { turn: TranscriptTurn }) {
           onPress={() => {
             Clipboard.setString(copy);
             setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+            setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
           }}
         >
           {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}

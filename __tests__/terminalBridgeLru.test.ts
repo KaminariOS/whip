@@ -282,19 +282,6 @@ describe('terminal bridge channels', () => {
     });
   });
 
-  test('uses the published protocol 20 terminal attach mode without changing the bridge handler position', async () => {
-    const native = bridgeClient(20);
-    connectWithPassword.mockResolvedValue(native);
-    const client = new HerdrClient();
-    await client.connect(profile);
-
-    await client.openTerminal('term-1', jest.fn());
-
-    const call = jest.mocked(native.startHerdrBridge).mock.calls[0];
-    expect(typeof call[8]).toBe('function');
-    expect(call[9]).toBe(2);
-  });
-
   test('ignores Herdr UI mouse capture and forwards Kitty keyboard mode changes', async () => {
     const native = bridgeClient(20);
     connectWithPassword.mockResolvedValue(native);

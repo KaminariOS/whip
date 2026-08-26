@@ -4,6 +4,7 @@ import type { ResponseResult } from '../generated/herdrApi';
 
 import { normalizePrivateKey } from '../lib/privateKey';
 import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
+import { DEFAULT_HERDR_COMMAND } from '../lib/hostProfiles';
 import { errorCode } from '../lib/connectionErrors';
 import { type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
@@ -386,7 +387,7 @@ export class HerdrClient {
 
   /** Lazily check setup only after the user requests Chat. */
   async codexIntegrationStatus(): Promise<CodexIntegrationStatus> {
-    const command = `${shellQuote(this.requireProfile().herdrCommand.trim() || 'herdr')} integration status`;
+    const command = `${shellQuote(this.requireProfile().herdrCommand.trim() || DEFAULT_HERDR_COMMAND)} integration status`;
     const output = await this.requireRuntime().execute(this.loginShellCommand(command));
     return parseCodexIntegrationStatus(output);
   }
@@ -1008,7 +1009,7 @@ export class HerdrClient {
     if (!profile) {
       throw new Error('Not connected');
     }
-    const command = shellQuote(profile.herdrCommand.trim() || 'herdr');
+    const command = shellQuote(profile.herdrCommand.trim() || DEFAULT_HERDR_COMMAND);
     return profile.sessionName.trim() ? `${command} --session ${shellQuote(profile.sessionName.trim())}` : command;
   }
 
@@ -1141,7 +1142,6 @@ export class HerdrClient {
       size.rows,
       size.cellWidthPx,
       size.cellHeightPx,
-      1,
       event => this.handleHerdrBridgeEvent(terminalId, event),
     );
   }

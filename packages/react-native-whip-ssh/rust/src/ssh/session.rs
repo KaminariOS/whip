@@ -85,7 +85,7 @@ impl SshSession {
         let size = file.metadata().await.map_err(TransportError::from)?.size;
         if size.is_some_and(|size| size > max_bytes) {
             return Err(SshFailure {
-                code: "OUTPUT_LIMIT".to_owned(),
+                code: SshErrorCode::OutputLimit,
                 message: format!("remote file exceeds the {max_bytes}-byte read limit"),
             });
         }
@@ -97,7 +97,7 @@ impl SshSession {
             .map_err(TransportError::from)?;
         if bytes.len() as u64 > max_bytes {
             return Err(SshFailure {
-                code: "OUTPUT_LIMIT".to_owned(),
+                code: SshErrorCode::OutputLimit,
                 message: format!("remote file exceeds the {max_bytes}-byte read limit"),
             });
         }
