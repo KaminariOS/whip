@@ -35,6 +35,11 @@ import {
   type TerminalInputTrace,
   type TerminalResizeTrace,
 } from './performanceTrace';
+import {
+  networkErrorKind,
+  networkErrorMessage,
+  recordNetworkDiagnostic,
+} from './networkDiagnostics';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
@@ -145,6 +150,7 @@ export class HerdrClient {
   private pendingTerminalResizeTraces = new Map<string, TerminalResizeTrace>();
   private terminalStateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
+    const startedAt = Date.now();
     const port = Number(profile.port);
     this.validateSshPort(port);
     jumpProfiles.forEach(jumpProfile => this.validateSshPort(Number(jumpProfile.port)));
@@ -161,6 +167,19 @@ export class HerdrClient {
     const cachedSocketPath = profile.herdrSocketPath?.trim()
       ? undefined
       : persistedHerdrSocketPathHint(profile.id) || undefined;
+    const endpoint = profile.host.trim();
+    recordNetworkDiagnostic('info', 'host-runtime-connect-started', {
+      sessionId: profile.id,
+      endpoint,
+      endpointKind: /^\d{1,3}(?:\.\d{1,3}){3}$/.test(endpoint)
+        ? 'ipv4'
+        : endpoint.includes(':') ? 'ipv6' : 'hostname',
+      port,
+      authMode: profile.authMode,
+      jumpHostCount: jumpProfiles.length,
+      explicitSocketPath: Boolean(profile.herdrSocketPath?.trim()),
+      cachedSocketPath: Boolean(cachedSocketPath),
+    });
     const runtime = SSHClient.createHostRuntime({
       runtimeId: profile.id,
       ssh: sshConfig(profile),
@@ -174,7 +193,18 @@ export class HerdrClient {
     this.profile = profile;
     try {
       await runtime.connect();
+      recordNetworkDiagnostic('info', 'host-runtime-connect-succeeded', {
+        sessionId: profile.id,
+        durationMs: Date.now() - startedAt,
+      });
     } catch (error) {
+      recordNetworkDiagnostic('error', 'host-runtime-connect-failed', {
+        sessionId: profile.id,
+        endpoint,
+        durationMs: Date.now() - startedAt,
+        errorKind: networkErrorKind(error),
+        error: networkErrorMessage(error),
+      });
       if (this.runtime === runtime) {
         this.runtime = null;
       }

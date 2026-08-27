@@ -41,4 +41,16 @@ describe('network diagnostics', () => {
     );
     expect(networkErrorMessage('x'.repeat(2_000))).toHaveLength(1_000);
   });
+
+  it('preserves the most specific native error category', () => {
+    const { networkErrorKind } =
+      require('../src/services/networkDiagnostics') as typeof import('../src/services/networkDiagnostics');
+
+    expect(networkErrorKind({
+      name: 'HostRuntimeError',
+      code: 'SSH_TRANSPORT',
+      nativeTag: 'SshTransportFailure',
+    })).toBe('SshTransportFailure');
+    expect(networkErrorKind(new Error('offline'))).toBe('Error');
+  });
 });

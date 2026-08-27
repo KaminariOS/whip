@@ -116,7 +116,7 @@ import {
   recordSlowHostLatency,
   type HostLatencyMeasurement,
 } from './src/services/latencyDiagnostics';
-import { networkErrorMessage, recordNetworkDiagnostic } from './src/services/networkDiagnostics';
+import { networkErrorKind, networkErrorMessage, recordNetworkDiagnostic } from './src/services/networkDiagnostics';
 import {
   deleteHostProfile,
   loadConnectionProfile,
@@ -763,6 +763,12 @@ function AppContent() {
     runtime.client.setRuntimeEventHandler(event => {
       if (runtimes.current.get(sessionId) !== runtime) return;
       if (event.type === 'connection-state') {
+        recordNetworkDiagnostic(event.state === 'failed' ? 'error' : 'info', 'native-connection-state', {
+          sessionId,
+          state: event.state,
+          reconnectAttempt: event.reconnectAttempt,
+          error: event.error,
+        });
         if (event.state === 'reconnecting' || event.state === 'connecting') {
           setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
             status: 'reconnecting',
@@ -1122,7 +1128,17 @@ function AppContent() {
     if (existing && !reusingConnectingSession) closeLiveHost(existing.id);
     let runtime: LiveRuntime | null = null;
     let liveSessionOpened = false;
+    let connectionStage = 'prepare';
+    recordNetworkDiagnostic('info', 'host-connect-requested', {
+      sessionId: nextProfile.id,
+      endpoint: nextProfile.host.trim(),
+      port: Number(nextProfile.port),
+      authMode: nextProfile.authMode,
+      reuseConnectingSession,
+      startupRestore: traceStartupRestore,
+    });
     try {
+      connectionStage = 'jump-credentials';
       const jumpProfiles = await withOptionalAppPerformanceTrace(
         traceStartupRestore,
         'Whip startup restore: jump credentials',
@@ -1152,6 +1168,7 @@ function AppContent() {
       let trustedKeys = 0;
       while (true) {
         try {
+          connectionStage = 'native-ssh-connect';
           await withOptionalAppPerformanceTrace(
             traceStartupRestore,
             'Whip startup restore: SSH connect',
@@ -1171,8 +1188,10 @@ function AppContent() {
           trustedKeys += 1;
         }
       }
+      connectionStage = 'initial-host-state';
       const initialState = runtime.client.hostState();
       const initial = runtime.client.snapshotFromHostState(initialState);
+      connectionStage = 'terminal-restore';
       const restoredTerminals = await withOptionalAppPerformanceTrace(
         traceStartupRestore,
         'Whip startup restore: terminal state',
@@ -1193,6 +1212,12 @@ function AppContent() {
         return applyNativeHostState(next, sessionId, initialState, initial);
       });
       liveSessionOpened = true;
+      recordNetworkDiagnostic('info', 'host-connect-ready', {
+        sessionId,
+        endpoint: nextProfile.host.trim(),
+        paneCount: initial.panes.length,
+        serverRunning: initial.server.running,
+      });
       setEditorProfile(null);
       if (navigate) {
         if (initial.server.running) {
@@ -1204,6 +1229,13 @@ function AppContent() {
       }
       return true;
     } catch (error) {
+      recordNetworkDiagnostic('error', 'host-connect-failed', {
+        sessionId: nextProfile.id,
+        endpoint: nextProfile.host.trim(),
+        stage: connectionStage,
+        errorKind: networkErrorKind(error),
+        error: networkErrorMessage(error),
+      });
       const message = t(connectionErrorTranslationKeys[classifyConnectionError(error)], {
         host: hostKeyErrorHost(error) || hostDisplayName(nextProfile),
         ...connectionErrorContext(error),

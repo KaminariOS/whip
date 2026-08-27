@@ -10,6 +10,19 @@ export function networkErrorMessage(error: unknown): string {
   return message.replace(/\s+/g, ' ').trim().slice(0, MAX_ERROR_CHARACTERS);
 }
 
+export function networkErrorKind(error: unknown): string {
+  const value = error as {
+    nativeTag?: unknown;
+    code?: unknown;
+    tag?: unknown;
+    name?: unknown;
+  } | null;
+  for (const candidate of [value?.nativeTag, value?.code, value?.tag, value?.name]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return typeof error;
+}
+
 export function recordNetworkDiagnostic(
   level: NetworkDiagnosticLevel,
   event: string,
