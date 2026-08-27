@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
@@ -54,5 +54,8 @@ export function useAgentNotifications() {
     setResponse(null);
   }, []);
 
-  return { response, wasHandled, consume };
+  return useMemo(
+    () => ({ response, wasHandled, consume }),
+    [consume, response, wasHandled],
+  );
 }

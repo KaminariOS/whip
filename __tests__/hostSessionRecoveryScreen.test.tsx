@@ -9,14 +9,18 @@ import {
 
 import { HostSessionRecoveryScreen } from '../src/components/HostSessionRecoveryScreen';
 
-jest.mock('lucide-react-native', () => ({ RefreshCw: 'RefreshCw', ServerOff: 'ServerOff' }));
+jest.mock('lucide-react-native', () => ({
+  RefreshCw: 'RefreshCw',
+  ServerOff: 'ServerOff',
+}));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({ View: 'View' }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, values?: { host?: string }) => values?.host ? `${key}:${values.host}` : key,
+    t: (key: string, values?: { host?: string }) =>
+      values?.host ? `${key}:${values.host}` : key,
   }),
 }));
 jest.mock('../src/components/app-ui', () => ({
@@ -52,15 +56,19 @@ describe('HostSessionRecoveryScreen', () => {
       );
     });
 
-    const text = hostNodes(renderer.root, 'Text').flatMap(node => node.children);
+    const text = hostNodes(renderer.root, 'Text').flatMap(
+      node => node.children,
+    );
     const buttons = hostNodes(renderer.root, 'Button');
-    expect(text).toEqual(expect.arrayContaining([
-      'session.runtimeUnavailableTitle:localhost',
-      'session.runtimeUnavailableCopy',
-      'connection refused',
-      'session.backToHerd',
-      'session.reconnect',
-    ]));
+    expect(text).toEqual(
+      expect.arrayContaining([
+        'session.runtimeUnavailableTitle:localhost',
+        'session.runtimeUnavailableCopy',
+        'connection refused',
+        'session.backToHerd',
+        'session.reconnect',
+      ]),
+    );
 
     act(() => buttons[0].props.onPress());
     act(() => buttons[1].props.onPress());
@@ -81,22 +89,34 @@ describe('HostSessionRecoveryScreen', () => {
     });
 
     const buttons = hostNodes(renderer.root, 'Button');
-    const text = hostNodes(renderer.root, 'Text').flatMap(node => node.children);
+    const text = hostNodes(renderer.root, 'Text').flatMap(
+      node => node.children,
+    );
     expect(buttons[1].props.disabled).toBe(true);
     expect(text).toContain('session.reconnecting');
   });
 });
 
 describe('missing host runtime recovery wiring', () => {
-  const app = readFileSync(join(__dirname, '..', 'App.tsx'), 'utf8');
+  const runtimeManager = readFileSync(
+    join(__dirname, '..', 'src/hooks/useSessionRuntimeManager.ts'),
+    'utf8',
+  );
+  const appShell = readFileSync(
+    join(__dirname, '..', 'src/components/AppShell.tsx'),
+    'utf8',
+  );
 
   test('rebuilds a missing runtime instead of trying to refresh it', () => {
-    expect(app).toContain('if (existing && existingRuntime)');
-    expect(app).toContain('reuseConnectingSession: Boolean(existing)');
+    expect(runtimeManager).toContain("action === 'select'");
+    expect(runtimeManager).toContain(
+      'reuseConnectingSession: Boolean(existing)',
+    );
   });
 
   test('renders recovery UI whenever terminal mode has a session without a runtime', () => {
-    expect(app).toContain('activeSession && !activeRuntime && terminalVisible');
-    expect(app).toContain('<HostSessionRecoveryScreen');
+    expect(appShell).toContain('activeSession &&');
+    expect(appShell).toContain('!sessions.activeClient &&');
+    expect(appShell).toContain('<HostSessionRecoveryScreen');
   });
 });

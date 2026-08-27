@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
   initialLatencyWarningState,
@@ -76,5 +76,8 @@ export function useLiveHostTelemetry() {
     [state],
   );
 
-  return { state, get, recordLatency, clearLatency };
+  return useMemo(
+    () => ({ state, get, recordLatency, clearLatency }),
+    [clearLatency, get, recordLatency, state],
+  );
 }

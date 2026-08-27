@@ -18,6 +18,8 @@ jest.mock('../src/services/terminalBackground', () => ({}));
 jest.mock('../src/services/appBackground', () => ({}));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   clearLiveHostLatency,
@@ -120,4 +122,17 @@ test('volatile host projection changes keep the durable live-host identity stabl
       persistedLiveHostsFromSessions(hostStateChanged),
     ),
   ).toBe(persistedLiveHostsIdentity(persistedLiveHostsFromSessions(first)));
+});
+
+test('App remains a composition root instead of reclaiming runtime ownership', () => {
+  const app = readFileSync(join(__dirname, '..', 'App.tsx'), 'utf8');
+
+  expect(app.split('\n').length).toBeLessThan(600);
+  expect(app).toContain('useSessionRuntimeManager');
+  expect(app).toContain('useHostManagement');
+  expect(app).toContain('useAppNavigation');
+  expect(app).toContain('<AppShell');
+  expect(app).not.toContain('new HerdrClient');
+  expect(app).not.toContain('setRuntimeEventHandler');
+  expect(app).not.toContain('retainedBackgroundRuntimes');
 });

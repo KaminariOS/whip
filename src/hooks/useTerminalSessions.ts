@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   closeTerminalSession,
@@ -46,6 +46,7 @@ export function updateHostTerminalSessions(
 export function useTerminalSessions() {
   const [state, setState] = useState<TerminalSessionsByHost>(() => new Map());
   const stateRef = useRef(state);
+  const composerDraftsRef = useRef(new Map<string, string>());
   const writerRef = useRef(new PersistedTerminalsWriter());
   stateRef.current = state;
 
@@ -178,17 +179,51 @@ export function useTerminalSessions() {
     [update],
   );
 
-  return {
-    state,
-    get,
-    replace,
-    restore,
-    remove,
-    reconcile,
-    openPane,
-    openSshShell,
-    close,
-    updateStatus,
-    updateFontSize,
-  };
+  const getComposerDraft = useCallback(
+    (sessionId: string, terminalId: string) =>
+      composerDraftsRef.current.get(`${sessionId}:${terminalId}`) || '',
+    [],
+  );
+
+  const updateComposerDraft = useCallback(
+    (sessionId: string, terminalId: string, value: string) => {
+      const key = `${sessionId}:${terminalId}`;
+      if (value) composerDraftsRef.current.set(key, value);
+      else composerDraftsRef.current.delete(key);
+    },
+    [],
+  );
+
+  return useMemo(
+    () => ({
+      state,
+      get,
+      replace,
+      restore,
+      remove,
+      reconcile,
+      openPane,
+      openSshShell,
+      close,
+      updateStatus,
+      updateFontSize,
+      getComposerDraft,
+      updateComposerDraft,
+    }),
+    [
+      close,
+      get,
+      getComposerDraft,
+      openPane,
+      openSshShell,
+      reconcile,
+      remove,
+      replace,
+      restore,
+      state,
+      updateComposerDraft,
+      updateFontSize,
+      updateStatus,
+    ],
+  );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 
 import { biometricResumeAction } from '../lib/appAccess';
@@ -121,13 +121,24 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
     [],
   );
 
-  return {
-    locked,
-    authenticating,
-    authenticateLockedApp,
-    verifyBiometric,
-    updateBiometricForKeys,
-    updateBiometricOnResume,
-    isKeyProtectionEnabled,
-  };
+  return useMemo(
+    () => ({
+      locked,
+      authenticating,
+      authenticateLockedApp,
+      verifyBiometric,
+      updateBiometricForKeys,
+      updateBiometricOnResume,
+      isKeyProtectionEnabled,
+    }),
+    [
+      authenticateLockedApp,
+      authenticating,
+      isKeyProtectionEnabled,
+      locked,
+      updateBiometricForKeys,
+      updateBiometricOnResume,
+      verifyBiometric,
+    ],
+  );
 }
