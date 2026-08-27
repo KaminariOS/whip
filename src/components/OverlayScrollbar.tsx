@@ -36,13 +36,13 @@ interface Props {
 }
 
 const ACTIVE_OPACITY = 0.82;
-const ACTIVE_WIDTH = 11;
+const ACTIVE_WIDTH = 22;
 const GLASS_BACKGROUND_ALPHA = 'B8';
 const GLASS_BORDER_ALPHA = '47';
 const GLASS_OPACITY = 0.58;
 const HIT_TARGET_WIDTH = 40;
 const IDLE_OPACITY = 0.36;
-const IDLE_WIDTH = 7;
+const IDLE_WIDTH = 14;
 const MIN_HIT_TARGET_HEIGHT = 44;
 const RIGHT_INSET = 2;
 const TRANSITION_MS = 120;

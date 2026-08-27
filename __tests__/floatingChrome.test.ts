@@ -122,8 +122,8 @@ describe('floating chrome geometry', () => {
     const scrollbar = source('src/components/OverlayScrollbar.tsx');
 
     expect(scrollbar).toContain('glass = true');
-    expect(scrollbar).toContain('const IDLE_WIDTH = 7;');
-    expect(scrollbar).toContain('const ACTIVE_WIDTH = 11;');
+    expect(scrollbar).toContain('const IDLE_WIDTH = 14;');
+    expect(scrollbar).toContain('const ACTIVE_WIDTH = 22;');
     expect(scrollbar).toContain('const HIT_TARGET_WIDTH = 40;');
     expect(scrollbar).toContain('const MIN_HIT_TARGET_HEIGHT = 44;');
     expect(scrollbar).toContain('const GLASS_OPACITY = 0.58;');
