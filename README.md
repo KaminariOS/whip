@@ -248,10 +248,13 @@ An unknown server key requires explicit fingerprint approval before Whip stores 
 ## Performance
 
 Whip's terminal latency is instrumented with correlated Android Perfetto slices
-from native input handling through confirmed WebView presentation. A release-build
-reference measurement on a Pixel 9 Pro connected to the `thinker` host produced
-the following baseline. Network conditions and display scheduling vary, so treat
-these as representative boundaries rather than universal benchmarks.
+from native input handling through confirmed WebView presentation. August 27,
+2026 release-build captures on a Pixel 9 Pro connected to the `thinker` host
+produced the following baseline. The end-to-end capture contains 20 correlated
+keystrokes; a subsequent passive capture covers 277 frames after terminal
+encoding moved off the JavaScript thread. Network conditions, remote output, and
+display scheduling vary, so treat these as representative observations rather
+than universal benchmarks.
 
 Release builds also retain a bounded history of the latest 500 SSH latency probes
 that take at least 200 ms or fail. Each slow record separates the native SSH
@@ -259,28 +262,31 @@ ping/pong time from total JavaScript dispatch-to-resolution time. The history is
 available in **More → Diagnostics**, persists across app restarts, and is never
 uploaded automatically.
 
-| Stage | Average | Observed range |
-| --- | ---: | ---: |
-| App wait before entering native code | 0.05 ms | 0.04–0.06 ms |
-| Native/Rust validation, framing, and queueing | 0.43 ms | 0.26–0.54 ms |
-| Complete React Native input-to-native dispatch | 0.73 ms | 0.47–0.95 ms |
-| Decoded response delivery to renderer injection | 0.26 ms | Reference sample |
-| Renderer frame to confirmed visible | 46.03 ms | 33.86–56.95 ms |
-| SSH network and remote-host latency | 70–150 ms | Typical host range |
+| Stage | Average | p50 / p95 | Observed range | Samples |
+| --- | ---: | ---: | ---: | ---: |
+| App wait before entering native code | 0.03 ms | 0.02 / 0.08 ms | 0.01–0.09 ms | 20 |
+| Native/Rust validation, framing, and queueing | 0.19 ms | 0.11 / 0.42 ms | 0.03–1.12 ms | 20 |
+| Complete React Native input-to-native dispatch | 0.39 ms | 0.27 / 0.75 ms | 0.12–1.38 ms | 20 |
+| Queue accepted to first returned terminal frame | 84.76 ms | 61.68 / 212.60 ms | 0.15–343.80 ms | 20 |
+| Returned frame to confirmed visible | 35.45 ms | 31.78 / 58.52 ms | 20.16–106.06 ms | 20 |
+| Complete input to confirmed visible | 120.60 ms | 92.66 / 243.26 ms | 39.60–375.17 ms | 20 |
 
-The first three rows overlap and must not be added together. The result is that
-Whip's owned JavaScript, FFI, and Rust send path contributes less than 1 ms on a
-warm terminal; SSH/network and remote-host time dominates user-perceived input
-latency. The confirmed-visible interval is deliberately conservative: it covers
-WebView injection, xterm parsing, and two animation-frame boundaries, so it can
-include about one display frame after the text was first visible.
+[![Android terminal input latency waterfall](docs/android-terminal-input-latency.svg)](docs/android-terminal-input-latency.svg)
 
-Warm renderers and retained terminal bridges are important to this result. Whip
-bypasses asynchronous bridge readiness for an already-retained terminal, removing
-a previously measured 121–154 ms warm-input delay. Chunked binary frames also
-report presentation from the final xterm data write instead of queueing an empty
-follow-up write. See [Android terminal latency tracing](docs/android-performance-tracing.md)
-for the slice definitions, capture command, SQL analysis, and interpretation.
+The first three rows overlap and must not be added together. The final three
+rows form the measured average critical path: 0.39 ms of local dispatch, 84.76
+ms from native queue acceptance to the first returned frame, and 35.45 ms from
+that frame to the conservative visibility marker. The queue-to-response span
+includes SSH/network time, remote PTY processing, and inbound native delivery;
+because the protocol cannot identify causality, unrelated terminal output can
+also satisfy the first-frame marker.
+
+Warm renderers and retained terminal bridges avoid cold attach work. In the
+newer passive post-change capture, 277 frames took 39.29 ms on average from Rust
+frame delivery to the visibility marker (p50 38.95 ms, p95 55.43 ms, observed
+range 19.09–73.58 ms). See [Android terminal latency
+tracing](docs/android-performance-tracing.md) for the slice definitions,
+capture command, SQL analysis, and interpretation.
 
 ## Architecture
 

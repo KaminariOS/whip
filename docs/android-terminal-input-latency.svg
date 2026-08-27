@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="title description">
+  <title id="title">Whip Android terminal input latency</title>
+  <desc id="description">Perfetto measurements from August 27, 2026. Twenty correlated keystrokes averaged 120.60 milliseconds from input to the conservative visibility marker.</desc>
+  <rect width="1200" height="900" fill="#0b1020"/>
+  <style>
+    text { font-family: Inter, ui-sans-serif, system-ui, sans-serif; fill: #e8edf7; }
+    .title { font-size: 30px; font-weight: 700; }
+    .subtitle { font-size: 16px; fill: #9fb0ca; }
+    .heading { font-size: 19px; font-weight: 650; }
+    .label { font-size: 14px; }
+    .small { font-size: 13px; fill: #aab8ce; }
+    .value { font-size: 14px; font-weight: 650; }
+    .axis { stroke: #41506b; stroke-width: 1; }
+    .grid { stroke: #263149; stroke-width: 1; }
+  </style>
+
+  <text x="54" y="54" class="title">Whip terminal input latency</text>
+  <text x="54" y="83" class="subtitle">Perfetto · Pixel 9 Pro → thinker · August 27, 2026 · 20 correlated keystrokes</text>
+
+  <text x="54" y="132" class="heading">Average input → confirmed visible: 120.60 ms</text>
+  <text x="54" y="158" class="small">Additive critical path; the first returned terminal frame is a correlation proxy, not a protocol acknowledgement.</text>
+
+  <line x1="230" y1="188" x2="1010" y2="188" class="axis"/>
+  <g class="small">
+    <text x="226" y="179">0</text>
+    <text x="399" y="179">30</text>
+    <text x="579" y="179">60</text>
+    <text x="759" y="179">90</text>
+    <text x="932" y="179">120</text>
+    <text x="992" y="179">130 ms</text>
+  </g>
+  <g class="grid">
+    <line x1="230" y1="188" x2="230" y2="266"/>
+    <line x1="410" y1="188" x2="410" y2="266"/>
+    <line x1="590" y1="188" x2="590" y2="266"/>
+    <line x1="770" y1="188" x2="770" y2="266"/>
+    <line x1="950" y1="188" x2="950" y2="266"/>
+    <line x1="1010" y1="188" x2="1010" y2="266"/>
+  </g>
+  <rect x="230" y="207" width="3" height="46" rx="2" fill="#6ee7b7"/>
+  <rect x="233" y="207" width="509" height="46" rx="3" fill="#60a5fa"/>
+  <rect x="742" y="207" width="213" height="46" rx="3" fill="#c084fc"/>
+  <text x="230" y="200" class="value">local 0.39 ms</text>
+  <text x="410" y="236" class="value">queue accepted → returned frame 84.76 ms</text>
+  <text x="760" y="236" class="value">frame → visible 35.45 ms</text>
+
+  <g transform="translate(54 292)">
+    <rect x="0" y="0" width="15" height="15" rx="3" fill="#6ee7b7"/>
+    <text x="24" y="13" class="small">React Native input → native dispatch</text>
+    <rect x="306" y="0" width="15" height="15" rx="3" fill="#60a5fa"/>
+    <text x="330" y="13" class="small">native queue → first returned frame</text>
+    <rect x="650" y="0" width="15" height="15" rx="3" fill="#c084fc"/>
+    <text x="674" y="13" class="small">renderer frame → two-RAF visibility marker</text>
+  </g>
+
+  <text x="54" y="354" class="heading">Individual correlated samples</text>
+  <text x="54" y="378" class="small">Scale: 1 px = 1 ms. Total p50 92.66 ms · p95 243.26 ms · observed range 39.60–375.17 ms.</text>
+
+  <g>
+    <text x="54" y="423" class="label">1</text><rect x="84" y="408" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="408" width="19" height="18" fill="#60a5fa"/><rect x="104" y="408" width="24" height="18" fill="#c084fc"/><text x="505" y="423" class="value">44.33</text>
+    <text x="54" y="454" class="label">2</text><rect x="84" y="439" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="439" width="143" height="18" fill="#60a5fa"/><rect x="228" y="439" width="32" height="18" fill="#c084fc"/><text x="505" y="454" class="value">175.56</text>
+    <text x="54" y="485" class="label">3</text><rect x="84" y="470" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="470" width="28" height="18" fill="#60a5fa"/><rect x="113" y="470" width="34" height="18" fill="#c084fc"/><text x="505" y="485" class="value">62.21</text>
+    <text x="54" y="516" class="label">4</text><rect x="84" y="501" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="501" width="52" height="18" fill="#60a5fa"/><rect x="137" y="501" width="30" height="18" fill="#c084fc"/><text x="505" y="516" class="value">82.31</text>
+    <text x="54" y="547" class="label">5</text><rect x="84" y="532" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="532" width="1" height="18" fill="#60a5fa"/><rect x="86" y="532" width="44" height="18" fill="#c084fc"/><text x="505" y="547" class="value">45.05</text>
+    <text x="54" y="578" class="label">6</text><rect x="84" y="563" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="563" width="16" height="18" fill="#60a5fa"/><rect x="101" y="563" width="32" height="18" fill="#c084fc"/><text x="505" y="578" class="value">48.11</text>
+    <text x="54" y="609" class="label">7</text><rect x="84" y="594" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="594" width="206" height="18" fill="#60a5fa"/><rect x="291" y="594" width="20" height="18" fill="#c084fc"/><text x="505" y="609" class="value">227.22</text>
+    <text x="54" y="640" class="label">8</text><rect x="84" y="625" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="625" width="55" height="18" fill="#60a5fa"/><rect x="140" y="625" width="32" height="18" fill="#c084fc"/><text x="505" y="640" class="value">86.69</text>
+    <text x="54" y="671" class="label">9</text><rect x="84" y="656" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="656" width="50" height="18" fill="#60a5fa"/><rect x="135" y="656" width="34" height="18" fill="#c084fc"/><text x="505" y="671" class="value">84.99</text>
+    <text x="47" y="702" class="label">10</text><rect x="84" y="687" width="1" height="18" fill="#6ee7b7"/><rect x="85" y="687" width="38" height="18" fill="#60a5fa"/><rect x="123" y="687" width="32" height="18" fill="#c084fc"/><text x="505" y="702" class="value">70.34</text>
+
+    <text x="630" y="423" class="label">11</text><rect x="666" y="408" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="408" width="108" height="18" fill="#60a5fa"/><rect x="775" y="408" width="106" height="18" fill="#c084fc"/><text x="1080" y="423" class="value">214.51</text>
+    <text x="630" y="454" class="label">12</text><rect x="666" y="439" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="439" width="344" height="18" fill="#60a5fa"/><rect x="1011" y="439" width="31" height="18" fill="#c084fc"/><text x="1080" y="454" class="value">375.17</text>
+    <text x="630" y="485" class="label">13</text><rect x="666" y="470" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="470" width="180" height="18" fill="#60a5fa"/><rect x="847" y="470" width="56" height="18" fill="#c084fc"/><text x="1080" y="485" class="value">236.31</text>
+    <text x="630" y="516" class="label">14</text><rect x="666" y="501" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="501" width="93" height="18" fill="#60a5fa"/><rect x="760" y="501" width="33" height="18" fill="#c084fc"/><text x="1080" y="516" class="value">126.92</text>
+    <text x="630" y="547" class="label">15</text><rect x="666" y="532" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="532" width="15" height="18" fill="#60a5fa"/><rect x="682" y="532" width="25" height="18" fill="#c084fc"/><text x="1080" y="547" class="value">39.60</text>
+    <text x="630" y="578" class="label">16</text><rect x="666" y="563" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="563" width="73" height="18" fill="#60a5fa"/><rect x="740" y="563" width="29" height="18" fill="#c084fc"/><text x="1080" y="578" class="value">101.83</text>
+    <text x="630" y="609" class="label">17</text><rect x="666" y="594" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="594" width="36" height="18" fill="#60a5fa"/><rect x="703" y="594" width="32" height="18" fill="#c084fc"/><text x="1080" y="609" class="value">68.01</text>
+    <text x="630" y="640" class="label">18</text><rect x="666" y="625" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="625" width="69" height="18" fill="#60a5fa"/><rect x="736" y="625" width="30" height="18" fill="#c084fc"/><text x="1080" y="640" class="value">98.62</text>
+    <text x="630" y="671" class="label">19</text><rect x="666" y="656" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="656" width="83" height="18" fill="#60a5fa"/><rect x="750" y="656" width="26" height="18" fill="#c084fc"/><text x="1080" y="671" class="value">109.30</text>
+    <text x="630" y="702" class="label">20</text><rect x="666" y="687" width="1" height="18" fill="#6ee7b7"/><rect x="667" y="687" width="89" height="18" fill="#60a5fa"/><rect x="756" y="687" width="26" height="18" fill="#c084fc"/><text x="1080" y="702" class="value">114.92</text>
+  </g>
+
+  <text x="54" y="758" class="heading">Newest post-change passive inbound capture</text>
+  <text x="54" y="782" class="small">277 complete frames after Rust-side terminal encoding: average 39.29 ms · p50 38.95 ms · p95 55.43 ms · range 19.09–73.58 ms.</text>
+  <line x1="230" y1="824" x2="710" y2="824" class="axis"/>
+  <rect x="345" y="810" width="326" height="28" rx="3" fill="#c084fc"/>
+  <line x1="464" y1="801" x2="464" y2="847" stroke="#6ee7b7" stroke-width="3"/>
+  <line x1="563" y1="801" x2="563" y2="847" stroke="#fbbf24" stroke-width="3"/>
+  <circle cx="466" cy="824" r="5" fill="#ffffff"/>
+  <text x="430" y="798" class="value">average 39.29</text>
+  <text x="438" y="866" class="small">p50 38.95</text>
+  <text x="540" y="866" class="small">p95 55.43</text>
+</svg>
