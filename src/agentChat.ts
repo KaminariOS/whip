@@ -322,33 +322,3 @@ export function timestamp(value: unknown): number | undefined {
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? undefined : parsed;
 }
-
-function sameValue(left: unknown, right: unknown): boolean {
-  if (left === right) return true;
-  try { return JSON.stringify(left) === JSON.stringify(right); } catch { return false; }
-}
-
-/** Preserve unchanged message and turn references when a source publishes a newer snapshot. */
-export function reconcileTranscript(previous: AgentTranscript, incoming: AgentTranscript): AgentTranscript {
-  if (previous.sessionId !== incoming.sessionId) return incoming;
-  const oldMessages = new Map(previous.messages.map(message => [message.id, message]));
-  const messages = incoming.messages.map(message => {
-    const old = oldMessages.get(message.id);
-    return old && sameValue(old, message) ? old : message;
-  });
-  const projected = projectTranscriptTurns(messages);
-  const oldTurns = new Map(previous.turns.map(turn => [turn.id, turn]));
-  const turns = projected.map(turn => {
-    const old = oldTurns.get(turn.id);
-    return old && sameValue(old, turn) ? old : turn;
-  });
-  const info = sameValue(previous.info, incoming.info) ? previous.info : incoming.info;
-  if (
-    info === previous.info
-    && messages.length === previous.messages.length
-    && messages.every((message, index) => message === previous.messages[index])
-    && turns.length === previous.turns.length
-    && turns.every((turn, index) => turn === previous.turns[index])
-  ) return previous;
-  return { sessionId: incoming.sessionId, info, messages, turns };
-}
