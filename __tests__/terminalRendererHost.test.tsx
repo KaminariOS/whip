@@ -51,6 +51,7 @@ const preferences: TerminalPreferences = {
   doubleTapAction: 'none',
   openLinksInApp: false,
   pauseResizeInBackground: false,
+  visualHints: false,
   backgroundImageUri: null,
   backgroundDimming: 0,
 };
@@ -214,7 +215,25 @@ describe('TerminalRendererHost lifecycle', () => {
 
     expect(injected.join('\n')).toContain('window.herdrSetVisualInsets');
     expect(injected.join('\n')).toContain('"alternateScreen":true');
+    expect(injected.join('\n')).toContain('"debug":false');
     expect(injected.join('\n')).not.toContain('window.herdrFit');
     expect(client).not.toHaveProperty('resizeTerminal');
+
+    injected.length = 0;
+    act(() => {
+      renderer.update(
+        <TerminalRendererHost
+          {...callbacks}
+          activeTarget={target}
+          preferences={{ ...preferences, visualHints: true }}
+          targets={[target]}
+          visible
+          visualViewport={visualViewport}
+        />,
+      );
+    });
+
+    expect(injected.join('\n')).toContain('"debug":true');
+    expect(injected.join('\n')).not.toContain('window.herdrFit');
   });
 });

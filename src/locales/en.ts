@@ -379,6 +379,8 @@ export const en = {
   'settings.developer': 'Developer',
   'settings.developerOptions': 'Developer options',
   'settings.developerOptionsCopy': 'Show experimental features and diagnostic tools.',
+  'settings.terminalVisualHints': 'Terminal visual hints',
+  'settings.terminalVisualHintsCopy': 'Show the terminal scroll-inset geometry overlay.',
   'settings.fullscreenTerminal': 'Full-screen terminal',
   'settings.fullscreenTerminalCopy': 'Hide the status bar while a terminal is open.',
   'settings.keepScreenOn': 'Keep screen on',

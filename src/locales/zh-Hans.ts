@@ -368,6 +368,8 @@ export const zhHans = {
   'settings.developer': '开发者',
   'settings.developerOptions': '开发者选项',
   'settings.developerOptionsCopy': '显示实验性功能和诊断工具。',
+  'settings.terminalVisualHints': '终端视觉提示',
+  'settings.terminalVisualHintsCopy': '显示终端滚动边距几何信息叠层。',
   'settings.fullscreenTerminal': '全屏终端',
   'settings.fullscreenTerminalCopy': '在终端打开时隐藏状态栏。',
   'settings.keepScreenOn': '保持屏幕打开',

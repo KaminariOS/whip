@@ -411,6 +411,16 @@ export function SettingsSection(props: SettingsSectionProps) {
           value={props.developerOptionsEnabled}
           onChange={props.onDeveloperOptionsEnabledChange}
         />
+        {props.developerOptionsEnabled ? <SettingRow
+          title={t('settings.terminalVisualHints')}
+          copy={t('settings.terminalVisualHintsCopy')}
+          value={props.terminalPreferences.visualHints}
+          onChange={value => props.onTerminalPreferencesChange({
+            ...props.terminalPreferences,
+            visualHints: value,
+          })}
+          divided
+        /> : null}
       </GlassSurface>
 
       {Platform.OS === 'android' ? <VolumeKeyActionSheet

@@ -50,6 +50,7 @@ export interface TerminalPreferences {
   doubleTapAction: TerminalDoubleTapAction;
   openLinksInApp: boolean;
   pauseResizeInBackground: boolean;
+  visualHints: boolean;
   backgroundImageUri: string | null;
   backgroundDimming: number;
 }
@@ -112,6 +113,7 @@ export const defaultDevicePreferences: DevicePreferences = {
     doubleTapAction: 'tab',
     openLinksInApp: true,
     pauseResizeInBackground: true,
+    visualHints: false,
     backgroundImageUri: null,
     backgroundDimming: 60,
   },
@@ -282,6 +284,7 @@ function parseDevicePreferences(
         pauseResizeInBackground: typeof terminal.pauseResizeInBackground === 'boolean'
           ? terminal.pauseResizeInBackground
           : defaultDevicePreferences.terminal.pauseResizeInBackground,
+        visualHints: parsed.developerOptionsEnabled === true && terminal.visualHints === true,
         backgroundImageUri: typeof terminal.backgroundImageUri === 'string' && terminal.backgroundImageUri
           ? terminal.backgroundImageUri
           : null,

@@ -82,7 +82,6 @@ const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const TERMINAL_RENDER_DROP_ENABLED = __DEV__
   && process.env.EXPO_PUBLIC_WHIP_TERMINAL_RENDER_DROP === '1';
-const TERMINAL_VISUAL_DEBUG_ENABLED = process.env.EXPO_PUBLIC_WHIP_TERMINAL_VISUAL_DEBUG === '1';
 const TERMINAL_SOURCE = Platform.select({
   android: { uri: 'file:///android_asset/herdr-terminal.html' },
   ios: { uri: IOS_TERMINAL_ASSETS?.indexURL || 'about:blank' },
@@ -314,7 +313,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       top: currentVisualViewport.insets.top,
       bottom: currentVisualViewport.insets.bottom,
       geometryBottomInset: currentVisualViewport.geometryBottomInset,
-      debug: TERMINAL_VISUAL_DEBUG_ENABLED,
+      debug: preferences.visualHints,
       alternateScreen: entry.target.key === activeKey.current
         ? currentVisualViewport.alternateScreen
         : undefined,
@@ -818,7 +817,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       top: visualTopInset,
       bottom: visualBottomInset,
       geometryBottomInset: visualGeometryBottomInset,
-      debug: TERMINAL_VISUAL_DEBUG_ENABLED,
+      debug: preferences.visualHints,
       alternateScreen: visualAlternateScreen,
       scrollOffsetFromBottom: visualScrollOffset,
       maxScrollOffsetFromBottom: visualMaxScrollOffset,
@@ -832,6 +831,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     visualMaxScrollOffset,
     visualScrollOffset,
     visualTopInset,
+    preferences.visualHints,
   ]);
 
   const updateSwipeOffset = useCallback((value: number) => {

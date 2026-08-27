@@ -368,6 +368,8 @@ export const ja = {
   'settings.developer': '開発者',
   'settings.developerOptions': '開発者向けオプション',
   'settings.developerOptionsCopy': '実験的な機能や診断ツールを表示します。',
+  'settings.terminalVisualHints': 'ターミナルの視覚ヒント',
+  'settings.terminalVisualHintsCopy': 'ターミナルのスクロールインセット形状をオーバーレイ表示します。',
   'settings.fullscreenTerminal': 'フルスクリーン端末',
   'settings.fullscreenTerminalCopy': '端末が開いている間、ステータスバーを非表示にします。',
   'settings.keepScreenOn': '画面をオンのままにする',

@@ -368,6 +368,8 @@ export const es = {
   'settings.developer': 'Desarrollador',
   'settings.developerOptions': 'Opciones para desarrolladores',
   'settings.developerOptionsCopy': 'Muestra funciones experimentales y herramientas de diagnóstico.',
+  'settings.terminalVisualHints': 'Indicadores visuales del terminal',
+  'settings.terminalVisualHintsCopy': 'Muestra la superposición de geometría de desplazamiento del terminal.',
   'settings.fullscreenTerminal': 'Terminal de pantalla completa',
   'settings.fullscreenTerminalCopy': 'Oculta la barra de estado mientras hay un terminal abierto.',
   'settings.keepScreenOn': 'Mantener la pantalla encendida',

@@ -368,6 +368,8 @@ export const zhHant: Record<string, string> = {
   'settings.developer': '開發者',
   'settings.developerOptions': '開發者選項',
   'settings.developerOptionsCopy': '顯示實驗性功能和診斷工具。',
+  'settings.terminalVisualHints': '終端機視覺提示',
+  'settings.terminalVisualHintsCopy': '顯示終端機捲動邊距幾何資訊疊層。',
   'settings.fullscreenTerminal': '全螢幕終端機',
   'settings.fullscreenTerminalCopy': '終端機開啟時隱藏狀態列。',
   'settings.keepScreenOn': '保持螢幕開啟',

@@ -59,6 +59,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     doubleTapAction: 'tab',
     openLinksInApp: true,
     pauseResizeInBackground: true,
+    visualHints: false,
     backgroundImageUri: null,
     backgroundDimming: 60,
   });
@@ -119,6 +120,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       doubleTapAction: 'tab',
       openLinksInApp: true,
       pauseResizeInBackground: true,
+      visualHints: false,
       backgroundImageUri: null,
       backgroundDimming: 60,
     },
@@ -308,6 +310,26 @@ test('pauses background resize commands by default and allows it to be disabled'
   }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     terminal: { pauseResizeInBackground: true },
+  });
+});
+
+test('enables terminal visual hints only through developer options', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    developerOptionsEnabled: true,
+    terminal: { visualHints: true },
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    developerOptionsEnabled: true,
+    terminal: { visualHints: true },
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    developerOptionsEnabled: false,
+    terminal: { visualHints: true },
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    developerOptionsEnabled: false,
+    terminal: { visualHints: false },
   });
 });
 

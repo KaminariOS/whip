@@ -2027,7 +2027,14 @@ function AppContent() {
               onAppBackgroundImageChange={value => setPreference('appBackgroundImageUri', value)}
               onAppBackgroundDimmingChange={value => setPreference('appBackgroundDimming', value)}
               onAppGlassEnabledChange={value => setPreference('appGlassEnabled', value)}
-              onDeveloperOptionsEnabledChange={value => setPreference('developerOptionsEnabled', value)}
+              onDeveloperOptionsEnabledChange={value => {
+                setPreference('developerOptionsEnabled', value);
+                if (!value) {
+                  setTerminalPreferences(current => current.visualHints
+                    ? { ...current, visualHints: false }
+                    : current);
+                }
+              }}
               onLanguageChange={value => setPreference('language', value)}
               onKeepScreenOnChange={value => setPreference('keepScreenOn', value)}
               onReopenTerminalOnLaunchChange={value => setPreference('reopenTerminalOnLaunch', value)}
