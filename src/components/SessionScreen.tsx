@@ -1146,7 +1146,7 @@ export function SessionScreen({
                   ? 'Open Terminal view'
                   : `Open ${activeChatAgent === 'opencode' ? 'OpenCode' : 'Codex'} Chat view`,
               active: chatVisible,
-              disabled: busy || codexChatLoading || !activeTerminalSession,
+              disabled: busy || codexChatLoading,
               loading: codexChatLoading,
               onPress: hapticPress(chatVisible ? closeActiveChat : openAgentChat),
             } : undefined}
