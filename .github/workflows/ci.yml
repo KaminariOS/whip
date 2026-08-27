@@ -50,6 +50,10 @@ jobs:
       - name: Lint Whip Rust core
         run: cargo clippy --locked --all-targets -- -D warnings
 
+      - name: Lint WhipAir
+        working-directory: ${{ github.workspace }}/whipair
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
       - name: Test Whip Rust core
         run: cargo test --locked
 

@@ -917,7 +917,7 @@ impl CodexTranscriptAdapter {
                     } else {
                         AgentToolStatus::Completed
                     },
-                    fields([("command", command_title(item.get("command")))]),
+                    Some(fields([("command", command_title(item.get("command")))])),
                     nonempty(item.get("aggregated_output")).map(str::to_owned),
                     exit.filter(|code| *code != 0)
                         .map(|code| format!("Exited with code {code}")),
@@ -1533,16 +1533,14 @@ fn scalar_fields(value: Option<&Value>) -> Vec<AgentField> {
         .unwrap_or_default()
 }
 
-fn fields<const N: usize>(values: [(&str, String); N]) -> Option<Vec<AgentField>> {
-    Some(
-        values
-            .into_iter()
-            .map(|(key, value)| AgentField {
-                key: key.to_owned(),
-                value: AgentScalarValue::String { value },
-            })
-            .collect(),
-    )
+fn fields<const N: usize>(values: [(&str, String); N]) -> Vec<AgentField> {
+    values
+        .into_iter()
+        .map(|(key, value)| AgentField {
+            key: key.to_owned(),
+            value: AgentScalarValue::String { value },
+        })
+        .collect()
 }
 
 fn put_field(fields: &mut Vec<AgentField>, key: &str, value: AgentScalarValue) {
@@ -1557,7 +1555,7 @@ fn put_field(fields: &mut Vec<AgentField>, key: &str, value: AgentScalarValue) {
 }
 
 fn fields_with_cwd(payload: &Map<String, Value>) -> Option<Vec<AgentField>> {
-    let mut fields = fields([("command", command_title(payload.get("command")))]).unwrap();
+    let mut fields = fields([("command", command_title(payload.get("command")))]);
     if let Some(cwd) = nonempty(payload.get("cwd")) {
         put_field(
             &mut fields,
@@ -1671,7 +1669,7 @@ fn translate_tool(
             let query = quoted_field(source, "q").unwrap_or_else(|| "Web search".to_owned());
             (
                 "websearch".to_owned(),
-                fields([("query", query)]).unwrap(),
+                fields([("query", query)]),
                 None,
                 false,
                 Vec::new(),

@@ -268,7 +268,10 @@ fn decode_pairing_code(code: &str) -> Result<PairingPayload, PairingError> {
         .ok_or(PairingError::BadPrefix)?;
     let decoded = base45_decode(body)?;
     let mut cursor = 0;
-    let address_type = take_bytes(&decoded, &mut cursor, 1)?[0];
+    let address_type = take_bytes(&decoded, &mut cursor, 1)?
+        .first()
+        .copied()
+        .ok_or(PairingError::BadEncoding)?;
     let ssh_host = match address_type {
         ADDRESS_IPV4 => {
             let octets: [u8; 4] = take_bytes(&decoded, &mut cursor, 4)?
@@ -283,7 +286,12 @@ fn decode_pairing_code(code: &str) -> Result<PairingPayload, PairingError> {
             IpAddr::from(octets).to_string()
         }
         ADDRESS_HOSTNAME => {
-            let length = usize::from(take_bytes(&decoded, &mut cursor, 1)?[0]);
+            let length = usize::from(
+                take_bytes(&decoded, &mut cursor, 1)?
+                    .first()
+                    .copied()
+                    .ok_or(PairingError::BadEncoding)?,
+            );
             String::from_utf8(take_bytes(&decoded, &mut cursor, length)?.to_vec())
                 .map_err(|_| PairingError::BadEncoding)?
         }
@@ -294,7 +302,12 @@ fn decode_pairing_code(code: &str) -> Result<PairingPayload, PairingError> {
             .try_into()
             .map_err(|_| PairingError::BadEncoding)?,
     );
-    let user_length = usize::from(take_bytes(&decoded, &mut cursor, 1)?[0]);
+    let user_length = usize::from(
+        take_bytes(&decoded, &mut cursor, 1)?
+            .first()
+            .copied()
+            .ok_or(PairingError::BadEncoding)?,
+    );
     let ssh_user = String::from_utf8(take_bytes(&decoded, &mut cursor, user_length)?.to_vec())
         .map_err(|_| PairingError::BadEncoding)?;
     let temporary_private_key_seed = take_bytes(&decoded, &mut cursor, ED25519_SEED_BYTES)?
@@ -349,9 +362,14 @@ fn base45_decode(encoded: &str) -> Result<Vec<u8>, PairingError> {
     }
     let mut decoded = Vec::with_capacity(encoded.len() * 2 / 3);
     for chunk in encoded.as_bytes().chunks(3) {
-        let mut value = base45_value(chunk[0])? + 45 * base45_value(chunk[1])?;
-        if chunk.len() == 3 {
-            value += 45 * 45 * base45_value(chunk[2])?;
+        let (first, second, third) = match chunk {
+            [first, second, third] => (*first, *second, Some(*third)),
+            [first, second] => (*first, *second, None),
+            _ => return Err(PairingError::BadEncoding),
+        };
+        let mut value = base45_value(first)? + 45 * base45_value(second)?;
+        if let Some(third) = third {
+            value += 45 * 45 * base45_value(third)?;
             if value > u16::MAX.into() {
                 return Err(PairingError::BadEncoding);
             }

@@ -88,6 +88,8 @@ pub enum HerdrBridgeError {
     ClosedBeforeHandshake(String),
     #[error("{0}")]
     BridgeUnavailable(String),
+    #[error("Herdr bridge SSH transport is unavailable")]
+    TransportUnavailable,
     #[error("{0}")]
     BridgeClosed(String),
 }
@@ -201,6 +203,12 @@ fn transport_closed(id: u64, reason: String) {
 }
 
 impl Bridge {
+    fn ssh(&self) -> Result<&Arc<SshSession>, HerdrBridgeError> {
+        self.ssh
+            .as_ref()
+            .ok_or(HerdrBridgeError::TransportUnavailable)
+    }
+
     fn terminal_id(&self) -> Option<String> {
         match &*self.state.lock() {
             ProtocolState::Attached(terminal_id) => Some(terminal_id.clone()),
@@ -562,11 +570,8 @@ pub(crate) async fn start_bridge_on_runtime(
     }
     let prepared_id = registry().lock().prepared.remove(&client_key);
     let mut bridge = prepared_id.and_then(bridge_for_id);
-    if bridge
-        .as_ref()
-        .is_some_and(|bridge| bridge.protocol != protocol)
-    {
-        bridge.take().unwrap().close_transport();
+    if let Some(incompatible) = bridge.take_if(|bridge| bridge.protocol != protocol) {
+        incompatible.close_transport();
     }
     let bridge = match bridge {
         Some(bridge) => bridge,
@@ -585,20 +590,16 @@ pub(crate) async fn start_bridge_on_runtime(
             .await?
         }
     };
+    let ssh = bridge.ssh()?.clone();
     *bridge.state.lock() = ProtocolState::Attached(terminal_id.clone());
     registry()
         .lock()
         .insert_active(client_key.clone(), terminal_id.clone(), bridge.id);
-    if let Err(error) = bridge
-        .ssh
-        .as_ref()
-        .expect("production bridge owns SSH")
-        .write_unix_socket(
-            &bridge.channel_id,
-            herdr_codec::attach(&terminal_id, takeover),
-            true,
-        )
-    {
+    if let Err(error) = ssh.write_unix_socket(
+        &bridge.channel_id,
+        herdr_codec::attach(&terminal_id, takeover),
+        true,
+    ) {
         bridge.close_transport();
         return Err(HerdrBridgeError::BridgeClosed(error.to_string()));
     }
@@ -695,9 +696,7 @@ pub fn herdr_terminal_input(
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
     bridge
-        .ssh
-        .as_ref()
-        .expect("production bridge owns SSH")
+        .ssh()?
         .write_unix_socket(
             &bridge.channel_id,
             herdr_codec::input(text.as_bytes()),
@@ -718,9 +717,7 @@ pub fn herdr_terminal_resize(
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
     let payload = herdr_codec::resize(columns, rows, cell_width_px, cell_height_px)?;
     bridge
-        .ssh
-        .as_ref()
-        .expect("production bridge owns SSH")
+        .ssh()?
         .write_unix_socket(&bridge.channel_id, payload, true)
         .map_err(|error| HerdrBridgeError::BridgeClosed(error.to_string()))
 }
@@ -739,9 +736,7 @@ pub fn herdr_terminal_scroll(
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
     let payload = herdr_codec::scroll(up, lines, column, row, modifiers)?;
     bridge
-        .ssh
-        .as_ref()
-        .expect("production bridge owns SSH")
+        .ssh()?
         .write_unix_socket(&bridge.channel_id, payload, true)
         .map_err(|error| HerdrBridgeError::BridgeClosed(error.to_string()))
 }
@@ -756,11 +751,9 @@ pub fn close_herdr_terminal_bridge(client_key: String, terminal_id: String) {
         registry.remove_active(&client_key, &terminal_id);
     }
     *bridge.state.lock() = ProtocolState::Closing;
-    let _ = bridge
-        .ssh
-        .as_ref()
-        .expect("production bridge owns SSH")
-        .write_unix_socket(&bridge.channel_id, herdr_codec::detach(), true);
+    if let Some(ssh) = &bridge.ssh {
+        let _ = ssh.write_unix_socket(&bridge.channel_id, herdr_codec::detach(), true);
+    }
     bridge.close_transport();
 }
 
@@ -776,12 +769,10 @@ pub fn close_all_herdr_terminal_bridges(client_key: String) {
             .collect::<Vec<_>>()
     };
     for bridge in bridges {
-        if bridge.terminal_id().is_some() {
-            let _ = bridge
-                .ssh
-                .as_ref()
-                .expect("production bridge owns SSH")
-                .write_unix_socket(&bridge.channel_id, herdr_codec::detach(), true);
+        if bridge.terminal_id().is_some()
+            && let Some(ssh) = &bridge.ssh
+        {
+            let _ = ssh.write_unix_socket(&bridge.channel_id, herdr_codec::detach(), true);
         }
         bridge.close_transport();
     }
@@ -861,6 +852,15 @@ mod tests {
         receiver: oneshot::Receiver<Result<(), HerdrBridgeError>>,
     ) -> Result<(), HerdrBridgeError> {
         receiver.blocking_recv().expect("handshake result")
+    }
+
+    #[test]
+    fn missing_bridge_transport_is_a_typed_error() {
+        let (bridge, _) = test_bridge(20);
+        assert!(matches!(
+            bridge.ssh(),
+            Err(HerdrBridgeError::TransportUnavailable)
+        ));
     }
 
     #[test]

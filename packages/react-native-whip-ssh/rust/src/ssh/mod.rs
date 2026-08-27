@@ -2193,7 +2193,9 @@ impl LengthPrefixedFrameReader {
                 }
             }
 
-            let payload = self.payload.as_mut().expect("payload initialized above");
+            let Some(payload) = self.payload.as_mut() else {
+                continue;
+            };
             let count = reader.read(&mut payload[self.payload_read..]).await?;
             if count == 0 {
                 return Err(TransportError::InvalidRequest(

@@ -391,11 +391,11 @@ async fn exchange(args: ExchangeArgs) -> Result<(), Error> {
     io::stdin()
         .take((MAX_MESSAGE_BYTES + 1) as u64)
         .read_to_end(&mut request)?;
-    if request.is_empty()
-        || request.len() > MAX_MESSAGE_BYTES
-        || request.last() != Some(&b'\n')
-        || serde_json::from_slice::<EnrollmentRequest>(&request[..request.len() - 1]).is_err()
-    {
+    let valid_request = request.len() <= MAX_MESSAGE_BYTES
+        && request
+            .strip_suffix(b"\n")
+            .is_some_and(|payload| serde_json::from_slice::<EnrollmentRequest>(payload).is_ok());
+    if !valid_request {
         return Err(Error::Message(
             "expected one bounded enrollment request on stdin".into(),
         ));

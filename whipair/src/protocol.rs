@@ -254,9 +254,14 @@ fn base45_decode(encoded: &str) -> Result<Vec<u8>, ProtocolError> {
     }
     let mut decoded = Vec::with_capacity(encoded.len() * 2 / 3);
     for chunk in encoded.as_bytes().chunks(3) {
-        let mut value = base45_value(chunk[0])? + 45 * base45_value(chunk[1])?;
-        if chunk.len() == 3 {
-            value += 45 * 45 * base45_value(chunk[2])?;
+        let (first, second, third) = match chunk {
+            [first, second, third] => (*first, *second, Some(*third)),
+            [first, second] => (*first, *second, None),
+            _ => return Err(ProtocolError::BadEncoding),
+        };
+        let mut value = base45_value(first)? + 45 * base45_value(second)?;
+        if let Some(third) = third {
+            value += 45 * 45 * base45_value(third)?;
             if value > u16::MAX.into() {
                 return Err(ProtocolError::BadEncoding);
             }
@@ -298,11 +303,13 @@ pub fn fingerprint_public_key(key: &ValidatedPublicKey) -> String {
 }
 
 pub fn verification_code_public_key(key: &ValidatedPublicKey) -> String {
+    // HashAlg::Sha256 structurally guarantees the SHA-256 digest variant.
+    #[allow(clippy::expect_used)]
     let digest = key
         .public_key
         .fingerprint(HashAlg::Sha256)
         .sha256()
-        .expect("SHA-256 fingerprints contain a SHA-256 digest");
+        .expect("a SHA-256 fingerprint must contain its 32-byte SHA-256 digest");
     verification_code(&digest)
 }
 

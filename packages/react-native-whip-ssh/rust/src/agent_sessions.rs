@@ -1,7 +1,6 @@
 //! Rust-owned lifecycle for remote coding-agent transcript sessions.
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
@@ -1249,7 +1248,7 @@ fn sqlite_text_literal(value: &str) -> String {
         if index != 0 {
             literal.push(',');
         }
-        write!(literal, "{byte}").expect("writing to a String cannot fail");
+        literal.push_str(&byte.to_string());
     }
     literal.push(')');
     literal
@@ -1395,12 +1394,15 @@ fn parse_metadata(output: &str) -> Result<(String, u64), AgentSessionError> {
             && device.chars().all(|value| value.is_ascii_digit())
             && inode.chars().all(|value| value.is_ascii_digit())
     });
-    if !file_id_valid || size.is_none() || fields.next().is_some() {
+    if !file_id_valid || fields.next().is_some() {
         return Err(AgentSessionError::SourceUnavailable(
             "Codex returned invalid rollout metadata".to_owned(),
         ));
     }
-    Ok((file_id.to_owned(), size.unwrap()))
+    let size = size.ok_or_else(|| {
+        AgentSessionError::SourceUnavailable("Codex returned invalid rollout metadata".to_owned())
+    })?;
+    Ok((file_id.to_owned(), size))
 }
 
 #[cfg(test)]
@@ -1504,7 +1506,11 @@ mod tests {
             ("12:34".to_owned(), 456)
         );
         assert!(parse_metadata("bad 456").is_err());
-        assert!(parse_metadata("12:34 nope").is_err());
+        assert!(matches!(
+            parse_metadata("12:34 nope"),
+            Err(AgentSessionError::SourceUnavailable(message))
+                if message == "Codex returned invalid rollout metadata"
+        ));
     }
 
     #[test]

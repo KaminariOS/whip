@@ -883,7 +883,7 @@ fn upsert_agent(snapshot: &mut HerdrSessionSnapshot, agent: HerdrAgentInfo) -> R
         .panes
         .iter_mut()
         .find(|pane| pane.pane_id == agent.pane_id)
-        .expect("pane existence was checked above")
+        .ok_or_else(|| format!("agent references unknown pane {}", agent.pane_id))?
         .agent_session
         .clone_from(&agent.agent_session);
     if let Some(current) = snapshot

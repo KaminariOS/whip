@@ -29,6 +29,10 @@ tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
 
+[lints.clippy]
+expect_used = "warn"
+unwrap_used = "deny"
+
 [profile.release]
 codegen-units = 1
 lto = "thin"

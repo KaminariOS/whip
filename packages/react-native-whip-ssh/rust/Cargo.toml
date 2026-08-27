@@ -29,6 +29,10 @@ url = "2"
 [dev-dependencies]
 tempfile = "3"
 
+[lints.clippy]
+expect_used = "warn"
+unwrap_used = "deny"
+
 [profile.release]
 codegen-units = 1
 lto = "thin"
