@@ -40,6 +40,19 @@ pub(crate) struct CodexRolloutReducer {
     context_turn_id: Option<String>,
     saw_paginated_item: bool,
     drift: ProtocolDriftCounters,
+    dirty_messages: Vec<usize>,
+    dirty_turns: Vec<usize>,
+    messages_truncated_to: Option<usize>,
+    turns_truncated_to: Option<usize>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CodexProjectionChanges {
+    pub(crate) became_authoritative: bool,
+    pub(crate) message_indexes: Vec<usize>,
+    pub(crate) turn_indexes: Vec<usize>,
+    pub(crate) messages_truncated_to: Option<usize>,
+    pub(crate) turns_truncated_to: Option<usize>,
 }
 
 impl CodexRolloutReducer {
@@ -55,7 +68,13 @@ impl CodexRolloutReducer {
         &self.turns
     }
 
-    pub(crate) fn accept(&mut self, record: &RolloutRecord, at: Option<u64>, sequence: u64) {
+    pub(crate) fn accept(
+        &mut self,
+        record: &RolloutRecord,
+        at: Option<u64>,
+        sequence: u64,
+    ) -> CodexProjectionChanges {
+        let was_authoritative = self.saw_paginated_item;
         match record {
             RolloutRecord::Event(event) => self.accept_event(event, at),
             RolloutRecord::TurnContext(context) => {
@@ -81,6 +100,21 @@ impl CodexRolloutReducer {
             RolloutRecord::SessionMeta(_)
             | RolloutRecord::AppServerLike(_)
             | RolloutRecord::KnownIrrelevant => {}
+        }
+        self.take_changes(!was_authoritative && self.saw_paginated_item)
+    }
+
+    fn take_changes(&mut self, became_authoritative: bool) -> CodexProjectionChanges {
+        self.dirty_messages.sort_unstable();
+        self.dirty_messages.dedup();
+        self.dirty_turns.sort_unstable();
+        self.dirty_turns.dedup();
+        CodexProjectionChanges {
+            became_authoritative,
+            message_indexes: std::mem::take(&mut self.dirty_messages),
+            turn_indexes: std::mem::take(&mut self.dirty_turns),
+            messages_truncated_to: self.messages_truncated_to.take(),
+            turns_truncated_to: self.turns_truncated_to.take(),
         }
     }
 
@@ -535,6 +569,7 @@ impl CodexRolloutReducer {
 
     fn ensure_turn(&mut self, turn_id: &str) -> usize {
         if let Some(index) = self.turn_indexes.get(turn_id).copied() {
+            self.dirty_turns.push(index);
             return index;
         }
         let index = self.turns.len();
@@ -548,12 +583,14 @@ impl CodexRolloutReducer {
             diffs: Vec::new(),
         });
         self.turn_indexes.insert(turn_id.to_owned(), index);
+        self.dirty_turns.push(index);
         index
     }
 
     fn put_message(&mut self, turn_id: &str, message: AgentTranscriptMessage) {
         if let Some(index) = self.message_indexes.get(&message.id).copied() {
             self.messages[index] = message;
+            self.dirty_messages.push(index);
             return;
         }
         self.message_turns
@@ -561,6 +598,7 @@ impl CodexRolloutReducer {
         self.message_indexes
             .insert(message.id.clone(), self.messages.len());
         self.messages.push(message);
+        self.dirty_messages.push(self.messages.len() - 1);
     }
 
     fn put_assistant_part(
@@ -605,6 +643,7 @@ impl CodexRolloutReducer {
         } else {
             message.parts.push(part);
         }
+        self.dirty_messages.push(index);
     }
 
     fn merge_turn_diffs(&mut self, turn_id: &str, files: &[AgentFileDiff]) {
@@ -613,6 +652,7 @@ impl CodexRolloutReducer {
         let message_id = format!("assistant:{turn_id}");
         if let Some(index) = self.message_indexes.get(&message_id).copied() {
             merge_diffs(&mut self.messages[index].diffs, files);
+            self.dirty_messages.push(index);
         }
     }
 
@@ -620,6 +660,7 @@ impl CodexRolloutReducer {
         let message_id = format!("assistant:{turn_id}");
         if let Some(index) = self.message_indexes.get(&message_id).copied() {
             self.messages[index].error = Some(error);
+            self.dirty_messages.push(index);
         }
     }
 
@@ -631,6 +672,7 @@ impl CodexRolloutReducer {
             .map(|turn| turn.id.clone())
             .collect::<Vec<_>>();
         self.turns.truncate(keep);
+        self.turns_truncated_to = Some(keep);
         self.turn_indexes = self
             .turns
             .iter()
@@ -642,6 +684,7 @@ impl CodexRolloutReducer {
                 .get(&message.id)
                 .is_none_or(|turn_id| !removed.contains(turn_id))
         });
+        self.messages_truncated_to = Some(self.messages.len());
         self.message_indexes = self
             .messages
             .iter()

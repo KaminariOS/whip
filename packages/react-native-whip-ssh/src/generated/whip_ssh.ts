@@ -2144,6 +2144,9 @@ export type AgentTranscriptCacheWrite = {
   key: string;
   blob: ArrayBuffer;
   confirmationToken: string;
+  revision: bigint;
+  sourceGeneration: bigint;
+  position: bigint;
 };
 
 /**
@@ -2173,18 +2176,525 @@ const FfiConverterTypeAgentTranscriptCacheWrite = (() => {
         key: FfiConverterString.read(from),
         blob: FfiConverterArrayBuffer.read(from),
         confirmationToken: FfiConverterString.read(from),
+        revision: FfiConverterUInt64.read(from),
+        sourceGeneration: FfiConverterUInt64.read(from),
+        position: FfiConverterUInt64.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterString.write(value.key, into);
       FfiConverterArrayBuffer.write(value.blob, into);
       FfiConverterString.write(value.confirmationToken, into);
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterUInt64.write(value.sourceGeneration, into);
+      FfiConverterUInt64.write(value.position, into);
     }
     allocationSize(value: TypeName): number {
       return (
         FfiConverterString.allocationSize(value.key) +
         FfiConverterArrayBuffer.allocationSize(value.blob) +
-        FfiConverterString.allocationSize(value.confirmationToken)
+        FfiConverterString.allocationSize(value.confirmationToken) +
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterUInt64.allocationSize(value.sourceGeneration) +
+        FfiConverterUInt64.allocationSize(value.position)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: AgentTranscriptDelta
+export enum AgentTranscriptDelta_Tags {
+  Reset = 'Reset',
+  InfoChanged = 'InfoChanged',
+  MessageUpserted = 'MessageUpserted',
+  MessageRemoved = 'MessageRemoved',
+  MessagesTruncated = 'MessagesTruncated',
+  TurnUpserted = 'TurnUpserted',
+  TurnsTruncated = 'TurnsTruncated',
+  StatusChanged = 'StatusChanged',
+}
+export const AgentTranscriptDelta = (() => {
+  type Reset__interface = {
+    tag: AgentTranscriptDelta_Tags.Reset;
+    inner: Readonly<{ state: AgentTranscriptState }>;
+  };
+  class Reset_ extends UniffiEnum implements Reset__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptDelta';
+    readonly tag = AgentTranscriptDelta_Tags.Reset;
+    readonly inner: Readonly<{ state: AgentTranscriptState }>;
+    constructor(inner: { state: AgentTranscriptState }) {
+      super('AgentTranscriptDelta', 'Reset');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { state: AgentTranscriptState }): Reset_ {
+      return new Reset_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Reset_ {
+      return obj.tag === AgentTranscriptDelta_Tags.Reset;
+    }
+  }
+
+  type InfoChanged__interface = {
+    tag: AgentTranscriptDelta_Tags.InfoChanged;
+    inner: Readonly<{ info?: AgentTranscriptInfo }>;
+  };
+  class InfoChanged_ extends UniffiEnum implements InfoChanged__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptDelta';
+    readonly tag = AgentTranscriptDelta_Tags.InfoChanged;
+    readonly inner: Readonly<{ info?: AgentTranscriptInfo }>;
+    constructor(inner: { info?: AgentTranscriptInfo }) {
+      super('AgentTranscriptDelta', 'InfoChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { info?: AgentTranscriptInfo }): InfoChanged_ {
+      return new InfoChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is InfoChanged_ {
+      return obj.tag === AgentTranscriptDelta_Tags.InfoChanged;
+    }
+  }
+
+  type MessageUpserted__interface = {
+    tag: AgentTranscriptDelta_Tags.MessageUpserted;
+    inner: Readonly<{ index: number; message: AgentTranscriptMessage }>;
+  };
+  class MessageUpserted_
+    extends UniffiEnum
+    implements MessageUpserted__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptDelta';
+    readonly tag = AgentTranscriptDelta_Tags.MessageUpserted;
+    readonly inner: Readonly<{
+      index: number;
+      message: AgentTranscriptMessage;
+    }>;
+    constructor(inner: { index: number; message: AgentTranscriptMessage }) {
+      super('AgentTranscriptDelta', 'MessageUpserted');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      index: number;
+      message: AgentTranscriptMessage;
+    }): MessageUpserted_ {
+      return new MessageUpserted_(inner);
+    }
+
+    static instanceOf(obj: any): obj is MessageUpserted_ {
+      return obj.tag === AgentTranscriptDelta_Tags.MessageUpserted;
+    }
+  }
+
+  type MessageRemoved__interface = {
+    tag: AgentTranscriptDelta_Tags.MessageRemoved;
+    inner: Readonly<{ index: number; messageId: string }>;
+  };
+  class MessageRemoved_
+    extends UniffiEnum
+    implements MessageRemoved__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptDelta';
+    readonly tag = AgentTranscriptDelta_Tags.MessageRemoved;
+    readonly inner: Readonly<{ index: number; messageId: string }>;
+    constructor(inner: { index: number; messageId: string }) {
+      super('AgentTranscriptDelta', 'MessageRemoved');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { index: number; messageId: string }): MessageRemoved_ {
+      return new MessageRemoved_(inner);
+    }
+
+    static instanceOf(obj: any): obj is MessageRemoved_ {
+      return obj.tag === AgentTranscriptDelta_Tags.MessageRemoved;
+    }
+  }
+
+  type MessagesTruncated__interface = {
+    tag: AgentTranscriptDelta_Tags.MessagesTruncated;
+    inner: Readonly<{ length: number }>;
+  };
+  class MessagesTruncated_
+    extends UniffiEnum
+    implements MessagesTruncated__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptDelta';
+    readonly tag = AgentTranscriptDelta_Tags.MessagesTruncated;
+    readonly inner: Readonly<{ length: number }>;
+    constructor(inner: { length: number }) {
+      super('AgentTranscriptDelta', 'MessagesTruncated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { length: number }): MessagesTruncated_ {
+      return new MessagesTruncated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is MessagesTruncated_ {
+      return obj.tag === AgentTranscriptDelta_Tags.MessagesTruncated;
+    }
+  }
+
+  type TurnUpserted__interface = {
+    tag: AgentTranscriptDelta_Tags.TurnUpserted;
+    inner: Readonly<{ index: number; turn: AgentTranscriptTurn }>;
+  };
+  class TurnUpserted_ extends UniffiEnum implements TurnUpserted__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptDelta';
+    readonly tag = AgentTranscriptDelta_Tags.TurnUpserted;
+    readonly inner: Readonly<{ index: number; turn: AgentTranscriptTurn }>;
+    constructor(inner: { index: number; turn: AgentTranscriptTurn }) {
+      super('AgentTranscriptDelta', 'TurnUpserted');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      index: number;
+      turn: AgentTranscriptTurn;
+    }): TurnUpserted_ {
+      return new TurnUpserted_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TurnUpserted_ {
+      return obj.tag === AgentTranscriptDelta_Tags.TurnUpserted;
+    }
+  }
+
+  type TurnsTruncated__interface = {
+    tag: AgentTranscriptDelta_Tags.TurnsTruncated;
+    inner: Readonly<{ length: number }>;
+  };
+  class TurnsTruncated_
+    extends UniffiEnum
+    implements TurnsTruncated__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptDelta';
+    readonly tag = AgentTranscriptDelta_Tags.TurnsTruncated;
+    readonly inner: Readonly<{ length: number }>;
+    constructor(inner: { length: number }) {
+      super('AgentTranscriptDelta', 'TurnsTruncated');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { length: number }): TurnsTruncated_ {
+      return new TurnsTruncated_(inner);
+    }
+
+    static instanceOf(obj: any): obj is TurnsTruncated_ {
+      return obj.tag === AgentTranscriptDelta_Tags.TurnsTruncated;
+    }
+  }
+
+  type StatusChanged__interface = {
+    tag: AgentTranscriptDelta_Tags.StatusChanged;
+    inner: Readonly<{ status: AgentTranscriptStatus; error?: string }>;
+  };
+  class StatusChanged_ extends UniffiEnum implements StatusChanged__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptDelta';
+    readonly tag = AgentTranscriptDelta_Tags.StatusChanged;
+    readonly inner: Readonly<{ status: AgentTranscriptStatus; error?: string }>;
+    constructor(inner: { status: AgentTranscriptStatus; error?: string }) {
+      super('AgentTranscriptDelta', 'StatusChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      status: AgentTranscriptStatus;
+      error?: string;
+    }): StatusChanged_ {
+      return new StatusChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is StatusChanged_ {
+      return obj.tag === AgentTranscriptDelta_Tags.StatusChanged;
+    }
+  }
+
+  function instanceOf(obj: any): obj is AgentTranscriptDelta {
+    return obj[uniffiTypeNameSymbol] === 'AgentTranscriptDelta';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Reset: Reset_,
+    InfoChanged: InfoChanged_,
+    MessageUpserted: MessageUpserted_,
+    MessageRemoved: MessageRemoved_,
+    MessagesTruncated: MessagesTruncated_,
+    TurnUpserted: TurnUpserted_,
+    TurnsTruncated: TurnsTruncated_,
+    StatusChanged: StatusChanged_,
+  });
+})();
+export type AgentTranscriptDelta = InstanceType<
+  (typeof AgentTranscriptDelta)[
+    | 'Reset'
+    | 'InfoChanged'
+    | 'MessageUpserted'
+    | 'MessageRemoved'
+    | 'MessagesTruncated'
+    | 'TurnUpserted'
+    | 'TurnsTruncated'
+    | 'StatusChanged']
+>;
+
+// FfiConverter for enum AgentTranscriptDelta
+const FfiConverterTypeAgentTranscriptDelta = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentTranscriptDelta;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new AgentTranscriptDelta.Reset({
+            state: FfiConverterTypeAgentTranscriptState.read(from),
+          });
+        case 2:
+          return new AgentTranscriptDelta.InfoChanged({
+            info: FfiConverterOptionalTypeAgentTranscriptInfo.read(from),
+          });
+        case 3:
+          return new AgentTranscriptDelta.MessageUpserted({
+            index: FfiConverterUInt32.read(from),
+            message: FfiConverterTypeAgentTranscriptMessage.read(from),
+          });
+        case 4:
+          return new AgentTranscriptDelta.MessageRemoved({
+            index: FfiConverterUInt32.read(from),
+            messageId: FfiConverterString.read(from),
+          });
+        case 5:
+          return new AgentTranscriptDelta.MessagesTruncated({
+            length: FfiConverterUInt32.read(from),
+          });
+        case 6:
+          return new AgentTranscriptDelta.TurnUpserted({
+            index: FfiConverterUInt32.read(from),
+            turn: FfiConverterTypeAgentTranscriptTurn.read(from),
+          });
+        case 7:
+          return new AgentTranscriptDelta.TurnsTruncated({
+            length: FfiConverterUInt32.read(from),
+          });
+        case 8:
+          return new AgentTranscriptDelta.StatusChanged({
+            status: FfiConverterTypeAgentTranscriptStatus.read(from),
+            error: FfiConverterOptionalString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case AgentTranscriptDelta_Tags.Reset: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterTypeAgentTranscriptState.write(inner.state, into);
+          return;
+        }
+        case AgentTranscriptDelta_Tags.InfoChanged: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterOptionalTypeAgentTranscriptInfo.write(inner.info, into);
+          return;
+        }
+        case AgentTranscriptDelta_Tags.MessageUpserted: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.index, into);
+          FfiConverterTypeAgentTranscriptMessage.write(inner.message, into);
+          return;
+        }
+        case AgentTranscriptDelta_Tags.MessageRemoved: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.index, into);
+          FfiConverterString.write(inner.messageId, into);
+          return;
+        }
+        case AgentTranscriptDelta_Tags.MessagesTruncated: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.length, into);
+          return;
+        }
+        case AgentTranscriptDelta_Tags.TurnUpserted: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.index, into);
+          FfiConverterTypeAgentTranscriptTurn.write(inner.turn, into);
+          return;
+        }
+        case AgentTranscriptDelta_Tags.TurnsTruncated: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.length, into);
+          return;
+        }
+        case AgentTranscriptDelta_Tags.StatusChanged: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterTypeAgentTranscriptStatus.write(inner.status, into);
+          FfiConverterOptionalString.write(inner.error, into);
+          return;
+        }
+        default:
+          // Throwing from here means that AgentTranscriptDelta_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case AgentTranscriptDelta_Tags.Reset: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterTypeAgentTranscriptState.allocationSize(
+            inner.state,
+          );
+          return size;
+        }
+        case AgentTranscriptDelta_Tags.InfoChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterOptionalTypeAgentTranscriptInfo.allocationSize(
+            inner.info,
+          );
+          return size;
+        }
+        case AgentTranscriptDelta_Tags.MessageUpserted: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterUInt32.allocationSize(inner.index);
+          size += FfiConverterTypeAgentTranscriptMessage.allocationSize(
+            inner.message,
+          );
+          return size;
+        }
+        case AgentTranscriptDelta_Tags.MessageRemoved: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterUInt32.allocationSize(inner.index);
+          size += FfiConverterString.allocationSize(inner.messageId);
+          return size;
+        }
+        case AgentTranscriptDelta_Tags.MessagesTruncated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterUInt32.allocationSize(inner.length);
+          return size;
+        }
+        case AgentTranscriptDelta_Tags.TurnUpserted: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterUInt32.allocationSize(inner.index);
+          size += FfiConverterTypeAgentTranscriptTurn.allocationSize(
+            inner.turn,
+          );
+          return size;
+        }
+        case AgentTranscriptDelta_Tags.TurnsTruncated: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterUInt32.allocationSize(inner.length);
+          return size;
+        }
+        case AgentTranscriptDelta_Tags.StatusChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterTypeAgentTranscriptStatus.allocationSize(
+            inner.status,
+          );
+          size += FfiConverterOptionalString.allocationSize(inner.error);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentTranscriptUpdate = {
+  revision: bigint;
+  deltas: Array<AgentTranscriptDelta>;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptUpdate} record objects.
+ */
+export const AgentTranscriptUpdate = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentTranscriptUpdate,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentTranscriptUpdate>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptUpdate = (() => {
+  type TypeName = AgentTranscriptUpdate;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        deltas: FfiConverterSequenceTypeAgentTranscriptDelta.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterSequenceTypeAgentTranscriptDelta.write(value.deltas, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterSequenceTypeAgentTranscriptDelta.allocationSize(
+          value.deltas,
+        )
       );
     }
   }
@@ -2194,7 +2704,7 @@ const FfiConverterTypeAgentTranscriptCacheWrite = (() => {
 export type AgentTranscriptEvent = {
   runtimeId: string;
   key: string;
-  state: AgentTranscriptState;
+  update: AgentTranscriptUpdate;
   cacheWrite?: AgentTranscriptCacheWrite;
 };
 
@@ -2223,7 +2733,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
       return {
         runtimeId: FfiConverterString.read(from),
         key: FfiConverterString.read(from),
-        state: FfiConverterTypeAgentTranscriptState.read(from),
+        update: FfiConverterTypeAgentTranscriptUpdate.read(from),
         cacheWrite:
           FfiConverterOptionalTypeAgentTranscriptCacheWrite.read(from),
       };
@@ -2231,7 +2741,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterString.write(value.runtimeId, into);
       FfiConverterString.write(value.key, into);
-      FfiConverterTypeAgentTranscriptState.write(value.state, into);
+      FfiConverterTypeAgentTranscriptUpdate.write(value.update, into);
       FfiConverterOptionalTypeAgentTranscriptCacheWrite.write(
         value.cacheWrite,
         into,
@@ -2241,7 +2751,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
       return (
         FfiConverterString.allocationSize(value.runtimeId) +
         FfiConverterString.allocationSize(value.key) +
-        FfiConverterTypeAgentTranscriptState.allocationSize(value.state) +
+        FfiConverterTypeAgentTranscriptUpdate.allocationSize(value.update) +
         FfiConverterOptionalTypeAgentTranscriptCacheWrite.allocationSize(
           value.cacheWrite,
         )
@@ -15458,6 +15968,11 @@ const FfiConverterSequenceTypeAgentTranscriptTurn = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptTurn,
 );
 
+// FfiConverter for Array<AgentTranscriptDelta>
+const FfiConverterSequenceTypeAgentTranscriptDelta = new FfiConverterArray(
+  FfiConverterTypeAgentTranscriptDelta,
+);
+
 // FfiConverter for AgentTranscriptCacheWrite | undefined
 const FfiConverterOptionalTypeAgentTranscriptCacheWrite =
   new FfiConverterOptional(FfiConverterTypeAgentTranscriptCacheWrite);
@@ -16358,6 +16873,7 @@ export default Object.freeze({
     FfiConverterTypeAgentToolState,
     FfiConverterTypeAgentToolStatus,
     FfiConverterTypeAgentTranscriptCacheWrite,
+    FfiConverterTypeAgentTranscriptDelta,
     FfiConverterTypeAgentTranscriptEvent,
     FfiConverterTypeAgentTranscriptEventSink,
     FfiConverterTypeAgentTranscriptInfo,
@@ -16367,6 +16883,7 @@ export default Object.freeze({
     FfiConverterTypeAgentTranscriptState,
     FfiConverterTypeAgentTranscriptStatus,
     FfiConverterTypeAgentTranscriptTurn,
+    FfiConverterTypeAgentTranscriptUpdate,
     FfiConverterTypeAgentTurnStatus,
     FfiConverterTypeGitDiff,
     FfiConverterTypeGitDiffKind,

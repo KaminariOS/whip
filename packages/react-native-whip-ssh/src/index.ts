@@ -4,6 +4,7 @@ import {
   AgentScalarValue_Tags,
   AgentToolStatus,
   AgentTranscriptKind,
+  AgentTranscriptDelta_Tags,
   AgentTranscriptPart_Tags,
   AgentTranscriptStatus,
   AgentTurnStatus,
@@ -71,7 +72,10 @@ import {
   type TransferProgress as NativeTransferProgress,
   type TransferResult as NativeTransferResult,
   type AgentTranscriptEvent,
+  type AgentTranscriptDelta,
+  type AgentTranscriptMessage,
   type AgentTranscriptState,
+  type AgentTranscriptTurn,
 } from './generated-entry';
 import sshNativeClient from './ssh-native';
 
@@ -136,10 +140,32 @@ export type NativeAgentTranscriptState = {
   error?: string;
 };
 
+export type NativeAgentTranscriptMessage = NativeAgentTranscriptState['messages'][number];
+export type NativeAgentTranscriptTurn = NativeAgentTranscriptState['turns'][number];
+export type NativeAgentTranscriptInfo = NonNullable<NativeAgentTranscriptState['info']>;
+
+export type NativeAgentTranscriptDelta =
+  | { type: 'reset'; state: NativeAgentTranscriptState }
+  | { type: 'info-changed'; info?: NativeAgentTranscriptInfo }
+  | { type: 'message-upserted'; index: number; message: NativeAgentTranscriptMessage }
+  | { type: 'message-removed'; index: number; messageId: string }
+  | { type: 'messages-truncated'; length: number }
+  | { type: 'turn-upserted'; index: number; turn: NativeAgentTranscriptTurn }
+  | { type: 'turns-truncated'; length: number }
+  | { type: 'status-changed'; status: NativeAgentTranscriptState['status']; error?: string };
+
 export type NativeAgentTranscriptUpdate = {
   key: string;
-  state: NativeAgentTranscriptState;
-  cacheWrite?: { key: string; blob: ArrayBuffer; confirmationToken: string };
+  revision: number;
+  deltas: NativeAgentTranscriptDelta[];
+  cacheWrite?: {
+    key: string;
+    blob: ArrayBuffer;
+    confirmationToken: string;
+    revision: number;
+    sourceGeneration: number;
+    position: number;
+  };
 };
 
 export type RuntimeSshConfig = {
@@ -424,45 +450,82 @@ function nativeAgentPart(part: AgentTranscriptState['messages'][number]['parts']
   }
 }
 
+function nativeAgentInfo(value: NonNullable<AgentTranscriptState['info']>): NativeAgentTranscriptInfo {
+  return {
+    id: value.id, title: value.title, directory: value.directory,
+    createdAt: nativeNumber(value.createdAtMs), updatedAt: nativeNumber(value.updatedAtMs),
+  };
+}
+
+function nativeAgentMessage(message: AgentTranscriptMessage): NativeAgentTranscriptMessage {
+  return {
+    id: message.id,
+    role: message.role === AgentMessageRole.Assistant ? 'assistant' : 'user',
+    parentId: message.parentId,
+    createdAt: nativeNumber(message.createdAtMs), completedAt: nativeNumber(message.completedAtMs),
+    error: message.error,
+    parts: message.parts.map(nativeAgentPart),
+    diffs: message.diffs.map(file => ({ ...file })),
+  };
+}
+
+function nativeAgentTurn(turn: AgentTranscriptTurn): NativeAgentTranscriptTurn {
+  return {
+    id: turn.id, userMessageId: turn.userMessageId, assistantMessageIds: [...turn.assistantMessageIds],
+    status: turn.status === AgentTurnStatus.Working ? 'working'
+      : turn.status === AgentTurnStatus.Interrupted ? 'interrupted'
+        : turn.status === AgentTurnStatus.Error ? 'error' : 'idle',
+    startedAt: nativeNumber(turn.startedAtMs), completedAt: nativeNumber(turn.completedAtMs),
+    diffs: turn.diffs.map(file => ({ ...file })),
+  };
+}
+
 function nativeAgentTranscript(value: AgentTranscriptState): NativeAgentTranscriptState {
   return {
     sessionId: value.sessionId,
     agent: value.agent === AgentTranscriptKind.OpenCode ? 'opencode' : 'codex',
     revision: Number(value.revision),
     status: nativeAgentStatus(value.status),
-    info: value.info ? {
-      id: value.info.id, title: value.info.title, directory: value.info.directory,
-      createdAt: nativeNumber(value.info.createdAtMs), updatedAt: nativeNumber(value.info.updatedAtMs),
-    } : undefined,
-    messages: value.messages.map(message => ({
-      id: message.id,
-      role: message.role === AgentMessageRole.Assistant ? 'assistant' : 'user',
-      parentId: message.parentId,
-      createdAt: nativeNumber(message.createdAtMs), completedAt: nativeNumber(message.completedAtMs),
-      error: message.error,
-      parts: message.parts.map(nativeAgentPart),
-      diffs: message.diffs.map(file => ({ ...file })),
-    })),
-    turns: value.turns.map(turn => ({
-      id: turn.id, userMessageId: turn.userMessageId, assistantMessageIds: [...turn.assistantMessageIds],
-      status: turn.status === AgentTurnStatus.Working ? 'working'
-        : turn.status === AgentTurnStatus.Interrupted ? 'interrupted'
-          : turn.status === AgentTurnStatus.Error ? 'error' : 'idle',
-      startedAt: nativeNumber(turn.startedAtMs), completedAt: nativeNumber(turn.completedAtMs),
-      diffs: turn.diffs.map(file => ({ ...file })),
-    })),
+    info: value.info ? nativeAgentInfo(value.info) : undefined,
+    messages: value.messages.map(nativeAgentMessage),
+    turns: value.turns.map(nativeAgentTurn),
     error: value.error,
   };
+}
+
+function nativeAgentDelta(delta: AgentTranscriptDelta): NativeAgentTranscriptDelta {
+  switch (delta.tag) {
+    case AgentTranscriptDelta_Tags.Reset:
+      return { type: 'reset', state: nativeAgentTranscript(delta.inner.state) };
+    case AgentTranscriptDelta_Tags.InfoChanged:
+      return { type: 'info-changed', info: delta.inner.info ? nativeAgentInfo(delta.inner.info) : undefined };
+    case AgentTranscriptDelta_Tags.MessageUpserted:
+      return { type: 'message-upserted', index: delta.inner.index, message: nativeAgentMessage(delta.inner.message) };
+    case AgentTranscriptDelta_Tags.MessageRemoved:
+      return { type: 'message-removed', index: delta.inner.index, messageId: delta.inner.messageId };
+    case AgentTranscriptDelta_Tags.MessagesTruncated:
+      return { type: 'messages-truncated', length: delta.inner.length };
+    case AgentTranscriptDelta_Tags.TurnUpserted:
+      return { type: 'turn-upserted', index: delta.inner.index, turn: nativeAgentTurn(delta.inner.turn) };
+    case AgentTranscriptDelta_Tags.TurnsTruncated:
+      return { type: 'turns-truncated', length: delta.inner.length };
+    case AgentTranscriptDelta_Tags.StatusChanged:
+      return { type: 'status-changed', status: nativeAgentStatus(delta.inner.status), error: delta.inner.error };
+  }
 }
 
 function nativeAgentUpdate(event: AgentTranscriptEvent): NativeAgentTranscriptUpdate {
   return {
     key: event.key,
-    state: nativeAgentTranscript(event.state),
+    revision: Number(event.update.revision),
+    deltas: event.update.deltas.map(nativeAgentDelta),
     cacheWrite: event.cacheWrite ? {
       key: event.cacheWrite.key,
       blob: event.cacheWrite.blob,
       confirmationToken: event.cacheWrite.confirmationToken,
+      revision: Number(event.cacheWrite.revision),
+      sourceGeneration: Number(event.cacheWrite.sourceGeneration),
+      position: Number(event.cacheWrite.position),
     } : undefined,
   };
 }

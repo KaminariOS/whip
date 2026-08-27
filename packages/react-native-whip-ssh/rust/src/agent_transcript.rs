@@ -180,6 +180,54 @@ pub struct AgentTranscriptState {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+#[allow(clippy::large_enum_variant)]
+pub enum AgentTranscriptDelta {
+    Reset {
+        state: AgentTranscriptState,
+    },
+    InfoChanged {
+        info: Option<AgentTranscriptInfo>,
+    },
+    MessageUpserted {
+        index: u32,
+        message: AgentTranscriptMessage,
+    },
+    MessageRemoved {
+        index: u32,
+        message_id: String,
+    },
+    MessagesTruncated {
+        length: u32,
+    },
+    TurnUpserted {
+        index: u32,
+        turn: AgentTranscriptTurn,
+    },
+    TurnsTruncated {
+        length: u32,
+    },
+    StatusChanged {
+        status: AgentTranscriptStatus,
+        error: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct AgentTranscriptUpdate {
+    pub revision: u64,
+    pub deltas: Vec<AgentTranscriptDelta>,
+}
+
+impl AgentTranscriptUpdate {
+    pub fn reset(state: AgentTranscriptState) -> Self {
+        Self {
+            revision: state.revision,
+            deltas: vec![AgentTranscriptDelta::Reset { state }],
+        }
+    }
+}
+
 impl AgentTranscriptState {
     pub fn empty(session_id: String, agent: AgentTranscriptKind) -> Self {
         Self {
@@ -361,12 +409,19 @@ impl CodexTranscriptAdapter {
     }
 
     pub fn accept(&mut self, value: &Value) -> bool {
+        self.accept_incremental(value).handled
+    }
+
+    fn accept_incremental(&mut self, value: &Value) -> CodexAdapterUpdate {
+        let previous_session_id = self.session_id.clone();
+        let previous_directory = self.directory.clone();
+        let was_authoritative = self.rollout_reducer.is_authoritative();
         self.sequence = self.sequence.saturating_add(1);
         let decoded = decode_rollout_record(value);
         let record = value.as_object();
         let at = timestamp_ms(record.and_then(|record| record.get("timestamp")));
-        self.rollout_reducer.accept(&decoded, at, self.sequence);
-        match &decoded {
+        let projection = self.rollout_reducer.accept(&decoded, at, self.sequence);
+        let handled = match &decoded {
             RolloutRecord::SessionMeta(payload) => {
                 if let Some(id) = payload.id.as_ref().filter(|id| !id.is_empty()) {
                     self.session_id = id.clone();
@@ -425,26 +480,28 @@ impl CodexTranscriptAdapter {
             }
             RolloutRecord::Event(CodexEvent::TurnAborted(_)) | RolloutRecord::Compacted(_) => true,
             RolloutRecord::AppServerLike(value) => {
-                let Some(record) = value.as_object() else {
-                    return false;
-                };
-                match nonempty(record.get("type")) {
-                    Some("thread.started") => {
-                        if let Some(id) = nonempty(record.get("thread_id")).or_else(|| {
-                            object(record.get("thread"))
-                                .and_then(|thread| nonempty(thread.get("id")))
-                        }) {
-                            self.session_id = id.to_owned();
+                if let Some(record) = value.as_object() {
+                    match nonempty(record.get("type")) {
+                        Some("thread.started") => {
+                            if let Some(id) = nonempty(record.get("thread_id")).or_else(|| {
+                                object(record.get("thread"))
+                                    .and_then(|thread| nonempty(thread.get("id")))
+                            }) {
+                                self.session_id = id.to_owned();
+                            }
+                            true
                         }
-                    }
-                    Some("item.completed") => {
-                        if let Some(item) = object(record.get("item")) {
-                            self.accept_completed_item(item, at);
+                        Some("item.completed") => {
+                            if let Some(item) = object(record.get("item")) {
+                                self.accept_completed_item(item, at);
+                            }
+                            true
                         }
+                        _ => false,
                     }
-                    _ => return false,
+                } else {
+                    false
                 }
-                true
             }
             RolloutRecord::KnownIrrelevant | RolloutRecord::Event(CodexEvent::KnownIrrelevant) => {
                 false
@@ -452,6 +509,58 @@ impl CodexTranscriptAdapter {
             RolloutRecord::ResponseItem(CodexResponseItem::Unknown { .. })
             | RolloutRecord::Event(CodexEvent::Unknown { .. })
             | RolloutRecord::Unknown { .. } => false,
+        };
+        let mut deltas = Vec::new();
+        let info_changed =
+            previous_session_id != self.session_id || previous_directory != self.directory;
+        if info_changed {
+            deltas.push(AgentTranscriptDelta::InfoChanged {
+                info: Some(self.info()),
+            });
+        }
+        let reset = projection.became_authoritative || (!was_authoritative && handled);
+        if self.rollout_reducer.is_authoritative() && !reset {
+            if let Some(length) = projection.messages_truncated_to {
+                deltas.push(AgentTranscriptDelta::MessagesTruncated {
+                    length: u32::try_from(length).unwrap_or(u32::MAX),
+                });
+            }
+            for index in projection.message_indexes {
+                if let Some(message) = self.rollout_reducer.messages().get(index) {
+                    deltas.push(AgentTranscriptDelta::MessageUpserted {
+                        index: u32::try_from(index).unwrap_or(u32::MAX),
+                        message: message.clone(),
+                    });
+                }
+            }
+            if let Some(length) = projection.turns_truncated_to {
+                deltas.push(AgentTranscriptDelta::TurnsTruncated {
+                    length: u32::try_from(length).unwrap_or(u32::MAX),
+                });
+            }
+            for index in projection.turn_indexes {
+                if let Some(turn) = self.rollout_reducer.turns().get(index) {
+                    deltas.push(AgentTranscriptDelta::TurnUpserted {
+                        index: u32::try_from(index).unwrap_or(u32::MAX),
+                        turn: turn.clone(),
+                    });
+                }
+            }
+        }
+        CodexAdapterUpdate {
+            handled,
+            reset,
+            deltas,
+        }
+    }
+
+    fn info(&self) -> AgentTranscriptInfo {
+        AgentTranscriptInfo {
+            id: self.session_id.clone(),
+            title: None,
+            directory: self.directory.clone(),
+            created_at_ms: None,
+            updated_at_ms: None,
         }
     }
 
@@ -490,13 +599,7 @@ impl CodexTranscriptAdapter {
             agent: AgentTranscriptKind::Codex,
             revision,
             status,
-            info: Some(AgentTranscriptInfo {
-                id: self.session_id.clone(),
-                title: None,
-                directory: self.directory.clone(),
-                created_at_ms: None,
-                updated_at_ms: None,
-            }),
+            info: Some(self.info()),
             messages,
             turns,
             error,
@@ -1269,6 +1372,13 @@ impl CodexTranscriptAdapter {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct CodexAdapterUpdate {
+    handled: bool,
+    reset: bool,
+    deltas: Vec<AgentTranscriptDelta>,
+}
+
 #[derive(Clone, Debug)]
 struct ParsedToolResult {
     output: Option<String>,
@@ -1914,7 +2024,10 @@ struct CachedCodexSession {
     source: Option<CodexSourceIdentity>,
     committed_offset: u64,
     lines: Vec<CachedCodexLine>,
-    transcript: AgentTranscriptState,
+    #[serde(default)]
+    revision: Option<u64>,
+    #[serde(default)]
+    transcript: Option<AgentTranscriptState>,
 }
 
 #[derive(Serialize)]
@@ -1946,15 +2059,8 @@ struct AgentTranscriptStateRef<'a> {
     status: AgentTranscriptStatus,
     info: Option<AgentTranscriptInfoRef<'a>>,
     messages: &'a [AgentTranscriptMessage],
-    turns: AgentTranscriptTurnsRef<'a>,
+    turns: &'a [AgentTranscriptTurn],
     error: Option<&'a str>,
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-enum AgentTranscriptTurnsRef<'a> {
-    Projected(Vec<AgentTranscriptTurnRef<'a>>),
-    Canonical(&'a [AgentTranscriptTurn]),
 }
 
 #[derive(Serialize)]
@@ -1964,7 +2070,7 @@ struct CachedCodexSessionRef<'a> {
     source: Option<&'a CodexSourceIdentity>,
     committed_offset: u64,
     lines: &'a [CachedCodexLine],
-    transcript: AgentTranscriptStateRef<'a>,
+    revision: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -1991,6 +2097,7 @@ pub struct CodexIngestResult {
     pub committable_offset: u64,
     pub malformed_records: u32,
     pub changed: bool,
+    pub update: Option<AgentTranscriptUpdate>,
 }
 
 /// Pure state machine shared by live sessions and deterministic tests. Remote
@@ -2048,6 +2155,11 @@ impl CodexSessionCore {
     }
 
     pub fn mark_stale(&mut self, error: impl Into<String>) -> AgentTranscriptState {
+        self.mark_stale_update(error);
+        self.state()
+    }
+
+    pub fn mark_stale_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
         self.status = if self.cached_lines.is_empty() {
             AgentTranscriptStatus::Error
         } else {
@@ -2055,10 +2167,15 @@ impl CodexSessionCore {
         };
         self.error = Some(error.into());
         self.bump_revision();
-        self.state()
+        self.status_update()
     }
 
     pub fn mark_unavailable(&mut self, error: impl Into<String>) -> AgentTranscriptState {
+        self.mark_unavailable_update(error);
+        self.state()
+    }
+
+    pub fn mark_unavailable_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
         self.status = if self.cached_lines.is_empty() {
             AgentTranscriptStatus::Unavailable
         } else {
@@ -2066,7 +2183,7 @@ impl CodexSessionCore {
         };
         self.error = Some(error.into());
         self.bump_revision();
-        self.state()
+        self.status_update()
     }
 
     pub fn mark_live(&mut self) -> bool {
@@ -2080,18 +2197,27 @@ impl CodexSessionCore {
         }
     }
 
+    pub fn mark_live_update(&mut self) -> Option<AgentTranscriptUpdate> {
+        self.mark_live().then(|| self.status_update())
+    }
+
     pub fn close(&mut self) -> AgentTranscriptState {
+        self.close_update();
+        self.state()
+    }
+
+    pub fn close_update(&mut self) -> AgentTranscriptUpdate {
         self.source_generation = self.source_generation.saturating_add(1);
         self.status = AgentTranscriptStatus::Closed;
         self.error = None;
         self.bump_revision();
-        self.state()
+        self.status_update()
     }
 
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
         let cached: CachedCodexSession = serde_json::from_slice(bytes)
             .map_err(|error| AgentCacheError::Malformed(error.to_string()))?;
-        if cached.schema_version != 1 {
+        if !matches!(cached.schema_version, 1 | 2) {
             return Err(AgentCacheError::Malformed("unsupported schema".to_owned()));
         }
         if cached.requested_session_id != self.requested_session_id {
@@ -2117,22 +2243,37 @@ impl CodexSessionCore {
                 adapter.accept(&value);
             }
         }
-        let replay = adapter.snapshot(
-            cached.transcript.revision,
-            cached.transcript.status,
-            cached.transcript.error.clone(),
-        );
-        if replay.info != cached.transcript.info
-            || replay.messages != cached.transcript.messages
-            || replay.turns != cached.transcript.turns
-        {
-            return Err(AgentCacheError::ReplayDiverged);
-        }
+        let revision = if cached.schema_version == 1 {
+            let transcript = cached.transcript.as_ref().ok_or_else(|| {
+                AgentCacheError::Malformed("legacy transcript is missing".to_owned())
+            })?;
+            let replay = adapter.snapshot(
+                transcript.revision,
+                transcript.status,
+                transcript.error.clone(),
+            );
+            if replay.info != transcript.info
+                || replay.messages != transcript.messages
+                || replay.turns != transcript.turns
+            {
+                return Err(AgentCacheError::ReplayDiverged);
+            }
+            transcript.revision
+        } else {
+            if cached.transcript.is_some() {
+                return Err(AgentCacheError::Malformed(
+                    "schema 2 duplicated its transcript projection".to_owned(),
+                ));
+            }
+            cached
+                .revision
+                .ok_or_else(|| AgentCacheError::Malformed("cache revision is missing".to_owned()))?
+        };
         self.source = cached.source;
         self.committed_offset = cached.committed_offset;
         self.cached_lines = cached.lines;
         self.adapter = adapter;
-        self.revision = cached.transcript.revision;
+        self.revision = revision;
         self.status = AgentTranscriptStatus::Stale;
         self.error = None;
         self.framer = TranscriptJsonlFramer::with_offset(self.committed_offset);
@@ -2145,34 +2286,13 @@ impl CodexSessionCore {
         let committed_line_count = self
             .cached_lines
             .partition_point(|line| line.end_offset <= committable);
-        let messages = self.adapter.projected_messages();
-        let turns = self
-            .adapter
-            .projected_turns()
-            .map(AgentTranscriptTurnsRef::Canonical)
-            .unwrap_or_else(|| AgentTranscriptTurnsRef::Projected(project_turn_refs(messages)));
         serde_json::to_vec(&CachedCodexSessionRef {
-            schema_version: 1,
+            schema_version: 2,
             requested_session_id: &self.requested_session_id,
             source: self.source.as_ref(),
             committed_offset: committable,
             lines: &self.cached_lines[..committed_line_count],
-            transcript: AgentTranscriptStateRef {
-                session_id: &self.adapter.session_id,
-                agent: AgentTranscriptKind::Codex,
-                revision: self.revision,
-                status: self.status,
-                info: Some(AgentTranscriptInfoRef {
-                    id: &self.adapter.session_id,
-                    title: None,
-                    directory: self.adapter.directory.as_deref(),
-                    created_at_ms: None,
-                    updated_at_ms: None,
-                }),
-                messages,
-                turns,
-                error: self.error.as_deref(),
-            },
+            revision: self.revision,
         })
         .map_err(|error| AgentCacheError::Malformed(error.to_string()))
     }
@@ -2237,10 +2357,13 @@ impl CodexSessionCore {
                 committable_offset: self.framer.committable_offset(),
                 malformed_records: 0,
                 changed: false,
+                update: None,
             });
         }
         let lines = self.framer.push(bytes)?;
         let mut changed = false;
+        let mut reset = false;
+        let mut deltas = Vec::new();
         let mut malformed_records = 0;
         for line in lines {
             self.cached_lines.push(CachedCodexLine {
@@ -2249,22 +2372,53 @@ impl CodexSessionCore {
             });
             match line.parsed {
                 Ok(Value::Null) => {}
-                Ok(value) => changed |= self.adapter.accept(&value),
+                Ok(value) => {
+                    let accepted = self.adapter.accept_incremental(&value);
+                    changed |= accepted.handled;
+                    reset |= accepted.reset;
+                    deltas.extend(accepted.deltas);
+                }
                 Err(_) => malformed_records += 1,
             }
         }
         if changed {
+            let status_changed = self.status != AgentTranscriptStatus::Live || self.error.is_some();
             self.status = AgentTranscriptStatus::Live;
             self.error = None;
             self.bump_revision();
+            if reset {
+                deltas = vec![AgentTranscriptDelta::Reset {
+                    state: self.state(),
+                }];
+            } else if status_changed {
+                deltas.push(AgentTranscriptDelta::StatusChanged {
+                    status: self.status,
+                    error: None,
+                });
+            }
         }
+        let update = changed.then_some(AgentTranscriptUpdate {
+            revision: self.revision,
+            deltas,
+        });
         Ok(CodexIngestResult {
             source_generation,
             received_offset: self.framer.received_offset(),
             committable_offset: self.framer.committable_offset(),
             malformed_records,
             changed,
+            update,
         })
+    }
+
+    fn status_update(&self) -> AgentTranscriptUpdate {
+        AgentTranscriptUpdate {
+            revision: self.revision,
+            deltas: vec![AgentTranscriptDelta::StatusChanged {
+                status: self.status,
+                error: self.error.clone(),
+            }],
+        }
     }
 
     fn bump_revision(&mut self) {
@@ -2304,6 +2458,21 @@ pub enum OpenCodeTranscriptError {
     IncompleteEvents,
 }
 
+#[derive(Clone, Debug)]
+enum OpenCodeMutation {
+    Info(AgentTranscriptInfo),
+    Message(AgentTranscriptMessage),
+    RemoveMessage(String),
+    Part {
+        message_id: String,
+        part: AgentTranscriptPart,
+    },
+    RemovePart {
+        message_id: String,
+        part_id: String,
+    },
+}
+
 /// OpenCode export/event adapter with an opaque, cursor-bearing cache. Remote
 /// I/O stays in `AgentSessionManager`; this type is deterministic and testable.
 #[derive(Clone, Debug)]
@@ -2311,9 +2480,14 @@ pub struct OpenCodeSessionCore {
     session_id: String,
     source_generation: u64,
     cursor: Option<u64>,
+    committed_cursor: Option<u64>,
     revision: u64,
     info: Option<AgentTranscriptInfo>,
     messages: Vec<AgentTranscriptMessage>,
+    message_indexes: HashMap<String, usize>,
+    turns: Vec<AgentTranscriptTurn>,
+    turn_indexes: HashMap<String, usize>,
+    message_turns: HashMap<String, usize>,
     status: AgentTranscriptStatus,
     error: Option<String>,
 }
@@ -2332,8 +2506,13 @@ impl OpenCodeSessionCore {
             session_id,
             source_generation: 0,
             cursor: None,
+            committed_cursor: None,
             revision: 0,
             messages: Vec::new(),
+            message_indexes: HashMap::new(),
+            turns: Vec::new(),
+            turn_indexes: HashMap::new(),
+            message_turns: HashMap::new(),
             status: AgentTranscriptStatus::Loading,
             error: None,
         }
@@ -2352,6 +2531,14 @@ impl OpenCodeSessionCore {
         self.cursor
     }
 
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn committed_cursor(&self) -> Option<u64> {
+        self.committed_cursor
+    }
+
     pub fn state(&self) -> AgentTranscriptState {
         AgentTranscriptState {
             session_id: self.session_id.clone(),
@@ -2360,12 +2547,17 @@ impl OpenCodeSessionCore {
             status: self.status,
             info: self.info.clone(),
             messages: self.messages.clone(),
-            turns: project_turns(&self.messages),
+            turns: self.turns.clone(),
             error: self.error.clone(),
         }
     }
 
     pub fn mark_stale(&mut self, error: impl Into<String>) -> AgentTranscriptState {
+        self.mark_stale_update(error);
+        self.state()
+    }
+
+    pub fn mark_stale_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
         self.status = if self.cursor.is_some() {
             AgentTranscriptStatus::Stale
         } else {
@@ -2373,10 +2565,15 @@ impl OpenCodeSessionCore {
         };
         self.error = Some(error.into());
         self.bump_revision();
-        self.state()
+        self.status_update()
     }
 
     pub fn mark_unavailable(&mut self, error: impl Into<String>) -> AgentTranscriptState {
+        self.mark_unavailable_update(error);
+        self.state()
+    }
+
+    pub fn mark_unavailable_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
         self.status = if self.cursor.is_some() {
             AgentTranscriptStatus::Stale
         } else {
@@ -2384,7 +2581,7 @@ impl OpenCodeSessionCore {
         };
         self.error = Some(error.into());
         self.bump_revision();
-        self.state()
+        self.status_update()
     }
 
     pub fn mark_live(&mut self) -> bool {
@@ -2398,12 +2595,42 @@ impl OpenCodeSessionCore {
         }
     }
 
+    pub fn mark_live_update(&mut self) -> Option<AgentTranscriptUpdate> {
+        self.mark_live().then(|| self.status_update())
+    }
+
+    pub fn finish_live_update(
+        &mut self,
+        update: Option<AgentTranscriptUpdate>,
+    ) -> Option<AgentTranscriptUpdate> {
+        if self.status == AgentTranscriptStatus::Live && self.error.is_none() {
+            return update;
+        }
+        self.status = AgentTranscriptStatus::Live;
+        self.error = None;
+        if let Some(mut update) = update {
+            update.deltas.push(AgentTranscriptDelta::StatusChanged {
+                status: AgentTranscriptStatus::Live,
+                error: None,
+            });
+            update.revision = self.revision;
+            return Some(update);
+        }
+        self.bump_revision();
+        Some(self.status_update())
+    }
+
     pub fn close(&mut self) -> AgentTranscriptState {
+        self.close_update();
+        self.state()
+    }
+
+    pub fn close_update(&mut self) -> AgentTranscriptUpdate {
         self.source_generation = self.source_generation.saturating_add(1);
         self.status = AgentTranscriptStatus::Closed;
         self.error = None;
         self.bump_revision();
-        self.state()
+        self.status_update()
     }
 
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
@@ -2430,8 +2657,11 @@ impl OpenCodeSessionCore {
             return Err(AgentCacheError::SessionMismatch);
         }
         self.cursor = Some(cached.cursor);
+        self.committed_cursor = Some(cached.cursor);
         self.info = cached.transcript.info;
         self.messages = cached.transcript.messages;
+        self.turns = cached.transcript.turns;
+        self.rebuild_indexes();
         self.revision = cached.transcript.revision;
         self.status = AgentTranscriptStatus::Stale;
         self.error = None;
@@ -2454,16 +2684,24 @@ impl OpenCodeSessionCore {
                 status: self.status,
                 info: self.info.as_ref().map(AgentTranscriptInfoRef::from),
                 messages: &self.messages,
-                turns: AgentTranscriptTurnsRef::Projected(project_turn_refs(&self.messages)),
+                turns: &self.turns,
                 error: self.error.as_deref(),
             },
         })
         .map_err(|error| AgentCacheError::Malformed(error.to_string()))
     }
 
-    pub fn confirm_cache(&self, source_generation: u64, cursor: u64) -> bool {
-        source_generation == self.source_generation
-            && self.cursor.is_some_and(|current| cursor <= current)
+    pub fn confirm_cache(&mut self, source_generation: u64, cursor: u64) -> bool {
+        if source_generation != self.source_generation
+            || !self.cursor.is_some_and(|current| cursor <= current)
+            || self
+                .committed_cursor
+                .is_some_and(|committed| cursor < committed)
+        {
+            return false;
+        }
+        self.committed_cursor = Some(cursor);
+        true
     }
 
     /// Installs an authoritative export at the cursor read immediately before
@@ -2481,10 +2719,21 @@ impl OpenCodeSessionCore {
         self.cursor = Some(cursor);
         self.info = Some(info);
         self.messages = messages;
+        self.turns = project_turns(&self.messages);
+        self.rebuild_indexes();
         if changed {
             self.bump_revision();
         }
         Ok(changed)
+    }
+
+    pub fn bootstrap_update(
+        &mut self,
+        cursor: u64,
+        export_json: &str,
+    ) -> Result<Option<AgentTranscriptUpdate>, OpenCodeTranscriptError> {
+        let changed = self.bootstrap(cursor, export_json)?;
+        Ok(changed.then(|| AgentTranscriptUpdate::reset(self.state())))
     }
 
     pub fn apply_events(
@@ -2492,6 +2741,16 @@ impl OpenCodeSessionCore {
         remote_cursor: u64,
         events_json: &str,
     ) -> Result<bool, OpenCodeTranscriptError> {
+        Ok(self
+            .apply_events_incremental(remote_cursor, events_json)?
+            .is_some())
+    }
+
+    pub fn apply_events_incremental(
+        &mut self,
+        remote_cursor: u64,
+        events_json: &str,
+    ) -> Result<Option<AgentTranscriptUpdate>, OpenCodeTranscriptError> {
         let local_cursor = self.cursor.ok_or(OpenCodeTranscriptError::InvalidCursor)?;
         if remote_cursor < local_cursor {
             return Err(OpenCodeTranscriptError::CursorDiverged);
@@ -2502,9 +2761,8 @@ impl OpenCodeSessionCore {
             .as_array()
             .ok_or(OpenCodeTranscriptError::InvalidEvents)?;
         let mut cursor = local_cursor;
-        let mut info = self.info.clone();
-        let mut messages = self.messages.clone();
-        let mut changed = false;
+        let mut plan = Vec::new();
+        let mut planned_messages = HashMap::<String, bool>::new();
         for row in rows {
             let row = row
                 .as_object()
@@ -2526,8 +2784,7 @@ impl OpenCodeSessionCore {
                         && nonempty(next.get("id")) == Some(self.session_id.as_str())
                     {
                         let next = open_code_session_info(next);
-                        changed |= info.as_ref() != Some(&next);
-                        info = Some(next);
+                        plan.push(OpenCodeMutation::Info(next));
                     }
                 }
                 "message.updated" => {
@@ -2537,25 +2794,15 @@ impl OpenCodeSessionCore {
                     let Some(next) = open_code_message_from_parts(next_info, &[]) else {
                         continue;
                     };
-                    if let Some(index) = messages.iter().position(|message| message.id == next.id) {
-                        let next = AgentTranscriptMessage {
-                            parts: messages[index].parts.clone(),
-                            ..next
-                        };
-                        changed |= messages[index] != next;
-                        messages[index] = next;
-                    } else {
-                        messages.push(next);
-                        changed = true;
-                    }
+                    planned_messages.insert(next.id.clone(), true);
+                    plan.push(OpenCodeMutation::Message(next));
                 }
                 "message.removed" => {
                     let Some(message_id) = nonempty(data.get("messageID")) else {
                         continue;
                     };
-                    let before = messages.len();
-                    messages.retain(|message| message.id != message_id);
-                    changed |= messages.len() != before;
+                    planned_messages.insert(message_id.to_owned(), false);
+                    plan.push(OpenCodeMutation::RemoveMessage(message_id.to_owned()));
                 }
                 "message.part.updated" => {
                     let Some(raw_part) = object(data.get("part")) else {
@@ -2567,19 +2814,17 @@ impl OpenCodeSessionCore {
                     let Some(next) = open_code_part(raw_part) else {
                         continue;
                     };
-                    let message = messages
-                        .iter_mut()
-                        .find(|message| message.id == message_id)
-                        .ok_or(OpenCodeTranscriptError::MissingMessage)?;
-                    if let Some(index) =
-                        message.parts.iter().position(|part| part.id() == next.id())
-                    {
-                        changed |= message.parts[index] != next;
-                        message.parts[index] = next;
-                    } else {
-                        message.parts.push(next);
-                        changed = true;
+                    let exists = planned_messages
+                        .get(message_id)
+                        .copied()
+                        .unwrap_or_else(|| self.message_indexes.contains_key(message_id));
+                    if !exists {
+                        return Err(OpenCodeTranscriptError::MissingMessage);
                     }
+                    plan.push(OpenCodeMutation::Part {
+                        message_id: message_id.to_owned(),
+                        part: next,
+                    });
                 }
                 "message.part.removed" => {
                     let Some(message_id) = nonempty(data.get("messageID")) else {
@@ -2588,13 +2833,10 @@ impl OpenCodeSessionCore {
                     let Some(part_id) = nonempty(data.get("partID")) else {
                         continue;
                     };
-                    if let Some(message) =
-                        messages.iter_mut().find(|message| message.id == message_id)
-                    {
-                        let before = message.parts.len();
-                        message.parts.retain(|part| part.id() != part_id);
-                        changed |= message.parts.len() != before;
-                    }
+                    plan.push(OpenCodeMutation::RemovePart {
+                        message_id: message_id.to_owned(),
+                        part_id: part_id.to_owned(),
+                    });
                 }
                 _ => {}
             }
@@ -2602,13 +2844,305 @@ impl OpenCodeSessionCore {
         if cursor < remote_cursor {
             return Err(OpenCodeTranscriptError::IncompleteEvents);
         }
+        let deltas = self.apply_open_code_plan(plan);
+        let changed = !deltas.is_empty();
         self.cursor = Some(cursor);
-        self.info = info;
-        self.messages = messages;
         if changed {
             self.bump_revision();
         }
-        Ok(changed)
+        Ok(changed.then_some(AgentTranscriptUpdate {
+            revision: self.revision,
+            deltas,
+        }))
+    }
+
+    fn apply_open_code_plan(&mut self, plan: Vec<OpenCodeMutation>) -> Vec<AgentTranscriptDelta> {
+        let mut deltas = Vec::new();
+        let mut affected_turns = Vec::new();
+        let mut structural = false;
+        for mutation in plan {
+            match mutation {
+                OpenCodeMutation::Info(info) => {
+                    if self.info.as_ref() != Some(&info) {
+                        self.info = Some(info.clone());
+                        deltas.push(AgentTranscriptDelta::InfoChanged { info: Some(info) });
+                    }
+                }
+                OpenCodeMutation::Message(mut message) => {
+                    if let Some(index) = self.message_indexes.get(&message.id).copied() {
+                        let current = &self.messages[index];
+                        message.parts = current.parts.clone();
+                        if *current == message {
+                            continue;
+                        }
+                        structural |=
+                            current.role != message.role || current.parent_id != message.parent_id;
+                        if let Some(turn) = self.message_turns.get(&message.id).copied() {
+                            affected_turns.push(turn);
+                        }
+                        self.messages[index] = message.clone();
+                        deltas.push(AgentTranscriptDelta::MessageUpserted {
+                            index: u32::try_from(index).unwrap_or(u32::MAX),
+                            message,
+                        });
+                    } else {
+                        let index = self.messages.len();
+                        self.message_indexes.insert(message.id.clone(), index);
+                        self.messages.push(message.clone());
+                        self.append_message_turn(index, &mut affected_turns);
+                        deltas.push(AgentTranscriptDelta::MessageUpserted {
+                            index: u32::try_from(index).unwrap_or(u32::MAX),
+                            message,
+                        });
+                    }
+                }
+                OpenCodeMutation::RemoveMessage(message_id) => {
+                    if let Some(index) = self.message_indexes.get(&message_id).copied() {
+                        self.messages.remove(index);
+                        deltas.push(AgentTranscriptDelta::MessageRemoved {
+                            index: u32::try_from(index).unwrap_or(u32::MAX),
+                            message_id,
+                        });
+                        structural = true;
+                        self.rebuild_message_indexes();
+                    }
+                }
+                OpenCodeMutation::Part { message_id, part } => {
+                    let Some(index) = self.message_indexes.get(&message_id).copied() else {
+                        continue;
+                    };
+                    let message = &mut self.messages[index];
+                    if let Some(part_index) = message
+                        .parts
+                        .iter()
+                        .position(|current| current.id() == part.id())
+                    {
+                        if message.parts[part_index] == part {
+                            continue;
+                        }
+                        message.parts[part_index] = part;
+                    } else {
+                        message.parts.push(part);
+                    }
+                    if let Some(turn) = self.message_turns.get(&message_id).copied() {
+                        affected_turns.push(turn);
+                    }
+                    deltas.push(AgentTranscriptDelta::MessageUpserted {
+                        index: u32::try_from(index).unwrap_or(u32::MAX),
+                        message: message.clone(),
+                    });
+                }
+                OpenCodeMutation::RemovePart {
+                    message_id,
+                    part_id,
+                } => {
+                    let Some(index) = self.message_indexes.get(&message_id).copied() else {
+                        continue;
+                    };
+                    let message = &mut self.messages[index];
+                    let before = message.parts.len();
+                    message.parts.retain(|part| part.id() != part_id);
+                    if message.parts.len() == before {
+                        continue;
+                    }
+                    if let Some(turn) = self.message_turns.get(&message_id).copied() {
+                        affected_turns.push(turn);
+                    }
+                    deltas.push(AgentTranscriptDelta::MessageUpserted {
+                        index: u32::try_from(index).unwrap_or(u32::MAX),
+                        message: message.clone(),
+                    });
+                }
+            }
+        }
+        if structural {
+            self.rebuild_turns_with_deltas(&mut deltas);
+        } else {
+            affected_turns.sort_unstable();
+            affected_turns.dedup();
+            for index in affected_turns {
+                self.recompute_turn(index);
+                if let Some(turn) = self.turns.get(index) {
+                    deltas.push(AgentTranscriptDelta::TurnUpserted {
+                        index: u32::try_from(index).unwrap_or(u32::MAX),
+                        turn: turn.clone(),
+                    });
+                }
+            }
+        }
+        deltas
+    }
+
+    fn append_message_turn(&mut self, message_index: usize, affected_turns: &mut Vec<usize>) {
+        let message = &self.messages[message_index];
+        let turn_index = if message.role == AgentMessageRole::User {
+            let index = self.turns.len();
+            self.turns.push(AgentTranscriptTurn {
+                id: message.id.clone(),
+                user_message_id: Some(message.id.clone()),
+                assistant_message_ids: Vec::new(),
+                status: AgentTurnStatus::Idle,
+                started_at_ms: message.created_at_ms,
+                completed_at_ms: message.completed_at_ms,
+                diffs: message.diffs.clone(),
+            });
+            self.turn_indexes.insert(message.id.clone(), index);
+            index
+        } else if let Some(index) = message
+            .parent_id
+            .as_ref()
+            .and_then(|parent| self.turn_indexes.get(parent).copied())
+            .or_else(|| self.turns.len().checked_sub(1))
+        {
+            self.turns[index]
+                .assistant_message_ids
+                .push(message.id.clone());
+            index
+        } else {
+            let index = self.turns.len();
+            let id = message
+                .parent_id
+                .clone()
+                .unwrap_or_else(|| message.id.clone());
+            self.turns.push(AgentTranscriptTurn {
+                id: id.clone(),
+                user_message_id: None,
+                assistant_message_ids: vec![message.id.clone()],
+                status: AgentTurnStatus::Idle,
+                started_at_ms: message.created_at_ms,
+                completed_at_ms: None,
+                diffs: Vec::new(),
+            });
+            self.turn_indexes.insert(id, index);
+            index
+        };
+        self.message_turns.insert(message.id.clone(), turn_index);
+        affected_turns.push(turn_index);
+    }
+
+    fn recompute_turn(&mut self, index: usize) {
+        let Some(turn) = self.turns.get_mut(index) else {
+            return;
+        };
+        let user = turn
+            .user_message_id
+            .as_ref()
+            .and_then(|id| self.message_indexes.get(id))
+            .and_then(|index| self.messages.get(*index));
+        turn.started_at_ms = user.and_then(|message| message.created_at_ms);
+        turn.completed_at_ms = user.and_then(|message| message.completed_at_ms);
+        turn.diffs = user
+            .map(|message| message.diffs.clone())
+            .unwrap_or_default();
+        let mut running = false;
+        let mut failed = false;
+        for message_id in &turn.assistant_message_ids {
+            let Some(message) = self
+                .message_indexes
+                .get(message_id)
+                .and_then(|index| self.messages.get(*index))
+            else {
+                continue;
+            };
+            turn.started_at_ms = turn.started_at_ms.or(message.created_at_ms);
+            if let Some(completed) = message.completed_at_ms {
+                turn.completed_at_ms = Some(turn.completed_at_ms.unwrap_or(0).max(completed));
+            }
+            failed |= message.error.is_some();
+            for diff in &message.diffs {
+                if let Some(current) = turn
+                    .diffs
+                    .iter_mut()
+                    .find(|current| current.file == diff.file)
+                {
+                    *current = diff.clone();
+                } else {
+                    turn.diffs.push(diff.clone());
+                }
+            }
+            for part in &message.parts {
+                if let AgentTranscriptPart::Tool { state, .. } = part {
+                    running |= matches!(
+                        state.status,
+                        AgentToolStatus::Pending | AgentToolStatus::Running
+                    );
+                    failed |= state.status == AgentToolStatus::Error;
+                    if let Some(completed) = state.completed_at_ms {
+                        turn.completed_at_ms =
+                            Some(turn.completed_at_ms.unwrap_or(0).max(completed));
+                    }
+                }
+            }
+        }
+        turn.status = if failed {
+            AgentTurnStatus::Error
+        } else if running {
+            AgentTurnStatus::Working
+        } else {
+            AgentTurnStatus::Idle
+        };
+    }
+
+    fn rebuild_message_indexes(&mut self) {
+        self.message_indexes = self
+            .messages
+            .iter()
+            .enumerate()
+            .map(|(index, message)| (message.id.clone(), index))
+            .collect();
+    }
+
+    fn rebuild_indexes(&mut self) {
+        self.rebuild_message_indexes();
+        self.turn_indexes = self
+            .turns
+            .iter()
+            .enumerate()
+            .map(|(index, turn)| (turn.id.clone(), index))
+            .collect();
+        self.message_turns.clear();
+        for (index, turn) in self.turns.iter().enumerate() {
+            if let Some(id) = &turn.user_message_id {
+                self.message_turns.insert(id.clone(), index);
+            }
+            for id in &turn.assistant_message_ids {
+                self.message_turns.insert(id.clone(), index);
+            }
+        }
+    }
+
+    fn rebuild_turns_with_deltas(&mut self, deltas: &mut Vec<AgentTranscriptDelta>) {
+        let next = project_turns(&self.messages);
+        let first_changed = self
+            .turns
+            .iter()
+            .zip(&next)
+            .position(|(current, next)| current != next)
+            .unwrap_or(self.turns.len().min(next.len()));
+        let previous_len = self.turns.len();
+        self.turns = next;
+        self.rebuild_indexes();
+        if first_changed < previous_len {
+            deltas.push(AgentTranscriptDelta::TurnsTruncated {
+                length: u32::try_from(first_changed).unwrap_or(u32::MAX),
+            });
+        }
+        for (index, turn) in self.turns.iter().enumerate().skip(first_changed) {
+            deltas.push(AgentTranscriptDelta::TurnUpserted {
+                index: u32::try_from(index).unwrap_or(u32::MAX),
+                turn: turn.clone(),
+            });
+        }
+    }
+
+    fn status_update(&self) -> AgentTranscriptUpdate {
+        AgentTranscriptUpdate {
+            revision: self.revision,
+            deltas: vec![AgentTranscriptDelta::StatusChanged {
+                status: self.status,
+                error: self.error.clone(),
+            }],
+        }
     }
 
     fn bump_revision(&mut self) {
@@ -3448,6 +3982,35 @@ mod tests {
     }
 
     #[test]
+    fn paginated_codex_append_emits_only_the_touched_message_and_turn() {
+        let lines = paginated_fixture()
+            .split_inclusive(|byte| *byte == b'\n')
+            .collect::<Vec<_>>();
+        let mut core = CodexSessionCore::new("requested");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        let initial = lines[..3].concat();
+        let reset = core.ingest(binding.source_generation, &initial).unwrap();
+        assert!(matches!(
+            reset.update.unwrap().deltas.as_slice(),
+            [AgentTranscriptDelta::Reset { .. }]
+        ));
+
+        let appended = core.ingest(binding.source_generation, lines[3]).unwrap();
+        let update = appended.update.expect("assistant item is visible");
+        assert_eq!(update.deltas.len(), 2);
+        assert!(matches!(
+            &update.deltas[0],
+            AgentTranscriptDelta::MessageUpserted { index: 1, message }
+                if message.id == "assistant:turn-current-1" && message.parts.len() == 1
+        ));
+        assert!(matches!(
+            &update.deltas[1],
+            AgentTranscriptDelta::TurnUpserted { index: 0, turn }
+                if turn.id == "turn-current-1"
+        ));
+    }
+
+    #[test]
     fn cache_round_trip_replays_raw_lines_and_resumes_incrementally() {
         let first = record(
             "event_msg",
@@ -3518,17 +4081,15 @@ mod tests {
 
         let blob = core.cache_blob().unwrap();
         let cached: CachedCodexSession = serde_json::from_slice(&blob).unwrap();
-        assert_eq!(cached.schema_version, 1);
+        assert_eq!(cached.schema_version, 2);
         assert_eq!(cached.lines.len(), 1);
         assert_eq!(
             cached.lines[0].raw_line,
             std::str::from_utf8(&complete).unwrap().trim_end()
         );
         assert_eq!(cached.committed_offset, complete.len() as u64);
-        assert_eq!(
-            serde_json::to_value(&cached.transcript).unwrap(),
-            serde_json::to_value(core.state()).unwrap()
-        );
+        assert_eq!(cached.revision, Some(core.revision()));
+        assert!(cached.transcript.is_none());
 
         let legacy_blob = serde_json::to_vec(&CachedCodexSession {
             schema_version: 1,
@@ -3536,7 +4097,8 @@ mod tests {
             source: core.source.clone(),
             committed_offset: cached.committed_offset,
             lines: cached.lines.clone(),
-            transcript: core.state(),
+            revision: None,
+            transcript: Some(core.state()),
         })
         .unwrap();
         let mut restored = CodexSessionCore::new("thread");
@@ -3660,7 +4222,17 @@ mod tests {
                 "data": { "messageID": "msg_assistant", "partID": "reasoning" }
             }
         ]);
-        core.apply_events(9, &events.to_string()).unwrap();
+        let update = core
+            .apply_events_incremental(9, &events.to_string())
+            .unwrap()
+            .expect("tool update is visible");
+        assert!(update.deltas.iter().all(|delta| match delta {
+            AgentTranscriptDelta::MessageUpserted { message, .. } => {
+                message.id == "msg_assistant"
+            }
+            AgentTranscriptDelta::TurnUpserted { turn, .. } => turn.id == "msg_user",
+            _ => false,
+        }));
         let state = core.state();
         assert_eq!(core.cursor(), Some(9));
         assert_eq!(state.turns[0].status, AgentTurnStatus::Error);
@@ -3697,5 +4269,88 @@ mod tests {
             restored.apply_events(3, "[]").unwrap_err(),
             OpenCodeTranscriptError::CursorDiverged
         );
+    }
+
+    #[test]
+    fn opencode_small_event_on_one_thousand_messages_stays_small() {
+        let messages = (0..1_000)
+            .map(|index| {
+                serde_json::json!({
+                    "info": { "id": format!("message-{index}"), "role": "user" },
+                    "parts": []
+                })
+            })
+            .collect::<Vec<_>>();
+        let export = serde_json::json!({
+            "info": { "id": "ses_scale" },
+            "messages": messages
+        });
+        let mut core = OpenCodeSessionCore::new("ses_scale");
+        core.bootstrap(0, &export.to_string()).unwrap();
+        let events = serde_json::json!([{
+            "seq": 1_u64,
+            "type": "message.part.updated.1",
+            "data": {
+                "part": {
+                    "id": "part-999", "messageID": "message-999",
+                    "type": "text", "text": "incremental"
+                }
+            }
+        }]);
+
+        let update = core
+            .apply_events_incremental(1, &events.to_string())
+            .unwrap()
+            .expect("part update changes state");
+        assert_eq!(update.deltas.len(), 2);
+        assert!(matches!(
+            &update.deltas[0],
+            AgentTranscriptDelta::MessageUpserted { index: 999, message }
+                if message.id == "message-999" && message.parts.len() == 1
+        ));
+        assert!(matches!(
+            &update.deltas[1],
+            AgentTranscriptDelta::TurnUpserted { index: 999, turn }
+                if turn.id == "message-999"
+        ));
+        assert_eq!(core.messages.len(), 1_000);
+        assert_eq!(core.turns.len(), 1_000);
+    }
+
+    #[test]
+    fn opencode_invalid_batch_is_atomic_without_a_history_clone() {
+        let export = serde_json::json!({
+            "info": { "id": "ses_atomic" },
+            "messages": [{
+                "info": { "id": "message", "role": "assistant" },
+                "parts": []
+            }]
+        });
+        let mut core = OpenCodeSessionCore::new("ses_atomic");
+        core.bootstrap(0, &export.to_string()).unwrap();
+        let events = serde_json::json!([
+            {
+                "seq": 1_u64, "type": "message.part.updated.1",
+                "data": { "part": {
+                    "id": "would-apply", "messageID": "message",
+                    "type": "text", "text": "partial mutation"
+                }}
+            },
+            {
+                "seq": 2_u64, "type": "message.part.updated.1",
+                "data": { "part": {
+                    "id": "invalid", "messageID": "missing",
+                    "type": "text", "text": "invalid reference"
+                }}
+            }
+        ]);
+
+        assert_eq!(
+            core.apply_events_incremental(2, &events.to_string())
+                .unwrap_err(),
+            OpenCodeTranscriptError::MissingMessage
+        );
+        assert_eq!(core.cursor(), Some(0));
+        assert!(core.messages[0].parts.is_empty());
     }
 }

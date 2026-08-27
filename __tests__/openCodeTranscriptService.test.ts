@@ -44,9 +44,9 @@ function fakeTransport(initial = state(1)) {
   };
   return {
     value,
-    update(next: NativeAgentTranscriptState, cacheWrite?: NativeAgentTranscriptUpdate['cacheWrite']) {
-      current = next;
-      handler?.({ key: nativeKey, state: next, cacheWrite });
+    update(update: Omit<NativeAgentTranscriptUpdate, 'key'>, snapshot?: NativeAgentTranscriptState) {
+      if (snapshot) current = snapshot;
+      handler?.({ key: nativeKey, ...update });
     },
   };
 }
@@ -60,7 +60,7 @@ describe('OpenCode native transcript facade', () => {
     const cache = new MemoryAgentChatCache();
     await cache.saveNative(
       { hostProfileId: 'profile', agent: 'opencode', sessionId },
-      new Uint8Array([1, 2, 3]).buffer,
+      { blob: new Uint8Array([1, 2, 3]).buffer, revision: 0, sourceGeneration: 0, position: 0 },
     );
     const remote = fakeTransport();
     const service = new OpenCodeTranscriptService(cache);
@@ -74,9 +74,9 @@ describe('OpenCode native transcript facade', () => {
     expect([...new Uint8Array(passed!)]).toEqual([1, 2, 3]);
     expect(service.getState(key)).toEqual(expect.objectContaining({ revision: 1, status: 'live' }));
 
-    remote.update(state(3, 'new'));
-    remote.update(state(2, 'old'));
-    expect(service.getState(key)?.revision).toBe(3);
+    remote.update({ revision: 2, deltas: [{ type: 'message-upserted', index: 0, message: state(2, 'new').messages[0] }] });
+    remote.update({ revision: 1, deltas: [{ type: 'message-upserted', index: 0, message: state(1, 'old').messages[0] }] });
+    expect(service.getState(key)?.revision).toBe(2);
     expect(service.getState(key)?.transcript.messages[0].parts[0]).toEqual(
       expect.objectContaining({ text: 'new' }),
     );
@@ -88,11 +88,10 @@ describe('OpenCode native transcript facade', () => {
     const service = new OpenCodeTranscriptService(cache);
     service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
-    remote.update(state(2), {
-      key: nativeKey,
-      blob: new Uint8Array([8, 9]).buffer,
-      confirmationToken: 'confirm-opencode',
-    });
+    remote.update({ revision: 2, deltas: [], cacheWrite: {
+      key: nativeKey, blob: new Uint8Array([8, 9]).buffer,
+      confirmationToken: 'confirm-opencode', revision: 2, sourceGeneration: 1, position: 2,
+    } });
     await flush();
 
     expect(remote.value.confirmAgentTranscriptCache).toHaveBeenCalledWith('confirm-opencode');

@@ -9,13 +9,16 @@ use chrono::NaiveDateTime;
 use parking_lot::{Mutex, RwLock};
 
 use crate::agent_transcript::{
-    AgentCacheError, AgentTranscriptKind, AgentTranscriptState, CodexSessionCore,
-    OpenCodeSessionCore, parse_open_code_cursor,
+    AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
+    AgentTranscriptUpdate, AgentTurnStatus, CodexSessionCore, OpenCodeSessionCore,
+    parse_open_code_cursor,
 };
 use crate::ssh::SshSession;
 
 const RETRY_DELAY: Duration = Duration::from_millis(1_500);
 const OPENCODE_POLL_DELAY: Duration = Duration::from_millis(1_200);
+const CODEX_CHECKPOINT_BYTES: u64 = 256 * 1024;
+const OPENCODE_CHECKPOINT_EVENTS: u64 = 64;
 static NEXT_STREAM_CONTEXT: AtomicU64 = AtomicU64::new(1);
 static STREAMS: OnceLock<RwLock<HashMap<u64, StreamContext>>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn AgentTranscriptEventSink>>>> = OnceLock::new();
@@ -33,13 +36,16 @@ pub struct AgentTranscriptCacheWrite {
     pub key: String,
     pub blob: Vec<u8>,
     pub confirmation_token: String,
+    pub revision: u64,
+    pub source_generation: u64,
+    pub position: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct AgentTranscriptEvent {
     pub runtime_id: String,
     pub key: String,
-    pub state: AgentTranscriptState,
+    pub update: AgentTranscriptUpdate,
     pub cache_write: Option<AgentTranscriptCacheWrite>,
 }
 
@@ -126,26 +132,26 @@ impl AgentSessionCore {
         }
     }
 
-    fn mark_stale(&mut self, reason: impl Into<String>) -> AgentTranscriptState {
+    fn mark_stale_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         let reason = reason.into();
         match self {
-            Self::Codex(core) => core.mark_stale(reason),
-            Self::OpenCode(core) => core.mark_stale(reason),
+            Self::Codex(core) => core.mark_stale_update(reason),
+            Self::OpenCode(core) => core.mark_stale_update(reason),
         }
     }
 
-    fn mark_unavailable(&mut self, reason: impl Into<String>) -> AgentTranscriptState {
+    fn mark_unavailable_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         let reason = reason.into();
         match self {
-            Self::Codex(core) => core.mark_unavailable(reason),
-            Self::OpenCode(core) => core.mark_unavailable(reason),
+            Self::Codex(core) => core.mark_unavailable_update(reason),
+            Self::OpenCode(core) => core.mark_unavailable_update(reason),
         }
     }
 
-    fn close(&mut self) -> AgentTranscriptState {
+    fn close_update(&mut self) -> AgentTranscriptUpdate {
         match self {
-            Self::Codex(core) => core.close(),
-            Self::OpenCode(core) => core.close(),
+            Self::Codex(core) => core.close_update(),
+            Self::OpenCode(core) => core.close_update(),
         }
     }
 
@@ -249,18 +255,18 @@ impl AgentSessionManager {
                 {
                     let _ = ssh.close_exec(&channel);
                 }
-                let state = if closed {
+                let update = if closed {
                     session.closed = true;
-                    session.core.close()
+                    session.core.close_update()
                 } else {
-                    session.core.mark_stale(reason)
+                    session.core.mark_stale_update(reason)
                 };
-                emissions.push((session.key.clone(), state));
+                emissions.push((session.key.clone(), update));
             }
             emissions
         };
-        for (key, state) in emissions {
-            emit(&self.inner, key, state, None);
+        for (key, update) in emissions {
+            emit(&self.inner, key, update, None);
         }
     }
 
@@ -420,7 +426,7 @@ impl AgentSessionManager {
             {
                 let _ = ssh.close_exec(&channel);
             }
-            (session.key.clone(), session.core.close())
+            (session.key.clone(), session.core.close_update())
         };
         emit(&self.inner, emission.0, emission.1, None);
     }
@@ -474,12 +480,12 @@ impl AgentSessionManager {
             if let AgentSessionCore::OpenCode(core) = &mut session.core {
                 core.begin_sync_generation();
             }
-            let snapshot = session.core.mark_stale(reason.clone());
+            let update = session.core.mark_stale_update(reason.clone());
             (
                 host_generation,
                 session.operation_epoch,
                 session.session_id.clone(),
-                snapshot,
+                update,
                 kind,
             )
         };
@@ -571,6 +577,9 @@ impl AgentSessionManager {
                 return;
             };
             let binding = core.bind_source(path.clone(), file_id.clone(), size);
+            let reset = binding
+                .rebuilt
+                .then(|| AgentTranscriptUpdate::reset(core.state()));
             let context = NEXT_STREAM_CONTEXT.fetch_add(1, Ordering::Relaxed);
             let channel_id = format!("agent-transcript-{context}");
             streams().write().insert(
@@ -585,8 +594,11 @@ impl AgentSessionManager {
             );
             session.stream_context = Some(context);
             session.stream_channel_id = Some(channel_id.clone());
-            (context, channel_id, binding.start_offset)
+            (context, channel_id, binding.start_offset, reset)
         };
+        if let Some(update) = opened.3 {
+            emit(&self.inner, key.clone(), update, None);
+        }
         let command = codex_stream_command(&path, opened.2);
         let context = opened.0;
         let data = Arc::new(move |bytes| stream_data(context, bytes));
@@ -610,13 +622,13 @@ impl AgentSessionManager {
                 let mut state = self.inner.state.lock();
                 current_session_mut(&mut state, &key, host_generation, operation_epoch).and_then(
                     |session| match &mut session.core {
-                        AgentSessionCore::Codex(core) => core.mark_live().then(|| core.state()),
+                        AgentSessionCore::Codex(core) => core.mark_live_update(),
                         AgentSessionCore::OpenCode(_) => None,
                     },
                 )
             };
-            if let Some(state) = emission {
-                emit(&self.inner, key, state, None);
+            if let Some(update) = emission {
+                emit(&self.inner, key, update, None);
             }
         }
     }
@@ -683,20 +695,18 @@ impl AgentSessionManager {
         };
 
         if local_cursor == Some(remote_cursor) {
-            let snapshot = {
+            let update = {
                 let mut state = self.inner.state.lock();
                 current_session_mut(&mut state, &key, host_generation, operation_epoch).and_then(
                     |session| match &mut session.core {
-                        AgentSessionCore::OpenCode(core) => {
-                            Some(core.mark_live().then(|| core.state()))
-                        }
+                        AgentSessionCore::OpenCode(core) => Some(core.mark_live_update()),
                         AgentSessionCore::Codex(_) => None,
                     },
                 )
             };
-            if let Some(snapshot) = snapshot {
-                if let Some(snapshot) = snapshot {
-                    emit(&self.inner, key.clone(), snapshot, None);
+            if let Some(update) = update {
+                if let Some(update) = update {
+                    emit(&self.inner, key.clone(), update, None);
                 }
                 self.schedule_opencode_poll(key, host_generation, operation_epoch, session_id);
             }
@@ -786,25 +796,39 @@ impl AgentSessionManager {
     ) -> Result<(), String> {
         let emission = {
             let mut state = self.inner.state.lock();
-            let (snapshot, cache_candidate) = {
+            let (update, cache_candidate) = {
                 let session =
                     current_session_mut(&mut state, key, host_generation, operation_epoch)
                         .ok_or_else(|| "OpenCode transcript operation became stale".to_owned())?;
                 let AgentSessionCore::OpenCode(core) = &mut session.core else {
                     return Err("OpenCode transcript was rebound to another agent".to_owned());
                 };
-                let transcript_changed = if full {
-                    core.bootstrap(remote_cursor, payload)
+                let transcript_update = if full {
+                    core.bootstrap(remote_cursor, payload).map(|changed| {
+                        changed.then(|| AgentTranscriptUpdate {
+                            revision: core.revision(),
+                            deltas: Vec::new(),
+                        })
+                    })
                 } else {
-                    core.apply_events(remote_cursor, payload)
+                    core.apply_events_incremental(remote_cursor, payload)
                 }
                 .map_err(|error| error.to_string())?;
-                let status_changed = core.mark_live();
-                let visible_changed = transcript_changed || status_changed;
+                let mut update = core.finish_live_update(transcript_update);
+                if full && let Some(update) = &mut update {
+                    update.deltas = vec![AgentTranscriptDelta::Reset {
+                        state: core.state(),
+                    }];
+                }
                 let cursor = core.cursor().unwrap_or(remote_cursor);
-                let new_checkpoint = session
-                    .pending_cache_offset
-                    .is_none_or(|pending| cursor > pending);
+                let checkpoint_base = session.pending_cache_offset.or(core.committed_cursor());
+                let checkpoint_due = full
+                    || update.as_ref().is_some_and(completes_turn)
+                    || checkpoint_base.is_none_or(|base| {
+                        cursor.saturating_sub(base) >= OPENCODE_CHECKPOINT_EVENTS
+                    });
+                let new_checkpoint =
+                    checkpoint_due && (full || checkpoint_base.is_none_or(|base| cursor > base));
                 let cache = new_checkpoint
                     .then(|| core.cache_blob().ok())
                     .flatten()
@@ -812,8 +836,13 @@ impl AgentSessionManager {
                         session.pending_cache_offset = Some(cursor);
                         (blob, core.source_generation(), cursor)
                     });
-                let snapshot = (visible_changed || cache.is_some()).then(|| core.state());
-                (snapshot, cache)
+                let update = update.or_else(|| {
+                    cache.is_some().then(|| AgentTranscriptUpdate {
+                        revision: core.revision(),
+                        deltas: Vec::new(),
+                    })
+                });
+                (update, cache)
             };
             let cache = cache_candidate.map(|(blob, source_generation, cursor)| {
                 let checkpoint = state.next_checkpoint;
@@ -831,12 +860,15 @@ impl AgentSessionManager {
                     key: key.to_owned(),
                     blob,
                     confirmation_token: token,
+                    revision: update.as_ref().map_or(0, |update| update.revision),
+                    source_generation,
+                    position: cursor,
                 }
             });
-            snapshot.map(|snapshot| (snapshot, cache))
+            update.map(|update| (update, cache))
         };
-        if let Some((snapshot, cache)) = emission {
-            emit(&self.inner, key.to_owned(), snapshot, cache);
+        if let Some((update, cache)) = emission {
+            emit(&self.inner, key.to_owned(), update, cache);
         }
         Ok(())
     }
@@ -907,9 +939,9 @@ impl AgentSessionManager {
             }
             session.retry_running = true;
             if unavailable {
-                session.core.mark_unavailable(reason.clone())
+                session.core.mark_unavailable_update(reason.clone())
             } else {
-                session.core.mark_stale(reason.clone())
+                session.core.mark_stale_update(reason.clone())
             }
         };
         emit(&self.inner, key.clone(), emission, None);
@@ -951,10 +983,37 @@ fn current_session_mut<'a>(
     })
 }
 
+fn merge_updates(
+    first: Option<AgentTranscriptUpdate>,
+    second: Option<AgentTranscriptUpdate>,
+) -> Option<AgentTranscriptUpdate> {
+    match (first, second) {
+        (Some(mut first), Some(second)) => {
+            first.revision = second.revision;
+            first.deltas.extend(second.deltas);
+            Some(first)
+        }
+        (Some(first), None) => Some(first),
+        (None, Some(second)) => Some(second),
+        (None, None) => None,
+    }
+}
+
+fn completes_turn(update: &AgentTranscriptUpdate) -> bool {
+    update.deltas.iter().any(|delta| {
+        matches!(
+            delta,
+            AgentTranscriptDelta::TurnUpserted { turn, .. }
+                if turn.completed_at_ms.is_some()
+                    && matches!(turn.status, AgentTurnStatus::Idle | AgentTurnStatus::Error | AgentTurnStatus::Interrupted)
+        )
+    })
+}
+
 fn emit(
     manager: &Arc<AgentSessionManagerInner>,
     key: String,
-    state: AgentTranscriptState,
+    update: AgentTranscriptUpdate,
     cache_write: Option<AgentTranscriptCacheWrite>,
 ) {
     let sink = event_sink().read().clone();
@@ -962,7 +1021,7 @@ fn emit(
         sink.event(AgentTranscriptEvent {
             runtime_id: manager.runtime_id.clone(),
             key,
-            state,
+            update,
             cache_write,
         });
     }
@@ -978,7 +1037,7 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
     };
     let emission = {
         let mut state = manager.state.lock();
-        let (snapshot, cache_candidate) = {
+        let (update, cache_candidate) = {
             let Some(session) = current_session_mut(
                 &mut state,
                 &context_value.session_key,
@@ -993,13 +1052,20 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
             match core.ingest(context_value.source_generation, &bytes) {
                 Ok(result) => {
                     let current_generation = result.source_generation == core.source_generation();
-                    let status_changed = current_generation && core.mark_live();
-                    let visible_changed = result.changed || status_changed;
-                    let new_checkpoint = visible_changed
-                        && result.committable_offset > core.committed_offset()
-                        && session
-                            .pending_cache_offset
-                            .is_none_or(|offset| result.committable_offset > offset);
+                    let update = merge_updates(
+                        result.update,
+                        current_generation
+                            .then(|| core.mark_live_update())
+                            .flatten(),
+                    );
+                    let checkpoint_base = session
+                        .pending_cache_offset
+                        .unwrap_or_else(|| core.committed_offset());
+                    let checkpoint_due = update.as_ref().is_some_and(completes_turn)
+                        || result.committable_offset.saturating_sub(checkpoint_base)
+                            >= CODEX_CHECKPOINT_BYTES;
+                    let new_checkpoint =
+                        checkpoint_due && result.committable_offset > checkpoint_base;
                     let cache = new_checkpoint
                         .then(|| core.cache_blob().ok())
                         .flatten()
@@ -1007,10 +1073,18 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
                             session.pending_cache_offset = Some(result.committable_offset);
                             (blob, result.committable_offset)
                         });
-                    let snapshot = (visible_changed || cache.is_some()).then(|| core.state());
-                    (snapshot, cache)
+                    let update = update.or_else(|| {
+                        cache.is_some().then(|| AgentTranscriptUpdate {
+                            revision: core.revision(),
+                            deltas: Vec::new(),
+                        })
+                    });
+                    (update, cache)
                 }
-                Err(error) => (Some(session.core.mark_stale(error.to_string())), None),
+                Err(error) => (
+                    Some(session.core.mark_stale_update(error.to_string())),
+                    None,
+                ),
             }
         };
         let cache = cache_candidate.map(|(blob, offset)| {
@@ -1029,12 +1103,15 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
                 key: context_value.session_key.clone(),
                 blob,
                 confirmation_token: token,
+                revision: update.as_ref().map_or(0, |update| update.revision),
+                source_generation: context_value.source_generation,
+                position: offset,
             }
         });
-        snapshot.map(|snapshot| (snapshot, cache))
+        update.map(|update| (update, cache))
     };
-    if let Some((state, cache)) = emission {
-        emit(&manager, context_value.session_key, state, cache);
+    if let Some((update, cache)) = emission {
+        emit(&manager, context_value.session_key, update, cache);
     }
 }
 

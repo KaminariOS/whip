@@ -30,7 +30,14 @@ export interface AgentChatCache {
   deleteSession(key: AgentChatCacheKey): Promise<void>;
   deleteHost(hostProfileId: string): Promise<void>;
   loadNative(key: AgentChatCacheKey): Promise<ArrayBuffer | null>;
-  saveNative(key: AgentChatCacheKey, blob: ArrayBuffer): Promise<void>;
+  saveNative(key: AgentChatCacheKey, checkpoint: NativeAgentChatCheckpoint): Promise<boolean>;
+}
+
+export interface NativeAgentChatCheckpoint {
+  blob: ArrayBuffer;
+  revision: number;
+  sourceGeneration: number;
+  position: number;
 }
 
 interface SessionRow {
@@ -45,6 +52,8 @@ interface SessionRow {
 interface NativeCacheRow {
   cache_blob: Uint8Array | ArrayBuffer;
 }
+
+interface NativeCacheEntry extends NativeAgentChatCheckpoint {}
 
 type SQLiteTransaction = {
   runAsync: (source: string, params: readonly unknown[]) => Promise<unknown>;
@@ -137,10 +146,19 @@ export class SQLiteAgentChatCache implements AgentChatCache {
             agent TEXT NOT NULL CHECK(agent IN ('codex', 'opencode')),
             agent_session_id TEXT NOT NULL,
             cache_blob BLOB NOT NULL,
+            revision INTEGER NOT NULL DEFAULT 0,
+            source_generation INTEGER NOT NULL DEFAULT 0,
+            position INTEGER NOT NULL DEFAULT 0,
             updated_at INTEGER NOT NULL,
             PRIMARY KEY (host_profile_id, agent, agent_session_id)
           );
         `);
+        const nativeColumns = new Set((await database.getAllAsync<{ name: string }>(
+          'PRAGMA table_info(native_agent_chat_cache)', [],
+        )).map(column => column.name));
+        if (!nativeColumns.has('revision')) await database.execAsync('ALTER TABLE native_agent_chat_cache ADD COLUMN revision INTEGER NOT NULL DEFAULT 0');
+        if (!nativeColumns.has('source_generation')) await database.execAsync('ALTER TABLE native_agent_chat_cache ADD COLUMN source_generation INTEGER NOT NULL DEFAULT 0');
+        if (!nativeColumns.has('position')) await database.execAsync('ALTER TABLE native_agent_chat_cache ADD COLUMN position INTEGER NOT NULL DEFAULT 0');
         return database;
       });
     }
@@ -220,22 +238,38 @@ export class SQLiteAgentChatCache implements AgentChatCache {
     return bytes.slice().buffer;
   }
 
-  async saveNative(key: AgentChatCacheKey, blob: ArrayBuffer): Promise<void> {
+  async saveNative(key: AgentChatCacheKey, checkpoint: NativeAgentChatCheckpoint): Promise<boolean> {
     const db = await this.db();
     await db.runAsync(`
-      INSERT INTO native_agent_chat_cache (host_profile_id, agent, agent_session_id, cache_blob, updated_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO native_agent_chat_cache (
+        host_profile_id, agent, agent_session_id, cache_blob,
+        revision, source_generation, position, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(host_profile_id, agent, agent_session_id) DO UPDATE SET
         cache_blob = excluded.cache_blob,
+        revision = excluded.revision,
+        source_generation = excluded.source_generation,
+        position = excluded.position,
         updated_at = excluded.updated_at
-    `, [...values(key), new Uint8Array(blob), Date.now()]);
+      WHERE excluded.revision > native_agent_chat_cache.revision
+        OR (excluded.revision = native_agent_chat_cache.revision
+          AND excluded.source_generation > native_agent_chat_cache.source_generation)
+        OR (excluded.revision = native_agent_chat_cache.revision
+          AND excluded.source_generation = native_agent_chat_cache.source_generation
+          AND excluded.position >= native_agent_chat_cache.position)
+    `, [
+      ...values(key), new Uint8Array(checkpoint.blob), checkpoint.revision,
+      checkpoint.sourceGeneration, checkpoint.position, Date.now(),
+    ]);
+    return true;
   }
 }
 
 /** Deterministic cache used by transcript service tests. */
 export class MemoryAgentChatCache implements AgentChatCache {
   private readonly entries = new Map<string, AgentChatCacheEntry>();
-  private readonly nativeEntries = new Map<string, ArrayBuffer>();
+  private readonly nativeEntries = new Map<string, NativeCacheEntry>();
 
   private id(key: AgentChatCacheKey): string {
     return `${key.hostProfileId}\n${key.agent}\n${key.sessionId}`;
@@ -277,11 +311,20 @@ export class MemoryAgentChatCache implements AgentChatCache {
   }
 
   async loadNative(key: AgentChatCacheKey): Promise<ArrayBuffer | null> {
-    return this.nativeEntries.get(this.id(key))?.slice(0) || null;
+    return this.nativeEntries.get(this.id(key))?.blob.slice(0) || null;
   }
 
-  async saveNative(key: AgentChatCacheKey, blob: ArrayBuffer): Promise<void> {
-    this.nativeEntries.set(this.id(key), blob.slice(0));
+  async saveNative(key: AgentChatCacheKey, checkpoint: NativeAgentChatCheckpoint): Promise<boolean> {
+    const id = this.id(key);
+    const current = this.nativeEntries.get(id);
+    const newer = !current
+      || checkpoint.revision > current.revision
+      || (checkpoint.revision === current.revision && checkpoint.sourceGeneration > current.sourceGeneration)
+      || (checkpoint.revision === current.revision
+        && checkpoint.sourceGeneration === current.sourceGeneration
+        && checkpoint.position >= current.position);
+    if (newer) this.nativeEntries.set(id, { ...checkpoint, blob: checkpoint.blob.slice(0) });
+    return true;
   }
 
   /** Test-only corruption hook. */

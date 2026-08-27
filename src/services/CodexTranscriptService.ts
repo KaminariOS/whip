@@ -1,7 +1,7 @@
 import type { NativeAgentTranscriptState, NativeAgentTranscriptUpdate } from 'react-native-whip-ssh';
 
 import { emptyTranscript, type AgentChatState } from '../agentChat';
-import { agentChatStateFromNative } from '../lib/nativeAgentTranscript';
+import { agentChatStateFromNative, applyNativeAgentTranscriptUpdate } from '../lib/nativeAgentTranscript';
 import { agentChatCache, type AgentChatCache, type AgentChatCacheKey } from './agentChatCache';
 
 export interface NativeTranscriptTransport {
@@ -101,9 +101,6 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
   getState(key: string): AgentChatState | null {
     const entry = this.entries.get(key);
     if (!entry) return null;
-    if (entry.nativeKey) {
-      try { this.acceptState(entry, entry.transport.agentTranscript(entry.nativeKey)); } catch { /* callback state remains usable */ }
-    }
     return entry.state;
   }
 
@@ -213,13 +210,22 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
       return;
     }
     entry.nativeKey = event.key;
-    this.acceptState(entry, event.state);
+    const next = applyNativeAgentTranscriptUpdate(entry.state, event);
+    if (next === null) {
+      try {
+        this.acceptState(entry, entry.transport.agentTranscript(event.key));
+      } catch (error) {
+        this.publish(entry, { ...entry.state, status: 'stale', error: `Transcript resync failed: ${String(error)}` });
+      }
+    } else if (next !== entry.state) {
+      this.publish(entry, next);
+    }
     if (!event.cacheWrite) return;
-    const { blob, confirmationToken } = event.cacheWrite;
+    const checkpoint = event.cacheWrite;
     entry.persistChain = entry.persistChain.then(async () => {
       if (generation !== entry.generation) return;
-      await this.cache.saveNative(entry.cacheKey, blob);
-      if (generation === entry.generation) entry.transport.confirmAgentTranscriptCache(confirmationToken);
+      await this.cache.saveNative(entry.cacheKey, checkpoint);
+      if (generation === entry.generation) entry.transport.confirmAgentTranscriptCache(checkpoint.confirmationToken);
     }).catch(error => {
       if (generation === entry.generation) this.publish(entry, { ...entry.state, status: 'stale', error: `Could not persist ${this.agent} history: ${String(error)}` });
     });

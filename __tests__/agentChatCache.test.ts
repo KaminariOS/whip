@@ -80,12 +80,24 @@ describe('agent chat cache contract', () => {
   test('stores native transcript checkpoints as opaque bytes', async () => {
     const cache = new MemoryAgentChatCache();
     const blob = new Uint8Array([0, 1, 2, 255]).buffer;
-    await cache.saveNative(codexKey, blob);
+    await cache.saveNative(codexKey, { blob, revision: 1, sourceGeneration: 1, position: 10 });
     const stored = await cache.loadNative(codexKey);
     expect([...new Uint8Array(stored!)]).toEqual([0, 1, 2, 255]);
     new Uint8Array(blob)[0] = 9;
     expect([...new Uint8Array((await cache.loadNative(codexKey))!)]).toEqual([0, 1, 2, 255]);
     await cache.deleteSession(codexKey);
     expect(await cache.loadNative(codexKey)).toBeNull();
+  });
+
+  test('never lets an older async checkpoint replace a newer revision', async () => {
+    const cache = new MemoryAgentChatCache();
+    await cache.saveNative(codexKey, {
+      blob: new Uint8Array([9]).buffer, revision: 9, sourceGeneration: 2, position: 90,
+    });
+    await cache.saveNative(codexKey, {
+      blob: new Uint8Array([4]).buffer, revision: 4, sourceGeneration: 1, position: 40,
+    });
+
+    expect([...new Uint8Array((await cache.loadNative(codexKey))!)]).toEqual([9]);
   });
 });

@@ -1,4 +1,11 @@
-import type { NativeAgentTranscriptPart, NativeAgentTranscriptState } from 'react-native-whip-ssh';
+import type {
+  NativeAgentTranscriptInfo,
+  NativeAgentTranscriptMessage,
+  NativeAgentTranscriptPart,
+  NativeAgentTranscriptState,
+  NativeAgentTranscriptTurn,
+  NativeAgentTranscriptUpdate,
+} from 'react-native-whip-ssh';
 
 import type {
   AgentChatState,
@@ -8,6 +15,8 @@ import type {
   TranscriptPart,
   TranscriptTurn,
 } from '../agentChat';
+
+const nativeMessageIndexes = new WeakMap<AgentChatState, Map<string, TranscriptMessage>>();
 
 function part(value: NativeAgentTranscriptPart): TranscriptPart {
   if (value.type === 'text' || value.type === 'reasoning' || value.type === 'plan') {
@@ -37,48 +46,175 @@ function part(value: NativeAgentTranscriptPart): TranscriptPart {
   };
 }
 
+function info(value: NativeAgentTranscriptInfo | undefined): AgentTranscript['info'] {
+  return value ? {
+    id: value.id,
+    title: value.title,
+    directory: value.directory,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  } : undefined;
+}
+
+function nativeMessage(value: NativeAgentTranscriptMessage): TranscriptMessage {
+  return {
+    id: value.id,
+    role: value.role,
+    parentId: value.parentId,
+    createdAt: value.createdAt,
+    completedAt: value.completedAt,
+    error: value.error ? { message: value.error } : undefined,
+    summary: value.diffs.length ? { diffs: value.diffs } : undefined,
+    parts: value.parts.map(part),
+  };
+}
+
+function turn(value: NativeAgentTranscriptTurn, byId: ReadonlyMap<string, TranscriptMessage>): TranscriptTurn {
+  return {
+    id: value.id,
+    user: value.userMessageId ? byId.get(value.userMessageId) : undefined,
+    assistants: value.assistantMessageIds.flatMap(id => {
+      const current = byId.get(id);
+      return current ? [current] : [];
+    }),
+    status: value.status,
+    startedAt: value.startedAt,
+    completedAt: value.completedAt,
+    diffs: value.diffs,
+  };
+}
+
 /** Mechanical typed-FFI projection into the existing presentation model. */
 export function agentChatStateFromNative(value: NativeAgentTranscriptState): AgentChatState {
-  const messages: TranscriptMessage[] = value.messages.map(message => ({
-    id: message.id,
-    role: message.role,
-    parentId: message.parentId,
-    createdAt: message.createdAt,
-    completedAt: message.completedAt,
-    error: message.error ? { message: message.error } : undefined,
-    summary: message.diffs.length ? { diffs: message.diffs } : undefined,
-    parts: message.parts.map(part),
-  }));
-  const byId = new Map(messages.map(message => [message.id, message]));
-  const turns: TranscriptTurn[] = value.turns.map(turn => ({
-    id: turn.id,
-    user: turn.userMessageId ? byId.get(turn.userMessageId) : undefined,
-    assistants: turn.assistantMessageIds.flatMap(id => {
-      const message = byId.get(id);
-      return message ? [message] : [];
-    }),
-    status: turn.status,
-    startedAt: turn.startedAt,
-    completedAt: turn.completedAt,
-    diffs: turn.diffs,
-  }));
+  const messages = value.messages.map(nativeMessage);
+  const byId = new Map(messages.map(current => [current.id, current]));
+  const turns = value.turns.map(nativeTurn => turn(nativeTurn, byId));
   const transcript: AgentTranscript = {
     sessionId: value.sessionId,
-    info: value.info ? {
-      id: value.info.id,
-      title: value.info.title,
-      directory: value.info.directory,
-      createdAt: value.info.createdAt,
-      updatedAt: value.info.updatedAt,
-    } : undefined,
+    info: info(value.info),
     messages,
     turns,
   };
-  return {
+  const state: AgentChatState = {
     sessionId: value.sessionId,
     transcript,
     revision: value.revision,
     status: value.status === 'closed' ? 'unavailable' : value.status,
     error: value.error,
   };
+  nativeMessageIndexes.set(state, byId);
+  return state;
+}
+
+/** Applies one contiguous native revision while retaining all untouched objects. */
+export function applyNativeAgentTranscriptUpdate(
+  current: AgentChatState,
+  update: NativeAgentTranscriptUpdate,
+): AgentChatState | null {
+  const revision = current.revision;
+  if (revision !== undefined && update.revision <= revision) return current;
+  const reset = update.deltas.find(delta => delta.type === 'reset');
+  if (reset?.type === 'reset') {
+    const next = agentChatStateFromNative(reset.state);
+    next.revision = update.revision;
+    for (const delta of update.deltas) {
+      if (delta.type === 'status-changed') {
+        next.status = delta.status === 'closed' ? 'unavailable' : delta.status;
+        next.error = delta.error;
+      }
+    }
+    return next;
+  }
+  if (revision === undefined || update.revision !== revision + 1) return null;
+
+  let messages = current.transcript.messages;
+  let turns = current.transcript.turns;
+  let transcriptInfo = current.transcript.info;
+  let status = current.status;
+  let error = current.error;
+  const byId = nativeMessageIndexes.get(current)
+    || new Map(messages.map(value => [value.id, value]));
+  let messagesChanged = false;
+  let turnsChanged = false;
+  const mutableMessages = () => {
+    if (!messagesChanged) {
+      messages = [...messages];
+      messagesChanged = true;
+    }
+    return messages;
+  };
+  const mutableTurns = () => {
+    if (!turnsChanged) {
+      turns = [...turns];
+      turnsChanged = true;
+    }
+    return turns;
+  };
+
+  for (const delta of update.deltas) {
+    switch (delta.type) {
+      case 'reset': break;
+      case 'info-changed':
+        transcriptInfo = info(delta.info);
+        break;
+      case 'message-upserted': {
+        const values = mutableMessages();
+        if (delta.index > values.length) return null;
+        if (delta.index < values.length && values[delta.index].id !== delta.message.id) return null;
+        const next = nativeMessage(delta.message);
+        if (delta.index === values.length) values.push(next);
+        else values[delta.index] = next;
+        byId.set(next.id, next);
+        break;
+      }
+      case 'message-removed': {
+        const values = mutableMessages();
+        if (values[delta.index]?.id !== delta.messageId) return null;
+        values.splice(delta.index, 1);
+        byId.delete(delta.messageId);
+        break;
+      }
+      case 'messages-truncated': {
+        const values = mutableMessages();
+        if (delta.length > values.length) return null;
+        for (const removed of values.slice(delta.length)) byId.delete(removed.id);
+        values.length = delta.length;
+        break;
+      }
+      case 'turn-upserted': {
+        const values = mutableTurns();
+        if (delta.index > values.length) return null;
+        if (delta.index < values.length && values[delta.index].id !== delta.turn.id) return null;
+        const next = turn(delta.turn, byId);
+        if (delta.index === values.length) values.push(next);
+        else values[delta.index] = next;
+        break;
+      }
+      case 'turns-truncated': {
+        const values = mutableTurns();
+        if (delta.length > values.length) return null;
+        values.length = delta.length;
+        break;
+      }
+      case 'status-changed':
+        status = delta.status === 'closed' ? 'unavailable' : delta.status;
+        error = delta.error;
+        break;
+    }
+  }
+
+  const next: AgentChatState = {
+    sessionId: current.sessionId,
+    revision: update.revision,
+    status,
+    error,
+    transcript: {
+      sessionId: current.transcript.sessionId,
+      info: transcriptInfo,
+      messages,
+      turns,
+    },
+  };
+  nativeMessageIndexes.set(next, byId);
+  return next;
 }

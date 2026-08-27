@@ -117,10 +117,31 @@ export interface NativeAgentTranscriptState {
   error?: string;
 }
 
+export type NativeAgentTranscriptMessage = NativeAgentTranscriptState['messages'][number];
+export type NativeAgentTranscriptTurn = NativeAgentTranscriptState['turns'][number];
+export type NativeAgentTranscriptInfo = NonNullable<NativeAgentTranscriptState['info']>;
+export type NativeAgentTranscriptDelta =
+  | { type: 'reset'; state: NativeAgentTranscriptState }
+  | { type: 'info-changed'; info?: NativeAgentTranscriptInfo }
+  | { type: 'message-upserted'; index: number; message: NativeAgentTranscriptMessage }
+  | { type: 'message-removed'; index: number; messageId: string }
+  | { type: 'messages-truncated'; length: number }
+  | { type: 'turn-upserted'; index: number; turn: NativeAgentTranscriptTurn }
+  | { type: 'turns-truncated'; length: number }
+  | { type: 'status-changed'; status: NativeAgentTranscriptState['status']; error?: string };
+
 export interface NativeAgentTranscriptUpdate {
   key: string;
-  state: NativeAgentTranscriptState;
-  cacheWrite?: { key: string; blob: ArrayBuffer; confirmationToken: string };
+  revision: number;
+  deltas: NativeAgentTranscriptDelta[];
+  cacheWrite?: {
+    key: string;
+    blob: ArrayBuffer;
+    confirmationToken: string;
+    revision: number;
+    sourceGeneration: number;
+    position: number;
+  };
 }
 
 export interface HostRuntimeConnection {

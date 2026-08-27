@@ -17,6 +17,11 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   AgentTranscriptPart_Tags: {
     Text: 'Text', Reasoning: 'Reasoning', Tool: 'Tool', Plan: 'Plan', Notice: 'Notice',
   },
+  AgentTranscriptDelta_Tags: {
+    Reset: 'Reset', InfoChanged: 'InfoChanged', MessageUpserted: 'MessageUpserted',
+    MessageRemoved: 'MessageRemoved', MessagesTruncated: 'MessagesTruncated',
+    TurnUpserted: 'TurnUpserted', TurnsTruncated: 'TurnsTruncated', StatusChanged: 'StatusChanged',
+  },
   HostSshCredential: {
     Password: { new: jest.fn(inner => ({ tag: 'Password', inner })) },
     Key: { new: jest.fn(inner => ({ tag: 'Key', inner })) },
@@ -319,12 +324,17 @@ describe('native Herdr bridge adapter', () => {
       })],
     }));
     mockAgentEventSink.event({
-      runtimeId: 'runtime-agent', key: 'codex:session-1', state: nativeState,
-      cacheWrite: { key: 'cache', blob: new Uint8Array([1, 2]).buffer, confirmationToken: 'token' },
+      runtimeId: 'runtime-agent', key: 'codex:session-1',
+      update: { revision: 4n, deltas: [{ tag: 'Reset', inner: { state: nativeState } }] },
+      cacheWrite: {
+        key: 'cache', blob: new Uint8Array([1, 2]).buffer, confirmationToken: 'token',
+        revision: 4n, sourceGeneration: 2n, position: 100n,
+      },
     });
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({
       key: 'codex:session-1',
-      state: expect.objectContaining({ revision: 4 }),
+      revision: 4,
+      deltas: [{ type: 'reset', state: expect.objectContaining({ revision: 4 }) }],
       cacheWrite: expect.objectContaining({ confirmationToken: 'token' }),
     }));
   });
