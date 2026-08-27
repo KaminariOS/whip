@@ -14,9 +14,8 @@ import { isSshShellTerminalId } from '../terminalSessions';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
 import {
-  cachedHerdrSocketPath,
-  forgetHerdrSocketPath,
-  rememberHerdrSocketPath,
+  persistedHerdrSocketPathHint,
+  persistHerdrSocketPathHint,
 } from './herdrSocketPathCache';
 import {
   abandonTerminalResizeTrace,
@@ -203,10 +202,6 @@ export class HerdrClient {
   private terminalProtocolStates = new Map<string, TerminalProtocolState>();
   private terminalInputTraces = new Map<string, TerminalInputTrace[]>();
   private pendingTerminalResizeTraces = new Map<string, TerminalResizeTrace>();
-  private apiServer: ServerInfo | null = null;
-  private resolvedApiSocketPath: string | null = null;
-  private resolvedApiSocketPathFromCache = false;
-
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
     const port = Number(profile.port);
     this.validateSshPort(port);
@@ -221,7 +216,9 @@ export class HerdrClient {
       passphrase: value.passphrase || undefined,
       forwardAgent: value.forwardAgent,
     } as const);
-    const cachedSocketPath = profile.herdrSocketPath?.trim() ? undefined : cachedHerdrSocketPath(profile) || undefined;
+    const cachedSocketPath = profile.herdrSocketPath?.trim()
+      ? undefined
+      : persistedHerdrSocketPathHint(profile.id) || undefined;
     const runtime = SSHClient.createHostRuntime({
       runtimeId: profile.id,
       ssh: sshConfig(profile),
@@ -232,9 +229,6 @@ export class HerdrClient {
     }, event => this.runtimeEventHandler?.(event));
     this.runtime = runtime;
     this.profile = profile;
-    this.apiServer = null;
-    this.resolvedApiSocketPath = profile.herdrSocketPath?.trim() ? null : cachedSocketPath || null;
-    this.resolvedApiSocketPathFromCache = Boolean(this.resolvedApiSocketPath);
     try {
       await runtime.connect();
     } catch (error) {
@@ -270,9 +264,6 @@ export class HerdrClient {
     this.runtime?.disconnect().catch(() => undefined);
     this.runtime = null;
     this.profile = null;
-    this.apiServer = null;
-    this.resolvedApiSocketPath = null;
-    this.resolvedApiSocketPathFromCache = false;
     this.terminalOpenings.clear();
     this.terminalConnections.clear();
     this.terminalSizes.clear();
@@ -355,6 +346,14 @@ export class HerdrClient {
     return this.requireRuntime().openAgentSession('codex', terminalId, sessionId, cacheBlob, handler);
   }
 
+  bindCodexAgentTranscript(
+    terminalId: string,
+    sessionId: string,
+    handler: (event: NativeAgentTranscriptUpdate) => void,
+  ): { key: string; state: NativeAgentTranscriptState } {
+    return this.requireRuntime().bindAgentSession('codex', terminalId, sessionId, handler);
+  }
+
   openOpenCodeAgentTranscript(
     terminalId: string,
     sessionId: string,
@@ -362,6 +361,22 @@ export class HerdrClient {
     handler: (event: NativeAgentTranscriptUpdate) => void,
   ): { key: string; state: NativeAgentTranscriptState } {
     return this.requireRuntime().openAgentSession('opencode', terminalId, sessionId, cacheBlob, handler);
+  }
+
+  bindOpenCodeAgentTranscript(
+    terminalId: string,
+    sessionId: string,
+    handler: (event: NativeAgentTranscriptUpdate) => void,
+  ): { key: string; state: NativeAgentTranscriptState } {
+    return this.requireRuntime().bindAgentSession('opencode', terminalId, sessionId, handler);
+  }
+
+  startAgentTranscript(
+    terminalId: string,
+    key: string,
+    cacheBlob: ArrayBuffer | undefined,
+  ): NativeAgentTranscriptState {
+    return this.requireRuntime().startAgentSession(terminalId, key, cacheBlob);
   }
 
   agentTranscript(key: string): NativeAgentTranscriptState {
@@ -372,8 +387,8 @@ export class HerdrClient {
     this.runtime?.closeAgentSession(key);
   }
 
-  closeAgentTranscriptTerminal(terminalId: string): void {
-    this.runtime?.closeAgentTerminal(terminalId);
+  closeAgentTranscriptTerminal(terminalId: string): string | undefined {
+    return this.runtime?.closeAgentTerminal(terminalId);
   }
 
   confirmAgentTranscriptCache(confirmationToken: string): boolean {
@@ -685,16 +700,11 @@ export class HerdrClient {
     const raw = state.snapshot as SessionSnapshotResult['snapshot'] | undefined;
     const socket = this.runtime?.resolvedSocketPath();
     if (!raw) {
-      this.apiServer = null;
       return this.offlineSnapshot({ running: false, socket });
     }
     assertHerdrProtocolCompatible(raw.protocol);
-    if (socket) {
-      this.resolvedApiSocketPath = socket;
-      this.resolvedApiSocketPathFromCache = false;
-      if (!this.requireProfile().herdrSocketPath?.trim()) {
-        rememberHerdrSocketPath(this.requireProfile(), socket);
-      }
+    if (socket && !this.requireProfile().herdrSocketPath?.trim()) {
+      persistHerdrSocketPathHint(this.requireProfile().id, socket);
     }
     const server: ServerInfo = {
       running: true,
@@ -703,7 +713,6 @@ export class HerdrClient {
       compatible: true,
       socket,
     };
-    this.apiServer = server;
     return {
       server,
       focused_workspace_id: raw.focused_workspace_id ?? null,
@@ -751,7 +760,6 @@ export class HerdrClient {
   async startServer(): Promise<void> {
     const command = `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`;
     await this.requireRuntime().execute(this.loginShellCommand(command));
-    this.apiServer = null;
   }
 
   readPane(paneId: string, lines = 160): Promise<string> {
@@ -923,12 +931,9 @@ export class HerdrClient {
   >(
     method: Method,
     params: HerdrApiParams<Method>,
-    socketPath?: string,
     performanceTracePrefix?: string,
   ): Promise<T> {
     const request = { method, params } as HerdrApiRequest;
-    if (socketPath) this.resolvedApiSocketPath = socketPath;
-    else await this.apiSocketPath();
     const requestApi = async () => await this.requireRuntime().requestHerdrApi(request) as T;
     return performanceTracePrefix
       ? await withAppPerformanceTrace(`${performanceTracePrefix}: API round trip`, requestApi)
@@ -939,69 +944,6 @@ export class HerdrClient {
   private loginShellCommand(command: string): string {
     const bootstrap = 'exec "${SHELL:-/bin/sh}" -lc "$1"';
     return `exec /bin/sh -c ${shellQuote(bootstrap)} whip ${shellQuote(command)}`;
-  }
-
-  private async apiSocketPath(): Promise<string> {
-    const profile = this.requireProfile();
-    const override = profile.herdrSocketPath?.trim();
-    if (override) {
-      if (!override.startsWith('/')) throw new Error('Herdr API socket override must be absolute');
-      return override;
-    }
-    if (this.resolvedApiSocketPath) return this.resolvedApiSocketPath;
-    const socketPath = await this.requireRuntime().resolveHerdrSocketPath();
-    this.resolvedApiSocketPath = socketPath;
-    this.resolvedApiSocketPathFromCache = false;
-    rememberHerdrSocketPath(profile, socketPath);
-    return socketPath;
-  }
-
-  private invalidateCachedApiSocketPath(): void {
-    if (!this.resolvedApiSocketPathFromCache) return;
-    const profile = this.requireProfile();
-    if (this.resolvedApiSocketPath) forgetHerdrSocketPath(profile, this.resolvedApiSocketPath);
-    this.resolvedApiSocketPath = null;
-    this.resolvedApiSocketPathFromCache = false;
-  }
-
-  private async probeServer(): Promise<ServerInfo> {
-    let socket = await this.apiSocketPath();
-    try {
-      return await this.pingServer(socket);
-    } catch (error) {
-      if (!isUnavailableSshChannel(error)) throw error;
-      if (this.resolvedApiSocketPathFromCache) {
-        this.invalidateCachedApiSocketPath();
-        socket = await this.apiSocketPath();
-        try {
-          return await this.pingServer(socket);
-        } catch (retryError) {
-          if (!isUnavailableSshChannel(retryError)) throw retryError;
-          return { running: false, socket };
-        }
-      }
-      // A missing Herdr socket and a stale SSH session can both surface as an
-      // unavailable direct-streamlocal channel. Verify a second SSH subsystem
-      // before publishing an offline server snapshot; if that channel also
-      // fails, the caller must reconnect instead of erasing its workspaces.
-      await this.requireRuntime().remoteHome();
-      return { running: false, socket };
-    }
-  }
-
-  private async pingServer(socket: string): Promise<ServerInfo> {
-    const pong = await this.apiRequest<{
-      type: 'pong';
-      version: string;
-      protocol: number;
-    }>('ping', {}, socket);
-    return {
-      running: true,
-      version: pong.version,
-      protocol: pong.protocol,
-      compatible: true,
-      socket,
-    };
   }
 
   private baseCommand(): string {

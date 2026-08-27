@@ -51,6 +51,10 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   HerdrAgentStatus: { Idle: 0, Working: 1, Blocked: 2, Done: 3, Unknown: 4 },
   HostSyncStatus: { Idle: 0, Syncing: 1, Synced: 2, Error: 3 },
   HostFreshness: { Loading: 0, Fresh: 1, Stale: 2, Unavailable: 3 },
+  HostConnectionState: {
+    Disconnected: 0, Connecting: 1, Connected: 2, Reconnecting: 3, Disconnecting: 4, Failed: 5,
+  },
+  HostTerminalState: { Opening: 0, Attached: 1, Restoring: 2, Closed: 3, Failed: 4 },
   HerdrSplitDirection: { Right: 0, Down: 1 },
   HerdrTerminalAttachLaunchMode: { LegacyTerminalAttach: 0, TerminalAttach: 1 },
   HerdrTerminalNotificationKind: { Sound: 0, Toast: 1, SystemToast: 2 },
@@ -248,7 +252,14 @@ describe('native Herdr bridge adapter', () => {
       tag: 'ConnectionStateChanged',
       inner: {
         runtimeId: 'runtime-1',
-        status: { state: 'Connected', generation: 3n, reconnectAttempt: 0 },
+        status: { state: mockGenerated.HostConnectionState.Connected, generation: 3n, reconnectAttempt: 0 },
+      },
+    });
+    mockRuntimeEventSink.event({
+      tag: 'TerminalStateChanged',
+      inner: {
+        runtimeId: 'runtime-1', terminalId: 'terminal-1', state: mockGenerated.HostTerminalState.Restoring,
+        reconnectAttempt: 2n, retrying: true, error: 'channel closed',
       },
     });
     mockRuntimeEventSink.event({
@@ -265,6 +276,10 @@ describe('native Herdr bridge adapter', () => {
       type: 'connection-state', state: 'connected', generation: 3,
       reconnectAttempt: 0, error: undefined,
     });
+    expect(handler).toHaveBeenNthCalledWith(2, {
+      type: 'terminal-state', terminalId: 'terminal-1', state: 'restoring',
+      reconnectAttempt: 2, retrying: true, error: 'channel closed',
+    });
     expect(runtime.hostState()).toEqual({
       revision: 7,
       connectionGeneration: 3,
@@ -278,11 +293,52 @@ describe('native Herdr bridge adapter', () => {
       focus: { workspaceId: 'w1', tabId: 't1', paneId: 'p1' },
       snapshot: undefined,
     });
-    expect(handler).toHaveBeenNthCalledWith(2, {
+    expect(handler).toHaveBeenNthCalledWith(3, {
       type: 'host-state',
       state: runtime.hostState(),
       changedAgentPaneIds: ['p1'],
     });
+
+    for (const [state, expected] of [
+      [mockGenerated.HostConnectionState.Disconnected, 'disconnected'],
+      [mockGenerated.HostConnectionState.Connecting, 'connecting'],
+      [mockGenerated.HostConnectionState.Connected, 'connected'],
+      [mockGenerated.HostConnectionState.Reconnecting, 'reconnecting'],
+      [mockGenerated.HostConnectionState.Disconnecting, 'disconnecting'],
+      [mockGenerated.HostConnectionState.Failed, 'failed'],
+    ] as const) {
+      mockRuntimeEventSink.event({
+        tag: 'ConnectionStateChanged',
+        inner: {
+          runtimeId: 'runtime-1',
+          status: { state, generation: 4n, reconnectAttempt: 1 },
+        },
+      });
+      expect(handler).toHaveBeenLastCalledWith({
+        type: 'connection-state', state: expected, generation: 4,
+        reconnectAttempt: 1, error: undefined,
+      });
+    }
+
+    for (const [state, expected] of [
+      [mockGenerated.HostTerminalState.Opening, 'opening'],
+      [mockGenerated.HostTerminalState.Attached, 'attached'],
+      [mockGenerated.HostTerminalState.Restoring, 'restoring'],
+      [mockGenerated.HostTerminalState.Closed, 'closed'],
+      [mockGenerated.HostTerminalState.Failed, 'failed'],
+    ] as const) {
+      mockRuntimeEventSink.event({
+        tag: 'TerminalStateChanged',
+        inner: {
+          runtimeId: 'runtime-1', terminalId: 'terminal-1', state,
+          reconnectAttempt: 1n, retrying: true,
+        },
+      });
+      expect(handler).toHaveBeenLastCalledWith({
+        type: 'terminal-state', terminalId: 'terminal-1', state: expected,
+        reconnectAttempt: 1, retrying: true, error: undefined,
+      });
+    }
   });
 
   it('logs and unwraps typed HostRuntime connection failures', async () => {
@@ -332,6 +388,8 @@ describe('native Herdr bridge adapter', () => {
     const rustRuntime = {
       runtimeId: jest.fn(() => 'runtime-agent'),
       openAgentSession: jest.fn(() => ({ key: 'codex:session-1', state: nativeState })),
+      bindAgentSession: jest.fn(() => ({ key: 'codex:session-1', state: nativeState })),
+      startAgentSession: jest.fn(() => nativeState),
       agentTranscript: jest.fn(() => nativeState),
       closeAgentSession: jest.fn(),
       closeAgentTerminal: jest.fn(),
@@ -347,6 +405,8 @@ describe('native Herdr bridge adapter', () => {
     });
     const handler = jest.fn();
     const result = runtime.openAgentSession('codex', 'terminal-1', 'session-1', undefined, handler);
+    const bound = runtime.bindAgentSession('codex', 'terminal-1', 'session-1', handler);
+    const started = runtime.startAgentSession('terminal-1', bound.key);
 
     expect(result.state).toEqual(expect.objectContaining({
       sessionId: 'session-1', revision: 4, status: 'live',
@@ -355,6 +415,7 @@ describe('native Herdr bridge adapter', () => {
         parts: [{ type: 'text', id: 'text:1', text: 'hello', timestamp: 12 }],
       })],
     }));
+    expect(started).toEqual(expect.objectContaining({ revision: 4, status: 'live' }));
     mockAgentEventSink.event({
       runtimeId: 'runtime-agent', key: 'codex:session-1',
       update: { revision: 4n, deltas: [{ tag: 'Reset', inner: { state: nativeState } }] },
@@ -369,5 +430,18 @@ describe('native Herdr bridge adapter', () => {
       deltas: [{ type: 'reset', state: expect.objectContaining({ revision: 4 }) }],
       cacheWrite: expect.objectContaining({ confirmationToken: 'token' }),
     }));
+    handler.mockClear();
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent', key: 'codex:session-1', cacheWrite: undefined,
+      update: {
+        revision: 5n,
+        deltas: [{ tag: 'StatusChanged', inner: { status: 5, error: undefined } }],
+      },
+    });
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent', key: 'codex:session-1', cacheWrite: undefined,
+      update: { revision: 6n, deltas: [] },
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });

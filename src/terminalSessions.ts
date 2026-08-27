@@ -13,6 +13,16 @@ export interface TerminalSession {
 
 export type TerminalSessionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
+export function terminalSessionStatusFromNative(
+  state: string,
+  retrying: boolean,
+): TerminalSessionStatus {
+  if (state === 'attached') return 'connected';
+  if (state === 'opening') return 'connecting';
+  if (state === 'failed' && !retrying) return 'error';
+  return 'disconnected';
+}
+
 export interface TerminalSessionsState {
   sessions: TerminalSession[];
   activeTerminalId: string | null;

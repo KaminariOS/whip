@@ -4,6 +4,7 @@ import {
   openSshShellSession,
   openTerminalSession,
   reconcileTerminalSessions,
+  terminalSessionStatusFromNative,
   updateTerminalSession,
 } from '../src/terminalSessions';
 import type { PaneInfo } from '../src/types';
@@ -103,5 +104,14 @@ describe('terminal session state', () => {
       title: 'SSH shell',
       status: 'connecting',
     });
+  });
+
+  test('projects terminal transport status only from native lifecycle state', () => {
+    expect(terminalSessionStatusFromNative('opening', true)).toBe('connecting');
+    expect(terminalSessionStatusFromNative('attached', false)).toBe('connected');
+    expect(terminalSessionStatusFromNative('restoring', true)).toBe('disconnected');
+    expect(terminalSessionStatusFromNative('failed', true)).toBe('disconnected');
+    expect(terminalSessionStatusFromNative('failed', false)).toBe('error');
+    expect(terminalSessionStatusFromNative('closed', false)).toBe('disconnected');
   });
 });

@@ -131,6 +131,8 @@ pub enum HostRuntimeEvent {
         runtime_id: String,
         terminal_id: String,
         state: HostTerminalState,
+        reconnect_attempt: u32,
+        retrying: bool,
         error: Option<String>,
     },
     SshShellData {
@@ -232,6 +234,7 @@ struct TerminalRuntime {
     cell_width_px: u32,
     cell_height_px: u32,
     operation_epoch: u64,
+    reconnect_attempt: u32,
     retry_running: bool,
 }
 
@@ -331,6 +334,7 @@ impl RuntimeState {
         for terminal in self.terminals.values_mut() {
             terminal.operation_epoch = terminal.operation_epoch.wrapping_add(1);
             terminal.state = HostTerminalState::Closed;
+            terminal.reconnect_attempt = 0;
             terminal.retry_running = false;
         }
         self.host_state.mark_disconnected();
@@ -759,6 +763,28 @@ fn safe_socket_path_replay(request: &HerdrControlRequest) -> bool {
         )
 }
 
+fn should_rediscover_cached_socket(
+    socket_from_cache: bool,
+    request: &HerdrControlRequest,
+    result: &Result<HerdrControlResult, HerdrControlError>,
+) -> bool {
+    socket_from_cache
+        && safe_socket_path_replay(request)
+        && result
+            .as_ref()
+            .err()
+            .is_some_and(is_transport_control_error)
+}
+
+fn invalidate_cached_socket(state: &mut RuntimeState) -> bool {
+    if !state.socket_from_cache {
+        return false;
+    }
+    state.socket_path = None;
+    state.socket_from_cache = false;
+    true
+}
+
 fn update_server_from_result(inner: &RuntimeInner, socket: String, result: &HerdrControlResult) {
     let protocol = match result {
         HerdrControlResult::Pong { protocol, .. } => Some(*protocol),
@@ -785,17 +811,12 @@ async fn ensure_herdr_server(inner: &Arc<RuntimeInner>) -> Result<(), HostRuntim
         HerdrControlRequest::Ping,
     )
     .await;
-    if result
-        .as_ref()
-        .err()
-        .is_some_and(is_transport_control_error)
-        && inner.state.lock().socket_from_cache
-    {
-        {
-            let mut state = inner.state.lock();
-            state.socket_path = None;
-            state.socket_from_cache = false;
-        }
+    if should_rediscover_cached_socket(
+        inner.state.lock().socket_from_cache,
+        &HerdrControlRequest::Ping,
+        &result,
+    ) {
+        invalidate_cached_socket(&mut inner.state.lock());
         socket = resolve_socket_path(inner).await?;
         result = request_on_runtime(
             inner.id.clone(),
@@ -837,18 +858,8 @@ async fn control_request_inner(
         request.clone(),
     )
     .await;
-    if result
-        .as_ref()
-        .err()
-        .is_some_and(is_transport_control_error)
-        && inner.state.lock().socket_from_cache
-        && safe_socket_path_replay(&request)
-    {
-        {
-            let mut state = inner.state.lock();
-            state.socket_path = None;
-            state.socket_from_cache = false;
-        }
+    if should_rediscover_cached_socket(inner.state.lock().socket_from_cache, &request, &result) {
+        invalidate_cached_socket(&mut inner.state.lock());
         socket = resolve_socket_path(&inner)
             .await
             .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
@@ -1199,11 +1210,14 @@ async fn open_terminal_inner(
     match result {
         Ok(()) => {
             current.state = HostTerminalState::Attached;
+            current.reconnect_attempt = 0;
             drop(state);
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: inner.id.clone(),
                 terminal_id,
                 state: HostTerminalState::Attached,
+                reconnect_attempt: 0,
+                retrying: false,
                 error: None,
             });
             inner.settled.notify_waiters();
@@ -1211,6 +1225,8 @@ async fn open_terminal_inner(
         }
         Err(error) => {
             current.state = HostTerminalState::Failed;
+            let reconnect_attempt = current.reconnect_attempt;
+            let retrying = current.retry_running;
             drop(state);
             let message = if restoring {
                 format!("Terminal reattach failed: {error}")
@@ -1221,6 +1237,8 @@ async fn open_terminal_inner(
                 runtime_id: inner.id.clone(),
                 terminal_id,
                 state: HostTerminalState::Failed,
+                reconnect_attempt,
+                retrying,
                 error: Some(message.clone()),
             });
             inner.settled.notify_waiters();
@@ -1279,6 +1297,18 @@ async fn open_terminal_with_retry(
     let mut last_error = None;
     for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
         if attempt > 1 {
+            if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
+                terminal.state = HostTerminalState::Opening;
+                terminal.reconnect_attempt = attempt - 1;
+            }
+            emit(HostRuntimeEvent::TerminalStateChanged {
+                runtime_id: inner.id.clone(),
+                terminal_id: terminal_id.clone(),
+                state: HostTerminalState::Opening,
+                reconnect_attempt: attempt - 1,
+                retrying: true,
+                error: last_error.as_ref().map(ToString::to_string),
+            });
             tokio::time::sleep(Duration::from_millis(reconnect_delay(
                 attempt - 1,
                 runtime_jitter(&inner, attempt - 1),
@@ -1315,9 +1345,18 @@ async fn open_terminal_with_retry(
         terminal.retry_running = false;
     }
     inner.settled.notify_waiters();
-    Err(last_error.unwrap_or_else(|| {
+    let error = last_error.unwrap_or_else(|| {
         HostRuntimeError::TerminalUnavailable(format!("terminal {terminal_id} failed to open"))
-    }))
+    });
+    emit(HostRuntimeEvent::TerminalStateChanged {
+        runtime_id: inner.id.clone(),
+        terminal_id: terminal_id.clone(),
+        state: HostTerminalState::Failed,
+        reconnect_attempt: MAX_RECONNECT_ATTEMPTS,
+        retrying: false,
+        error: Some(format!("terminal recovery exhausted: {error}")),
+    });
+    Err(error)
 }
 
 async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u32 {
@@ -1342,6 +1381,7 @@ async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u32 {
                     None
                 } else {
                     terminal.state = HostTerminalState::Restoring;
+                    terminal.reconnect_attempt = 0;
                     terminal.retry_running = true;
                     Some((id.clone(), terminal.operation_epoch))
                 }
@@ -1354,6 +1394,8 @@ async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u32 {
             runtime_id: inner.id.clone(),
             terminal_id: terminal_id.clone(),
             state: HostTerminalState::Restoring,
+            reconnect_attempt: 0,
+            retrying: true,
             error: None,
         });
         match open_terminal_inner(inner.clone(), terminal_id.clone(), operation_epoch, true).await {
@@ -1456,18 +1498,33 @@ fn schedule_terminal_retry(inner: Arc<RuntimeInner>, terminal_id: String, reason
         }
         terminal.retry_running = true;
         terminal.state = HostTerminalState::Failed;
+        terminal.reconnect_attempt = 0;
         (epoch, terminal.operation_epoch)
     };
     emit(HostRuntimeEvent::TerminalStateChanged {
         runtime_id: inner.id.clone(),
         terminal_id: terminal_id.clone(),
         state: HostTerminalState::Failed,
+        reconnect_attempt: 0,
+        retrying: true,
         error: Some(reason.clone()),
     });
     if let Ok(runtime) = crate::runtime() {
         runtime.spawn(async move {
             let mut last_error = reason;
             for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
+                if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
+                    terminal.state = HostTerminalState::Restoring;
+                    terminal.reconnect_attempt = attempt;
+                }
+                emit(HostRuntimeEvent::TerminalStateChanged {
+                    runtime_id: inner.id.clone(),
+                    terminal_id: terminal_id.clone(),
+                    state: HostTerminalState::Restoring,
+                    reconnect_attempt: attempt,
+                    retrying: true,
+                    error: Some(last_error.clone()),
+                });
                 tokio::time::sleep(Duration::from_millis(reconnect_delay(
                     attempt,
                     runtime_jitter(&inner, attempt),
@@ -1505,6 +1562,8 @@ fn schedule_terminal_retry(inner: Arc<RuntimeInner>, terminal_id: String, reason
                 runtime_id: inner.id.clone(),
                 terminal_id,
                 state: HostTerminalState::Failed,
+                reconnect_attempt: MAX_RECONNECT_ATTEMPTS,
+                retrying: false,
                 error: Some(format!("terminal recovery exhausted: {last_error}")),
             });
         });
@@ -1691,6 +1750,32 @@ impl HostRuntime {
         }
     }
 
+    pub fn bind_agent_session(
+        &self,
+        agent: AgentTranscriptKind,
+        terminal_id: String,
+        session_id: String,
+    ) -> Result<AgentSessionOpenResult, AgentSessionError> {
+        let (key, state) = match agent {
+            AgentTranscriptKind::Codex => self.inner.agents.bind_codex(terminal_id, session_id)?,
+            AgentTranscriptKind::OpenCode => {
+                self.inner.agents.bind_opencode(terminal_id, session_id)?
+            }
+        };
+        Ok(AgentSessionOpenResult { key, state })
+    }
+
+    pub fn start_agent_session(
+        &self,
+        terminal_id: String,
+        key: String,
+        cache_blob: Option<Vec<u8>>,
+    ) -> Result<AgentTranscriptState, AgentSessionError> {
+        self.inner
+            .agents
+            .start_bound(&terminal_id, &key, cache_blob)
+    }
+
     pub fn agent_transcript(&self, key: String) -> Result<AgentTranscriptState, AgentSessionError> {
         self.inner.agents.state(&key).ok_or_else(|| {
             AgentSessionError::SessionClosed(format!("agent transcript session {key} is closed"))
@@ -1701,8 +1786,8 @@ impl HostRuntime {
         self.inner.agents.close_session(&key);
     }
 
-    pub fn close_agent_terminal(&self, terminal_id: String) {
-        self.inner.agents.close_terminal(&terminal_id);
+    pub fn close_agent_terminal(&self, terminal_id: String) -> Option<String> {
+        self.inner.agents.close_terminal(&terminal_id)
     }
 
     pub fn confirm_agent_transcript_cache(&self, confirmation_token: String) -> bool {
@@ -1897,6 +1982,7 @@ impl HostRuntime {
                         } else {
                             terminal.operation_epoch = terminal.operation_epoch.wrapping_add(1);
                             terminal.state = HostTerminalState::Opening;
+                            terminal.reconnect_attempt = 0;
                             terminal.retry_running = true;
                             (terminal.operation_epoch, false)
                         }
@@ -1911,6 +1997,7 @@ impl HostRuntime {
                                 cell_width_px,
                                 cell_height_px,
                                 operation_epoch: 1,
+                                reconnect_attempt: 0,
                                 retry_running: true,
                             },
                         );
@@ -1924,6 +2011,8 @@ impl HostRuntime {
                     runtime_id: inner.id.clone(),
                     terminal_id: terminal_id.clone(),
                     state: HostTerminalState::Opening,
+                    reconnect_attempt: 0,
+                    retrying: true,
                     error: None,
                 });
                 open_terminal_with_retry(inner, terminal_id, operation_epoch).await
@@ -2011,12 +2100,15 @@ impl HostRuntime {
     }
 
     pub fn close_terminal(&self, terminal_id: String) {
+        self.inner.agents.close_terminal(&terminal_id);
         self.inner.state.lock().terminals.remove(&terminal_id);
         close_herdr_terminal_bridge(self.inner.id.clone(), terminal_id.clone());
         emit(HostRuntimeEvent::TerminalStateChanged {
             runtime_id: self.inner.id.clone(),
             terminal_id,
             state: HostTerminalState::Closed,
+            reconnect_attempt: 0,
+            retrying: false,
             error: None,
         });
         self.inner.settled.notify_waiters();
@@ -2033,10 +2125,13 @@ impl HostRuntime {
             .collect::<Vec<_>>();
         close_all_herdr_terminal_bridges(self.inner.id.clone());
         for terminal_id in terminal_ids {
+            self.inner.agents.close_terminal(&terminal_id);
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: self.inner.id.clone(),
                 terminal_id,
                 state: HostTerminalState::Closed,
+                reconnect_attempt: 0,
+                retrying: false,
                 error: None,
             });
         }
@@ -3105,6 +3200,7 @@ mod tests {
                 cell_width_px: 8,
                 cell_height_px: 16,
                 operation_epoch: 2,
+                reconnect_attempt: 3,
                 retry_running: true,
             },
         );
@@ -3113,6 +3209,7 @@ mod tests {
         let terminal = &state.terminals["t1"];
         assert_eq!(terminal.state, HostTerminalState::Closed);
         assert!(!terminal.retry_running);
+        assert_eq!(terminal.reconnect_attempt, 0);
         assert_eq!(terminal.operation_epoch, 3);
     }
 
@@ -3148,6 +3245,7 @@ mod tests {
             cell_width_px: 9,
             cell_height_px: 18,
             operation_epoch: 7,
+            reconnect_attempt: 2,
             retry_running: false,
         };
         assert_eq!(
@@ -3160,6 +3258,7 @@ mod tests {
             (132, 47, 9, 18)
         );
         assert!(terminal.takeover);
+        assert_eq!(terminal.reconnect_attempt, 2);
     }
 
     #[test]
@@ -3172,7 +3271,17 @@ mod tests {
         assert!(!state.socket_from_cache);
         let mut cached = config();
         cached.cached_socket_path = Some("/cached.sock".to_owned());
-        assert!(RuntimeState::new(&cached).socket_from_cache);
+        let mut cached_state = RuntimeState::new(&cached);
+        assert!(cached_state.socket_from_cache);
+        assert!(invalidate_cached_socket(&mut cached_state));
+        assert!(cached_state.socket_path.is_none());
+
+        let mut explicit_state = RuntimeState::new(&explicit);
+        assert!(!invalidate_cached_socket(&mut explicit_state));
+        assert_eq!(
+            explicit_state.socket_path.as_deref(),
+            Some("/run/herdr.sock")
+        );
     }
 
     #[test]
@@ -3276,6 +3385,7 @@ mod tests {
             cell_width_px: 0,
             cell_height_px: 0,
             operation_epoch: 5,
+            reconnect_attempt: 1,
             retry_running: true,
         };
         let restoring = terminal.operation_epoch;
@@ -3300,6 +3410,7 @@ mod tests {
                 cell_width_px: 0,
                 cell_height_px: 0,
                 operation_epoch: 1,
+                reconnect_attempt: 5,
                 retry_running: false,
             },
         );
@@ -3317,6 +3428,7 @@ mod tests {
             cell_width_px: 0,
             cell_height_px: 0,
             operation_epoch: 1,
+            reconnect_attempt: 1,
             retry_running: false,
         };
         let attached = failed.clone();
@@ -3404,6 +3516,36 @@ mod tests {
                 pane_id: "p".to_owned(),
                 text: "hello".to_owned()
             }
+        ));
+        let unavailable = Err(HerdrControlError::TransportDisconnected(
+            "cached socket refused the channel".to_owned(),
+        ));
+        assert!(should_rediscover_cached_socket(
+            true,
+            &HerdrControlRequest::SessionSnapshot,
+            &unavailable,
+        ));
+        assert!(!should_rediscover_cached_socket(
+            false,
+            &HerdrControlRequest::SessionSnapshot,
+            &unavailable,
+        ));
+        assert!(!should_rediscover_cached_socket(
+            true,
+            &HerdrControlRequest::PaneSendText {
+                pane_id: "p".to_owned(),
+                text: "do not replay".to_owned(),
+            },
+            &unavailable,
+        ));
+        let protocol_error = Err(HerdrControlError::ProtocolError(
+            "invalid_request".to_owned(),
+            "bad request".to_owned(),
+        ));
+        assert!(!should_rediscover_cached_socket(
+            true,
+            &HerdrControlRequest::SessionSnapshot,
+            &protocol_error,
         ));
     }
 }

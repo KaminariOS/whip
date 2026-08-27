@@ -160,7 +160,10 @@ import {
   hydrateHerdrSocketPathCache,
   loadHerdrSocketPathCache,
 } from './src/services/herdrSocketPathStorage';
-import type { TerminalSessionStatus } from './src/terminalSessions';
+import {
+  terminalSessionStatusFromNative,
+  type TerminalSessionStatus,
+} from './src/terminalSessions';
 import { useTheme } from './src/theme';
 import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, KnownHost, PaneInfo } from './src/types';
 import { guiFontFamilies } from './src/lib/guiFonts';
@@ -797,6 +800,15 @@ function AppContent() {
         acceptHostState(event.state, event.changedAgentPaneIds);
         return;
       }
+      if (event.type === 'terminal-state') {
+        updateTerminalMetadataStatus(
+          sessionId,
+          event.terminalId,
+          terminalSessionStatusFromNative(event.state, event.retrying),
+          event.error,
+          event.reconnectAttempt,
+        );
+      }
       if (event.type === 'event-stream-closed') {
         scheduleEventReconnect(sessionId, event.reason);
         return;
@@ -808,7 +820,7 @@ function AppContent() {
         });
         return;
       }
-      if (event.type === 'terminal-state' && event.state === 'failed' && event.error?.includes('recovery exhausted')) {
+      if (event.type === 'terminal-state' && event.state === 'failed' && !event.retrying) {
         recordNetworkDiagnostic('error', 'terminal-recovery-exhausted', {
           sessionId,
           terminalId: event.terminalId,

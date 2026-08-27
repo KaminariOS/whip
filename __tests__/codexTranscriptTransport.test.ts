@@ -32,27 +32,35 @@ describe('HerdrClient native transcript boundary', () => {
     const transcript = {
       sessionId, agent: 'codex', revision: 1, status: 'loading', messages: [], turns: [],
     } as const;
-    runtime.openAgentSession = jest.fn(() => ({ key: `codex\n${sessionId}`, state: transcript }));
+    runtime.openAgentSession = jest.fn(() => ({ key: `codex:${sessionId}`, state: transcript }));
+    runtime.bindAgentSession = jest.fn(() => ({ key: `codex:${sessionId}`, state: transcript }));
+    runtime.startAgentSession = jest.fn(() => transcript);
     runtime.agentTranscript = jest.fn(() => transcript);
     runtime.closeAgentSession = jest.fn();
-    runtime.closeAgentTerminal = jest.fn();
+    runtime.closeAgentTerminal = jest.fn(() => `codex:${sessionId}`);
     runtime.confirmAgentTranscriptCache = jest.fn(() => true);
     const handler = jest.fn();
     const blob = new Uint8Array([1, 2]).buffer;
 
     expect(client.openCodexAgentTranscript('terminal-1', sessionId, blob, handler)).toEqual({
-      key: `codex\n${sessionId}`, state: transcript,
+      key: `codex:${sessionId}`, state: transcript,
     });
     expect(runtime.openAgentSession).toHaveBeenCalledWith('codex', 'terminal-1', sessionId, blob, handler);
     expect(client.openOpenCodeAgentTranscript('terminal-2', 'ses_abc123', blob, handler)).toEqual({
-      key: `codex\n${sessionId}`, state: transcript,
+      key: `codex:${sessionId}`, state: transcript,
     });
     expect(runtime.openAgentSession).toHaveBeenCalledWith('opencode', 'terminal-2', 'ses_abc123', blob, handler);
-    expect(client.agentTranscript(`codex\n${sessionId}`)).toBe(transcript);
-    client.closeAgentTranscriptTerminal('terminal-1');
-    client.closeAgentTranscript(`codex\n${sessionId}`);
+    expect(client.bindCodexAgentTranscript('terminal-1', sessionId, handler)).toEqual({
+      key: `codex:${sessionId}`, state: transcript,
+    });
+    expect(runtime.bindAgentSession).toHaveBeenCalledWith('codex', 'terminal-1', sessionId, handler);
+    expect(client.startAgentTranscript('terminal-1', `codex:${sessionId}`, blob)).toBe(transcript);
+    expect(runtime.startAgentSession).toHaveBeenCalledWith('terminal-1', `codex:${sessionId}`, blob);
+    expect(client.agentTranscript(`codex:${sessionId}`)).toBe(transcript);
+    expect(client.closeAgentTranscriptTerminal('terminal-1')).toBe(`codex:${sessionId}`);
+    client.closeAgentTranscript(`codex:${sessionId}`);
     expect(client.confirmAgentTranscriptCache('token')).toBe(true);
     expect(runtime.closeAgentTerminal).toHaveBeenCalledWith('terminal-1');
-    expect(runtime.closeAgentSession).toHaveBeenCalledWith(`codex\n${sessionId}`);
+    expect(runtime.closeAgentSession).toHaveBeenCalledWith(`codex:${sessionId}`);
   });
 });

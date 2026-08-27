@@ -228,7 +228,18 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportTitle = useEffectEvent(onTitleChange);
   const reportFontSize = useEffectEvent(onFontSizeChange);
   const reportSelectionState = useEffectEvent(onSelectionStateChange);
-  const reportStatus = useEffectEvent(onStatus);
+  // Herdr terminal transport state is projected exclusively from HostRuntime
+  // events in App. The plain SSH fallback has no Herdr terminal runtime.
+  const reportStatus = useEffectEvent((
+    target: TerminalRenderTarget,
+    status: TerminalSessionStatus,
+    error?: string,
+    reconnectAttempt?: number,
+  ) => {
+    if (target.session.kind === 'ssh') {
+      onStatus(target, status, error, reconnectAttempt);
+    }
+  });
   const reportError = useEffectEvent(onError);
 
   const inject = useCallback((script: string) => {

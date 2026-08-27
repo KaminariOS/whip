@@ -65,9 +65,12 @@ Herdr version and protocol from its `pong` response. Rust then takes a bootstrap
 snapshot to obtain the current pane IDs, opens the complete lifecycle and
 per-pane event subscription, waits for Herdr's `subscription_started`
 acknowledgement, and takes a reconciliation snapshot while buffering events.
-Whip caches each resolved absolute socket path for the life of the app process.
-`HostRuntime` validates a cached path and re-resolves it through its current SSH
-session if the cached path stops accepting channels. Rust selects the
+AsyncStorage retains one opaque resolved-socket hint per saved host across app
+launches. TypeScript only loads and stores that hint; it has no socket validity,
+invalidation, discovery, or replay policy. `HostRuntime` treats the hint as
+untrusted, validates it through normal control traffic, and re-resolves it
+through its current SSH session if the hinted path stops accepting channels.
+Rust selects the
 protocol-specific terminal attach variant from the ping result.
 
 ### Terminal plane
@@ -91,6 +94,9 @@ actions. Ctrl/Alt and control bytes in the terminal key rail belong to the progr
 inside the pane; they are not Herdr navigation shortcuts.
 
 Terminal sessions are identified by `terminal_id`, remain mounted while the user switches Herdr tabs and panes, and can be switched or closed independently. Input and resize events are routed to the exact terminal connection; metadata commands never share an interactive shell channel.
+Rust terminal lifecycle events include the native retry attempt and whether a
+retry remains scheduled. React projects those events for status rendering;
+persisted terminal metadata excludes transient transport state.
 
 The renderer is responsible for ANSI color, alternate screen applications, cursor modes, bracketed paste, resize, selection, scrollback, clipboard, and mobile special keys. It does not interpret Herdr management state.
 
@@ -126,6 +132,9 @@ missed callback does not lose transcript correctness. The remote rollout remains
 authoritative. A versioned opaque Rust cache blob is stored by the existing
 platform SQLite layer; Rust validates and replays it before resuming, and only
 advances the durable checkpoint after the platform confirms the blob write.
+Opening Chat first binds the terminal and semantic agent session in Rust. The
+platform cache is loaded afterward and starts that exact binding; a late cache
+load is rejected natively if the terminal was closed or rebound meanwhile.
 Transient source failure retains known content as stale rather than replacing it
 with an empty transcript.
 

@@ -108,6 +108,7 @@ struct SessionRuntime {
     stream_channel_id: Option<String>,
     retry_running: bool,
     pending_cache_offset: Option<u64>,
+    started: bool,
     closed: bool,
 }
 
@@ -230,7 +231,12 @@ impl AgentSessionManager {
             let mut state = self.inner.state.lock();
             state.connected_generation = Some(generation);
             state.closed = false;
-            state.sessions.keys().cloned().collect::<Vec<_>>()
+            state
+                .sessions
+                .iter()
+                .filter(|(_, session)| session.started)
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>()
         };
         for key in keys {
             self.restart(key, "Host connection was replaced".to_owned());
@@ -276,53 +282,18 @@ impl AgentSessionManager {
         session_id: String,
         cache_blob: Option<Vec<u8>>,
     ) -> Result<(String, AgentTranscriptState), AgentSessionError> {
+        let (key, _) = self.bind_codex(terminal_id.clone(), session_id)?;
+        let state = self.start_bound(&terminal_id, &key, cache_blob)?;
+        Ok((key, state))
+    }
+
+    pub(crate) fn bind_codex(
+        &self,
+        terminal_id: String,
+        session_id: String,
+    ) -> Result<(String, AgentTranscriptState), AgentSessionError> {
         validate_codex_session_id(&session_id)?;
-        let key = format!("codex:{session_id}");
-        let (state_snapshot, should_start) = {
-            let mut state = self.inner.state.lock();
-            if state.closed {
-                return Err(AgentSessionError::SessionClosed(
-                    "host runtime is closed".to_owned(),
-                ));
-            }
-            if let Some(old_key) = state
-                .terminal_bindings
-                .insert(terminal_id.clone(), key.clone())
-                && old_key != key
-                && let Some(old) = state.sessions.get_mut(&old_key)
-            {
-                old.terminals.remove(&terminal_id);
-            }
-            let generation = state.connected_generation;
-            let session = state.sessions.entry(key.clone()).or_insert_with(|| {
-                let mut core =
-                    AgentSessionCore::Codex(Box::new(CodexSessionCore::new(session_id.clone())));
-                if let Some(blob) = cache_blob.as_deref() {
-                    let _ = core.restore_cache(blob);
-                }
-                SessionRuntime {
-                    key: key.clone(),
-                    session_id: session_id.clone(),
-                    terminals: HashSet::new(),
-                    core,
-                    host_generation: generation.unwrap_or(0),
-                    operation_epoch: 0,
-                    stream_context: None,
-                    stream_channel_id: None,
-                    retry_running: false,
-                    pending_cache_offset: None,
-                    closed: false,
-                }
-            });
-            session.terminals.insert(terminal_id);
-            session.closed = false;
-            let should_start = generation.is_some() && session.stream_context.is_none();
-            (session.core.state(), should_start)
-        };
-        if should_start {
-            self.restart(key.clone(), "Opening Codex transcript".to_owned());
-        }
-        Ok((key, state_snapshot))
+        self.bind(terminal_id, session_id, AgentTranscriptKind::Codex)
     }
 
     pub(crate) fn open_opencode(
@@ -331,31 +302,57 @@ impl AgentSessionManager {
         session_id: String,
         cache_blob: Option<Vec<u8>>,
     ) -> Result<(String, AgentTranscriptState), AgentSessionError> {
+        let (key, _) = self.bind_opencode(terminal_id.clone(), session_id)?;
+        let state = self.start_bound(&terminal_id, &key, cache_blob)?;
+        Ok((key, state))
+    }
+
+    pub(crate) fn bind_opencode(
+        &self,
+        terminal_id: String,
+        session_id: String,
+    ) -> Result<(String, AgentTranscriptState), AgentSessionError> {
         validate_opencode_session_id(&session_id)?;
-        let key = format!("opencode:{session_id}");
-        let (state_snapshot, should_start) = {
+        self.bind(terminal_id, session_id, AgentTranscriptKind::OpenCode)
+    }
+
+    fn bind(
+        &self,
+        terminal_id: String,
+        session_id: String,
+        kind: AgentTranscriptKind,
+    ) -> Result<(String, AgentTranscriptState), AgentSessionError> {
+        let prefix = match kind {
+            AgentTranscriptKind::Codex => "codex",
+            AgentTranscriptKind::OpenCode => "opencode",
+        };
+        let key = format!("{prefix}:{session_id}");
+        let (state_snapshot, orphaned) = {
             let mut state = self.inner.state.lock();
             if state.closed {
                 return Err(AgentSessionError::SessionClosed(
                     "host runtime is closed".to_owned(),
                 ));
             }
-            if let Some(old_key) = state
+            let old_key = state
                 .terminal_bindings
                 .insert(terminal_id.clone(), key.clone())
-                && old_key != key
-                && let Some(old) = state.sessions.get_mut(&old_key)
-            {
+                .filter(|old_key| old_key != &key);
+            let orphaned = old_key.and_then(|old_key| {
+                let old = state.sessions.get_mut(&old_key)?;
                 old.terminals.remove(&terminal_id);
-            }
+                old.terminals.is_empty().then_some(old_key)
+            });
             let generation = state.connected_generation;
             let session = state.sessions.entry(key.clone()).or_insert_with(|| {
-                let mut core = AgentSessionCore::OpenCode(Box::new(OpenCodeSessionCore::new(
-                    session_id.clone(),
-                )));
-                if let Some(blob) = cache_blob.as_deref() {
-                    let _ = core.restore_cache(blob);
-                }
+                let core = match kind {
+                    AgentTranscriptKind::Codex => {
+                        AgentSessionCore::Codex(Box::new(CodexSessionCore::new(session_id.clone())))
+                    }
+                    AgentTranscriptKind::OpenCode => AgentSessionCore::OpenCode(Box::new(
+                        OpenCodeSessionCore::new(session_id.clone()),
+                    )),
+                };
                 SessionRuntime {
                     key: key.clone(),
                     session_id: session_id.clone(),
@@ -367,18 +364,69 @@ impl AgentSessionManager {
                     stream_channel_id: None,
                     retry_running: false,
                     pending_cache_offset: None,
+                    started: false,
                     closed: false,
                 }
             });
             session.terminals.insert(terminal_id);
             session.closed = false;
-            let should_start = generation.is_some() && session.operation_epoch == 0;
-            (session.core.state(), should_start)
+            (session.core.state(), orphaned)
         };
-        if should_start {
-            self.restart(key.clone(), "Opening OpenCode transcript".to_owned());
+        if let Some(orphaned) = orphaned {
+            self.close_session(&orphaned);
         }
         Ok((key, state_snapshot))
+    }
+
+    pub(crate) fn start_bound(
+        &self,
+        terminal_id: &str,
+        key: &str,
+        cache_blob: Option<Vec<u8>>,
+    ) -> Result<AgentTranscriptState, AgentSessionError> {
+        let (state_snapshot, should_start, kind) = {
+            let mut state = self.inner.state.lock();
+            if state.closed {
+                return Err(AgentSessionError::SessionClosed(
+                    "host runtime is closed".to_owned(),
+                ));
+            }
+            if state.terminal_bindings.get(terminal_id).map(String::as_str) != Some(key) {
+                return Err(AgentSessionError::StaleGeneration(format!(
+                    "terminal {terminal_id} is no longer bound to {key}"
+                )));
+            }
+            let generation = state.connected_generation;
+            let session = state.sessions.get_mut(key).ok_or_else(|| {
+                AgentSessionError::SessionClosed(format!(
+                    "agent transcript session {key} is closed"
+                ))
+            })?;
+            if session.closed {
+                return Err(AgentSessionError::SessionClosed(format!(
+                    "agent transcript session {key} is closed"
+                )));
+            }
+            if !session.started {
+                if let Some(blob) = cache_blob.as_deref() {
+                    let _ = session.core.restore_cache(blob);
+                }
+                session.started = true;
+            }
+            (
+                session.core.state(),
+                generation.is_some() && session.operation_epoch == 0,
+                session.core.kind(),
+            )
+        };
+        if should_start {
+            let label = match kind {
+                AgentTranscriptKind::Codex => "Opening Codex transcript",
+                AgentTranscriptKind::OpenCode => "Opening OpenCode transcript",
+            };
+            self.restart(key.to_owned(), label.to_owned());
+        }
+        Ok(state_snapshot)
     }
 
     pub(crate) fn state(&self, key: &str) -> Option<AgentTranscriptState> {
@@ -390,21 +438,23 @@ impl AgentSessionManager {
             .map(|session| session.core.state())
     }
 
-    pub(crate) fn close_terminal(&self, terminal_id: &str) {
+    pub(crate) fn close_terminal(&self, terminal_id: &str) -> Option<String> {
         let close = {
             let mut state = self.inner.state.lock();
             let Some(key) = state.terminal_bindings.remove(terminal_id) else {
-                return;
+                return None;
             };
             let Some(session) = state.sessions.get_mut(&key) else {
-                return;
+                return None;
             };
             session.terminals.remove(terminal_id);
             session.terminals.is_empty().then_some(key)
         };
         if let Some(key) = close {
             self.close_session(&key);
+            return Some(key);
         }
+        None
     }
 
     pub(crate) fn close_session(&self, key: &str) {
@@ -461,7 +511,7 @@ impl AgentSessionManager {
             let Some(session) = state.sessions.get_mut(&key) else {
                 return;
             };
-            if session.closed || session.terminals.is_empty() {
+            if !session.started || session.closed || session.terminals.is_empty() {
                 return;
             }
             session.operation_epoch = session.operation_epoch.saturating_add(1);
@@ -1455,5 +1505,42 @@ mod tests {
         manager.close_terminal("terminal-1");
         assert!(manager.state(&first_key).is_none());
         assert!(manager.state(&second_key).is_some());
+    }
+
+    #[test]
+    fn shared_session_lives_until_its_last_terminal_detaches() {
+        let manager = AgentSessionManager::new("host".into(), Arc::new(RwLock::new(None)));
+        let (key, _) = manager
+            .bind_codex("terminal-1".into(), SESSION.into())
+            .unwrap();
+        let (same_key, _) = manager
+            .bind_codex("terminal-2".into(), SESSION.into())
+            .unwrap();
+        assert_eq!(same_key, key);
+        manager.start_bound("terminal-1", &key, None).unwrap();
+
+        assert_eq!(manager.close_terminal("terminal-1"), None);
+        assert!(manager.state(&key).is_some());
+        assert_eq!(manager.close_terminal("terminal-2"), Some(key.clone()));
+        assert!(manager.state(&key).is_none());
+    }
+
+    #[test]
+    fn late_cache_start_cannot_restore_a_rebound_terminal() {
+        let manager = AgentSessionManager::new("host".into(), Arc::new(RwLock::new(None)));
+        let (old_key, _) = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let replacement = "22222222-2222-4222-8222-222222222222";
+        let (new_key, _) = manager
+            .bind_codex("terminal".into(), replacement.into())
+            .unwrap();
+
+        assert!(matches!(
+            manager.start_bound("terminal", &old_key, None),
+            Err(AgentSessionError::StaleGeneration(_))
+        ));
+        assert!(manager.state(&old_key).is_none());
+        assert!(manager.start_bound("terminal", &new_key, None).is_ok());
     }
 }

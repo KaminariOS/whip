@@ -240,7 +240,7 @@ export class SQLiteAgentChatCache implements AgentChatCache {
 
   async saveNative(key: AgentChatCacheKey, checkpoint: NativeAgentChatCheckpoint): Promise<boolean> {
     const db = await this.db();
-    await db.runAsync(`
+    const result = await db.runAsync(`
       INSERT INTO native_agent_chat_cache (
         host_profile_id, agent, agent_session_id, cache_blob,
         revision, source_generation, position, updated_at
@@ -262,7 +262,7 @@ export class SQLiteAgentChatCache implements AgentChatCache {
       ...values(key), new Uint8Array(checkpoint.blob), checkpoint.revision,
       checkpoint.sourceGeneration, checkpoint.position, Date.now(),
     ]);
-    return true;
+    return (result as { changes?: number }).changes !== 0;
   }
 }
 
@@ -324,7 +324,7 @@ export class MemoryAgentChatCache implements AgentChatCache {
         && checkpoint.sourceGeneration === current.sourceGeneration
         && checkpoint.position >= current.position);
     if (newer) this.nativeEntries.set(id, { ...checkpoint, blob: checkpoint.blob.slice(0) });
-    return true;
+    return newer;
   }
 
   /** Test-only corruption hook. */

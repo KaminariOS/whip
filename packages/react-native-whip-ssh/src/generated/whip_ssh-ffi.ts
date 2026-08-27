@@ -429,6 +429,13 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     transferId: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session(
+    uniffiSelf: bigint,
+    agent: Uint8Array,
+    terminalId: Uint8Array,
+    sessionId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer(
     uniffiSelf: bigint,
     transferId: Uint8Array,
@@ -443,7 +450,7 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): void;
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_all_terminals(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -612,6 +619,13 @@ interface NativeModuleInterface {
     bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_agent_session(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    key: Uint8Array,
+    cacheBlob: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_attachment_upload(
     uniffiSelf: bigint,
     localPath: Uint8Array,
@@ -735,6 +749,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_terminal(): number;
@@ -772,6 +787,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_id(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_upload(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_download(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_html_preview(): number;

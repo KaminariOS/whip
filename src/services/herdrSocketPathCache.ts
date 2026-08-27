@@ -1,51 +1,40 @@
-import type { ConnectionProfile } from '../types';
-
-interface CachedHerdrSocketPath {
+interface PersistedHerdrSocketPathHint {
   hostId: string;
-  fingerprint: string;
   socketPath: string;
 }
 
-interface PersistedHerdrSocketPaths {
-  entries: CachedHerdrSocketPath[];
+interface PersistedHerdrSocketPathHints {
+  entries: PersistedHerdrSocketPathHint[];
 }
 
-const cachedPaths = new Map<string, CachedHerdrSocketPath>();
+// This object is only an in-memory mirror of AsyncStorage. Rust decides whether
+// a hint is usable and replaces stale hints after rediscovery.
+const persistedHints: Record<string, string> = {};
 let changeListener: ((serialized: string) => void) | null = null;
 
-function profileFingerprint(profile: ConnectionProfile): string {
-  return [
-    profile.host.trim(),
-    profile.port.trim(),
-    profile.username.trim(),
-    profile.sessionName.trim(),
-  ].join('\n');
-}
-
-function validEntry(value: unknown): value is CachedHerdrSocketPath {
+function validEntry(value: unknown): value is PersistedHerdrSocketPathHint {
   if (!value || typeof value !== 'object') return false;
-  const entry = value as Partial<CachedHerdrSocketPath>;
+  const entry = value as Partial<PersistedHerdrSocketPathHint>;
   return typeof entry.hostId === 'string'
     && Boolean(entry.hostId)
-    && typeof entry.fingerprint === 'string'
     && typeof entry.socketPath === 'string'
     && entry.socketPath.startsWith('/');
 }
 
 function notifyChanged(): void {
   changeListener?.(JSON.stringify({
-    entries: [...cachedPaths.values()],
-  } satisfies PersistedHerdrSocketPaths));
+    entries: Object.entries(persistedHints).map(([hostId, socketPath]) => ({ hostId, socketPath })),
+  } satisfies PersistedHerdrSocketPathHints));
 }
 
 export function hydrateHerdrSocketPathCache(value: string | null): void {
-  cachedPaths.clear();
+  clearHerdrSocketPathCache();
   if (!value) return;
   try {
-    const parsed = JSON.parse(value) as Partial<PersistedHerdrSocketPaths>;
+    const parsed = JSON.parse(value) as Partial<PersistedHerdrSocketPathHints>;
     if (!Array.isArray(parsed.entries)) return;
     for (const entry of parsed.entries) {
-      if (validEntry(entry)) cachedPaths.set(entry.hostId, entry);
+      if (validEntry(entry)) persistedHints[entry.hostId] = entry.socketPath;
     }
   } catch {
     // A malformed performance cache is equivalent to a cold start.
@@ -58,33 +47,18 @@ export function setHerdrSocketPathCacheChangeListener(
   changeListener = listener;
 }
 
-export function cachedHerdrSocketPath(profile: ConnectionProfile): string | null {
-  const cached = cachedPaths.get(profile.id);
-  if (!cached) return null;
-  if (cached.fingerprint === profileFingerprint(profile)) return cached.socketPath;
-  cachedPaths.delete(profile.id);
-  notifyChanged();
-  return null;
+export function persistedHerdrSocketPathHint(hostId: string): string | null {
+  return persistedHints[hostId] ?? null;
 }
 
-export function rememberHerdrSocketPath(profile: ConnectionProfile, socketPath: string): void {
+export function persistHerdrSocketPathHint(hostId: string, socketPath: string): void {
   if (!socketPath.startsWith('/')) return;
-  cachedPaths.set(profile.id, {
-    hostId: profile.id,
-    fingerprint: profileFingerprint(profile),
-    socketPath,
-  });
-  notifyChanged();
-}
-
-export function forgetHerdrSocketPath(profile: ConnectionProfile, socketPath: string): void {
-  const cached = cachedPaths.get(profile.id);
-  if (cached?.socketPath !== socketPath) return;
-  cachedPaths.delete(profile.id);
+  if (persistedHints[hostId] === socketPath) return;
+  persistedHints[hostId] = socketPath;
   notifyChanged();
 }
 
 /** Clears only process memory. Persisted data is reloaded explicitly at startup. */
 export function clearHerdrSocketPathCache(): void {
-  cachedPaths.clear();
+  for (const hostId of Object.keys(persistedHints)) delete persistedHints[hostId];
 }

@@ -6,9 +6,9 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
-  cachedHerdrSocketPath,
+  persistedHerdrSocketPathHint,
   clearHerdrSocketPathCache,
-  rememberHerdrSocketPath,
+  persistHerdrSocketPathHint,
 } from '../src/services/herdrSocketPathCache';
 import {
   HERDR_SOCKET_PATH_CACHE_KEY,
@@ -41,7 +41,7 @@ beforeEach(async () => {
 
 test('persists and hydrates a resolved socket path', async () => {
   const socketPath = '/home/herdr/.config/herdr/sessions/main/herdr.sock';
-  rememberHerdrSocketPath(profile, socketPath);
+  persistHerdrSocketPathHint(profile.id, socketPath);
   await flushHerdrSocketPathCacheWrites();
 
   expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
@@ -50,29 +50,26 @@ test('persists and hydrates a resolved socket path', async () => {
 
   clearHerdrSocketPathCache();
   hydrateHerdrSocketPathCache(value);
-  expect(cachedHerdrSocketPath(profile)).toBe(socketPath);
+  expect(persistedHerdrSocketPathHint(profile.id)).toBe(socketPath);
 });
 
-test('invalidates a cached path when connection identity changes', async () => {
-  rememberHerdrSocketPath(profile, '/home/herdr/.config/herdr/herdr.sock');
+test('acts only as a storage mirror and leaves hint validation to Rust', async () => {
+  persistHerdrSocketPathHint(profile.id, '/home/herdr/.config/herdr/herdr.sock');
   await flushHerdrSocketPathCacheWrites();
   jest.mocked(AsyncStorage.setItem).mockClear();
 
-  expect(cachedHerdrSocketPath({ ...profile, username: 'someone-else' })).toBeNull();
+  expect(persistedHerdrSocketPathHint(profile.id)).toBe('/home/herdr/.config/herdr/herdr.sock');
   await flushHerdrSocketPathCacheWrites();
-
-  const persisted = JSON.parse(jest.mocked(AsyncStorage.setItem).mock.calls[0][1]);
-  expect(persisted.entries).toEqual([]);
+  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
 });
 
 test('ignores malformed and relative persisted paths', () => {
   hydrateHerdrSocketPathCache(JSON.stringify({
     entries: [{
       hostId: profile.id,
-      fingerprint: 'host.example.test\n22\nherdr\nmain',
       socketPath: 'relative/herdr.sock',
     }],
   }));
 
-  expect(cachedHerdrSocketPath(profile)).toBeNull();
+  expect(persistedHerdrSocketPathHint(profile.id)).toBeNull();
 });

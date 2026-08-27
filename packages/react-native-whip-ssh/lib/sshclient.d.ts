@@ -48,7 +48,7 @@ export type HostRuntimeLifecycleEvent =
   | { type: 'connection-state'; state: string; generation: number; reconnectAttempt: number; error?: string }
   | { type: 'reconnect-scheduled'; attempt: number; delayMs: number; reason: string }
   | { type: 'reconnected'; generation: number; restoredTerminals: number }
-  | { type: 'terminal-state'; terminalId: string; state: string; error?: string }
+  | { type: 'terminal-state'; terminalId: string; state: string; reconnectAttempt: number; retrying: boolean; error?: string }
   | { type: 'host-state'; state: HostRuntimeState; changedAgentPaneIds: string[] }
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
@@ -152,9 +152,11 @@ export interface HostRuntimeConnection {
   hostState(): HostRuntimeState;
   refreshState(): Promise<HostRuntimeState>;
   openAgentSession(agent: 'codex' | 'opencode', terminalId: string, sessionId: string, cacheBlob?: ArrayBuffer, handler?: (event: NativeAgentTranscriptUpdate) => void): { key: string; state: NativeAgentTranscriptState };
+  bindAgentSession(agent: 'codex' | 'opencode', terminalId: string, sessionId: string, handler?: (event: NativeAgentTranscriptUpdate) => void): { key: string; state: NativeAgentTranscriptState };
+  startAgentSession(terminalId: string, key: string, cacheBlob?: ArrayBuffer): NativeAgentTranscriptState;
   agentTranscript(key: string): NativeAgentTranscriptState;
   closeAgentSession(key: string): void;
-  closeAgentTerminal(terminalId: string): void;
+  closeAgentTerminal(terminalId: string): string | undefined;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
   requestHerdrApi(request: { method: string; params: object }): Promise<Record<string, unknown>>;
   startHerdrBridge(terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void): Promise<void>;

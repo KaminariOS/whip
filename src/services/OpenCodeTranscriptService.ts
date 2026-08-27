@@ -7,10 +7,9 @@ import {
 } from './CodexTranscriptService';
 
 export interface OpenCodeTranscriptTransport extends NativeTranscriptTransport {
-  openOpenCodeAgentTranscript(
+  bindOpenCodeAgentTranscript(
     terminalId: string,
     sessionId: string,
-    cacheBlob: ArrayBuffer | undefined,
     handler: (event: NativeAgentTranscriptUpdate) => void,
   ): { key: string; state: NativeAgentTranscriptState };
 }
@@ -20,18 +19,14 @@ export class OpenCodeTranscriptService extends NativeTranscriptService<OpenCodeT
   constructor(cache: AgentChatCache = agentChatCache) {
     super(
       'opencode',
-      (transport, terminalId, sessionId, cacheBlob, handler) => transport.openOpenCodeAgentTranscript(
+      (transport, terminalId, sessionId, handler) => transport.bindOpenCodeAgentTranscript(
         terminalId,
         sessionId,
-        cacheBlob,
         handler,
       ),
       cache,
     );
   }
-
-  /** HostRuntime polls and reconnects natively; foreground hints need no JS work. */
-  refresh(_key: string): void {}
 }
 
 export const openCodeTranscriptService = new OpenCodeTranscriptService();

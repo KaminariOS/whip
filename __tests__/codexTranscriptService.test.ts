@@ -10,7 +10,7 @@ import {
 } from '../src/services/CodexTranscriptService';
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
-const nativeKey = `codex\n${sessionId}`;
+const nativeKey = `codex:${sessionId}`;
 
 function state(revision: number, text = 'hello'): NativeAgentTranscriptState {
   return {
@@ -36,14 +36,19 @@ function state(revision: number, text = 'hello'): NativeAgentTranscriptState {
 function fakeTransport(initial = state(1)) {
   let current = initial;
   let handler: ((event: NativeAgentTranscriptUpdate) => void) | undefined;
+  const terminals = new Set<string>();
   const value: CodexTranscriptTransport = {
-    openCodexAgentTranscript: jest.fn((_terminalId, _sessionId, _cache, next) => {
+    bindCodexAgentTranscript: jest.fn((terminalId, _sessionId, next) => {
+      terminals.add(terminalId);
       handler = next;
       return { key: nativeKey, state: current };
     }),
+    startAgentTranscript: jest.fn((_terminalId, _key, _cache) => current),
     agentTranscript: jest.fn(() => current),
-    closeAgentTranscript: jest.fn(),
-    closeAgentTranscriptTerminal: jest.fn(),
+    closeAgentTranscriptTerminal: jest.fn((terminalId: string) => {
+      terminals.delete(terminalId);
+      return terminals.size ? undefined : nativeKey;
+    }),
     confirmAgentTranscriptCache: jest.fn(() => true),
   };
   return {
@@ -84,10 +89,13 @@ describe('Codex native transcript facade', () => {
     const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
 
-    expect(remote.value.openCodexAgentTranscript).toHaveBeenCalledWith(
-      'terminal-1', sessionId, expect.any(ArrayBuffer), expect.any(Function),
+    expect(remote.value.bindCodexAgentTranscript).toHaveBeenCalledWith(
+      'terminal-1', sessionId, expect.any(Function),
     );
-    const passed = jest.mocked(remote.value.openCodexAgentTranscript).mock.calls[0][2];
+    expect(remote.value.startAgentTranscript).toHaveBeenCalledWith(
+      'terminal-1', nativeKey, expect.any(ArrayBuffer),
+    );
+    const passed = jest.mocked(remote.value.startAgentTranscript).mock.calls[0][2];
     expect([...new Uint8Array(passed!)]).toEqual([1, 2, 3]);
     expect(service.getState(key)).toEqual(expect.objectContaining({ revision: 1, status: 'live' }));
     expect(assistantText(service, key)).toBe('hello');
@@ -225,9 +233,9 @@ describe('Codex native transcript facade', () => {
     expect(first).toBe(second);
     service.closeTerminal('host-runtime', 'terminal-1');
     expect(remote.value.closeAgentTranscriptTerminal).toHaveBeenCalledWith('terminal-1');
-    expect(remote.value.closeAgentTranscript).not.toHaveBeenCalled();
+    expect(service.getState(first)).not.toBeNull();
     service.closeTerminal('host-runtime', 'terminal-2');
     expect(remote.value.closeAgentTranscriptTerminal).toHaveBeenCalledWith('terminal-2');
-    expect(remote.value.closeAgentTranscript).toHaveBeenCalledWith(nativeKey);
+    expect(service.getState(first)).toBeNull();
   });
 });

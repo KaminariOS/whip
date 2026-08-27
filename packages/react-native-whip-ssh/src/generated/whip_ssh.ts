@@ -12239,6 +12239,8 @@ export const HostRuntimeEvent = (() => {
       runtimeId: string;
       terminalId: string;
       state: HostTerminalState;
+      reconnectAttempt: number;
+      retrying: boolean;
       error?: string;
     }>;
   };
@@ -12256,12 +12258,16 @@ export const HostRuntimeEvent = (() => {
       runtimeId: string;
       terminalId: string;
       state: HostTerminalState;
+      reconnectAttempt: number;
+      retrying: boolean;
       error?: string;
     }>;
     constructor(inner: {
       runtimeId: string;
       terminalId: string;
       state: HostTerminalState;
+      reconnectAttempt: number;
+      retrying: boolean;
       error?: string;
     }) {
       super('HostRuntimeEvent', 'TerminalStateChanged');
@@ -12272,6 +12278,8 @@ export const HostRuntimeEvent = (() => {
       runtimeId: string;
       terminalId: string;
       state: HostTerminalState;
+      reconnectAttempt: number;
+      retrying: boolean;
       error?: string;
     }): TerminalStateChanged_ {
       return new TerminalStateChanged_(inner);
@@ -12647,6 +12655,8 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             runtimeId: FfiConverterString.read(from),
             terminalId: FfiConverterString.read(from),
             state: FfiConverterTypeHostTerminalState.read(from),
+            reconnectAttempt: FfiConverterUInt32.read(from),
+            retrying: FfiConverterBool.read(from),
             error: FfiConverterOptionalString.read(from),
           });
         case 5:
@@ -12730,6 +12740,8 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.terminalId, into);
           FfiConverterTypeHostTerminalState.write(inner.state, into);
+          FfiConverterUInt32.write(inner.reconnectAttempt, into);
+          FfiConverterBool.write(inner.retrying, into);
           FfiConverterOptionalString.write(inner.error, into);
           return;
         }
@@ -12833,6 +12845,8 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.terminalId);
           size += FfiConverterTypeHostTerminalState.allocationSize(inner.state);
+          size += FfiConverterUInt32.allocationSize(inner.reconnectAttempt);
+          size += FfiConverterBool.allocationSize(inner.retrying);
           size += FfiConverterOptionalString.allocationSize(inner.error);
           return size;
         }
@@ -13605,9 +13619,14 @@ export interface HostRuntimeLike {
     transferId: string,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<TransferResult>;
+  bindAgentSession(
+    agent: AgentTranscriptKind,
+    terminalId: string,
+    sessionId: string,
+  ): /*throws*/ AgentSessionOpenResult;
   cancelTransfer(transferId: string): boolean;
   closeAgentSession(key: string): void;
-  closeAgentTerminal(terminalId: string): void;
+  closeAgentTerminal(terminalId: string): string | undefined;
   closeAllTerminals(): void;
   closeSshShell(terminalId: string): void;
   closeTerminal(terminalId: string): void;
@@ -13721,6 +13740,11 @@ export interface HostRuntimeLike {
     modifiers: number,
   ): /*throws*/ void;
   sshShellInput(terminalId: string, bytes: ArrayBuffer): /*throws*/ void;
+  startAgentSession(
+    terminalId: string,
+    key: string,
+    cacheBlob: ArrayBuffer | undefined,
+  ): /*throws*/ AgentTranscriptState;
   startAttachmentUpload(localPath: string): /*throws*/ string;
   startDownload(remotePath: string, localDirectory: string): /*throws*/ string;
   startHtmlPreview(
@@ -13844,6 +13868,45 @@ export class HostRuntime
     }
   }
 
+  bindAgentSession(
+    agent: AgentTranscriptKind,
+    terminalId: string,
+    sessionId: string,
+  ): AgentSessionOpenResult /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAgentSessionOpenResult.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeAgentTranscriptKind.lower(
+              agent,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   cancelTransfer(transferId: string): boolean {
     return FfiConverterBool.lift(
       uniffiCaller.rustCall(
@@ -13875,16 +13938,27 @@ export class HostRuntime
     );
   }
 
-  closeAgentTerminal(terminalId: string): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
-          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  closeAgentTerminal(terminalId: string): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -14994,6 +15068,42 @@ export class HostRuntime
         );
       },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  startAgentSession(
+    terminalId: string,
+    key: string,
+    cacheBlob: ArrayBuffer | undefined,
+  ): AgentTranscriptState /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAgentTranscriptState.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_agent_session(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalBytes.lower(
+              cacheBlob,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -16421,6 +16531,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session() !==
+    62327
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer() !==
     6066
   ) {
@@ -16438,7 +16556,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_terminal() !==
-    63595
+    16829
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_close_agent_terminal',
@@ -16714,6 +16832,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session() !==
+    42738
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session',
     );
   }
   if (

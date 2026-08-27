@@ -32,14 +32,19 @@ function state(revision: number, text = 'hello'): NativeAgentTranscriptState {
 function fakeTransport(initial = state(1)) {
   let current = initial;
   let handler: ((event: NativeAgentTranscriptUpdate) => void) | undefined;
+  const terminals = new Set<string>();
   const value: OpenCodeTranscriptTransport = {
-    openOpenCodeAgentTranscript: jest.fn((_terminalId, _sessionId, _cache, next) => {
+    bindOpenCodeAgentTranscript: jest.fn((terminalId, _sessionId, next) => {
+      terminals.add(terminalId);
       handler = next;
       return { key: nativeKey, state: current };
     }),
+    startAgentTranscript: jest.fn((_terminalId, _key, _cache) => current),
     agentTranscript: jest.fn(() => current),
-    closeAgentTranscript: jest.fn(),
-    closeAgentTranscriptTerminal: jest.fn(),
+    closeAgentTranscriptTerminal: jest.fn((terminalId: string) => {
+      terminals.delete(terminalId);
+      return terminals.size ? undefined : nativeKey;
+    }),
     confirmAgentTranscriptCache: jest.fn(() => true),
   };
   return {
@@ -67,10 +72,13 @@ describe('OpenCode native transcript facade', () => {
     const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
 
-    expect(remote.value.openOpenCodeAgentTranscript).toHaveBeenCalledWith(
-      'terminal-1', sessionId, expect.any(ArrayBuffer), expect.any(Function),
+    expect(remote.value.bindOpenCodeAgentTranscript).toHaveBeenCalledWith(
+      'terminal-1', sessionId, expect.any(Function),
     );
-    const passed = jest.mocked(remote.value.openOpenCodeAgentTranscript).mock.calls[0][2];
+    expect(remote.value.startAgentTranscript).toHaveBeenCalledWith(
+      'terminal-1', nativeKey, expect.any(ArrayBuffer),
+    );
+    const passed = jest.mocked(remote.value.startAgentTranscript).mock.calls[0][2];
     expect([...new Uint8Array(passed!)]).toEqual([1, 2, 3]);
     expect(service.getState(key)).toEqual(expect.objectContaining({ revision: 1, status: 'live' }));
 
@@ -104,7 +112,7 @@ describe('OpenCode native transcript facade', () => {
     const service = new OpenCodeTranscriptService(new MemoryAgentChatCache());
     const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
-    service.reconcileTerminals('host-runtime', []);
+    service.closeTerminal('host-runtime', 'terminal-1', key);
 
     expect(remote.value.closeAgentTranscriptTerminal).toHaveBeenCalledWith('terminal-1');
     expect(service.getState(key)).toBeNull();

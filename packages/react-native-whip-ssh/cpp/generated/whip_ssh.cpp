@@ -205,12 +205,15 @@ RustBuffer uniffi_whip_ssh_fn_method_hostruntime_agent_transcript(
     /*handle*/ uint64_t ptr, RustBuffer key, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
     /*handle*/ uint64_t ptr, RustBuffer transfer_id);
+RustBuffer uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session(
+    /*handle*/ uint64_t ptr, RustBuffer agent, RustBuffer terminal_id,
+    RustBuffer session_id, RustCallStatus *uniffi_out_err);
 int8_t uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer(
     /*handle*/ uint64_t ptr, RustBuffer transfer_id,
     RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_hostruntime_close_agent_session(
     /*handle*/ uint64_t ptr, RustBuffer key, RustCallStatus *uniffi_out_err);
-void uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
+RustBuffer uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id,
     RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_hostruntime_close_all_terminals(
@@ -301,6 +304,9 @@ void uniffi_whip_ssh_fn_method_hostruntime_scroll_terminal(
 void uniffi_whip_ssh_fn_method_hostruntime_ssh_shell_input(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id, RustBuffer bytes,
     RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_hostruntime_start_agent_session(
+    /*handle*/ uint64_t ptr, RustBuffer terminal_id, RustBuffer key,
+    RustBuffer cache_blob, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_hostruntime_start_attachment_upload(
     /*handle*/ uint64_t ptr, RustBuffer local_path,
     RustCallStatus *uniffi_out_err);
@@ -590,6 +596,7 @@ uniffi_whip_ssh_checksum_method_herdrterminaleventsink_graphics_frame();
 uint16_t uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_await_transfer();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_close_agent_session();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_close_agent_terminal();
@@ -628,6 +635,7 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_runtime_id();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_upload();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_start_download();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_start_html_preview();
@@ -5033,6 +5041,19 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session"),
+          4,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -5474,6 +5495,19 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_fn_method_hostruntime_ssh_shell_input(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_agent_session"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_agent_session"),
+          4,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_start_agent_session(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_attachment_upload"] =
@@ -7075,6 +7109,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "hostruntime_bind_agent_session"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -7529,6 +7575,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_"
+        "session"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "hostruntime_start_agent_session"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_"
         "upload"] = jsi::Function::createFromHostFunction(
       rt,
@@ -8399,6 +8457,24 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
                                                          value);
 }
 jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -8436,7 +8512,7 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
     size_t count) {
   RustCallStatus status =
       uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
-  uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
@@ -8444,7 +8520,7 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
   uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
       rt, callInvoker, status, args[count - 1]);
 
-  return jsi::Value::undefined();
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_close_all_terminals(
@@ -8922,6 +8998,24 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_ssh_shell_input(
       rt, callInvoker, status, args[count - 1]);
 
   return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_start_agent_session(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_start_agent_session(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
 jsi::Value NativeWhipSsh::
     cpp_uniffi_whip_ssh_fn_method_hostruntime_start_attachment_upload(
@@ -10520,6 +10614,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -10823,6 +10925,15 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

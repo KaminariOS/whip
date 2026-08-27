@@ -23,7 +23,9 @@ import {
   HerdrTerminalAttachLaunchMode,
   HerdrTerminalNotificationKind,
   HerdrTerminalControlEvent_Tags,
+  HostConnectionState,
   HostFreshness,
+  HostTerminalState,
   GitDiffKind,
   GitDiffRowKind,
   PreviewKind,
@@ -102,6 +104,29 @@ const eventHandlers = new Map<string, EventHandler>();
 const runtimeHandlers = new Map<string, (event: RuntimeLifecycleEvent) => void>();
 const agentTranscriptHandlers = new Map<string, Map<string, (event: NativeAgentTranscriptUpdate) => void>>();
 const runtimeSshShellHandlers = new Map<string, Map<string, RuntimeSshShellHandler>>();
+
+function runtimeConnectionState(state: HostConnectionState): RuntimeConnectionState {
+  switch (state) {
+    case HostConnectionState.Disconnected: return 'disconnected';
+    case HostConnectionState.Connecting: return 'connecting';
+    case HostConnectionState.Connected: return 'connected';
+    case HostConnectionState.Reconnecting: return 'reconnecting';
+    case HostConnectionState.Disconnecting: return 'disconnecting';
+    case HostConnectionState.Failed: return 'failed';
+  }
+  throw new Error(`Unknown native host connection state: ${state}`);
+}
+
+function runtimeTerminalState(state: HostTerminalState): RuntimeTerminalState {
+  switch (state) {
+    case HostTerminalState.Opening: return 'opening';
+    case HostTerminalState.Attached: return 'attached';
+    case HostTerminalState.Restoring: return 'restoring';
+    case HostTerminalState.Closed: return 'closed';
+    case HostTerminalState.Failed: return 'failed';
+  }
+  throw new Error(`Unknown native terminal state: ${state}`);
+}
 
 export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
@@ -187,11 +212,20 @@ export type RuntimeConfig = {
   cachedSocketPath?: string;
 };
 
+export type RuntimeConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnecting'
+  | 'failed';
+export type RuntimeTerminalState = 'opening' | 'attached' | 'restoring' | 'closed' | 'failed';
+
 export type RuntimeLifecycleEvent =
-  | { type: 'connection-state'; state: string; generation: number; reconnectAttempt: number; error?: string }
+  | { type: 'connection-state'; state: RuntimeConnectionState; generation: number; reconnectAttempt: number; error?: string }
   | { type: 'reconnect-scheduled'; attempt: number; delayMs: number; reason: string }
   | { type: 'reconnected'; generation: number; restoredTerminals: number }
-  | { type: 'terminal-state'; terminalId: string; state: string; error?: string }
+  | { type: 'terminal-state'; terminalId: string; state: RuntimeTerminalState; reconnectAttempt: number; retrying: boolean; error?: string }
   | { type: 'host-state'; state: RuntimeHostState; changedAgentPaneIds: string[] }
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
@@ -1187,7 +1221,7 @@ const hostRuntimeEventSink = {
       case HostRuntimeEvent_Tags.ConnectionStateChanged:
         handler({
           type: 'connection-state',
-          state: String(inner.status.state).toLowerCase(),
+          state: runtimeConnectionState(inner.status.state),
           generation: Number(inner.status.generation),
           reconnectAttempt: inner.status.reconnectAttempt,
           error: inner.status.error,
@@ -1200,7 +1234,14 @@ const hostRuntimeEventSink = {
         handler({ type: 'reconnected', generation: Number(inner.generation), restoredTerminals: inner.restoredTerminals });
         break;
       case HostRuntimeEvent_Tags.TerminalStateChanged:
-        handler({ type: 'terminal-state', terminalId: inner.terminalId, state: String(inner.state).toLowerCase(), error: inner.error });
+        handler({
+          type: 'terminal-state',
+          terminalId: inner.terminalId,
+          state: runtimeTerminalState(inner.state),
+          reconnectAttempt: Number(inner.reconnectAttempt),
+          retrying: inner.retrying,
+          error: inner.error,
+        });
         break;
       case HostRuntimeEvent_Tags.HostStateChanged:
         handler({
@@ -1235,8 +1276,14 @@ const hostRuntimeEventSink = {
 
 const agentTranscriptEventSink = {
   event(event: AgentTranscriptEvent): void {
-    const handler = agentTranscriptHandlers.get(event.runtimeId)?.get(event.key);
+    const handlers = agentTranscriptHandlers.get(event.runtimeId);
+    const handler = handlers?.get(event.key);
     handler?.(nativeAgentUpdate(event));
+    const closed = event.update.deltas.some(delta => (
+      delta.tag === AgentTranscriptDelta_Tags.StatusChanged
+      && delta.inner.status === AgentTranscriptStatus.Closed
+    ));
+    if (closed) handlers?.delete(event.key);
   },
 };
 
@@ -1315,6 +1362,36 @@ export class NativeHostRuntime {
     return { key: result.key, state: nativeAgentTranscript(result.state) };
   }
 
+  bindAgentSession(
+    agentKind: 'codex' | 'opencode',
+    terminalId: string,
+    sessionId: string,
+    handler?: (event: NativeAgentTranscriptUpdate) => void,
+  ): { key: string; state: NativeAgentTranscriptState } {
+    const result = this.runtime.bindAgentSession(
+      agentKind === 'opencode' ? AgentTranscriptKind.OpenCode : AgentTranscriptKind.Codex,
+      terminalId,
+      sessionId,
+    );
+    if (handler) {
+      let handlers = agentTranscriptHandlers.get(this.runtimeId);
+      if (!handlers) {
+        handlers = new Map();
+        agentTranscriptHandlers.set(this.runtimeId, handlers);
+      }
+      handlers.set(result.key, handler);
+    }
+    return { key: result.key, state: nativeAgentTranscript(result.state) };
+  }
+
+  startAgentSession(
+    terminalId: string,
+    key: string,
+    cacheBlob?: ArrayBuffer,
+  ): NativeAgentTranscriptState {
+    return nativeAgentTranscript(this.runtime.startAgentSession(terminalId, key, cacheBlob));
+  }
+
   agentTranscript(key: string): NativeAgentTranscriptState {
     return nativeAgentTranscript(this.runtime.agentTranscript(key));
   }
@@ -1324,8 +1401,10 @@ export class NativeHostRuntime {
     this.runtime.closeAgentSession(key);
   }
 
-  closeAgentTerminal(terminalId: string): void {
-    this.runtime.closeAgentTerminal(terminalId);
+  closeAgentTerminal(terminalId: string): string | undefined {
+    const released = this.runtime.closeAgentTerminal(terminalId);
+    if (released) agentTranscriptHandlers.get(this.runtimeId)?.delete(released);
+    return released;
   }
 
   confirmAgentTranscriptCache(confirmationToken: string): boolean {

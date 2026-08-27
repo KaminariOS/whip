@@ -2,7 +2,6 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { ChevronLeft, Globe2, Plus, SquareTerminal, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
-  AppState,
   Linking,
   Modal,
   PanResponder,
@@ -220,7 +219,6 @@ export function SessionScreen({
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
-  const previousChatAgentStatuses = useRef(new Map<string, PaneInfo['agent_status']>());
   const codexIntegrationInstallingRef = useRef(false);
   const codexIntegrationInstallRequestRef = useRef(0);
   const chatViewsRef = useRef(chatViews);
@@ -401,7 +399,6 @@ export function SessionScreen({
     setAttachmentsOpen(false);
     setPasteRequest(null);
     setChatViews(new Map());
-    previousChatAgentStatuses.current.clear();
     setPendingIntegrationPaneId(null);
     setAgentIdentityWarning(null);
     setCodexHistoryWarmup(null);
@@ -411,29 +408,35 @@ export function SessionScreen({
     setCodexIntegrationPrompt(null);
   }, [hostSessionId]);
 
+  useEffect(() => () => {
+    for (const [terminalId, view] of chatViewsRef.current) {
+      const service = view.agent === 'codex'
+        ? codexTranscriptService
+        : openCodeTranscriptService;
+      service.closeTerminal(hostSessionId, terminalId, view.key ?? undefined);
+    }
+  }, [hostSessionId]);
+
   useEffect(() => {
     const terminalIds = terminalState.sessions.map(session => session.terminalId);
     const liveTerminalIds = new Set(terminalIds);
-    codexTranscriptService.reconcileTerminals(hostSessionId, terminalIds);
-    openCodeTranscriptService.reconcileTerminals(hostSessionId, terminalIds);
-    for (const session of terminalState.sessions) {
-      const pane = snapshot.panes.find(item => item.terminal_id === session.terminalId);
-      codexTranscriptService.rebind(hostProfileId, hostSessionId, session.terminalId, codexSessionIdForPane(pane), client);
-    }
     const nextViews = new Map(chatViewsRef.current);
     let changed = false;
     for (const [terminalId, view] of nextViews) {
+      const previousService = view.agent === 'codex'
+        ? codexTranscriptService
+        : openCodeTranscriptService;
       if (!liveTerminalIds.has(terminalId)) {
+        previousService.closeTerminal(hostSessionId, terminalId, view.key ?? undefined);
         nextViews.delete(terminalId);
-        previousChatAgentStatuses.current.delete(terminalId);
         changed = true;
         continue;
       }
       const pane = snapshot.panes.find(item => item.terminal_id === terminalId);
       const nextAgent = chatAgentForPane(pane);
       if (!nextAgent) {
+        previousService.closeTerminal(hostSessionId, terminalId, view.key ?? undefined);
         nextViews.delete(terminalId);
-        previousChatAgentStatuses.current.delete(terminalId);
         changed = true;
         continue;
       }
@@ -441,6 +444,7 @@ export function SessionScreen({
         ? codexSessionIdForPane(pane)
         : openCodeSessionIdForPane(pane);
       if (sessionId && (sessionId !== view.state.sessionId || nextAgent !== view.agent)) {
+        previousService.closeTerminal(hostSessionId, terminalId, view.key ?? undefined);
         const service = nextAgent === 'codex' ? codexTranscriptService : openCodeTranscriptService;
         const key = service.activate(hostProfileId, hostSessionId, terminalId, sessionId, client);
         nextViews.set(terminalId, {
@@ -450,6 +454,7 @@ export function SessionScreen({
         });
         changed = true;
       } else if (!sessionId && view.state.status !== 'unavailable') {
+        previousService.closeTerminal(hostSessionId, terminalId, view.key ?? undefined);
         nextViews.set(terminalId, {
           agent: nextAgent,
           key: null,
@@ -508,27 +513,6 @@ export function SessionScreen({
       }
     });
   }, [codexHistoryWarmup, snapshot.panes]);
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', state => {
-      if (state !== 'active') return;
-      codexTranscriptService.reconnectHost(hostSessionId);
-      for (const view of chatViewsRef.current.values()) {
-        if (view.agent === 'opencode' && view.key) openCodeTranscriptService.refresh(view.key);
-      }
-    });
-    return () => subscription.remove();
-  }, [hostSessionId]);
-
-  useEffect(() => {
-    const terminalId = activeTerminalSession?.terminalId;
-    if (!terminalId) return;
-    const previous = previousChatAgentStatuses.current.get(terminalId);
-    if (activePane?.agent_status) previousChatAgentStatuses.current.set(terminalId, activePane.agent_status);
-    if (activeChatView?.agent === 'opencode' && activeChatView.key && previous && previous !== 'idle' && activePane?.agent_status === 'idle') {
-      openCodeTranscriptService.refresh(activeChatView.key);
-    }
-  }, [activeChatView?.agent, activeChatView?.key, activePane?.agent_status, activeTerminalSession?.terminalId]);
 
   useEffect(() => {
     if (!pendingIntegrationPaneId) return;

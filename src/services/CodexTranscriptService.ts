@@ -1,21 +1,24 @@
 import type { NativeAgentTranscriptState, NativeAgentTranscriptUpdate } from 'react-native-whip-ssh';
 
-import { emptyTranscript, type AgentChatState } from '../agentChat';
+import type { AgentChatState } from '../agentChat';
 import { agentChatStateFromNative, applyNativeAgentTranscriptUpdate } from '../lib/nativeAgentTranscript';
 import { agentChatCache, type AgentChatCache, type AgentChatCacheKey } from './agentChatCache';
 
 export interface NativeTranscriptTransport {
+  startAgentTranscript(
+    terminalId: string,
+    key: string,
+    cacheBlob: ArrayBuffer | undefined,
+  ): NativeAgentTranscriptState;
   agentTranscript(key: string): NativeAgentTranscriptState;
-  closeAgentTranscript(key: string): void;
-  closeAgentTranscriptTerminal(terminalId: string): void;
+  closeAgentTranscriptTerminal(terminalId: string): string | undefined;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
 }
 
 export interface CodexTranscriptTransport extends NativeTranscriptTransport {
-  openCodexAgentTranscript(
+  bindCodexAgentTranscript(
     terminalId: string,
     sessionId: string,
-    cacheBlob: ArrayBuffer | undefined,
     handler: (event: NativeAgentTranscriptUpdate) => void,
   ): { key: string; state: NativeAgentTranscriptState };
 }
@@ -23,39 +26,30 @@ export interface CodexTranscriptTransport extends NativeTranscriptTransport {
 type Listener = (state: AgentChatState) => void;
 
 interface TranscriptEntry<Transport extends NativeTranscriptTransport> {
-  nativeKey: string | null;
+  nativeKey: string;
   cacheKey: AgentChatCacheKey;
   hostSessionId: string;
   sessionId: string;
   transport: Transport;
-  terminals: Set<string>;
   listeners: Set<Listener>;
   state: AgentChatState;
-  generation: number;
   persistChain: Promise<void>;
 }
 
-function transcriptKey(agent: AgentChatCacheKey['agent'], hostProfileId: string, sessionId: string): string {
-  return `${hostProfileId}\n${agent}\n${sessionId}`;
-}
-
-function terminalKey(hostSessionId: string, terminalId: string): string {
-  return `${hostSessionId}\n${terminalId}`;
+function transcriptKey(hostSessionId: string, nativeKey: string): string {
+  return `${hostSessionId}\n${nativeKey}`;
 }
 
 /** Agent-neutral UI/listener and opaque-storage facade over Rust AgentSessionManager. */
 export class NativeTranscriptService<Transport extends NativeTranscriptTransport> {
   private readonly entries = new Map<string, TranscriptEntry<Transport>>();
-  private readonly bindings = new Map<string, string>();
-  private readonly activatedTerminals = new Set<string>();
 
   constructor(
     private readonly agent: AgentChatCacheKey['agent'],
-    private readonly open: (
+    private readonly bindNative: (
       transport: Transport,
       terminalId: string,
       sessionId: string,
-      cacheBlob: ArrayBuffer | undefined,
       handler: (event: NativeAgentTranscriptUpdate) => void,
     ) => { key: string; state: NativeAgentTranscriptState },
     private readonly cache: AgentChatCache = agentChatCache,
@@ -68,26 +62,36 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     sessionId: string,
     transport: Transport,
   ): string {
-    const terminal = terminalKey(hostSessionId, terminalId);
-    this.activatedTerminals.add(terminal);
-    this.bind(hostProfileId, hostSessionId, terminalId, sessionId, transport);
-    return transcriptKey(this.agent, hostProfileId, sessionId);
-  }
-
-  rebind(
-    hostProfileId: string,
-    hostSessionId: string,
-    terminalId: string,
-    sessionId: string | null,
-    transport: Transport,
-  ): void {
-    const terminal = terminalKey(hostSessionId, terminalId);
-    if (!this.activatedTerminals.has(terminal)) return;
-    const current = this.bindings.get(terminal);
-    const next = sessionId ? transcriptKey(this.agent, hostProfileId, sessionId) : null;
-    if (current === next) return;
-    this.releaseBinding(terminal, terminalId);
-    if (sessionId) this.bind(hostProfileId, hostSessionId, terminalId, sessionId, transport);
+    let boundEntry: TranscriptEntry<Transport> | undefined;
+    const result = this.bindNative(
+      transport,
+      terminalId,
+      sessionId,
+      event => boundEntry && this.acceptEvent(boundEntry, event),
+    );
+    const key = transcriptKey(hostSessionId, result.key);
+    let entry = this.entries.get(key);
+    if (!entry) {
+      entry = {
+        nativeKey: result.key,
+        cacheKey: { hostProfileId, agent: this.agent, sessionId },
+        hostSessionId,
+        sessionId,
+        transport,
+        listeners: new Set(),
+        state: agentChatStateFromNative(result.state),
+        persistChain: Promise.resolve(),
+      };
+      this.entries.set(key, entry);
+      boundEntry = entry;
+      this.restoreAndStart(entry, terminalId);
+    } else {
+      entry.transport = transport;
+      entry.sessionId = sessionId;
+      boundEntry = entry;
+      this.startNative(entry, terminalId, undefined);
+    }
+    return key;
   }
 
   subscribe(key: string, listener: Listener): () => void {
@@ -109,107 +113,49 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     return status === 'live' || status === 'stale';
   }
 
-  closeTerminal(hostSessionId: string, terminalId: string): void {
-    const terminal = terminalKey(hostSessionId, terminalId);
-    this.activatedTerminals.delete(terminal);
-    this.releaseBinding(terminal, terminalId);
+  closeTerminal(hostSessionId: string, terminalId: string, projectionKey?: string): void {
+    const transport = [...this.entries.values()]
+      .find(entry => entry.hostSessionId === hostSessionId)?.transport;
+    const released = transport?.closeAgentTranscriptTerminal(terminalId);
+    const key = projectionKey ?? (released ? transcriptKey(hostSessionId, released) : null);
+    if (!key) return;
+    this.entries.get(key)?.listeners.clear();
+    this.entries.delete(key);
   }
-
-  reconcileTerminals(hostSessionId: string, terminalIds: readonly string[]): void {
-    const keep = new Set(terminalIds.map(id => terminalKey(hostSessionId, id)));
-    for (const terminal of [...this.activatedTerminals]) {
-      if (!terminal.startsWith(`${hostSessionId}\n`) || keep.has(terminal)) continue;
-      this.activatedTerminals.delete(terminal);
-      this.releaseBinding(terminal, terminal.slice(hostSessionId.length + 1));
-    }
-  }
-
-  /** HostRuntime rebinds every native transcript automatically. */
-  reconnectHost(_hostSessionId: string): void {}
 
   reset(): void {
     for (const entry of this.entries.values()) {
-      entry.generation += 1;
-      if (entry.nativeKey) entry.transport.closeAgentTranscript(entry.nativeKey);
       entry.listeners.clear();
     }
     this.entries.clear();
-    this.bindings.clear();
-    this.activatedTerminals.clear();
   }
 
-  private bind(
-    hostProfileId: string,
-    hostSessionId: string,
-    terminalId: string,
-    sessionId: string,
-    transport: Transport,
-  ): void {
-    const terminal = terminalKey(hostSessionId, terminalId);
-    const key = transcriptKey(this.agent, hostProfileId, sessionId);
-    const current = this.bindings.get(terminal);
-    if (current && current !== key) this.releaseBinding(terminal, terminalId);
-    this.bindings.set(terminal, key);
-    let entry = this.entries.get(key);
-    if (!entry) {
-      entry = {
-        nativeKey: null,
-        cacheKey: { hostProfileId, agent: this.agent, sessionId },
-        hostSessionId,
-        sessionId,
-        transport,
-        terminals: new Set(),
-        listeners: new Set(),
-        state: { sessionId, transcript: emptyTranscript(sessionId), status: 'loading' },
-        generation: 0,
-        persistChain: Promise.resolve(),
-      };
-      this.entries.set(key, entry);
-      this.restoreAndOpen(entry, terminalId);
-    } else {
-      entry.hostSessionId = hostSessionId;
-      entry.transport = transport;
-      this.openNative(entry, terminalId, undefined, entry.generation);
-    }
-    entry.terminals.add(terminal);
-  }
-
-  private restoreAndOpen(entry: TranscriptEntry<Transport>, terminalId: string): void {
-    const generation = ++entry.generation;
+  private restoreAndStart(entry: TranscriptEntry<Transport>, terminalId: string): void {
     this.cache.loadNative(entry.cacheKey).then(blob => {
-      if (generation === entry.generation) this.openNative(entry, terminalId, blob || undefined, generation);
+      this.startNative(entry, terminalId, blob || undefined);
     }).catch(error => {
-      if (generation !== entry.generation) return;
       this.publish(entry, { ...entry.state, status: 'error', error: String(error) });
-      this.openNative(entry, terminalId, undefined, generation);
+      this.startNative(entry, terminalId, undefined);
     });
   }
 
-  private openNative(entry: TranscriptEntry<Transport>, terminalId: string, cacheBlob: ArrayBuffer | undefined, generation: number): void {
+  private startNative(entry: TranscriptEntry<Transport>, terminalId: string, cacheBlob: ArrayBuffer | undefined): void {
     try {
-      const result = this.open(
-        entry.transport,
+      this.acceptState(entry, entry.transport.startAgentTranscript(
         terminalId,
-        entry.sessionId,
+        entry.nativeKey,
         cacheBlob,
-        event => this.acceptEvent(entry, generation, event),
-      );
-      if (generation !== entry.generation) {
-        entry.transport.closeAgentTranscript(result.key);
-        return;
-      }
-      entry.nativeKey = result.key;
-      this.acceptState(entry, result.state);
+      ));
     } catch (error) {
-      if (generation === entry.generation) this.publish(entry, { ...entry.state, status: 'error', error: String(error) });
+      // Rust rejects a late cache load when the terminal was rebound. That is
+      // expected lifecycle protection, not a visible transcript failure.
+      if (/StaleGeneration|no longer bound/i.test(String(error))) return;
+      this.publish(entry, { ...entry.state, status: 'error', error: String(error) });
     }
   }
 
-  private acceptEvent(entry: TranscriptEntry<Transport>, generation: number, event: NativeAgentTranscriptUpdate): void {
-    if (generation !== entry.generation || (entry.nativeKey && event.key !== entry.nativeKey)) {
-      return;
-    }
-    entry.nativeKey = event.key;
+  private acceptEvent(entry: TranscriptEntry<Transport>, event: NativeAgentTranscriptUpdate): void {
+    if (event.key !== entry.nativeKey) return;
     const next = applyNativeAgentTranscriptUpdate(entry.state, event);
     if (next === null) {
       try {
@@ -223,11 +169,12 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     if (!event.cacheWrite) return;
     const checkpoint = event.cacheWrite;
     entry.persistChain = entry.persistChain.then(async () => {
-      if (generation !== entry.generation) return;
-      await this.cache.saveNative(entry.cacheKey, checkpoint);
-      if (generation === entry.generation) entry.transport.confirmAgentTranscriptCache(checkpoint.confirmationToken);
+      const durable = await this.cache.saveNative(entry.cacheKey, checkpoint);
+      if (durable) {
+        entry.transport.confirmAgentTranscriptCache(checkpoint.confirmationToken);
+      }
     }).catch(error => {
-      if (generation === entry.generation) this.publish(entry, { ...entry.state, status: 'stale', error: `Could not persist ${this.agent} history: ${String(error)}` });
+      this.publish(entry, { ...entry.state, status: 'stale', error: `Could not persist ${this.agent} history: ${String(error)}` });
     });
   }
 
@@ -241,31 +188,15 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     for (const listener of entry.listeners) listener(state);
   }
 
-  private releaseBinding(terminal: string, terminalId: string): void {
-    const key = this.bindings.get(terminal);
-    this.bindings.delete(terminal);
-    if (!key) return;
-    const entry = this.entries.get(key);
-    if (!entry) return;
-    entry.terminals.delete(terminal);
-    entry.transport.closeAgentTranscriptTerminal(terminalId);
-    if (!entry.terminals.size) {
-      entry.generation += 1;
-      if (entry.nativeKey) entry.transport.closeAgentTranscript(entry.nativeKey);
-      entry.listeners.clear();
-      this.entries.delete(key);
-    }
-  }
 }
 
 export class CodexTranscriptService extends NativeTranscriptService<CodexTranscriptTransport> {
   constructor(cache: AgentChatCache = agentChatCache) {
     super(
       'codex',
-      (transport, terminalId, sessionId, cacheBlob, handler) => transport.openCodexAgentTranscript(
+      (transport, terminalId, sessionId, handler) => transport.bindCodexAgentTranscript(
         terminalId,
         sessionId,
-        cacheBlob,
         handler,
       ),
       cache,
