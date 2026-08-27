@@ -44,6 +44,7 @@ import type {
 } from '../agentChat';
 import type { ChatAgent } from '../lib/agentChatSession';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
+import { insetContentPadding, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
@@ -60,10 +61,13 @@ interface Props {
   state: AgentChatState;
   agent: ChatAgent;
   agentStatus: AgentStatus;
+  contentInsets: VisualContentInsets;
   onOpenFile: (target: TranscriptFileLinkTarget) => void;
 }
 
 const COPY_FEEDBACK_MS = 1_500;
+const CHAT_CONTENT_TOP_GAP = 16;
+const CHAT_CONTENT_BOTTOM_GAP = 24;
 
 interface ChatScrollGeometry {
   contentHeight: number;
@@ -75,6 +79,19 @@ interface ChatScrollbarDragSnapshot {
   lastOffset: number;
   maxOffset: number;
   startOffset: number;
+}
+
+/** A real list item keeps Android's scroll range honest at floating-chrome boundaries. */
+function ChatBoundarySpacer({ height }: { height: number }) {
+  const style = useMemo(() => ({ height }), [height]);
+  return (
+    <View
+      accessibilityElementsHidden
+      collapsable={false}
+      pointerEvents="none"
+      style={style}
+    />
+  );
 }
 
 function ThinkingIndicator() {
@@ -889,6 +906,7 @@ export function AgentChatView({
   state,
   agent,
   agentStatus,
+  contentInsets,
   onOpenFile,
 }: Props) {
   const { colors } = useTheme();
@@ -906,6 +924,10 @@ export function AgentChatView({
   const previousCount = useRef(0);
   const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
   const agentWorking = agentStatus === 'working';
+  const contentPadding = insetContentPadding(contentInsets, {
+    top: CHAT_CONTENT_TOP_GAP,
+    bottom: CHAT_CONTENT_BOTTOM_GAP,
+  });
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
   const scrollThumb = scrollThumbGeometry(
     scrollGeometry.offset,
@@ -1004,14 +1026,6 @@ export function AgentChatView({
 
   return (
     <View className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}>
-      {state.status !== 'live' && (
-        <View className="flex-row items-center gap-2 px-4 py-3">
-          {state.status === 'loading' ? <ActivityIndicator size="small" color={colors.primary} /> : <CircleAlert size={14} color={colors.textSecondary} />}
-          <Text numberOfLines={2} className="min-w-0 flex-1 text-[12px] text-muted-foreground">
-            {state.error || (state.status === 'loading' ? `Reading the local ${agentName} history…` : 'The transcript is temporarily unavailable.')}
-          </Text>
-        </View>
-      )}
       <View className="relative flex-1">
         <FlatList
           ref={list}
@@ -1026,10 +1040,25 @@ export function AgentChatView({
               />
             </View>
           )}
-          contentContainerClassName="flex-grow px-4 pb-6 pt-4"
+          contentContainerClassName="flex-grow px-4"
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
+          scrollIndicatorInsets={contentInsets}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={(
+            <>
+              <ChatBoundarySpacer height={contentPadding.top} />
+              {state.status !== 'live' && (
+                <View className={cn('flex-row items-center gap-2 py-3', turns.length > 0 && 'mb-4')}>
+                  {state.status === 'loading' ? <ActivityIndicator size="small" color={colors.primary} /> : <CircleAlert size={14} color={colors.textSecondary} />}
+                  <Text numberOfLines={2} className="min-w-0 flex-1 text-[12px] text-muted-foreground">
+                    {state.error || (state.status === 'loading' ? `Reading the local ${agentName} history…` : 'The transcript is temporarily unavailable.')}
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
+          ListFooterComponent={<ChatBoundarySpacer height={contentPadding.bottom} />}
           ListEmptyComponent={state.status === 'live' && agentWorking
             ? <ThinkingIndicator />
             : state.status === 'live' ? (
@@ -1063,8 +1092,11 @@ export function AgentChatView({
         {!atBottom && (
           <Button
             accessibilityLabel="Jump to latest"
-            className={cn('absolute bottom-3 right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg', appGlassEnabled && 'border')}
-            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+            className={cn('absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg', appGlassEnabled && 'border')}
+            style={[
+              { bottom: contentInsets.bottom + 12 },
+              appGlassEnabled ? appGlassControlStyle(false, colors) : undefined,
+            ]}
             variant={appGlassEnabled ? 'ghost' : 'secondary'}
             onPress={() => list.current?.scrollToEnd({ animated: true })}>
             <ChevronDown size={15} color={colors.text} /><Text className="text-[10px] font-semibold">Latest</Text>
@@ -1074,6 +1106,7 @@ export function AgentChatView({
           <OverlayScrollbar
             accessibilityLabel="Conversation scroll position"
             heightPercent={scrollThumb.heightPercent}
+            insets={contentInsets}
             topPercent={scrollThumb.topPercent}
             onAccessibilityAdjust={adjustScrollbar}
             onDrag={dragScrollbar}

@@ -18,6 +18,7 @@ import WebView from 'react-native-webview';
 
 import { orderByAgentStatusPriority, tabAgentStateChangeSequence } from '@/src/herdQueue';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
+import { sessionTopChromeInset } from '@/src/lib/floatingChrome';
 import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { cn } from '@/src/lib/utils';
 import {
@@ -253,7 +254,7 @@ export function SessionScreen({
     ? selectedTab?.label || selectedTab?.tab_id
     : workspace?.label || workspace?.workspace_id;
   const panes = selectableResources.panes.filter(item => item.tab_id === selectedTab?.tab_id);
-  const topOverlayInset = 55 + (selectedTab && panes.length > 1 ? 37 : 0);
+  const topOverlayInset = sessionTopChromeInset(panes.length);
   const serverWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const serverTab = snapshot.tabs.find(item => (
     item.workspace_id === serverWorkspace?.workspace_id
@@ -1192,11 +1193,12 @@ export function SessionScreen({
               loading: codexChatLoading,
               onPress: hapticPress(chatVisible ? closeActiveChat : openAgentChat),
             } : undefined}
-            viewportOverlay={activeChatView && activePane ? (
+            renderViewportOverlay={activeChatView && activePane ? insets => (
               <AgentChatView
                 state={activeChatView.state}
                 agent={activeChatView.agent}
                 agentStatus={activePane.agent_status}
+                contentInsets={insets}
                 onOpenFile={openChatFile}
               />
             ) : undefined}

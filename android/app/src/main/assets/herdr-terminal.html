@@ -34,12 +34,14 @@
       font-weight: 400;
       font-display: block;
     }
-    html, body, #terminals, .terminal-session, .terminal-session #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+    html, body, #terminals, .terminal-session #terminal-geometry, .terminal-session #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
     html { -webkit-text-size-adjust: none; text-size-adjust: none; }
     #terminal-background-layer { position: fixed; inset: 0; z-index: 2; display: none; mix-blend-mode: screen; pointer-events: none; }
     #terminal-background-image { width: 100%; height: 100%; object-fit: cover; }
     #terminal-background-glass { position: absolute; inset: 0; }
-    #terminal { position: relative; z-index: 1; box-sizing: border-box; }
+    #terminal-geometry { position: relative; z-index: 1; box-sizing: border-box; height: calc(100% - var(--terminal-geometry-bottom, 0px)); overflow: visible; transform: translateY(var(--terminal-visual-offset, 0px)); transition: transform 120ms cubic-bezier(0.2, 0, 0, 1); will-change: transform; }
+    #terminal { position: relative; box-sizing: border-box; }
+    #terminal-visual-debug { position: fixed; z-index: 30; top: 104px; right: 8px; display: none; max-width: calc(100% - 16px); padding: 5px 7px; border: 1px solid #7aa2f7aa; border-radius: 7px; background: #16161ed9; color: #c0caf5; font: 700 9px/1.35 monospace; white-space: pre-wrap; pointer-events: none; }
     .xterm { height: 100%; }
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; background-color: transparent !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
@@ -59,6 +61,9 @@
       pointer-events: none;
       transform: translateX(0);
     }
+    .terminal-session #terminal-geometry {
+      height: calc(100% - var(--terminal-geometry-bottom, 0px));
+    }
     .terminal-session.presented {
       visibility: visible;
       pointer-events: auto;
@@ -72,7 +77,7 @@
   <script src="addon-image.js"></script>
   <script src="addon-serialize.js"></script>
   <script>
-    const terminalMarkup = "  \u003cdiv id=\"terminal-background-layer\">\n    \u003cimg id=\"terminal-background-image\" alt=\"\" />\n    \u003cdiv id=\"terminal-background-glass\">\u003c/div>\n  \u003c/div>\n  \u003cdiv id=\"terminal\">\u003c/div>\n  \u003cdiv id=\"selection-handles\" aria-hidden=\"true\">\n    \u003cdiv id=\"selection-start-handle\" class=\"selection-handle\">\u003c/div>\n    \u003cdiv id=\"selection-end-handle\" class=\"selection-handle\">\u003c/div>\n  \u003c/div>\n  \u003cdiv id=\"selection-toolbar\">\u003cbutton id=\"copy-selection\">COPY\u003c/button>\u003cbutton id=\"select-all-selection\">SELECT ALL\u003c/button>\u003cbutton id=\"paste-selection\">PASTE\u003c/button>\u003c/div>";
+    const terminalMarkup = "  \u003cdiv id=\"terminal-background-layer\">\n    \u003cimg id=\"terminal-background-image\" alt=\"\" />\n    \u003cdiv id=\"terminal-background-glass\">\u003c/div>\n  \u003c/div>\n  \u003cdiv id=\"terminal-geometry\">\u003cdiv id=\"terminal\">\u003c/div>\u003c/div>\n  \u003cpre id=\"terminal-visual-debug\" aria-hidden=\"true\">\u003c/pre>\n  \u003cdiv id=\"selection-handles\" aria-hidden=\"true\">\n    \u003cdiv id=\"selection-start-handle\" class=\"selection-handle\">\u003c/div>\n    \u003cdiv id=\"selection-end-handle\" class=\"selection-handle\">\u003c/div>\n  \u003c/div>\n  \u003cdiv id=\"selection-toolbar\">\u003cbutton id=\"copy-selection\">COPY\u003c/button>\u003cbutton id=\"select-all-selection\">SELECT ALL\u003c/button>\u003cbutton id=\"paste-selection\">PASTE\u003c/button>\u003c/div>";
     const createTerminalSession = (root, report) => {
       let disposed = false;
       const api = {
@@ -383,6 +388,22 @@
     let offlineTranscriptChunks = [];
     let offlineTranscriptVisible = false;
     let lastReportedOfflineScroll = '';
+    let terminalVisualInsets = {
+      top: 0,
+      bottom: 0,
+      geometryBottomInset: 0,
+      debug: false,
+      alternateScreen: false,
+      scrollOffsetFromBottom: undefined,
+      maxScrollOffsetFromBottom: undefined,
+    };
+    let terminalVisualBoundaryPreference = 'top';
+    let lastTerminalVisualState = '';
+    let remoteVisualScrollOffset;
+    let remoteVisualScrollMaximum;
+    let remoteVisualInputOffset;
+    let remoteVisualInputMaximum;
+    let remoteVisualPendingDelta = 0;
     const offlineCache = createTerminalOfflineCache({
       serialize: options => serializer.serialize(options),
       send,
@@ -399,6 +420,130 @@
       if (signature === lastReportedOfflineScroll) return;
       lastReportedOfflineScroll = signature;
       send({ type: 'offline-scroll', ...scroll });
+    };
+    const finiteInset = value => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
+    const reportTerminalVisualState = state => {
+      const signature = JSON.stringify(state);
+      const debug = root.querySelector('#terminal-visual-debug');
+      if (debug) {
+        debug.style.display = terminalVisualInsets.debug ? 'block' : 'none';
+        debug.textContent = terminalVisualInsets.debug
+          ? (state.alternateScreen ? 'ALT' : 'NORMAL')
+            + '  scroll ' + state.offset + '/' + state.maximum
+            + '  visual ' + state.visualOffset
+            + '\nT ' + state.top + '  B ' + state.bottom + '  G ' + state.geometryBottom
+            + '  pref ' + state.boundaryPreference
+            + (state.remoteScroll ? '\nin ' + state.inputOffset + '  pending ' + state.pendingDelta : '')
+            + (Number.isFinite(state.surfaceTop) ? '\nS ' + state.surfaceTop + '..' + state.surfaceBottom + '/' + state.viewportHeight : '')
+          : '';
+      }
+      if (signature === lastTerminalVisualState) return;
+      lastTerminalVisualState = signature;
+      send({ type: 'visual-insets-debug', ...state });
+    };
+    const applyTerminalVisualInsets = () => {
+      const terminalElement = root.querySelector('#terminal');
+      const geometryElement = root.querySelector('#terminal-geometry');
+      if (!terminalElement || !geometryElement) return;
+      const geometryBottom = finiteInset(terminalVisualInsets.geometryBottomInset);
+      geometryElement.style.setProperty('--terminal-geometry-bottom', geometryBottom + 'px');
+      if (terminalVisualInsets.alternateScreen || terminal.buffer.active.type === 'alternate') {
+        geometryElement.style.transition = 'none';
+        geometryElement.style.setProperty('--terminal-visual-offset', '0px');
+        reportTerminalVisualState({
+          alternateScreen: true,
+          top: finiteInset(terminalVisualInsets.top),
+          bottom: finiteInset(terminalVisualInsets.bottom),
+          geometryBottom,
+          offset: 0,
+          maximum: 0,
+          visualOffset: 0,
+          boundaryPreference: terminalVisualBoundaryPreference,
+        });
+        return;
+      }
+      geometryElement.style.transition = '';
+      const local = offlineScrollInfo();
+      const hasRemoteScroll = Number.isFinite(remoteVisualScrollOffset)
+        && Number.isFinite(remoteVisualScrollMaximum);
+      const offset = hasRemoteScroll
+        ? Math.max(0, Number(remoteVisualScrollOffset))
+        : local.offsetFromBottom;
+      const maximum = hasRemoteScroll
+        ? Math.max(0, Number(remoteVisualScrollMaximum))
+        : local.maxOffsetFromBottom;
+      const top = finiteInset(terminalVisualInsets.top);
+      const bottomAllowance = Math.max(0, finiteInset(terminalVisualInsets.bottom) - geometryBottom);
+      // The terminal surface stays full-screen while moving through scrollback.
+      // The outer visual pad is progressively revealed only as the active drag
+      // reaches the corresponding scroll boundary.
+      let visualOffset = 0;
+      if (maximum <= 0) {
+        visualOffset = terminalVisualBoundaryPreference === 'top' ? top : -bottomAllowance;
+      } else if (offset >= maximum) {
+        visualOffset = top;
+      } else if (offset <= 0) {
+        visualOffset = -bottomAllowance;
+      } else {
+        const cellHeight = Math.max(1, window.innerHeight / Math.max(1, terminal.rows));
+        if (terminalVisualBoundaryPreference === 'top') {
+          visualOffset = Math.max(0, top - ((maximum - offset) * cellHeight));
+        } else {
+          const bottomReveal = Math.max(0, bottomAllowance - (offset * cellHeight));
+          visualOffset = bottomReveal > 0 ? -bottomReveal : 0;
+        }
+      }
+      geometryElement.style.setProperty('--terminal-visual-offset', visualOffset + 'px');
+      const surfaceRect = geometryElement.getBoundingClientRect();
+      reportTerminalVisualState({
+        alternateScreen: false,
+        top,
+        bottom: finiteInset(terminalVisualInsets.bottom),
+        geometryBottom,
+        offset,
+        maximum,
+        visualOffset,
+        boundaryPreference: terminalVisualBoundaryPreference,
+        remoteScroll: hasRemoteScroll,
+        inputOffset: remoteVisualInputOffset,
+        pendingDelta: remoteVisualPendingDelta,
+        surfaceTop: Math.round(surfaceRect.top),
+        surfaceBottom: Math.round(surfaceRect.bottom),
+        viewportHeight: Math.round(window.innerHeight),
+      });
+    };
+    api.herdrSetVisualInsets = options => {
+      const nextInputOffset = Number(options?.scrollOffsetFromBottom);
+      const nextInputMaximum = Number(options?.maxScrollOffsetFromBottom);
+      if (Number.isFinite(nextInputOffset) && Number.isFinite(nextInputMaximum)) {
+        const normalizedInputMaximum = Math.max(0, nextInputMaximum);
+        const normalizedInputOffset = Math.max(0, Math.min(normalizedInputMaximum, nextInputOffset));
+        const inputOffsetChanged = normalizedInputOffset !== remoteVisualInputOffset;
+        const inputMaximumChanged = normalizedInputMaximum !== remoteVisualInputMaximum;
+        if (inputOffsetChanged || inputMaximumChanged) {
+          remoteVisualInputOffset = normalizedInputOffset;
+          remoteVisualInputMaximum = normalizedInputMaximum;
+          remoteVisualScrollMaximum = normalizedInputMaximum;
+          if (inputOffsetChanged) {
+            remoteVisualPendingDelta = 0;
+            remoteVisualScrollOffset = normalizedInputOffset;
+          } else {
+            remoteVisualScrollOffset = Math.max(0, Math.min(
+              normalizedInputMaximum,
+              normalizedInputOffset + remoteVisualPendingDelta,
+            ));
+            remoteVisualPendingDelta = remoteVisualScrollOffset - normalizedInputOffset;
+          }
+        }
+      } else {
+        remoteVisualScrollOffset = undefined;
+        remoteVisualScrollMaximum = undefined;
+        remoteVisualInputOffset = undefined;
+        remoteVisualInputMaximum = undefined;
+        remoteVisualPendingDelta = 0;
+      }
+      terminalVisualInsets = { ...terminalVisualInsets, ...(options || {}) };
+      applyTerminalVisualInsets();
     };
     installAndroidImeBridge(terminal, send, navigator.userAgent);
     const handleOfflineInput = data => {
@@ -737,6 +882,8 @@
     };
     const scrollTerminal = (direction, lines, point) => {
       const count = Math.max(1, Math.round(Number(lines) || 1));
+      terminalVisualBoundaryPreference = direction === 'up' ? 'top' : 'bottom';
+      applyTerminalVisualInsets();
       if (offlineScrollback) {
         terminal.scrollLines(direction === 'up' ? -count : count);
         return;
@@ -744,6 +891,23 @@
       if (dispatchTerminalWheel(direction, count, point)) return;
       if (localScrollback) terminal.scrollLines(direction === 'up' ? -count : count);
       else {
+        const visualDelta = direction === 'up' ? count : -count;
+        if (Number.isFinite(remoteVisualScrollOffset) && Number.isFinite(remoteVisualScrollMaximum)) {
+          const previousVisualOffset = remoteVisualScrollOffset;
+          const nextVisualOffset = Math.max(0, Math.min(
+            remoteVisualScrollMaximum,
+            previousVisualOffset + visualDelta,
+          ));
+          remoteVisualScrollOffset = nextVisualOffset;
+          if (remoteVisualScrollMaximum <= 0) {
+            remoteVisualPendingDelta = visualDelta > 0
+              ? Math.min(Math.max(1, terminal.rows), remoteVisualPendingDelta + visualDelta)
+              : 0;
+          } else {
+            remoteVisualPendingDelta += nextVisualOffset - previousVisualOffset;
+          }
+          applyTerminalVisualInsets();
+        }
         const cell = terminalMouseCell(point);
         send({ type: 'scroll', direction, lines: count, column: cell?.col, row: cell?.row });
       }
@@ -1168,10 +1332,12 @@
     terminal.onScroll(() => {
       renderSelectionHandles();
       reportOfflineScroll();
+      applyTerminalVisualInsets();
     });
     terminal.buffer.onBufferChange(buffer => {
       clearInteractiveSelection(true);
       searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
+      applyTerminalVisualInsets();
       send({ type: 'buffer-mode', alternate: buffer.type === 'alternate' });
     });
     send({ type: 'buffer-mode', alternate: terminal.buffer.active.type === 'alternate' });
@@ -1556,6 +1722,11 @@
     window.herdrHideOfflineTranscript = key => call(key, 'herdrHideOfflineTranscript');
     window.herdrOfflineInput = (key, data) => call(key, 'herdrOfflineInput', [data]);
     window.herdrConfigure = (key, options) => call(key, 'herdrConfigure', [options]);
+    window.herdrSetVisualInsets = (key, options) => {
+      const entry = create(key);
+      if (!entry) return;
+      call(key, 'herdrSetVisualInsets', [options]);
+    };
     window.herdrChangeFontSize = (key, delta) => call(key, 'herdrChangeFontSize', [delta]);
     window.herdrScroll = (key, direction, lines) => call(key, 'herdrScroll', [direction, lines]);
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);

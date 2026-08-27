@@ -97,6 +97,8 @@ const DEFAULT_TERMINAL_SIZE: TerminalSize = {
   cellHeightPx: 0,
 };
 
+const TERMINAL_STATE_REFRESH_DEBOUNCE_MS = 120;
+
 function terminalSizesEqual(left: TerminalSize | undefined, right: TerminalSize): boolean {
   return Boolean(
     left
@@ -141,6 +143,7 @@ export class HerdrClient {
   private terminalProtocolStates = new Map<string, TerminalProtocolState>();
   private terminalInputTraces = new Map<string, TerminalInputTrace[]>();
   private pendingTerminalResizeTraces = new Map<string, TerminalResizeTrace>();
+  private terminalStateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
     const port = Number(profile.port);
     this.validateSshPort(port);
@@ -198,6 +201,10 @@ export class HerdrClient {
   }
 
   disconnect(): void {
+    if (this.terminalStateRefreshTimer !== null) {
+      clearTimeout(this.terminalStateRefreshTimer);
+      this.terminalStateRefreshTimer = null;
+    }
     for (const terminalId of this.sshShellConnections.keys()) {
       this.closeSshShell(terminalId);
     }
@@ -505,6 +512,7 @@ export class HerdrClient {
           size.cellWidthPx,
           size.cellHeightPx,
         );
+        this.scheduleTerminalStateRefresh();
         terminalResizeNativeDispatchEnded(performanceTrace, true);
       } catch (error) {
         if (this.terminalDispatchedSizes.get(terminalId) === size) {
@@ -542,6 +550,7 @@ export class HerdrClient {
       column,
       row,
     );
+    this.scheduleTerminalStateRefresh();
     return '';
   }
 
@@ -999,6 +1008,7 @@ export class HerdrClient {
         size.cellWidthPx,
         size.cellHeightPx,
       );
+      this.scheduleTerminalStateRefresh();
       terminalResizeNativeDispatchEnded(resizeTrace, true);
     } catch (error) {
       if (this.terminalDispatchedSizes.get(terminalId) === size) {
@@ -1028,6 +1038,16 @@ export class HerdrClient {
       size.cellHeightPx,
       event => this.handleHerdrBridgeEvent(terminalId, event),
     );
+  }
+
+  private scheduleTerminalStateRefresh(): void {
+    if (this.terminalStateRefreshTimer !== null) {
+      clearTimeout(this.terminalStateRefreshTimer);
+    }
+    this.terminalStateRefreshTimer = setTimeout(() => {
+      this.terminalStateRefreshTimer = null;
+      this.runtime?.refreshState().catch(() => undefined);
+    }, TERMINAL_STATE_REFRESH_DEBOUNCE_MS);
   }
 
   private handleHerdrBridgeEvent(terminalId: string, event: HerdrBridgeEvent): void {

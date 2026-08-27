@@ -13,7 +13,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { useTheme } from '../theme';
+import type { VisualContentInsets } from '../lib/floatingChrome';
+import { colorWithAlpha, useTheme } from '../theme';
 import { useReducedMotion } from './app-ui';
 
 export interface OverlayScrollbarDragEvent {
@@ -23,7 +24,9 @@ export interface OverlayScrollbarDragEvent {
 }
 
 interface Props {
+  glass?: boolean;
   heightPercent: number;
+  insets?: VisualContentInsets;
   topPercent: number;
   accessibilityLabel: string;
   onDragStart?: (event: Omit<OverlayScrollbarDragEvent, 'dy'>) => void;
@@ -32,13 +35,16 @@ interface Props {
   onAccessibilityAdjust?: (direction: 'up' | 'down') => void;
 }
 
-const ACTIVE_OPACITY = 0.76;
-const ACTIVE_WIDTH = 6;
-const HIT_TARGET_WIDTH = 24;
+const ACTIVE_OPACITY = 0.82;
+const ACTIVE_WIDTH = 11;
+const GLASS_BACKGROUND_ALPHA = 'B8';
+const GLASS_BORDER_ALPHA = '47';
+const GLASS_OPACITY = 0.58;
+const HIT_TARGET_WIDTH = 40;
 const IDLE_OPACITY = 0.36;
-const IDLE_WIDTH = 2;
-const MIN_HIT_TARGET_HEIGHT = 28;
-const RIGHT_INSET = 3;
+const IDLE_WIDTH = 7;
+const MIN_HIT_TARGET_HEIGHT = 44;
+const RIGHT_INSET = 2;
 const TRANSITION_MS = 120;
 
 function boundedPercent(value: number): number {
@@ -46,7 +52,9 @@ function boundedPercent(value: number): number {
 }
 
 export function OverlayScrollbar({
+  glass = true,
   heightPercent,
+  insets,
   topPercent,
   accessibilityLabel,
   onDragStart,
@@ -56,6 +64,7 @@ export function OverlayScrollbar({
 }: Props) {
   const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
+  const [interacting, setInteracting] = useState(false);
   const [trackHeight, setTrackHeight] = useState(0);
   const active = useSharedValue(0);
   const reduceMotionRef = useRef(reduceMotion);
@@ -67,6 +76,7 @@ export function OverlayScrollbar({
   callbacksRef.current = { onDragStart, onDrag, onDragEnd };
 
   finishDragRef.current = () => {
+    setInteracting(false);
     active.value = withTiming(0, {
       duration: reduceMotionRef.current ? 0 : TRANSITION_MS,
     });
@@ -77,6 +87,7 @@ export function OverlayScrollbar({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: () => {
+      setInteracting(true);
       active.value = withTiming(1, {
         duration: reduceMotionRef.current ? 0 : TRANSITION_MS,
       });
@@ -99,10 +110,13 @@ export function OverlayScrollbar({
 
   useEffect(() => () => cancelAnimation(active), [active]);
 
+  const glassEnabled = glass && !interacting;
   const animatedThumbStyle = useAnimatedStyle(() => ({
-    opacity: IDLE_OPACITY + ((ACTIVE_OPACITY - IDLE_OPACITY) * active.value),
+    opacity: glassEnabled
+      ? GLASS_OPACITY
+      : IDLE_OPACITY + ((ACTIVE_OPACITY - IDLE_OPACITY) * active.value),
     width: IDLE_WIDTH + ((ACTIVE_WIDTH - IDLE_WIDTH) * active.value),
-  }));
+  }), [glassEnabled]);
 
   const boundedHeightPercent = boundedPercent(heightPercent);
   const boundedTopPercent = boundedPercent(topPercent);
@@ -127,11 +141,23 @@ export function OverlayScrollbar({
     if (event.nativeEvent.actionName === 'increment') onAccessibilityAdjust?.('down');
     if (event.nativeEvent.actionName === 'decrement') onAccessibilityAdjust?.('up');
   };
+  const thumbMaterialStyle = glassEnabled ? {
+    backgroundColor: colorWithAlpha(colors.surface, GLASS_BACKGROUND_ALPHA),
+    borderColor: colorWithAlpha(colors.text, GLASS_BORDER_ALPHA),
+    borderWidth: StyleSheet.hairlineWidth,
+  } : {
+    backgroundColor: colors.textSecondary,
+    borderColor: 'transparent',
+    borderWidth: 0,
+  };
 
   return (
     <View
       pointerEvents="box-none"
-      style={styles.track}
+      style={[
+        styles.track,
+        insets ? { bottom: insets.bottom, top: insets.top } : undefined,
+      ]}
       onLayout={handleLayout}>
       {trackHeight > 0 && (
         <View
@@ -150,8 +176,8 @@ export function OverlayScrollbar({
             pointerEvents="none"
             style={[
               styles.thumb,
+              thumbMaterialStyle,
               {
-                backgroundColor: colors.textSecondary,
                 height: thumbHeight,
                 top: thumbTop - hitTop,
               },

@@ -245,6 +245,32 @@ describe('terminal bridge channels', () => {
     );
   });
 
+  test('debounces host-state reconciliation after remote resize and scroll activity', async () => {
+    jest.useFakeTimers();
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    try {
+      await client.connect(profile);
+      await client.openTerminal('term-1', jest.fn());
+      jest.mocked(native.requestHerdrApi).mockClear();
+
+      await client.resizeTerminal('term-1', 100, 30, 8, 16);
+      await client.scrollTerminal('term-1', 'up', 3, 12, 7);
+
+      jest.advanceTimersByTime(119);
+      await Promise.resolve();
+      expect(native.requestHerdrApi).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+      expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
+    } finally {
+      client.disconnect();
+      jest.useRealTimers();
+    }
+  });
+
   test('encodes a stationary terminal tap as an SGR mouse click', async () => {
     const native = bridgeClient();
     connectWithPassword.mockResolvedValue(native);

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useEffectEvent, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useEffectEvent, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Portal } from '@rn-primitives/portal';
 import { ArrowBigUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, BookOpen, ChevronDown, ChevronUp, ClipboardPaste, CornerDownLeft, FolderOpen, Globe2, History, Keyboard as KeyboardIcon, MessageCircle, Minimize2, Option, Paperclip, Search, Send, SquareTerminal, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react-native';
 import { ActivityIndicator, AppState, Clipboard, Image, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderHandlers, type TextInput as TextInputHandle } from 'react-native';
@@ -7,6 +7,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
+import {
+  terminalBottomChromeInset,
+  terminalControlBarInset,
+  visualContentInsets,
+  type VisualContentInsets,
+} from '@/src/lib/floatingChrome';
 import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
 import { cn } from '@/src/lib/utils';
 import { retryDelay } from '../lib/retryDelay';
@@ -96,7 +102,7 @@ interface Props {
     loading: boolean;
     onPress: () => void;
   };
-  viewportOverlay?: ReactNode;
+  renderViewportOverlay?: (insets: VisualContentInsets) => ReactNode;
   viewportOverlayBackground?: ReactNode;
   onOpenLink?: (link: string) => void;
   onLinksScanned?: (links: string[]) => void;
@@ -173,7 +179,6 @@ const TERMINAL_ICON_CONTROL_CLASS = 'h-9 w-11 items-center justify-center rounde
 const TERMINAL_TEXT_CONTROL_CLASS = 'h-9 min-w-11 items-center justify-center rounded-sm border border-border bg-card/70 px-2.5 py-0 active:bg-card/80';
 const TERMINAL_ICON_BOX_CLASS = 'size-5 items-center justify-center';
 const TERMINAL_ICON_SIZE = 18;
-const TERMINAL_CONTROL_BAR_HEIGHT = 50;
 const TERMINAL_CONTROL_LABEL_STYLE = {
   includeFontPadding: false,
   textAlignVertical: 'center',
@@ -298,7 +303,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   onRequestFiles,
   onRequestLinks,
   chatControl,
-  viewportOverlay,
+  renderViewportOverlay,
   viewportOverlayBackground,
   onOpenLink,
   onLinksScanned,
@@ -331,6 +336,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const composeInputRef = useRef<TextInputHandle | null>(null);
   const composeTextRef = useRef('');
   const keyboardEnabledBeforeComposeRef = useRef<boolean | null>(null);
+  const terminalLayoutKeyboardInsetRef = useRef(0);
   const wasVisible = useRef(visible);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -344,6 +350,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const [searchResult, setSearchResult] = useState({ count: 0, index: -1, invalid: false });
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeExpanded, setComposeExpanded] = useState(false);
+  const [composerHeight, setComposerHeight] = useState(0);
+  const [controlBarHeight, setControlBarHeight] = useState(
+    terminalControlBarInset(bottomSafeAreaInset),
+  );
   const [composeText, setComposeText] = useState('');
   const [composeAttachments, setComposeAttachments] = useState<ComposeAttachment[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
@@ -379,6 +389,28 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const composerKeyboardEnabled = composeOpen && keyboardEnabled;
   const keyboardControlDisabled = status !== 'connected' && !composeOpen;
   const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
+  const terminalLayoutKeyboardInset = composeOpen ? 0 : keyboardInset;
+  const floatingKeyboardInset = Math.max(0, keyboardInset - terminalLayoutKeyboardInset);
+  const bottomChromeInset = terminalBottomChromeInset({
+    composerHeight,
+    composerVisible: composeOpen && !composeExpanded,
+    controlBarHeight,
+    keyboardInset: floatingKeyboardInset,
+  });
+  const viewportTopOcclusion = searchOpen ? 0 : topOverlayInset;
+  const scrollingInsets = useMemo(
+    () => visualContentInsets(viewportTopOcclusion, bottomChromeInset),
+    [bottomChromeInset, viewportTopOcclusion],
+  );
+  const terminalVisualViewport = useMemo(() => ({
+    insets: scrollingInsets,
+    // Floating controls overlay a genuinely full-screen xterm. Their measured
+    // height is only a visual boundary allowance and never fitted geometry.
+    geometryBottomInset: 0,
+    alternateScreen,
+    scroll: scrollPosition,
+  }), [alternateScreen, scrollPosition, scrollingInsets]);
+  const viewportOverlay = renderViewportOverlay?.(scrollingInsets);
   activeTargetRef.current = activeTarget;
   scrollPositionRef.current = scrollPosition;
   targetsRef.current = targets;
@@ -877,15 +909,16 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   }, [terminalId]);
 
   useEffect(() => {
-    // On Android, changing the inset changes the WebView viewport and its own
-    // window resize listener fits xterm. Calling fit here as well produces a
-    // second visible resize after the keyboard has opened.
-    if (!ready || Platform.OS === 'android') return;
+    // Floating composer/chrome changes are visual-only. On iOS an explicit fit
+    // is reserved for a real WebView layout change caused by the direct IME.
+    const layoutChanged = terminalLayoutKeyboardInsetRef.current !== terminalLayoutKeyboardInset;
+    terminalLayoutKeyboardInsetRef.current = terminalLayoutKeyboardInset;
+    if (!ready || Platform.OS === 'android' || !layoutChanged) return;
     const timer = setTimeout(() => {
       renderer.current?.fit();
     }, TERMINAL_FIT_DEFER_MS);
     return () => clearTimeout(timer);
-  }, [composeOpen, keyboardInset, ready]);
+  }, [ready, terminalLayoutKeyboardInset]);
 
   useEffect(() => {
     if (!composeOpen || composeExpanded || !keyboardEnabled) return;
@@ -1419,6 +1452,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           targets={targets}
           visible={visible}
           preferences={preferences}
+          visualViewport={terminalVisualViewport}
           offlineTranscript={offlineSnapshot.transcript}
           offlineScroll={offlineSnapshot.scroll}
           swipe={swipe}
@@ -1489,6 +1523,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           <OverlayScrollbar
             accessibilityLabel="Terminal scroll position"
             heightPercent={scrollThumb.heightPercent}
+            insets={scrollingInsets}
             topPercent={scrollThumb.topPercent}
             onAccessibilityAdjust={adjustTerminalScrollbar}
             onDrag={dragTerminalScrollbar}
@@ -1505,8 +1540,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
               {viewportOverlayBackground}
             </View>
             <View
-              className="absolute inset-x-0 bottom-0 z-20"
-              style={{ top: topOverlayInset }}>
+              className="absolute inset-0 z-20">
               {viewportOverlay}
             </View>
           </>
@@ -1552,7 +1586,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
             <View
               className="absolute inset-x-0 border-t border-terminal-divider bg-transparent p-2"
               style={{
-                bottom: TERMINAL_CONTROL_BAR_HEIGHT + bottomSafeAreaInset + keyboardInset,
+                bottom: controlBarHeight + keyboardInset,
+              }}
+              onLayout={event => {
+                const height = Math.round(event.nativeEvent.layout.height);
+                if (height <= 0) return;
+                setComposerHeight(current => current === height ? current : height);
               }}>
               <MessageComposer
                 initialValue={composeText}
@@ -1607,8 +1646,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
       <View
         ref={controlsRef}
         collapsable={false}
-        className="relative z-10"
-        style={keyboardInset > 0 ? { transform: [{ translateY: -keyboardInset }] } : undefined}>
+        className="absolute inset-x-0 bottom-0 z-30"
+        style={keyboardInset > 0 ? { transform: [{ translateY: -keyboardInset }] } : undefined}
+        onLayout={event => {
+          const height = Math.round(event.nativeEvent.layout.height);
+          if (height <= 0) return;
+          setControlBarHeight(current => current === height ? current : height);
+        }}>
         <ScrollView
           horizontal
           keyboardShouldPersistTaps="always"

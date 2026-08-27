@@ -32,6 +32,7 @@ import {
   terminalResizeForcesNativeDispatch,
   terminalScrollbackMode,
   type TerminalRenderTarget,
+  type TerminalVisualViewport,
 } from '../lib/terminalRenderer';
 import { prepareTerminalPaste } from '../lib/terminalPaste';
 import { terminalSubmissionWrites } from '../lib/terminalSubmission';
@@ -81,11 +82,16 @@ const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const TERMINAL_RENDER_DROP_ENABLED = __DEV__
   && process.env.EXPO_PUBLIC_WHIP_TERMINAL_RENDER_DROP === '1';
+const TERMINAL_VISUAL_DEBUG_ENABLED = process.env.EXPO_PUBLIC_WHIP_TERMINAL_VISUAL_DEBUG === '1';
 const TERMINAL_SOURCE = Platform.select({
   android: { uri: 'file:///android_asset/herdr-terminal.html' },
   ios: { uri: IOS_TERMINAL_ASSETS?.indexURL || 'about:blank' },
   default: { uri: 'about:blank' },
 });
+const DEFAULT_TERMINAL_VISUAL_VIEWPORT: TerminalVisualViewport = {
+  insets: { top: 0, bottom: 0 },
+  geometryBottomInset: 0,
+};
 
 interface WebViewHandle {
   injectJavaScript: (script: string) => void;
@@ -144,6 +150,7 @@ interface Props {
   targets: readonly TerminalRenderTarget[];
   visible: boolean;
   preferences: TerminalPreferences;
+  visualViewport?: TerminalVisualViewport;
   offlineTranscript?: string;
   offlineScroll?: PaneScrollInfo;
   swipe?: {
@@ -180,6 +187,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   targets,
   visible,
   preferences,
+  visualViewport = DEFAULT_TERMINAL_VISUAL_VIEWPORT,
   offlineTranscript = '',
   offlineScroll,
   swipe,
@@ -209,10 +217,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const appState = useRef(AppState.currentState);
   const offlineTranscriptRef = useRef(offlineTranscript);
   const offlineScrollRef = useRef(offlineScroll);
+  const visualViewportRef = useRef(visualViewport);
   const serializationTraces = useRef(new Map<string, AppPerformanceTrace>());
   activeKey.current = activeTarget?.key || null;
   offlineTranscriptRef.current = offlineTranscript;
   offlineScrollRef.current = offlineScroll;
+  visualViewportRef.current = visualViewport;
 
   const reportReady = useEffectEvent(() => onReady?.());
   const reportInput = useEffectEvent(onInput);
@@ -290,12 +300,26 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   const configureEntry = useCallback((entry: RendererEntry) => {
     const scrollbackMode = terminalScrollbackMode(entry.target.session);
+    const currentVisualViewport = visualViewportRef.current;
+    const visualScroll = entry.target.key === activeKey.current
+      ? currentVisualViewport.scroll
+      : entry.target.scroll;
     inject(`window.herdrConfigure(${JSON.stringify(entry.target.key)}, ${JSON.stringify({
       ...preferences,
       fontSize: entry.fontSize,
       backgroundImageUri: null,
       ...scrollbackMode,
       offlineCache: entry.target.session.kind !== 'ssh',
+    })}); window.herdrSetVisualInsets(${JSON.stringify(entry.target.key)}, ${JSON.stringify({
+      top: currentVisualViewport.insets.top,
+      bottom: currentVisualViewport.insets.bottom,
+      geometryBottomInset: currentVisualViewport.geometryBottomInset,
+      debug: TERMINAL_VISUAL_DEBUG_ENABLED,
+      alternateScreen: entry.target.key === activeKey.current
+        ? currentVisualViewport.alternateScreen
+        : undefined,
+      scrollOffsetFromBottom: visualScroll?.offset_from_bottom,
+      maxScrollOffsetFromBottom: visualScroll?.max_offset_from_bottom,
     })}); window.herdrSetRenderDrop(${JSON.stringify(entry.target.key)}, ${TERMINAL_RENDER_DROP_ENABLED});`);
   }, [inject, preferences]);
 
@@ -782,6 +806,34 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
   }, [configureEntry, preferences]);
 
+  const visualTopInset = visualViewport.insets.top;
+  const visualBottomInset = visualViewport.insets.bottom;
+  const visualGeometryBottomInset = visualViewport.geometryBottomInset;
+  const visualAlternateScreen = visualViewport.alternateScreen;
+  const visualScrollOffset = visualViewport.scroll?.offset_from_bottom;
+  const visualMaxScrollOffset = visualViewport.scroll?.max_offset_from_bottom;
+  useEffect(() => {
+    if (!hostReady.current || !activeTarget) return;
+    inject(`window.herdrSetVisualInsets(${JSON.stringify(activeTarget.key)}, ${JSON.stringify({
+      top: visualTopInset,
+      bottom: visualBottomInset,
+      geometryBottomInset: visualGeometryBottomInset,
+      debug: TERMINAL_VISUAL_DEBUG_ENABLED,
+      alternateScreen: visualAlternateScreen,
+      scrollOffsetFromBottom: visualScrollOffset,
+      maxScrollOffsetFromBottom: visualMaxScrollOffset,
+    })});`);
+  }, [
+    activeTarget,
+    inject,
+    visualBottomInset,
+    visualAlternateScreen,
+    visualGeometryBottomInset,
+    visualMaxScrollOffset,
+    visualScrollOffset,
+    visualTopInset,
+  ]);
+
   const updateSwipeOffset = useCallback((value: number) => {
     if (!activeTarget || !previewTarget || !swipe) return;
     inject(`window.herdrSwipe(${JSON.stringify(activeTarget.key)}, ${JSON.stringify(previewTarget.key)}, ${swipe.direction}, ${value});`);
@@ -1104,6 +1156,21 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
     } else if (message.type === 'buffer-mode') {
       reportBufferMode(entry.target, message.alternate === true);
+    } else if (message.type === 'visual-insets-debug') {
+      console.info('[WHIP_TERMINAL_VISUAL]', JSON.stringify({
+        key: entry.target.key,
+        alternateScreen: message.alternateScreen,
+        top: message.top,
+        bottom: message.bottom,
+        geometryBottom: message.geometryBottom,
+        offset: message.offset,
+        maximum: message.maximum,
+        visualOffset: message.visualOffset,
+        boundaryPreference: message.boundaryPreference,
+        remoteScroll: message.remoteScroll,
+        inputOffset: message.inputOffset,
+        pendingDelta: message.pendingDelta,
+      }));
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(message.text || '');
     } else if (message.type === 'clipboard-read') {

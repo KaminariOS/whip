@@ -1,6 +1,57 @@
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSession } from '../terminalSessions';
 import type { PaneScrollInfo } from '../types';
+import type { VisualContentInsets } from './floatingChrome';
+
+export interface TerminalVisualViewport {
+  /** Floating chrome that may visually cover terminal content. */
+  insets: VisualContentInsets;
+  /** Bottom space historically excluded from xterm's fitted geometry. */
+  geometryBottomInset: number;
+  /** RN's last-known xterm buffer mode; the renderer also checks its live buffer. */
+  alternateScreen?: boolean;
+  /** Remote scroll position; local/offline xterm buffers derive this in the renderer. */
+  scroll?: PaneScrollInfo;
+}
+
+export interface TerminalVisualOffsetInput extends TerminalVisualViewport {
+  alternateScreen: boolean;
+  boundaryPreference?: 'top' | 'bottom';
+  viewportHeight?: number;
+}
+
+/**
+ * Places normal-buffer content at its visual boundaries without adding terminal
+ * rows. Full-screen applications always retain their real PTY coordinates.
+ */
+export function terminalVisualOffset({
+  alternateScreen,
+  boundaryPreference = 'top',
+  geometryBottomInset,
+  insets,
+  scroll,
+  viewportHeight,
+}: TerminalVisualOffsetInput): number {
+  if (alternateScreen) return 0;
+
+  const top = Math.max(0, insets.top);
+  const bottomAllowance = Math.max(0, insets.bottom - Math.max(0, geometryBottomInset));
+  if (!scroll || scroll.max_offset_from_bottom <= 0) {
+    return boundaryPreference === 'top' ? top : -bottomAllowance;
+  }
+
+  const maximum = Math.max(0, scroll.max_offset_from_bottom);
+  const offset = Math.max(0, Math.min(maximum, scroll.offset_from_bottom));
+  if (offset >= maximum) return top;
+  if (offset <= 0) return -bottomAllowance;
+
+  const cellHeight = Math.max(1, (viewportHeight ?? scroll.viewport_rows) / scroll.viewport_rows);
+  if (boundaryPreference === 'top') {
+    return Math.max(0, top - ((maximum - offset) * cellHeight));
+  }
+  const bottomReveal = Math.max(0, bottomAllowance - (offset * cellHeight));
+  return bottomReveal > 0 ? -bottomReveal : 0;
+}
 
 export interface TerminalRenderTarget {
   key: string;

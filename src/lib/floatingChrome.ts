@@ -1,0 +1,52 @@
+export interface VisualContentInsets {
+  top: number;
+  bottom: number;
+}
+
+export const SESSION_TAB_BAR_HEIGHT = 55;
+export const SESSION_PANE_BAR_HEIGHT = 37;
+export const TERMINAL_CONTROL_BAR_BASE_HEIGHT = 50;
+
+export function sessionTopChromeInset(paneCount: number): number {
+  return SESSION_TAB_BAR_HEIGHT + (paneCount > 1 ? SESSION_PANE_BAR_HEIGHT : 0);
+}
+
+export function visualContentInsets(
+  top: number,
+  bottom: number,
+): VisualContentInsets {
+  return {
+    top: Math.max(0, top),
+    bottom: Math.max(0, bottom),
+  };
+}
+
+export function insetContentPadding(
+  insets: VisualContentInsets,
+  spacing: VisualContentInsets,
+): VisualContentInsets {
+  return {
+    top: insets.top + spacing.top,
+    bottom: insets.bottom + spacing.bottom,
+  };
+}
+
+export function terminalControlBarInset(bottomSafeAreaInset: number): number {
+  return TERMINAL_CONTROL_BAR_BASE_HEIGHT + Math.max(0, bottomSafeAreaInset);
+}
+
+export function terminalBottomChromeInset({
+  composerHeight,
+  composerVisible,
+  controlBarHeight,
+  keyboardInset,
+}: {
+  composerHeight: number;
+  composerVisible: boolean;
+  controlBarHeight: number;
+  keyboardInset: number;
+}): number {
+  return Math.max(0, keyboardInset)
+    + Math.max(0, controlBarHeight)
+    + (composerVisible ? Math.max(0, composerHeight) : 0);
+}

@@ -12,13 +12,16 @@ describe('terminal keyboard layout', () => {
     expect(terminalScreen).not.toContain('useAnimatedKeyboard({');
     expect(terminalScreen).toContain('paddingBottom: keyboardInset');
     expect(terminalScreen).toContain('translateY: -keyboardInset');
+    expect(terminalScreen).toContain('const floatingKeyboardInset = Math.max(0, keyboardInset - terminalLayoutKeyboardInset)');
+    expect(terminalScreen).toContain('keyboardInset: floatingKeyboardInset');
     expect(terminalScreen).toContain(
-      'bottom: TERMINAL_CONTROL_BAR_HEIGHT + bottomSafeAreaInset + keyboardInset',
+      'bottom: controlBarHeight + keyboardInset',
     );
     expect(terminalScreen).toContain('{viewportOverlay}');
     expect(terminalScreen.indexOf('{viewportOverlay}')).toBeLessThan(
       terminalScreen.indexOf('ref={controlsRef}'),
     );
-    expect(sessionScreen).toContain('viewportOverlay={activeChatView && activePane ? (');
+    expect(sessionScreen).toContain('renderViewportOverlay={activeChatView && activePane ? insets => (');
+    expect(sessionScreen).toContain('contentInsets={insets}');
   });
 });
