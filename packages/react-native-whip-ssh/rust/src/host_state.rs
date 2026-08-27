@@ -440,6 +440,11 @@ fn validate_snapshot(snapshot: &HerdrSessionSnapshot) -> Result<(), String> {
         .iter()
         .map(|tab| (tab.tab_id.as_str(), tab.workspace_id.as_str()))
         .collect::<HashMap<_, _>>();
+    let panes = snapshot
+        .panes
+        .iter()
+        .map(|pane| (pane.pane_id.as_str(), pane.tab_id.as_str()))
+        .collect::<HashSet<_>>();
     for tab in &snapshot.tabs {
         if !workspace_ids.contains(tab.workspace_id.as_str()) {
             return Err(format!(
@@ -470,11 +475,7 @@ fn validate_snapshot(snapshot: &HerdrSessionSnapshot) -> Result<(), String> {
             ));
         }
         for pane in &layout.panes {
-            if !snapshot
-                .panes
-                .iter()
-                .any(|item| item.pane_id == pane.pane_id && item.tab_id == layout.tab_id)
-            {
+            if !panes.contains(&(pane.pane_id.as_str(), layout.tab_id.as_str())) {
                 return Err(format!(
                     "layout for tab {} references unknown pane {}",
                     layout.tab_id, pane.pane_id
@@ -495,13 +496,6 @@ fn status_priority(status: HerdrAgentStatus) -> u8 {
     }
 }
 
-fn aggregate_status<'a>(statuses: impl Iterator<Item = &'a HerdrAgentStatus>) -> HerdrAgentStatus {
-    statuses
-        .copied()
-        .max_by_key(|status| status_priority(*status))
-        .unwrap_or(HerdrAgentStatus::Unknown)
-}
-
 fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
     for agent in &snapshot.agents {
         if let Some(pane) = snapshot
@@ -512,26 +506,51 @@ fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
             pane.agent_session.clone_from(&agent.agent_session);
         }
     }
+
+    let mut panes_by_tab = HashMap::<&str, (usize, HerdrAgentStatus)>::new();
+    let mut panes_by_workspace = HashMap::<&str, usize>::new();
+    for pane in &snapshot.panes {
+        let (count, status) = panes_by_tab
+            .entry(pane.tab_id.as_str())
+            .or_insert((0, HerdrAgentStatus::Unknown));
+        *count += 1;
+        if status_priority(pane.agent_status) > status_priority(*status) {
+            *status = pane.agent_status;
+        }
+        *panes_by_workspace
+            .entry(pane.workspace_id.as_str())
+            .or_default() += 1;
+    }
     for tab in &mut snapshot.tabs {
-        let panes = snapshot
-            .panes
-            .iter()
-            .filter(|pane| pane.tab_id == tab.tab_id);
-        tab.pane_count = panes.clone().count() as f64;
-        tab.agent_status = aggregate_status(panes.map(|pane| &pane.agent_status));
+        let (pane_count, agent_status) = panes_by_tab
+            .get(tab.tab_id.as_str())
+            .copied()
+            .unwrap_or((0, HerdrAgentStatus::Unknown));
+        tab.pane_count = pane_count as f64;
+        tab.agent_status = agent_status;
+    }
+
+    let mut tabs_by_workspace = HashMap::<&str, (usize, HerdrAgentStatus)>::new();
+    for tab in &snapshot.tabs {
+        let (count, status) = tabs_by_workspace
+            .entry(tab.workspace_id.as_str())
+            .or_insert((0, HerdrAgentStatus::Unknown));
+        *count += 1;
+        if status_priority(tab.agent_status) > status_priority(*status) {
+            *status = tab.agent_status;
+        }
     }
     for workspace in &mut snapshot.workspaces {
-        let tabs = snapshot
-            .tabs
-            .iter()
-            .filter(|tab| tab.workspace_id == workspace.workspace_id);
-        workspace.tab_count = tabs.clone().count() as f64;
-        workspace.pane_count = snapshot
-            .panes
-            .iter()
-            .filter(|pane| pane.workspace_id == workspace.workspace_id)
-            .count() as f64;
-        workspace.agent_status = aggregate_status(tabs.map(|tab| &tab.agent_status));
+        let (tab_count, agent_status) = tabs_by_workspace
+            .get(workspace.workspace_id.as_str())
+            .copied()
+            .unwrap_or((0, HerdrAgentStatus::Unknown));
+        workspace.tab_count = tab_count as f64;
+        workspace.pane_count = panes_by_workspace
+            .get(workspace.workspace_id.as_str())
+            .copied()
+            .unwrap_or_default() as f64;
+        workspace.agent_status = agent_status;
     }
     repair_focus(snapshot);
 }
@@ -1365,6 +1384,62 @@ mod tests {
             ApplyResult::Applied
         );
         state
+    }
+
+    #[test]
+    fn snapshot_validation_accepts_consistent_layout_references() {
+        let mut value = snapshot();
+        value.layouts.push(layout("w1", "t1", "p1"));
+
+        assert_eq!(validate_snapshot(&value), Ok(()));
+    }
+
+    #[test]
+    fn snapshot_validation_rejects_a_pane_with_an_unknown_tab() {
+        let mut value = snapshot();
+        value.panes[0].tab_id = "missing".to_owned();
+
+        assert_eq!(
+            validate_snapshot(&value),
+            Err("pane p1 references missing tab missing".to_owned())
+        );
+    }
+
+    #[test]
+    fn snapshot_validation_rejects_a_pane_with_a_mismatched_workspace() {
+        let mut value = snapshot();
+        value.panes[0].workspace_id = "w2".to_owned();
+
+        assert_eq!(
+            validate_snapshot(&value),
+            Err("pane p1 has inconsistent workspace w2 for tab t1".to_owned())
+        );
+    }
+
+    #[test]
+    fn snapshot_validation_rejects_a_layout_with_an_unknown_pane() {
+        let mut value = snapshot();
+        value.layouts.push(layout("w1", "t1", "missing"));
+
+        assert_eq!(
+            validate_snapshot(&value),
+            Err("layout for tab t1 references unknown pane missing".to_owned())
+        );
+    }
+
+    #[test]
+    fn snapshot_validation_rejects_a_layout_pane_owned_by_another_tab() {
+        let mut value = snapshot();
+        value.tabs.push(tab("t2", "w1"));
+        value
+            .panes
+            .push(pane("p2", "w1", "t2", HerdrAgentStatus::Idle));
+        value.layouts.push(layout("w1", "t1", "p2"));
+
+        assert_eq!(
+            validate_snapshot(&value),
+            Err("layout for tab t1 references unknown pane p2".to_owned())
+        );
     }
 
     #[test]

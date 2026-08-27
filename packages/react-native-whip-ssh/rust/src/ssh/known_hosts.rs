@@ -85,27 +85,24 @@ impl KnownHosts {
         let encoded_key = key.to_bytes().unwrap_or_default();
         let normalized_host = normalized_host(host);
         let canonical_host = canonical_host(&normalized_host, port);
-        let matching: Vec<&Entry> = self
-            .entries
-            .iter()
-            .filter(|entry| {
-                entry
-                    .hosts
-                    .iter()
-                    .any(|candidate| host_matches(candidate, &canonical_host))
-            })
-            .collect();
-        if matching
-            .iter()
-            .any(|entry| entry.algorithm == key.algorithm().as_str() && entry.key == encoded_key)
-        {
+        let algorithm = key.algorithm();
+        let mut host_matched = false;
+        let trusted = self.entries.iter().any(|entry| {
+            let matches_host = entry
+                .hosts
+                .iter()
+                .any(|candidate| host_matches(candidate, &canonical_host));
+            host_matched |= matches_host;
+            matches_host && entry.algorithm == algorithm.as_str() && entry.key == encoded_key
+        });
+        if trusted {
             return HostKeyDecision::Trusted;
         }
         let challenge = HostKeyChallenge::new(&normalized_host, port, key, encoded_key);
-        if matching.is_empty() {
-            HostKeyDecision::Unknown(challenge)
-        } else {
+        if host_matched {
             HostKeyDecision::Changed(challenge)
+        } else {
+            HostKeyDecision::Unknown(challenge)
         }
     }
 
@@ -274,6 +271,18 @@ mod tests {
         assert!(host_matches(&pattern, "[example.com]:2222"));
         assert!(!host_matches(&pattern, "example.com"));
         assert!(!host_matches("example.com", "[example.com]:2222"));
+
+        let key = test_key();
+        let contents = format!(
+            "{pattern} {} {}\n",
+            key.public_key().algorithm().as_str(),
+            STANDARD.encode(key.public_key().to_bytes().unwrap())
+        );
+        let known = KnownHosts::parse(&contents);
+        assert!(matches!(
+            known.check("example.com", 2222, key.public_key()),
+            HostKeyDecision::Trusted
+        ));
     }
 
     #[test]

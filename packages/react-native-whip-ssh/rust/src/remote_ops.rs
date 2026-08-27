@@ -393,25 +393,21 @@ pub(crate) fn git_status_command(root: &str) -> String {
 pub(crate) fn parse_git_status(bytes: &[u8], root: &str) -> Result<Vec<GitStatusEntry>, String> {
     let text =
         std::str::from_utf8(bytes).map_err(|_| "Git status output was not UTF-8".to_owned())?;
-    let records = text.split('\0').collect::<Vec<_>>();
+    let mut records = text.split('\0');
     let mut entries = Vec::new();
-    let mut index = 0;
-    while index < records.len() {
-        let record = records[index];
+    while let Some(record) = records.next() {
         let chars = record.as_bytes();
         if chars.len() < 4 || chars[2] != b' ' {
-            index += 1;
             continue;
         }
         let index_status = char::from(chars[0]).to_string();
         let worktree_status = char::from(chars[1]).to_string();
         let renamed = matches!(chars[0], b'R' | b'C') || matches!(chars[1], b'R' | b'C');
         let original_path = if renamed {
-            index += 1;
             records
-                .get(index)
+                .next()
                 .filter(|path| !path.is_empty())
-                .map(|path| (*path).to_owned())
+                .map(str::to_owned)
         } else {
             None
         };
@@ -424,7 +420,6 @@ pub(crate) fn parse_git_status(bytes: &[u8], root: &str) -> Result<Vec<GitStatus
             original_path,
             absolute_path,
         });
-        index += 1;
     }
     entries.sort_by(|left, right| {
         left.path
@@ -685,16 +680,60 @@ mod tests {
     }
 
     #[test]
-    fn parses_git_status_fixture() {
+    fn parses_ordinary_modified_git_status_entries() {
+        let entries = parse_git_status(b" M src/App.tsx\0M  Cargo.toml\0", "/repo").unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, "Cargo.toml");
+        assert_eq!(entries[0].index_status, "M");
+        assert_eq!(entries[0].worktree_status, " ");
+        assert_eq!(entries[1].path, "src/App.tsx");
+        assert_eq!(entries[1].index_status, " ");
+        assert_eq!(entries[1].worktree_status, "M");
+    }
+
+    #[test]
+    fn parses_renamed_and_copied_git_status_entries() {
         let entries = parse_git_status(
-            b" M src/App.tsx\0?? new file.txt\0R  new-name.ts\0old-name.ts\0",
+            b"R  new-name.ts\0old-name.ts\0C  copied-name.ts\0source-name.ts\0",
             "/repo",
         )
         .unwrap();
-        assert_eq!(entries.len(), 3);
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, "copied-name.ts");
+        assert_eq!(entries[0].original_path.as_deref(), Some("source-name.ts"));
         assert_eq!(entries[1].path, "new-name.ts");
         assert_eq!(entries[1].original_path.as_deref(), Some("old-name.ts"));
         assert_eq!(entries[1].absolute_path, "/repo/new-name.ts");
+    }
+
+    #[test]
+    fn truncated_rename_records_keep_the_entry_without_an_original_path() {
+        let entries = parse_git_status(b"R  new-name.ts", "/repo").unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, "new-name.ts");
+        assert_eq!(entries[0].original_path, None);
+    }
+
+    #[test]
+    fn rename_records_with_an_empty_original_path_are_kept_and_parsing_continues() {
+        let entries = parse_git_status(b"R  new-name.ts\0\0 M src/App.tsx\0", "/repo").unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, "new-name.ts");
+        assert_eq!(entries[0].original_path, None);
+        assert_eq!(entries[1].path, "src/App.tsx");
+    }
+
+    #[test]
+    fn empty_records_are_skipped_in_git_status_output() {
+        let entries = parse_git_status(b"\0 M src/App.tsx\0\0?? new.txt\0", "/repo").unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, "new.txt");
+        assert_eq!(entries[1].path, "src/App.tsx");
     }
 
     #[test]

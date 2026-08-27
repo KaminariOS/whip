@@ -38,16 +38,19 @@ fn temporary_file(token: &str, extension: &str) -> String {
 }
 
 fn encode_url_segment(value: &str) -> String {
-    value
-        .bytes()
-        .flat_map(|byte| {
-            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-                vec![char::from(byte)].into_iter().collect::<Vec<_>>()
-            } else {
-                format!("%{byte:02X}").chars().collect()
-            }
-        })
-        .collect()
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+    }
+    encoded
 }
 
 fn start_command(directory: &str, token: &str) -> String {
@@ -232,11 +235,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preview_url_segments_encode_shell_sensitive_and_unicode_names() {
+    fn preview_url_segments_preserve_unreserved_ascii() {
+        assert_eq!(
+            encode_url_segment("report-1_final~.html"),
+            "report-1_final~.html"
+        );
+    }
+
+    #[test]
+    fn preview_url_segments_encode_reserved_ascii() {
+        assert_eq!(encode_url_segment("space here"), "space%20here");
         assert_eq!(
             encode_url_segment("report #1; $final.html"),
             "report%20%231%3B%20%24final.html"
         );
+        assert_eq!(encode_url_segment("100%/done"), "100%25%2Fdone");
+    }
+
+    #[test]
+    fn preview_url_segments_encode_unicode_as_utf8_bytes() {
         assert_eq!(encode_url_segment("資料.html"), "%E8%B3%87%E6%96%99.html");
     }
 }
