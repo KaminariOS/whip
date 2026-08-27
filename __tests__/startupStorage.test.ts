@@ -6,11 +6,13 @@ jest.mock('../src/services/terminalBackground', () => ({}));
 jest.mock('../src/services/appBackground', () => ({}));
 jest.mock('react-native-whip-ssh', () => ({
   __esModule: true,
-  default: { setKnownHosts: jest.fn() },
+  default: { setTrustedHostKeys: jest.fn() },
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import SSHClient from 'react-native-whip-ssh';
 
+import { knownHostsFromStorage } from '../src/services/knownHosts';
 import {
   STARTUP_STORAGE_KEYS,
   readStartupStorage,
@@ -35,6 +37,52 @@ test('reads every startup value through one AsyncStorage bridge call', async () 
   expect(snapshot.liveHosts).toBe('value:herdr.live.hosts.v1');
   expect(snapshot.terminalHistory).toBe('value:herdr.terminal.history.v1');
   expect(snapshot.herdrSocketPaths).toBe('value:herdr.api-socket-paths.v1');
+});
+
+test('startup snapshot known hosts are strictly parsed and installed natively', async () => {
+  const storedKnownHost = {
+    id: 'known-host-startup',
+    host: 'startup.example',
+    port: 2222,
+    keyType: 'ssh-ed25519',
+    publicKey: 'AAAAStartupKey',
+    fingerprint: 'SHA256:startup',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
+  jest.mocked(AsyncStorage.multiGet).mockResolvedValueOnce(
+    STARTUP_STORAGE_KEYS.map(key => [
+      key,
+      key === 'herdr.known-hosts.v1' ? JSON.stringify([storedKnownHost]) : null,
+    ]),
+  );
+
+  const snapshot = await readStartupStorage();
+  const state = knownHostsFromStorage(snapshot.knownHosts);
+
+  expect(state).toEqual({ status: 'loaded', hosts: [storedKnownHost] });
+  expect(SSHClient.setTrustedHostKeys).toHaveBeenCalledWith([{
+    host: 'startup.example',
+    port: 2222,
+    keyType: 'ssh-ed25519',
+    publicKey: 'AAAAStartupKey',
+  }]);
+});
+
+test('an omitted multiGet entry is a read failure, not an authoritative null', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  jest.mocked(AsyncStorage.multiGet).mockResolvedValueOnce(
+    STARTUP_STORAGE_KEYS
+      .filter(key => key !== 'herdr.known-hosts.v1')
+      .map(key => [key, null]),
+  );
+
+  await expect(readStartupStorage()).rejects.toThrow(
+    'omitted startup key herdr.known-hosts.v1',
+  );
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+    '[StorageDiagnostics] startup-storage-multiget-failed',
+  ));
+  consoleError.mockRestore();
 });
 
 test('logs a startup diagnostic before multiGet failure falls back to individual reads', async () => {

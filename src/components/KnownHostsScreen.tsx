@@ -1,34 +1,36 @@
-import { ChevronLeft, Fingerprint, ShieldCheck, Trash2 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import {
+  ChevronLeft,
+  CircleAlert,
+  Fingerprint,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react-native';
+import { useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { deleteKnownHost } from '@/src/services/knownHosts';
+import type { KnownHostsLoadState } from '@/src/services/knownHosts';
 import type { KnownHost } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader } from './app-ui';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassSurface } from './GlassSurface';
+import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 interface Props {
-  initialHosts: KnownHost[];
+  state: KnownHostsLoadState;
   onClose: () => void;
-  onChanged: (hosts: KnownHost[]) => void;
+  onDelete: (id: string) => Promise<void>;
+  onRetry: () => Promise<void>;
 }
 
-export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
+export function KnownHostsScreen({ state, onClose, onDelete, onRetry }: Props) {
   const { t } = useTranslation();
-  const [hosts, setHosts] = useState(initialHosts);
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<KnownHost | null>(null);
-
-  useEffect(() => { setHosts(initialHosts); }, [initialHosts]);
-
-  const updateHosts = (next: KnownHost[]) => {
-    setHosts(next);
-    onChanged(next);
-  };
+  const hosts = state.status === 'loaded' ? state.hosts : [];
 
   const confirmDelete = (host: KnownHost) => {
     setDeleteTarget(host);
@@ -38,7 +40,7 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
     if (!deleteTarget || busy) return;
     setBusy(true);
     try {
-      updateHosts(await deleteKnownHost(hosts, deleteTarget.id));
+      await onDelete(deleteTarget.id);
       setDeleteTarget(null);
     } catch (error) {
       setDeleteTarget(null);
@@ -52,7 +54,11 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
     <View className="flex-1">
       <ScreenHeader
         title={t('knownHosts.title')}
-        subtitle={t('knownHosts.count', { count: hosts.length })}
+        subtitle={state.status === 'loaded'
+          ? t('knownHosts.count', { count: hosts.length })
+          : t(state.status === 'loading'
+            ? 'knownHosts.loading'
+            : 'knownHosts.failed')}
         left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onClose} />}
       />
       <ScrollView className="flex-1">
@@ -65,7 +71,35 @@ export function KnownHostsScreen({ initialHosts, onClose, onChanged }: Props) {
             </View>
           </GlassSurface>
 
-          {hosts.length === 0 ? (
+          {state.status === 'failed' ? (
+            <View className="min-h-[320px] items-center justify-center px-7">
+              <View className="size-16 items-center justify-center rounded-full bg-destructive/10">
+                <Icon as={CircleAlert} className="text-destructive" size={27} />
+              </View>
+              <Text className="mt-4 text-lg font-semibold">{t('knownHosts.loadFailedTitle')}</Text>
+              <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
+                {t('knownHosts.loadFailedCopy')}
+              </Text>
+              <Button
+                className="mt-5"
+                disabled={busy}
+                onPress={hapticPress(async () => {
+                  setBusy(true);
+                  try {
+                    await onRetry();
+                  } finally {
+                    setBusy(false);
+                  }
+                })}>
+                <RefreshCw size={16} />
+                <Text>{t('knownHosts.retry')}</Text>
+              </Button>
+            </View>
+          ) : state.status === 'loading' ? (
+            <View className="min-h-[320px] items-center justify-center px-7">
+              <Text className="text-sm text-muted-foreground">{t('knownHosts.loading')}</Text>
+            </View>
+          ) : hosts.length === 0 ? (
             <View className="min-h-[320px] items-center justify-center px-7">
               <View className="size-16 items-center justify-center rounded-full bg-muted">
                 <Icon as={Fingerprint} size={27} />

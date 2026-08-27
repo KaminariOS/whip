@@ -114,9 +114,10 @@ export function AppOverlays({
             dimming={appBackgroundDimming}
           />
           <KnownHostsScreen
-            initialHosts={hosts.knownHosts}
-            onChanged={hosts.replaceKnownHosts}
+            state={hosts.knownHostsState}
             onClose={hosts.closeKnownHosts}
+            onDelete={hosts.forgetKnownHost}
+            onRetry={hosts.retryKnownHosts}
           />
         </FullScreenOverlay>
       )}

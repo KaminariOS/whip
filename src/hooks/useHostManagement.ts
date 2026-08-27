@@ -22,9 +22,12 @@ import {
   saveConnectionProfile,
 } from '../services/hostProfiles';
 import {
+  deleteKnownHost,
   knownHostsFromStorage,
   loadKnownHosts,
+  KnownHostsUnavailableError,
   trustKnownHost,
+  type KnownHostsLoadState,
   type UnknownHostKeyChallenge,
 } from '../services/knownHosts';
 import { withAppPerformanceTrace } from '../services/performanceTrace';
@@ -63,16 +66,15 @@ export interface HostManagementController {
   pairingSuccess: PairHostResult | null;
   profilesLoaded: boolean;
   knownHostsLoaded: boolean;
+  knownHostsState: KnownHostsLoadState;
   error: string | null;
   credentialRecovery: CredentialRecoveryStatus;
   credentialRecoveryBusy: boolean;
   deleteHostTarget: HostProfile | null;
   deleteHostBusy: boolean;
   getHosts: () => HostProfile[];
-  getKnownHosts: () => KnownHost[];
   setError: (error: string | null) => void;
   replaceHosts: (hosts: HostProfile[]) => void;
-  replaceKnownHosts: (hosts: KnownHost[]) => void;
   persistProfile: (
     profile: ConnectionProfile,
   ) => Promise<{ hosts: HostProfile[]; host: HostProfile }>;
@@ -97,6 +99,8 @@ export interface HostManagementController {
   openGlobalKeychain: () => Promise<void>;
   closeGlobalKeychain: () => void;
   updateGlobalKeys: (keys: GlobalSshKeyMaterial[]) => void;
+  retryKnownHosts: () => Promise<void>;
+  forgetKnownHost: (id: string) => Promise<void>;
   openKnownHosts: () => void;
   closeKnownHosts: () => void;
   confirmDelete: (host: HostProfile) => void;
@@ -116,7 +120,9 @@ export function useHostManagement({
   onDeleteConnectedHost,
 }: HostManagementOptions): HostManagementController {
   const [hosts, setHosts] = useState<HostProfile[]>([]);
-  const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
+  const [knownHostsState, setKnownHostsState] = useState<KnownHostsLoadState>({
+    status: 'loading',
+  });
   const [globalSshKeys, setGlobalSshKeys] = useState<GlobalSshKey[]>([]);
   const [unlockedGlobalKeys, setUnlockedGlobalKeys] = useState<
     GlobalSshKeyMaterial[] | null
@@ -132,7 +138,6 @@ export function useHostManagement({
     null,
   );
   const [profilesLoaded, setProfilesLoaded] = useState(false);
-  const [knownHostsLoaded, setKnownHostsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [credentialRecovery, setCredentialRecovery] =
     useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
@@ -142,7 +147,7 @@ export function useHostManagement({
   );
   const [deleteHostBusy, setDeleteHostBusy] = useState(false);
   const hostsRef = useRef(hosts);
-  const knownHostsRef = useRef(knownHosts);
+  const knownHostsStateRef = useRef(knownHostsState);
   const profileHydrationStartedRef = useRef(false);
   const deferredHydrationStartedRef = useRef(false);
   const credentialMigrationStartedRef = useRef(false);
@@ -152,16 +157,22 @@ export function useHostManagement({
   const onDeleteConnectedHostRef = useRef(onDeleteConnectedHost);
   onDeleteConnectedHostRef.current = onDeleteConnectedHost;
   hostsRef.current = hosts;
-  knownHostsRef.current = knownHosts;
+  knownHostsStateRef.current = knownHostsState;
+
+  const knownHosts = useMemo(
+    () => knownHostsState.status === 'loaded' ? knownHostsState.hosts : [],
+    [knownHostsState],
+  );
+  const knownHostsLoaded = knownHostsState.status === 'loaded';
 
   const replaceHosts = useCallback((value: HostProfile[]) => {
     hostsRef.current = value;
     setHosts(value);
   }, []);
 
-  const replaceKnownHosts = useCallback((value: KnownHost[]) => {
-    knownHostsRef.current = value;
-    setKnownHosts(value);
+  const replaceKnownHostsState = useCallback((value: KnownHostsLoadState) => {
+    knownHostsStateRef.current = value;
+    setKnownHostsState(value);
   }, []);
 
   useEffect(() => {
@@ -201,16 +212,22 @@ export function useHostManagement({
         ? knownHostsFromStorage(startupStorage.value.knownHosts)
         : loadKnownHosts();
     withAppPerformanceTrace('Whip startup store: known hosts', () => load)
-      .then(replaceKnownHosts)
-      .catch(() => replaceKnownHosts([]))
-      .finally(() => setKnownHostsLoaded(true));
+      .then(replaceKnownHostsState);
     withAppPerformanceTrace(
       'Whip startup store: credential status',
       credentialRecoveryStatus,
     )
       .then(setCredentialRecovery)
       .catch(() => undefined);
-  }, [deferredHydrationReady, replaceKnownHosts, startupStorage]);
+  }, [deferredHydrationReady, replaceKnownHostsState, startupStorage]);
+
+  const retryKnownHosts = useCallback(async () => {
+    replaceKnownHostsState({ status: 'loading' });
+    replaceKnownHostsState(await withAppPerformanceTrace(
+      'Whip known hosts: retry storage load',
+      loadKnownHosts,
+    ));
+  }, [replaceKnownHostsState]);
 
   const completeLiveHostRestore = useCallback(() => {
     if (!deferredHydrationReady || credentialMigrationStartedRef.current)
@@ -302,20 +319,20 @@ export function useHostManagement({
 
   const savePairedHost = useCallback(
     async (result: PairHostResult, key: PairingKeySelection) => {
-      const nextKnownHosts = await trustKnownHost(knownHostsRef.current, {
+      const nextKnownHosts = await trustKnownHost({
         host: result.sshHost,
         port: result.sshPort,
         keyType: result.sshHostKeyType,
         publicKey: result.sshHostPublicKey,
         fingerprint: result.sshHostFingerprint,
       });
-      replaceKnownHosts(nextKnownHosts);
+      replaceKnownHostsState({ status: 'loaded', hosts: nextKnownHosts });
       await persistProfile(profileFromPairing(result, key));
       setCredentialRecovery(await credentialRecoveryStatus());
       setNewHostOpen(false);
       if (key.privateKey) setPairingSuccess(result);
     },
-    [persistProfile, replaceKnownHosts],
+    [persistProfile, replaceKnownHostsState],
   );
 
   const openEditor = useCallback(
@@ -360,12 +377,16 @@ export function useHostManagement({
   }, []);
 
   const confirmUnknownHost = useCallback(
-    (challenge: UnknownHostKeyChallenge): Promise<boolean> =>
-      new Promise(resolve => {
+    (challenge: UnknownHostKeyChallenge): Promise<boolean> => {
+      if (knownHostsStateRef.current.status !== 'loaded') {
+        return Promise.reject(new KnownHostsUnavailableError());
+      }
+      return new Promise(resolve => {
         unknownHostResolutionRef.current?.(false);
         unknownHostResolutionRef.current = resolve;
         setUnknownHostChallenge(challenge);
-      }),
+      });
+    },
     [],
   );
 
@@ -378,10 +399,16 @@ export function useHostManagement({
 
   const trustChallenge = useCallback(
     async (challenge: UnknownHostKeyChallenge) => {
-      replaceKnownHosts(await trustKnownHost(knownHostsRef.current, challenge));
+      const hosts = await trustKnownHost(challenge);
+      replaceKnownHostsState({ status: 'loaded', hosts });
     },
-    [replaceKnownHosts],
+    [replaceKnownHostsState],
   );
+
+  const forgetKnownHost = useCallback(async (id: string) => {
+    const hosts = await deleteKnownHost(id);
+    replaceKnownHostsState({ status: 'loaded', hosts });
+  }, [replaceKnownHostsState]);
 
   const deleteConfirmed = useCallback(async () => {
     if (!deleteHostTarget || deleteHostBusy) return;
@@ -417,7 +444,6 @@ export function useHostManagement({
   }, [editorProfile, knownHostsOpen, newHostOpen, unlockedGlobalKeys]);
 
   const getHosts = useCallback(() => hostsRef.current, []);
-  const getKnownHosts = useCallback(() => knownHostsRef.current, []);
   const openNewHost = useCallback(() => {
     setError(null);
     setNewHostOpen(true);
@@ -456,16 +482,15 @@ export function useHostManagement({
       pairingSuccess,
       profilesLoaded,
       knownHostsLoaded,
+      knownHostsState,
       error,
       credentialRecovery,
       credentialRecoveryBusy,
       deleteHostTarget,
       deleteHostBusy,
       getHosts,
-      getKnownHosts,
       setError,
       replaceHosts,
-      replaceKnownHosts,
       persistProfile,
       markDisconnected,
       confirmUnknownHost,
@@ -483,6 +508,8 @@ export function useHostManagement({
       openGlobalKeychain,
       closeGlobalKeychain,
       updateGlobalKeys,
+      retryKnownHosts,
+      forgetKnownHost,
       openKnownHosts,
       closeKnownHosts,
       confirmDelete: setDeleteHostTarget,
@@ -510,12 +537,13 @@ export function useHostManagement({
       dismissTopOverlay,
       editorProfile,
       error,
+      forgetKnownHost,
       getHosts,
-      getKnownHosts,
       globalSshKeys,
       hosts,
       knownHosts,
       knownHostsLoaded,
+      knownHostsState,
       knownHostsOpen,
       loadProfileForConnection,
       markDisconnected,
@@ -529,7 +557,7 @@ export function useHostManagement({
       persistProfile,
       profilesLoaded,
       replaceHosts,
-      replaceKnownHosts,
+      retryKnownHosts,
       resolveUnknownHost,
       saveHost,
       savePairedHost,

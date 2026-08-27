@@ -35,9 +35,24 @@ export type StartupStorageSnapshot = {
 
 /** Reads every startup AsyncStorage value through a single native bridge call. */
 export async function readStartupStorage(): Promise<StartupStorageSnapshot> {
-  let entries: readonly [string, string | null][];
   try {
-    entries = await AsyncStorage.multiGet([...STARTUP_STORAGE_KEYS]);
+    const entries = await AsyncStorage.multiGet([...STARTUP_STORAGE_KEYS]);
+    const values = new Map(entries);
+    const missingKey = STARTUP_STORAGE_KEYS.find(key => !values.has(key));
+    if (missingKey) {
+      throw new Error(`AsyncStorage multiGet omitted startup key ${missingKey}`);
+    }
+    const value = (key: string) => values.get(key) ?? null;
+    return {
+      hosts: value(HOSTS_STORAGE_KEY),
+      legacyHost: value(LEGACY_PROFILE_KEY),
+      preferences: value(DEVICE_PREFERENCES_KEY),
+      legacyPreferences: LEGACY_DEVICE_PREFERENCES_KEYS.map(value),
+      knownHosts: value(KNOWN_HOSTS_STORAGE_KEY),
+      liveHosts: value(LIVE_HOSTS_KEY),
+      terminalHistory: value(TERMINAL_HISTORY_STORAGE_KEY),
+      herdrSocketPaths: value(HERDR_SOCKET_PATH_CACHE_KEY),
+    };
   } catch (error) {
     recordStorageDiagnostic('error', 'startup-storage-multiget-failed', {
       store: 'startup-storage',
@@ -48,16 +63,4 @@ export async function readStartupStorage(): Promise<StartupStorageSnapshot> {
     });
     throw error;
   }
-  const values = new Map(entries);
-  const value = (key: string) => values.get(key) ?? null;
-  return {
-    hosts: value(HOSTS_STORAGE_KEY),
-    legacyHost: value(LEGACY_PROFILE_KEY),
-    preferences: value(DEVICE_PREFERENCES_KEY),
-    legacyPreferences: LEGACY_DEVICE_PREFERENCES_KEYS.map(value),
-    knownHosts: value(KNOWN_HOSTS_STORAGE_KEY),
-    liveHosts: value(LIVE_HOSTS_KEY),
-    terminalHistory: value(TERMINAL_HISTORY_STORAGE_KEY),
-    herdrSocketPaths: value(HERDR_SOCKET_PATH_CACHE_KEY),
-  };
 }

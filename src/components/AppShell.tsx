@@ -370,7 +370,9 @@ export function AppShell({
                       biometricForKeys={biometricForKeys}
                       biometricOnResume={biometricOnResume}
                       globalKeyCount={hosts.globalSshKeys.length}
-                      knownHostCount={hosts.knownHosts.length}
+                      knownHostCount={hosts.knownHostsState.status === 'loaded'
+                        ? hosts.knownHosts.length
+                        : null}
                       appearance={appearance}
                       fullscreenApp={fullscreenApp}
                       appBackgroundImageUri={appBackgroundImageUri}

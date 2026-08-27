@@ -102,7 +102,7 @@ export interface SettingsSectionProps {
   biometricForKeys: boolean;
   biometricOnResume: boolean;
   globalKeyCount: number;
-  knownHostCount: number;
+  knownHostCount: number | null;
   appearance: AppearancePreference;
   fullscreenApp: boolean;
   appBackgroundImageUri: string | null;
@@ -255,7 +255,9 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
         <ActionRow
           title={t('settings.knownHosts')}
-          copy={t('settings.knownHostsCopy', { count: props.knownHostCount })}
+          copy={props.knownHostCount === null
+            ? t('settings.knownHostsUnavailable')
+            : t('settings.knownHostsCopy', { count: props.knownHostCount })}
           icon={Fingerprint}
           onPress={props.onManageKnownHosts}
           divided

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <!-- Keychain and the locally wrapped recovery key remain intentionally excluded. -->
+        <!-- Includes AsyncStorage known hosts; Keychain and the locally wrapped recovery key remain excluded. -->
         <include domain="database" path="." />
         <include domain="file" path="terminal-backgrounds/" />
     </cloud-backup>

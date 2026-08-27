@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- AsyncStorage contains host metadata, bounded latency diagnostics, and AES-GCM-encrypted credential backups. -->
+    <!-- AsyncStorage's database contains known SSH hosts, host metadata, bounded diagnostics, and encrypted credential backups. -->
     <include domain="database" path="." />
     <!-- Only user-selected terminal backgrounds are backed up from app files. -->
     <include domain="file" path="terminal-backgrounds/" />
