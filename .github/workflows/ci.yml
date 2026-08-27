@@ -85,7 +85,7 @@ jobs:
         run: npm ci
 
       - name: Check Expo dependencies
-        run: npx expo-doctor
+        run: npm run doctor
 
       - name: Check types
         run: npx tsc --noEmit
