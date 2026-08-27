@@ -607,18 +607,26 @@ function renderablePart(part: TranscriptPart): boolean {
   return part.type === 'compaction' || part.type === 'plan' || part.type === 'notice' || part.type === 'subtask';
 }
 
-function AssistantPart({ part, onLinkPress }: { part: TranscriptPart; onLinkPress: (url: string) => void }) {
+function AssistantPart({
+  part,
+  onLinkPress,
+  streaming = false,
+}: {
+  part: TranscriptPart;
+  onLinkPress: (url: string) => void;
+  streaming?: boolean;
+}) {
   const { colors } = useTheme();
   if (part.type === 'text') {
     if (!part.text.trim() || part.synthetic || part.ignored) return null;
-    return <View className="min-w-0 w-full"><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
+    return <View className="min-w-0 w-full"><MarkdownText content={part.text} streaming={streaming} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'reasoning') {
     if (!part.text.trim()) return null;
     return (
       <View className="w-full border-l border-border pl-3 py-0.5">
         <Text className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Thinking</Text>
-        <MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} />
+        <MarkdownText content={part.text} streaming={streaming} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} />
       </View>
     );
   }
@@ -833,6 +841,12 @@ const TranscriptTurnView = memo(function TranscriptTurnRow({
 }) {
   const { colors } = useTheme();
   const parts = useMemo(() => groupParts(turn.assistants.flatMap(message => message.parts).filter(renderablePart)), [turn.assistants]);
+  const tail = parts.at(-1);
+  const streamingPartId = working
+    && tail?.type === 'part'
+    && (tail.part.type === 'text' || tail.part.type === 'reasoning')
+    ? tail.part.id
+    : undefined;
   const showThinking = working && turn.status !== 'error' && !parts.length;
   return (
     <View className="w-full">
@@ -840,7 +854,12 @@ const TranscriptTurnView = memo(function TranscriptTurnRow({
       <View className={cn('w-full gap-3', turn.user && 'mt-3')}>
         {parts.map(group => group.type === 'context'
           ? <ContextToolGroup key={group.id} tools={group.tools} />
-          : <AssistantPart key={group.part.id} part={group.part} onLinkPress={onLinkPress} />)}
+          : <AssistantPart
+              key={group.part.id}
+              part={group.part}
+              streaming={group.part.id === streamingPartId}
+              onLinkPress={onLinkPress}
+            />)}
         {showThinking && <ThinkingIndicator />}
         {turn.assistants.flatMap(message => message.error ? [message.error] : []).map((error, index) => (
           <View key={`error:${index}`} className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{stringify(error) || 'Agent error'}</Text></View>

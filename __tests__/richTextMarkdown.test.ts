@@ -43,6 +43,43 @@ describe('rich text markdown normalization', () => {
     expect(normalizeRichTextMarkdown(source)).toBe(source);
   });
 
+  test('preserves the Markdown syntax enabled by the native parser', () => {
+    const source = [
+      '**bold**',
+      '',
+      '*italic*',
+      '',
+      '~~deleted~~',
+      '',
+      '`inline code`',
+      '',
+      '```rust',
+      'fn main() {}',
+      '```',
+      '',
+      '- [ ] incomplete',
+      '- [x] complete',
+      '',
+      '| A | B |',
+      '| - | - |',
+      '| 1 | 2 |',
+      '',
+      'H~2~O',
+      '',
+      'x^2^',
+      '',
+      '==highlight==',
+      '',
+      '$E = mc^2$',
+      '',
+      String.raw`\(a + b\)`,
+    ].join('\n');
+
+    expect(normalizeRichTextMarkdown(source)).toBe(
+      source.replace(String.raw`\(a + b\)`, '$a + b$'),
+    );
+  });
+
   test('converts OpenCode inline math delimiters for the native renderer', () => {
     const source = String.raw`Euler's identity \(e^{i\pi} + 1 = 0\) is compact.`;
     expect(normalizeRichTextMarkdown(source)).toBe(
@@ -67,6 +104,20 @@ describe('rich text markdown normalization', () => {
     expect(normalizeRichTextMarkdown(String.raw`<code>\(not_math\)</code> and \(x\)`)).toBe(
       '`\\(not_math\\)` and $x$',
     );
+  });
+
+  test('does not transform Markdown, HTML, or math delimiters inside code', () => {
+    const source = [
+      'Inline: `<strong>**bold**</strong> \\(x\\) $y$ H~2~O x^2^ ==mark==`',
+      '',
+      '```markdown',
+      '<em>*italic*</em>',
+      String.raw`\(not_math\) and $also_not_math$`,
+      '~~deleted~~ H~2~O x^2^ ==highlight==',
+      '```',
+    ].join('\n');
+
+    expect(normalizeRichTextMarkdown(source)).toBe(source);
   });
 
   test('does not crash on invalid numeric HTML entities', () => {

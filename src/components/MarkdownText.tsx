@@ -4,16 +4,32 @@ import {
   type MarkdownStyle,
 } from 'react-native-enriched-markdown';
 import type { TextStyle, ViewStyle } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { guiFontFamilies } from '../lib/guiFonts';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
-import { useTheme } from '../theme';
+import { colorWithAlpha, useTheme } from '../theme';
+
+export const WHIP_MARKDOWN_FLAGS = {
+  highlight: true,
+  latexMath: true,
+  subscript: true,
+  superscript: true,
+} as const;
+
+export const WHIP_MARKDOWN_STREAMING_CONFIG = {
+  codeBlockMode: 'progressive',
+  tableMode: 'progressive',
+} as const;
+
+const LOCAL_PATH_LINK_PATTERN = '^(?:file:\\/\\/|\\/|\\.\\.?\\/|~\\/)';
 
 interface Props {
   content: string;
   containerStyle?: ViewStyle | TextStyle;
   onLinkPress?: (link: { url: string }) => void;
   selectable?: boolean;
+  streaming?: boolean;
   variant?: 'default' | 'transcript';
 }
 
@@ -107,6 +123,12 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         fontFamily: guiFontFamilies.medium,
         underline: true,
       },
+      linkVariants: {
+        [LOCAL_PATH_LINK_PATTERN]: {
+          backgroundColor: colorWithAlpha(colors.primary, '14'),
+          underline: false,
+        },
+      },
       strong: {
         color: colors.text,
         fontFamily: guiFontFamilies.semiBold,
@@ -121,6 +143,7 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         color: colors.text,
         backgroundColor: colors.surfaceRaised,
         borderColor: colors.divider,
+        fontFamily: guiFontFamilies.mono,
         fontSize: 12,
       },
       codeBlock: {
@@ -133,6 +156,22 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         fontSize: 12,
         lineHeight: 18,
         padding: 13,
+        syntaxColors: {
+          attribute: colors.warning,
+          comment: colors.textTertiary,
+          constant: colors.warning,
+          embedded: colors.text,
+          function: colors.primary,
+          keyword: colors.primary,
+          number: colors.warning,
+          operator: colors.textSecondary,
+          property: colors.textSecondary,
+          punctuation: colors.textSecondary,
+          string: colors.done,
+          tag: colors.error,
+          type: colors.warning,
+          variable: colors.text,
+        },
         marginBottom: 14,
         marginTop: 2,
       },
@@ -166,7 +205,12 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         checkboxBorderRadius: 4,
         checkboxSize: 17,
         checkmarkColor: colors.onPrimary,
+        checkedStrikethrough: true,
         checkedTextColor: colors.textSecondary,
+      },
+      highlight: {
+        color: colors.text,
+        backgroundColor: colorWithAlpha(colors.warning, '2E'),
       },
       ...(variant === 'transcript' ? {
         math: {
@@ -191,20 +235,59 @@ export function MarkdownText({
   containerStyle,
   onLinkPress,
   selectable = true,
+  streaming = false,
   variant = 'default',
 }: Props) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
   const markdownStyle = useWhipMarkdownStyle(variant);
   const markdown = useMemo(() => normalizeRichTextMarkdown(content), [content]);
+  const accessibilityLabels = useMemo(() => ({
+    list: {
+      bulletPoint: t('markdown.a11y.bulletPoint'),
+      nestedBulletPoint: t('markdown.a11y.nestedBulletPoint'),
+      orderedItem: t('markdown.a11y.orderedItem'),
+      nestedOrderedItem: t('markdown.a11y.nestedOrderedItem'),
+    },
+    blockquote: {
+      quote: t('markdown.a11y.blockquote'),
+      nestedQuote: t('markdown.a11y.nestedBlockquote'),
+    },
+    table: { row: t('markdown.a11y.tableRow') },
+    math: { equation: t('markdown.a11y.math') },
+    rotor: {
+      headings: t('markdown.a11y.headings'),
+      links: t('markdown.a11y.links'),
+      images: t('markdown.a11y.images'),
+    },
+  }), [t]);
+  const selectionMenuConfig = useMemo(() => ({
+    copy: { label: t('markdown.copy') },
+    copyAsMarkdown: { label: t('markdown.copyAsMarkdown') },
+    copyImageUrl: {
+      label: t('markdown.copyImageUrl'),
+      pluralLabels: { other: t('markdown.copyImageUrls') },
+    },
+  }), [t]);
   return (
     <EnrichedMarkdownText
+      accessibilityLabels={accessibilityLabels}
+      allowFontScaling
       allowTrailingMargin={false}
       containerStyle={containerStyle}
+      enableLinkPreview
+      enableTaskListItemToggle={false}
       flavor="github"
       markdown={markdown}
       markdownStyle={markdownStyle}
-      md4cFlags={{ latexMath: true }}
+      md4cFlags={WHIP_MARKDOWN_FLAGS}
       onLinkPress={onLinkPress}
       selectable={selectable}
+      selectionColor={colorWithAlpha(colors.primary, '4D')}
+      selectionHandleColor={colors.primary}
+      selectionMenuConfig={selectionMenuConfig}
+      streamingAnimation={streaming}
+      streamingConfig={streaming ? WHIP_MARKDOWN_STREAMING_CONFIG : undefined}
     />
   );
 }
