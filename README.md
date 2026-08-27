@@ -1,8 +1,5 @@
 # Whip
 
-Request-specific RevenueCat tip and feedback backend setup is documented in
-[docs/request-tipping.md](docs/request-tipping.md).
-
 <p align="center">
   <img src="assets/whip-cyborg-hand-concept.svg" alt="Whip app icon" width="128">
 </p>
