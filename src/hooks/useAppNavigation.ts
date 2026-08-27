@@ -71,6 +71,7 @@ export function useAppNavigation({
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [licensesOpen, setLicensesOpen] = useState(false);
   const hydratedRef = useRef(false);
+  const firstTabMountedNotifiedRef = useRef(false);
   const startupTraceRef = useRef<AppPerformanceTrace | null>(null);
   const tabMountTracesRef = useRef(new Map<AppTab, AppPerformanceTrace>());
   const dismissOverlay = useEffectEvent(dismissTopOverlay);
@@ -120,11 +121,11 @@ export function useAppNavigation({
       endAppPerformanceTrace(trace);
       tabMountTracesRef.current.delete(tab);
     }
-    if (mountedTabs.size > 0 && startupTraceRef.current) {
-      endAppPerformanceTrace(startupTraceRef.current);
-      startupTraceRef.current = null;
-      notifyFirstTabMounted();
-    }
+    if (mountedTabs.size === 0 || firstTabMountedNotifiedRef.current) return;
+    firstTabMountedNotifiedRef.current = true;
+    endAppPerformanceTrace(startupTraceRef.current);
+    startupTraceRef.current = null;
+    notifyFirstTabMounted();
   }, [mountedTabs]);
 
   useEffect(() => {
