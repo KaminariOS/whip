@@ -351,6 +351,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ count: 0, index: -1, invalid: false });
   const [composeOpen, setComposeOpen] = useState(false);
+  const composeOpenRef = useRef(composeOpen);
   const [composeExpanded, setComposeExpanded] = useState(false);
   const [composerHeight, setComposerHeight] = useState(0);
   const [controlBarHeight, setControlBarHeight] = useState(
@@ -391,28 +392,41 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const composerKeyboardEnabled = composeOpen && keyboardEnabled;
   const keyboardControlDisabled = status !== 'connected' && !composeOpen;
   const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
+  composeOpenRef.current = composeOpen;
   const terminalLayoutKeyboardInset = composeOpen ? 0 : keyboardInset;
   const floatingKeyboardInset = Math.max(0, keyboardInset - terminalLayoutKeyboardInset);
-  const bottomChromeInset = terminalBottomChromeInset({
+  const terminalBottomChrome = terminalBottomChromeInset({
+    composerHeight,
+    // Terminal composer and IME are transient overlays. They must not alter
+    // xterm's fitted size or its current visual scroll offset when opened.
+    composerVisible: false,
+    controlBarHeight,
+    keyboardInset: 0,
+  });
+  const viewportOverlayBottomChrome = terminalBottomChromeInset({
     composerHeight,
     composerVisible: composeOpen && !composeExpanded,
     controlBarHeight,
     keyboardInset: floatingKeyboardInset,
   });
   const viewportTopOcclusion = searchOpen ? 0 : topOverlayInset;
-  const scrollingInsets = useMemo(
-    () => visualContentInsets(viewportTopOcclusion, bottomChromeInset),
-    [bottomChromeInset, viewportTopOcclusion],
+  const terminalScrollingInsets = useMemo(
+    () => visualContentInsets(viewportTopOcclusion, terminalBottomChrome),
+    [terminalBottomChrome, viewportTopOcclusion],
+  );
+  const viewportOverlayInsets = useMemo(
+    () => visualContentInsets(viewportTopOcclusion, viewportOverlayBottomChrome),
+    [viewportOverlayBottomChrome, viewportTopOcclusion],
   );
   const terminalVisualViewport = useMemo(() => ({
-    insets: scrollingInsets,
+    insets: terminalScrollingInsets,
     // Floating controls overlay a genuinely full-screen xterm. Their measured
     // height is only a visual boundary allowance and never fitted geometry.
     geometryBottomInset: 0,
     alternateScreen,
     scroll: scrollPosition,
-  }), [alternateScreen, scrollPosition, scrollingInsets]);
-  const viewportOverlay = renderViewportOverlay?.(scrollingInsets);
+  }), [alternateScreen, scrollPosition, terminalScrollingInsets]);
+  const viewportOverlay = renderViewportOverlay?.(viewportOverlayInsets);
   activeTargetRef.current = activeTarget;
   scrollPositionRef.current = scrollPosition;
   targetsRef.current = targets;
@@ -689,7 +703,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
         composeInputRef.current?.setSelection(nextComposeText.length, nextComposeText.length);
       }
     }
-    if (enteredVisibility && !composeOpen) {
+    if (enteredVisibility && !composeOpenRef.current) {
       renderer.current?.blur();
       Keyboard.dismiss();
     }
@@ -697,7 +711,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
       renderer.current?.fit();
     }, TERMINAL_FIT_DEFER_MS);
     return () => clearTimeout(timer);
-  }, [composeOpen, getComposerDraft, ready, terminalId, visible]);
+  }, [getComposerDraft, ready, terminalId, visible]);
 
   useEffect(() => {
     if (status === 'connected' || composeOpen || !keyboardEnabled) return;
@@ -1451,7 +1465,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
       <View
         pointerEvents={composeOpen ? 'none' : 'auto'}
         className="relative flex-1"
-        style={keyboardInset > 0 && !composeOpen ? { paddingBottom: keyboardInset } : undefined}
+        style={terminalLayoutKeyboardInset > 0
+          ? { paddingBottom: terminalLayoutKeyboardInset }
+          : undefined}
         {...(!terminalSelectionActive ? terminalPanHandlers : undefined)}
       >
         <TerminalRendererHost
@@ -1532,7 +1548,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           <OverlayScrollbar
             accessibilityLabel="Terminal scroll position"
             heightPercent={scrollThumb.heightPercent}
-            insets={scrollingInsets}
+            insets={terminalScrollingInsets}
             topPercent={scrollThumb.topPercent}
             onAccessibilityAdjust={adjustTerminalScrollbar}
             onDrag={dragTerminalScrollbar}
@@ -1545,7 +1561,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
             accessibilityLabel="Jump to latest terminal output"
             className={cn('absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg', appGlassEnabled && 'border')}
             style={[
-              { bottom: scrollingInsets.bottom + 12 },
+              { bottom: terminalScrollingInsets.bottom + 12 },
               appGlassEnabled ? appGlassControlStyle(false, appColors) : undefined,
             ]}
             variant={appGlassEnabled ? 'ghost' : 'secondary'}

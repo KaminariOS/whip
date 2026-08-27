@@ -113,7 +113,7 @@ describe('floating chrome geometry', () => {
     const chat = source('src/components/AgentChatView.tsx');
     const scrollbar = source('src/components/OverlayScrollbar.tsx');
 
-    expect(terminal).toContain('insets={scrollingInsets}');
+    expect(terminal).toContain('insets={terminalScrollingInsets}');
     expect(chat).toContain('insets={contentInsets}');
     expect(scrollbar).toContain('insets ? { bottom: insets.bottom, top: insets.top } : undefined');
   });
@@ -138,8 +138,12 @@ describe('floating chrome geometry', () => {
 
     expect(terminal).toContain('setComposerHeight(current => current === height ? current : height)');
     expect(terminal).toContain('terminalLayoutKeyboardInset = composeOpen ? 0 : keyboardInset');
+    expect(terminal).toContain('const terminalBottomChrome = terminalBottomChromeInset({');
+    expect(terminal).toContain('composerVisible: false,');
+    expect(terminal).toContain('keyboardInset: 0,');
+    expect(terminal).toContain('const viewportOverlayBottomChrome = terminalBottomChromeInset({');
     expect(terminal).not.toMatch(/useEffect\(\(\) => \{[\s\S]*?renderer\.current\?\.fit\(\)[\s\S]*?\}, \[[^\]]*composerHeight/s);
-    expect(terminal).not.toMatch(/useEffect\(\(\) => \{[\s\S]*?renderer\.current\?\.fit\(\)[\s\S]*?\}, \[[^\]]*scrollingInsets/s);
+    expect(terminal).not.toMatch(/useEffect\(\(\) => \{[\s\S]*?renderer\.current\?\.fit\(\)[\s\S]*?\}, \[[^\]]*terminalScrollingInsets/s);
   });
 
   test('terminal view offers the same latest affordance without bypassing terminal scrolling', () => {
@@ -148,6 +152,6 @@ describe('floating chrome geometry', () => {
     expect(terminal).toContain('accessibilityLabel="Jump to latest terminal output"');
     expect(terminal).toContain('onPress={jumpTerminalToLatest}');
     expect(terminal).toContain('requestTerminalScrollOffset(target, current.offset_from_bottom, 0);');
-    expect(terminal).toContain('{ bottom: scrollingInsets.bottom + 12 }');
+    expect(terminal).toContain('{ bottom: terminalScrollingInsets.bottom + 12 }');
   });
 });
