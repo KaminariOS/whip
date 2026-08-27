@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use futures::{FutureExt, channel::mpsc as futures_mpsc, future::try_join_all};
 use parking_lot::RwLock;
 use russh::client;
-use russh::keys::{PrivateKeyWithHashAlg, PublicKey};
+use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -158,6 +158,7 @@ const CONTROL_QUEUE_CAPACITY: usize = 256;
 const INBOUND_DELIVERY_QUEUE_CAPACITY: usize = 64;
 const INBOUND_DELIVERY_BYTE_CAPACITY: usize = 8 * 1024 * 1024;
 const HOST_LATENCY_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_DISCONNECT_REASON_CHARS: usize = 256;
 const EXECUTE_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 const SFTP_HTTP_HEADER_LIMIT: usize = 16 * 1024;
 const SFTP_HTTP_PIPELINE_DEPTH: usize = 8;
@@ -182,6 +183,10 @@ enum TransportError {
     HostKeyUnknown(known_hosts::HostKeyChallenge),
     #[error("SSH host key changed")]
     HostKeyChanged(known_hosts::HostKeyChallenge),
+    #[error("SSH host certificates are not supported")]
+    UnsupportedHostCertificate,
+    #[error("SSH transport disconnected: {0}")]
+    SessionClosed(String),
     #[error("{0}")]
     Ssh(#[from] russh::Error),
     #[error("{0}")]
@@ -259,6 +264,8 @@ fn transport_error_code(error: &TransportError) -> SshErrorCode {
         TransportError::HostUnreachable(_) => SshErrorCode::HostUnreachable,
         TransportError::HostKeyUnknown(_) => SshErrorCode::HostKeyUnknown,
         TransportError::HostKeyChanged(_) => SshErrorCode::HostKeyChanged,
+        TransportError::UnsupportedHostCertificate => SshErrorCode::HostKeyUnknown,
+        TransportError::SessionClosed(_) => SshErrorCode::SessionClosed,
         TransportError::Ssh(error) => match error {
             russh::Error::WrongChannel | russh::Error::ChannelOpenFailure(_) => {
                 SshErrorCode::ChannelUnavailable
@@ -354,6 +361,100 @@ struct Session {
     host: String,
     port: u16,
     agent: Arc<AgentState>,
+    lifecycle: Arc<ConnectionLifecycle>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ConnectionDisconnect {
+    reason: String,
+}
+
+struct ConnectionLifecycle {
+    alive: AtomicBool,
+    disconnected: watch::Sender<Option<Arc<ConnectionDisconnect>>>,
+}
+
+impl Default for ConnectionLifecycle {
+    fn default() -> Self {
+        let (disconnected, _) = watch::channel(None);
+        Self {
+            alive: AtomicBool::new(true),
+            disconnected,
+        }
+    }
+}
+
+impl ConnectionLifecycle {
+    fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::Acquire)
+    }
+
+    fn mark_disconnected(&self, reason: impl Into<String>) -> bool {
+        if self
+            .alive
+            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return false;
+        }
+        self.disconnected
+            .send_replace(Some(Arc::new(ConnectionDisconnect {
+                reason: reason.into(),
+            })));
+        true
+    }
+
+    async fn disconnected(&self) -> Arc<ConnectionDisconnect> {
+        let mut receiver = self.disconnected.subscribe();
+        loop {
+            if let Some(disconnect) = receiver.borrow().clone() {
+                return disconnect;
+            }
+            if receiver.changed().await.is_err() {
+                return Arc::new(ConnectionDisconnect {
+                    reason: "SSH transport disconnected".to_owned(),
+                });
+            }
+        }
+    }
+}
+
+fn concise_disconnect_reason(reason: &str) -> String {
+    let mut characters = reason.chars();
+    let mut concise = characters
+        .by_ref()
+        .take(MAX_DISCONNECT_REASON_CHARS)
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    if characters.next().is_some() {
+        concise.push('…');
+    }
+    concise
+}
+
+impl Session {
+    fn is_alive(&self) -> bool {
+        self.lifecycle.is_alive() && !self.handle.is_closed()
+    }
+
+    fn ensure_alive(&self) -> Result<(), TransportError> {
+        if self.is_alive() {
+            Ok(())
+        } else {
+            Err(TransportError::SessionClosed(
+                self.lifecycle.disconnected.borrow().as_ref().map_or_else(
+                    || "session is closed".to_owned(),
+                    |event| event.reason.clone(),
+                ),
+            ))
+        }
+    }
 }
 
 /// Authenticated SSH session owned directly by a Whip host runtime.
@@ -511,6 +612,7 @@ struct RusshHandler {
     host: String,
     port: u16,
     agent: Arc<AgentState>,
+    lifecycle: Arc<ConnectionLifecycle>,
 }
 
 impl client::Handler for RusshHandler {
@@ -518,8 +620,15 @@ impl client::Handler for RusshHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        let PublicKeyOrCertificate::PublicKey {
+            key: server_public_key,
+            ..
+        } = server_public_key
+        else {
+            return Err(TransportError::UnsupportedHostCertificate);
+        };
         let decision = known_hosts()
             .read()
             .check(&self.host, self.port, server_public_key);
@@ -527,6 +636,31 @@ impl client::Handler for RusshHandler {
             HostKeyDecision::Trusted => Ok(true),
             HostKeyDecision::Unknown(challenge) => Err(TransportError::HostKeyUnknown(challenge)),
             HostKeyDecision::Changed(challenge) => Err(TransportError::HostKeyChanged(challenge)),
+        }
+    }
+
+    fn disconnected(
+        &mut self,
+        reason: client::DisconnectReason<Self::Error>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let lifecycle = self.lifecycle.clone();
+        async move {
+            match reason {
+                client::DisconnectReason::ReceivedDisconnect(info) => {
+                    let message = concise_disconnect_reason(info.message.trim());
+                    let reason = if message.is_empty() {
+                        format!("remote SSH disconnect ({:?})", info.reason_code)
+                    } else {
+                        format!("remote SSH disconnect ({:?}): {message}", info.reason_code)
+                    };
+                    lifecycle.mark_disconnected(reason);
+                    Ok(())
+                }
+                client::DisconnectReason::Error(error) => {
+                    lifecycle.mark_disconnected(concise_disconnect_reason(&error.to_string()));
+                    Err(error)
+                }
+            }
         }
     }
 
@@ -767,13 +901,16 @@ async fn connect_inner(
         inactivity_timeout: Some(Duration::from_secs(30)),
         keepalive_interval: Some(Duration::from_secs(15)),
         keepalive_max: 3,
+        nodelay: true,
         ..Default::default()
     });
     let agent = Arc::new(AgentState::default());
+    let lifecycle = Arc::new(ConnectionLifecycle::default());
     let handler = RusshHandler {
         host: host.clone(),
         port,
         agent: agent.clone(),
+        lifecycle: lifecycle.clone(),
     };
     let mut handle = if let Some(jump) = jump {
         let channel = jump
@@ -823,6 +960,7 @@ async fn connect_inner(
         host,
         port,
         agent,
+        lifecycle,
     });
     if connection.forward_agent {
         session.agent.enabled.store(true, Ordering::Relaxed);
@@ -927,6 +1065,7 @@ pub(crate) struct CommandOutput {
 }
 
 async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, TransportError> {
+    session.ensure_alive()?;
     let mut channel = session.handle.channel_open_session().await?;
     request_agent_forwarding(session, &channel).await?;
     channel.exec(true, command).await?;
@@ -971,23 +1110,86 @@ async fn latency(params: &Value) -> Result<Value, TransportError> {
         .get(&key)
         .cloned()
         .ok_or(TransportError::UnknownClient)?;
-    let start = Instant::now();
-    tokio::time::timeout(HOST_LATENCY_PROBE_TIMEOUT, session.handle.send_ping())
-        .await
-        .map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::TimedOut, "SSH latency probe timed out")
-        })??;
-    Ok(json!(start.elapsed().as_secs_f64() * 1000.0))
+    Ok(json!(latency_on(&session).await?))
 }
 
 async fn latency_on(session: &Session) -> Result<f64, TransportError> {
+    latency_probe(
+        &session.lifecycle,
+        session.handle.is_closed(),
+        session.handle.send_ping(),
+    )
+    .await
+}
+
+async fn latency_probe<F>(
+    lifecycle: &ConnectionLifecycle,
+    handle_is_closed: bool,
+    ping: F,
+) -> Result<f64, TransportError>
+where
+    F: Future<Output = Result<(), russh::Error>>,
+{
+    if handle_is_closed || !lifecycle.is_alive() {
+        return Err(TransportError::SessionClosed(
+            lifecycle.disconnected.borrow().as_ref().map_or_else(
+                || "session is closed".to_owned(),
+                |event| event.reason.clone(),
+            ),
+        ));
+    }
     let start = Instant::now();
-    tokio::time::timeout(HOST_LATENCY_PROBE_TIMEOUT, session.handle.send_ping())
-        .await
-        .map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::TimedOut, "SSH latency probe timed out")
-        })??;
+    tokio::select! {
+        biased;
+        disconnect = lifecycle.disconnected() => {
+            return Err(TransportError::SessionClosed(disconnect.reason.clone()));
+        }
+        result = ping => result?,
+        _ = tokio::time::sleep(HOST_LATENCY_PROBE_TIMEOUT) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "SSH latency probe timed out",
+            ).into());
+        }
+    }
+    if !lifecycle.is_alive() {
+        return Err(TransportError::SessionClosed(
+            "session closed during SSH latency probe".to_owned(),
+        ));
+    }
     Ok(start.elapsed().as_secs_f64() * 1000.0)
+}
+
+async fn select_channel_loops<T, R, W, D, F>(
+    read_loop: R,
+    write_loop: W,
+    disconnect: D,
+    disconnected: F,
+) -> T
+where
+    R: Future<Output = T>,
+    W: Future<Output = T>,
+    D: Future<Output = String>,
+    F: FnOnce(String) -> T,
+{
+    tokio::select! {
+        biased;
+        reason = disconnect => disconnected(reason),
+        reason = read_loop => reason,
+        reason = write_loop => reason,
+    }
+}
+
+fn shell_write_failure(action: &str, error: &russh::Error) -> String {
+    format!("SSH {action} failed: {error}")
+}
+
+fn shell_eof_reason(close_reason: &str) -> String {
+    if close_reason == "remote shell closed" {
+        "remote shell EOF".to_owned()
+    } else {
+        close_reason.to_owned()
+    }
 }
 
 async fn start_shell(params: &Value) -> Result<Value, TransportError> {
@@ -1026,12 +1228,13 @@ async fn start_shell_on(
     rows: u32,
     delivery: ShellDelivery,
 ) -> Result<(), TransportError> {
+    session.ensure_alive()?;
     if shells().read().contains(&key, &shell_id) {
         return Err(TransportError::InvalidRequest(format!(
             "shell '{shell_id}' is already open"
         )));
     }
-    let mut channel = session.handle.channel_open_session().await?;
+    let channel = session.handle.channel_open_session().await?;
     channel
         .request_pty(false, &pty_type, columns, rows, 0, 0, &[])
         .await?;
@@ -1047,52 +1250,67 @@ async fn start_shell_on(
         }
         shells.insert(key.clone(), shell_id.clone(), sender.clone());
     }
+    let lifecycle = session.lifecycle.clone();
+    let (mut reader, writer) = channel.split();
     tokio::spawn(async move {
-        let mut close_reason = "remote shell closed".to_owned();
-        loop {
-            tokio::select! {
-                message = channel.wait() => match message {
-                    Some(russh::ChannelMsg::Data { data }) => {
-                        match &delivery {
-                            ShellDelivery::ReactNative => emit_event(json!({
-                                "name": "Shell",
-                                "key": key,
-                                "value": String::from_utf8_lossy(&data),
-                            })),
-                            ShellDelivery::Rust { data: deliver, .. } => deliver(data.to_vec()),
-                        }
-                    }
-                    Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                        match &delivery {
-                            ShellDelivery::ReactNative => emit_event(json!({
-                                "name": "Shell",
-                                "key": key,
-                                "value": String::from_utf8_lossy(&data),
-                            })),
-                            ShellDelivery::Rust { data: deliver, .. } => deliver(data.to_vec()),
-                        }
-                    }
+        let read_delivery = delivery.clone();
+        let read_key = key.clone();
+        let read_loop = async move {
+            let mut close_reason = "remote shell closed".to_owned();
+            loop {
+                match reader.wait().await {
+                    Some(russh::ChannelMsg::Data { data })
+                    | Some(russh::ChannelMsg::ExtendedData { data, .. }) => match &read_delivery {
+                        ShellDelivery::ReactNative => emit_event(json!({
+                            "name": "Shell",
+                            "key": read_key,
+                            "value": String::from_utf8_lossy(&data),
+                        })),
+                        ShellDelivery::Rust { data: deliver, .. } => deliver(data.to_vec()),
+                    },
                     Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
                         close_reason = format!("remote shell exited with status {exit_status}");
                     }
-                    Some(russh::ChannelMsg::Eof | russh::ChannelMsg::Close) | None => break,
+                    Some(russh::ChannelMsg::Eof) => {
+                        close_reason = shell_eof_reason(&close_reason);
+                        break;
+                    }
+                    Some(russh::ChannelMsg::Close) | None => break,
                     _ => {}
-                },
-                command = receiver.recv() => match command {
+                }
+            }
+            close_reason
+        };
+        let write_loop = async {
+            loop {
+                match receiver.recv().await {
                     Some(ShellCommand::Write(data)) => {
-                        if channel.data(&data[..]).await.is_err() { break; }
+                        if let Err(error) = writer.data_bytes(data).await {
+                            break shell_write_failure("channel write", &error);
+                        }
                     }
                     Some(ShellCommand::Resize { columns, rows }) => {
-                        if channel.window_change(columns, rows, 0, 0).await.is_err() { break; }
+                        if let Err(error) = writer.window_change(columns, rows, 0, 0).await {
+                            break shell_write_failure("resize", &error);
+                        }
                     }
                     Some(ShellCommand::Close) | None => {
-                        let _ = channel.eof().await;
-                        let _ = channel.close().await;
-                        break;
+                        let _ = writer.eof().await;
+                        let _ = writer.close().await;
+                        break "shell closed by application".to_owned();
                     }
                 }
             }
-        }
+        };
+        let close_reason = select_channel_loops(
+            read_loop,
+            write_loop,
+            async move { lifecycle.disconnected().await.reason.clone() },
+            |reason| format!("SSH transport disconnected: {reason}"),
+        )
+        .await;
+        let _ = writer.eof().await;
+        let _ = writer.close().await;
         shells()
             .write()
             .remove_if(&key, &shell_id, |current| current.same_channel(&sender));
@@ -1147,6 +1365,7 @@ async fn connect_sftp(params: &Value) -> Result<Value, TransportError> {
 }
 
 async fn connect_sftp_on(key: &str, session: &Session) -> Result<(), TransportError> {
+    session.ensure_alive()?;
     if sftp_sessions().read().contains_key(key) {
         return Ok(());
     }
@@ -1769,6 +1988,7 @@ async fn request_unix_socket_bytes_on(
     timeout_ms: u64,
     max_response_bytes: usize,
 ) -> Result<Vec<u8>, TransportError> {
+    session.ensure_alive()?;
     let channel = session
         .handle
         .channel_open_direct_streamlocal(socket_path)
@@ -2092,6 +2312,7 @@ async fn open_unix_socket_channel_with_framing(
     max_frame_bytes: usize,
     delivery: UnixSocketDelivery,
 ) -> Result<(), TransportError> {
+    session.ensure_alive()?;
     if channel_id.is_empty() || channel_id.len() > 128 || channel_id.chars().any(char::is_control) {
         return Err(TransportError::InvalidRequest(
             "channelId must contain 1 through 128 printable characters".to_owned(),
@@ -2318,6 +2539,7 @@ async fn open_local_forward_on(
     remote_host: String,
     remote_port: u16,
 ) -> Result<u16, TransportError> {
+    session.ensure_alive()?;
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
     let local_port = listener.local_addr()?.port();
     let (cancel_tx, mut cancel_rx) = watch::channel(false);
@@ -2608,6 +2830,7 @@ async fn start_sftp_file_server_on(
     session: Arc<Session>,
     remote_path: String,
 ) -> Result<SftpFileServer, TransportError> {
+    session.ensure_alive()?;
     let channel = session.handle.channel_open_session().await?;
     channel.request_subsystem(true, "sftp").await?;
     let sftp = Arc::new(SftpSession::new(channel.into_stream()).await?);
@@ -2701,6 +2924,7 @@ async fn open_exec_channel_with_delivery(
     command: String,
     delivery: ExecDelivery,
 ) -> Result<(), TransportError> {
+    session.ensure_alive()?;
     if channel_id.is_empty() || channel_id.len() > 128 || channel_id.chars().any(char::is_control) {
         return Err(TransportError::InvalidRequest(
             "channelId must contain 1 through 128 printable characters".to_owned(),
@@ -2726,52 +2950,72 @@ async fn open_exec_channel_with_delivery(
     }
     tokio::spawn(async move {
         let (mut reader, writer) = channel.split();
-        let mut stderr = Vec::new();
-        let mut exit_status = None;
-        let (reason, closed_by_client) = loop {
-            tokio::select! {
-                message = reader.wait() => match message {
+        let lifecycle = session.lifecycle.clone();
+        let read_delivery = delivery.clone();
+        let read_key = key.clone();
+        let read_channel_id = channel_id.clone();
+        let read_loop = async move {
+            let mut stderr = Vec::new();
+            let mut exit_status = None;
+            loop {
+                match reader.wait().await {
                     Some(russh::ChannelMsg::Data { data }) => {
                         {
                             let _trace = AndroidTraceSlice::begin(EXEC_INBOUND_RUST_CHUNK_RECEIVED);
                         }
                         emit_exec_channel_data(
-                            &key,
-                            &channel_id,
+                            &read_key,
+                            &read_channel_id,
                             data.to_vec(),
-                            &delivery,
+                            &read_delivery,
                         );
-                    },
+                    }
                     Some(russh::ChannelMsg::ExtendedData { data, ext: 1 }) => {
                         const MAX_EXEC_STDERR_BYTES: usize = 4 * 1024;
                         let remaining = MAX_EXEC_STDERR_BYTES.saturating_sub(stderr.len());
                         stderr.extend_from_slice(&data[..data.len().min(remaining)]);
-                    },
-                    Some(russh::ChannelMsg::ExitStatus { exit_status: status }) => {
+                    }
+                    Some(russh::ChannelMsg::ExitStatus {
+                        exit_status: status,
+                    }) => {
                         exit_status = Some(status);
-                    },
+                    }
                     Some(russh::ChannelMsg::ExitSignal { error_message, .. }) => {
                         if stderr.is_empty() {
                             stderr.extend_from_slice(error_message.as_bytes());
                         }
-                    },
+                    }
                     Some(russh::ChannelMsg::Close) | None => {
                         break (exec_channel_close_reason(exit_status, &stderr), false);
-                    },
-                    Some(russh::ChannelMsg::Eof) | Some(_) => {},
-                },
-                command = receiver.recv() => match command {
-                    Some(StreamCommand::Write(data)) => if let Err(error) = writer.data_bytes(data).await {
-                        break (format!("remote exec-channel write failed: {error}"), false);
-                    },
+                    }
+                    Some(russh::ChannelMsg::Eof) | Some(_) => {}
+                }
+            }
+        };
+        let write_loop = async {
+            loop {
+                match receiver.recv().await {
+                    Some(StreamCommand::Write(data)) => {
+                        if let Err(error) = writer.data_bytes(data).await {
+                            break (format!("remote exec-channel write failed: {error}"), false);
+                        }
+                    }
                     Some(StreamCommand::Close) => {
                         let _ = writer.close().await;
                         break ("exec channel closed by client".to_owned(), true);
-                    },
+                    }
                     None => break ("exec-channel control queue closed".to_owned(), true),
                 }
             }
         };
+        let (reason, closed_by_client) = select_channel_loops(
+            read_loop,
+            write_loop,
+            async move { lifecycle.disconnected().await.reason.clone() },
+            |reason| (format!("SSH transport disconnected: {reason}"), false),
+        )
+        .await;
+        let _ = writer.close().await;
         exec_channels()
             .write()
             .remove_if(&key, &channel_id, |current| current.same_channel(&sender));
@@ -2852,10 +3096,10 @@ async fn disconnect_key(key: String) {
     for sender in exec_channels.into_iter().flat_map(HashMap::into_values) {
         let _ = sender.try_send(StreamCommand::Close);
     }
-    if let Some(cancel) = transfers().read().get(&(key.clone(), "upload")) {
+    if let Some(cancel) = transfers().write().remove(&(key.clone(), "upload")) {
         let _ = cancel.send(true);
     }
-    if let Some(cancel) = transfers().read().get(&(key.clone(), "download")) {
+    if let Some(cancel) = transfers().write().remove(&(key.clone(), "download")) {
         let _ = cancel.send(true);
     }
     let shells = shells().write().remove_owner(&key);
@@ -2888,6 +3132,9 @@ async fn disconnect_key(key: String) {
     }
     let removed_session = { sessions().write().remove(&key) };
     if let Some(session) = removed_session {
+        session
+            .lifecycle
+            .mark_disconnected("SSH session closed by application");
         let _ = session
             .handle
             .disconnect(russh::Disconnect::ByApplication, "", "en")

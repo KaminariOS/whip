@@ -5,11 +5,14 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
-use russh::{ChannelMsg, client, keys::PrivateKeyWithHashAlg};
+use russh::{
+    ChannelMsg, client,
+    keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use ssh_key::{PrivateKey, PublicKey, private::Ed25519Keypair};
+use ssh_key::{PrivateKey, private::Ed25519Keypair};
 use tokio::time::timeout;
 
 const ENVELOPE_PREFIX: &str = "WP4:";
@@ -41,6 +44,8 @@ pub enum PairingError {
     AuthenticationFailed,
     #[error("SSH host key did not match the fingerprint pinned in the QR code")]
     HostKeyMismatch,
+    #[error("SSH host certificates are not supported for pairing")]
+    UnsupportedHostCertificate,
     #[error("restricted pairing command returned invalid data")]
     InvalidResponse,
     #[error("restricted pairing command failed: {0}")]
@@ -96,8 +101,15 @@ impl client::Handler for PinnedSshHostKey {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        let PublicKeyOrCertificate::PublicKey {
+            key: server_public_key,
+            ..
+        } = server_public_key
+        else {
+            return Err(PairingError::UnsupportedHostCertificate);
+        };
         let encoded = server_public_key.to_bytes()?;
         let actual: [u8; SHA256_BYTES] = Sha256::digest(&encoded).into();
         if actual != self.expected_sha256 {
@@ -132,6 +144,7 @@ pub async fn pair_host(
     };
     let config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(30)),
+        nodelay: true,
         ..Default::default()
     });
     let mut handle = timeout(

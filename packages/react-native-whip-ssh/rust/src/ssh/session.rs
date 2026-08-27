@@ -1,6 +1,14 @@
 use super::*;
 
 impl SshSession {
+    pub(crate) fn is_alive(&self) -> bool {
+        self.inner.is_alive()
+    }
+
+    pub(crate) async fn disconnected(&self) -> String {
+        self.inner.lifecycle.disconnected().await.reason.clone()
+    }
+
     pub(crate) fn registered(key: &str) -> Result<Arc<Self>, SshFailure> {
         let inner = sessions()
             .read()
@@ -338,6 +346,9 @@ impl SshSession {
     }
 
     pub(crate) async fn disconnect(&self) {
+        self.inner
+            .lifecycle
+            .mark_disconnected("SSH session closed by application");
         disconnect_key(self.resource_key.clone()).await;
         let _ = self
             .inner

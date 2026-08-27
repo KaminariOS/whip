@@ -382,6 +382,28 @@ impl RuntimeState {
         true
     }
 
+    fn begin_reconnect(
+        &mut self,
+        expected_generation: Option<u64>,
+        reason: &str,
+    ) -> Option<(u64, u64)> {
+        if self.explicit_disconnect || self.reconnect_running {
+            return None;
+        }
+        if expected_generation.is_some_and(|generation| {
+            self.connection != HostConnectionState::Connected || self.generation != generation
+        }) {
+            return None;
+        }
+        self.epoch = self.epoch.wrapping_add(1);
+        self.connection = HostConnectionState::Reconnecting;
+        self.reconnect_running = true;
+        self.reconnect_attempt = 0;
+        self.last_error = Some(reason.to_owned());
+        self.host_state.mark_reconnecting(reason.to_owned());
+        Some((self.epoch, self.generation))
+    }
+
     fn disconnect(&mut self) -> u64 {
         self.epoch = self.epoch.wrapping_add(1);
         self.connection = HostConnectionState::Disconnecting;
@@ -505,9 +527,15 @@ fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRuntimeError> {
 }
 
 fn current_ssh(inner: &RuntimeInner) -> Result<Arc<SshSession>, HostRuntimeError> {
-    inner.ssh.read().clone().ok_or_else(|| {
+    let ssh = inner.ssh.read().clone().ok_or_else(|| {
         HostRuntimeError::RuntimeDisconnected("host SSH session is disconnected".to_owned())
-    })
+    })?;
+    if !ssh.is_alive() {
+        return Err(HostRuntimeError::RuntimeDisconnected(
+            "host SSH transport is disconnected".to_owned(),
+        ));
+    }
+    Ok(ssh)
 }
 
 fn current_generation(inner: &RuntimeInner) -> Result<u64, HostRuntimeError> {
@@ -552,6 +580,22 @@ fn ssh_config(config: &HostSshConfig) -> SshConnectionConfig {
 async fn disconnect_sessions(sessions: Vec<Arc<SshSession>>) {
     for session in sessions.into_iter().rev() {
         session.disconnect().await;
+    }
+}
+
+fn observe_transport_lifecycle(
+    inner: &Arc<RuntimeInner>,
+    generation: u64,
+    session: Arc<SshSession>,
+) {
+    let inner = Arc::downgrade(inner);
+    if let Ok(runtime) = crate::runtime() {
+        runtime.spawn(async move {
+            let reason = session.disconnected().await;
+            if let Some(inner) = inner.upgrade() {
+                begin_reconnect_for_generation(inner, Some(generation), reason, true);
+            }
+        });
     }
 }
 
@@ -611,6 +655,10 @@ async fn finish_connection(
     }
     disconnect_sessions(old_jumps).await;
     let generation = inner.state.lock().generation;
+    observe_transport_lifecycle(&inner, generation, ssh);
+    for jump in jumps {
+        observe_transport_lifecycle(&inner, generation, jump);
+    }
     inner.agents.connected(generation);
     emit_status(&inner);
     emit_host_state(&inner, Vec::new());
@@ -697,20 +745,20 @@ fn runtime_jitter(inner: &RuntimeInner, attempt: u32) -> f64 {
     (value % 10_000) as f64 / 9_999.0
 }
 
-fn begin_reconnect(inner: Arc<RuntimeInner>, reason: String, immediate: bool) -> bool {
-    let (epoch, generation) = {
+fn begin_reconnect_for_generation(
+    inner: Arc<RuntimeInner>,
+    expected_generation: Option<u64>,
+    reason: String,
+    immediate: bool,
+) -> bool {
+    let Some((epoch, generation)) = ({
         let mut state = inner.state.lock();
-        if state.explicit_disconnect || state.reconnect_running {
-            return false;
-        }
-        state.epoch = state.epoch.wrapping_add(1);
-        state.connection = HostConnectionState::Reconnecting;
-        state.reconnect_running = true;
-        state.reconnect_attempt = 0;
-        state.last_error = Some(reason.clone());
-        state.host_state.mark_reconnecting(reason.clone());
-        (state.epoch, state.generation)
+        state.begin_reconnect(expected_generation, &reason)
+    }) else {
+        return false;
     };
+    let ssh = inner.ssh.write().take();
+    let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
     invalidate_remote_operations(&inner, generation, &reason);
     let _ = inner.cancellation.send(epoch);
     inner.agents.disconnected(false, &reason);
@@ -719,9 +767,19 @@ fn begin_reconnect(inner: Arc<RuntimeInner>, reason: String, immediate: bool) ->
     crate::runtime()
         .ok()
         .map(|runtime| {
-            runtime.spawn(reconnect_loop(inner, epoch, reason, immediate));
+            runtime.spawn(async move {
+                if let Some(ssh) = ssh {
+                    ssh.disconnect().await;
+                }
+                disconnect_sessions(jumps).await;
+                reconnect_loop(inner, epoch, reason, immediate).await;
+            });
         })
         .is_some()
+}
+
+fn begin_reconnect(inner: Arc<RuntimeInner>, reason: String, immediate: bool) -> bool {
+    begin_reconnect_for_generation(inner, None, reason, immediate)
 }
 
 async fn reconnect_loop(
@@ -3922,6 +3980,69 @@ mod tests {
         state.disconnect();
         assert_eq!(state.connection, HostConnectionState::Disconnecting);
         assert!(state.explicit_disconnect);
+    }
+
+    #[test]
+    fn unexpected_transport_death_starts_host_reconnect() {
+        let mut state = RuntimeState::new(&config());
+        let epoch = state.begin_connect().unwrap();
+        assert!(state.install_connection(epoch));
+
+        assert!(
+            state
+                .begin_reconnect(Some(1), "SSH transport disconnected")
+                .is_some()
+        );
+        assert_eq!(state.connection, HostConnectionState::Reconnecting);
+        assert!(state.reconnect_running);
+    }
+
+    #[test]
+    fn explicit_disconnect_rejects_transport_reconnect() {
+        let mut state = RuntimeState::new(&config());
+        let epoch = state.begin_connect().unwrap();
+        assert!(state.install_connection(epoch));
+        state.disconnect();
+
+        assert!(
+            state
+                .begin_reconnect(Some(1), "russh callback after user disconnect")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn simultaneous_transport_failures_start_one_reconnect() {
+        let mut state = RuntimeState::new(&config());
+        let epoch = state.begin_connect().unwrap();
+        assert!(state.install_connection(epoch));
+
+        assert!(state.begin_reconnect(Some(1), "channel failed").is_some());
+        assert!(
+            state
+                .begin_reconnect(Some(1), "russh disconnected")
+                .is_none()
+        );
+        assert_eq!(state.epoch, epoch.wrapping_add(1));
+    }
+
+    #[test]
+    fn stale_session_generation_cannot_reconnect_replacement() {
+        let mut state = RuntimeState::new(&config());
+        let first = state.begin_connect().unwrap();
+        assert!(state.install_connection(first));
+        state.connection = HostConnectionState::Failed;
+        let second = state.begin_connect().unwrap();
+        assert!(state.install_connection(second));
+        assert_eq!(state.generation, 2);
+
+        assert!(
+            state
+                .begin_reconnect(Some(1), "old session disconnected")
+                .is_none()
+        );
+        assert_eq!(state.connection, HostConnectionState::Connected);
+        assert!(!state.reconnect_running);
     }
 
     #[test]

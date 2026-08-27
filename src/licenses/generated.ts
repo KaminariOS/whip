@@ -568,11 +568,11 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
   {
-    id: "cargo-russh-0-62-7",
+    id: "cargo-russh-0-63-1",
     category: "cargo",
     projectName: "russh",
     sourceUrl: "https://github.com/warp-tech/russh",
-    attribution: "Direct Rust dependency · version 0.62.7 · used by whip-ssh",
+    attribution: "Direct Rust dependency · version 0.63.1 · used by whip-ssh",
     licenseName: "Apache-2.0",
     licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
   },

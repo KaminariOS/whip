@@ -1,6 +1,195 @@
 use super::*;
 
 #[test]
+fn russh_transport_disconnect_marks_the_connection_dead_once() {
+    runtime().unwrap().block_on(async {
+        let lifecycle = Arc::new(ConnectionLifecycle::default());
+        let mut handler = RusshHandler {
+            host: "host.test".to_owned(),
+            port: 22,
+            agent: Arc::new(AgentState::default()),
+            lifecycle: lifecycle.clone(),
+        };
+        client::Handler::disconnected(
+            &mut handler,
+            client::DisconnectReason::ReceivedDisconnect(client::RemoteDisconnectInfo {
+                reason_code: russh::Disconnect::ConnectionLost,
+                message: "network path lost".to_owned(),
+                lang_tag: "en".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert!(!lifecycle.is_alive());
+        assert!(!lifecycle.mark_disconnected("second observation"));
+        assert_eq!(
+            lifecycle.disconnected().await.reason,
+            "remote SSH disconnect (ConnectionLost): network path lost"
+        );
+    });
+}
+
+#[test]
+fn russh_transport_error_is_published_and_returned() {
+    runtime().unwrap().block_on(async {
+        let lifecycle = Arc::new(ConnectionLifecycle::default());
+        let mut handler = RusshHandler {
+            host: "host.test".to_owned(),
+            port: 22,
+            agent: Arc::new(AgentState::default()),
+            lifecycle: lifecycle.clone(),
+        };
+        let result = client::Handler::disconnected(
+            &mut handler,
+            client::DisconnectReason::Error(TransportError::Ssh(russh::Error::HUP)),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(TransportError::Ssh(russh::Error::HUP))
+        ));
+        assert!(!lifecycle.is_alive());
+        assert!(!lifecycle.disconnected().await.reason.is_empty());
+    });
+}
+
+#[test]
+fn latency_probe_fails_when_transport_dies_during_ping() {
+    runtime().unwrap().block_on(async {
+        let lifecycle = Arc::new(ConnectionLifecycle::default());
+        let (started, started_rx) = tokio::sync::oneshot::channel();
+        let probe_lifecycle = lifecycle.clone();
+        let probe = tokio::spawn(async move {
+            latency_probe(&probe_lifecycle, false, async move {
+                let _ = started.send(());
+                std::future::pending::<Result<(), russh::Error>>().await
+            })
+            .await
+        });
+        started_rx.await.unwrap();
+        lifecycle.mark_disconnected("test transport loss");
+
+        let error = probe.await.unwrap().unwrap_err();
+        assert!(matches!(
+            error,
+            TransportError::SessionClosed(reason) if reason == "test transport loss"
+        ));
+    });
+}
+
+#[test]
+fn latency_probe_fails_immediately_for_closed_session() {
+    runtime().unwrap().block_on(async {
+        let lifecycle = ConnectionLifecycle::default();
+        lifecycle.mark_disconnected("already closed");
+        let error = latency_probe(
+            &lifecycle,
+            false,
+            std::future::pending::<Result<(), russh::Error>>(),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            TransportError::SessionClosed(reason) if reason == "already closed"
+        ));
+    });
+}
+
+#[test]
+fn terminal_reader_drains_while_write_is_flow_controlled() {
+    runtime().unwrap().block_on(async {
+        let (write_started, write_started_rx) = tokio::sync::oneshot::channel();
+        let incoming_drained = Arc::new(AtomicBool::new(false));
+        let drained = incoming_drained.clone();
+        let read_loop = async move {
+            write_started_rx.await.unwrap();
+            drained.store(true, Ordering::SeqCst);
+            "remote shell EOF".to_owned()
+        };
+        let write_loop = async move {
+            let _ = write_started.send(());
+            std::future::pending::<String>().await
+        };
+
+        assert_eq!(
+            select_channel_loops(
+                read_loop,
+                write_loop,
+                std::future::pending::<String>(),
+                |reason| reason,
+            )
+            .await,
+            "remote shell EOF"
+        );
+        assert!(incoming_drained.load(Ordering::SeqCst));
+    });
+}
+
+#[test]
+fn shell_failures_keep_concise_write_and_resize_reasons() {
+    let error = russh::Error::WrongChannel;
+    assert_eq!(
+        shell_write_failure("channel write", &error),
+        format!("SSH channel write failed: {error}")
+    );
+    assert_eq!(
+        shell_write_failure("resize", &error),
+        format!("SSH resize failed: {error}")
+    );
+}
+
+#[test]
+fn normal_shell_eof_does_not_mark_transport_dead() {
+    let lifecycle = ConnectionLifecycle::default();
+    assert_eq!(shell_eof_reason("remote shell closed"), "remote shell EOF");
+    assert!(lifecycle.is_alive());
+}
+
+#[test]
+fn russh_host_certificates_are_explicitly_rejected() {
+    runtime().unwrap().block_on(async {
+        let mut rng =
+            russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
+        let ca =
+            russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap();
+        let subject =
+            russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap();
+        let mut builder = russh::keys::ssh_key::certificate::Builder::new_with_random_nonce(
+            &mut rng,
+            subject.public_key(),
+            0,
+            u64::MAX,
+        )
+        .unwrap();
+        builder
+            .cert_type(russh::keys::ssh_key::certificate::CertType::Host)
+            .unwrap();
+        builder.valid_principal("host.test").unwrap();
+        let certificate = builder.sign(&ca).unwrap();
+        let lifecycle = Arc::new(ConnectionLifecycle::default());
+        let mut handler = RusshHandler {
+            host: "host.test".to_owned(),
+            port: 22,
+            agent: Arc::new(AgentState::default()),
+            lifecycle,
+        };
+
+        let result = client::Handler::check_server_key(
+            &mut handler,
+            &PublicKeyOrCertificate::Certificate(certificate),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(TransportError::UnsupportedHostCertificate)
+        ));
+    });
+}
+
+#[test]
 fn grouped_channels_scope_shared_ids_by_owner_and_prune_empty_owners() {
     let mut channels = GroupedChannels::default();
     assert_eq!(
