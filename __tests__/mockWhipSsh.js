@@ -280,6 +280,15 @@ function createMockWhipSshModule() {
         shell.client.closeShell();
       },
       hasSshShell(terminalId) { return sshShells.has(terminalId); },
+      createTabWithLaunch(workspaceId, label, launch) {
+        return runtime.controlClient.createTabWithLaunch(workspaceId, label, launch);
+      },
+      agentIntegrationStatus(kind) {
+        return runtime.controlClient.agentIntegrationStatus(kind);
+      },
+      installAgentIntegration(kind) {
+        return runtime.controlClient.installAgentIntegration(kind);
+      },
       execute(command) { return runtime.controlClient.execute(command); },
       remoteHome() { return runtime.controlClient.getRemoteHome(); },
       measureHostLatency() { return runtime.controlClient.measureHostLatency(); },

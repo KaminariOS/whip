@@ -20,8 +20,6 @@ describe('connection error presentation', () => {
     ['java.net.ConnectException: Connection refused', 'connectionRefused'],
     ['authentication rejected: Permission denied', 'authentication'],
     ['E_KEY_INVALID: invalid private key', 'invalidKey'],
-    ['HostKey has been changed', 'hostKey'],
-    ['E_HOST_KEY_CHANGED:{"host":"thinker"}', 'hostKey'],
     ['Herdr protocol mismatch: Whip supports 17–20, server reports 16', 'incompatibleProtocol'],
     ['Herdr API socket is not available', 'herdrUnavailable'],
     ['unexpected native failure', 'unknown'],

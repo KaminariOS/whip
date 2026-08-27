@@ -23,6 +23,81 @@ pub enum HerdrAgentStatus {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
+pub enum HerdrAgentKind {
+    Claude,
+    Codex,
+    #[serde(rename = "opencode")]
+    OpenCode,
+}
+
+impl HerdrAgentKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::OpenCode => "opencode",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum HerdrTabLaunch {
+    Shell,
+    Agent {
+        kind: HerdrAgentKind,
+        args: Vec<String>,
+    },
+    Command {
+        command: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum HerdrTabLaunchResult {
+    Created {
+        tab: HerdrTabInfo,
+        root_pane: HerdrPaneInfo,
+    },
+    LaunchFailed {
+        tab: HerdrTabInfo,
+        root_pane: HerdrPaneInfo,
+        stage: HerdrTabLaunchStage,
+        failure: HerdrControlFailure,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct HerdrIntegrationInstallResult {
+    pub kind: HerdrAgentKind,
+    pub messages: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum HerdrControlFailureKind {
+    TransportDisconnected,
+    MalformedResponse,
+    ProtocolError,
+    UnsupportedResponse,
+    InvalidField,
+    RequestCancelled,
+    RequestTimeout,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct HerdrControlFailure {
+    pub kind: HerdrControlFailureKind,
+    pub code: Option<String>,
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum HerdrTabLaunchStage {
+    AgentStart,
+    CommandInput,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
 pub enum HerdrAgentSessionKind {
     Id,
     Path,
@@ -284,6 +359,9 @@ pub enum HerdrControlResult {
     AgentPrompted {
         agent: HerdrAgentInfo,
     },
+    IntegrationInstalled {
+        install: HerdrIntegrationInstallResult,
+    },
     PaneZoom {
         zoom: HerdrPaneZoomResult,
     },
@@ -358,7 +436,7 @@ pub enum HerdrControlRequest {
     },
     AgentStart {
         name: String,
-        kind: String,
+        kind: HerdrAgentKind,
         pane_id: String,
         args: Vec<String>,
     },
@@ -368,6 +446,9 @@ pub enum HerdrControlRequest {
     AgentPrompt {
         target: String,
         text: String,
+    },
+    IntegrationInstall {
+        kind: HerdrAgentKind,
     },
 }
 
@@ -387,6 +468,35 @@ pub enum HerdrControlError {
     RequestCancelled(String),
     #[error("{0}")]
     RequestTimeout(String),
+}
+
+impl From<HerdrControlError> for HerdrControlFailure {
+    fn from(error: HerdrControlError) -> Self {
+        let (kind, code) = match &error {
+            HerdrControlError::TransportDisconnected(_) => {
+                (HerdrControlFailureKind::TransportDisconnected, None)
+            }
+            HerdrControlError::MalformedResponse(_) => {
+                (HerdrControlFailureKind::MalformedResponse, None)
+            }
+            HerdrControlError::ProtocolError(code, _) => {
+                (HerdrControlFailureKind::ProtocolError, Some(code.clone()))
+            }
+            HerdrControlError::UnsupportedResponse(_) => {
+                (HerdrControlFailureKind::UnsupportedResponse, None)
+            }
+            HerdrControlError::InvalidField(_) => (HerdrControlFailureKind::InvalidField, None),
+            HerdrControlError::RequestCancelled(_) => {
+                (HerdrControlFailureKind::RequestCancelled, None)
+            }
+            HerdrControlError::RequestTimeout(_) => (HerdrControlFailureKind::RequestTimeout, None),
+        };
+        Self {
+            kind,
+            code,
+            message: error.to_string(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -477,7 +587,7 @@ struct PaneSendKeysParams<'a> {
 #[derive(Serialize)]
 struct AgentStartParams<'a> {
     name: &'a str,
-    kind: &'a str,
+    kind: HerdrAgentKind,
     pane_id: &'a str,
     #[serde(skip_serializing_if = "slice_is_empty")]
     args: &'a [String],
@@ -495,6 +605,11 @@ struct AgentPromptParams<'a> {
 #[derive(Serialize)]
 struct AgentTarget<'a> {
     target: &'a str,
+}
+
+#[derive(Serialize)]
+struct IntegrationInstallParams {
+    target: HerdrAgentKind,
 }
 
 impl HerdrControlRequest {
@@ -522,6 +637,7 @@ impl HerdrControlRequest {
             Self::AgentStart { .. } => "agent.start",
             Self::AgentFocus { .. } => "agent.focus",
             Self::AgentPrompt { .. } => "agent.prompt",
+            Self::IntegrationInstall { .. } => "integration.install",
         }
     }
 
@@ -665,7 +781,7 @@ impl HerdrControlRequest {
                 method,
                 params: AgentStartParams {
                     name,
-                    kind,
+                    kind: *kind,
                     pane_id,
                     args,
                 },
@@ -679,6 +795,11 @@ impl HerdrControlRequest {
                 id,
                 method,
                 params: AgentPromptParams { target, text },
+            }),
+            Self::IntegrationInstall { kind } => line(WireRequest {
+                id,
+                method,
+                params: IntegrationInstallParams { target: *kind },
             }),
         }
     }
@@ -707,6 +828,7 @@ impl HerdrControlRequest {
             Self::AgentStart { .. } => HerdrControlResultKind::AgentStarted,
             Self::AgentFocus { .. } => HerdrControlResultKind::AgentInfo,
             Self::AgentPrompt { .. } => HerdrControlResultKind::AgentPrompted,
+            Self::IntegrationInstall { .. } => HerdrControlResultKind::IntegrationInstall,
         }
     }
 }
@@ -725,6 +847,7 @@ enum HerdrControlResultKind {
     AgentStarted,
     AgentInfo,
     AgentPrompted,
+    IntegrationInstall,
     PaneZoom,
     Ok,
 }
@@ -743,6 +866,7 @@ impl HerdrControlResultKind {
             Self::AgentStarted => "agent_started",
             Self::AgentInfo => "agent_info",
             Self::AgentPrompted => "agent_prompted",
+            Self::IntegrationInstall => "integration_install",
             Self::PaneZoom => "pane_zoom",
             Self::Ok => "ok",
         }
@@ -935,6 +1059,24 @@ fn decode_result(
         HerdrControlResultKind::AgentPrompted => Ok(HerdrControlResult::AgentPrompted {
             agent: agent(required(result, "agent", "result.agent")?, "agent")?,
         }),
+        HerdrControlResultKind::IntegrationInstall => {
+            let details = object(
+                required(result, "details", "result.details")?,
+                "result.details",
+            )?;
+            Ok(HerdrControlResult::IntegrationInstalled {
+                install: HerdrIntegrationInstallResult {
+                    kind: enum_value(
+                        required(result, "target", "result.target")?,
+                        "result.target",
+                    )?,
+                    messages: string_array(
+                        required(details, "messages", "result.details.messages")?,
+                        "result.details.messages",
+                    )?,
+                },
+            })
+        }
         HerdrControlResultKind::PaneZoom => Ok(HerdrControlResult::PaneZoom {
             zoom: pane_zoom(required(result, "zoom", "result.zoom")?)?,
         }),
@@ -1791,7 +1933,7 @@ mod tests {
     fn optional_agent_args_are_omitted_when_empty() {
         let request = HerdrControlRequest::AgentStart {
             name: "codex-1".into(),
-            kind: "codex".into(),
+            kind: HerdrAgentKind::Codex,
             pane_id: "p1".into(),
             args: vec![],
         };
@@ -1811,6 +1953,33 @@ mod tests {
             .unwrap(),
             "{\"id\":\"android_5\",\"method\":\"agent.focus\",\"params\":{\"target\":\"codex-1\"}}\n"
         );
+    }
+
+    #[test]
+    fn opencode_uses_the_existing_herdr_wire_name() {
+        let launch = HerdrControlRequest::AgentStart {
+            name: "opencode-1".into(),
+            kind: HerdrAgentKind::OpenCode,
+            pane_id: "p1".into(),
+            args: vec![],
+        };
+        assert_eq!(
+            String::from_utf8(launch.encode("android_6").unwrap()).unwrap(),
+            "{\"id\":\"android_6\",\"method\":\"agent.start\",\"params\":{\"name\":\"opencode-1\",\"kind\":\"opencode\",\"pane_id\":\"p1\"}}\n"
+        );
+
+        let install = HerdrControlRequest::IntegrationInstall {
+            kind: HerdrAgentKind::OpenCode,
+        };
+        assert_eq!(
+            String::from_utf8(install.encode("android_7").unwrap()).unwrap(),
+            "{\"id\":\"android_7\",\"method\":\"integration.install\",\"params\":{\"target\":\"opencode\"}}\n"
+        );
+        assert_eq!(
+            serde_json::from_str::<HerdrAgentKind>("\"opencode\"").unwrap(),
+            HerdrAgentKind::OpenCode
+        );
+        assert!(serde_json::from_str::<HerdrAgentKind>("\"open_code\"").is_err());
     }
 
     #[test]
@@ -1925,6 +2094,13 @@ mod tests {
                     "pane_id":"p1","focused_pane_id":"p1","zoomed":false,"layout":layout_value()
                 }}),
             ),
+            (
+                HerdrControlResultKind::IntegrationInstall,
+                serde_json::json!({
+                    "target":"codex",
+                    "details":{"messages":["installed"]}
+                }),
+            ),
             (HerdrControlResultKind::Ok, serde_json::json!({})),
         ];
         for (kind, value) in cases {
@@ -1945,6 +2121,9 @@ mod tests {
                 HerdrControlResult::AgentStarted { .. } => HerdrControlResultKind::AgentStarted,
                 HerdrControlResult::AgentInfo { .. } => HerdrControlResultKind::AgentInfo,
                 HerdrControlResult::AgentPrompted { .. } => HerdrControlResultKind::AgentPrompted,
+                HerdrControlResult::IntegrationInstalled { .. } => {
+                    HerdrControlResultKind::IntegrationInstall
+                }
                 HerdrControlResult::PaneZoom { .. } => HerdrControlResultKind::PaneZoom,
                 HerdrControlResult::Ok => HerdrControlResultKind::Ok,
             };

@@ -126,7 +126,6 @@ export function LiveSessionView({
 
   return (
     <SessionScreen
-      hostProfileId={session.hostId}
       hostSessionId={sessionId}
       visible={visible}
       snapshot={session.snapshot}

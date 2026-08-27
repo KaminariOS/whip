@@ -10,7 +10,7 @@ import {
 } from '../src/services/CodexTranscriptService';
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
-const nativeKey = `codex:${sessionId}`;
+const nativeKey = `profile\ncodex\n${sessionId}`;
 
 function state(revision: number, text = 'hello'): NativeAgentTranscriptState {
   return {
@@ -60,10 +60,10 @@ function fakeTransport(initial = state(1)) {
   };
 }
 
-function cacheWrite(revision: number, confirmationToken: string, bytes = [8, 9]): NonNullable<NativeAgentTranscriptUpdate['cacheWrite']> {
+function cacheWrite(confirmationToken: string, bytes = [8, 9]): NonNullable<NativeAgentTranscriptUpdate['cacheWrite']> {
   return {
-    key: nativeKey, blob: new Uint8Array(bytes).buffer, confirmationToken,
-    revision, sourceGeneration: 1, position: revision * 10,
+    namespace: 'profile', key: nativeKey, blob: new Uint8Array(bytes).buffer,
+    confirmationToken,
   };
 }
 
@@ -80,13 +80,10 @@ describe('Codex native transcript facade', () => {
   test('hands an opaque cache blob to Rust and projects the typed initial state', async () => {
     const cache = new MemoryAgentChatCache();
     const blob = new Uint8Array([1, 2, 3]).buffer;
-    await cache.saveNative(
-      { hostProfileId: 'profile', agent: 'codex', sessionId },
-      { blob, revision: 0, sourceGeneration: 0, position: 0 },
-    );
+    await cache.saveNative({ namespace: 'profile', key: nativeKey, blob });
     const remote = fakeTransport();
     const service = new CodexTranscriptService(cache);
-    const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
 
     expect(remote.value.bindCodexAgentTranscript).toHaveBeenCalledWith(
@@ -104,7 +101,7 @@ describe('Codex native transcript facade', () => {
   test('uses monotonic native revisions and ignores an older callback', async () => {
     const remote = fakeTransport();
     const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
     remote.update({ revision: 2, deltas: [{ type: 'message-upserted', index: 0, message: state(2, 'new').messages[0] }] });
     remote.update({ revision: 1, deltas: [{ type: 'message-upserted', index: 0, message: state(1, 'old').messages[0] }] });
@@ -116,7 +113,7 @@ describe('Codex native transcript facade', () => {
   test('resyncs from a full snapshot after a revision gap', async () => {
     const remote = fakeTransport();
     const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
     remote.update({ revision: 3, deltas: [{ type: 'message-upserted', index: 0, message: state(3, 'ignored').messages[0] }] }, state(3, 'resynced'));
 
@@ -131,7 +128,7 @@ describe('Codex native transcript facade', () => {
     initial.turns[0].userMessageId = 'message:0';
     const remote = fakeTransport(initial);
     const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
     const before = service.getState(key)!;
     remote.update({ revision: 2, deltas: [
@@ -151,7 +148,7 @@ describe('Codex native transcript facade', () => {
     initial.turns.push({ id: 'turn:2', assistantMessageIds: ['message:2'], status: 'idle', diffs: [] });
     const remote = fakeTransport(initial);
     const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
     remote.update({ revision: 2, deltas: [{ type: 'messages-truncated', length: 1 }, { type: 'turns-truncated', length: 1 }] });
 
@@ -163,14 +160,14 @@ describe('Codex native transcript facade', () => {
     const cache = new MemoryAgentChatCache();
     const remote = fakeTransport();
     const service = new CodexTranscriptService(cache);
-    service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
     const blob = new Uint8Array([8, 9]).buffer;
-    remote.update({ revision: 2, deltas: [], cacheWrite: { ...cacheWrite(2, 'confirm-1'), blob } });
+    remote.update({ revision: 2, deltas: [], cacheWrite: { ...cacheWrite('confirm-1'), blob } });
     await flush();
 
     expect(remote.value.confirmAgentTranscriptCache).toHaveBeenCalledWith('confirm-1');
-    const stored = await cache.loadNative({ hostProfileId: 'profile', agent: 'codex', sessionId });
+    const stored = await cache.loadNative(nativeKey);
     expect([...new Uint8Array(stored!)]).toEqual([8, 9]);
   });
 
@@ -179,9 +176,9 @@ describe('Codex native transcript facade', () => {
     jest.spyOn(cache, 'saveNative').mockRejectedValue(new Error('disk full'));
     const remote = fakeTransport();
     const service = new CodexTranscriptService(cache);
-    const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
-    remote.update({ revision: 2, deltas: [], cacheWrite: cacheWrite(2, 'never-confirm', [1]) });
+    remote.update({ revision: 2, deltas: [], cacheWrite: cacheWrite('never-confirm', [1]) });
     await flush();
 
     expect(remote.value.confirmAgentTranscriptCache).not.toHaveBeenCalled();
@@ -190,44 +187,53 @@ describe('Codex native transcript facade', () => {
     }));
   });
 
-  test('closing while an older write is in flight cannot regress a rebound checkpoint', async () => {
+  test('opaque persistence ordering prevents an in-flight write from regressing a rebound checkpoint', async () => {
     let releaseOlder!: () => void;
     const olderGate = new Promise<void>(resolve => { releaseOlder = resolve; });
     class DelayedCache extends MemoryAgentChatCache {
-      override async saveNative(key: Parameters<MemoryAgentChatCache['saveNative']>[0], checkpoint: Parameters<MemoryAgentChatCache['saveNative']>[1]): Promise<boolean> {
-        if (checkpoint.revision === 2) await olderGate;
-        return super.saveNative(key, checkpoint);
+      private chain = Promise.resolve();
+
+      override saveNative(checkpoint: Parameters<MemoryAgentChatCache['saveNative']>[0]): Promise<void> {
+        const operation = this.chain.then(async () => {
+          if (new Uint8Array(checkpoint.blob)[0] === 2) await olderGate;
+          await super.saveNative(checkpoint);
+        });
+        this.chain = operation.catch(() => undefined);
+        return operation;
       }
     }
     const cache = new DelayedCache();
     const oldRemote = fakeTransport();
     const oldService = new CodexTranscriptService(cache);
-    oldService.activate('profile', 'host-runtime', 'terminal-1', sessionId, oldRemote.value);
+    oldService.activate('host-runtime', 'terminal-1', sessionId, oldRemote.value);
     await flush();
-    oldRemote.update({ revision: 2, deltas: [], cacheWrite: cacheWrite(2, 'old', [2]) });
+    oldRemote.update({ revision: 2, deltas: [], cacheWrite: cacheWrite('old', [2]) });
     await flush();
     oldService.closeTerminal('host-runtime', 'terminal-1');
 
     const newRemote = fakeTransport(state(3));
     const newService = new CodexTranscriptService(cache);
-    newService.activate('profile', 'host-runtime-2', 'terminal-2', sessionId, newRemote.value);
+    newService.activate('host-runtime-2', 'terminal-2', sessionId, newRemote.value);
     await flush();
-    newRemote.update({ revision: 4, deltas: [], cacheWrite: cacheWrite(4, 'new', [4]) });
+    newRemote.update({ revision: 4, deltas: [], cacheWrite: cacheWrite('new', [4]) });
     await flush();
     releaseOlder();
     await flush();
 
-    const stored = await cache.loadNative({ hostProfileId: 'profile', agent: 'codex', sessionId });
+    const stored = await cache.loadNative(nativeKey);
+    await flush();
     expect([...new Uint8Array(stored!)]).toEqual([4]);
-    expect(oldRemote.value.confirmAgentTranscriptCache).not.toHaveBeenCalledWith('old');
+    // Rust owns token validity. TS confirms only after the older blob is
+    // durable; a released native session rejects the obsolete token.
+    expect(oldRemote.value.confirmAgentTranscriptCache).toHaveBeenCalledWith('old');
     expect(newRemote.value.confirmAgentTranscriptCache).toHaveBeenCalledWith('new');
   });
 
   test('two terminals share one logical session and close independently', async () => {
     const remote = fakeTransport();
     const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const first = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
-    const second = service.activate('profile', 'host-runtime', 'terminal-2', sessionId, remote.value);
+    const first = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
+    const second = service.activate('host-runtime', 'terminal-2', sessionId, remote.value);
     await flush();
 
     expect(first).toBe(second);

@@ -20,7 +20,7 @@ The mobile device reaches a remote machine over SSH. A saved host profile owns h
 
 Metadata is stored in AsyncStorage. Passwords, private keys, and passphrases are stored through the platform credential store and referenced by profile ID; they must never be embedded in profile JSON, logs, screenshots, or fixtures. Android may back up only AES-GCM ciphertext, with its recovery token separated into Block Store. Global SSH keychain secrets are excluded from that recovery path.
 
-Both platforms link one `whip-ssh` static library and expose one WhipSsh TurboModule. The Rust core loads one process-wide OpenSSH-compatible known-host repository, returns unknown keys for explicit fingerprint approval, and rejects changed keys. Direct hosts and every jump-host hop follow the same rule.
+Both platforms link one `whip-ssh` static library and expose one WhipSsh TurboModule. The Rust core loads one process-wide OpenSSH-compatible known-host repository, returns typed unknown/changed challenges for explicit fingerprint approval, and parses and validates structured trusted-key records supplied by the platform store. React Native owns confirmation UI and durable storage, but never parses native error strings or constructs OpenSSH `known_hosts` lines. Direct hosts and every jump-host hop follow the same rule.
 
 ### Control plane
 
@@ -33,7 +33,7 @@ The control plane reads and mutates structured Herdr server state:
 - agents, status, metadata, and recent output
 - create, focus, rename, split, resize, send, close, and launch actions
 
-Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. Herdr calls an owned `SshSession` through ordinary Rust methods and closures; there is no C ABI, callback context, dynamic symbol lookup, or JSON dispatch between the SSH and Herdr modules. Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection.
+Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. It also owns cohesive launch semantics: one typed shell/command/agent tab operation performs tab creation and the exact follow-up action, including managed-agent naming and typed partial failure. React Native chooses the launch intent but does not classify command strings or sequence `tab.create`, `agent.start`, and `pane.send_input`. Herdr calls an owned `SshSession` through ordinary Rust methods and closures; there is no C ABI, callback context, dynamic symbol lookup, or JSON dispatch between the SSH and Herdr modules. Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection.
 
 One Rust `HostRuntime` owns each connected host's authenticated `Arc<SshSession>`,
 ProxyJump chain, control generation, reconnect loop, event subscription, and
@@ -129,9 +129,14 @@ received/committable/durable offsets, generation guards, source replacement and
 truncation detection, catch-up, retry/rebind, and incremental normalization.
 Each state projection has a monotonic revision and can be fetched in full, so a
 missed callback does not lose transcript correctness. The remote rollout remains
-authoritative. A versioned opaque Rust cache blob is stored by the existing
-platform SQLite layer; Rust validates and replays it before resuming, and only
-advances the durable checkpoint after the platform confirms the blob write.
+authoritative. Rust constructs the host/agent/session-qualified opaque cache key,
+owns the blob schema/version and compatibility checks, and emits a checkpoint
+token with each opaque blob. The existing platform SQLite adapter stores only
+that key, host namespace, and bytes; it does not compare transcript revisions or
+reconstruct session identity. Rust validates and replays the blob before
+resuming, and only advances the durable checkpoint after the platform confirms
+the blob write. P0 cache rows are migrated once to the Rust key and the obsolete
+semantic tables are removed.
 Opening Chat first binds the terminal and semantic agent session in Rust. The
 platform cache is loaded afterward and starts that exact binding; a late cache
 load is rejected natively if the terminal was closed or rebound meanwhile.

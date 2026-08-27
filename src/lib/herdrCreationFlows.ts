@@ -2,6 +2,7 @@ import type { WorkspaceInfo } from '../types';
 import {
   CommandLaunchPartialFailure,
   type HerdrClient,
+  type TabLaunchIntent,
   type TabCreationResult,
 } from '../services/HerdrClient';
 
@@ -17,15 +18,15 @@ export async function createWorkspaceAndSelect(
 }
 
 /** Open the authoritative pane even when launch failed after tab.create. */
-export async function launchCommandAndOpenCreatedTab(
-  client: Pick<HerdrClient, 'createTabAndLaunchCommand'>,
+export async function launchTabAndOpenCreatedTab(
+  client: Pick<HerdrClient, 'createTabWithLaunch'>,
   workspaceId: string,
   tabName: string,
-  command: string,
+  launch: TabLaunchIntent,
   open: (created: TabCreationResult) => void,
 ): Promise<TabCreationResult> {
   try {
-    const created = await client.createTabAndLaunchCommand(workspaceId, tabName, command);
+    const created = await client.createTabWithLaunch(workspaceId, tabName, launch);
     open(created);
     return created;
   } catch (error) {

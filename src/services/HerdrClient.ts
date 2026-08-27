@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, type RuntimeGitDiff, type RuntimeGitRepository, type RuntimeGitStatusEntry, type RuntimeRemoteDirectoryListing, type RuntimeTransfer } from 'react-native-whip-ssh';
+import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, type RuntimeGitDiff, type RuntimeGitRepository, type RuntimeGitStatusEntry, type RuntimeRemoteDirectoryListing, type RuntimeTabLaunch, type RuntimeTransfer } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
 import type { ResponseResult } from '../generated/herdrApi';
 
@@ -8,7 +8,7 @@ import { DEFAULT_HERDR_COMMAND } from '../lib/hostProfiles';
 import { errorCode } from '../lib/connectionErrors';
 import { type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import { shellQuote } from '../lib/shell';
-import { parseCodexIntegrationStatus, type CodexIntegrationStatus } from '../lib/codexSession';
+import type { CodexIntegrationStatus } from '../lib/codexSession';
 import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
@@ -49,73 +49,12 @@ export type WorkspaceCreationResult = Extract<ResponseResult, { type: 'workspace
 export type TabCreationResult = Extract<ResponseResult, { type: 'tab_created' }>;
 export type IntegrationInstall = Extract<ResponseResult, { type: 'integration_install' }>;
 
-export type ClassifiedAgentCommand =
-  | { type: 'agent'; kind: 'claude' | 'codex' | 'opencode'; args: string[] }
-  | { type: 'shell'; command: string };
-
-const DIRECT_AGENT_KINDS = new Set(['claude', 'codex', 'opencode']);
-
-/**
- * Parse only direct, shell-independent agent invocations. Anything whose shell
- * interpretation could change is intentionally left on pane.send_input.
- */
-export function classifyAgentCommand(command: string): ClassifiedAgentCommand {
-  const trimmed = command.trim();
-  const shell = (): ClassifiedAgentCommand => ({ type: 'shell', command: trimmed });
-  if (!trimmed || /[\\\n\r$`]/.test(trimmed)) return shell();
-
-  const argv: string[] = [];
-  let token = '';
-  let quote: "'" | '"' | null = null;
-  let tokenStarted = false;
-  for (const character of trimmed) {
-    if (quote) {
-      if (character === quote) quote = null;
-      else token += character;
-      tokenStarted = true;
-      continue;
-    }
-    if (character === "'" || character === '"') {
-      quote = character;
-      tokenStarted = true;
-      continue;
-    }
-    if (/\s/.test(character)) {
-      if (tokenStarted) {
-        argv.push(token);
-        token = '';
-        tokenStarted = false;
-      }
-      continue;
-    }
-    if (/[|&;<>()[\]{}*?!#~]/.test(character)) return shell();
-    token += character;
-    tokenStarted = true;
-  }
-  if (quote) return shell();
-  if (tokenStarted) argv.push(token);
-  const kind = argv[0];
-  if (!DIRECT_AGENT_KINDS.has(kind)) return shell();
-  return {
-    type: 'agent',
-    kind: kind as Extract<ClassifiedAgentCommand, { type: 'agent' }>['kind'],
-    args: argv.slice(1),
-  };
-}
-
-function managedAgentName(label: string, kind: string, tabNumber: number): string {
-  const normalized = label
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^[^a-z]+/, '')
-    .replace(/-+$/g, '');
-  return (normalized || `${kind}-${tabNumber}`).slice(0, 32);
-}
+export type TabLaunchIntent = RuntimeTabLaunch;
 
 export class CommandLaunchPartialFailure extends Error {
   constructor(
     readonly created: TabCreationResult,
-    readonly launchType: 'agent' | 'shell',
+    readonly launchType: 'agent' | 'command',
     cause: unknown,
   ) {
     const detail = cause instanceof Error ? cause.message : String(cause);
@@ -224,6 +163,7 @@ export class HerdrClient {
       ssh: sshConfig(profile),
       jumpHosts: jumpProfiles.map(sshConfig),
       sessionName: profile.sessionName.trim(),
+      herdrCommand: profile.herdrCommand.trim() || DEFAULT_HERDR_COMMAND,
       socketPath: profile.herdrSocketPath?.trim() || undefined,
       cachedSocketPath,
     }, event => this.runtimeEventHandler?.(event));
@@ -397,14 +337,16 @@ export class HerdrClient {
 
   /** Explicit user-approved host integration setup; never called during connect. */
   installCodexIntegration(): Promise<IntegrationInstall> {
-    return this.apiRequest<IntegrationInstall>('integration.install', { target: 'codex' });
+    return this.requireRuntime().installAgentIntegration('codex').then(result => ({
+      type: 'integration_install',
+      target: result.kind,
+      details: { messages: result.messages },
+    } as IntegrationInstall));
   }
 
   /** Lazily check setup only after the user requests Chat. */
-  async codexIntegrationStatus(): Promise<CodexIntegrationStatus> {
-    const command = `${shellQuote(this.requireProfile().herdrCommand.trim() || DEFAULT_HERDR_COMMAND)} integration status`;
-    const output = await this.requireRuntime().execute(this.loginShellCommand(command));
-    return parseCodexIntegrationStatus(output);
+  codexIntegrationStatus(): Promise<CodexIntegrationStatus> {
+    return this.requireRuntime().agentIntegrationStatus('codex');
   }
 
   async openTerminal(
@@ -780,31 +722,31 @@ export class HerdrClient {
     await this.apiFocus('agent.focus', { target });
   }
 
-  async createTabAndLaunchCommand(
+  async createTabWithLaunch(
     workspaceId: string,
     name: string,
-    command: string,
+    launch: TabLaunchIntent,
   ): Promise<TabCreationResult> {
-    const created = await this.createTab(workspaceId, name);
-    const launch = classifyAgentCommand(command);
     try {
-      if (launch.type === 'agent') {
-        await this.apiRequest('agent.start', {
-          name: managedAgentName(created.tab.label, launch.kind, created.tab.number),
-          kind: launch.kind,
-          pane_id: created.root_pane.pane_id,
-          ...(launch.args.length ? { args: launch.args } : {}),
-        });
-      } else {
-        await this.apiRequest('pane.send_input', {
-          pane_id: created.root_pane.pane_id,
-          text: launch.command,
-          keys: ['enter'],
-        });
-      }
-      return created;
+      return await this.requireRuntime().createTabWithLaunch(
+        workspaceId,
+        name,
+        launch,
+      ) as TabCreationResult;
     } catch (error) {
-      throw new CommandLaunchPartialFailure(created, launch.type, error);
+      const native = error as {
+        code?: string;
+        created?: TabCreationResult;
+        launchType?: 'agent' | 'command';
+      };
+      if (native.code === 'TAB_LAUNCH_FAILED' && native.created && native.launchType) {
+        throw new CommandLaunchPartialFailure(
+          native.created,
+          native.launchType,
+          error,
+        );
+      }
+      throw error;
     }
   }
 

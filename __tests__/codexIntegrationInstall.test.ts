@@ -1,6 +1,6 @@
 import SSHClient from 'react-native-whip-ssh';
 
-import { codexChatAction, codexMissingIdentityAction, parseCodexIntegrationStatus } from '../src/lib/codexSession';
+import { codexChatAction, codexMissingIdentityAction } from '../src/lib/codexSession';
 import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile, PaneInfo } from '../src/types';
 
@@ -37,72 +37,68 @@ describe('Codex integration installation flow', () => {
     };
     const native = {
       execute: jest.fn(async () => ''),
+      installAgentIntegration: jest.fn(async (kind: string) => ({
+        kind,
+        messages: response.details.messages,
+      })),
+      agentIntegrationStatus: jest.fn(async () => 'unknown'),
       requestHerdrApi: jest.fn(async (_socketPath: string, request: { method: string }) => (
         request.method === 'integration.install' ? response : { type: 'ok' }
       )),
       off: jest.fn(),
       disconnect: jest.fn(),
-    } as unknown as SSHClient;
-    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
+    };
+    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native as unknown as SSHClient);
     const client = new HerdrClient();
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
     expect(native.execute).not.toHaveBeenCalled(); // Cancel/no confirmation makes no remote change.
     await expect(client.installCodexIntegration()).resolves.toEqual(response);
-    expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
-    expect(native.requestHerdrApi).toHaveBeenCalledWith(
-      '/home/me/.config/herdr/sessions/main/herdr.sock',
-      { method: 'integration.install', params: { target: 'codex' } },
-    );
+    expect(native.installAgentIntegration).toHaveBeenCalledTimes(1);
+    expect(native.installAgentIntegration).toHaveBeenCalledWith('codex');
+    expect(native.requestHerdrApi).not.toHaveBeenCalled();
     expect(native.execute).not.toHaveBeenCalled();
   });
 
   test('forwards a socket install failure without retrying it', async () => {
     const native = {
       execute: jest.fn(async () => ''),
+      installAgentIntegration: jest.fn(async () => { throw new Error('installation failed'); }),
+      agentIntegrationStatus: jest.fn(async () => 'unknown'),
       requestHerdrApi: jest.fn(async (_socketPath: string, request: { method: string }) => {
         if (request.method === 'integration.install') throw new Error('installation failed');
         return { type: 'ok' };
       }),
       off: jest.fn(),
       disconnect: jest.fn(),
-    } as unknown as SSHClient;
-    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
+    };
+    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native as unknown as SSHClient);
     const client = new HerdrClient();
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
     await expect(client.installCodexIntegration()).rejects.toThrow('installation failed');
-    expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
-  });
-
-  test.each([
-    ['codex: current (v2) (/home/me/.codex/config.toml)', 'current'],
-    ['codex: outdated (v1 < v2) (/home/me/.codex/config.toml)', 'outdated'],
-    ['codex: needs repair (v2) (/home/me/.codex/config.toml)', 'needs-repair'],
-    ['codex: not installed (/home/me/.codex/config.toml)', 'not-installed'],
-  ] as const)('parses integration status %s', (output, expected) => {
-    expect(parseCodexIntegrationStatus(output)).toBe(expected);
+    expect(native.installAgentIntegration).toHaveBeenCalledTimes(1);
+    expect(native.requestHerdrApi).not.toHaveBeenCalled();
   });
 
   test('an installed integration is detected without running install', async () => {
     const native = {
-      execute: jest.fn(async () => 'claude: not installed (/tmp/claude)\ncodex: current (v2) (/home/me/.codex/config.toml)\n'),
+      execute: jest.fn(async () => ''),
+      agentIntegrationStatus: jest.fn(async () => 'current'),
+      installAgentIntegration: jest.fn(),
+      requestHerdrApi: jest.fn(async () => ({ type: 'ok' })),
       off: jest.fn(),
       disconnect: jest.fn(),
-    } as unknown as SSHClient;
-    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
+    };
+    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native as unknown as SSHClient);
     const client = new HerdrClient();
     await client.connect(profile);
     await expect(client.codexIntegrationStatus()).resolves.toBe('current');
-    expect(native.execute).toHaveBeenCalledTimes(1);
-    expect(jest.mocked(native.execute).mock.calls[0][0]).toContain('integration status');
-    expect(jest.mocked(native.execute).mock.calls[0][0]).not.toContain('integration install codex');
-  });
-
-  test('unknown status output is not mistaken for a missing installation', () => {
-    expect(parseCodexIntegrationStatus('older herdr output')).toBe('unknown');
+    expect(native.agentIntegrationStatus).toHaveBeenCalledWith('codex');
+    expect(native.execute).not.toHaveBeenCalled();
+    expect(native.installAgentIntegration).not.toHaveBeenCalled();
   });
 
   test('a current integration requests diagnosis instead of installation or another blind restart', () => {

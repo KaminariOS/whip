@@ -69,7 +69,6 @@ import { AgentChatView } from './AgentChatView';
 import { useAppGlassEnabled } from './GlassSurface';
 
 interface Props {
-  hostProfileId: string;
   hostSessionId: string;
   visible: boolean;
   snapshot: HerdrSnapshot;
@@ -136,7 +135,6 @@ function loadingChatState(sessionId: string): AgentChatState {
 }
 
 export function SessionScreen({
-  hostProfileId,
   hostSessionId,
   visible,
   snapshot,
@@ -446,7 +444,7 @@ export function SessionScreen({
       if (sessionId && (sessionId !== view.state.sessionId || nextAgent !== view.agent)) {
         previousService.closeTerminal(hostSessionId, terminalId, view.key ?? undefined);
         const service = nextAgent === 'codex' ? codexTranscriptService : openCodeTranscriptService;
-        const key = service.activate(hostProfileId, hostSessionId, terminalId, sessionId, client);
+        const key = service.activate(hostSessionId, terminalId, sessionId, client);
         nextViews.set(terminalId, {
           agent: nextAgent,
           key,
@@ -469,7 +467,7 @@ export function SessionScreen({
       }
     }
     if (changed) setChatViews(nextViews);
-  }, [chatViewIdentity, client, hostProfileId, hostSessionId, snapshot.panes, terminalState.sessions]);
+  }, [chatViewIdentity, client, hostSessionId, snapshot.panes, terminalState.sessions]);
 
   useEffect(() => {
     const subscriptions = [...chatViewsRef.current.entries()].flatMap(([terminalId, view]) => {
@@ -520,7 +518,7 @@ export function SessionScreen({
     setPendingIntegrationPaneId(null);
     const sessionId = codexSessionIdForPane(pane);
     if (pane && sessionId) {
-      const key = codexTranscriptService.activate(hostProfileId, hostSessionId, pane.terminal_id, sessionId, client);
+      const key = codexTranscriptService.activate(hostSessionId, pane.terminal_id, sessionId, client);
       if (codexTranscriptService.hasCachedHistory(key)) {
         setChatViews(current => {
           const next = new Map(current);
@@ -541,7 +539,7 @@ export function SessionScreen({
         message: 'The Herdr Codex integration is installed, but this already-running Codex process has no native session identity. Restart Codex in this pane, then tap Chat again.',
       });
     }
-  }, [client, hostProfileId, hostSessionId, pendingIntegrationPaneId, snapshot.panes]);
+  }, [client, hostSessionId, pendingIntegrationPaneId, snapshot.panes]);
 
   useEffect(() => {
     const pending = pendingFocus.current;
@@ -905,7 +903,7 @@ export function SessionScreen({
         });
         return;
       }
-      const key = openCodeTranscriptService.activate(hostProfileId, hostSessionId, activeTerminalSession.terminalId, sessionId, client);
+      const key = openCodeTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
       setChatViews(current => {
         const next = new Map(current);
         next.set(activeTerminalSession.terminalId, {
@@ -921,7 +919,7 @@ export function SessionScreen({
     const action = codexChatAction(activePane);
     if (action === 'open') {
       const sessionId = codexSessionIdForPane(activePane)!;
-      const key = codexTranscriptService.activate(hostProfileId, hostSessionId, activeTerminalSession.terminalId, sessionId, client);
+      const key = codexTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
       if (!codexTranscriptService.hasCachedHistory(key)) {
         setCodexHistoryWarmup({ key, sessionId, terminalId: activeTerminalSession.terminalId });
         return;

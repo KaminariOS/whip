@@ -135,14 +135,24 @@ export interface NativeAgentTranscriptUpdate {
   revision: number;
   deltas: NativeAgentTranscriptDelta[];
   cacheWrite?: {
+    namespace: string;
     key: string;
     blob: ArrayBuffer;
     confirmationToken: string;
-    revision: number;
-    sourceGeneration: number;
-    position: number;
   };
 }
+
+export type RuntimeAgentKind = 'claude' | 'codex' | 'opencode';
+export type RuntimeTabLaunch =
+  | { type: 'shell' }
+  | { type: 'agent'; kind: RuntimeAgentKind; args?: string[] }
+  | { type: 'command'; command: string };
+export type RuntimeAgentIntegrationStatus =
+  | 'not-installed'
+  | 'current'
+  | 'outdated'
+  | 'needs-repair'
+  | 'unknown';
 
 export interface HostRuntimeConnection {
   readonly runtimeId: string;
@@ -158,6 +168,9 @@ export interface HostRuntimeConnection {
   closeAgentSession(key: string): void;
   closeAgentTerminal(terminalId: string): string | undefined;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
+  createTabWithLaunch(workspaceId: string, label: string, launch: RuntimeTabLaunch): Promise<Record<string, unknown>>;
+  agentIntegrationStatus(kind: RuntimeAgentKind): Promise<RuntimeAgentIntegrationStatus>;
+  installAgentIntegration(kind: RuntimeAgentKind): Promise<{ kind: RuntimeAgentKind; messages: string[] }>;
   requestHerdrApi(request: { method: string; params: object }): Promise<Record<string, unknown>>;
   startHerdrBridge(terminalId: string, takeover: boolean, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, handler: (event: HerdrBridgeEvent) => void): Promise<void>;
   herdrBridgeInput(terminalId: string, text: string): Promise<void>;
@@ -283,6 +296,12 @@ interface SSHClient extends BaseSSHClient, WhipSSHClientExtensions {}
 declare class SSHClient {
   static addNetworkChangeListener(handler: () => void): { remove: () => void };
   static setKnownHosts(knownHosts: string): void;
+  static setTrustedHostKeys(entries: Array<{
+    host: string;
+    port: number;
+    keyType: string;
+    publicKey: string;
+  }>): void;
   static getKeyDetails(key: string, passphrase?: string): ReturnType<typeof BaseSSHClient.getKeyDetails>;
   static generateKeyPair(type: string, passphrase?: string, keySize?: number, comment?: string): ReturnType<typeof BaseSSHClient.generateKeyPair>;
   static createHostRuntime(config: {
@@ -290,6 +309,7 @@ declare class SSHClient {
     ssh: { host: string; port: number; username: string; authMode: 'password' | 'key'; secret: string; passphrase?: string; forwardAgent?: boolean };
     jumpHosts: Array<{ host: string; port: number; username: string; authMode: 'password' | 'key'; secret: string; passphrase?: string; forwardAgent?: boolean }>;
     sessionName: string;
+    herdrCommand: string;
     socketPath?: string;
     cachedSocketPath?: string;
   }, lifecycleHandler?: (event: HostRuntimeLifecycleEvent) => void): HostRuntimeConnection;

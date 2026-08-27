@@ -823,15 +823,6 @@ fn upsert_agent(snapshot: &mut HerdrSessionSnapshot, agent: HerdrAgentInfo) -> R
     {
         return Err(format!("agent references unknown pane {}", agent.pane_id));
     }
-    if let Some(current) = snapshot
-        .agents
-        .iter_mut()
-        .find(|item| item.pane_id == agent.pane_id)
-    {
-        *current = agent.clone();
-    } else {
-        snapshot.agents.push(agent.clone());
-    }
     update_agent_status(
         snapshot,
         &agent.pane_id,
@@ -840,7 +831,24 @@ fn upsert_agent(snapshot: &mut HerdrSessionSnapshot, agent: HerdrAgentInfo) -> R
         &agent.title,
         &agent.display_agent,
         &agent.state_labels,
-    )
+    )?;
+    snapshot
+        .panes
+        .iter_mut()
+        .find(|pane| pane.pane_id == agent.pane_id)
+        .expect("pane existence was checked above")
+        .agent_session
+        .clone_from(&agent.agent_session);
+    if let Some(current) = snapshot
+        .agents
+        .iter_mut()
+        .find(|item| item.pane_id == agent.pane_id)
+    {
+        *current = agent;
+    } else {
+        snapshot.agents.push(agent);
+    }
+    Ok(())
 }
 
 fn apply_event_to_snapshot(
@@ -1132,6 +1140,7 @@ fn apply_control_to_snapshot(
         },
         HerdrControlResult::Pong { .. }
         | HerdrControlResult::SessionSnapshot { .. }
+        | HerdrControlResult::IntegrationInstalled { .. }
         | HerdrControlResult::PaneRead { .. } => Ok(false),
     }
 }
@@ -1139,7 +1148,10 @@ fn apply_control_to_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::herdr_api::{HerdrPaneLayoutPane, HerdrPaneLayoutRect, HerdrWorkspaceWorktreeInfo};
+    use crate::herdr_api::{
+        HerdrAgentKind, HerdrAgentSessionInfo, HerdrAgentSessionKind, HerdrPaneLayoutPane,
+        HerdrPaneLayoutRect, HerdrWorkspaceWorktreeInfo,
+    };
 
     fn workspace(id: &str) -> HerdrWorkspaceInfo {
         HerdrWorkspaceInfo {
@@ -1189,6 +1201,38 @@ mod tests {
             agent_session: None,
             scroll: None,
             revision: 0.0,
+        }
+    }
+
+    fn agent(pane_id: &str, kind: HerdrAgentKind, session_id: &str) -> HerdrAgentInfo {
+        HerdrAgentInfo {
+            pane_id: pane_id.to_owned(),
+            terminal_id: format!("term-{pane_id}"),
+            workspace_id: "w1".to_owned(),
+            tab_id: "t1".to_owned(),
+            focused: true,
+            agent_status: HerdrAgentStatus::Working,
+            revision: 1.0,
+            cwd: None,
+            foreground_cwd: None,
+            agent: Some(kind.as_str().to_owned()),
+            name: None,
+            title: None,
+            terminal_title: None,
+            terminal_title_stripped: None,
+            display_agent: None,
+            interactive_ready: Some(true),
+            launch_pending: Some(false),
+            screen_detection_skipped: None,
+            state_change_seq: None,
+            state_labels: None,
+            tokens: None,
+            agent_session: Some(HerdrAgentSessionInfo {
+                source: "herdr:test".to_owned(),
+                agent: kind.as_str().to_owned(),
+                kind: HerdrAgentSessionKind::Id,
+                value: session_id.to_owned(),
+            }),
         }
     }
 
@@ -1411,6 +1455,44 @@ mod tests {
         let value = state.snapshot.unwrap();
         assert_eq!(value.focused_workspace_id.as_deref(), Some("w2"));
         assert_eq!(value.focused_pane_id.as_deref(), Some("p2"));
+    }
+
+    #[test]
+    fn agent_results_project_codex_and_opencode_session_identity_onto_the_pane() {
+        for (kind, session_id) in [
+            (
+                HerdrAgentKind::Codex,
+                "018f0c7e-7b4b-7f23-8a7b-123456789abc",
+            ),
+            (HerdrAgentKind::OpenCode, "ses_123456789"),
+        ] {
+            let mut state = synced_state();
+            let result = HerdrControlResult::AgentStarted {
+                agent: agent("p1", kind, session_id),
+                argv: Vec::new(),
+            };
+            assert_eq!(
+                state.apply_control_result(
+                    1,
+                    &HerdrControlRequest::AgentStart {
+                        name: "test-agent".to_owned(),
+                        kind,
+                        pane_id: "p1".to_owned(),
+                        args: Vec::new(),
+                    },
+                    &result,
+                ),
+                ApplyResult::Applied
+            );
+            let snapshot = state.snapshot.unwrap();
+            assert_eq!(
+                snapshot.panes[0]
+                    .agent_session
+                    .as_ref()
+                    .map(|session| session.value.as_str()),
+                Some(session_id)
+            );
+        }
     }
 
     #[test]

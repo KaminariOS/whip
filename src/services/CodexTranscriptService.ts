@@ -2,7 +2,7 @@ import type { NativeAgentTranscriptState, NativeAgentTranscriptUpdate } from 're
 
 import type { AgentChatState } from '../agentChat';
 import { agentChatStateFromNative, applyNativeAgentTranscriptUpdate } from '../lib/nativeAgentTranscript';
-import { agentChatCache, type AgentChatCache, type AgentChatCacheKey } from './agentChatCache';
+import { agentChatCache, type AgentChatCache } from './agentChatCache';
 
 export interface NativeTranscriptTransport {
   startAgentTranscript(
@@ -27,7 +27,6 @@ type Listener = (state: AgentChatState) => void;
 
 interface TranscriptEntry<Transport extends NativeTranscriptTransport> {
   nativeKey: string;
-  cacheKey: AgentChatCacheKey;
   hostSessionId: string;
   sessionId: string;
   transport: Transport;
@@ -36,16 +35,12 @@ interface TranscriptEntry<Transport extends NativeTranscriptTransport> {
   persistChain: Promise<void>;
 }
 
-function transcriptKey(hostSessionId: string, nativeKey: string): string {
-  return `${hostSessionId}\n${nativeKey}`;
-}
-
 /** Agent-neutral UI/listener and opaque-storage facade over Rust AgentSessionManager. */
 export class NativeTranscriptService<Transport extends NativeTranscriptTransport> {
   private readonly entries = new Map<string, TranscriptEntry<Transport>>();
 
   constructor(
-    private readonly agent: AgentChatCacheKey['agent'],
+    private readonly agent: 'codex' | 'opencode',
     private readonly bindNative: (
       transport: Transport,
       terminalId: string,
@@ -56,7 +51,6 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
   ) {}
 
   activate(
-    hostProfileId: string,
     hostSessionId: string,
     terminalId: string,
     sessionId: string,
@@ -69,12 +63,11 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
       sessionId,
       event => boundEntry && this.acceptEvent(boundEntry, event),
     );
-    const key = transcriptKey(hostSessionId, result.key);
+    const key = result.key;
     let entry = this.entries.get(key);
     if (!entry) {
       entry = {
         nativeKey: result.key,
-        cacheKey: { hostProfileId, agent: this.agent, sessionId },
         hostSessionId,
         sessionId,
         transport,
@@ -117,7 +110,7 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     const transport = [...this.entries.values()]
       .find(entry => entry.hostSessionId === hostSessionId)?.transport;
     const released = transport?.closeAgentTranscriptTerminal(terminalId);
-    const key = projectionKey ?? (released ? transcriptKey(hostSessionId, released) : null);
+    const key = projectionKey ?? released ?? null;
     if (!key) return;
     this.entries.get(key)?.listeners.clear();
     this.entries.delete(key);
@@ -131,7 +124,7 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
   }
 
   private restoreAndStart(entry: TranscriptEntry<Transport>, terminalId: string): void {
-    this.cache.loadNative(entry.cacheKey).then(blob => {
+    this.cache.loadNative(entry.nativeKey).then(blob => {
       this.startNative(entry, terminalId, blob || undefined);
     }).catch(error => {
       this.publish(entry, { ...entry.state, status: 'error', error: String(error) });
@@ -169,10 +162,8 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     if (!event.cacheWrite) return;
     const checkpoint = event.cacheWrite;
     entry.persistChain = entry.persistChain.then(async () => {
-      const durable = await this.cache.saveNative(entry.cacheKey, checkpoint);
-      if (durable) {
-        entry.transport.confirmAgentTranscriptCache(checkpoint.confirmationToken);
-      }
+      await this.cache.saveNative(checkpoint);
+      entry.transport.confirmAgentTranscriptCache(checkpoint.confirmationToken);
     }).catch(error => {
       this.publish(entry, { ...entry.state, status: 'stale', error: `Could not persist ${this.agent} history: ${String(error)}` });
     });

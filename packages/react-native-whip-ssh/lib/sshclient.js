@@ -61,6 +61,10 @@ SSHClient.pairHost = function pairHost(code, publicKey, deviceName) {
   return privateNativeClient().pairHost(code, publicKey, deviceName);
 };
 
+SSHClient.setTrustedHostKeys = function setTrustedHostKeys(entries) {
+  return privateNativeClient().setTrustedHostKeys(entries);
+};
+
 SSHClient.createHostRuntime = function createHostRuntime(config, lifecycleHandler) {
   return privateNativeClient().createHostRuntime(config, lifecycleHandler);
 };

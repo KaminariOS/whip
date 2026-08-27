@@ -33,12 +33,10 @@ fn event_sink() -> &'static RwLock<Option<Arc<dyn AgentTranscriptEventSink>>> {
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct AgentTranscriptCacheWrite {
+    pub namespace: String,
     pub key: String,
     pub blob: Vec<u8>,
     pub confirmation_token: String,
-    pub revision: u64,
-    pub source_generation: u64,
-    pub position: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -326,7 +324,10 @@ impl AgentSessionManager {
             AgentTranscriptKind::Codex => "codex",
             AgentTranscriptKind::OpenCode => "opencode",
         };
-        let key = format!("{prefix}:{session_id}");
+        // This is both the native session key and the opaque platform cache
+        // identity. Including the stable HostRuntime id prevents otherwise
+        // identical agent session ids on different hosts from colliding.
+        let key = format!("{}\n{prefix}\n{session_id}", self.inner.runtime_id);
         let (state_snapshot, orphaned) = {
             let mut state = self.inner.state.lock();
             if state.closed {
@@ -441,12 +442,8 @@ impl AgentSessionManager {
     pub(crate) fn close_terminal(&self, terminal_id: &str) -> Option<String> {
         let close = {
             let mut state = self.inner.state.lock();
-            let Some(key) = state.terminal_bindings.remove(terminal_id) else {
-                return None;
-            };
-            let Some(session) = state.sessions.get_mut(&key) else {
-                return None;
-            };
+            let key = state.terminal_bindings.remove(terminal_id)?;
+            let session = state.sessions.get_mut(&key)?;
             session.terminals.remove(terminal_id);
             session.terminals.is_empty().then_some(key)
         };
@@ -907,12 +904,10 @@ impl AgentSessionManager {
                     },
                 );
                 AgentTranscriptCacheWrite {
+                    namespace: self.inner.runtime_id.clone(),
                     key: key.to_owned(),
                     blob,
                     confirmation_token: token,
-                    revision: update.as_ref().map_or(0, |update| update.revision),
-                    source_generation,
-                    position: cursor,
                 }
             });
             update.map(|update| (update, cache))
@@ -1150,12 +1145,10 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
                 },
             );
             AgentTranscriptCacheWrite {
+                namespace: manager.runtime_id.clone(),
                 key: context_value.session_key.clone(),
                 blob,
                 confirmation_token: token,
-                revision: update.as_ref().map_or(0, |update| update.revision),
-                source_generation: context_value.source_generation,
-                position: offset,
             }
         });
         update.map(|update| (update, cache))
@@ -1185,7 +1178,7 @@ async fn execute(ssh: &SshSession, command: String) -> Result<String, AgentSessi
     let output = ssh
         .execute(&command)
         .await
-        .map_err(|error| AgentSessionError::ReadFailed(error.message))?;
+        .map_err(|error| AgentSessionError::ReadFailed(error.to_string()))?;
     if output.exit_status.is_some_and(|status| status != 0) {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();
@@ -1505,6 +1498,36 @@ mod tests {
         manager.close_terminal("terminal-1");
         assert!(manager.state(&first_key).is_none());
         assert!(manager.state(&second_key).is_some());
+    }
+
+    #[test]
+    fn cache_identity_is_host_qualified_agent_qualified_and_reconnect_stable() {
+        let first_host = AgentSessionManager::new("host-a".into(), Arc::new(RwLock::new(None)));
+        let second_host = AgentSessionManager::new("host-b".into(), Arc::new(RwLock::new(None)));
+        first_host.connected(1);
+        second_host.connected(1);
+
+        let (codex_key, _) = first_host
+            .bind_codex("terminal-codex".into(), SESSION.into())
+            .unwrap();
+        let (opencode_key, _) = first_host
+            .bind_opencode("terminal-opencode".into(), "ses_abc123".into())
+            .unwrap();
+        let (other_host_key, _) = second_host
+            .bind_codex("terminal-codex".into(), SESSION.into())
+            .unwrap();
+
+        assert_eq!(codex_key, format!("host-a\ncodex\n{SESSION}"));
+        assert_eq!(opencode_key, "host-a\nopencode\nses_abc123");
+        assert_ne!(codex_key, opencode_key);
+        assert_ne!(codex_key, other_host_key);
+
+        first_host.disconnected(false, "network changed");
+        first_host.connected(2);
+        let (rebound_key, _) = first_host
+            .bind_codex("terminal-rebound".into(), SESSION.into())
+            .unwrap();
+        assert_eq!(rebound_key, codex_key);
     }
 
     #[test]

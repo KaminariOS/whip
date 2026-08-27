@@ -10,8 +10,6 @@ import {
 } from './storageDiagnostics';
 
 export const KNOWN_HOSTS_STORAGE_KEY = 'herdr.known-hosts.v1';
-export const UNKNOWN_HOST_KEY_PREFIX = 'E_HOST_KEY_UNKNOWN:';
-export const CHANGED_HOST_KEY_PREFIX = 'E_HOST_KEY_CHANGED:';
 
 export interface UnknownHostKeyChallenge {
   host: string;
@@ -51,55 +49,41 @@ export async function trustKnownHost(
   hosts: KnownHost[],
   challenge: UnknownHostKeyChallenge,
 ): Promise<KnownHost[]> {
-  const normalizedHost = normalizeHost(challenge.host);
-  const normalizedPublicKey = normalizePublicKey(challenge.keyType, challenge.publicKey);
-  const normalizedHosts = hosts.map(entry => {
-    const publicKey = normalizePublicKey(entry.keyType, entry.publicKey);
-    return publicKey === entry.publicKey ? entry : { ...entry, publicKey };
-  });
-  const duplicate = normalizedHosts.some(entry => (
-    normalizeHost(entry.host) === normalizedHost
+  const duplicate = hosts.some(entry => (
+    entry.host === challenge.host
     && entry.port === challenge.port
     && entry.keyType === challenge.keyType
-    && entry.publicKey === normalizedPublicKey
+    && entry.fingerprint === challenge.fingerprint
   ));
   if (duplicate) {
-    if (normalizedHosts.some((entry, index) => entry !== hosts[index])) {
-      await replaceKnownHosts(normalizedHosts);
-    } else {
-      configureNativeKnownHosts(normalizedHosts);
-    }
-    return normalizedHosts;
+    configureNativeKnownHosts(hosts);
+    return hosts;
   }
 
   const next = [
-    ...normalizedHosts,
+    ...hosts,
     {
       id: createSecureId('known-host'),
-      host: normalizedHost,
+      host: challenge.host,
       port: challenge.port,
       keyType: challenge.keyType,
-      publicKey: normalizedPublicKey,
+      publicKey: challenge.publicKey,
       fingerprint: challenge.fingerprint,
       createdAt: new Date().toISOString(),
     },
   ].sort(compareKnownHosts);
-  await replaceKnownHosts(next);
+  await replaceKnownHosts(next, hosts);
   return next;
 }
 
 export async function deleteKnownHost(hosts: KnownHost[], id: string): Promise<KnownHost[]> {
   const next = hosts.filter(entry => entry.id !== id);
-  await replaceKnownHosts(next);
+  await replaceKnownHosts(next, hosts);
   return next;
 }
 
 export function parseUnknownHostKey(error: unknown): UnknownHostKeyChallenge | null {
-  const parsed = structuredHostKeyPayload(error, 'HOST_KEY_UNKNOWN')
-    || parseHostKeyPayload(
-      error instanceof Error ? error.message : String(error),
-      UNKNOWN_HOST_KEY_PREFIX,
-    );
+  const parsed = structuredHostKeyPayload(error, 'HOST_KEY_UNKNOWN');
   if (
     !parsed
     || typeof parsed.keyType !== 'string'
@@ -118,11 +102,8 @@ export function parseUnknownHostKey(error: unknown): UnknownHostKeyChallenge | n
 }
 
 export function hostKeyErrorHost(error: unknown): string | null {
-  const text = error instanceof Error ? error.message : String(error);
   const parsed = structuredHostKeyPayload(error, 'HOST_KEY_UNKNOWN')
-    || structuredHostKeyPayload(error, 'HOST_KEY_CHANGED')
-    || parseHostKeyPayload(text, UNKNOWN_HOST_KEY_PREFIX)
-    || parseHostKeyPayload(text, CHANGED_HOST_KEY_PREFIX);
+    || structuredHostKeyPayload(error, 'HOST_KEY_CHANGED');
   if (!parsed) return null;
   return parsed.port === 22 ? parsed.host : `[${parsed.host}]:${parsed.port}`;
 }
@@ -143,64 +124,33 @@ function structuredHostKeyPayload(
     typeof details.host !== 'string'
     || typeof details.port !== 'number'
     || !Number.isInteger(details.port)
-    || details.port < 1
-    || details.port > 65535
   ) {
     return null;
   }
   return {
     ...details,
-    host: normalizeHost(details.host),
+    host: details.host,
     port: details.port,
   };
 }
 
-function parseHostKeyPayload(
-  text: string,
-  prefix: string,
-): { host: string; port: number; [key: string]: unknown } | null {
-  const prefixIndex = text.indexOf(prefix);
-  if (prefixIndex < 0) return null;
-  try {
-    const parsed = JSON.parse(text.slice(prefixIndex + prefix.length));
-    if (
-      !parsed
-      || typeof parsed !== 'object'
-      || typeof parsed.host !== 'string'
-      || typeof parsed.port !== 'number'
-      || !Number.isInteger(parsed.port)
-      || parsed.port < 1
-      || parsed.port > 65535
-    ) {
-      return null;
-    }
-    return {
-      ...parsed,
-      host: normalizeHost(parsed.host),
-      port: parsed.port,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function serializeKnownHosts(hosts: KnownHost[]): string {
-  return hosts
-    .map(entry => (
-      `${knownHostAlias(entry.host, entry.port)} ${entry.keyType} ${normalizePublicKey(entry.keyType, entry.publicKey)}`
-    ))
-    .join('\n');
-}
-
 function configureNativeKnownHosts(hosts: KnownHost[]): void {
-  SSHClient.setKnownHosts(serializeKnownHosts(hosts));
+  SSHClient.setTrustedHostKeys(hosts.map(({ host, port, keyType, publicKey }) => ({
+    host,
+    port,
+    keyType,
+    publicKey,
+  })));
 }
 
-async function replaceKnownHosts(hosts: KnownHost[]): Promise<void> {
+async function replaceKnownHosts(hosts: KnownHost[], previousHosts: KnownHost[]): Promise<void> {
   const operation = knownHostsMutation.then(async () => {
+    // Rust validates the protocol material before it can become durable.
+    configureNativeKnownHosts(hosts);
     try {
       await AsyncStorage.setItem(KNOWN_HOSTS_STORAGE_KEY, JSON.stringify(hosts));
     } catch (error) {
+      configureNativeKnownHosts(previousHosts);
       recordStorageDiagnostic('error', 'storage-write-failed', {
         store: 'known-hosts',
         storageKey: KNOWN_HOSTS_STORAGE_KEY,
@@ -210,7 +160,6 @@ async function replaceKnownHosts(hosts: KnownHost[]): Promise<void> {
       });
       throw error;
     }
-    configureNativeKnownHosts(hosts);
   });
   knownHostsMutation = operation.catch(() => undefined);
   await operation;
@@ -250,20 +199,6 @@ function isKnownHost(value: unknown): value is KnownHost {
     && typeof entry.fingerprint === 'string'
     && typeof entry.createdAt === 'string',
   );
-}
-
-function knownHostAlias(host: string, port: number): string {
-  const normalized = normalizeHost(host);
-  return port === 22 ? normalized : `[${normalized}]:${port}`;
-}
-
-function normalizeHost(host: string): string {
-  return host.trim().toLowerCase();
-}
-
-function normalizePublicKey(keyType: string, publicKey: string): string {
-  const fields = publicKey.trim().split(/\s+/);
-  return fields[0] === keyType && fields.length > 1 ? fields[1] : fields[0];
 }
 
 function compareKnownHosts(left: KnownHost, right: KnownHost): number {

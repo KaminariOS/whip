@@ -1,6 +1,8 @@
 %%{init: {"theme":"base","flowchart":{"curve":"basis","htmlLabels":true,"nodeSpacing":28,"rankSpacing":44}}}%%
 flowchart TB
-  RN["React Native / TypeScript<br/>navigation · forms · rendering · UI projections<br/>semantic operations; no transport handles"]
+  RN["React Native / TypeScript<br/>navigation · forms · rendering · trust confirmation UI<br/>semantic operations; no transport handles"]
+  Cache["TS persistence adapter<br/>opaque Rust key + bytes"]
+  SQLite["Platform SQLite"]
 
   subgraph Boundary["One React Native ↔ Rust boundary"]
     JSI["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary buffers"]
@@ -12,8 +14,8 @@ flowchart TB
 
     subgraph Services["HostRuntime-owned application services"]
       direction LR
-      Control["Herdr control/state<br/>API requests · subscriptions/events<br/>HostState · reconciliation"]
-      Agents["Agent sessions/transcripts<br/>Herdr identity/context · independent sources<br/>Codex rollout · OpenCode export/events<br/>cursors/checkpoints · retries · AgentTranscript"]
+      Control["Herdr control/state<br/>typed tab/agent launch orchestration<br/>API requests · subscriptions/events · HostState"]
+      Agents["Agent sessions/transcripts<br/>Herdr identity/context · independent sources<br/>Codex rollout · OpenCode export/events<br/>cache identity/version/checkpoints · retries"]
       TerminalRuntime["Terminal runtime<br/>binary Herdr client protocol<br/>terminal registry/lifecycle"]
       RemoteOps["Remote operations<br/>SFTP/files · transfers/attachments<br/>Git · previews/forwarding"]
     end
@@ -49,6 +51,9 @@ flowchart TB
 
   RN <-->|"semantic calls · typed/versioned projections<br/>raw terminal buffers"| JSI
   JSI <--> Host
+  JSI -->|"opaque checkpoint"| Cache
+  Cache --> SQLite
+  Cache -->|"durable confirmation"| JSI
   JSI --> Pairing
   SSH <-->|"one encrypted SSH path · direct or ProxyJump"| SSHD
   Pairing -.->|"pinned host key"| SSHD
@@ -57,7 +62,7 @@ flowchart TB
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033
-  class RN ui
+  class RN,Cache,SQLite ui
   class JSI native
   class Host,Control,Agents,TerminalRuntime,RemoteOps,SSH,Pairing rust
   class SSHD,API,Terminal,AgentSources,FilesGit,Forwarded remote

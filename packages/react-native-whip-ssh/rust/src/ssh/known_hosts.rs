@@ -19,14 +19,34 @@ struct Entry {
     key: Vec<u8>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct HostKeyChallenge {
-    host: String,
-    port: u16,
-    key_type: String,
-    fingerprint: String,
-    public_key: String,
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+    pub public_key: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct TrustedHostKey {
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub public_key: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, uniffi::Error)]
+pub enum KnownHostStoreError {
+    #[error("trusted host name is empty")]
+    EmptyHost,
+    #[error("trusted host port must be between 1 and 65535, received {0}")]
+    InvalidPort(u16),
+    #[error("trusted host key is malformed: {0}")]
+    MalformedKey(String),
+    #[error("trusted host key type {0} does not match decoded key type {1}")]
+    KeyTypeMismatch(String, String),
 }
 
 #[derive(Debug)]
@@ -63,11 +83,8 @@ impl KnownHosts {
 
     pub fn check(&self, host: &str, port: u16, key: &PublicKey) -> HostKeyDecision {
         let encoded_key = key.to_bytes().unwrap_or_default();
-        let canonical_host = if port == 22 {
-            host.to_owned()
-        } else {
-            format!("[{host}]:{port}")
-        };
+        let normalized_host = normalized_host(host);
+        let canonical_host = canonical_host(&normalized_host, port);
         let matching: Vec<&Entry> = self
             .entries
             .iter()
@@ -84,12 +101,89 @@ impl KnownHosts {
         {
             return HostKeyDecision::Trusted;
         }
-        let challenge = HostKeyChallenge::new(host, port, key, encoded_key);
+        let challenge = HostKeyChallenge::new(&normalized_host, port, key, encoded_key);
         if matching.is_empty() {
             HostKeyDecision::Unknown(challenge)
         } else {
             HostKeyDecision::Changed(challenge)
         }
+    }
+
+    pub fn from_trusted(entries: Vec<TrustedHostKey>) -> Result<Self, KnownHostStoreError> {
+        let entries = entries
+            .into_iter()
+            .map(|entry| {
+                let host = normalize_host(&entry.host)?;
+                if entry.port == 0 {
+                    return Err(KnownHostStoreError::InvalidPort(entry.port));
+                }
+                let encoded = public_key_base64(&entry.key_type, &entry.public_key)?;
+                let key = russh::keys::parse_public_key_base64(encoded)
+                    .map_err(|error| KnownHostStoreError::MalformedKey(error.to_string()))?;
+                let decoded_type = key.algorithm().as_str().to_owned();
+                if decoded_type != entry.key_type {
+                    return Err(KnownHostStoreError::KeyTypeMismatch(
+                        entry.key_type,
+                        decoded_type,
+                    ));
+                }
+                Ok(Entry {
+                    hosts: vec![canonical_host(&host, entry.port)],
+                    algorithm: key.algorithm().as_str().to_owned(),
+                    key: key
+                        .to_bytes()
+                        .map_err(|error| KnownHostStoreError::MalformedKey(error.to_string()))?,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { entries })
+    }
+}
+
+fn normalize_host(host: &str) -> Result<String, KnownHostStoreError> {
+    let host = normalized_host(host);
+    if host.is_empty() {
+        return Err(KnownHostStoreError::EmptyHost);
+    }
+    Ok(host)
+}
+
+fn normalized_host(host: &str) -> String {
+    let host = host.trim();
+    host.strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host)
+        .to_lowercase()
+}
+
+fn canonical_host(host: &str, port: u16) -> String {
+    if port == 22 {
+        host.to_owned()
+    } else {
+        format!("[{host}]:{port}")
+    }
+}
+
+fn public_key_base64<'a>(
+    key_type: &str,
+    public_key: &'a str,
+) -> Result<&'a str, KnownHostStoreError> {
+    let mut fields = public_key.split_whitespace();
+    let first = fields
+        .next()
+        .ok_or_else(|| KnownHostStoreError::MalformedKey("key is empty".to_owned()))?;
+    if first.starts_with("ssh-") || first.starts_with("ecdsa-") || first.starts_with("sk-") {
+        if first != key_type {
+            return Err(KnownHostStoreError::KeyTypeMismatch(
+                key_type.to_owned(),
+                first.to_owned(),
+            ));
+        }
+        fields
+            .next()
+            .ok_or_else(|| KnownHostStoreError::MalformedKey("key body is missing".to_owned()))
+    } else {
+        Ok(first)
     }
 }
 
@@ -143,6 +237,21 @@ impl HostKeyChallenge {
 mod tests {
     use super::*;
 
+    fn test_key() -> russh::keys::PrivateKey {
+        let mut rng =
+            russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
+        russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap()
+    }
+
+    fn trusted(host: &str, port: u16, key: &russh::keys::PrivateKey) -> TrustedHostKey {
+        TrustedHostKey {
+            host: host.to_owned(),
+            port,
+            key_type: key.public_key().algorithm().as_str().to_owned(),
+            public_key: key.public_key().to_openssh().unwrap(),
+        }
+    }
+
     #[test]
     fn parser_ignores_comments_and_invalid_lines() {
         let parsed = KnownHosts::parse("# comment\ninvalid\nexample.com ssh-ed25519 AAAA\n");
@@ -165,5 +274,75 @@ mod tests {
         assert!(host_matches(&pattern, "[example.com]:2222"));
         assert!(!host_matches(&pattern, "example.com"));
         assert!(!host_matches("example.com", "[example.com]:2222"));
+    }
+
+    #[test]
+    fn structured_keys_normalize_dns_names_and_support_default_and_nonstandard_ports() {
+        let key = test_key();
+        let default = KnownHosts::from_trusted(vec![trusted("Example.COM", 22, &key)]).unwrap();
+        assert!(matches!(
+            default.check("example.com", 22, key.public_key()),
+            HostKeyDecision::Trusted
+        ));
+
+        let nonstandard =
+            KnownHosts::from_trusted(vec![trusted("192.0.2.10", 2222, &key)]).unwrap();
+        assert!(matches!(
+            nonstandard.check("192.0.2.10", 2222, key.public_key()),
+            HostKeyDecision::Trusted
+        ));
+        assert!(matches!(
+            nonstandard.check("192.0.2.10", 22, key.public_key()),
+            HostKeyDecision::Unknown(_)
+        ));
+    }
+
+    #[test]
+    fn structured_keys_support_ipv6_hosts() {
+        let key = test_key();
+        let known = KnownHosts::from_trusted(vec![trusted("[2001:db8::1]", 2222, &key)]).unwrap();
+        assert!(matches!(
+            known.check("2001:DB8::1", 2222, key.public_key()),
+            HostKeyDecision::Trusted
+        ));
+    }
+
+    #[test]
+    fn structured_keys_reject_invalid_ports_and_key_material() {
+        let key = test_key();
+        assert!(matches!(
+            KnownHosts::from_trusted(vec![trusted("example.com", 0, &key)]),
+            Err(KnownHostStoreError::InvalidPort(0))
+        ));
+        assert!(matches!(
+            KnownHosts::from_trusted(vec![TrustedHostKey {
+                host: "example.com".to_owned(),
+                port: 22,
+                key_type: "ssh-ed25519".to_owned(),
+                public_key: "not-base64".to_owned(),
+            }]),
+            Err(KnownHostStoreError::MalformedKey(_))
+        ));
+        assert!(matches!(
+            KnownHosts::from_trusted(vec![TrustedHostKey {
+                host: "example.com".to_owned(),
+                port: 22,
+                key_type: "ssh-rsa".to_owned(),
+                public_key: key.public_key().to_openssh().unwrap(),
+            }]),
+            Err(KnownHostStoreError::KeyTypeMismatch(_, _))
+        ));
+    }
+
+    #[test]
+    fn different_key_for_a_known_alias_is_changed_not_unknown() {
+        let trusted_key = test_key();
+        let received_key = test_key();
+        let known =
+            KnownHosts::from_trusted(vec![trusted("example.com", 22, &trusted_key)]).unwrap();
+        assert!(matches!(
+            known.check("example.com", 22, received_key.public_key()),
+            HostKeyDecision::Changed(_)
+        ));
     }
 }

@@ -4108,6 +4108,40 @@ mod tests {
     }
 
     #[test]
+    fn incompatible_native_cache_versions_fail_safely() {
+        let codex = CodexSessionCore::new("thread");
+        let mut codex_blob: serde_json::Value =
+            serde_json::from_slice(&codex.cache_blob().unwrap()).unwrap();
+        codex_blob["schema_version"] = serde_json::json!(999);
+        let mut restored_codex = CodexSessionCore::new("thread");
+        assert!(matches!(
+            restored_codex.restore_cache(&serde_json::to_vec(&codex_blob).unwrap()),
+            Err(AgentCacheError::Malformed(_))
+        ));
+
+        let mut opencode = OpenCodeSessionCore::new("ses_cache");
+        opencode.begin_sync_generation();
+        opencode
+            .bootstrap(
+                0,
+                &serde_json::json!({
+                    "info": { "id": "ses_cache" },
+                    "messages": []
+                })
+                .to_string(),
+            )
+            .unwrap();
+        let mut opencode_blob: serde_json::Value =
+            serde_json::from_slice(&opencode.cache_blob().unwrap()).unwrap();
+        opencode_blob["schema_version"] = serde_json::json!(999);
+        let mut restored_opencode = OpenCodeSessionCore::new("ses_cache");
+        assert!(matches!(
+            restored_opencode.restore_cache(&serde_json::to_vec(&opencode_blob).unwrap()),
+            Err(AgentCacheError::Malformed(_))
+        ));
+    }
+
+    #[test]
     fn reconnect_before_cache_confirmation_does_not_replay_incorporated_records() {
         let first = record(
             "event_msg",

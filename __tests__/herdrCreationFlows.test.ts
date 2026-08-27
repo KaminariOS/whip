@@ -1,6 +1,6 @@
 import {
   createWorkspaceAndSelect,
-  launchCommandAndOpenCreatedTab,
+  launchTabAndOpenCreatedTab,
 } from '../src/lib/herdrCreationFlows';
 import { runWithInFlightGuard } from '../src/lib/inFlightSubmission';
 import {
@@ -57,18 +57,18 @@ test('workspace creation selects and filters by the returned workspace id', asyn
   expect(select).toHaveBeenCalledWith('workspace-new');
 });
 
-test('generic command creation opens the returned pane without requesting a snapshot', async () => {
+test('semantic tab launch opens the returned pane without requesting a snapshot', async () => {
   const client = {
-    createTabAndLaunchCommand: jest.fn(async () => created),
+    createTabWithLaunch: jest.fn(async () => created),
     snapshot: jest.fn(),
   };
   const open = jest.fn();
 
-  await expect(launchCommandAndOpenCreatedTab(
+  await expect(launchTabAndOpenCreatedTab(
     client,
     'workspace-new',
     'Checks',
-    'npm test',
+    { type: 'command', command: 'npm test' },
     open,
   )).resolves.toBe(created);
 
@@ -77,15 +77,15 @@ test('generic command creation opens the returned pane without requesting a snap
 });
 
 test('partial launch failure still opens the created pane and remains an error', async () => {
-  const partial = new CommandLaunchPartialFailure(created, 'shell', new Error('input failed'));
-  const client = { createTabAndLaunchCommand: jest.fn(async () => { throw partial; }) };
+  const partial = new CommandLaunchPartialFailure(created, 'command', new Error('input failed'));
+  const client = { createTabWithLaunch: jest.fn(async () => { throw partial; }) };
   const open = jest.fn();
 
-  await expect(launchCommandAndOpenCreatedTab(
+  await expect(launchTabAndOpenCreatedTab(
     client,
     'workspace-new',
     'Checks',
-    'npm test',
+    { type: 'command', command: 'npm test' },
     open,
   )).rejects.toBe(partial);
 

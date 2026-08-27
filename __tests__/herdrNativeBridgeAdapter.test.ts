@@ -7,6 +7,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrTerminalScroll: jest.fn(),
   herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
+  AgentIntegrationStatus: { NotInstalled: 0, Current: 1, Outdated: 2, NeedsRepair: 3, Unknown: 4 },
   AgentTranscriptKind: { Codex: 0, OpenCode: 1 },
   AgentTranscriptStatus: { Loading: 0, Live: 1, Stale: 2, Unavailable: 3, Error: 4, Closed: 5 },
   AgentMessageRole: { User: 0, Assistant: 1 },
@@ -45,8 +46,10 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     Pong: 'Pong', SessionSnapshot: 'SessionSnapshot', WorkspaceCreated: 'WorkspaceCreated',
     WorkspaceInfo: 'WorkspaceInfo', TabCreated: 'TabCreated', TabInfo: 'TabInfo',
     PaneInfo: 'PaneInfo', PaneRead: 'PaneRead', AgentStarted: 'AgentStarted',
-    AgentInfo: 'AgentInfo', AgentPrompted: 'AgentPrompted', PaneZoom: 'PaneZoom', Ok: 'Ok',
+    AgentInfo: 'AgentInfo', AgentPrompted: 'AgentPrompted', IntegrationInstalled: 'IntegrationInstalled',
+    PaneZoom: 'PaneZoom', Ok: 'Ok',
   },
+  HerdrAgentKind: { Claude: 0, Codex: 1, OpenCode: 2 },
   HerdrAgentSessionKind: { Id: 0, Path: 1 },
   HerdrAgentStatus: { Idle: 0, Working: 1, Blocked: 2, Done: 3, Unknown: 4 },
   HostSyncStatus: { Idle: 0, Syncing: 1, Synced: 2, Error: 3 },
@@ -56,6 +59,13 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   },
   HostTerminalState: { Opening: 0, Attached: 1, Restoring: 2, Closed: 3, Failed: 4 },
   HerdrSplitDirection: { Right: 0, Down: 1 },
+  HerdrTabLaunch: {
+    Shell: { new: jest.fn(() => ({ tag: 'Shell' })) },
+    Agent: { new: jest.fn(inner => ({ tag: 'Agent', inner })) },
+    Command: { new: jest.fn(inner => ({ tag: 'Command', inner })) },
+  },
+  HerdrTabLaunchResult_Tags: { Created: 'Created', LaunchFailed: 'LaunchFailed' },
+  HerdrTabLaunchStage: { AgentStart: 0, CommandInput: 1 },
   HerdrTerminalAttachLaunchMode: { LegacyTerminalAttach: 0, TerminalAttach: 1 },
   HerdrTerminalNotificationKind: { Sound: 0, Toast: 1, SystemToast: 2 },
   HerdrTerminalControlEvent_Tags: {
@@ -84,6 +94,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   setAgentTranscriptEventSink: jest.fn(),
   setHerdrTerminalEventSink: jest.fn(),
   setHostRuntimeEventSink: jest.fn(),
+  setTrustedHostKeys: jest.fn(),
   startHerdrEventSubscription: jest.fn().mockResolvedValue(undefined),
   startHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
 }));
@@ -241,6 +252,7 @@ describe('native Herdr bridge adapter', () => {
       },
       jumpHosts: [],
       sessionName: 'main',
+      herdrCommand: 'herdr',
     }, handler);
 
     await runtime.connect();
@@ -356,7 +368,7 @@ describe('native Herdr bridge adapter', () => {
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
       },
-      jumpHosts: [], sessionName: 'main',
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
     });
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -369,6 +381,83 @@ describe('native Herdr bridge adapter', () => {
       runtimeId: 'runtime-failing',
       tag: 'SshTransportFailure',
       message: 'SSH key exchange failed',
+    });
+    consoleError.mockRestore();
+  });
+
+  it('projects a typed native partial tab-launch outcome without string parsing', async () => {
+    const tab = {
+      tabId: 'tab-1', workspaceId: 'workspace-1', number: 1, label: 'Codex',
+      focused: true, paneCount: 1, agentStatus: mockGenerated.HerdrAgentStatus.Idle,
+    };
+    const rootPane = {
+      paneId: 'pane-1', terminalId: 'terminal-1', workspaceId: 'workspace-1', tabId: 'tab-1',
+      focused: true, agentStatus: mockGenerated.HerdrAgentStatus.Idle, revision: 1n,
+    };
+    const rustRuntime = {
+      runtimeId: jest.fn(() => 'runtime-launch'),
+      createTabWithLaunch: jest.fn().mockResolvedValue({
+        tag: mockGenerated.HerdrTabLaunchResult_Tags.LaunchFailed,
+        inner: {
+          tab,
+          rootPane,
+          stage: mockGenerated.HerdrTabLaunchStage.AgentStart,
+          failure: { kind: 2, code: 'AGENT_START_FAILED', message: 'agent startup failed' },
+        },
+      }),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = nativeClient.createHostRuntime({
+      runtimeId: 'runtime-launch',
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
+      },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+
+    await expect(runtime.createTabWithLaunch(
+      'workspace-1', 'Codex', { type: 'agent', kind: 'codex' },
+    )).rejects.toMatchObject({
+      code: 'TAB_LAUNCH_FAILED',
+      launchType: 'agent',
+      created: { type: 'tab_created', root_pane: { pane_id: 'pane-1' } },
+      nativeFailure: { code: 'AGENT_START_FAILED', message: 'agent startup failed' },
+    });
+    expect(rustRuntime.createTabWithLaunch).toHaveBeenCalledWith(
+      'workspace-1',
+      'Codex',
+      { tag: 'Agent', inner: { kind: mockGenerated.HerdrAgentKind.Codex, args: [] } },
+    );
+  });
+
+  it.each([
+    ['HostKeyUnknown', 'HOST_KEY_UNKNOWN'],
+    ['HostKeyChanged', 'HOST_KEY_CHANGED'],
+  ] as const)('projects %s as a structured host-key challenge', async (tag, code) => {
+    const challenge = {
+      host: 'example.com', port: 2222, keyType: 'ssh-ed25519',
+      publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:key',
+    };
+    const rustRuntime = {
+      runtimeId: jest.fn(() => `runtime-${tag}`),
+      connect: jest.fn().mockRejectedValue({ tag, inner: [challenge] }),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = nativeClient.createHostRuntime({
+      runtimeId: `runtime-${tag}`,
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
+      },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(runtime.connect()).rejects.toMatchObject({
+      name: 'HostRuntimeError',
+      message: tag === 'HostKeyUnknown' ? 'unknown SSH host key' : 'SSH host key changed',
+      nativeTag: tag,
+      code,
+      details: challenge,
     });
     consoleError.mockRestore();
   });
@@ -401,7 +490,7 @@ describe('native Herdr bridge adapter', () => {
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
       },
-      jumpHosts: [], sessionName: 'main',
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
     });
     const handler = jest.fn();
     const result = runtime.openAgentSession('codex', 'terminal-1', 'session-1', undefined, handler);
@@ -420,8 +509,8 @@ describe('native Herdr bridge adapter', () => {
       runtimeId: 'runtime-agent', key: 'codex:session-1',
       update: { revision: 4n, deltas: [{ tag: 'Reset', inner: { state: nativeState } }] },
       cacheWrite: {
-        key: 'cache', blob: new Uint8Array([1, 2]).buffer, confirmationToken: 'token',
-        revision: 4n, sourceGeneration: 2n, position: 100n,
+        namespace: 'runtime-agent', key: 'cache', blob: new Uint8Array([1, 2]).buffer,
+        confirmationToken: 'token',
       },
     });
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({

@@ -113,24 +113,24 @@ pub(super) fn register_preview(
     id: String,
     generation: u64,
     preview: crate::remote_ops::ManagedPreview,
-) -> Result<(), (HostRuntimeError, crate::remote_ops::ManagedPreview)> {
+) -> Result<(), Box<(HostRuntimeError, crate::remote_ops::ManagedPreview)>> {
     let state = inner.state.lock();
     if state.connection != HostConnectionState::Connected || state.generation != generation {
-        return Err((
+        return Err(Box::new((
             HostRuntimeError::StaleOperation(
                 "preview opened after its host connection was replaced".to_owned(),
             ),
             preview,
-        ));
+        )));
     }
     let mut previews = inner.operations.previews.lock();
     if previews.len() >= MAX_ACTIVE_PREVIEWS {
-        return Err((
+        return Err(Box::new((
             HostRuntimeError::PreviewFailure(format!(
                 "at most {MAX_ACTIVE_PREVIEWS} previews may be open at once"
             )),
             preview,
-        ));
+        )));
     }
     previews.insert(id, preview);
     Ok(())
@@ -162,7 +162,8 @@ pub(super) async fn start_path_preview_inner(
         )
         .await?
     };
-    if let Err((error, preview)) = register_preview(&inner, id, generation, preview) {
+    if let Err(error_preview) = register_preview(&inner, id, generation, preview) {
+        let (error, preview) = *error_preview;
         crate::remote_preview::stop_preview(&ssh, preview.resource).await;
         return Err(error);
     }

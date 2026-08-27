@@ -34,18 +34,6 @@ export function codexChatAction(pane: PaneInfo | undefined): CodexChatAction {
   return codexSessionIdForPane(pane) ? 'open' : 'setup';
 }
 
-/** Parse the Codex row from `herdr integration status` without relying on paths. */
-export function parseCodexIntegrationStatus(output: string): CodexIntegrationStatus {
-  const match = output.match(/^codex:\s+(not installed|current|outdated|needs repair)(?:\s|\()/im);
-  switch (match?.[1].toLowerCase()) {
-    case 'not installed': return 'not-installed';
-    case 'current': return 'current';
-    case 'outdated': return 'outdated';
-    case 'needs repair': return 'needs-repair';
-    default: return 'unknown';
-  }
-}
-
 export type CodexMissingIdentityAction = 'diagnose' | 'install' | 'unknown';
 
 export function codexMissingIdentityAction(status: CodexIntegrationStatus): CodexMissingIdentityAction {

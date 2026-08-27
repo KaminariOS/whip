@@ -15,7 +15,9 @@ use tokio::sync::{Notify, watch};
 use crate::agent_sessions::{AgentSessionError, AgentSessionManager, AgentSessionOpenResult};
 use crate::agent_transcript::{AgentTranscriptKind, AgentTranscriptState};
 use crate::herdr_api::{
-    HerdrControlError, HerdrControlRequest, HerdrControlResult, request_on_runtime,
+    HerdrAgentKind, HerdrControlError, HerdrControlRequest, HerdrControlResult,
+    HerdrIntegrationInstallResult, HerdrTabLaunch, HerdrTabLaunchResult, HerdrTabLaunchStage,
+    request_on_runtime,
 };
 use crate::herdr_events::{
     HerdrEvent, HerdrEventError, close_herdr_event_subscription, start_on_runtime as start_events,
@@ -31,8 +33,9 @@ use crate::remote_ops::{
     RemoteOperationManager, TransferProgress, TransferResult, TransferState, attachment_filename,
     git_diff_command, git_repository_command, git_status_command, join_remote_path,
     normalize_remote_path, parse_git_diff, parse_git_repository, parse_git_status, remote_filename,
+    shell_quote,
 };
-use crate::ssh::{SshConnectionConfig, SshCredential, SshErrorCode, SshFailure, SshSession};
+use crate::ssh::{SshConnectionConfig, SshCredential, SshFailure, SshSession};
 use remote_files::*;
 
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
@@ -76,8 +79,18 @@ pub struct HostRuntimeConfig {
     pub ssh: HostSshConfig,
     pub jump_hosts: Vec<HostSshConfig>,
     pub session_name: String,
+    pub herdr_command: String,
     pub socket_path: Option<String>,
     pub cached_socket_path: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AgentIntegrationStatus {
+    NotInstalled,
+    Current,
+    Outdated,
+    NeedsRepair,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -183,8 +196,10 @@ pub trait HostRuntimeEventSink: Send + Sync {
 pub enum HostRuntimeError {
     #[error("{0}")]
     AuthenticationFailure(String),
-    #[error("{0}")]
-    HostKeyFailure(String),
+    #[error("unknown SSH host key")]
+    HostKeyUnknown(crate::ssh::HostKeyChallenge),
+    #[error("SSH host key changed")]
+    HostKeyChanged(crate::ssh::HostKeyChallenge),
     #[error("{0}")]
     SshTransportFailure(String),
     #[error("{0}")]
@@ -215,12 +230,11 @@ pub enum HostRuntimeError {
 
 impl From<SshFailure> for HostRuntimeError {
     fn from(error: SshFailure) -> Self {
-        match error.code {
-            SshErrorCode::AuthenticationFailed => Self::AuthenticationFailure(error.message),
-            SshErrorCode::HostKeyUnknown | SshErrorCode::HostKeyChanged => {
-                Self::HostKeyFailure(error.message)
-            }
-            _ => Self::SshTransportFailure(error.message),
+        match error {
+            SshFailure::Authentication(message) => Self::AuthenticationFailure(message),
+            SshFailure::HostKeyUnknown(challenge) => Self::HostKeyUnknown(*challenge),
+            SshFailure::HostKeyChanged(challenge) => Self::HostKeyChanged(*challenge),
+            SshFailure::Transport(message) => Self::SshTransportFailure(message),
         }
     }
 }
@@ -912,6 +926,152 @@ async fn control_request_inner(
             }
         }
         Err(error) => Err(error),
+    }
+}
+
+fn managed_agent_name(label: &str, kind: HerdrAgentKind, tab_number: f64) -> String {
+    let mut normalized = String::new();
+    let mut previous_was_dash = false;
+    for character in label.to_lowercase().chars() {
+        if character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_' {
+            normalized.push(character);
+            previous_was_dash = false;
+        } else if character == '-' {
+            normalized.push(character);
+            previous_was_dash = true;
+        } else if !previous_was_dash {
+            normalized.push('-');
+            previous_was_dash = true;
+        }
+    }
+    let first_letter = normalized
+        .char_indices()
+        .find_map(|(index, character)| character.is_ascii_lowercase().then_some(index));
+    normalized = first_letter.map_or_else(String::new, |index| normalized[index..].to_owned());
+    while normalized.ends_with('-') {
+        normalized.pop();
+    }
+    if normalized.is_empty() {
+        normalized = format!("{}-{tab_number}", kind.as_str());
+    }
+    normalized.truncate(normalized.len().min(32));
+    normalized
+}
+
+fn launch_request(
+    tab: &crate::herdr_api::HerdrTabInfo,
+    root_pane: &crate::herdr_api::HerdrPaneInfo,
+    launch: HerdrTabLaunch,
+) -> Option<(HerdrTabLaunchStage, HerdrControlRequest)> {
+    match launch {
+        HerdrTabLaunch::Shell => None,
+        HerdrTabLaunch::Agent { kind, args } => Some((
+            HerdrTabLaunchStage::AgentStart,
+            HerdrControlRequest::AgentStart {
+                name: managed_agent_name(&tab.label, kind, tab.number),
+                kind,
+                pane_id: root_pane.pane_id.clone(),
+                args,
+            },
+        )),
+        HerdrTabLaunch::Command { command } => Some((
+            HerdrTabLaunchStage::CommandInput,
+            HerdrControlRequest::PaneSendInput {
+                pane_id: root_pane.pane_id.clone(),
+                text: command,
+                keys: vec!["enter".to_owned()],
+            },
+        )),
+    }
+}
+
+async fn create_tab_with_launch_inner(
+    inner: Arc<RuntimeInner>,
+    workspace_id: String,
+    label: String,
+    launch: HerdrTabLaunch,
+) -> Result<HerdrTabLaunchResult, HerdrControlError> {
+    let launch = match launch {
+        HerdrTabLaunch::Command { command } => {
+            let command = command.trim().to_owned();
+            if command.is_empty() {
+                return Err(HerdrControlError::InvalidField(
+                    "command must not be empty".to_owned(),
+                ));
+            }
+            HerdrTabLaunch::Command { command }
+        }
+        launch => launch,
+    };
+    let label = label.trim();
+    let created = control_request_inner(
+        inner.clone(),
+        HerdrControlRequest::TabCreate {
+            workspace_id,
+            label: (!label.is_empty()).then(|| label.to_owned()),
+        },
+    )
+    .await?;
+    let HerdrControlResult::TabCreated { tab, root_pane } = created else {
+        return Err(HerdrControlError::UnsupportedResponse(
+            "tab.create returned a non-tab result".to_owned(),
+        ));
+    };
+    let Some((stage, request)) = launch_request(&tab, &root_pane, launch) else {
+        return Ok(HerdrTabLaunchResult::Created { tab, root_pane });
+    };
+    match control_request_inner(inner, request).await {
+        Ok(_) => Ok(HerdrTabLaunchResult::Created { tab, root_pane }),
+        Err(error) => Ok(HerdrTabLaunchResult::LaunchFailed {
+            tab,
+            root_pane,
+            stage,
+            failure: error.into(),
+        }),
+    }
+}
+
+fn integration_status_command(herdr_command: &str) -> String {
+    let herdr_command = herdr_command.trim();
+    let herdr_command = if herdr_command.is_empty() {
+        "herdr"
+    } else {
+        herdr_command
+    };
+    let command = format!("{} integration status", shell_quote(herdr_command));
+    let bootstrap = r#"exec "${SHELL:-/bin/sh}" -lc "$1""#;
+    format!(
+        "exec /bin/sh -c {} whip {}",
+        shell_quote(bootstrap),
+        shell_quote(&command)
+    )
+}
+
+fn parse_agent_integration_status(output: &str, kind: HerdrAgentKind) -> AgentIntegrationStatus {
+    let prefix = format!("{}:", kind.as_str());
+    let Some(status) = output.lines().find_map(|line| {
+        let line = line.trim().to_lowercase();
+        line.strip_prefix(&prefix).map(str::trim).map(str::to_owned)
+    }) else {
+        return AgentIntegrationStatus::Unknown;
+    };
+    let matches = |expected: &str| {
+        status == expected
+            || status
+                .strip_prefix(expected)
+                .and_then(|suffix| suffix.chars().next())
+                .is_some_and(|character| character.is_whitespace() || character == '(')
+    };
+    if matches("not installed") {
+        AgentIntegrationStatus::NotInstalled
+    } else if matches("current") {
+        AgentIntegrationStatus::Current
+    } else if matches("outdated") {
+        AgentIntegrationStatus::Outdated
+    } else if matches("needs repair") {
+        AgentIntegrationStatus::NeedsRepair
+    } else {
+        AgentIntegrationStatus::Unknown
     }
 }
 
@@ -1917,6 +2077,59 @@ impl HostRuntime {
             })?
     }
 
+    pub async fn create_tab_with_launch(
+        &self,
+        workspace_id: String,
+        label: String,
+        launch: HerdrTabLaunch,
+    ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HerdrControlError::TransportDisconnected)?
+            .spawn(create_tab_with_launch_inner(
+                inner,
+                workspace_id,
+                label,
+                launch,
+            ))
+            .await
+            .map_err(|error| {
+                HerdrControlError::RequestCancelled(format!("host tab launch task failed: {error}"))
+            })?
+    }
+
+    pub async fn agent_integration_status(
+        &self,
+        kind: HerdrAgentKind,
+    ) -> Result<AgentIntegrationStatus, HostRuntimeError> {
+        let command = integration_status_command(&self.inner.config.herdr_command);
+        let output = self.execute(command).await?;
+        Ok(parse_agent_integration_status(&output, kind))
+    }
+
+    pub async fn install_agent_integration(
+        &self,
+        kind: HerdrAgentKind,
+    ) -> Result<HerdrIntegrationInstallResult, HerdrControlError> {
+        match self
+            .control_request(HerdrControlRequest::IntegrationInstall { kind })
+            .await?
+        {
+            HerdrControlResult::IntegrationInstalled { install } if install.kind == kind => {
+                Ok(install)
+            }
+            HerdrControlResult::IntegrationInstalled { install } => {
+                Err(HerdrControlError::UnsupportedResponse(format!(
+                    "integration.install returned {:?} for requested {:?}",
+                    install.kind, kind
+                )))
+            }
+            _ => Err(HerdrControlError::UnsupportedResponse(
+                "integration.install returned a non-integration result".to_owned(),
+            )),
+        }
+    }
+
     pub async fn subscribe_events(&self, pane_ids: Vec<String>) -> Result<(), HerdrEventError> {
         let inner = self.inner.clone();
         crate::runtime()
@@ -2771,7 +2984,8 @@ impl HostRuntime {
                     &remote_url,
                 )
                 .await?;
-                if let Err((error, preview)) = register_preview(&inner, id, generation, preview) {
+                if let Err(error_preview) = register_preview(&inner, id, generation, preview) {
+                    let (error, preview) = *error_preview;
                     crate::remote_preview::stop_preview(&ssh, preview.resource).await;
                     return Err(error);
                 }
@@ -2922,9 +3136,115 @@ mod tests {
             },
             jump_hosts: Vec::new(),
             session_name: "main".to_owned(),
+            herdr_command: "herdr".to_owned(),
             socket_path: None,
             cached_socket_path: None,
         }
+    }
+
+    #[test]
+    fn managed_agent_names_are_native_owned_and_stable() {
+        assert_eq!(
+            managed_agent_name("  42 Review / Fix  ", HerdrAgentKind::Codex, 2.0),
+            "review-fix"
+        );
+        assert_eq!(
+            managed_agent_name("---", HerdrAgentKind::OpenCode, 3.0),
+            "opencode-3"
+        );
+        assert_eq!(
+            managed_agent_name(
+                "A very long tab label whose agent name must be bounded",
+                HerdrAgentKind::Claude,
+                1.0,
+            ),
+            "a-very-long-tab-label-whose-agen"
+        );
+    }
+
+    #[test]
+    fn integration_status_command_and_parser_are_native_owned() {
+        let command = integration_status_command("/opt/herdr current/herdr");
+        assert!(command.contains("integration status"));
+        assert!(command.contains("/opt/herdr current/herdr"));
+        assert_eq!(
+            parse_agent_integration_status(
+                "claude: not installed\ncodex: current (v2)\n",
+                HerdrAgentKind::Codex,
+            ),
+            AgentIntegrationStatus::Current
+        );
+        assert_eq!(
+            parse_agent_integration_status(
+                "opencode: needs repair (/tmp/config)\n",
+                HerdrAgentKind::OpenCode,
+            ),
+            AgentIntegrationStatus::NeedsRepair
+        );
+        assert_eq!(
+            parse_agent_integration_status("older output", HerdrAgentKind::Codex),
+            AgentIntegrationStatus::Unknown
+        );
+    }
+
+    #[test]
+    fn typed_launch_intent_selects_exactly_one_native_second_step() {
+        let snapshot = batch_test_snapshot();
+        let tab = &snapshot.tabs[0];
+        let root_pane = &snapshot.panes[0];
+
+        assert!(launch_request(tab, root_pane, HerdrTabLaunch::Shell).is_none());
+        assert!(matches!(
+            launch_request(
+                tab,
+                root_pane,
+                HerdrTabLaunch::Agent {
+                    kind: HerdrAgentKind::Codex,
+                    args: Vec::new(),
+                },
+            ),
+            Some((
+                HerdrTabLaunchStage::AgentStart,
+                HerdrControlRequest::AgentStart {
+                    kind: HerdrAgentKind::Codex,
+                    ..
+                }
+            ))
+        ));
+        assert!(matches!(
+            launch_request(
+                tab,
+                root_pane,
+                HerdrTabLaunch::Agent {
+                    kind: HerdrAgentKind::OpenCode,
+                    args: Vec::new(),
+                },
+            ),
+            Some((
+                HerdrTabLaunchStage::AgentStart,
+                HerdrControlRequest::AgentStart {
+                    kind: HerdrAgentKind::OpenCode,
+                    ..
+                }
+            ))
+        ));
+        assert_eq!(
+            launch_request(
+                tab,
+                root_pane,
+                HerdrTabLaunch::Command {
+                    command: "echo codex is installed".to_owned(),
+                },
+            ),
+            Some((
+                HerdrTabLaunchStage::CommandInput,
+                HerdrControlRequest::PaneSendInput {
+                    pane_id: "pane-1".to_owned(),
+                    text: "echo codex is installed".to_owned(),
+                    keys: vec!["enter".to_owned()],
+                }
+            ))
+        );
     }
 
     fn batch_test_snapshot() -> HerdrSessionSnapshot {
@@ -2995,29 +3315,30 @@ mod tests {
     }
 
     #[test]
-    fn ssh_failures_are_classified_by_typed_code() {
-        let authentication = HostRuntimeError::from(SshFailure {
-            code: SshErrorCode::AuthenticationFailed,
-            message: "bad credentials".to_owned(),
-        });
+    fn ssh_failures_map_to_typed_runtime_errors() {
+        let authentication =
+            HostRuntimeError::from(SshFailure::Authentication("bad credentials".to_owned()));
         assert!(matches!(
             authentication,
             HostRuntimeError::AuthenticationFailure(message) if message == "bad credentials"
         ));
 
-        let host_key = HostRuntimeError::from(SshFailure {
-            code: SshErrorCode::HostKeyChanged,
-            message: "changed key".to_owned(),
-        });
+        let host_key = HostRuntimeError::from(SshFailure::HostKeyChanged(Box::new(
+            crate::ssh::HostKeyChallenge {
+                host: "example.com".to_owned(),
+                port: 2222,
+                key_type: "ssh-ed25519".to_owned(),
+                fingerprint: "SHA256:new".to_owned(),
+                public_key: "ssh-ed25519 AAAA".to_owned(),
+            },
+        )));
         assert!(matches!(
             host_key,
-            HostRuntimeError::HostKeyFailure(message) if message == "changed key"
+            HostRuntimeError::HostKeyChanged(challenge)
+                if challenge.host == "example.com" && challenge.port == 2222
         ));
 
-        let transport = HostRuntimeError::from(SshFailure {
-            code: SshErrorCode::ConnectionTimeout,
-            message: "timed out".to_owned(),
-        });
+        let transport = HostRuntimeError::from(SshFailure::Transport("timed out".to_owned()));
         assert!(matches!(
             transport,
             HostRuntimeError::SshTransportFailure(message) if message == "timed out"

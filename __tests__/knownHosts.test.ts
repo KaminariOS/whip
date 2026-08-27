@@ -7,7 +7,6 @@ import {
   knownHostsFromStorage,
   loadKnownHosts,
   parseUnknownHostKey,
-  serializeKnownHosts,
   trustKnownHost,
 } from '../src/services/knownHosts';
 import type { KnownHost } from '../src/types';
@@ -28,7 +27,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 jest.mock('react-native-whip-ssh', () => ({
   __esModule: true,
   default: {
-    setKnownHosts: jest.fn(),
+    setTrustedHostKeys: jest.fn(),
   },
 }));
 
@@ -51,9 +50,12 @@ test('loads the global list into the native strict host-key repository', async (
   mockStoredKnownHosts = JSON.stringify([knownHost]);
 
   await expect(loadKnownHosts()).resolves.toEqual([knownHost]);
-  expect(SSHClient.setKnownHosts).toHaveBeenCalledWith(
-    'savior.tailnet.ts.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest',
-  );
+  expect(SSHClient.setTrustedHostKeys).toHaveBeenCalledWith([{
+    host: 'savior.tailnet.ts.net',
+    port: 22,
+    keyType: 'ssh-ed25519',
+    publicKey: 'AAAAC3NzaC1lZDI1NTE5AAAAITest',
+  }]);
 });
 
 test('logs known-host read rejection without changing rejection behavior', async () => {
@@ -83,7 +85,7 @@ test('logs malformed known-host JSON without exposing key material', () => {
   consoleError.mockRestore();
 });
 
-test('stores a confirmed host globally and uses OpenSSH nonstandard-port syntax', async () => {
+test('stores a confirmed host globally and sends structured nonstandard-port data', async () => {
   const next = await trustKnownHost([], {
     host: 'Thinker.Example',
     port: 2222,
@@ -94,24 +96,24 @@ test('stores a confirmed host globally and uses OpenSSH nonstandard-port syntax'
 
   expect(next).toHaveLength(1);
   expect(next[0]).toMatchObject({
-    host: 'thinker.example',
+    host: 'Thinker.Example',
     port: 2222,
     keyType: 'ssh-ed25519',
   });
   expect(next[0].id).toMatch(/^known-host-/);
-  expect(serializeKnownHosts(next)).toBe(
-    '[thinker.example]:2222 ssh-ed25519 AAAANewKey',
-  );
   expect(AsyncStorage.setItem).toHaveBeenCalledWith(
     KNOWN_HOSTS_STORAGE_KEY,
     expect.any(String),
   );
-  expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith(
-    '[thinker.example]:2222 ssh-ed25519 AAAANewKey',
-  );
+  expect(SSHClient.setTrustedHostKeys).toHaveBeenLastCalledWith([{
+    host: 'Thinker.Example',
+    port: 2222,
+    keyType: 'ssh-ed25519',
+    publicKey: 'AAAANewKey',
+  }]);
 });
 
-test('normalizes the full OpenSSH public key returned by the iOS verifier', async () => {
+test('persists the native-produced public key without interpreting OpenSSH syntax', async () => {
   const next = await trustKnownHost([], {
     host: 'Mini',
     port: 22,
@@ -120,14 +122,16 @@ test('normalizes the full OpenSSH public key returned by the iOS verifier', asyn
     fingerprint: 'SHA256:ios',
   });
 
-  expect(next[0].publicKey).toBe('AAAAIosKey');
-  expect(serializeKnownHosts(next)).toBe('mini ssh-ed25519 AAAAIosKey');
-  expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith(
-    'mini ssh-ed25519 AAAAIosKey',
-  );
+  expect(next[0].publicKey).toBe('ssh-ed25519 AAAAIosKey mini');
+  expect(SSHClient.setTrustedHostKeys).toHaveBeenLastCalledWith([{
+    host: 'Mini',
+    port: 22,
+    keyType: 'ssh-ed25519',
+    publicKey: 'ssh-ed25519 AAAAIosKey mini',
+  }]);
 });
 
-test('repairs a previously stored full OpenSSH public key when it is trusted again', async () => {
+test('deduplicates trusted native challenges by fingerprint', async () => {
   const legacyHost: KnownHost = {
     ...knownHost,
     host: 'mini',
@@ -143,14 +147,14 @@ test('repairs a previously stored full OpenSSH public key when it is trusted aga
   });
 
   expect(next).toHaveLength(1);
-  expect(next[0].publicKey).toBe('AAAAIosKey');
-  expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-    KNOWN_HOSTS_STORAGE_KEY,
-    expect.stringContaining('AAAAIosKey'),
-  );
-  expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith(
-    'mini ssh-ed25519 AAAAIosKey',
-  );
+  expect(next).toEqual([legacyHost]);
+  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(SSHClient.setTrustedHostKeys).toHaveBeenLastCalledWith([{
+    host: 'mini',
+    port: 22,
+    keyType: 'ssh-ed25519',
+    publicKey: 'ssh-ed25519 AAAAIosKey mini',
+  }]);
 });
 
 test('parses an unknown-key challenge returned by the native handshake', () => {
@@ -167,7 +171,7 @@ test('parses an unknown-key challenge returned by the native handshake', () => {
       },
     }),
   ).toEqual({
-    host: 'savior',
+    host: 'Savior',
     port: 22,
     keyType: 'ssh-ed25519',
     publicKey: 'AAAA',
@@ -179,13 +183,29 @@ test('parses an unknown-key challenge returned by the native handshake', () => {
       code: 'HOST_KEY_CHANGED',
       details: { host: 'Jump.Example', port: 2222 },
     }),
-  ).toBe('[jump.example]:2222');
+  ).toBe('[Jump.Example]:2222');
+});
+
+test('does not persist trusted host material rejected by Rust validation', async () => {
+  jest.mocked(SSHClient.setTrustedHostKeys).mockImplementationOnce(() => {
+    throw new Error('trusted host key is malformed');
+  });
+
+  await expect(trustKnownHost([], {
+    host: 'invalid.example',
+    port: 22,
+    keyType: 'ssh-ed25519',
+    publicKey: 'not-base64',
+    fingerprint: 'SHA256:invalid',
+  })).rejects.toThrow('malformed');
+
+  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
 });
 
 test('forgetting a host immediately replaces the native repository', async () => {
   await expect(deleteKnownHost([knownHost], knownHost.id)).resolves.toEqual([]);
   expect(mockStoredKnownHosts).toBe('[]');
-  expect(SSHClient.setKnownHosts).toHaveBeenLastCalledWith('');
+  expect(SSHClient.setTrustedHostKeys).toHaveBeenLastCalledWith([]);
 });
 
 test('logs known-host write rejection without exposing public-key material', async () => {

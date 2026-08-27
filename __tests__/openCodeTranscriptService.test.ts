@@ -10,7 +10,7 @@ import {
 } from '../src/services/OpenCodeTranscriptService';
 
 const sessionId = 'ses_abc123';
-const nativeKey = `opencode:${sessionId}`;
+const nativeKey = `profile\nopencode\n${sessionId}`;
 
 function state(revision: number, text = 'hello'): NativeAgentTranscriptState {
   return {
@@ -63,13 +63,12 @@ async function flush(): Promise<void> {
 describe('OpenCode native transcript facade', () => {
   test('hands the opaque cache to Rust and projects native updates', async () => {
     const cache = new MemoryAgentChatCache();
-    await cache.saveNative(
-      { hostProfileId: 'profile', agent: 'opencode', sessionId },
-      { blob: new Uint8Array([1, 2, 3]).buffer, revision: 0, sourceGeneration: 0, position: 0 },
-    );
+    await cache.saveNative({
+      namespace: 'profile', key: nativeKey, blob: new Uint8Array([1, 2, 3]).buffer,
+    });
     const remote = fakeTransport();
     const service = new OpenCodeTranscriptService(cache);
-    const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
 
     expect(remote.value.bindOpenCodeAgentTranscript).toHaveBeenCalledWith(
@@ -94,23 +93,23 @@ describe('OpenCode native transcript facade', () => {
     const cache = new MemoryAgentChatCache();
     const remote = fakeTransport();
     const service = new OpenCodeTranscriptService(cache);
-    service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
     remote.update({ revision: 2, deltas: [], cacheWrite: {
-      key: nativeKey, blob: new Uint8Array([8, 9]).buffer,
-      confirmationToken: 'confirm-opencode', revision: 2, sourceGeneration: 1, position: 2,
+      namespace: 'profile', key: nativeKey, blob: new Uint8Array([8, 9]).buffer,
+      confirmationToken: 'confirm-opencode',
     } });
     await flush();
 
     expect(remote.value.confirmAgentTranscriptCache).toHaveBeenCalledWith('confirm-opencode');
-    const stored = await cache.loadNative({ hostProfileId: 'profile', agent: 'opencode', sessionId });
+    const stored = await cache.loadNative(nativeKey);
     expect([...new Uint8Array(stored!)]).toEqual([8, 9]);
   });
 
   test('releases native ownership when its final terminal closes', async () => {
     const remote = fakeTransport();
     const service = new OpenCodeTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('profile', 'host-runtime', 'terminal-1', sessionId, remote.value);
+    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
     await flush();
     service.closeTerminal('host-runtime', 'terminal-1', key);
 

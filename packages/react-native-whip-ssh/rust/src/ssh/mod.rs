@@ -34,6 +34,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader},
 };
 
+pub use self::known_hosts::{HostKeyChallenge, KnownHostStoreError, TrustedHostKey};
 use self::known_hosts::{HostKeyDecision, KnownHosts};
 
 type Sessions = RwLock<HashMap<String, Arc<Session>>>;
@@ -207,7 +208,6 @@ pub(crate) enum SshErrorCode {
     InvalidPrivateKey,
     SftpFailure,
     InvalidRequest,
-    OutputLimit,
     Unknown,
 }
 
@@ -384,14 +384,22 @@ pub(crate) struct SshConnectionConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SshFailure {
-    pub code: SshErrorCode,
-    pub message: String,
+pub(crate) enum SshFailure {
+    Authentication(String),
+    HostKeyUnknown(Box<HostKeyChallenge>),
+    HostKeyChanged(Box<HostKeyChallenge>),
+    Transport(String),
 }
 
 impl std::fmt::Display for SshFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.message)
+        match self {
+            Self::Authentication(message) | Self::Transport(message) => {
+                formatter.write_str(message)
+            }
+            Self::HostKeyUnknown(_) => formatter.write_str("unknown SSH host key"),
+            Self::HostKeyChanged(_) => formatter.write_str("SSH host key changed"),
+        }
     }
 }
 
@@ -399,9 +407,13 @@ impl std::error::Error for SshFailure {}
 
 impl From<TransportError> for SshFailure {
     fn from(error: TransportError) -> Self {
-        Self {
-            code: transport_error_code(&error),
-            message: error.to_string(),
+        match error {
+            TransportError::HostKeyUnknown(challenge) => Self::HostKeyUnknown(Box::new(challenge)),
+            TransportError::HostKeyChanged(challenge) => Self::HostKeyChanged(Box::new(challenge)),
+            error if transport_error_code(&error) == SshErrorCode::AuthenticationFailed => {
+                Self::Authentication(error.to_string())
+            }
+            error => Self::Transport(error.to_string()),
         }
     }
 }
@@ -551,6 +563,13 @@ fn sessions() -> &'static Sessions {
 
 fn known_hosts() -> &'static RwLock<KnownHosts> {
     KNOWN_HOSTS.get_or_init(|| RwLock::new(KnownHosts::default()))
+}
+
+#[uniffi::export]
+pub fn set_trusted_host_keys(entries: Vec<TrustedHostKey>) -> Result<(), KnownHostStoreError> {
+    let parsed = KnownHosts::from_trusted(entries)?;
+    *known_hosts().write() = parsed;
+    Ok(())
 }
 
 fn shells() -> &'static Shells {

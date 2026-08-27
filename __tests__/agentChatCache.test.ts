@@ -1,103 +1,74 @@
-import { emptyTranscript } from '../src/agentChat';
-import {
-  AGENT_CHAT_CACHE_SCHEMA_VERSION,
-  MemoryAgentChatCache,
-  type AgentChatCacheKey,
-} from '../src/services/agentChatCache';
+import { MemoryAgentChatCache, SQLiteAgentChatCache } from '../src/services/agentChatCache';
 
-const openCodeKey: AgentChatCacheKey = {
-  hostProfileId: 'stable-profile', agent: 'opencode', sessionId: 'ses_abc123',
-};
-const codexKey: AgentChatCacheKey = {
-  hostProfileId: 'stable-profile', agent: 'codex', sessionId: '11111111-1111-4111-8111-111111111111',
-};
+const codexKey = 'stable-profile\ncodex\n11111111-1111-4111-8111-111111111111';
+const openCodeKey = 'stable-profile\nopencode\nses_abc123';
 
-describe('agent chat cache contract', () => {
-  test('writes and reads normalized transcript, cursor, type, checkpoint, and version', async () => {
+function checkpoint(key: string, bytes: number[], namespace = 'stable-profile') {
+  return { key, namespace, blob: new Uint8Array(bytes).buffer };
+}
+
+describe('opaque agent chat persistence adapter', () => {
+  test('stores and returns native checkpoint bytes without interpreting them', async () => {
     const cache = new MemoryAgentChatCache();
-    await cache.save({
-      ...openCodeKey,
-      transcript: emptyTranscript(openCodeKey.sessionId),
-      cursor: 42,
-      cursorType: 'opencode-event-sequence',
-      checkpoint: { source: 'event' },
-    });
-    const stored = await cache.load(openCodeKey);
-    expect(stored).toEqual(expect.objectContaining({
-      ...openCodeKey,
-      cursor: 42,
-      cursorType: 'opencode-event-sequence',
-      schemaVersion: AGENT_CHAT_CACHE_SCHEMA_VERSION,
-      checkpoint: { source: 'event' },
-    }));
-  });
+    const write = checkpoint(codexKey, [0, 1, 2, 255]);
+    await cache.saveNative(write);
 
-  test('durable identity is stable host profile ID, not hostSessionId or terminal ID', async () => {
-    const cache = new MemoryAgentChatCache();
-    await cache.save({
-      ...openCodeKey,
-      transcript: emptyTranscript(openCodeKey.sessionId),
-      cursor: 1,
-      cursorType: 'opencode-event-sequence',
-      checkpoint: {},
-    });
-    expect(await cache.load(openCodeKey)).not.toBeNull();
-    expect(await cache.load({ ...openCodeKey, hostProfileId: 'new-connection-id' })).toBeNull();
-  });
-
-  test('corrupt entries and incompatible schema versions are dropped', async () => {
-    const cache = new MemoryAgentChatCache();
-    await cache.save({
-      ...openCodeKey, transcript: emptyTranscript(openCodeKey.sessionId), cursor: 1,
-      cursorType: 'opencode-event-sequence', checkpoint: {},
-    });
-    cache.corrupt(openCodeKey, entry => ({ ...entry, schemaVersion: AGENT_CHAT_CACHE_SCHEMA_VERSION + 1 }));
-    expect(await cache.load(openCodeKey)).toBeNull();
-
-    await cache.save({
-      ...openCodeKey, transcript: emptyTranscript(openCodeKey.sessionId), cursor: 1,
-      cursorType: 'opencode-event-sequence', checkpoint: {},
-    });
-    cache.corrupt(openCodeKey, entry => ({ ...entry, transcript: { ...entry.transcript, sessionId: 'wrong' } }));
-    expect(await cache.load(openCodeKey)).toBeNull();
-  });
-
-  test('deletes one session or every session for a stable host', async () => {
-    const cache = new MemoryAgentChatCache();
-    for (const key of [openCodeKey, { ...openCodeKey, sessionId: 'ses_other' }]) {
-      await cache.save({
-        ...key, transcript: emptyTranscript(key.sessionId), cursor: 1,
-        cursorType: 'opencode-event-sequence', checkpoint: {},
-      });
-    }
-    await cache.deleteSession(openCodeKey);
-    expect(await cache.load(openCodeKey)).toBeNull();
-    expect(await cache.load({ ...openCodeKey, sessionId: 'ses_other' })).not.toBeNull();
-    await cache.deleteHost(openCodeKey.hostProfileId);
-    expect(await cache.load({ ...openCodeKey, sessionId: 'ses_other' })).toBeNull();
-  });
-
-  test('stores native transcript checkpoints as opaque bytes', async () => {
-    const cache = new MemoryAgentChatCache();
-    const blob = new Uint8Array([0, 1, 2, 255]).buffer;
-    await cache.saveNative(codexKey, { blob, revision: 1, sourceGeneration: 1, position: 10 });
     const stored = await cache.loadNative(codexKey);
     expect([...new Uint8Array(stored!)]).toEqual([0, 1, 2, 255]);
-    new Uint8Array(blob)[0] = 9;
+    new Uint8Array(write.blob)[0] = 9;
     expect([...new Uint8Array((await cache.loadNative(codexKey))!)]).toEqual([0, 1, 2, 255]);
-    await cache.deleteSession(codexKey);
-    expect(await cache.loadNative(codexKey)).toBeNull();
   });
 
-  test('never lets an older async checkpoint replace a newer revision', async () => {
+  test('uses the opaque Rust key without reconstructing host, agent, or session identity', async () => {
     const cache = new MemoryAgentChatCache();
-    await cache.saveNative(codexKey, {
-      blob: new Uint8Array([9]).buffer, revision: 9, sourceGeneration: 2, position: 90,
-    });
-    await cache.saveNative(codexKey, {
-      blob: new Uint8Array([4]).buffer, revision: 4, sourceGeneration: 1, position: 40,
-    });
+    await cache.saveNative(checkpoint(codexKey, [1]));
+    await cache.saveNative(checkpoint(openCodeKey, [2]));
+    await cache.saveNative(checkpoint('other-host\ncodex\nsame-session', [3], 'other-host'));
 
-    expect([...new Uint8Array((await cache.loadNative(codexKey))!)]).toEqual([9]);
+    expect([...new Uint8Array((await cache.loadNative(codexKey))!)]).toEqual([1]);
+    expect([...new Uint8Array((await cache.loadNative(openCodeKey))!)]).toEqual([2]);
+  });
+
+  test('serializes writes for one opaque key in arrival order', async () => {
+    const cache = new MemoryAgentChatCache();
+    const first = cache.saveNative(checkpoint(codexKey, [1]));
+    const second = cache.saveNative(checkpoint(codexKey, [2]));
+    await Promise.all([second, first]);
+
+    expect([...new Uint8Array((await cache.loadNative(codexKey))!)]).toEqual([2]);
+  });
+
+  test('deletes checkpoints by the native namespace used for host cleanup', async () => {
+    const cache = new MemoryAgentChatCache();
+    await cache.saveNative(checkpoint(codexKey, [1]));
+    await cache.saveNative(checkpoint('other-key', [2], 'other-host'));
+    await cache.deleteHost('stable-profile');
+
+    expect(await cache.loadNative(codexKey)).toBeNull();
+    expect(await cache.loadNative('other-key')).not.toBeNull();
+  });
+
+  test('migrates P0 native blobs to the Rust key and removes obsolete semantic tables', async () => {
+    const execAsync = jest.fn(async (_sql: string) => undefined);
+    const getFirstAsync = jest.fn(async (sql: string) => (
+      sql.includes('sqlite_master')
+        ? { name: 'native_agent_chat_cache' }
+        : { cache_blob: new Uint8Array([7, 8]) }
+    ));
+    const database = {
+      execAsync,
+      getFirstAsync,
+      runAsync: jest.fn(),
+      withExclusiveTransactionAsync: jest.fn(),
+    };
+
+    const cache = new SQLiteAgentChatCache(async () => database as never);
+    await expect(cache.loadNative(codexKey)).resolves.toEqual(new Uint8Array([7, 8]).buffer);
+
+    const schema = String(execAsync.mock.calls[0]?.[0]);
+    const migration = String(execAsync.mock.calls[1]?.[0]);
+    expect(migration).toContain('host_profile_id || char(10) || agent || char(10) || agent_session_id');
+    expect(migration).toContain('DROP TABLE native_agent_chat_cache');
+    expect(schema).toContain('DROP TABLE IF EXISTS agent_chat_session');
   });
 });

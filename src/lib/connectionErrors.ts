@@ -86,7 +86,6 @@ export function classifyConnectionError(error: unknown): ConnectionErrorKind {
   const message = errorText(error).toLowerCase();
 
   if (/herdr protocol mismatch/.test(message)) return 'incompatibleProtocol';
-  if (/hostkey|host key|e_host_key/.test(message)) return 'hostKey';
   if (
     /private key|privatekey|key passphrase|e_key_|invalid key|invalidkey/.test(message)
   ) {

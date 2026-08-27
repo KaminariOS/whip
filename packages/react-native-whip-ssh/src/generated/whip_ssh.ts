@@ -569,6 +569,26 @@ export function setHostRuntimeEventSink(sink: HostRuntimeEventSink): void {
   );
 }
 
+export function setTrustedHostKeys(
+  entries: Array<TrustedHostKey>,
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
+      FfiConverterTypeKnownHostStoreError,
+    ),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_trusted_host_keys(
+        FfiConverterSequenceTypeTrustedHostKey.lower(
+          entries,
+          nativeModule().rustbuffer_alloc,
+        ),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export function shutdown(): void {
   uniffiCaller.rustCall(
     /*caller:*/ callStatus => {
@@ -2141,12 +2161,10 @@ const FfiConverterTypeAgentSessionOpenResult = (() => {
 })();
 
 export type AgentTranscriptCacheWrite = {
+  namespace: string;
   key: string;
   blob: ArrayBuffer;
   confirmationToken: string;
-  revision: bigint;
-  sourceGeneration: bigint;
-  position: bigint;
 };
 
 /**
@@ -2173,30 +2191,24 @@ const FfiConverterTypeAgentTranscriptCacheWrite = (() => {
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
       return {
+        namespace: FfiConverterString.read(from),
         key: FfiConverterString.read(from),
         blob: FfiConverterArrayBuffer.read(from),
         confirmationToken: FfiConverterString.read(from),
-        revision: FfiConverterUInt64.read(from),
-        sourceGeneration: FfiConverterUInt64.read(from),
-        position: FfiConverterUInt64.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.namespace, into);
       FfiConverterString.write(value.key, into);
       FfiConverterArrayBuffer.write(value.blob, into);
       FfiConverterString.write(value.confirmationToken, into);
-      FfiConverterUInt64.write(value.revision, into);
-      FfiConverterUInt64.write(value.sourceGeneration, into);
-      FfiConverterUInt64.write(value.position, into);
     }
     allocationSize(value: TypeName): number {
       return (
+        FfiConverterString.allocationSize(value.namespace) +
         FfiConverterString.allocationSize(value.key) +
         FfiConverterArrayBuffer.allocationSize(value.blob) +
-        FfiConverterString.allocationSize(value.confirmationToken) +
-        FfiConverterUInt64.allocationSize(value.revision) +
-        FfiConverterUInt64.allocationSize(value.sourceGeneration) +
-        FfiConverterUInt64.allocationSize(value.position)
+        FfiConverterString.allocationSize(value.confirmationToken)
       );
     }
   }
@@ -3333,6 +3345,200 @@ const FfiConverterTypeHerdrAgentInfo = (() => {
   return new FFIConverter();
 })();
 
+export enum HerdrControlFailureKind {
+  TransportDisconnected,
+  MalformedResponse,
+  ProtocolError,
+  UnsupportedResponse,
+  InvalidField,
+  RequestCancelled,
+  RequestTimeout,
+}
+
+const FfiConverterTypeHerdrControlFailureKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrControlFailureKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HerdrControlFailureKind.TransportDisconnected;
+        case 2:
+          return HerdrControlFailureKind.MalformedResponse;
+        case 3:
+          return HerdrControlFailureKind.ProtocolError;
+        case 4:
+          return HerdrControlFailureKind.UnsupportedResponse;
+        case 5:
+          return HerdrControlFailureKind.InvalidField;
+        case 6:
+          return HerdrControlFailureKind.RequestCancelled;
+        case 7:
+          return HerdrControlFailureKind.RequestTimeout;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HerdrControlFailureKind.TransportDisconnected:
+          return ordinalConverter.write(1, into);
+        case HerdrControlFailureKind.MalformedResponse:
+          return ordinalConverter.write(2, into);
+        case HerdrControlFailureKind.ProtocolError:
+          return ordinalConverter.write(3, into);
+        case HerdrControlFailureKind.UnsupportedResponse:
+          return ordinalConverter.write(4, into);
+        case HerdrControlFailureKind.InvalidField:
+          return ordinalConverter.write(5, into);
+        case HerdrControlFailureKind.RequestCancelled:
+          return ordinalConverter.write(6, into);
+        case HerdrControlFailureKind.RequestTimeout:
+          return ordinalConverter.write(7, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrControlFailure = {
+  kind: HerdrControlFailureKind;
+  code?: string;
+  message: string;
+};
+
+/**
+ * Generated factory for {@link HerdrControlFailure} record objects.
+ */
+export const HerdrControlFailure = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrControlFailure, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrControlFailure>,
+  });
+})();
+
+const FfiConverterTypeHerdrControlFailure = (() => {
+  type TypeName = HerdrControlFailure;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        kind: FfiConverterTypeHerdrControlFailureKind.read(from),
+        code: FfiConverterOptionalString.read(from),
+        message: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeHerdrControlFailureKind.write(value.kind, into);
+      FfiConverterOptionalString.write(value.code, into);
+      FfiConverterString.write(value.message, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeHerdrControlFailureKind.allocationSize(value.kind) +
+        FfiConverterOptionalString.allocationSize(value.code) +
+        FfiConverterString.allocationSize(value.message)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HerdrAgentKind {
+  Claude,
+  Codex,
+  OpenCode,
+}
+
+const FfiConverterTypeHerdrAgentKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrAgentKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HerdrAgentKind.Claude;
+        case 2:
+          return HerdrAgentKind.Codex;
+        case 3:
+          return HerdrAgentKind.OpenCode;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HerdrAgentKind.Claude:
+          return ordinalConverter.write(1, into);
+        case HerdrAgentKind.Codex:
+          return ordinalConverter.write(2, into);
+        case HerdrAgentKind.OpenCode:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrIntegrationInstallResult = {
+  kind: HerdrAgentKind;
+  messages: Array<string>;
+};
+
+/**
+ * Generated factory for {@link HerdrIntegrationInstallResult} record objects.
+ */
+export const HerdrIntegrationInstallResult = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrIntegrationInstallResult,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<HerdrIntegrationInstallResult>,
+  });
+})();
+
+const FfiConverterTypeHerdrIntegrationInstallResult = (() => {
+  type TypeName = HerdrIntegrationInstallResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        kind: FfiConverterTypeHerdrAgentKind.read(from),
+        messages: FfiConverterSequenceString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeHerdrAgentKind.write(value.kind, into);
+      FfiConverterSequenceString.write(value.messages, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeHerdrAgentKind.allocationSize(value.kind) +
+        FfiConverterSequenceString.allocationSize(value.messages)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type HerdrPaneScrollInfo = {
   offsetFromBottom: number;
   maxOffsetFromBottom: number;
@@ -4380,6 +4586,63 @@ const FfiConverterTypeHerdrWorktreeInfo = (() => {
   return new FFIConverter();
 })();
 
+export type HostKeyChallenge = {
+  host: string;
+  port: number;
+  keyType: string;
+  fingerprint: string;
+  publicKey: string;
+};
+
+/**
+ * Generated factory for {@link HostKeyChallenge} record objects.
+ */
+export const HostKeyChallenge = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostKeyChallenge, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostKeyChallenge>,
+  });
+})();
+
+const FfiConverterTypeHostKeyChallenge = (() => {
+  type TypeName = HostKeyChallenge;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        host: FfiConverterString.read(from),
+        port: FfiConverterUInt16.read(from),
+        keyType: FfiConverterString.read(from),
+        fingerprint: FfiConverterString.read(from),
+        publicKey: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.host, into);
+      FfiConverterUInt16.write(value.port, into);
+      FfiConverterString.write(value.keyType, into);
+      FfiConverterString.write(value.fingerprint, into);
+      FfiConverterString.write(value.publicKey, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.host) +
+        FfiConverterUInt16.allocationSize(value.port) +
+        FfiConverterString.allocationSize(value.keyType) +
+        FfiConverterString.allocationSize(value.fingerprint) +
+        FfiConverterString.allocationSize(value.publicKey)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Enum: HostSshCredential
 export enum HostSshCredential_Tags {
   Password = 'Password',
@@ -4577,6 +4840,7 @@ export type HostRuntimeConfig = {
   ssh: HostSshConfig;
   jumpHosts: Array<HostSshConfig>;
   sessionName: string;
+  herdrCommand: string;
   socketPath?: string;
   cachedSocketPath?: string;
 };
@@ -4607,6 +4871,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
         ssh: FfiConverterTypeHostSshConfig.read(from),
         jumpHosts: FfiConverterSequenceTypeHostSshConfig.read(from),
         sessionName: FfiConverterString.read(from),
+        herdrCommand: FfiConverterString.read(from),
         socketPath: FfiConverterOptionalString.read(from),
         cachedSocketPath: FfiConverterOptionalString.read(from),
       };
@@ -4616,6 +4881,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
       FfiConverterTypeHostSshConfig.write(value.ssh, into);
       FfiConverterSequenceTypeHostSshConfig.write(value.jumpHosts, into);
       FfiConverterString.write(value.sessionName, into);
+      FfiConverterString.write(value.herdrCommand, into);
       FfiConverterOptionalString.write(value.socketPath, into);
       FfiConverterOptionalString.write(value.cachedSocketPath, into);
     }
@@ -4625,6 +4891,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
         FfiConverterTypeHostSshConfig.allocationSize(value.ssh) +
         FfiConverterSequenceTypeHostSshConfig.allocationSize(value.jumpHosts) +
         FfiConverterString.allocationSize(value.sessionName) +
+        FfiConverterString.allocationSize(value.herdrCommand) +
         FfiConverterOptionalString.allocationSize(value.socketPath) +
         FfiConverterOptionalString.allocationSize(value.cachedSocketPath)
       );
@@ -5393,6 +5660,108 @@ const FfiConverterTypeTransferResult = (() => {
         FfiConverterOptionalString.allocationSize(value.localPath) +
         FfiConverterOptionalString.allocationSize(value.remotePath)
       );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TrustedHostKey = {
+  host: string;
+  port: number;
+  keyType: string;
+  publicKey: string;
+};
+
+/**
+ * Generated factory for {@link TrustedHostKey} record objects.
+ */
+export const TrustedHostKey = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<TrustedHostKey, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<TrustedHostKey>,
+  });
+})();
+
+const FfiConverterTypeTrustedHostKey = (() => {
+  type TypeName = TrustedHostKey;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        host: FfiConverterString.read(from),
+        port: FfiConverterUInt16.read(from),
+        keyType: FfiConverterString.read(from),
+        publicKey: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.host, into);
+      FfiConverterUInt16.write(value.port, into);
+      FfiConverterString.write(value.keyType, into);
+      FfiConverterString.write(value.publicKey, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.host) +
+        FfiConverterUInt16.allocationSize(value.port) +
+        FfiConverterString.allocationSize(value.keyType) +
+        FfiConverterString.allocationSize(value.publicKey)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentIntegrationStatus {
+  NotInstalled,
+  Current,
+  Outdated,
+  NeedsRepair,
+  Unknown,
+}
+
+const FfiConverterTypeAgentIntegrationStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentIntegrationStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentIntegrationStatus.NotInstalled;
+        case 2:
+          return AgentIntegrationStatus.Current;
+        case 3:
+          return AgentIntegrationStatus.Outdated;
+        case 4:
+          return AgentIntegrationStatus.NeedsRepair;
+        case 5:
+          return AgentIntegrationStatus.Unknown;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentIntegrationStatus.NotInstalled:
+          return ordinalConverter.write(1, into);
+        case AgentIntegrationStatus.Current:
+          return ordinalConverter.write(2, into);
+        case AgentIntegrationStatus.Outdated:
+          return ordinalConverter.write(3, into);
+        case AgentIntegrationStatus.NeedsRepair:
+          return ordinalConverter.write(4, into);
+        case AgentIntegrationStatus.Unknown:
+          return ordinalConverter.write(5, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
     }
   }
   return new FFIConverter();
@@ -6862,6 +7231,7 @@ export enum HerdrControlRequest_Tags {
   AgentStart = 'AgentStart',
   AgentFocus = 'AgentFocus',
   AgentPrompt = 'AgentPrompt',
+  IntegrationInstall = 'IntegrationInstall',
 }
 export const HerdrControlRequest = (() => {
   type Ping__interface = {
@@ -7388,7 +7758,7 @@ export const HerdrControlRequest = (() => {
     tag: HerdrControlRequest_Tags.AgentStart;
     inner: Readonly<{
       name: string;
-      kind: string;
+      kind: HerdrAgentKind;
       paneId: string;
       args: Array<string>;
     }>;
@@ -7402,13 +7772,13 @@ export const HerdrControlRequest = (() => {
     readonly tag = HerdrControlRequest_Tags.AgentStart;
     readonly inner: Readonly<{
       name: string;
-      kind: string;
+      kind: HerdrAgentKind;
       paneId: string;
       args: Array<string>;
     }>;
     constructor(inner: {
       name: string;
-      kind: string;
+      kind: HerdrAgentKind;
       paneId: string;
       args: Array<string>;
     }) {
@@ -7418,7 +7788,7 @@ export const HerdrControlRequest = (() => {
     }
     static new(inner: {
       name: string;
-      kind: string;
+      kind: HerdrAgentKind;
       paneId: string;
       args: Array<string>;
     }): AgentStart_ {
@@ -7482,6 +7852,35 @@ export const HerdrControlRequest = (() => {
     }
   }
 
+  type IntegrationInstall__interface = {
+    tag: HerdrControlRequest_Tags.IntegrationInstall;
+    inner: Readonly<{ kind: HerdrAgentKind }>;
+  };
+  class IntegrationInstall_
+    extends UniffiEnum
+    implements IntegrationInstall__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.IntegrationInstall;
+    readonly inner: Readonly<{ kind: HerdrAgentKind }>;
+    constructor(inner: { kind: HerdrAgentKind }) {
+      super('HerdrControlRequest', 'IntegrationInstall');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { kind: HerdrAgentKind }): IntegrationInstall_ {
+      return new IntegrationInstall_(inner);
+    }
+
+    static instanceOf(obj: any): obj is IntegrationInstall_ {
+      return obj.tag === HerdrControlRequest_Tags.IntegrationInstall;
+    }
+  }
+
   function instanceOf(obj: any): obj is HerdrControlRequest {
     return obj[uniffiTypeNameSymbol] === 'HerdrControlRequest';
   }
@@ -7510,6 +7909,7 @@ export const HerdrControlRequest = (() => {
     AgentStart: AgentStart_,
     AgentFocus: AgentFocus_,
     AgentPrompt: AgentPrompt_,
+    IntegrationInstall: IntegrationInstall_,
   });
 })();
 export type HerdrControlRequest = InstanceType<
@@ -7535,7 +7935,8 @@ export type HerdrControlRequest = InstanceType<
     | 'PaneSendKeys'
     | 'AgentStart'
     | 'AgentFocus'
-    | 'AgentPrompt']
+    | 'AgentPrompt'
+    | 'IntegrationInstall']
 >;
 
 // FfiConverter for enum HerdrControlRequest
@@ -7631,7 +8032,7 @@ const FfiConverterTypeHerdrControlRequest = (() => {
         case 20:
           return new HerdrControlRequest.AgentStart({
             name: FfiConverterString.read(from),
-            kind: FfiConverterString.read(from),
+            kind: FfiConverterTypeHerdrAgentKind.read(from),
             paneId: FfiConverterString.read(from),
             args: FfiConverterSequenceString.read(from),
           });
@@ -7643,6 +8044,10 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           return new HerdrControlRequest.AgentPrompt({
             target: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
+          });
+        case 23:
+          return new HerdrControlRequest.IntegrationInstall({
+            kind: FfiConverterTypeHerdrAgentKind.read(from),
           });
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -7775,7 +8180,7 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           ordinalConverter.write(20, into);
           const inner = value.inner;
           FfiConverterString.write(inner.name, into);
-          FfiConverterString.write(inner.kind, into);
+          FfiConverterTypeHerdrAgentKind.write(inner.kind, into);
           FfiConverterString.write(inner.paneId, into);
           FfiConverterSequenceString.write(inner.args, into);
           return;
@@ -7791,6 +8196,12 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           const inner = value.inner;
           FfiConverterString.write(inner.target, into);
           FfiConverterString.write(inner.text, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.IntegrationInstall: {
+          ordinalConverter.write(23, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrAgentKind.write(inner.kind, into);
           return;
         }
         default:
@@ -7925,7 +8336,7 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(20);
           size += FfiConverterString.allocationSize(inner.name);
-          size += FfiConverterString.allocationSize(inner.kind);
+          size += FfiConverterTypeHerdrAgentKind.allocationSize(inner.kind);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterSequenceString.allocationSize(inner.args);
           return size;
@@ -7941,6 +8352,12 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           let size = ordinalConverter.allocationSize(22);
           size += FfiConverterString.allocationSize(inner.target);
           size += FfiConverterString.allocationSize(inner.text);
+          return size;
+        }
+        case HerdrControlRequest_Tags.IntegrationInstall: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(23);
+          size += FfiConverterTypeHerdrAgentKind.allocationSize(inner.kind);
           return size;
         }
         default:
@@ -7964,6 +8381,7 @@ export enum HerdrControlResult_Tags {
   AgentStarted = 'AgentStarted',
   AgentInfo = 'AgentInfo',
   AgentPrompted = 'AgentPrompted',
+  IntegrationInstalled = 'IntegrationInstalled',
   PaneZoom = 'PaneZoom',
   Ok = 'Ok',
 }
@@ -8282,6 +8700,37 @@ export const HerdrControlResult = (() => {
     }
   }
 
+  type IntegrationInstalled__interface = {
+    tag: HerdrControlResult_Tags.IntegrationInstalled;
+    inner: Readonly<{ install: HerdrIntegrationInstallResult }>;
+  };
+  class IntegrationInstalled_
+    extends UniffiEnum
+    implements IntegrationInstalled__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlResult';
+    readonly tag = HerdrControlResult_Tags.IntegrationInstalled;
+    readonly inner: Readonly<{ install: HerdrIntegrationInstallResult }>;
+    constructor(inner: { install: HerdrIntegrationInstallResult }) {
+      super('HerdrControlResult', 'IntegrationInstalled');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      install: HerdrIntegrationInstallResult;
+    }): IntegrationInstalled_ {
+      return new IntegrationInstalled_(inner);
+    }
+
+    static instanceOf(obj: any): obj is IntegrationInstalled_ {
+      return obj.tag === HerdrControlResult_Tags.IntegrationInstalled;
+    }
+  }
+
   type PaneZoom__interface = {
     tag: HerdrControlResult_Tags.PaneZoom;
     inner: Readonly<{ zoom: HerdrPaneZoomResult }>;
@@ -8348,6 +8797,7 @@ export const HerdrControlResult = (() => {
     AgentStarted: AgentStarted_,
     AgentInfo: AgentInfo_,
     AgentPrompted: AgentPrompted_,
+    IntegrationInstalled: IntegrationInstalled_,
     PaneZoom: PaneZoom_,
     Ok: Ok_,
   });
@@ -8365,6 +8815,7 @@ export type HerdrControlResult = InstanceType<
     | 'AgentStarted'
     | 'AgentInfo'
     | 'AgentPrompted'
+    | 'IntegrationInstalled'
     | 'PaneZoom'
     | 'Ok']
 >;
@@ -8426,10 +8877,14 @@ const FfiConverterTypeHerdrControlResult = (() => {
             agent: FfiConverterTypeHerdrAgentInfo.read(from),
           });
         case 12:
+          return new HerdrControlResult.IntegrationInstalled({
+            install: FfiConverterTypeHerdrIntegrationInstallResult.read(from),
+          });
+        case 13:
           return new HerdrControlResult.PaneZoom({
             zoom: FfiConverterTypeHerdrPaneZoomResult.read(from),
           });
-        case 13:
+        case 14:
           return new HerdrControlResult.Ok();
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -8508,14 +8963,23 @@ const FfiConverterTypeHerdrControlResult = (() => {
           FfiConverterTypeHerdrAgentInfo.write(inner.agent, into);
           return;
         }
-        case HerdrControlResult_Tags.PaneZoom: {
+        case HerdrControlResult_Tags.IntegrationInstalled: {
           ordinalConverter.write(12, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrIntegrationInstallResult.write(
+            inner.install,
+            into,
+          );
+          return;
+        }
+        case HerdrControlResult_Tags.PaneZoom: {
+          ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterTypeHerdrPaneZoomResult.write(inner.zoom, into);
           return;
         }
         case HerdrControlResult_Tags.Ok: {
-          ordinalConverter.write(13, into);
+          ordinalConverter.write(14, into);
           return;
         }
         default:
@@ -8604,16 +9068,24 @@ const FfiConverterTypeHerdrControlResult = (() => {
           size += FfiConverterTypeHerdrAgentInfo.allocationSize(inner.agent);
           return size;
         }
-        case HerdrControlResult_Tags.PaneZoom: {
+        case HerdrControlResult_Tags.IntegrationInstalled: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(12);
+          size += FfiConverterTypeHerdrIntegrationInstallResult.allocationSize(
+            inner.install,
+          );
+          return size;
+        }
+        case HerdrControlResult_Tags.PaneZoom: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(13);
           size += FfiConverterTypeHerdrPaneZoomResult.allocationSize(
             inner.zoom,
           );
           return size;
         }
         case HerdrControlResult_Tags.Ok: {
-          return ordinalConverter.allocationSize(13);
+          return ordinalConverter.allocationSize(14);
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -10597,6 +11069,380 @@ const FfiConverterTypeHerdrEventError = (() => {
   return new FFIConverter();
 })();
 
+// Enum: HerdrTabLaunch
+export enum HerdrTabLaunch_Tags {
+  Shell = 'Shell',
+  Agent = 'Agent',
+  Command = 'Command',
+}
+export const HerdrTabLaunch = (() => {
+  type Shell__interface = {
+    tag: HerdrTabLaunch_Tags.Shell;
+  };
+  class Shell_ extends UniffiEnum implements Shell__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrTabLaunch';
+    readonly tag = HerdrTabLaunch_Tags.Shell;
+    constructor() {
+      super('HerdrTabLaunch', 'Shell');
+    }
+
+    static new(): Shell_ {
+      return new Shell_();
+    }
+
+    static instanceOf(obj: any): obj is Shell_ {
+      return obj.tag === HerdrTabLaunch_Tags.Shell;
+    }
+  }
+
+  type Agent__interface = {
+    tag: HerdrTabLaunch_Tags.Agent;
+    inner: Readonly<{ kind: HerdrAgentKind; args: Array<string> }>;
+  };
+  class Agent_ extends UniffiEnum implements Agent__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrTabLaunch';
+    readonly tag = HerdrTabLaunch_Tags.Agent;
+    readonly inner: Readonly<{ kind: HerdrAgentKind; args: Array<string> }>;
+    constructor(inner: { kind: HerdrAgentKind; args: Array<string> }) {
+      super('HerdrTabLaunch', 'Agent');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { kind: HerdrAgentKind; args: Array<string> }): Agent_ {
+      return new Agent_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Agent_ {
+      return obj.tag === HerdrTabLaunch_Tags.Agent;
+    }
+  }
+
+  type Command__interface = {
+    tag: HerdrTabLaunch_Tags.Command;
+    inner: Readonly<{ command: string }>;
+  };
+  class Command_ extends UniffiEnum implements Command__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrTabLaunch';
+    readonly tag = HerdrTabLaunch_Tags.Command;
+    readonly inner: Readonly<{ command: string }>;
+    constructor(inner: { command: string }) {
+      super('HerdrTabLaunch', 'Command');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { command: string }): Command_ {
+      return new Command_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Command_ {
+      return obj.tag === HerdrTabLaunch_Tags.Command;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HerdrTabLaunch {
+    return obj[uniffiTypeNameSymbol] === 'HerdrTabLaunch';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Shell: Shell_,
+    Agent: Agent_,
+    Command: Command_,
+  });
+})();
+export type HerdrTabLaunch = InstanceType<
+  (typeof HerdrTabLaunch)['Shell' | 'Agent' | 'Command']
+>;
+
+// FfiConverter for enum HerdrTabLaunch
+const FfiConverterTypeHerdrTabLaunch = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrTabLaunch;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HerdrTabLaunch.Shell();
+        case 2:
+          return new HerdrTabLaunch.Agent({
+            kind: FfiConverterTypeHerdrAgentKind.read(from),
+            args: FfiConverterSequenceString.read(from),
+          });
+        case 3:
+          return new HerdrTabLaunch.Command({
+            command: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HerdrTabLaunch_Tags.Shell: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case HerdrTabLaunch_Tags.Agent: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrAgentKind.write(inner.kind, into);
+          FfiConverterSequenceString.write(inner.args, into);
+          return;
+        }
+        case HerdrTabLaunch_Tags.Command: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.command, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HerdrTabLaunch_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HerdrTabLaunch_Tags.Shell: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case HerdrTabLaunch_Tags.Agent: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypeHerdrAgentKind.allocationSize(inner.kind);
+          size += FfiConverterSequenceString.allocationSize(inner.args);
+          return size;
+        }
+        case HerdrTabLaunch_Tags.Command: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.command);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HerdrTabLaunchStage {
+  AgentStart,
+  CommandInput,
+}
+
+const FfiConverterTypeHerdrTabLaunchStage = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrTabLaunchStage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HerdrTabLaunchStage.AgentStart;
+        case 2:
+          return HerdrTabLaunchStage.CommandInput;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HerdrTabLaunchStage.AgentStart:
+          return ordinalConverter.write(1, into);
+        case HerdrTabLaunchStage.CommandInput:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: HerdrTabLaunchResult
+export enum HerdrTabLaunchResult_Tags {
+  Created = 'Created',
+  LaunchFailed = 'LaunchFailed',
+}
+export const HerdrTabLaunchResult = (() => {
+  type Created__interface = {
+    tag: HerdrTabLaunchResult_Tags.Created;
+    inner: Readonly<{ tab: HerdrTabInfo; rootPane: HerdrPaneInfo }>;
+  };
+  class Created_ extends UniffiEnum implements Created__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrTabLaunchResult';
+    readonly tag = HerdrTabLaunchResult_Tags.Created;
+    readonly inner: Readonly<{ tab: HerdrTabInfo; rootPane: HerdrPaneInfo }>;
+    constructor(inner: { tab: HerdrTabInfo; rootPane: HerdrPaneInfo }) {
+      super('HerdrTabLaunchResult', 'Created');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      tab: HerdrTabInfo;
+      rootPane: HerdrPaneInfo;
+    }): Created_ {
+      return new Created_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Created_ {
+      return obj.tag === HerdrTabLaunchResult_Tags.Created;
+    }
+  }
+
+  type LaunchFailed__interface = {
+    tag: HerdrTabLaunchResult_Tags.LaunchFailed;
+    inner: Readonly<{
+      tab: HerdrTabInfo;
+      rootPane: HerdrPaneInfo;
+      stage: HerdrTabLaunchStage;
+      failure: HerdrControlFailure;
+    }>;
+  };
+  class LaunchFailed_ extends UniffiEnum implements LaunchFailed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrTabLaunchResult';
+    readonly tag = HerdrTabLaunchResult_Tags.LaunchFailed;
+    readonly inner: Readonly<{
+      tab: HerdrTabInfo;
+      rootPane: HerdrPaneInfo;
+      stage: HerdrTabLaunchStage;
+      failure: HerdrControlFailure;
+    }>;
+    constructor(inner: {
+      tab: HerdrTabInfo;
+      rootPane: HerdrPaneInfo;
+      stage: HerdrTabLaunchStage;
+      failure: HerdrControlFailure;
+    }) {
+      super('HerdrTabLaunchResult', 'LaunchFailed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      tab: HerdrTabInfo;
+      rootPane: HerdrPaneInfo;
+      stage: HerdrTabLaunchStage;
+      failure: HerdrControlFailure;
+    }): LaunchFailed_ {
+      return new LaunchFailed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is LaunchFailed_ {
+      return obj.tag === HerdrTabLaunchResult_Tags.LaunchFailed;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HerdrTabLaunchResult {
+    return obj[uniffiTypeNameSymbol] === 'HerdrTabLaunchResult';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Created: Created_,
+    LaunchFailed: LaunchFailed_,
+  });
+})();
+export type HerdrTabLaunchResult = InstanceType<
+  (typeof HerdrTabLaunchResult)['Created' | 'LaunchFailed']
+>;
+
+// FfiConverter for enum HerdrTabLaunchResult
+const FfiConverterTypeHerdrTabLaunchResult = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrTabLaunchResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HerdrTabLaunchResult.Created({
+            tab: FfiConverterTypeHerdrTabInfo.read(from),
+            rootPane: FfiConverterTypeHerdrPaneInfo.read(from),
+          });
+        case 2:
+          return new HerdrTabLaunchResult.LaunchFailed({
+            tab: FfiConverterTypeHerdrTabInfo.read(from),
+            rootPane: FfiConverterTypeHerdrPaneInfo.read(from),
+            stage: FfiConverterTypeHerdrTabLaunchStage.read(from),
+            failure: FfiConverterTypeHerdrControlFailure.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HerdrTabLaunchResult_Tags.Created: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrTabInfo.write(inner.tab, into);
+          FfiConverterTypeHerdrPaneInfo.write(inner.rootPane, into);
+          return;
+        }
+        case HerdrTabLaunchResult_Tags.LaunchFailed: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypeHerdrTabInfo.write(inner.tab, into);
+          FfiConverterTypeHerdrPaneInfo.write(inner.rootPane, into);
+          FfiConverterTypeHerdrTabLaunchStage.write(inner.stage, into);
+          FfiConverterTypeHerdrControlFailure.write(inner.failure, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HerdrTabLaunchResult_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HerdrTabLaunchResult_Tags.Created: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterTypeHerdrTabInfo.allocationSize(inner.tab);
+          size += FfiConverterTypeHerdrPaneInfo.allocationSize(inner.rootPane);
+          return size;
+        }
+        case HerdrTabLaunchResult_Tags.LaunchFailed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypeHerdrTabInfo.allocationSize(inner.tab);
+          size += FfiConverterTypeHerdrPaneInfo.allocationSize(inner.rootPane);
+          size += FfiConverterTypeHerdrTabLaunchStage.allocationSize(
+            inner.stage,
+          );
+          size += FfiConverterTypeHerdrControlFailure.allocationSize(
+            inner.failure,
+          );
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 /**
  * The terminal-attach variant moved from bincode discriminant 1 to 2 when
  * protocol 20 inserted `AppDirectGraphics` into Herdr's `ClientLaunchMode`.
@@ -11184,7 +12030,8 @@ const FfiConverterTypeHerdrTerminalControlEvent = (() => {
 // Error type: HostRuntimeError
 export enum HostRuntimeError_Tags {
   AuthenticationFailure = 'AuthenticationFailure',
-  HostKeyFailure = 'HostKeyFailure',
+  HostKeyUnknown = 'HostKeyUnknown',
+  HostKeyChanged = 'HostKeyChanged',
   SshTransportFailure = 'SshTransportFailure',
   HerdrUnavailable = 'HerdrUnavailable',
   ControlConnectionFailure = 'ControlConnectionFailure',
@@ -11236,38 +12083,74 @@ export const HostRuntimeError = (() => {
     }
   }
 
-  type HostKeyFailure__interface = {
-    tag: HostRuntimeError_Tags.HostKeyFailure;
-    inner: Readonly<[string]>;
+  type HostKeyUnknown__interface = {
+    tag: HostRuntimeError_Tags.HostKeyUnknown;
+    inner: Readonly<[HostKeyChallenge]>;
   };
-  class HostKeyFailure_
+  class HostKeyUnknown_
     extends UniffiError
-    implements HostKeyFailure__interface
+    implements HostKeyUnknown__interface
   {
     /**
      * @private
      * This field is private and should not be used, use `tag` instead.
      */
     readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
-    readonly tag = HostRuntimeError_Tags.HostKeyFailure;
-    readonly inner: Readonly<[string]>;
-    constructor(v0: string) {
-      super('HostRuntimeError', 'HostKeyFailure');
+    readonly tag = HostRuntimeError_Tags.HostKeyUnknown;
+    readonly inner: Readonly<[HostKeyChallenge]>;
+    constructor(v0: HostKeyChallenge) {
+      super('HostRuntimeError', 'HostKeyUnknown');
 
       this.inner = Object.freeze([v0]);
     }
-    static new(v0: string): HostKeyFailure_ {
-      return new HostKeyFailure_(v0);
+    static new(v0: HostKeyChallenge): HostKeyUnknown_ {
+      return new HostKeyUnknown_(v0);
     }
 
-    static instanceOf(obj: any): obj is HostKeyFailure_ {
-      return obj.tag === HostRuntimeError_Tags.HostKeyFailure;
+    static instanceOf(obj: any): obj is HostKeyUnknown_ {
+      return obj.tag === HostRuntimeError_Tags.HostKeyUnknown;
     }
-    static hasInner(obj: any): obj is HostKeyFailure_ {
-      return HostKeyFailure_.instanceOf(obj);
+    static hasInner(obj: any): obj is HostKeyUnknown_ {
+      return HostKeyUnknown_.instanceOf(obj);
     }
 
-    static getInner(obj: HostKeyFailure_): Readonly<[string]> {
+    static getInner(obj: HostKeyUnknown_): Readonly<[HostKeyChallenge]> {
+      return obj.inner;
+    }
+  }
+
+  type HostKeyChanged__interface = {
+    tag: HostRuntimeError_Tags.HostKeyChanged;
+    inner: Readonly<[HostKeyChallenge]>;
+  };
+  class HostKeyChanged_
+    extends UniffiError
+    implements HostKeyChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.HostKeyChanged;
+    readonly inner: Readonly<[HostKeyChallenge]>;
+    constructor(v0: HostKeyChallenge) {
+      super('HostRuntimeError', 'HostKeyChanged');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: HostKeyChallenge): HostKeyChanged_ {
+      return new HostKeyChanged_(v0);
+    }
+
+    static instanceOf(obj: any): obj is HostKeyChanged_ {
+      return obj.tag === HostRuntimeError_Tags.HostKeyChanged;
+    }
+    static hasInner(obj: any): obj is HostKeyChanged_ {
+      return HostKeyChanged_.instanceOf(obj);
+    }
+
+    static getInner(obj: HostKeyChanged_): Readonly<[HostKeyChallenge]> {
       return obj.inner;
     }
   }
@@ -11744,7 +12627,8 @@ export const HostRuntimeError = (() => {
   return Object.freeze({
     instanceOf,
     AuthenticationFailure: AuthenticationFailure_,
-    HostKeyFailure: HostKeyFailure_,
+    HostKeyUnknown: HostKeyUnknown_,
+    HostKeyChanged: HostKeyChanged_,
     SshTransportFailure: SshTransportFailure_,
     HerdrUnavailable: HerdrUnavailable_,
     ControlConnectionFailure: ControlConnectionFailure_,
@@ -11763,7 +12647,8 @@ export const HostRuntimeError = (() => {
 export type HostRuntimeError = InstanceType<
   (typeof HostRuntimeError)[
     | 'AuthenticationFailure'
-    | 'HostKeyFailure'
+    | 'HostKeyUnknown'
+    | 'HostKeyChanged'
     | 'SshTransportFailure'
     | 'HerdrUnavailable'
     | 'ControlConnectionFailure'
@@ -11791,56 +12676,60 @@ const FfiConverterTypeHostRuntimeError = (() => {
             FfiConverterString.read(from),
           );
         case 2:
-          return new HostRuntimeError.HostKeyFailure(
-            FfiConverterString.read(from),
+          return new HostRuntimeError.HostKeyUnknown(
+            FfiConverterTypeHostKeyChallenge.read(from),
           );
         case 3:
+          return new HostRuntimeError.HostKeyChanged(
+            FfiConverterTypeHostKeyChallenge.read(from),
+          );
+        case 4:
           return new HostRuntimeError.SshTransportFailure(
             FfiConverterString.read(from),
           );
-        case 4:
+        case 5:
           return new HostRuntimeError.HerdrUnavailable(
             FfiConverterString.read(from),
           );
-        case 5:
+        case 6:
           return new HostRuntimeError.ControlConnectionFailure(
             FfiConverterString.read(from),
           );
-        case 6:
+        case 7:
           return new HostRuntimeError.ReconnectExhausted(
             FfiConverterString.read(from),
           );
-        case 7:
+        case 8:
           return new HostRuntimeError.RuntimeDisconnected(
             FfiConverterString.read(from),
           );
-        case 8:
+        case 9:
           return new HostRuntimeError.TerminalUnavailable(
             FfiConverterString.read(from),
           );
-        case 9:
+        case 10:
           return new HostRuntimeError.StaleOperation(
             FfiConverterString.read(from),
           );
-        case 10:
+        case 11:
           return new HostRuntimeError.InvalidConfiguration(
             FfiConverterString.read(from),
           );
-        case 11:
+        case 12:
           return new HostRuntimeError.RemoteFileFailure(
             FfiConverterString.read(from),
           );
-        case 12:
+        case 13:
           return new HostRuntimeError.TransferFailure(
             FfiConverterString.read(from),
           );
-        case 13:
+        case 14:
           return new HostRuntimeError.TransferCancelled(
             FfiConverterString.read(from),
           );
-        case 14:
-          return new HostRuntimeError.GitFailure(FfiConverterString.read(from));
         case 15:
+          return new HostRuntimeError.GitFailure(FfiConverterString.read(from));
+        case 16:
           return new HostRuntimeError.PreviewFailure(
             FfiConverterString.read(from),
           );
@@ -11856,86 +12745,92 @@ const FfiConverterTypeHostRuntimeError = (() => {
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.HostKeyFailure: {
+        case HostRuntimeError_Tags.HostKeyUnknown: {
           ordinalConverter.write(2, into);
           const inner = value.inner;
-          FfiConverterString.write(inner[0], into);
+          FfiConverterTypeHostKeyChallenge.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.HostKeyChanged: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterTypeHostKeyChallenge.write(inner[0], into);
           return;
         }
         case HostRuntimeError_Tags.SshTransportFailure: {
-          ordinalConverter.write(3, into);
-          const inner = value.inner;
-          FfiConverterString.write(inner[0], into);
-          return;
-        }
-        case HostRuntimeError_Tags.HerdrUnavailable: {
           ordinalConverter.write(4, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.ControlConnectionFailure: {
+        case HostRuntimeError_Tags.HerdrUnavailable: {
           ordinalConverter.write(5, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.ReconnectExhausted: {
+        case HostRuntimeError_Tags.ControlConnectionFailure: {
           ordinalConverter.write(6, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.RuntimeDisconnected: {
+        case HostRuntimeError_Tags.ReconnectExhausted: {
           ordinalConverter.write(7, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.TerminalUnavailable: {
+        case HostRuntimeError_Tags.RuntimeDisconnected: {
           ordinalConverter.write(8, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.StaleOperation: {
+        case HostRuntimeError_Tags.TerminalUnavailable: {
           ordinalConverter.write(9, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.InvalidConfiguration: {
+        case HostRuntimeError_Tags.StaleOperation: {
           ordinalConverter.write(10, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.RemoteFileFailure: {
+        case HostRuntimeError_Tags.InvalidConfiguration: {
           ordinalConverter.write(11, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.TransferFailure: {
+        case HostRuntimeError_Tags.RemoteFileFailure: {
           ordinalConverter.write(12, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.TransferCancelled: {
+        case HostRuntimeError_Tags.TransferFailure: {
           ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.GitFailure: {
+        case HostRuntimeError_Tags.TransferCancelled: {
           ordinalConverter.write(14, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.PreviewFailure: {
+        case HostRuntimeError_Tags.GitFailure: {
           ordinalConverter.write(15, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.PreviewFailure: {
+          ordinalConverter.write(16, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
@@ -11953,87 +12848,93 @@ const FfiConverterTypeHostRuntimeError = (() => {
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.HostKeyFailure: {
+        case HostRuntimeError_Tags.HostKeyUnknown: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(2);
-          size += FfiConverterString.allocationSize(inner[0]);
+          size += FfiConverterTypeHostKeyChallenge.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.HostKeyChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterTypeHostKeyChallenge.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.SshTransportFailure: {
-          const inner = value.inner;
-          let size = ordinalConverter.allocationSize(3);
-          size += FfiConverterString.allocationSize(inner[0]);
-          return size;
-        }
-        case HostRuntimeError_Tags.HerdrUnavailable: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(4);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.ControlConnectionFailure: {
+        case HostRuntimeError_Tags.HerdrUnavailable: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(5);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.ReconnectExhausted: {
+        case HostRuntimeError_Tags.ControlConnectionFailure: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(6);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.RuntimeDisconnected: {
+        case HostRuntimeError_Tags.ReconnectExhausted: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(7);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.TerminalUnavailable: {
+        case HostRuntimeError_Tags.RuntimeDisconnected: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(8);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.StaleOperation: {
+        case HostRuntimeError_Tags.TerminalUnavailable: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(9);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.InvalidConfiguration: {
+        case HostRuntimeError_Tags.StaleOperation: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(10);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.RemoteFileFailure: {
+        case HostRuntimeError_Tags.InvalidConfiguration: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(11);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.TransferFailure: {
+        case HostRuntimeError_Tags.RemoteFileFailure: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(12);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.TransferCancelled: {
+        case HostRuntimeError_Tags.TransferFailure: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(13);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.GitFailure: {
+        case HostRuntimeError_Tags.TransferCancelled: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(14);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.PreviewFailure: {
+        case HostRuntimeError_Tags.GitFailure: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(15);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostRuntimeError_Tags.PreviewFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(16);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
@@ -12923,6 +13824,250 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
   return new FFIConverter();
 })();
 
+// Error type: KnownHostStoreError
+export enum KnownHostStoreError_Tags {
+  EmptyHost = 'EmptyHost',
+  InvalidPort = 'InvalidPort',
+  MalformedKey = 'MalformedKey',
+  KeyTypeMismatch = 'KeyTypeMismatch',
+}
+export const KnownHostStoreError = (() => {
+  type EmptyHost__interface = {
+    tag: KnownHostStoreError_Tags.EmptyHost;
+  };
+  class EmptyHost_ extends UniffiError implements EmptyHost__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.EmptyHost;
+    constructor() {
+      super('KnownHostStoreError', 'EmptyHost');
+    }
+
+    static new(): EmptyHost_ {
+      return new EmptyHost_();
+    }
+
+    static instanceOf(obj: any): obj is EmptyHost_ {
+      return obj.tag === KnownHostStoreError_Tags.EmptyHost;
+    }
+    static hasInner(obj: any): obj is EmptyHost_ {
+      return false;
+    }
+  }
+
+  type InvalidPort__interface = {
+    tag: KnownHostStoreError_Tags.InvalidPort;
+    inner: Readonly<[number]>;
+  };
+  class InvalidPort_ extends UniffiError implements InvalidPort__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.InvalidPort;
+    readonly inner: Readonly<[number]>;
+    constructor(v0: number) {
+      super('KnownHostStoreError', 'InvalidPort');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: number): InvalidPort_ {
+      return new InvalidPort_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidPort_ {
+      return obj.tag === KnownHostStoreError_Tags.InvalidPort;
+    }
+    static hasInner(obj: any): obj is InvalidPort_ {
+      return InvalidPort_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidPort_): Readonly<[number]> {
+      return obj.inner;
+    }
+  }
+
+  type MalformedKey__interface = {
+    tag: KnownHostStoreError_Tags.MalformedKey;
+    inner: Readonly<[string]>;
+  };
+  class MalformedKey_ extends UniffiError implements MalformedKey__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.MalformedKey;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('KnownHostStoreError', 'MalformedKey');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): MalformedKey_ {
+      return new MalformedKey_(v0);
+    }
+
+    static instanceOf(obj: any): obj is MalformedKey_ {
+      return obj.tag === KnownHostStoreError_Tags.MalformedKey;
+    }
+    static hasInner(obj: any): obj is MalformedKey_ {
+      return MalformedKey_.instanceOf(obj);
+    }
+
+    static getInner(obj: MalformedKey_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type KeyTypeMismatch__interface = {
+    tag: KnownHostStoreError_Tags.KeyTypeMismatch;
+    inner: Readonly<[string, string]>;
+  };
+  class KeyTypeMismatch_
+    extends UniffiError
+    implements KeyTypeMismatch__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.KeyTypeMismatch;
+    readonly inner: Readonly<[string, string]>;
+    constructor(v0: string, v1: string) {
+      super('KnownHostStoreError', 'KeyTypeMismatch');
+
+      this.inner = Object.freeze([v0, v1]);
+    }
+    static new(v0: string, v1: string): KeyTypeMismatch_ {
+      return new KeyTypeMismatch_(v0, v1);
+    }
+
+    static instanceOf(obj: any): obj is KeyTypeMismatch_ {
+      return obj.tag === KnownHostStoreError_Tags.KeyTypeMismatch;
+    }
+    static hasInner(obj: any): obj is KeyTypeMismatch_ {
+      return KeyTypeMismatch_.instanceOf(obj);
+    }
+
+    static getInner(obj: KeyTypeMismatch_): Readonly<[string, string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is KnownHostStoreError {
+    return obj[uniffiTypeNameSymbol] === 'KnownHostStoreError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    EmptyHost: EmptyHost_,
+    InvalidPort: InvalidPort_,
+    MalformedKey: MalformedKey_,
+    KeyTypeMismatch: KeyTypeMismatch_,
+  });
+})();
+export type KnownHostStoreError = InstanceType<
+  (typeof KnownHostStoreError)[
+    | 'EmptyHost'
+    | 'InvalidPort'
+    | 'MalformedKey'
+    | 'KeyTypeMismatch']
+>;
+
+// FfiConverter for enum KnownHostStoreError
+const FfiConverterTypeKnownHostStoreError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = KnownHostStoreError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new KnownHostStoreError.EmptyHost();
+        case 2:
+          return new KnownHostStoreError.InvalidPort(
+            FfiConverterUInt16.read(from),
+          );
+        case 3:
+          return new KnownHostStoreError.MalformedKey(
+            FfiConverterString.read(from),
+          );
+        case 4:
+          return new KnownHostStoreError.KeyTypeMismatch(
+            FfiConverterString.read(from),
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case KnownHostStoreError_Tags.EmptyHost: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case KnownHostStoreError_Tags.InvalidPort: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterUInt16.write(inner[0], into);
+          return;
+        }
+        case KnownHostStoreError_Tags.MalformedKey: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case KnownHostStoreError_Tags.KeyTypeMismatch: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          FfiConverterString.write(inner[1], into);
+          return;
+        }
+        default:
+          // Throwing from here means that KnownHostStoreError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case KnownHostStoreError_Tags.EmptyHost: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case KnownHostStoreError_Tags.InvalidPort: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterUInt16.allocationSize(inner[0]);
+          return size;
+        }
+        case KnownHostStoreError_Tags.MalformedKey: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case KnownHostStoreError_Tags.KeyTypeMismatch: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner[0]);
+          size += FfiConverterString.allocationSize(inner[1]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 export interface AgentTranscriptEventSink {
   event(event: AgentTranscriptEvent): void;
 }
@@ -13614,6 +14759,10 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
 };
 
 export interface HostRuntimeLike {
+  agentIntegrationStatus(
+    kind: HerdrAgentKind,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<AgentIntegrationStatus>;
   agentTranscript(key: string): /*throws*/ AgentTranscriptState;
   awaitTransfer(
     transferId: string,
@@ -13640,6 +14789,12 @@ export interface HostRuntimeLike {
     path: string,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<void>;
+  createTabWithLaunch(
+    workspaceId: string,
+    label: string,
+    launch: HerdrTabLaunch,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<HerdrTabLaunchResult>;
   disconnect(asyncOpts_?: { signal: AbortSignal }): /*throws*/ Promise<void>;
   discoverGitRepository(
     path: string,
@@ -13661,6 +14816,10 @@ export interface HostRuntimeLike {
   hasSshShell(terminalId: string): boolean;
   hasTerminal(terminalId: string): boolean;
   hostState(): HostStateSnapshot;
+  installAgentIntegration(
+    kind: HerdrAgentKind,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<HerdrIntegrationInstallResult>;
   isTerminalOpening(terminalId: string): boolean;
   listDirectory(
     path: string | undefined,
@@ -13795,6 +14954,53 @@ export class HostRuntime
     this[pointerLiteralSymbol] = pointer;
     this[destructorGuardSymbol] =
       uniffiTypeHostRuntimeObjectFactory.bless(pointer);
+  }
+
+  async agentIntegrationStatus(
+    kind: HerdrAgentKind,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<AgentIntegrationStatus> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_integration_status(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeHerdrAgentKind.lower(
+              kind,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeAgentIntegrationStatus.lift.bind(
+          FfiConverterTypeAgentIntegrationStatus,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
   }
 
   agentTranscript(key: string): AgentTranscriptState /*throws*/ {
@@ -14133,6 +15339,60 @@ export class HostRuntime
     }
   }
 
+  async createTabWithLaunch(
+    workspaceId: string,
+    label: string,
+    launch: HerdrTabLaunch,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<HerdrTabLaunchResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_launch(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              workspaceId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(label, nativeModule().rustbuffer_alloc),
+            FfiConverterTypeHerdrTabLaunch.lower(
+              launch,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeHerdrTabLaunchResult.lift.bind(
+          FfiConverterTypeHerdrTabLaunchResult,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   async disconnect(asyncOpts_?: {
     signal: AbortSignal;
   }): Promise<void> /*throws*/ {
@@ -14402,6 +15662,53 @@ export class HostRuntime
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
     );
+  }
+
+  async installAgentIntegration(
+    kind: HerdrAgentKind,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<HerdrIntegrationInstallResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_install_agent_integration(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeHerdrAgentKind.lower(
+              kind,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeHerdrIntegrationInstallResult.lift.bind(
+          FfiConverterTypeHerdrIntegrationInstallResult,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
   }
 
   isTerminalOpening(terminalId: string): boolean {
@@ -16215,6 +17522,11 @@ const FfiConverterOptionalTypeTransferProgress = new FfiConverterOptional(
   FfiConverterTypeTransferProgress,
 );
 
+// FfiConverter for Array<TrustedHostKey>
+const FfiConverterSequenceTypeTrustedHostKey = new FfiConverterArray(
+  FfiConverterTypeTrustedHostKey,
+);
+
 /**
  * This should be called before anything else.
  *
@@ -16413,6 +17725,14 @@ function uniffiEnsureInitialized() {
       'uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink',
     );
   }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_trusted_host_keys() !==
+    44993
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_trusted_host_keys',
+    );
+  }
   if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_shutdown() !== 45428) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_shutdown',
@@ -16512,6 +17832,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status() !==
+    55412
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status',
     );
   }
   if (
@@ -16619,6 +17947,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_launch() !==
+    39886
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_launch',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_disconnect() !==
     57121
   ) {
@@ -16680,6 +18016,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_host_state',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_install_agent_integration() !==
+    47392
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_install_agent_integration',
     );
   }
   if (
@@ -16991,6 +18335,7 @@ export default Object.freeze({
   converters: {
     FfiConverterTypeAgentField,
     FfiConverterTypeAgentFileDiff,
+    FfiConverterTypeAgentIntegrationStatus,
     FfiConverterTypeAgentMessageRole,
     FfiConverterTypeAgentNoticeLevel,
     FfiConverterTypeAgentScalarValue,
@@ -17018,16 +18363,20 @@ export default Object.freeze({
     FfiConverterTypeGitRepository,
     FfiConverterTypeGitStatusEntry,
     FfiConverterTypeHerdrAgentInfo,
+    FfiConverterTypeHerdrAgentKind,
     FfiConverterTypeHerdrAgentSessionInfo,
     FfiConverterTypeHerdrAgentSessionKind,
     FfiConverterTypeHerdrAgentStatus,
     FfiConverterTypeHerdrBridgeError,
     FfiConverterTypeHerdrControlError,
+    FfiConverterTypeHerdrControlFailure,
+    FfiConverterTypeHerdrControlFailureKind,
     FfiConverterTypeHerdrControlRequest,
     FfiConverterTypeHerdrControlResult,
     FfiConverterTypeHerdrEvent,
     FfiConverterTypeHerdrEventError,
     FfiConverterTypeHerdrEventSink,
+    FfiConverterTypeHerdrIntegrationInstallResult,
     FfiConverterTypeHerdrPaneInfo,
     FfiConverterTypeHerdrPaneLayoutPane,
     FfiConverterTypeHerdrPaneLayoutRect,
@@ -17042,6 +18391,9 @@ export default Object.freeze({
     FfiConverterTypeHerdrSessionSnapshot,
     FfiConverterTypeHerdrSplitDirection,
     FfiConverterTypeHerdrTabInfo,
+    FfiConverterTypeHerdrTabLaunch,
+    FfiConverterTypeHerdrTabLaunchResult,
+    FfiConverterTypeHerdrTabLaunchStage,
     FfiConverterTypeHerdrTerminalAttachLaunchMode,
     FfiConverterTypeHerdrTerminalControlEvent,
     FfiConverterTypeHerdrTerminalEventSink,
@@ -17051,6 +18403,7 @@ export default Object.freeze({
     FfiConverterTypeHerdrWorktreeInfo,
     FfiConverterTypeHostConnectionState,
     FfiConverterTypeHostFreshness,
+    FfiConverterTypeHostKeyChallenge,
     FfiConverterTypeHostRuntime,
     FfiConverterTypeHostRuntimeConfig,
     FfiConverterTypeHostRuntimeError,
@@ -17063,6 +18416,7 @@ export default Object.freeze({
     FfiConverterTypeHostStateSnapshot,
     FfiConverterTypeHostSyncStatus,
     FfiConverterTypeHostTerminalState,
+    FfiConverterTypeKnownHostStoreError,
     FfiConverterTypePreviewInfo,
     FfiConverterTypePreviewKind,
     FfiConverterTypePreviewState,
@@ -17072,6 +18426,7 @@ export default Object.freeze({
     FfiConverterTypeTransferProgress,
     FfiConverterTypeTransferResult,
     FfiConverterTypeTransferState,
+    FfiConverterTypeTrustedHostKey,
     FfiConverterTypeWhipSshEventSink,
   },
 });

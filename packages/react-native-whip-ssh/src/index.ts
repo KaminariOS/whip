@@ -1,6 +1,7 @@
 import {
   AgentMessageRole,
   AgentNoticeLevel,
+  AgentIntegrationStatus,
   AgentScalarValue_Tags,
   AgentToolStatus,
   AgentTranscriptKind,
@@ -18,8 +19,12 @@ import {
   HerdrControlRequest,
   HerdrControlResult_Tags,
   HerdrAgentSessionKind,
+  HerdrAgentKind,
   HerdrAgentStatus,
   HerdrSplitDirection,
+  HerdrTabLaunch,
+  HerdrTabLaunchResult_Tags,
+  HerdrTabLaunchStage,
   HerdrTerminalAttachLaunchMode,
   HerdrTerminalNotificationKind,
   HerdrTerminalControlEvent_Tags,
@@ -43,6 +48,7 @@ import {
   setAgentTranscriptEventSink,
   setHerdrTerminalEventSink,
   setHostRuntimeEventSink,
+  setTrustedHostKeys as setTrustedHostKeysRust,
   startHerdrEventSubscription,
   startHerdrTerminalBridge,
   type HerdrBridgeError,
@@ -184,12 +190,10 @@ export type NativeAgentTranscriptUpdate = {
   revision: number;
   deltas: NativeAgentTranscriptDelta[];
   cacheWrite?: {
+    namespace: string;
     key: string;
     blob: ArrayBuffer;
     confirmationToken: string;
-    revision: number;
-    sourceGeneration: number;
-    position: number;
   };
 };
 
@@ -208,6 +212,7 @@ export type RuntimeConfig = {
   ssh: RuntimeSshConfig;
   jumpHosts: RuntimeSshConfig[];
   sessionName: string;
+  herdrCommand: string;
   socketPath?: string;
   cachedSocketPath?: string;
 };
@@ -219,6 +224,27 @@ export type RuntimeConnectionState =
   | 'reconnecting'
   | 'disconnecting'
   | 'failed';
+
+export type RuntimeAgentKind = 'claude' | 'codex' | 'opencode';
+
+export type RuntimeTabLaunch =
+  | { type: 'shell' }
+  | { type: 'agent'; kind: RuntimeAgentKind; args?: string[] }
+  | { type: 'command'; command: string };
+
+export type RuntimeAgentIntegrationStatus =
+  | 'not-installed'
+  | 'current'
+  | 'outdated'
+  | 'needs-repair'
+  | 'unknown';
+
+export type RuntimeTabLaunchFailure = Error & {
+  code: 'TAB_CREATION_FAILED' | 'TAB_LAUNCH_FAILED' | 'INVALID_TAB_LAUNCH';
+  created?: ApiResult;
+  launchType?: 'agent' | 'command';
+  nativeFailure?: unknown;
+};
 export type RuntimeTerminalState = 'opening' | 'attached' | 'restoring' | 'closed' | 'failed';
 
 export type RuntimeLifecycleEvent =
@@ -406,19 +432,41 @@ function eventError(error: unknown): Error {
   return result;
 }
 
-function hostRuntimeError(error: unknown): Error & { nativeTag?: string } {
+function hostRuntimeError(error: unknown): Error & {
+  nativeTag?: string;
+  code?: string;
+  details?: unknown;
+} {
   const nativeError = error as {
     tag?: string;
     inner?: readonly unknown[];
   };
-  const message = typeof nativeError.inner?.[0] === 'string'
-    ? nativeError.inner[0]
-    : error instanceof Error
-      ? error.message
-      : String(error);
-  const result = new Error(message) as Error & { nativeTag?: string };
+  const hostKeyCode = nativeError.tag === 'HostKeyUnknown'
+    ? 'HOST_KEY_UNKNOWN'
+    : nativeError.tag === 'HostKeyChanged'
+      ? 'HOST_KEY_CHANGED'
+      : undefined;
+  const details = hostKeyCode ? nativeError.inner?.[0] : undefined;
+  const message = hostKeyCode === 'HOST_KEY_UNKNOWN'
+    ? 'unknown SSH host key'
+    : hostKeyCode === 'HOST_KEY_CHANGED'
+      ? 'SSH host key changed'
+      : typeof nativeError.inner?.[0] === 'string'
+        ? nativeError.inner[0]
+        : error instanceof Error
+          ? error.message
+          : String(error);
+  const result = new Error(message) as Error & {
+    nativeTag?: string;
+    code?: string;
+    details?: unknown;
+  };
   result.name = 'HostRuntimeError';
   if (nativeError.tag) result.nativeTag = nativeError.tag;
+  if (hostKeyCode) {
+    result.code = hostKeyCode;
+    result.details = details;
+  }
   return result;
 }
 
@@ -428,6 +476,14 @@ function optionalString(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function runtimeAgentKind(kind: RuntimeAgentKind): HerdrAgentKind {
+  switch (kind) {
+    case 'claude': return HerdrAgentKind.Claude;
+    case 'codex': return HerdrAgentKind.Codex;
+    case 'opencode': return HerdrAgentKind.OpenCode;
+  }
 }
 
 function nativeNumber(value: bigint | undefined): number | undefined {
@@ -570,12 +626,10 @@ function nativeAgentUpdate(event: AgentTranscriptEvent): NativeAgentTranscriptUp
     revision: Number(event.update.revision),
     deltas: event.update.deltas.map(nativeAgentDelta),
     cacheWrite: event.cacheWrite ? {
+      namespace: event.cacheWrite.namespace,
       key: event.cacheWrite.key,
       blob: event.cacheWrite.blob,
       confirmationToken: event.cacheWrite.confirmationToken,
-      revision: Number(event.cacheWrite.revision),
-      sourceGeneration: Number(event.cacheWrite.sourceGeneration),
-      position: Number(event.cacheWrite.position),
     } : undefined,
   };
 }
@@ -644,12 +698,6 @@ function controlRequest(request: ApiRequest): HerdrControlRequest {
     case 'pane.send_input': return HerdrControlRequest.PaneSendInput.new({ paneId: text('pane_id'), text: text('text'), keys: stringArray(params.keys) });
     case 'pane.send_text': return HerdrControlRequest.PaneSendText.new({ paneId: text('pane_id'), text: text('text') });
     case 'pane.send_keys': return HerdrControlRequest.PaneSendKeys.new({ paneId: text('pane_id'), keys: stringArray(params.keys) });
-    case 'agent.start': return HerdrControlRequest.AgentStart.new({
-      name: text('name'),
-      kind: text('kind'),
-      paneId: text('pane_id'),
-      args: stringArray(params.args),
-    });
     case 'agent.focus': return HerdrControlRequest.AgentFocus.new({ target: text('target') });
     case 'agent.prompt': return HerdrControlRequest.AgentPrompt.new({ target: text('target'), text: text('text') });
     default: throw new Error(`Unsupported Herdr API method ${request.method}`);
@@ -988,6 +1036,16 @@ function apiResult(value: HerdrControlResult): ApiResult {
       return { type: 'agent_info', agent: agent(value.inner.agent) };
     case HerdrControlResult_Tags.AgentPrompted:
       return { type: 'agent_prompted', agent: agent(value.inner.agent) };
+    case HerdrControlResult_Tags.IntegrationInstalled:
+      return {
+        type: 'integration_install',
+        target: value.inner.install.kind === HerdrAgentKind.Claude
+          ? 'claude'
+          : value.inner.install.kind === HerdrAgentKind.Codex
+            ? 'codex'
+            : 'opencode',
+        details: { messages: [...value.inner.install.messages] },
+      };
     case HerdrControlResult_Tags.PaneZoom:
       return { type: 'pane_zoom' };
     case HerdrControlResult_Tags.Ok:
@@ -1317,6 +1375,55 @@ export class NativeHostRuntime {
     }
   }
 
+  async createTabWithLaunch(
+    workspaceId: string,
+    label: string,
+    launch: RuntimeTabLaunch,
+  ): Promise<ApiResult> {
+    const nativeLaunch = launch.type === 'shell'
+      ? HerdrTabLaunch.Shell.new()
+      : launch.type === 'agent'
+        ? HerdrTabLaunch.Agent.new({ kind: runtimeAgentKind(launch.kind), args: launch.args || [] })
+        : HerdrTabLaunch.Command.new({ command: launch.command });
+    const outcome = await this.runtime.createTabWithLaunch(workspaceId, label, nativeLaunch);
+    const projected: ApiResult = {
+      type: 'tab_created',
+      tab: tab(outcome.inner.tab),
+      root_pane: pane(outcome.inner.rootPane),
+    };
+    if (outcome.tag === HerdrTabLaunchResult_Tags.LaunchFailed) {
+      const normalized = new Error(outcome.inner.failure.message) as RuntimeTabLaunchFailure;
+      normalized.name = 'RuntimeTabLaunchError';
+      normalized.code = 'TAB_LAUNCH_FAILED';
+      normalized.created = projected;
+      normalized.launchType = outcome.inner.stage === HerdrTabLaunchStage.AgentStart
+        ? 'agent'
+        : 'command';
+      normalized.nativeFailure = outcome.inner.failure;
+      throw normalized;
+    }
+    return projected;
+  }
+
+  async agentIntegrationStatus(kind: RuntimeAgentKind): Promise<RuntimeAgentIntegrationStatus> {
+    const status = await this.runtime.agentIntegrationStatus(runtimeAgentKind(kind));
+    switch (status) {
+      case AgentIntegrationStatus.NotInstalled: return 'not-installed';
+      case AgentIntegrationStatus.Current: return 'current';
+      case AgentIntegrationStatus.Outdated: return 'outdated';
+      case AgentIntegrationStatus.NeedsRepair: return 'needs-repair';
+      default: return 'unknown';
+    }
+  }
+
+  async installAgentIntegration(kind: RuntimeAgentKind): Promise<{
+    kind: RuntimeAgentKind;
+    messages: string[];
+  }> {
+    const installed = await this.runtime.installAgentIntegration(runtimeAgentKind(kind));
+    return { kind, messages: [...installed.messages] };
+  }
+
   async disconnect(): Promise<void> {
     runtimeHandlers.delete(this.runtimeId);
     agentTranscriptHandlers.delete(this.runtimeId);
@@ -1599,12 +1706,21 @@ export class NativeHostRuntime {
 
 const nativeClient = {
   ...sshNativeClient,
+  setTrustedHostKeys(entries: Array<{
+    host: string;
+    port: number;
+    keyType: string;
+    publicKey: string;
+  }>): void {
+    setTrustedHostKeysRust(entries);
+  },
   createHostRuntime(config: RuntimeConfig, handler?: (event: RuntimeLifecycleEvent) => void): NativeHostRuntime {
     const runtime = createHostRuntimeRust({
       runtimeId: config.runtimeId,
       ssh: runtimeSshConfig(config.ssh),
       jumpHosts: config.jumpHosts.map(runtimeSshConfig),
       sessionName: config.sessionName,
+      herdrCommand: config.herdrCommand,
       socketPath: config.socketPath,
       cachedSocketPath: config.cachedSocketPath,
     });

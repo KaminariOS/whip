@@ -107,7 +107,7 @@ fn host_key_errors_carry_structured_challenges() {
     let error =
         serde_json::to_value(SshError::from(TransportError::HostKeyUnknown(challenge))).unwrap();
     assert_eq!(error["code"], "HOST_KEY_UNKNOWN");
-    assert_eq!(error["details"]["host"], "Example.COM");
+    assert_eq!(error["details"]["host"], "example.com");
     assert_eq!(error["details"]["port"], 2222);
     assert_eq!(error["details"]["keyType"], "ssh-ed25519");
     assert!(

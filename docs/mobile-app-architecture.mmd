@@ -7,6 +7,8 @@ flowchart TB
     SessionViews["Pane/session presentation<br/>Terminal View ⇄ Chat View<br/>same pane/session · composer"]
     Secondary["Secondary surfaces<br/>Files/Git · previews · pickers · sheets/forms"]
     Client["HerdrClient + thin UI facades<br/>semantic operations · typed/versioned render projections<br/>presentation preferences · opaque cache persistence"]
+    CacheAdapter["Transcript persistence adapter<br/>opaque Rust key + bytes only"]
+    SQLite["Platform SQLite<br/>durable opaque blobs"]
     Renderer["TerminalRendererHost<br/>xterm lifecycle · renderer state · scrolling/gestures"]
     Xterm["WebView + xterm.js<br/>ANSI/TUI rendering"]
 
@@ -18,6 +20,7 @@ flowchart TB
     SessionViews --> Secondary
     SessionViews <--> Renderer
     Renderer <--> Xterm
+    CacheAdapter --> SQLite
   end
 
   subgraph Boundary["One React Native ↔ Rust boundary"]
@@ -32,8 +35,8 @@ flowchart TB
 
       subgraph Services["HostRuntime-owned services"]
         direction LR
-        Control["Herdr control + HostState<br/>API requests · subscriptions/events<br/>snapshot/event reconciliation"]
-        Agents["AgentSessionManager<br/>Codex rollout · OpenCode export/events<br/>cursors/checkpoints · retries · AgentTranscript"]
+        Control["Herdr control + HostState<br/>typed tab/agent launch orchestration<br/>API requests · subscriptions/events · reconciliation"]
+        Agents["AgentSessionManager<br/>Codex rollout · OpenCode export/events<br/>cache identity/version/checkpoints · retries · AgentTranscript"]
         Operations["Remote operations<br/>filesystem/SFTP · transfers/attachments<br/>Git · previews/forwarding"]
         Terminals["Terminal registry + Herdr terminal protocol<br/>binary codec · attach/lifecycle"]
       end
@@ -57,10 +60,12 @@ flowchart TB
   Renderer <-->|"binary terminal/graphics buffers"| Module
   Module <--> Lifecycle
   Module --> Pairing
+  Module -->|"opaque key/blob"| CacheAdapter
+  CacheAdapter -->|"durable checkpoint confirmation"| Module
 
   classDef react fill:#e9f1ff,stroke:#3772c5,color:#172033
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
-  class Navigation,Projections,SessionViews,Secondary,Client,Renderer,Xterm react
+  class Navigation,Projections,SessionViews,Secondary,Client,CacheAdapter,SQLite,Renderer,Xterm react
   class Module native
   class Lifecycle,Control,Agents,Operations,Terminals,Transport,Pairing rust

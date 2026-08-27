@@ -81,7 +81,8 @@ import {
   resolveAgentNotificationTarget,
 } from './src/lib/notificationNavigation';
 import { nextHostLivenessFailure } from './src/lib/hostLiveness';
-import { launchCommandAndOpenCreatedTab } from './src/lib/herdrCreationFlows';
+import { launchTabAndOpenCreatedTab } from './src/lib/herdrCreationFlows';
+import type { TabLaunchIntent } from './src/services/HerdrClient';
 import {
   applyNativeHostState,
   canRefreshLiveHostSession,
@@ -1768,22 +1769,22 @@ function AppContent() {
     if (navigate) selectLiveHost(sessionId, 'terminal');
   }, [openTerminalPane, selectLiveHost]);
 
-  const runHerdCommand = async (
+  const launchHerdTab = async (
     sessionId: string,
     workspaceId: string,
     tabName: string,
-    command: string,
+    launch: TabLaunchIntent,
   ) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
-    await launchCommandAndOpenCreatedTab(
+    await launchTabAndOpenCreatedTab(
       runtime.client,
       workspaceId,
       tabName,
-      command,
+      launch,
       created => acceptCreatedTab(sessionId, created, true),
     );
-    recordTerminalHistoryEntry(command);
+    if (launch.type === 'command') recordTerminalHistoryEntry(launch.command);
   };
 
   const startServer = async (sessionId: string) => {
@@ -1919,7 +1920,7 @@ function AppContent() {
                   onRefresh={refreshHerd}
                   onOpenTerminal={openAgentTerminal}
                   onOpenFiles={openAgentFiles}
-                  onRunCommand={runHerdCommand}
+                  onLaunchTab={launchHerdTab}
                   onOpenSpace={openHerdWorkspace}
                   onStartServer={startServer}
                   onOpenSshShell={openSshShell}
