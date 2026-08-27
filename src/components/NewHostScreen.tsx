@@ -1,5 +1,5 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { ChevronLeft, Keyboard, ScanLine, X } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Keyboard, ScanLine, X } from 'lucide-react-native';
 import SSHClient from 'react-native-whip-ssh';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
@@ -15,7 +15,7 @@ import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
-import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -32,6 +32,7 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const [permission, requestPermission] = useCameraPermissions();
+  const [pairingSetupOpen, setPairingSetupOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState<PairingKeySelection | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [working, setWorking] = useState(false);
@@ -122,11 +123,79 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
     );
   }
 
+  if (!pairingSetupOpen) {
+    return (
+      <View className="flex-1">
+        <ScreenHeader
+          title={t('pairing.title')}
+          left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />}
+        />
+        <ScrollView className="flex-1" contentContainerClassName="px-5 pb-8">
+          <View className="items-center pb-8 pt-8">
+            <WhipMark size={52} />
+            <Text className="mt-5 text-center text-2xl font-semibold">{t('pairing.chooseHeading')}</Text>
+            <Text className="mt-2 max-w-[330px] text-center text-[15px] leading-[22px] text-muted-foreground">
+              {t('pairing.chooseCopy')}
+            </Text>
+          </View>
+
+          <GlassSurface className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10">
+            <Button
+              accessibilityHint={t('pairing.scanOptionCopy')}
+              accessibilityLabel={t('pairing.scan')}
+              className="min-h-[112px] w-full items-center justify-start gap-4 px-4 py-5"
+              size="content"
+              variant="ghost"
+              onPress={hapticPress(() => setPairingSetupOpen(true))}>
+              <View className="size-11 items-center justify-center rounded-full bg-primary">
+                <Icon as={ScanLine} className="text-primary-foreground" size={21} />
+              </View>
+              <View className="min-w-0 flex-1 items-start">
+                <Text className="text-base font-semibold">{t('pairing.scan')}</Text>
+                <Text className="mt-1 text-left text-sm leading-5 text-muted-foreground">
+                  {t('pairing.scanOptionCopy')}
+                </Text>
+              </View>
+              <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
+            </Button>
+          </GlassSurface>
+
+          <View className="flex-row items-center gap-3 py-5">
+            <View className="h-px flex-1 bg-border" />
+            <Text className="text-xs font-semibold tracking-widest text-muted-foreground">{t('pairing.or')}</Text>
+            <View className="h-px flex-1 bg-border" />
+          </View>
+
+          <GlassSurface className="overflow-hidden rounded-xl border border-white/30 dark:border-white/10">
+            <Button
+              accessibilityHint={t('pairing.manualCopy')}
+              accessibilityLabel={t('pairing.manual')}
+              className="min-h-[112px] w-full items-center justify-start gap-4 px-4 py-5"
+              size="content"
+              variant="ghost"
+              onPress={hapticPress(onManual)}>
+              <View className="size-11 items-center justify-center rounded-full bg-secondary">
+                <Icon as={Keyboard} className="text-secondary-foreground" size={21} />
+              </View>
+              <View className="min-w-0 flex-1 items-start">
+                <Text className="text-base font-semibold">{t('pairing.manual')}</Text>
+                <Text className="mt-1 text-left text-sm leading-5 text-muted-foreground">
+                  {t('pairing.manualCopy')}
+                </Text>
+              </View>
+              <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
+            </Button>
+          </GlassSurface>
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1">
       <ScreenHeader
-        title={t('pairing.title')}
-        left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />}
+        title={t('pairing.scan')}
+        left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={() => setPairingSetupOpen(false)} />}
       />
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-8">
         <View className="items-center pb-7 pt-8">
@@ -166,16 +235,6 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
         <Button className={cn(pairing && verificationCode ? 'mt-4' : 'mt-7', 'h-12 rounded-full')} disabled={working} onPress={hapticPress(launchScanner)}>
           {working ? <ActivityIndicator color={colors.onPrimary} /> : <Icon as={ScanLine} className="text-primary-foreground" size={19} />}
           <Text>{pairing ? t('pairing.waiting') : t('pairing.scan')}</Text>
-        </Button>
-        <Button
-          className={cn('relative mt-3 h-12 overflow-hidden rounded-full', appGlassEnabled && 'border')}
-          style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-          variant={appGlassEnabled ? 'ghost' : 'outline'}
-          disabled={working}
-          onPress={hapticPress(onManual)}>
-          <GlassBackdrop shapeClassName="rounded-full" />
-          <Icon as={Keyboard} size={19} />
-          <Text>{t('pairing.manual')}</Text>
         </Button>
       </ScrollView>
 

@@ -185,6 +185,11 @@ export const en = {
   'hosts.errorTitle': 'Connection problem',
 
   'pairing.title': 'Add host',
+  'pairing.chooseHeading': 'How do you want to add it?',
+  'pairing.chooseCopy': 'Choose a connection method for this host.',
+  'pairing.scanOptionCopy': 'Run a one-time pairing command on the host, then scan its QR code.',
+  'pairing.manualCopy': 'No commands needed on the host. Enter its SSH address and credentials directly.',
+  'pairing.or': 'OR',
   'pairing.heading': 'Pair with a nearby host',
   'pairing.intro': 'Scan the one-time QR code shown by whipair. Whip will generate a new Ed25519 key for this host.',
   'pairing.runOnHost': 'On the host, run either command:',

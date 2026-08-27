@@ -50,4 +50,10 @@ describe('localization resources', () => {
     expect(en['app.connectUnreachableError']).not.toMatch(/tailscale/i);
     expect(zhHant['hosts.emptyCopy']).not.toMatch(/tailscale/i);
   });
+
+  it('makes the command-free manual host path explicit', () => {
+    expect(en['pairing.scan']).toBe('Scan pairing QR');
+    expect(en['pairing.manual']).toBe('Enter host manually');
+    expect(en['pairing.manualCopy']).toMatch(/^No commands needed on the host\./);
+  });
 });
