@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const LATENCY_DIAGNOSTICS_STORAGE_KEY = 'whip.latency-diagnostics.v1';
 export const SLOW_HOST_LATENCY_MS = 200;
 
-const MAX_ENTRIES = 100;
+const MAX_ENTRIES = 500;
 const MAX_ERROR_CHARACTERS = 500;
 const MAX_SESSION_ID_CHARACTERS = 200;
 const PERSIST_DELAY_MS = 5_000;

@@ -12,7 +12,7 @@ Whip may process or store:
 - local terminal, notification, security, language, and appearance preferences;
 - background images and files explicitly downloaded or selected by the user; and
 - up to 500 recent app-log entries from the current launch, which may include hostnames or connection details and are cleared when Whip restarts; and
-- up to 100 slow or failed SSH latency probe records, including a host identifier, timestamp, timing breakdown, and bounded error text. These records persist across app restarts in app data and may be included in operating-system backup or device transfer.
+- up to 500 slow or failed SSH latency probe records, including a host identifier, timestamp, timing breakdown, and bounded error text. These records persist across app restarts in app data and may be included in operating-system backup or device transfer.
 
 Host credentials use Android Keystore-backed or iOS Keychain-backed storage and request a when-unlocked, this-device-only accessibility policy where the platform supports it. Global SSH keychain labels and fingerprints are ordinary app metadata; their private keys and passphrases remain in the platform credential store and require device authentication before the keychain is opened.
 

@@ -47,6 +47,7 @@ const levelFilters: readonly AppLogLevelFilter[] = [
   'warn',
   'error',
 ];
+const COPY_CONFIRMATION_MS = 2_000;
 
 export function AppLogsSection() {
   const [visible, setVisible] = useState(false);
@@ -103,10 +104,12 @@ function AppLogsModal({
     getLatencyDiagnosticEntries,
   );
   const [copied, setCopied] = useState(false);
+  const [latencyCopied, setLatencyCopied] = useState(false);
   const [levelFilter, setLevelFilter] = useState<AppLogLevelFilter>('all');
   const scrollRef = useRef<ScrollView>(null);
   const scrollToLatest = useRef(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latencyCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useTranslation();
   const filteredEntries = useMemo(
     () =>
@@ -115,10 +118,17 @@ function AppLogsModal({
         : entries.filter(entry => entry.level === levelFilter),
     [entries, levelFilter],
   );
+  const latestLatencyEntries = useMemo(
+    () => latencyEntries.slice().reverse(),
+    [latencyEntries],
+  );
 
   useEffect(() => {
     if (visible) scrollToLatest.current = true;
-    else setCopied(false);
+    else {
+      setCopied(false);
+      setLatencyCopied(false);
+    }
   }, [visible]);
 
   useEffect(() => {
@@ -128,9 +138,22 @@ function AppLogsModal({
   useEffect(
     () => () => {
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      if (latencyCopiedTimer.current) clearTimeout(latencyCopiedTimer.current);
     },
     [],
   );
+
+  const showCopyConfirmation = (
+    setConfirmationVisible: (visible: boolean) => void,
+    timer: { current: ReturnType<typeof setTimeout> | null },
+  ) => {
+    setConfirmationVisible(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(
+      () => setConfirmationVisible(false),
+      COPY_CONFIRMATION_MS,
+    );
+  };
 
   const copyLogs = () => {
     const latencyDiagnostics = formatLatencyDiagnostics(latencyEntries);
@@ -139,9 +162,17 @@ function AppLogsModal({
       `Latency diagnostics\n${latencyDiagnostics || '(none)'}`,
       `App logs\n${appLogs || '(none)'}`,
     ].join('\n\n'));
-    setCopied(true);
-    if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setCopied(false), 2_000);
+    setLatencyCopied(false);
+    showCopyConfirmation(setCopied, copiedTimer);
+  };
+
+  const copyLatencyDiagnostics = () => {
+    const latencyDiagnostics = formatLatencyDiagnostics(latencyEntries);
+    Clipboard.setString(
+      `Latency diagnostics\n${latencyDiagnostics || '(none)'}`,
+    );
+    setCopied(false);
+    showCopyConfirmation(setLatencyCopied, latencyCopiedTimer);
   };
 
   return (
@@ -213,28 +244,59 @@ function AppLogsModal({
             </Text>
           </View>
           <View className="mb-3 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas px-3 py-2.5">
-            <Text className="font-mono text-[11px] font-semibold leading-4 text-terminal-text">
-              {t('appLogs.latencyTitle')} ({latencyEntries.length})
-            </Text>
-            <Text className="mb-2 mt-0.5 text-[10px] leading-[14px] text-terminal-subtle">
-              {t('appLogs.latencyCopy')}
-            </Text>
+            <View className="mb-2 flex-row items-start gap-2">
+              <View className="min-w-0 flex-1">
+                <Text className="font-mono text-[11px] font-semibold leading-4 text-terminal-text">
+                  {t('appLogs.latencyTitle')} ({latencyEntries.length})
+                </Text>
+                <Text className="mt-0.5 text-[10px] leading-[14px] text-terminal-subtle">
+                  {t('appLogs.latencyCopy')}
+                </Text>
+              </View>
+              <Button
+                accessibilityLabel={
+                  latencyCopied
+                    ? t('appLogs.copied')
+                    : t('appLogs.copyLatency')
+                }
+                className="rounded-full px-3"
+                size="sm"
+                variant={latencyCopied ? 'secondary' : 'outline'}
+                onPress={hapticPress(copyLatencyDiagnostics)}
+              >
+                <Icon as={latencyCopied ? Check : Copy} size={14} />
+                <Text className="text-xs">
+                  {latencyCopied
+                    ? t('appLogs.copied')
+                    : t('appLogs.copyLatency')}
+                </Text>
+              </Button>
+            </View>
             {latencyEntries.length === 0 ? (
               <Text className="font-mono text-[10px] leading-[15px] text-terminal-subtle">
                 {t('appLogs.latencyEmpty')}
               </Text>
-            ) : latencyEntries.slice(-3).reverse().map(entry => (
-              <View key={entry.id} className="mb-1">
-                <Text selectable className="font-mono text-[10px] leading-[14px] text-terminal-text">
-                  {formatAppLogTime(entry.timestamp)} {entry.kind === 'slow'
-                    ? `SLOW SSH ${entry.sshRttMs}ms · TOTAL ${entry.totalMs}ms · DISPATCH ${entry.dispatchMs}ms`
-                    : `FAIL ${entry.totalMs}ms · ${entry.error}`}
-                </Text>
-                <Text selectable className="font-mono text-[9px] leading-[12px] text-terminal-subtle">
-                  {entry.sessionId}
-                </Text>
-              </View>
-            ))}
+            ) : (
+              <ScrollView
+                className="max-h-44"
+                contentContainerClassName="pb-1"
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+              >
+                {latestLatencyEntries.map(entry => (
+                  <View key={entry.id} className="mb-1.5">
+                    <Text selectable className="font-mono text-[10px] leading-[14px] text-terminal-text">
+                      {formatAppLogTime(entry.timestamp)} {entry.kind === 'slow'
+                        ? `SLOW SSH ${entry.sshRttMs}ms · TOTAL ${entry.totalMs}ms · DISPATCH ${entry.dispatchMs}ms`
+                        : `FAIL ${entry.totalMs}ms · ${entry.error}`}
+                    </Text>
+                    <Text selectable className="font-mono text-[9px] leading-[12px] text-terminal-subtle">
+                      {entry.sessionId}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
           <ScrollView
             horizontal
@@ -316,7 +378,11 @@ function AppLogsModal({
             accessibilityLiveRegion="polite"
             className="mt-2 min-h-5 text-center text-xs font-medium text-primary"
           >
-            {copied ? t('appLogs.copyConfirmation') : ' '}
+            {latencyCopied
+              ? t('appLogs.latencyCopyConfirmation')
+              : copied
+                ? t('appLogs.copyConfirmation')
+                : ' '}
           </Text>
         </View>
       </SafeAreaView>

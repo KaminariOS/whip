@@ -70,13 +70,13 @@ test('persists only slow samples and first-class failure details', async () => {
   );
 });
 
-test('retains at most the latest 100 anomalous samples', async () => {
+test('retains at most the latest 500 anomalous samples', async () => {
   mockedStorage().getItem.mockResolvedValue(null);
   const diagnostics =
     require('../src/services/latencyDiagnostics') as typeof import('../src/services/latencyDiagnostics');
   await diagnostics.setLatencyDiagnosticsEnabled(true);
 
-  for (let index = 0; index < 105; index += 1) {
+  for (let index = 0; index < 505; index += 1) {
     await diagnostics.recordSlowHostLatency(`host-${index}`, {
       latencyMs: 200,
       sshRttMs: 200,
@@ -86,9 +86,9 @@ test('retains at most the latest 100 anomalous samples', async () => {
   }
 
   const entries = diagnostics.getLatencyDiagnosticEntries();
-  expect(entries).toHaveLength(100);
+  expect(entries).toHaveLength(500);
   expect(entries[0]).toMatchObject({ sessionId: 'host-5' });
-  expect(entries[99]).toMatchObject({ sessionId: 'host-104' });
+  expect(entries[499]).toMatchObject({ sessionId: 'host-504' });
   await diagnostics.flushLatencyDiagnosticWrites();
 });
 
