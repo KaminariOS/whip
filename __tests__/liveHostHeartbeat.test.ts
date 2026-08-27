@@ -1,5 +1,4 @@
 import { shouldRefreshLiveHost } from '../src/lib/liveHostHeartbeat';
-import { initialLatencyWarningState } from '../src/lib/latencyWarning';
 import type { LiveHostSession } from '../src/liveHostSessions';
 
 function state(
@@ -16,8 +15,6 @@ function state(
       freshness: syncStatus === 'synced' ? 'fresh' : syncStatus === 'stale' ? 'stale' : 'loading',
       error: null,
       lastSyncedAt: null,
-      latencyMs: null,
-      latencyWarning: initialLatencyWarningState,
     },
   };
 }

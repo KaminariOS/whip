@@ -1,10 +1,4 @@
-import type { TerminalSessionsState } from './terminalSessions';
 import type { HostRuntimeState } from 'react-native-whip-ssh';
-import {
-  initialLatencyWarningState,
-  nextLatencyWarningState,
-  type LatencyWarningState,
-} from './lib/latencyWarning';
 import type {
   HerdrSnapshot,
   HostProfile,
@@ -39,9 +33,6 @@ export interface LiveHostSyncState {
   freshness: HostRuntimeState['freshness'];
   error: string | null;
   lastSyncedAt: string | null;
-  /** Latest successful Android-to-host network round trip. */
-  latencyMs: number | null;
-  latencyWarning: LatencyWarningState;
 }
 
 export interface LiveHostSession {
@@ -54,7 +45,6 @@ export interface LiveHostSession {
   snapshot: HerdrSnapshot;
   sync: LiveHostSyncState;
   selection: LiveHostSelection;
-  terminals: TerminalSessionsState;
 }
 
 export interface LiveHostSessionsState {
@@ -114,17 +104,11 @@ export function createLiveHostSession(
       freshness: 'loading',
       error: null,
       lastSyncedAt: null,
-      latencyMs: null,
-      latencyWarning: initialLatencyWarningState,
     },
     selection: {
       workspaceId: null,
       tabId: null,
       paneId: null,
-    },
-    terminals: {
-      sessions: [],
-      activeTerminalId: null,
     },
   };
 }
@@ -214,22 +198,10 @@ export function updateLiveHostConnection(
       ?? (update.status === 'ready' || update.status === 'connected'
         ? 0
         : session.reconnectAttempt);
-    const losesTransportLatency = update.status === 'reconnecting'
-      || update.status === 'disconnected'
-      || update.status === 'error';
-    const sync = losesTransportLatency
-      ? {
-          ...session.sync,
-          latencyMs: null,
-          latencyWarning: initialLatencyWarningState,
-        }
-      : session.sync;
-
     if (
       session.status === update.status
       && session.connectionError === connectionError
       && session.reconnectAttempt === reconnectAttempt
-      && session.sync === sync
     ) {
       return session;
     }
@@ -239,57 +211,6 @@ export function updateLiveHostConnection(
       status: update.status,
       connectionError,
       reconnectAttempt,
-      sync,
-    };
-  });
-}
-
-/** Apply a lightweight RTT sample without changing snapshot synchronization state. */
-export function applyLiveHostLatency(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  latencyMs: number,
-): LiveHostSessionsState {
-  if (!Number.isFinite(latencyMs) || latencyMs <= 0) return state;
-  return updateSession(state, sessionId, session => {
-    if (session.status !== 'ready') return session;
-    const latencyWarning = nextLatencyWarningState(session.sync.latencyWarning, latencyMs);
-    if (session.sync.latencyMs === latencyMs && latencyWarning === session.sync.latencyWarning) {
-      return session;
-    }
-    return {
-      ...session,
-      sync: {
-        ...session.sync,
-        latencyMs,
-        latencyWarning,
-      },
-    };
-  });
-}
-
-/**
- * Discard a latency sample after its transport probe fails. Keeping the last
- * successful value would make an unreachable host look both current and fast.
- */
-export function invalidateLiveHostLatency(
-  state: LiveHostSessionsState,
-  sessionId: string,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    if (
-      session.sync.latencyMs === null
-      && session.sync.latencyWarning === initialLatencyWarningState
-    ) {
-      return session;
-    }
-    return {
-      ...session,
-      sync: {
-        ...session.sync,
-        latencyMs: null,
-        latencyWarning: initialLatencyWarningState,
-      },
     };
   });
 }
@@ -370,25 +291,6 @@ export function preferredWorkspacePane(
   if (!workspace) return undefined;
   const tab = preferredTab(snapshot, workspace);
   return tab ? preferredPane(snapshot, tab) : undefined;
-}
-
-export function replaceLiveHostTerminals(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  terminals: TerminalSessionsState,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => ({ ...session, terminals }));
-}
-
-export function updateLiveHostTerminals(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  updater: (terminals: TerminalSessionsState) => TerminalSessionsState,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const terminals = updater(session.terminals);
-    return terminals === session.terminals ? session : { ...session, terminals };
-  });
 }
 
 export function findLiveHostSession(

@@ -7,13 +7,13 @@ import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
-import { formatRemoteFileSize, isRemoteHiddenPath, nextRemoteFileSort, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortDirection, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
+import { formatRemoteFileSize, isRemoteHiddenPath, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
 import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '@/src/lib/remoteFileSwipeActions';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
 import type { HerdrClient, RemoteFilePreviewHandle, RemoteHtmlPreviewHandle } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
-import { defaultRemoteFilePreferences, loadRemoteFilePreferences, saveRemoteFilePreferences } from '@/src/services/remoteFilePreferences';
+import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPreferences';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
 import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
@@ -74,6 +74,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const { colors } = useTheme();
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
+  const fileViewPreferences = useRemoteFileViewPreferences();
+  const {
+    showHiddenFiles,
+    sortField,
+    sortDirection,
+    setShowHiddenFiles,
+    selectSortField,
+  } = fileViewPreferences;
   const [path, setPath] = useState('');
   const [entries, setEntries] = useState<RuntimeRemoteFileEntry[]>([]);
   const [busy, setBusy] = useState(false);
@@ -83,9 +91,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [discardAction, setDiscardAction] = useState<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
-  const [showHiddenFiles, setShowHiddenFiles] = useState(defaultRemoteFilePreferences.showHiddenFiles);
-  const [sortField, setSortField] = useState<RemoteFileSortField>(defaultRemoteFilePreferences.sortField);
-  const [sortDirection, setSortDirection] = useState<RemoteFileSortDirection>(defaultRemoteFilePreferences.sortDirection);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
   const [gitRepository, setGitRepository] = useState<RemoteGitRepository | null>(null);
   const [gitMode, setGitMode] = useState(false);
@@ -105,19 +110,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const sortedEntries = useMemo(() => sortRemoteEntries(visibleEntries, sortField, sortDirection), [sortDirection, sortField, visibleEntries]);
   const visibleGitStatus = useMemo(() => (showHiddenFiles ? gitStatus : gitStatus.filter(status => !isRemoteHiddenPath(status.path))), [gitStatus, showHiddenFiles]);
   const gitTreeRows = useMemo(() => buildRemoteGitTreeRows(visibleGitStatus, gitCollapsedPaths), [gitCollapsedPaths, visibleGitStatus]);
-
-  useEffect(() => {
-    let active = true;
-    loadRemoteFilePreferences().then(preferences => {
-      if (!active) return;
-      setShowHiddenFiles(preferences.showHiddenFiles);
-      setSortField(preferences.sortField);
-      setSortDirection(preferences.sortDirection);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const replacePreview = useCallback(
     (next: FilePreview | null) => {
@@ -294,14 +286,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
 
   const updateShowHiddenFiles = (show: boolean) => {
     setShowHiddenFiles(show);
-    saveRemoteFilePreferences({ showHiddenFiles: show, sortField, sortDirection }).catch(() => undefined);
-  };
-
-  const selectSortField = (field: RemoteFileSortField) => {
-    const next = nextRemoteFileSort(sortField, sortDirection, field);
-    setSortField(next.field);
-    setSortDirection(next.direction);
-    saveRemoteFilePreferences({ showHiddenFiles, sortField: next.field, sortDirection: next.direction }).catch(() => undefined);
   };
 
   const openGitChange = async (status: RemoteGitStatusEntry) => {

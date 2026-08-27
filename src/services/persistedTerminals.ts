@@ -123,6 +123,14 @@ export async function savePersistedTerminals(hostId: string, state: TerminalSess
 export class PersistedTerminalsWriter {
   private readonly observedBySessionId = new Map<string, ObservedPersistedTerminals>();
 
+  /** Seed a successfully loaded value without rewriting it during restoration. */
+  observe(sessionId: string, state: TerminalSessionsState): void {
+    this.observedBySessionId.set(sessionId, {
+      state,
+      value: persistedTerminalsValue(state),
+    });
+  }
+
   async saveIfChanged(
     sessionId: string,
     hostId: string,

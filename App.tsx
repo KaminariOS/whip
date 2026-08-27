@@ -14,9 +14,8 @@ import { BlurTargetView } from 'expo-blur';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { useKeepAwake } from 'expo-keep-awake';
-import { useLocales } from 'expo-localization';
 import { PortalHost } from '@rn-primitives/portal';
-import { Alert, Appearance, AppState, BackHandler, Platform, StatusBar, StyleSheet, View } from 'react-native';
+import { Alert, AppState, BackHandler, Platform, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { HostRuntimeState } from 'react-native-whip-ssh';
@@ -41,7 +40,7 @@ import { MoreScreen } from './src/components/MoreScreen';
 import { PaneDetail } from './src/components/PaneDetail';
 import { PairingSuccessPopup } from './src/components/PairingSuccessPopup';
 import { RemoteFileManager } from './src/components/RemoteFileManager';
-import { SessionScreen } from './src/components/SessionScreen';
+import { LiveSessionView } from './src/components/LiveSessionView';
 import { TrustHostSheet } from './src/components/TrustHostSheet';
 import { AgentStatusAnimationProvider, ReducedMotionProvider, WhipMark } from './src/components/app-ui';
 import type { HerdHostQueue } from './src/herdQueue';
@@ -53,8 +52,6 @@ import {
   connectionErrorContext,
   connectionErrorTranslationKeys,
 } from './src/lib/connectionErrors';
-import { resolveColorScheme } from './src/lib/appearance';
-import { biometricResumeAction } from './src/lib/appAccess';
 import { shouldEnableAppGlass } from './src/lib/appGlass';
 import { requiresBiometricForKeyUse, requiresBiometricForSavedKey } from './src/lib/biometricSecurity';
 import {
@@ -69,11 +66,7 @@ import { shouldRefreshLiveHost } from './src/lib/liveHostHeartbeat';
 import { allSettledWithConcurrency } from './src/lib/promisePool';
 import { parentRemotePath } from './src/lib/remoteFiles';
 import type { TranscriptFileLinkTarget } from './src/lib/transcriptLinks';
-import {
-  incrementTerminalControlUsage,
-  type TerminalControlId,
-  type TerminalControlUsage,
-} from './src/lib/terminalControls';
+import type { TerminalControlId } from './src/lib/terminalControls';
 import {
   addTerminalHistoryEntry,
   removeTerminalHistoryEntries,
@@ -90,22 +83,17 @@ import {
 import { nextHostLivenessFailure } from './src/lib/hostLiveness';
 import { launchCommandAndOpenCreatedTab } from './src/lib/herdrCreationFlows';
 import {
-  applyLiveHostLatency,
   applyNativeHostState,
   canRefreshLiveHostSession,
   closeLiveHostSession,
   emptyLiveHostSessions,
   findLiveHostSession,
   getActiveLiveHostSession,
-  invalidateLiveHostLatency,
   openLiveHostSession,
   preferredWorkspacePane,
-  replaceLiveHostTerminals,
   selectLiveHostSession,
   selectLiveHostWorkspaceView,
   updateLiveHostConnection,
-  updateLiveHostTerminals,
-  type LiveHostSession,
 } from './src/liveHostSessions';
 import { aggregateAgentStatus } from './src/lib/agentStatusAggregate';
 import {
@@ -115,32 +103,16 @@ import {
 } from './src/mobileNavigation';
 import {
   alertAgent,
-  dismissAgentAlerts,
   dismissAgentAlertsForPane,
   dismissAgentAlertsForTab,
-  prepareAlerts,
 } from './src/services/alerts';
-import { authenticateAppAccess } from './src/services/appAuthentication';
-import { setAppLogCaptureEnabled } from './src/services/appLogs';
-import { startBackgroundMonitoring, stopBackgroundMonitoring } from './src/services/backgroundMonitoring';
 import { deleteAgentChatCachesForHost } from './src/services/agentChatCache';
-import {
-  defaultDevicePreferences,
-  devicePreferencesFromStorage,
-  loadDevicePreferences,
-  saveDevicePreferences,
-  type AppearancePreference,
-  type DevicePreferences,
-  type LanguagePreference,
-  type TerminalPreferences,
-} from './src/services/devicePreferences';
+import { defaultDevicePreferences } from './src/services/devicePreferences';
 import { HerdrClient, type TabCreationResult } from './src/services/HerdrClient';
 import {
-  flushLatencyDiagnosticWrites,
   isSlowHostLatency,
   recordHostLatencyFailure,
   recordSlowHostLatency,
-  setLatencyDiagnosticsEnabled,
   type HostLatencyMeasurement,
 } from './src/services/latencyDiagnostics';
 import { networkErrorMessage, recordNetworkDiagnostic } from './src/services/networkDiagnostics';
@@ -169,11 +141,6 @@ import {
   type UnknownHostKeyChallenge,
 } from './src/services/knownHosts';
 import {
-  loadPersistedTerminals,
-  PersistedTerminalsWriter,
-  savePersistedTerminals,
-} from './src/services/persistedTerminals';
-import {
   beginAppPerformanceTrace,
   endAppPerformanceTrace,
   withAppPerformanceTrace,
@@ -183,28 +150,31 @@ import { loadTerminalHistory, saveTerminalHistory, terminalHistoryFromStorage } 
 import { configureTerminalVolumeKeys } from './src/services/volumeKeys';
 import {
   loadPersistedLiveHosts,
+  persistedLiveHostsFromSessions,
+  persistedLiveHostsIdentity,
   persistedLiveHostsFromStorage,
   savePersistedLiveHosts,
   type PersistedLiveHosts,
 } from './src/services/persistedLiveHosts';
-import { readStartupStorage, type StartupStorageSnapshot } from './src/services/startupStorage';
 import {
   hydrateHerdrSocketPathCache,
   loadHerdrSocketPathCache,
 } from './src/services/herdrSocketPathStorage';
-import {
-  closeTerminalSession,
-  openSshShellSession,
-  openTerminalSession,
-  reconcileTerminalSessions,
-  updateTerminalSession,
-  type TerminalSessionStatus,
-} from './src/terminalSessions';
+import type { TerminalSessionStatus } from './src/terminalSessions';
 import { useTheme } from './src/theme';
 import type { AgentInfo, AgentStatus, AppTab, ConnectionProfile, GlobalSshKey, GlobalSshKeyMaterial, HerdrSnapshot, HostProfile, KnownHost, PaneInfo } from './src/types';
 import { guiFontFamilies } from './src/lib/guiFonts';
 import { terminalFontFamily } from './src/lib/terminalFonts';
-import i18n, { languageForLocale } from './src/i18n';
+import { useStartupStorage } from './src/hooks/useStartupStorage';
+import { useDevicePreferences } from './src/hooks/useDevicePreferences';
+import { useLiveHostTelemetry } from './src/hooks/useLiveHostTelemetry';
+import { useTerminalSessions } from './src/hooks/useTerminalSessions';
+import { useApplicationSecurity } from './src/hooks/useApplicationSecurity';
+import { useAgentNotifications } from './src/hooks/useAgentNotifications';
+import {
+  useLiveHostMonitoring,
+  type ReconnectRecoveryTrigger,
+} from './src/hooks/useLiveHostMonitoring';
 
 const guiFontAssets = {
   [guiFontFamilies.regular]: require('./assets/gui-fonts/Inter-Regular.ttf'),
@@ -216,12 +186,7 @@ const guiFontAssets = {
   [terminalFontFamily]: require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf'),
 };
 
-const LIVE_HOST_HEALTHCHECK_MS = 15_000;
-const LIVE_HOST_RECONCILE_MS = 120_000;
-const NETWORK_CHANGE_DEBOUNCE_MS = 750;
-const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;
 const BACKGROUND_HOST_RESTORE_CONCURRENCY = 2;
-type ReconnectRecoveryTrigger = 'app-resume' | 'network-change';
 
 function recordLatencyMeasurement(
   sessionId: string,
@@ -335,7 +300,79 @@ const NavigationBlurTarget = Platform.OS === 'android' ? View : BlurTargetView;
 function AppContent() {
   const { t } = useTranslation();
   const { colors: theme, isDark } = useTheme();
-  const locales = useLocales();
+  const startupStorage = useStartupStorage();
+  const preferenceController = useDevicePreferences(startupStorage);
+  const liveHostTelemetry = useLiveHostTelemetry();
+  const terminalController = useTerminalSessions();
+  const {
+    setPreference,
+    setTerminalPreferences,
+    recordTerminalControlUse: recordTerminalControlPreferenceUse,
+    recordLastTab,
+  } = preferenceController;
+  const {
+    state: liveHostTelemetryState,
+    get: getLiveHostTelemetry,
+    recordLatency: recordLiveHostLatency,
+    clearLatency: clearLiveHostLatency,
+  } = liveHostTelemetry;
+  const {
+    state: terminalSessionsByHost,
+    get: getTerminalSessions,
+    restore: restoreTerminalSessions,
+    remove: removeTerminalSessions,
+    reconcile: reconcileHostTerminals,
+    openPane: openTerminalPane,
+    openSshShell: openSshTerminal,
+    close: closeTerminalMetadata,
+    updateStatus: updateTerminalMetadataStatus,
+    updateFontSize: updateTerminalMetadataFontSize,
+  } = terminalController;
+  const {
+    alertsEnabled,
+    persistentAlertDurationSeconds,
+    ttsEnabled,
+    biometricForKeys,
+    biometricOnResume,
+    appearance,
+    fullscreenApp,
+    appBackgroundImageUri,
+    appBackgroundDimming,
+    appGlassEnabled,
+    developerOptionsEnabled,
+    language,
+    keepScreenOn,
+    reopenTerminalOnLaunch,
+    agentCommand,
+    terminal: terminalPreferences,
+    terminalControlUsage,
+  } = preferenceController.value;
+  const preferencesLoaded = preferenceController.hydration.status !== 'loading';
+  const security = useApplicationSecurity({
+    preferencesLoaded,
+    biometricForKeys,
+    biometricOnResume,
+    onBiometricForKeysChange: enabled => (
+      setPreference('biometricForKeys', enabled)
+    ),
+    onBiometricOnResumeChange: enabled => (
+      setPreference('biometricOnResume', enabled)
+    ),
+    biometricUnavailableTitle: t('settings.biometricUnavailable'),
+    biometricUnavailableMessage: error => (
+      t('settings.biometricUnavailableCopy', { error: String(error) })
+    ),
+  });
+  const agentNotifications = useAgentNotifications();
+  const notificationResponse = agentNotifications.response;
+  const {
+    locked: appAccessLocked,
+    authenticating: appAccessAuthenticating,
+    authenticateLockedApp,
+    verifyBiometric,
+    updateBiometricForKeys,
+    updateBiometricOnResume,
+  } = security;
   const runtimes = useRef(new Map<string, LiveRuntime>());
   const liveSessionsRef = useRef(emptyLiveHostSessions);
   const latencyPingsInFlight = useRef(new Map<string, LiveRuntime>());
@@ -348,29 +385,21 @@ function AppContent() {
   const knownHostsRef = useRef<KnownHost[]>([]);
   const persistedLiveHostsRef = useRef<PersistedLiveHosts>({ hostIds: [], activeHostId: null });
   const restoredTerminalHostIdsRef = useRef(new Set<string>());
-  const persistedTerminalsWriterRef = useRef(new PersistedTerminalsWriter());
   const restoreStarted = useRef(false);
   const startupTraceRef = useRef<AppPerformanceTrace | null>(null);
   const tabMountTracesRef = useRef(new Map<AppTab, AppPerformanceTrace>());
   const latencyStateApplyTracesRef = useRef(new Set<AppPerformanceTrace>());
-  const deferredStartupStorageRef = useRef<StartupStorageSnapshot | null>(null);
-  const deferredStartupFallbackRef = useRef(false);
+  const criticalStartupHydrationStartedRef = useRef(false);
   const deferredStartupHydrationStartedRef = useRef(false);
+  const preferencesNavigationHydratedRef = useRef(false);
   const credentialMigrationStartedRef = useRef(false);
   const alertsEnabledRef = useRef(true);
   const persistentAlertDurationSecondsRef = useRef(defaultDevicePreferences.persistentAlertDurationSeconds);
   const ttsEnabledRef = useRef(false);
-  const handledNotificationIdRef = useRef<string | null>(null);
   const remoteFilesRequestIdRef = useRef(0);
   const remoteFilePathsRef = useRef(new Map<string, string>());
   const terminalComposerDraftsRef = useRef(new Map<string, string>());
-  const biometricOnResumeRef = useRef(defaultDevicePreferences.biometricOnResume);
-  const biometricForKeysRef = useRef(defaultDevicePreferences.biometricForKeys);
-  const preferencesLoadedRef = useRef(false);
-  const appAuthenticationInFlightRef = useRef(false);
-  const securitySettingChangeInFlightRef = useRef(false);
   const unknownHostResolutionRef = useRef<((trusted: boolean) => void) | null>(null);
-  const [notificationResponse, setNotificationResponse] = useState<Notifications.NotificationResponse | null>(null);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [editorProfile, setEditorProfile] = useState<ConnectionProfile | null>(null);
   const [newHostOpen, setNewHostOpen] = useState(false);
@@ -383,9 +412,10 @@ function AppContent() {
   const [pairingSuccess, setPairingSuccess] = useState<PairHostResult | null>(null);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [knownHostsLoaded, setKnownHostsLoaded] = useState(false);
-  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [liveHostsLoaded, setLiveHostsLoaded] = useState(false);
   const [terminalHistoryLoaded, setTerminalHistoryLoaded] = useState(false);
+  const [liveHostsSafeToPersist, setLiveHostsSafeToPersist] = useState(false);
+  const [terminalHistorySafeToPersist, setTerminalHistorySafeToPersist] = useState(false);
   const [liveHostRestoreComplete, setLiveHostRestoreComplete] = useState(false);
   const [connectingHostIds, setConnectingHostIds] = useState<ReadonlySet<string>>(() => new Set());
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -397,66 +427,13 @@ function AppContent() {
   const [herdHostFilterId, setHerdHostFilterId] = useState<string | null>(null);
   const [herdWorkspaceFilterIds, setHerdWorkspaceFilterIds] = useState<Record<string, string | null>>({});
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
-  const [alertsEnabled, setAlertsEnabled] = useState(true);
-  const [persistentAlertDurationSeconds, setPersistentAlertDurationSeconds] = useState(defaultDevicePreferences.persistentAlertDurationSeconds);
-  const [ttsEnabled, setTtsEnabled] = useState(false);
-  const [biometricForKeys, setBiometricForKeys] = useState(defaultDevicePreferences.biometricForKeys);
-  const [biometricOnResume, setBiometricOnResume] = useState(defaultDevicePreferences.biometricOnResume);
-  const [appAccessLocked, setAppAccessLocked] = useState(false);
-  const [appAccessAuthenticating, setAppAccessAuthenticating] = useState(false);
-  const [appearance, setAppearance] = useState<AppearancePreference>(defaultDevicePreferences.appearance);
-  const [fullscreenApp, setFullscreenApp] = useState(defaultDevicePreferences.fullscreenApp);
-  const [appBackgroundImageUri, setAppBackgroundImageUri] = useState(defaultDevicePreferences.appBackgroundImageUri);
-  const [appBackgroundDimming, setAppBackgroundDimming] = useState(defaultDevicePreferences.appBackgroundDimming);
-  const [appGlassEnabled, setAppGlassEnabled] = useState(defaultDevicePreferences.appGlassEnabled);
-  const [developerOptionsEnabled, setDeveloperOptionsEnabled] = useState(defaultDevicePreferences.developerOptionsEnabled);
-  const [language, setLanguage] = useState<LanguagePreference>(defaultDevicePreferences.language);
-  const [keepScreenOn, setKeepScreenOn] = useState(defaultDevicePreferences.keepScreenOn);
-  const [reopenTerminalOnLaunch, setReopenTerminalOnLaunch] = useState(defaultDevicePreferences.reopenTerminalOnLaunch);
-  const [agentCommand, setAgentCommand] = useState(defaultDevicePreferences.agentCommand);
-  const [terminalPreferences, setTerminalPreferences] = useState<TerminalPreferences>(defaultDevicePreferences.terminal);
-  const [terminalControlUsage, setTerminalControlUsage] = useState<TerminalControlUsage>(defaultDevicePreferences.terminalControlUsage);
   const [terminalHistory, setTerminalHistory] = useState<string[]>([]);
   const [remoteFilesRequest, setRemoteFilesRequest] = useState<RemoteFilesRequest | null>(null);
   const [credentialRecovery, setCredentialRecovery] = useState<CredentialRecoveryStatus>({ state: 'none', count: 0 });
   const [credentialRecoveryBusy, setCredentialRecoveryBusy] = useState(false);
-  const applyAppearance = useEffectEvent((value: AppearancePreference) => {
-    Appearance.setColorScheme(resolveColorScheme(value));
-  });
   const reportHostProfilesLoadError = useEffectEvent((error: unknown) => {
     setConnectError(t('app.loadHostsError', { error: String(error) }));
   });
-  const applyStartupPreferences = useEffectEvent((preferences: DevicePreferences) => {
-    setAlertsEnabled(preferences.alertsEnabled);
-    setPersistentAlertDurationSeconds(preferences.persistentAlertDurationSeconds);
-    setTtsEnabled(preferences.ttsEnabled);
-    biometricForKeysRef.current = preferences.biometricForKeys;
-    setBiometricForKeys(preferences.biometricForKeys);
-    biometricOnResumeRef.current = preferences.biometricOnResume;
-    setBiometricOnResume(preferences.biometricOnResume);
-    setAppearance(preferences.appearance);
-    setFullscreenApp(preferences.fullscreenApp);
-    setAppBackgroundImageUri(preferences.appBackgroundImageUri);
-    setAppBackgroundDimming(preferences.appBackgroundDimming);
-    setAppGlassEnabled(preferences.appGlassEnabled);
-    setDeveloperOptionsEnabled(preferences.developerOptionsEnabled);
-    setLanguage(preferences.language);
-    setKeepScreenOn(preferences.keepScreenOn);
-    setReopenTerminalOnLaunch(preferences.reopenTerminalOnLaunch);
-    setAgentCommand(preferences.agentCommand);
-    applyAppearance(preferences.appearance);
-    setTerminalPreferences(preferences.terminal);
-    setTerminalControlUsage(preferences.terminalControlUsage);
-    setNavigation(current => selectMobileTab(
-      current,
-      preferences.lastTab === 'terminal' ? 'hosts' : preferences.lastTab,
-    ));
-  });
-  const resolvedLanguage = language === 'system' ? languageForLocale(locales[0]) : language;
-
-  useEffect(() => {
-    i18n.changeLanguage(resolvedLanguage).catch(() => undefined);
-  }, [resolvedLanguage]);
 
   const updateTerminalOpenLinksInApp = useCallback((openLinksInApp: boolean) => {
     setTerminalPreferences(current => (
@@ -464,11 +441,11 @@ function AppContent() {
         ? current
         : { ...current, openLinksInApp }
     ));
-  }, []);
+  }, [setTerminalPreferences]);
 
   const recordTerminalControlUse = useCallback((control: TerminalControlId) => {
-    setTerminalControlUsage(current => incrementTerminalControlUsage(current, control));
-  }, []);
+    recordTerminalControlPreferenceUse(control);
+  }, [recordTerminalControlPreferenceUse]);
 
   const recordTerminalHistoryEntry = useCallback((entry: string) => {
     setTerminalHistory(current => addTerminalHistoryEntry(current, entry));
@@ -490,7 +467,7 @@ function AppContent() {
       endAppPerformanceTrace(trace);
     }
     latencyStateApplyTracesRef.current.clear();
-  }, [liveSessions]);
+  }, [liveHostTelemetryState]);
 
   useEffect(() => {
     const retained = retainedBackgroundRuntimes;
@@ -500,77 +477,38 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    let receivedResponse = false;
-    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      receivedResponse = true;
-      setNotificationResponse(response);
-    });
-    Notifications.getLastNotificationResponseAsync()
-      .then(response => {
-        if (active && !receivedResponse && response) setNotificationResponse(response);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    let previousState = AppState.currentState;
-    const subscription = AppState.addEventListener('change', state => {
-      const returnedToForeground = previousState !== 'active' && state === 'active';
-      previousState = state;
-      if (returnedToForeground) dismissAgentAlerts().catch(() => undefined);
-    });
-    return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
     startupTraceRef.current = beginAppPerformanceTrace('Whip startup to first tab');
-    const storageTrace = beginAppPerformanceTrace('Whip startup storage hydration');
     loadGlobalSshKeys().then(setGlobalSshKeys).catch(() => undefined);
-    prepareAlerts().catch(() => undefined);
-
-    const hydrateCriticalStartupStorage = async () => {
-      let snapshot: StartupStorageSnapshot | null = null;
-      try {
-        snapshot = await withAppPerformanceTrace(
-          'Whip startup store: multi-get',
-          readStartupStorage,
-        );
-        deferredStartupStorageRef.current = snapshot;
-      } catch {
-        deferredStartupFallbackRef.current = true;
-      }
-
-      const [nextHosts, preferences] = await Promise.all([
-        withAppPerformanceTrace('Whip startup store: hosts', () => (
-          snapshot
-            ? loadHostProfilesFromStorage(snapshot.hosts, snapshot.legacyHost)
-            : loadHostProfiles()
-        )).catch(error => {
-          reportHostProfilesLoadError(error);
-          return [];
-        }),
-        withAppPerformanceTrace('Whip startup store: preferences', () => (
-          snapshot
-            ? devicePreferencesFromStorage(snapshot.preferences, snapshot.legacyPreferences)
-            : loadDevicePreferences()
-        )).catch(() => defaultDevicePreferences),
-      ]);
-
-      setHosts(nextHosts);
-      setProfilesLoaded(true);
-      applyStartupPreferences(preferences);
-      preferencesLoadedRef.current = true;
-      setPreferencesLoaded(true);
-    };
-
-    hydrateCriticalStartupStorage()
-      .finally(() => endAppPerformanceTrace(storageTrace));
   }, []);
+
+  useEffect(() => {
+    if (startupStorage.status === 'loading' || criticalStartupHydrationStartedRef.current) return;
+    criticalStartupHydrationStartedRef.current = true;
+    const load = startupStorage.status === 'loaded'
+      ? loadHostProfilesFromStorage(
+          startupStorage.value.hosts,
+          startupStorage.value.legacyHost,
+        )
+      : loadHostProfiles();
+    withAppPerformanceTrace('Whip startup store: hosts', () => load)
+      .then(setHosts)
+      .catch(error => {
+        reportHostProfilesLoadError(error);
+        setHosts([]);
+      })
+      .finally(() => setProfilesLoaded(true));
+  }, [startupStorage]);
+
+  useEffect(() => {
+    if (!preferencesLoaded || preferencesNavigationHydratedRef.current) return;
+    preferencesNavigationHydratedRef.current = true;
+    setNavigation(current => selectMobileTab(
+      current,
+      preferenceController.value.lastTab === 'terminal'
+        ? 'hosts'
+        : preferenceController.value.lastTab,
+    ));
+  }, [biometricForKeys, biometricOnResume, preferenceController.value.lastTab, preferencesLoaded]);
 
   const appReady = profilesLoaded
     && preferencesLoaded;
@@ -603,36 +541,41 @@ function AppContent() {
   useEffect(() => {
     if (mountedTabs.size === 0 || deferredStartupHydrationStartedRef.current) return;
     deferredStartupHydrationStartedRef.current = true;
-    const snapshot = deferredStartupStorageRef.current;
-    deferredStartupStorageRef.current = null;
-    const useFallback = deferredStartupFallbackRef.current;
+    const snapshot = startupStorage.status === 'loaded' ? startupStorage.value : null;
 
     Promise.all([
       withAppPerformanceTrace('Whip startup store: known hosts', () => (
-        snapshot && !useFallback
+        snapshot
           ? knownHostsFromStorage(snapshot.knownHosts)
           : loadKnownHosts()
       )).catch(() => []),
       withAppPerformanceTrace('Whip startup store: live hosts', () => (
-        snapshot && !useFallback
+        snapshot
           ? persistedLiveHostsFromStorage(snapshot.liveHosts)
           : loadPersistedLiveHosts()
-      )).catch(() => ({ hostIds: [], activeHostId: null })),
+      )).then(value => ({ loaded: true as const, value }))
+        .catch(() => ({
+          loaded: false as const,
+          value: { hostIds: [], activeHostId: null },
+        })),
       withAppPerformanceTrace('Whip startup store: terminal history', () => (
-        snapshot && !useFallback
+        snapshot
           ? terminalHistoryFromStorage(snapshot.terminalHistory)
           : loadTerminalHistory()
-      )).catch(() => []),
+      )).then(value => ({ loaded: true as const, value }))
+        .catch(() => ({ loaded: false as const, value: [] as string[] })),
       withAppPerformanceTrace('Whip startup store: socket paths', () => (
-        snapshot && !useFallback
+        snapshot
           ? hydrateHerdrSocketPathCache(snapshot.herdrSocketPaths)
           : loadHerdrSocketPathCache()
       )).catch(() => undefined),
     ]).then(([nextKnownHosts, persistedLiveHosts, nextTerminalHistory]) => {
       setKnownHosts(nextKnownHosts);
       knownHostsRef.current = nextKnownHosts;
-      persistedLiveHostsRef.current = persistedLiveHosts;
-      setTerminalHistory(nextTerminalHistory);
+      persistedLiveHostsRef.current = persistedLiveHosts.value;
+      setLiveHostsSafeToPersist(persistedLiveHosts.loaded);
+      setTerminalHistory(nextTerminalHistory.value);
+      setTerminalHistorySafeToPersist(nextTerminalHistory.loaded);
     }).finally(() => {
       setKnownHostsLoaded(true);
       setLiveHostsLoaded(true);
@@ -642,7 +585,7 @@ function AppContent() {
     withAppPerformanceTrace('Whip startup store: credential status', credentialRecoveryStatus)
       .then(setCredentialRecovery)
       .catch(() => undefined);
-  }, [mountedTabs]);
+  }, [mountedTabs, startupStorage]);
 
   useEffect(() => {
     if (!liveHostRestoreComplete || mountedTabs.size === 0 || credentialMigrationStartedRef.current) return;
@@ -661,74 +604,26 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!preferencesLoaded) return;
-    saveDevicePreferences({
-      alertsEnabled,
-      persistentAlertDurationSeconds,
-      ttsEnabled,
-      biometricForKeys,
-      biometricOnResume,
-      appearance,
-      fullscreenApp,
-      appBackgroundImageUri,
-      appBackgroundDimming,
-      appGlassEnabled,
-      developerOptionsEnabled,
-      language,
-      keepScreenOn,
-      reopenTerminalOnLaunch,
-      agentCommand,
-      lastTab: navigation.tab,
-      terminal: terminalPreferences,
-      terminalControlUsage,
-    }).catch(() => undefined);
-  }, [agentCommand, alertsEnabled, appearance, appBackgroundDimming, appBackgroundImageUri, appGlassEnabled, biometricForKeys, biometricOnResume, developerOptionsEnabled, fullscreenApp, keepScreenOn, language, navigation.tab, persistentAlertDurationSeconds, preferencesLoaded, reopenTerminalOnLaunch, terminalControlUsage, terminalPreferences, ttsEnabled]);
+    if (!preferencesNavigationHydratedRef.current) return;
+    recordLastTab(navigation.tab);
+  }, [navigation.tab, recordLastTab]);
 
   useEffect(() => {
-    if (!preferencesLoaded) return;
-    setAppLogCaptureEnabled(developerOptionsEnabled);
-    setLatencyDiagnosticsEnabled(developerOptionsEnabled).catch(() => undefined);
-  }, [developerOptionsEnabled, preferencesLoaded]);
-
-  useEffect(() => {
-    if (!terminalHistoryLoaded) return;
+    if (!terminalHistoryLoaded || !terminalHistorySafeToPersist) return;
     saveTerminalHistory(terminalHistory).catch(() => undefined);
-  }, [terminalHistory, terminalHistoryLoaded]);
+  }, [terminalHistory, terminalHistoryLoaded, terminalHistorySafeToPersist]);
 
-  const updateAppearance = useCallback((value: AppearancePreference) => {
-    setAppearance(value);
-    Appearance.setColorScheme(resolveColorScheme(value));
-  }, []);
-
-  useEffect(() => {
-    const retainedSessionIds = new Set<string>();
-    for (const session of liveSessions.sessions) {
-      retainedSessionIds.add(session.id);
-      if (session.status !== 'connecting') {
-        persistedTerminalsWriterRef.current
-          .saveIfChanged(session.id, session.hostId, session.terminals)
-          .catch(() => undefined);
-      }
-    }
-    persistedTerminalsWriterRef.current.retainSessions(retainedSessionIds);
-  }, [liveSessions.sessions]);
+  const persistedLiveHostSelection = persistedLiveHostsFromSessions(liveSessions);
+  const persistedLiveHostIdentity = persistedLiveHostsIdentity(persistedLiveHostSelection);
+  const persistLiveHostSelection = useEffectEvent(() => {
+    savePersistedLiveHosts(persistedLiveHostsFromSessions(liveSessionsRef.current))
+      .catch(() => undefined);
+  });
 
   useEffect(() => {
-    if (!liveHostRestoreComplete) return;
-    savePersistedLiveHosts({
-      hostIds: liveSessions.sessions.map(session => session.hostId),
-      activeHostId: getActiveLiveHostSession(liveSessions)?.hostId || null,
-    }).catch(() => undefined);
-  }, [liveHostRestoreComplete, liveSessions]);
-
-  useEffect(() => {
-    if (!liveHostRestoreComplete) return;
-    const hostCount = liveSessions.sessions.length;
-    const operation = alertsEnabled && hostCount > 0
-      ? startBackgroundMonitoring(hostCount)
-      : stopBackgroundMonitoring();
-    operation.catch(error => setConnectError(t('app.backgroundUnavailable', { error: String(error) })));
-  }, [alertsEnabled, liveHostRestoreComplete, liveSessions.sessions.length, t]);
+    if (!liveHostRestoreComplete || !liveHostsSafeToPersist) return;
+    persistLiveHostSelection();
+  }, [liveHostRestoreComplete, liveHostsSafeToPersist, persistedLiveHostIdentity]);
 
   useEffect(() => () => {
     if (
@@ -763,6 +658,7 @@ function AppContent() {
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
     if (session?.status === 'connected' || session?.status === 'ready') recordHostDisconnect(sessionId);
     if (isHerdrProtocolMismatch(cause)) {
+      clearLiveHostLatency(sessionId);
       recordNetworkDiagnostic('error', 'control-reconnect-protocol-mismatch', {
         sessionId,
         error: networkErrorMessage(cause),
@@ -777,6 +673,7 @@ function AppContent() {
       sessionId,
       cause: networkErrorMessage(cause),
     });
+    clearLiveHostLatency(sessionId);
     setLiveSessions(current => updateLiveHostConnection(current, sessionId, {
       status: 'reconnecting',
       error: String(cause),
@@ -846,15 +743,13 @@ function AppContent() {
       }
       runtime.previousStatuses = statuses;
       startTransition(() => {
-        setLiveSessions(current => {
-          const updated = applyNativeHostState(current, sessionId, state, snapshot);
-          if (updated === current) return current;
-          return updateLiveHostTerminals(
-            updated,
-            sessionId,
-            terminals => reconcileTerminalSessions(terminals, snapshot.panes),
-          );
-        });
+        setLiveSessions(current => applyNativeHostState(
+          current,
+          sessionId,
+          state,
+          snapshot,
+        ));
+        reconcileHostTerminals(sessionId, snapshot.panes);
       });
       if (state.freshness === 'fresh' || state.freshness === 'unavailable') {
         setConnectError(null);
@@ -959,7 +854,7 @@ function AppContent() {
     await refreshHostSnapshot(sessionId);
   }
 
-  const resumeLiveConnections = useEffectEvent((reconcile = false) => {
+  const resumeLiveConnections = (reconcile = false) => {
     for (const session of liveSessionsRef.current.sessions) {
       const sessionId = session.id;
       const runtime = runtimes.current.get(sessionId);
@@ -973,9 +868,9 @@ function AppContent() {
         continue;
       refreshHost(sessionId).catch(() => undefined);
     }
-  });
+  };
 
-  const restartLiveConnections = useEffectEvent((trigger: ReconnectRecoveryTrigger) => {
+  const restartLiveConnections = (trigger: ReconnectRecoveryTrigger) => {
     for (const session of liveSessionsRef.current.sessions) {
       const runtime = runtimes.current.get(session.id);
       if (!runtime) continue;
@@ -988,7 +883,7 @@ function AppContent() {
           : session.connectionError || t('app.resumeReconnect'),
       );
     }
-  });
+  };
 
   const probeLiveHost = (
     sessionId: string,
@@ -1016,16 +911,10 @@ function AppContent() {
           });
         }
         const trace = beginAppPerformanceTrace('Whip host latency state apply');
-        if (trace) latencyStateApplyTracesRef.current.add(trace);
         startTransition(() => {
-          setLiveSessions(current => {
-            const updated = applyLiveHostLatency(current, sessionId, latencyMs);
-            if (updated === current && trace) {
-              endAppPerformanceTrace(trace);
-              latencyStateApplyTracesRef.current.delete(trace);
-            }
-            return updated;
-          });
+          const changed = recordLiveHostLatency(sessionId, latencyMs);
+          if (trace && changed) latencyStateApplyTracesRef.current.add(trace);
+          else endAppPerformanceTrace(trace);
         });
       })
       .catch(error => {
@@ -1035,7 +924,7 @@ function AppContent() {
           reconnectImmediately,
         );
         runtime.latencyFailures = decision.failures;
-        setLiveSessions(current => invalidateLiveHostLatency(current, sessionId));
+        clearLiveHostLatency(sessionId);
         if (!runtime.latencyFailureActive) {
           runtime.latencyFailureActive = true;
           recordLatencyFailure(sessionId, latencyProbeStartedAt, error);
@@ -1055,7 +944,7 @@ function AppContent() {
   };
   probeLiveHostRef.current = probeLiveHost;
 
-  const measureConnectedHostLatencies = useEffectEvent((
+  const measureConnectedHostLatencies = (
     reconnectImmediately = false,
   ) => {
     for (const session of liveSessionsRef.current.sessions) {
@@ -1063,37 +952,7 @@ function AppContent() {
         probeLiveHost(session.id, reconnectImmediately);
       }
     }
-  });
-
-  const authenticateLockedApp = useCallback(async () => {
-    if (appAuthenticationInFlightRef.current) return;
-    appAuthenticationInFlightRef.current = true;
-    setAppAccessAuthenticating(true);
-    try {
-      await authenticateAppAccess();
-      setAppAccessLocked(false);
-    } catch {
-      // Cancellation and failed checks leave the app locked so the user can retry.
-    } finally {
-      appAuthenticationInFlightRef.current = false;
-      setAppAccessAuthenticating(false);
-    }
-  }, []);
-
-  const verifyBiometric = useCallback(async (): Promise<boolean> => {
-    try {
-      await authenticateAppAccess();
-      return true;
-    } catch (error) {
-      if ((error as { code?: string }).code !== 'E_APP_AUTH_CANCELLED') {
-        Alert.alert(
-          t('settings.biometricUnavailable'),
-          t('settings.biometricUnavailableCopy', { error: String(error) }),
-        );
-      }
-      return false;
-    }
-  }, [t]);
+  };
 
   const unlockGlobalKeychain = useCallback(async (): Promise<GlobalSshKeyMaterial[] | null> => {
     try {
@@ -1131,109 +990,19 @@ function AppContent() {
     resolve?.(trusted);
   }, []);
 
-  useEffect(() => {
-    let previousState = AppState.currentState;
-    const subscription = AppState.addEventListener('change', state => {
-      const action = biometricResumeAction(
-        previousState,
-        state,
-        biometricOnResumeRef.current,
-        preferencesLoadedRef.current,
-      );
-      previousState = state;
-      if (action === 'lock') {
-        setAppAccessLocked(true);
-      } else if (action === 'authenticate') {
-        setAppAccessLocked(true);
-        authenticateLockedApp();
-      }
-    });
-    return () => subscription.remove();
-  }, [authenticateLockedApp]);
-
-  const updateSecuritySetting = async (apply: () => void): Promise<void> => {
-    if (securitySettingChangeInFlightRef.current) return;
-    securitySettingChangeInFlightRef.current = true;
-    try {
-      if (await verifyBiometric()) apply();
-    } finally {
-      securitySettingChangeInFlightRef.current = false;
-    }
-  };
-
-  const updateBiometricForKeys = async (enabled: boolean): Promise<void> => {
-    await updateSecuritySetting(() => {
-      biometricForKeysRef.current = enabled;
-      setBiometricForKeys(enabled);
-    });
-  };
-
-  const updateBiometricOnResume = async (enabled: boolean): Promise<void> => {
-    await updateSecuritySetting(() => {
-      biometricOnResumeRef.current = enabled;
-      setBiometricOnResume(enabled);
-      if (!enabled) setAppAccessLocked(false);
-    });
-  };
-
-  useEffect(() => {
-    if (liveSessions.sessions.length === 0) return;
-    let previousState = AppState.currentState;
-    const subscription = AppState.addEventListener('change', state => {
-      recordNetworkDiagnostic('info', 'app-state-changed', {
-        from: previousState,
-        to: state,
-        liveHostCount: liveSessionsRef.current.sessions.length,
-      });
-      previousState = state;
-      if (state === 'active') {
-        restartLiveConnections('app-resume');
-        measureConnectedHostLatencies(true);
-        resumeLiveConnections(true);
-      } else {
-        flushLatencyDiagnosticWrites().catch(() => undefined);
-      }
-    });
-    const heartbeat = setInterval(() => {
-      if (AppState.currentState === 'active') {
-        measureConnectedHostLatencies();
-        resumeLiveConnections(false);
-      }
-    }, LIVE_HOST_HEALTHCHECK_MS);
-    const reconciliation = setInterval(() => {
-      if (AppState.currentState === 'active') resumeLiveConnections(true);
-    }, LIVE_HOST_RECONCILE_MS);
-    return () => {
-      subscription.remove();
-      clearInterval(heartbeat);
-      clearInterval(reconciliation);
-    };
-  }, [liveSessions.sessions.length]);
-
-  useEffect(() => {
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const subscription = HerdrClient.addNetworkChangeListener(() => {
-      recordNetworkDiagnostic('warn', 'native-network-change', {
-        liveHostCount: liveSessionsRef.current.sessions.length,
-      });
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        restartLiveConnections('network-change');
-      }, NETWORK_CHANGE_DEBOUNCE_MS);
-    });
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      subscription.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (navigation.tab !== 'hosts' || appAccessLocked) return;
-    measureConnectedHostLatencies();
-    const interval = setInterval(measureConnectedHostLatencies, VISIBLE_HOST_LATENCY_POLL_MS);
-    return () => clearInterval(interval);
-  }, [appAccessLocked, navigation.tab]);
+  useLiveHostMonitoring({
+    liveHostCount: liveSessions.sessions.length,
+    alertsEnabled,
+    restoreComplete: liveHostRestoreComplete,
+    hostsVisible: navigation.tab === 'hosts',
+    appAccessLocked,
+    restartConnections: restartLiveConnections,
+    measureLatencies: measureConnectedHostLatencies,
+    resumeConnections: resumeLiveConnections,
+    onBackgroundMonitoringError: error => {
+      setConnectError(t('app.backgroundUnavailable', { error: String(error) }));
+    },
+  });
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -1275,15 +1044,16 @@ function AppContent() {
   const closeLiveHost = useCallback((sessionId: string, recordDisconnect = true) => {
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
     if (session) {
-      savePersistedTerminals(session.hostId, session.terminals).catch(() => undefined);
       if (recordDisconnect) recordHostDisconnect(session.hostId);
     }
+    removeTerminalSessions(sessionId);
     const runtime = runtimes.current.get(sessionId);
     if (runtime) {
       runtime.client.releaseAllTerminals()
         .finally(() => runtime.client.disconnect());
       runtimes.current.delete(sessionId);
     }
+    clearLiveHostLatency(sessionId);
     setSelectedPaneId(null);
     setRemoteFilesRequest(current => current?.hostSessionId === sessionId ? null : current);
     setHerdHostFilterId(current => current === sessionId ? null : current);
@@ -1300,7 +1070,7 @@ function AppContent() {
       }
       return next;
     });
-  }, []);
+  }, [clearLiveHostLatency, removeTerminalSessions]);
 
   const trackHostConnection = (hostId: string, isConnecting: boolean) => {
     setConnectingHostIds(current => {
@@ -1350,7 +1120,7 @@ function AppContent() {
         throw new Error(`${hostDisplayName(jumpWithoutCredential)} needs a saved SSH credential before it can be used as a jump host`);
       }
       const protectedConnection = [nextProfile, ...jumpProfiles].some(profile => (
-        requiresBiometricForKeyUse(profile, biometricForKeysRef.current)
+        requiresBiometricForKeyUse(profile, security.isKeyProtectionEnabled())
       ));
       if (!biometricVerified && protectedConnection) {
         if (!await verifyBiometric()) return false;
@@ -1393,7 +1163,7 @@ function AppContent() {
       const restoredTerminals = await withOptionalAppPerformanceTrace(
         traceStartupRestore,
         'Whip startup restore: terminal state',
-        () => loadPersistedTerminals(nextProfile.id, initial),
+        () => restoreTerminalSessions(sessionId, nextProfile.id, initial),
       );
       if (restoredTerminals.activeTerminalId) restoredTerminalHostIdsRef.current.add(nextProfile.id);
       runtime.previousStatuses = new Map(initial.agents.map(agent => [agent.pane_id, agent.agent_status]));
@@ -1407,8 +1177,7 @@ function AppContent() {
           activateSession,
         );
         next = updateLiveHostConnection(next, sessionId, { status: 'ready' });
-        next = applyNativeHostState(next, sessionId, initialState, initial);
-        return replaceLiveHostTerminals(next, sessionId, restoredTerminals);
+        return applyNativeHostState(next, sessionId, initialState, initial);
       });
       liveSessionOpened = true;
       setEditorProfile(null);
@@ -1468,10 +1237,10 @@ function AppContent() {
       const hasProtectedKey = persistedHosts.some(host => {
         try {
           return [host, ...resolveJumpHostChain(hostsRef.current, host)].some(candidate => (
-            requiresBiometricForSavedKey(candidate, biometricForKeysRef.current)
+            requiresBiometricForSavedKey(candidate, security.isKeyProtectionEnabled())
           ));
         } catch {
-          return requiresBiometricForSavedKey(host, biometricForKeysRef.current);
+          return requiresBiometricForSavedKey(host, security.isKeyProtectionEnabled());
         }
       });
       const protectedKeyAccessGranted = !hasProtectedKey || await withAppPerformanceTrace(
@@ -1481,10 +1250,10 @@ function AppContent() {
       const restoreHost = async (hostId: string) => {
         const host = hostsRef.current.find(item => item.id === hostId);
         if (!host) return;
-        let protectedKey = requiresBiometricForSavedKey(host, biometricForKeysRef.current);
+        let protectedKey = requiresBiometricForSavedKey(host, security.isKeyProtectionEnabled());
         try {
           protectedKey = [host, ...resolveJumpHostChain(hostsRef.current, host)].some(candidate => (
-            requiresBiometricForSavedKey(candidate, biometricForKeysRef.current)
+            requiresBiometricForSavedKey(candidate, security.isKeyProtectionEnabled())
           ));
         } catch {
           // The normal connect path reports a missing or cyclic jump-host configuration.
@@ -1652,13 +1421,13 @@ function AppContent() {
 
   const exitTerminalToHerd = useCallback((sessionId: string) => {
     const session = findLiveHostSession(liveSessionsRef.current, sessionId);
-    const activeTerminalId = session?.terminals.activeTerminalId;
+    const activeTerminalId = getTerminalSessions(sessionId).activeTerminalId;
     const activePane = session?.snapshot.panes.find(pane => pane.terminal_id === activeTerminalId);
     const workspaceId = activePane?.workspace_id || session?.selection.workspaceId;
     setHerdHostFilterId(sessionId);
     if (workspaceId) setHerdWorkspaceFilter(sessionId, workspaceId);
     setNavigation(current => selectMobileTab(current, 'herd'));
-  }, [setHerdWorkspaceFilter]);
+  }, [getTerminalSessions, setHerdWorkspaceFilter]);
 
   const connectSavedHost = async (host: HostProfile) => {
     const existing = liveSessionsRef.current.sessions.find(session => session.hostId === host.id);
@@ -1733,26 +1502,18 @@ function AppContent() {
   };
 
   const activatePaneTerminal = useCallback((sessionId: string, pane: PaneInfo) => {
-    setLiveSessions(current => updateLiveHostTerminals(current, sessionId, terminals => openTerminalSession(terminals, pane)));
-  }, []);
+    openTerminalPane(sessionId, pane);
+  }, [openTerminalPane]);
 
   const openSshShell = useCallback((sessionId: string) => {
     setSelectedPaneId(null);
-    setLiveSessions(current => updateLiveHostTerminals(
-      current,
-      sessionId,
-      terminals => openSshShellSession(terminals, t('terminal.sshShell')),
-    ));
+    openSshTerminal(sessionId, t('terminal.sshShell'));
     selectLiveHost(sessionId, 'terminal');
-  }, [selectLiveHost, t]);
+  }, [openSshTerminal, selectLiveHost, t]);
 
   const openPaneTerminal = (sessionId: string, pane: PaneInfo, focusAgent = false) => {
     setSelectedPaneId(null);
-    setLiveSessions(current => updateLiveHostTerminals(
-      current,
-      sessionId,
-      terminals => openTerminalSession(terminals, pane),
-    ));
+    openTerminalPane(sessionId, pane);
     selectLiveHost(sessionId, 'terminal');
     const runtime = runtimes.current.get(sessionId);
     const focus = focusAgent
@@ -1768,27 +1529,25 @@ function AppContent() {
       notificationResponse,
       Notifications.DEFAULT_ACTION_IDENTIFIER,
     );
-    if (!target || handledNotificationIdRef.current === target.notificationId) return false;
+    if (!target || agentNotifications.wasHandled(target.notificationId)) return false;
     const resolved = resolveAgentNotificationTarget(liveSessionsRef.current, target);
     if (!resolved) return false;
-    handledNotificationIdRef.current = target.notificationId;
     setEditorProfile(null);
     setConnectError(null);
     openPaneTerminal(resolved.sessionId, resolved.pane, true);
-    Notifications.clearLastNotificationResponse();
-    setNotificationResponse(null);
+    agentNotifications.consume(target.notificationId);
     return true;
   });
 
   useEffect(() => {
     if (!liveHostRestoreComplete || !notificationResponse) return;
     openNotificationTarget();
-  }, [liveHostRestoreComplete, liveSessions, notificationResponse]);
+  }, [liveHostRestoreComplete, notificationResponse]);
 
   const closeTerminal = useCallback((sessionId: string, terminalId: string) => {
     runtimes.current.get(sessionId)?.client.closeTerminalBridge(terminalId).catch(() => undefined);
-    setLiveSessions(current => updateLiveHostTerminals(current, sessionId, terminals => closeTerminalSession(terminals, terminalId)));
-  }, []);
+    closeTerminalMetadata(sessionId, terminalId);
+  }, [closeTerminalMetadata]);
 
   const updateTerminalStatus = useCallback((
     sessionId: string,
@@ -1797,26 +1556,21 @@ function AppContent() {
     error?: string,
     reconnectAttempt?: number,
   ) => {
-    setLiveSessions(current => updateLiveHostTerminals(current, sessionId, terminals => updateTerminalSession(terminals, terminalId, {
-      status,
-      error,
-      reconnectAttempt: reconnectAttempt ?? (status === 'connected' ? 0 : undefined),
-    })));
-  }, []);
+    updateTerminalMetadataStatus(sessionId, terminalId, status, error, reconnectAttempt);
+  }, [updateTerminalMetadataStatus]);
 
   const updateTerminalFontSize = useCallback((
     sessionId: string,
     terminalId: string,
     fontSize: number,
   ) => {
-    setLiveSessions(current => updateLiveHostTerminals(
-      current,
-      sessionId,
-      terminals => updateTerminalSession(terminals, terminalId, { fontSize }),
-    ));
-  }, []);
+    updateTerminalMetadataFontSize(sessionId, terminalId, fontSize);
+  }, [updateTerminalMetadataFontSize]);
 
   const activeSession = getActiveLiveHostSession(liveSessions);
+  const activeTelemetry = activeSession
+    ? getLiveHostTelemetry(activeSession.id)
+    : null;
   const activeRuntime = activeSession ? runtimes.current.get(activeSession.id) : undefined;
   const activeClient = activeRuntime?.client;
   const remoteFilesRuntime = remoteFilesRequest
@@ -1827,7 +1581,8 @@ function AppContent() {
       liveSessions.sessions.flatMap(session => {
         const runtime = runtimes.current.get(session.id);
         if (!runtime) return [];
-        return session.terminals.sessions.map(terminal => ({
+        const terminals = terminalSessionsByHost.get(session.id)?.terminals.sessions ?? [];
+        return terminals.map(terminal => ({
           key: terminalRendererKey(session.id, terminal.terminalId),
           hostSessionId: session.id,
           client: runtime.client,
@@ -1837,7 +1592,7 @@ function AppContent() {
           )?.scroll ?? undefined,
         }));
       }),
-    [liveSessions.sessions],
+    [liveSessions.sessions, terminalSessionsByHost],
   );
   const snapshot = activeSession?.snapshot;
   const selectedPane = selectedPaneId && snapshot
@@ -1997,15 +1752,9 @@ function AppContent() {
     navigate: boolean,
   ) => {
     setSelectedPaneId(null);
-    setLiveSessions(current => {
-      return updateLiveHostTerminals(
-        current,
-        sessionId,
-        terminals => openTerminalSession(terminals, created.root_pane),
-      );
-    });
+    openTerminalPane(sessionId, created.root_pane);
     if (navigate) selectLiveHost(sessionId, 'terminal');
-  }, [selectLiveHost]);
+  }, [openTerminalPane, selectLiveHost]);
 
   const runHerdCommand = async (
     sessionId: string,
@@ -2044,7 +1793,7 @@ function AppContent() {
   const terminalVisible = navigation.tab === 'terminal' && !editorProfile;
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
   const activeTerminalVisible =
-    immersiveTerminal && Boolean(activeSession?.terminals.activeTerminalId);
+    immersiveTerminal && Boolean(activeSession && getTerminalSessions(activeSession.id).activeTerminalId);
   const fullscreenTerminalVisible =
     activeTerminalVisible && terminalPreferences.fullscreen;
   const fullscreenVisible = immersiveTerminal
@@ -2055,7 +1804,7 @@ function AppContent() {
     label: hostDisplayName(session.host),
     status: session.status,
     agentStatus: aggregateAgentStatus(session.snapshot.workspaces.map(workspace => workspace.agent_status)),
-    terminalCount: session.terminals.sessions.length,
+    terminalCount: getTerminalSessions(session.id).sessions.length,
   }));
 
   return (
@@ -2100,7 +1849,9 @@ function AppContent() {
                 .map(session => session.hostId)}
               latencyMsByHostId={Object.fromEntries(liveSessions.sessions.map(session => [
                 session.hostId,
-                session.status === 'ready' ? session.sync.latencyMs : null,
+                session.status === 'ready'
+                  ? getLiveHostTelemetry(session.id).latencyMs
+                  : null,
               ]))}
               runtimeByHostId={Object.fromEntries(liveSessions.sessions.map(session => [
                 session.hostId,
@@ -2193,8 +1944,8 @@ function AppContent() {
               agentCommand={agentCommand}
               terminalHistory={terminalHistory}
               terminalPreferences={terminalPreferences}
-              onAlertsChange={setAlertsEnabled}
-              onPersistentAlertDurationChange={setPersistentAlertDurationSeconds}
+              onAlertsChange={value => setPreference('alertsEnabled', value)}
+              onPersistentAlertDurationChange={value => setPreference('persistentAlertDurationSeconds', value)}
               onTestPersistentAlert={() => {
                 alertAgent({
                   terminal_id: 'whip-alert-test',
@@ -2213,22 +1964,22 @@ function AppContent() {
                   setConnectError(String(error));
                 });
               }}
-              onTtsChange={setTtsEnabled}
+              onTtsChange={value => setPreference('ttsEnabled', value)}
               onBiometricForKeysChange={value => { updateBiometricForKeys(value).catch(() => undefined); }}
               onBiometricOnResumeChange={value => { updateBiometricOnResume(value).catch(() => undefined); }}
               onManageGlobalKeychain={() => { openGlobalKeychain().catch(() => undefined); }}
               onManageKnownHosts={() => setKnownHostsOpen(true)}
               onOpenLicenses={() => setLicensesOpen(true)}
-              onAppearanceChange={updateAppearance}
-              onFullscreenAppChange={setFullscreenApp}
-              onAppBackgroundImageChange={setAppBackgroundImageUri}
-              onAppBackgroundDimmingChange={setAppBackgroundDimming}
-              onAppGlassEnabledChange={setAppGlassEnabled}
-              onDeveloperOptionsEnabledChange={setDeveloperOptionsEnabled}
-              onLanguageChange={setLanguage}
-              onKeepScreenOnChange={setKeepScreenOn}
-              onReopenTerminalOnLaunchChange={setReopenTerminalOnLaunch}
-              onAgentCommandChange={setAgentCommand}
+              onAppearanceChange={value => setPreference('appearance', value)}
+              onFullscreenAppChange={value => setPreference('fullscreenApp', value)}
+              onAppBackgroundImageChange={value => setPreference('appBackgroundImageUri', value)}
+              onAppBackgroundDimmingChange={value => setPreference('appBackgroundDimming', value)}
+              onAppGlassEnabledChange={value => setPreference('appGlassEnabled', value)}
+              onDeveloperOptionsEnabledChange={value => setPreference('developerOptionsEnabled', value)}
+              onLanguageChange={value => setPreference('language', value)}
+              onKeepScreenOnChange={value => setPreference('keepScreenOn', value)}
+              onReopenTerminalOnLaunchChange={value => setPreference('reopenTerminalOnLaunch', value)}
+              onAgentCommandChange={value => setPreference('agentCommand', value)}
               onDeleteTerminalHistory={deleteTerminalHistoryEntries}
               onTerminalPreferencesChange={setTerminalPreferences}
             />
@@ -2242,6 +1993,9 @@ function AppContent() {
             session={activeSession}
             client={activeRuntime.client}
             visible={terminalVisible}
+            latencyMs={activeSession.status === 'ready' ? activeTelemetry?.latencyMs ?? null : null}
+            latencyWarningActive={activeSession.status === 'ready' && Boolean(activeTelemetry?.latencyWarning.active)}
+            terminalState={getTerminalSessions(activeSession.id)}
             terminalTargets={terminalTargets}
             appBackgroundImageUri={appBackgroundImageUri}
             appBackgroundDimming={appBackgroundDimming}
@@ -2447,104 +2201,6 @@ function TerminalVolumeKeyBinding({
     return () => configureTerminalVolumeKeys(false, 'none', 'none');
   }, [enabled, volumeDownAction, volumeUpAction]);
   return null;
-}
-
-function LiveSessionView({
-  session,
-  client,
-  visible,
-  terminalTargets,
-  appBackgroundImageUri,
-  appBackgroundDimming,
-  terminalPreferences,
-  terminalControlUsage,
-  terminalHistory,
-  onOpenFiles,
-  getTerminalComposerDraft,
-  onTerminalComposerDraftChange,
-  onTerminalControlUse,
-  onTerminalHistoryEntry,
-  onTerminalOpenLinksInAppChange,
-  onInteraction,
-  onExit,
-  onRefresh,
-  onOpenPane,
-  onActivateTerminal,
-  onCloseTerminal,
-  onTerminalStatus,
-  onTerminalFontSizeChange,
-}: {
-  session: LiveHostSession;
-  client: HerdrClient;
-  visible: boolean;
-  terminalTargets: readonly TerminalRenderTarget[];
-  appBackgroundImageUri: string | null;
-  appBackgroundDimming: number;
-  terminalPreferences: TerminalPreferences;
-  terminalControlUsage: TerminalControlUsage;
-  terminalHistory: readonly string[];
-  onOpenFiles: (sessionId: string, terminalId: string, target?: TranscriptFileLinkTarget) => void;
-  getTerminalComposerDraft: (sessionId: string, terminalId: string) => string;
-  onTerminalComposerDraftChange: (sessionId: string, terminalId: string, value: string) => void;
-  onTerminalControlUse: (control: TerminalControlId) => void;
-  onTerminalHistoryEntry: (entry: string) => void;
-  onTerminalOpenLinksInAppChange: (value: boolean) => void;
-  onInteraction: (sessionId: string, tabId: string) => void;
-  onExit: () => void;
-  onRefresh: (sessionId: string) => Promise<void>;
-  onOpenPane: (sessionId: string, pane: PaneInfo) => void;
-  onActivateTerminal: (sessionId: string, pane: PaneInfo) => void;
-  onCloseTerminal: (sessionId: string, terminalId: string) => void;
-  onTerminalStatus: (sessionId: string, terminalId: string, status: TerminalSessionStatus, error?: string, reconnectAttempt?: number) => void;
-  onTerminalFontSizeChange: (sessionId: string, terminalId: string, fontSize: number) => void;
-}) {
-  const sessionId = session.id;
-  const refresh = useCallback(() => onRefresh(sessionId), [onRefresh, sessionId]);
-  const openPane = useCallback((pane: PaneInfo) => onOpenPane(sessionId, pane), [onOpenPane, sessionId]);
-  const activateTerminal = useCallback((pane: PaneInfo) => onActivateTerminal(sessionId, pane), [onActivateTerminal, sessionId]);
-  const closeTerminal = useCallback((terminalId: string) => onCloseTerminal(sessionId, terminalId), [onCloseTerminal, sessionId]);
-  const openFiles = useCallback((terminalId: string, target?: TranscriptFileLinkTarget) => onOpenFiles(sessionId, terminalId, target), [onOpenFiles, sessionId]);
-  const getComposerDraft = useCallback(
-    (terminalId: string) => getTerminalComposerDraft(sessionId, terminalId),
-    [getTerminalComposerDraft, sessionId],
-  );
-  const updateComposerDraft = useCallback(
-    (terminalId: string, value: string) => onTerminalComposerDraftChange(sessionId, terminalId, value),
-    [onTerminalComposerDraftChange, sessionId],
-  );
-
-  return (
-    <SessionScreen
-      hostProfileId={session.hostId}
-      hostSessionId={sessionId}
-      visible={visible}
-      snapshot={session.snapshot}
-      client={client}
-      terminalState={session.terminals}
-      terminalTargets={terminalTargets}
-      appBackgroundImageUri={appBackgroundImageUri}
-      appBackgroundDimming={appBackgroundDimming}
-      latencyMs={session.status === 'ready' ? session.sync.latencyMs : null}
-      latencyWarningActive={session.status === 'ready' && session.sync.latencyWarning.active}
-      onRefresh={refresh}
-      onOpenPane={openPane}
-      onActivateTerminal={activateTerminal}
-      onCloseTerminal={closeTerminal}
-      onTerminalStatus={onTerminalStatus}
-      onTerminalFontSizeChange={onTerminalFontSizeChange}
-      terminalPreferences={terminalPreferences}
-      terminalControlUsage={terminalControlUsage}
-      terminalHistory={terminalHistory}
-      onOpenFiles={openFiles}
-      getComposerDraft={getComposerDraft}
-      onComposerDraftChange={updateComposerDraft}
-      onTerminalControlUse={onTerminalControlUse}
-      onTerminalHistoryEntry={onTerminalHistoryEntry}
-      onTerminalOpenLinksInAppChange={onTerminalOpenLinksInAppChange}
-      onInteraction={tabId => onInteraction(sessionId, tabId)}
-      onExit={onExit}
-    />
-  );
 }
 
 export default App;

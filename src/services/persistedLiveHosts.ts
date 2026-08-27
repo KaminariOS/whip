@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import type { LiveHostSessionsState } from '../liveHostSessions';
+
 import {
   recordStorageDiagnostic,
   storageErrorDetails,
@@ -11,6 +13,21 @@ export const LIVE_HOSTS_KEY = 'herdr.live.hosts.v1';
 export interface PersistedLiveHosts {
   hostIds: string[];
   activeHostId: string | null;
+}
+
+/** Select only durable membership/selection from the volatile live-host model. */
+export function persistedLiveHostsFromSessions(
+  state: LiveHostSessionsState,
+): PersistedLiveHosts {
+  const active = state.sessions.find(session => session.id === state.activeSessionId);
+  return {
+    hostIds: state.sessions.map(session => session.hostId),
+    activeHostId: active?.hostId ?? null,
+  };
+}
+
+export function persistedLiveHostsIdentity(state: PersistedLiveHosts): string {
+  return JSON.stringify(state);
 }
 
 export async function loadPersistedLiveHosts(): Promise<PersistedLiveHosts> {
