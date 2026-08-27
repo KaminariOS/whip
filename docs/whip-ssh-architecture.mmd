@@ -18,6 +18,7 @@ flowchart TB
       Agents["Agent sessions/transcripts<br/>Herdr identity/context · independent sources<br/>Codex rollout · OpenCode export/events<br/>cache identity/version/checkpoints · retries"]
       TerminalRuntime["Terminal runtime<br/>binary Herdr client protocol<br/>terminal registry/lifecycle"]
       RemoteOps["Remote operations<br/>SFTP/files · transfers/attachments<br/>Git · previews/forwarding"]
+      Diagnostics["Runtime diagnostics<br/>transport-owned coarse timings<br/>typed outcomes"]
     end
 
     SSH["HostRuntime-owned SshSession · shared transport<br/>russh · ProxyJump · known_hosts<br/>shell · exec · SFTP · forwarding · stream-local"]
@@ -27,10 +28,12 @@ flowchart TB
     Host --> Agents
     Host --> TerminalRuntime
     Host --> RemoteOps
+    Host --> Diagnostics
     Control --> SSH
     Agents --> SSH
     TerminalRuntime --> SSH
     RemoteOps --> SSH
+    Diagnostics --> SSH
   end
 
   subgraph Remote["Remote host"]
@@ -64,5 +67,5 @@ flowchart TB
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033
   class RN,Cache,SQLite ui
   class JSI native
-  class Host,Control,Agents,TerminalRuntime,RemoteOps,SSH,Pairing rust
+  class Host,Control,Agents,TerminalRuntime,RemoteOps,Diagnostics,SSH,Pairing rust
   class SSHD,API,Terminal,AgentSources,FilesGit,Forwarded remote

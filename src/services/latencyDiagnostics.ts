@@ -12,7 +12,7 @@ export interface HostLatencyMeasurement {
   latencyMs: number;
   sshRttMs: number;
   totalMs: number;
-  dispatchMs: number;
+  runtimeOverheadMs: number;
 }
 
 export type LatencyDiagnosticEntry =
@@ -24,7 +24,7 @@ export type LatencyDiagnosticEntry =
       latencyMs: number;
       sshRttMs: number;
       totalMs: number;
-      dispatchMs: number;
+      runtimeOverheadMs: number;
     }
   | {
       id: string;
@@ -74,10 +74,13 @@ function parseEntry(value: unknown): LatencyDiagnosticEntry | null {
 
   const latencyMs = finiteMilliseconds(candidate.latencyMs);
   const sshRttMs = finiteMilliseconds(candidate.sshRttMs);
-  const dispatchMs = finiteMilliseconds(candidate.dispatchMs);
-  return latencyMs === null || sshRttMs === null || dispatchMs === null
+  const legacy = candidate as Partial<LatencyDiagnosticEntry> & { dispatchMs?: number };
+  const runtimeOverheadMs = finiteMilliseconds(
+    candidate.runtimeOverheadMs ?? legacy.dispatchMs,
+  );
+  return latencyMs === null || sshRttMs === null || runtimeOverheadMs === null
     ? null
-    : { id, kind: 'slow', timestamp, sessionId, latencyMs, sshRttMs, totalMs, dispatchMs };
+    : { id, kind: 'slow', timestamp, sessionId, latencyMs, sshRttMs, totalMs, runtimeOverheadMs };
 }
 
 export function latencyDiagnosticsFromStorage(value: string | null): LatencyDiagnosticEntry[] {
@@ -177,7 +180,7 @@ export async function recordSlowHostLatency(
     latencyMs: measurement.latencyMs,
     sshRttMs: measurement.sshRttMs,
     totalMs: measurement.totalMs,
-    dispatchMs: measurement.dispatchMs,
+    runtimeOverheadMs: measurement.runtimeOverheadMs,
   }]);
   schedulePersistence();
   return true;
@@ -220,7 +223,7 @@ export function formatLatencyDiagnostics(
   diagnosticEntries: readonly LatencyDiagnosticEntry[] = snapshot,
 ): string {
   return diagnosticEntries.map(entry => entry.kind === 'slow'
-    ? `${entry.timestamp} SLOW session=${entry.sessionId} latency=${entry.latencyMs}ms ssh=${entry.sshRttMs}ms total=${entry.totalMs}ms dispatch=${entry.dispatchMs}ms`
+    ? `${entry.timestamp} SLOW session=${entry.sessionId} latency=${entry.latencyMs}ms ssh=${entry.sshRttMs}ms total=${entry.totalMs}ms runtime=${entry.runtimeOverheadMs}ms`
     : `${entry.timestamp} FAIL session=${entry.sessionId} total=${entry.totalMs}ms error=${entry.error}`
   ).join('\n');
 }

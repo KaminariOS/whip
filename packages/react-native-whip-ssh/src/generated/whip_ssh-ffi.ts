@@ -655,6 +655,9 @@ interface NativeModuleInterface {
     localDirectory: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_herdr_server(
+    uniffiSelf: bigint,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_html_preview(
     uniffiSelf: bigint,
     remotePath: Uint8Array,
@@ -684,6 +687,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_stop_preview(
     uniffiSelf: bigint,
     previewId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_submit_pastes(
+    uniffiSelf: bigint,
+    paneId: Uint8Array,
+    parts: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_subscribe_events(
     uniffiSelf: bigint,
@@ -812,6 +820,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_upload(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_download(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_herdr_server(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_html_preview(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_remote_file_preview(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_upload(): number;
@@ -819,6 +828,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stat_remote_path(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_status(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stop_preview(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_submit_pastes(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_subscribe_events(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_input(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_transfer_progress(): number;

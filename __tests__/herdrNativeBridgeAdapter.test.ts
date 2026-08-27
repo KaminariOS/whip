@@ -36,8 +36,14 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     Herdr: 'Herdr',
     EventSubscriptionClosed: 'EventSubscriptionClosed',
     EventSubscriptionRestored: 'EventSubscriptionRestored',
+    Diagnostic: 'Diagnostic',
     FatalError: 'FatalError',
   },
+  RuntimeDiagnosticOperation: {
+    SshConnect: 0, SshReconnect: 1, HostLatencyProbe: 2, HerdrRequest: 3,
+    TerminalAttach: 4, TerminalRecovery: 5, EventStreamRecovery: 6,
+  },
+  RuntimeDiagnosticOutcome: { Succeeded: 0, Failed: 1 },
   HerdrControlRequest: {
     WorkspaceFocus: { new: jest.fn(inner => ({ tag: 'WorkspaceFocus', inner })) },
     AgentFocus: { new: jest.fn(inner => ({ tag: 'AgentFocus', inner })) },
@@ -282,6 +288,18 @@ describe('native Herdr bridge adapter', () => {
         changedAgentPaneIds: ['p1'],
       },
     });
+    mockRuntimeEventSink.event({
+      tag: 'Diagnostic',
+      inner: {
+        runtimeId: 'runtime-1',
+        diagnostic: {
+          operation: mockGenerated.RuntimeDiagnosticOperation.HostLatencyProbe,
+          durationMs: 43,
+          transportDurationMs: 42,
+          outcome: mockGenerated.RuntimeDiagnosticOutcome.Succeeded,
+        },
+      },
+    });
 
     expect(rustRuntime.connect).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenNthCalledWith(1, {
@@ -309,6 +327,17 @@ describe('native Herdr bridge adapter', () => {
       type: 'host-state',
       state: runtime.hostState(),
       changedAgentPaneIds: ['p1'],
+    });
+    expect(handler).toHaveBeenNthCalledWith(4, {
+      type: 'diagnostic',
+      diagnostic: {
+        operation: 'host-latency-probe',
+        durationMs: 43,
+        transportDurationMs: 42,
+        outcome: 'succeeded',
+        terminalId: undefined,
+        error: undefined,
+      },
     });
 
     for (const [state, expected] of [

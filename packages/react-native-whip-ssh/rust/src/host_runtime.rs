@@ -7,7 +7,7 @@ use std::sync::{
     Arc, OnceLock, Weak,
     atomic::{AtomicU64, Ordering},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::{Notify, watch};
@@ -41,6 +41,7 @@ use remote_files::*;
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
 const INITIAL_RECONNECT_DELAY_MS: u64 = 750;
 const MAX_RECONNECT_DELAY_MS: u64 = 8_000;
+const SLOW_RUNTIME_DIAGNOSTIC_MS: f64 = 200.0;
 static NEXT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 static RUNTIMES: OnceLock<RwLock<HashMap<String, Weak<RuntimeInner>>>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn HostRuntimeEventSink>>>> = OnceLock::new();
@@ -120,6 +121,40 @@ pub struct HostRuntimeStatus {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum RuntimeDiagnosticOperation {
+    SshConnect,
+    SshReconnect,
+    HostLatencyProbe,
+    HerdrRequest,
+    TerminalAttach,
+    TerminalRecovery,
+    EventStreamRecovery,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum RuntimeDiagnosticOutcome {
+    Succeeded,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct RuntimeDiagnostic {
+    pub operation: RuntimeDiagnosticOperation,
+    pub duration_ms: f64,
+    pub transport_duration_ms: Option<f64>,
+    pub outcome: RuntimeDiagnosticOutcome,
+    pub terminal_id: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
+pub struct HostLatencyMeasurement {
+    pub ssh_rtt_ms: f64,
+    pub total_ms: f64,
+    pub runtime_overhead_ms: f64,
+}
+
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 // UniFFI data enums cannot box an associated record. Herdr events remain typed
 // instead of crossing the native boundary as serialized JSON.
@@ -181,6 +216,10 @@ pub enum HostRuntimeEvent {
         state: PreviewState,
         error: Option<String>,
     },
+    Diagnostic {
+        runtime_id: String,
+        diagnostic: RuntimeDiagnostic,
+    },
     FatalError {
         runtime_id: String,
         message: String,
@@ -226,6 +265,11 @@ pub enum HostRuntimeError {
     GitFailure(String),
     #[error("{0}")]
     PreviewFailure(String),
+    #[error("pane submission failed after {submitted_parts} completed paste parts: {message}")]
+    PaneSubmissionFailure {
+        submitted_parts: u32,
+        message: String,
+    },
 }
 
 impl From<SshFailure> for HostRuntimeError {
@@ -399,6 +443,49 @@ fn emit_host_state(inner: &RuntimeInner, changed_agent_pane_ids: Vec<String>) {
     });
 }
 
+fn elapsed_ms(started_at: Instant) -> f64 {
+    started_at.elapsed().as_secs_f64() * 1_000.0
+}
+
+fn emit_diagnostic(
+    inner: &RuntimeInner,
+    operation: RuntimeDiagnosticOperation,
+    started_at: Instant,
+    transport_duration_ms: Option<f64>,
+    terminal_id: Option<String>,
+    error: Option<String>,
+) {
+    let event = HostRuntimeEvent::Diagnostic {
+        runtime_id: inner.id.clone(),
+        diagnostic: RuntimeDiagnostic {
+            operation,
+            duration_ms: elapsed_ms(started_at),
+            transport_duration_ms,
+            outcome: if error.is_some() {
+                RuntimeDiagnosticOutcome::Failed
+            } else {
+                RuntimeDiagnosticOutcome::Succeeded
+            },
+            terminal_id,
+            error,
+        },
+    };
+    // Diagnostics are best-effort observability. A faulty foreign listener
+    // must not turn a completed transport operation into a runtime failure.
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| emit(event)));
+}
+
+fn emit_slow_or_failed_diagnostic(
+    inner: &RuntimeInner,
+    operation: RuntimeDiagnosticOperation,
+    started_at: Instant,
+    error: Option<String>,
+) {
+    if error.is_some() || elapsed_ms(started_at) >= SLOW_RUNTIME_DIAGNOSTIC_MS {
+        emit_diagnostic(inner, operation, started_at, None, None, error);
+    }
+}
+
 fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRuntimeError> {
     for ssh in std::iter::once(&config.ssh).chain(config.jump_hosts.iter()) {
         if ssh.host.trim().is_empty() || ssh.username.trim().is_empty() || ssh.port == 0 {
@@ -552,10 +639,20 @@ async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), HostRuntimeErro
     let epoch = inner.state.lock().begin_connect()?;
     let _ = inner.cancellation.send(epoch);
     emit_status(&inner);
+    let started_at = Instant::now();
     match connect_chain(&inner).await {
         Ok((ssh, jumps)) => {
-            finish_connection(inner, epoch, ssh, jumps, false).await?;
-            Ok(())
+            emit_diagnostic(
+                &inner,
+                RuntimeDiagnosticOperation::SshConnect,
+                started_at,
+                None,
+                None,
+                None,
+            );
+            finish_connection(inner.clone(), epoch, ssh, jumps, false)
+                .await
+                .map(|_| ())
         }
         Err(error) => {
             let mut state = inner.state.lock();
@@ -568,6 +665,14 @@ async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), HostRuntimeErro
             emit_status(&inner);
             emit_host_state(&inner, Vec::new());
             inner.settled.notify_waiters();
+            emit_diagnostic(
+                &inner,
+                RuntimeDiagnosticOperation::SshConnect,
+                started_at,
+                None,
+                None,
+                Some(error.to_string()),
+            );
             Err(error)
         }
     }
@@ -625,6 +730,7 @@ async fn reconnect_loop(
     initial_reason: String,
     immediate: bool,
 ) {
+    let started_at = Instant::now();
     close_herdr_event_subscription(inner.id.clone());
     close_all_herdr_terminal_bridges(inner.id.clone());
     let mut cancellation = inner.cancellation.subscribe();
@@ -664,6 +770,14 @@ async fn reconnect_loop(
                             generation,
                             restored_terminals: restored,
                         });
+                        emit_diagnostic(
+                            &inner,
+                            RuntimeDiagnosticOperation::SshReconnect,
+                            started_at,
+                            None,
+                            None,
+                            None,
+                        );
                         return;
                     }
                     Err(_) => return,
@@ -690,6 +804,14 @@ async fn reconnect_loop(
             "host reconnect exhausted after {MAX_RECONNECT_ATTEMPTS} attempts: {last_error}"
         ),
     });
+    emit_diagnostic(
+        &inner,
+        RuntimeDiagnosticOperation::SshReconnect,
+        started_at,
+        None,
+        None,
+        Some(last_error),
+    );
     inner.settled.notify_waiters();
 }
 
@@ -861,6 +983,7 @@ async fn control_request_inner(
             "host runtime is {state:?}"
         )));
     }
+    let started_at = Instant::now();
     let mut socket = resolve_socket_path(&inner)
         .await
         .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
@@ -886,6 +1009,12 @@ async fn control_request_inner(
         )
         .await;
     }
+    emit_slow_or_failed_diagnostic(
+        &inner,
+        RuntimeDiagnosticOperation::HerdrRequest,
+        started_at,
+        result.as_ref().err().map(ToString::to_string),
+    );
     match result {
         Ok(result) => {
             update_server_from_result(&inner, socket, &result);
@@ -1029,6 +1158,92 @@ async fn create_tab_with_launch_inner(
             failure: error.into(),
         }),
     }
+}
+
+fn pane_submission_requests(
+    pane_id: String,
+    parts: Vec<String>,
+) -> Vec<(HerdrControlRequest, bool)> {
+    let parts = parts
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return vec![(
+            HerdrControlRequest::PaneSendKeys {
+                pane_id,
+                keys: vec!["enter".to_owned()],
+            },
+            false,
+        )];
+    }
+
+    let part_count = parts.len();
+    let mut requests = Vec::with_capacity(part_count.saturating_mul(2).saturating_sub(1));
+    for (index, text) in parts.into_iter().enumerate() {
+        if index > 0 {
+            requests.push((
+                HerdrControlRequest::PaneSendText {
+                    pane_id: pane_id.clone(),
+                    text: " ".to_owned(),
+                },
+                false,
+            ));
+        }
+        requests.push((
+            HerdrControlRequest::PaneSendInput {
+                pane_id: pane_id.clone(),
+                text,
+                keys: if index + 1 == part_count {
+                    vec!["enter".to_owned()]
+                } else {
+                    Vec::new()
+                },
+            },
+            true,
+        ));
+    }
+    requests
+}
+
+async fn submit_pastes_inner(
+    inner: Arc<RuntimeInner>,
+    pane_id: String,
+    parts: Vec<String>,
+) -> Result<(), HostRuntimeError> {
+    let mut submitted_parts = 0_u32;
+    for (request, completes_part) in pane_submission_requests(pane_id, parts) {
+        control_request_inner(inner.clone(), request)
+            .await
+            .map_err(|error| HostRuntimeError::PaneSubmissionFailure {
+                submitted_parts,
+                message: error.to_string(),
+            })?;
+        if completes_part {
+            submitted_parts = submitted_parts.saturating_add(1);
+        }
+    }
+    Ok(())
+}
+
+fn start_herdr_server_command(herdr_command: &str, session_name: &str) -> String {
+    let herdr_command = herdr_command.trim();
+    let mut base = shell_quote(if herdr_command.is_empty() {
+        "herdr"
+    } else {
+        herdr_command
+    });
+    if !session_name.trim().is_empty() {
+        base.push_str(" --session ");
+        base.push_str(&shell_quote(session_name.trim()));
+    }
+    let command = format!("nohup {base} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &");
+    let bootstrap = r#"exec "${SHELL:-/bin/sh}" -lc "$1""#;
+    format!(
+        "exec /bin/sh -c {} whip {}",
+        shell_quote(bootstrap),
+        shell_quote(&command)
+    )
 }
 
 fn integration_status_command(herdr_command: &str) -> String {
@@ -1313,6 +1528,12 @@ async fn open_terminal_inner(
     operation_epoch: u64,
     restoring: bool,
 ) -> Result<(), HostRuntimeError> {
+    let started_at = Instant::now();
+    let operation = if restoring {
+        RuntimeDiagnosticOperation::TerminalRecovery
+    } else {
+        RuntimeDiagnosticOperation::TerminalAttach
+    };
     ensure_herdr_server(&inner).await?;
     let (socket, protocol, terminal) = {
         let state = inner.state.lock();
@@ -1374,12 +1595,20 @@ async fn open_terminal_inner(
             drop(state);
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: inner.id.clone(),
-                terminal_id,
+                terminal_id: terminal_id.clone(),
                 state: HostTerminalState::Attached,
                 reconnect_attempt: 0,
                 retrying: false,
                 error: None,
             });
+            emit_diagnostic(
+                &inner,
+                operation,
+                started_at,
+                None,
+                Some(terminal_id.clone()),
+                None,
+            );
             inner.settled.notify_waiters();
             Ok(())
         }
@@ -1395,12 +1624,20 @@ async fn open_terminal_inner(
             };
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: inner.id.clone(),
-                terminal_id,
+                terminal_id: terminal_id.clone(),
                 state: HostTerminalState::Failed,
                 reconnect_attempt,
                 retrying,
                 error: Some(message.clone()),
             });
+            emit_diagnostic(
+                &inner,
+                operation,
+                started_at,
+                None,
+                Some(terminal_id.clone()),
+                Some(message.clone()),
+            );
             inner.settled.notify_waiters();
             Err(HostRuntimeError::TerminalUnavailable(message))
         }
@@ -1592,6 +1829,7 @@ fn schedule_event_retry(inner: Arc<RuntimeInner>, reason: String) {
     };
     if let Ok(runtime) = crate::runtime() {
         runtime.spawn(async move {
+            let started_at = Instant::now();
             let mut last_error = reason;
             for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
                 let delay = reconnect_delay(attempt, runtime_jitter(&inner, attempt));
@@ -1622,6 +1860,14 @@ fn schedule_event_retry(inner: Arc<RuntimeInner>, reason: String) {
                             runtime_id: inner.id.clone(),
                             generation,
                         });
+                        emit_diagnostic(
+                            &inner,
+                            RuntimeDiagnosticOperation::EventStreamRecovery,
+                            started_at,
+                            None,
+                            None,
+                            None,
+                        );
                         schedule_state_resync(
                             inner.clone(),
                             "event subscription restarted after a delivery gap".to_owned(),
@@ -1636,8 +1882,16 @@ fn schedule_event_retry(inner: Arc<RuntimeInner>, reason: String) {
             }
             emit(HostRuntimeEvent::EventSubscriptionClosed {
                 runtime_id: inner.id.clone(),
-                reason: last_error,
+                reason: last_error.clone(),
             });
+            emit_diagnostic(
+                &inner,
+                RuntimeDiagnosticOperation::EventStreamRecovery,
+                started_at,
+                None,
+                None,
+                Some(last_error),
+            );
         });
     }
 }
@@ -1745,6 +1999,7 @@ fn apply_herdr_event_batch(
     let mut changed_agent_pane_ids = HashSet::new();
     let generation = state.generation;
     for event in events {
+        let changes_projection = !matches!(event, HerdrEvent::PaneOutputChanged { .. });
         let agent_pane_id = match &event {
             HerdrEvent::PaneAgentStatusChanged { pane_id, .. } => Some(pane_id.clone()),
             _ => None,
@@ -1753,7 +2008,7 @@ fn apply_herdr_event_batch(
         if matches!(outcome, ApplyResult::IgnoredStale) {
             continue;
         }
-        result.changed = true;
+        result.changed |= changes_projection || matches!(outcome, ApplyResult::NeedsResync(_));
         if let Some(pane_id) = agent_pane_id {
             changed_agent_pane_ids.insert(pane_id);
         }
@@ -2096,6 +2351,31 @@ impl HostRuntime {
             .map_err(|error| {
                 HerdrControlError::RequestCancelled(format!("host tab launch task failed: {error}"))
             })?
+    }
+
+    pub async fn submit_pastes(
+        &self,
+        pane_id: String,
+        parts: Vec<String>,
+    ) -> Result<(), HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(submit_pastes_inner(inner, pane_id, parts))
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!(
+                    "pane submission task failed: {error}"
+                ))
+            })?
+    }
+
+    pub async fn start_herdr_server(&self) -> Result<(), HostRuntimeError> {
+        let command = start_herdr_server_command(
+            &self.inner.config.herdr_command,
+            &self.inner.config.session_name,
+        );
+        self.execute(command).await.map(|_| ())
     }
 
     pub async fn agent_integration_status(
@@ -2496,16 +2776,52 @@ impl HostRuntime {
         Ok(home)
     }
 
-    pub async fn measure_host_latency(&self) -> Result<f64, HostRuntimeError> {
-        let ssh = current_ssh(&self.inner)?;
-        let latency_ms = crate::runtime()
+    pub async fn measure_host_latency(&self) -> Result<HostLatencyMeasurement, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
-            .spawn(async move { ssh.latency_ms().await })
+            .spawn(async move {
+                let started_at = Instant::now();
+                let result = match current_ssh(&inner) {
+                    Ok(ssh) => ssh.latency_ms().await.map_err(HostRuntimeError::from),
+                    Err(error) => Err(error),
+                };
+                match result {
+                    Ok(ssh_rtt_ms) => {
+                        let total_ms = elapsed_ms(started_at);
+                        if total_ms >= SLOW_RUNTIME_DIAGNOSTIC_MS {
+                            emit_diagnostic(
+                                &inner,
+                                RuntimeDiagnosticOperation::HostLatencyProbe,
+                                started_at,
+                                Some(ssh_rtt_ms),
+                                None,
+                                None,
+                            );
+                        }
+                        Ok(HostLatencyMeasurement {
+                            ssh_rtt_ms,
+                            total_ms,
+                            runtime_overhead_ms: (total_ms - ssh_rtt_ms).max(0.0),
+                        })
+                    }
+                    Err(error) => {
+                        emit_diagnostic(
+                            &inner,
+                            RuntimeDiagnosticOperation::HostLatencyProbe,
+                            started_at,
+                            None,
+                            None,
+                            Some(error.to_string()),
+                        );
+                        Err(error)
+                    }
+                }
+            })
             .await
             .map_err(|error| {
                 HostRuntimeError::SshTransportFailure(format!("SSH latency task failed: {error}"))
-            })??;
-        Ok(latency_ms)
+            })?
     }
 
     pub async fn list_directory(
@@ -3122,6 +3438,14 @@ mod tests {
         }
     }
 
+    struct PanickingRuntimeSink;
+
+    impl HostRuntimeEventSink for PanickingRuntimeSink {
+        fn event(&self, _event: HostRuntimeEvent) {
+            panic!("diagnostic listener failed");
+        }
+    }
+
     fn config() -> HostRuntimeConfig {
         HostRuntimeConfig {
             runtime_id: "test".to_owned(),
@@ -3188,6 +3512,17 @@ mod tests {
     }
 
     #[test]
+    fn server_start_command_is_native_owned_and_supports_profile_values() {
+        let command = start_herdr_server_command("/opt/herdr current/herdr", "team's session");
+        assert!(command.starts_with("exec /bin/sh -c "));
+        assert!(command.contains("nohup"));
+        assert!(command.contains("/opt/herdr current/herdr"));
+        assert!(command.contains("team"));
+        assert!(command.contains("server"));
+        assert!(command.contains("/tmp/whip-herdr-server.log"));
+    }
+
+    #[test]
     fn typed_launch_intent_selects_exactly_one_native_second_step() {
         let snapshot = batch_test_snapshot();
         let tab = &snapshot.tabs[0];
@@ -3245,6 +3580,42 @@ mod tests {
                 }
             ))
         );
+    }
+
+    #[test]
+    fn pane_submission_sequence_is_one_semantic_native_operation() {
+        let requests = pane_submission_requests(
+            "pane-1".to_owned(),
+            vec![
+                "review".to_owned(),
+                String::new(),
+                "/tmp/image.png".to_owned(),
+            ],
+        );
+        assert_eq!(requests.len(), 3);
+        assert!(matches!(
+            &requests[0],
+            (
+                HerdrControlRequest::PaneSendInput { text, keys, .. },
+                true
+            ) if text == "review" && keys.is_empty()
+        ));
+        assert!(matches!(
+            &requests[1],
+            (HerdrControlRequest::PaneSendText { text, .. }, false) if text == " "
+        ));
+        assert!(matches!(
+            &requests[2],
+            (
+                HerdrControlRequest::PaneSendInput { text, keys, .. },
+                true
+            ) if text == "/tmp/image.png" && keys == &["enter"]
+        ));
+
+        assert!(matches!(
+            pane_submission_requests("pane-1".to_owned(), Vec::new()).as_slice(),
+            [(HerdrControlRequest::PaneSendKeys { keys, .. }, false)] if keys == &["enter"]
+        ));
     }
 
     fn batch_test_snapshot() -> HerdrSessionSnapshot {
@@ -3346,7 +3717,7 @@ mod tests {
     }
 
     #[test]
-    fn host_state_callback_can_synchronously_reenter_runtime() {
+    fn runtime_callbacks_are_reentrant_and_diagnostics_are_isolated() {
         let _guard = EVENT_SINK_TEST_LOCK.lock();
         let (cancellation, _) = watch::channel(0);
         let ssh = Arc::new(RwLock::new(None));
@@ -3375,6 +3746,50 @@ mod tests {
         assert!(sink.called.load(Ordering::SeqCst));
         assert!(sink.runtime_unlocked.load(Ordering::SeqCst));
         assert!(sink.registry_unlocked.load(Ordering::SeqCst));
+
+        let diagnostics = Arc::new(RecordingRuntimeSink::default());
+        set_host_runtime_event_sink(diagnostics.clone());
+        emit_diagnostic(
+            &inner,
+            RuntimeDiagnosticOperation::TerminalAttach,
+            Instant::now(),
+            None,
+            Some("terminal-1".to_owned()),
+            None,
+        );
+        emit_diagnostic(
+            &inner,
+            RuntimeDiagnosticOperation::TerminalRecovery,
+            Instant::now(),
+            None,
+            Some("terminal-1".to_owned()),
+            Some("closed".to_owned()),
+        );
+        clear_host_runtime_event_sink();
+        let events = diagnostics.events.lock();
+        assert!(matches!(
+            &events[0],
+            HostRuntimeEvent::Diagnostic { diagnostic, .. }
+                if diagnostic.outcome == RuntimeDiagnosticOutcome::Succeeded
+        ));
+        assert!(matches!(
+            &events[1],
+            HostRuntimeEvent::Diagnostic { diagnostic, .. }
+                if diagnostic.outcome == RuntimeDiagnosticOutcome::Failed
+                    && diagnostic.error.as_deref() == Some("closed")
+        ));
+        drop(events);
+
+        set_host_runtime_event_sink(Arc::new(PanickingRuntimeSink));
+        emit_diagnostic(
+            &inner,
+            RuntimeDiagnosticOperation::SshConnect,
+            Instant::now(),
+            None,
+            None,
+            None,
+        );
+        clear_host_runtime_event_sink();
     }
 
     #[test]
@@ -3411,6 +3826,22 @@ mod tests {
             .insert(inner.id.clone(), Arc::downgrade(&inner));
         let sink = Arc::new(RecordingRuntimeSink::default());
         set_host_runtime_event_sink(sink.clone());
+
+        let revision_before_output = inner.state.lock().host_state.projection().revision;
+        let output_forwarded = deliver_herdr_events(
+            &inner.id,
+            vec![HerdrEvent::PaneOutputChanged {
+                workspace_id: "workspace-1".to_owned(),
+                pane_id: "pane-1".to_owned(),
+                revision: 2.0,
+            }],
+        );
+        assert!(output_forwarded.is_none());
+        assert!(sink.events.lock().is_empty());
+        assert_eq!(
+            inner.state.lock().host_state.projection().revision,
+            revision_before_output
+        );
 
         let forwarded = deliver_herdr_events(
             &inner.id,

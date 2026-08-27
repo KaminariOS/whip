@@ -26,13 +26,16 @@ test('parses only bounded valid latency diagnostic entries', () => {
     latencyMs: 600,
     sshRttMs: 599.8,
     totalMs: 604.2,
-    dispatchMs: 4.4,
+    runtimeOverheadMs: 4.4,
   };
 
   expect(latencyDiagnosticsFromStorage(JSON.stringify([
     valid,
     { ...valid, id: 'bad-time', timestamp: 'not-a-date' },
     { ...valid, id: 'bad-number', sshRttMs: -1 },
+  ]))).toEqual([valid]);
+  expect(latencyDiagnosticsFromStorage(JSON.stringify([
+    { ...valid, runtimeOverheadMs: undefined, dispatchMs: 4.4 },
   ]))).toEqual([valid]);
   expect(latencyDiagnosticsFromStorage('{')).toEqual([]);
 });
@@ -48,25 +51,25 @@ test('persists only slow samples and first-class failure details', async () => {
     latencyMs: 4,
     sshRttMs: 4,
     totalMs: 5,
-    dispatchMs: 1,
+    runtimeOverheadMs: 1,
   })).resolves.toBe(false);
   await expect(diagnostics.recordSlowHostLatency('host-1', {
     latencyMs: 4,
     sshRttMs: 4,
     totalMs: 604,
-    dispatchMs: 600,
+    runtimeOverheadMs: 600,
   })).resolves.toBe(true);
   await diagnostics.recordHostLatencyFailure('host-1', 10_000, 'timed\n out');
 
   expect(diagnostics.getLatencyDiagnosticEntries()).toMatchObject([
-    { kind: 'slow', sshRttMs: 4, totalMs: 604, dispatchMs: 600 },
+    { kind: 'slow', sshRttMs: 4, totalMs: 604, runtimeOverheadMs: 600 },
     { kind: 'failure', totalMs: 10_000, error: 'timed out' },
   ]);
   await diagnostics.flushLatencyDiagnosticWrites();
   expect(storage.setItem).toHaveBeenCalledTimes(1);
   expect(JSON.parse(storage.setItem.mock.calls[0][1])).toHaveLength(2);
   expect(diagnostics.formatLatencyDiagnostics()).toContain(
-    'SLOW session=host-1 latency=4ms ssh=4ms total=604ms dispatch=600ms',
+    'SLOW session=host-1 latency=4ms ssh=4ms total=604ms runtime=600ms',
   );
 });
 
@@ -81,7 +84,7 @@ test('retains at most the latest 500 anomalous samples', async () => {
       latencyMs: 200,
       sshRttMs: 200,
       totalMs: 201,
-      dispatchMs: 1,
+      runtimeOverheadMs: 1,
     });
   }
 
@@ -101,7 +104,7 @@ test('does not collect while disabled and removes previously persisted diagnosti
     latencyMs: 500,
     sshRttMs: 500,
     totalMs: 501,
-    dispatchMs: 1,
+    runtimeOverheadMs: 1,
   })).resolves.toBe(false);
   expect(storage.getItem).not.toHaveBeenCalled();
   expect(diagnostics.getLatencyDiagnosticEntries()).toEqual([]);

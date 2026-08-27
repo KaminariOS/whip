@@ -261,6 +261,28 @@ impl HostState {
         if connection_generation != self.connection_generation {
             return ApplyResult::IgnoredStale;
         }
+        if let HerdrEvent::PaneOutputChanged { pane_id, .. } = &event {
+            let pane_exists = self
+                .snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.panes.iter().any(|pane| pane.pane_id == *pane_id));
+            if pane_exists {
+                // Output bytes and activity travel over the terminal/transcript streams. This
+                // notification must not mutate or emit the full HostState projection.
+                return ApplyResult::Applied;
+            }
+            self.last_event_at_ms = Some(now_ms);
+            let reason = format!("pane output references unknown pane {pane_id}");
+            self.needs_resync = true;
+            self.error = Some(reason.clone());
+            self.freshness = if self.snapshot.is_some() {
+                HostFreshness::Stale
+            } else {
+                HostFreshness::Unavailable
+            };
+            self.bump_revision();
+            return ApplyResult::NeedsResync(reason);
+        }
         if let Some(active) = self.active_sync.as_mut() {
             active.buffered_events.push(event.clone());
         }
@@ -1292,6 +1314,41 @@ mod tests {
         state.complete_sync(token, empty, 20);
         assert!(state.snapshot.as_ref().unwrap().workspaces.is_empty());
         assert_eq!(state.freshness, HostFreshness::Fresh);
+    }
+
+    #[test]
+    fn pane_output_notification_does_not_change_the_host_projection() {
+        let mut state = synced_state();
+        let revision = state.revision;
+
+        assert_eq!(
+            state.apply_event(
+                1,
+                HerdrEvent::PaneOutputChanged {
+                    workspace_id: "w1".to_owned(),
+                    pane_id: "p1".to_owned(),
+                    revision: 2.0,
+                },
+                25,
+            ),
+            ApplyResult::Applied
+        );
+        assert_eq!(state.revision, revision);
+        assert_eq!(state.last_event_at_ms, None);
+
+        assert!(matches!(
+            state.apply_event(
+                1,
+                HerdrEvent::PaneOutputChanged {
+                    workspace_id: "w1".to_owned(),
+                    pane_id: "missing".to_owned(),
+                    revision: 1.0,
+                },
+                26,
+            ),
+            ApplyResult::NeedsResync(_)
+        ));
+        assert!(state.revision > revision);
     }
 
     #[test]

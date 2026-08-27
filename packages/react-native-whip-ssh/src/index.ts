@@ -40,6 +40,8 @@ import {
   HostRuntimeEvent_Tags,
   HostSyncStatus,
   HostSshCredential,
+  RuntimeDiagnosticOperation as NativeRuntimeDiagnosticOperation,
+  RuntimeDiagnosticOutcome as NativeRuntimeDiagnosticOutcome,
   createHostRuntime as createHostRuntimeRust,
   HerdrEvent_Tags,
   pairHost as pairHostRust,
@@ -72,6 +74,8 @@ import {
   type HostRuntimeEvent,
   type HostRuntimeLike,
   type HostStateSnapshot,
+  type HostLatencyMeasurement as NativeHostLatencyMeasurement,
+  type RuntimeDiagnostic as NativeRuntimeDiagnostic,
   type GitDiff as NativeGitDiff,
   type GitRepository as NativeGitRepository,
   type GitStatusEntry as NativeGitStatusEntry,
@@ -257,7 +261,32 @@ export type RuntimeLifecycleEvent =
   | { type: 'event-stream-restored'; generation: number }
   | { type: 'transfer-progress'; progress: RuntimeTransferProgress }
   | { type: 'preview-state'; previewId: string; state: RuntimePreviewState; error?: string }
+  | { type: 'diagnostic'; diagnostic: RuntimeDiagnostic }
   | { type: 'fatal-error'; message: string };
+
+export type RuntimeDiagnosticOperation =
+  | 'ssh-connect'
+  | 'ssh-reconnect'
+  | 'host-latency-probe'
+  | 'herdr-request'
+  | 'terminal-attach'
+  | 'terminal-recovery'
+  | 'event-stream-recovery';
+
+export type RuntimeDiagnostic = {
+  operation: RuntimeDiagnosticOperation;
+  durationMs: number;
+  transportDurationMs?: number;
+  outcome: 'succeeded' | 'failed';
+  terminalId?: string;
+  error?: string;
+};
+
+export type RuntimeHostLatencyMeasurement = {
+  sshRttMs: number;
+  totalMs: number;
+  runtimeOverheadMs: number;
+};
 
 export type RuntimeTransferState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type RuntimePreviewState = 'running' | 'disconnected' | 'stopped';
@@ -978,6 +1007,43 @@ function runtimePreview(value: NativePreviewInfo): RuntimePreviewInfo {
   };
 }
 
+function runtimeDiagnosticOperation(
+  value: NativeRuntimeDiagnosticOperation,
+): RuntimeDiagnosticOperation {
+  switch (value) {
+    case NativeRuntimeDiagnosticOperation.SshConnect: return 'ssh-connect';
+    case NativeRuntimeDiagnosticOperation.SshReconnect: return 'ssh-reconnect';
+    case NativeRuntimeDiagnosticOperation.HostLatencyProbe: return 'host-latency-probe';
+    case NativeRuntimeDiagnosticOperation.HerdrRequest: return 'herdr-request';
+    case NativeRuntimeDiagnosticOperation.TerminalAttach: return 'terminal-attach';
+    case NativeRuntimeDiagnosticOperation.TerminalRecovery: return 'terminal-recovery';
+    case NativeRuntimeDiagnosticOperation.EventStreamRecovery: return 'event-stream-recovery';
+  }
+}
+
+function runtimeDiagnostic(value: NativeRuntimeDiagnostic): RuntimeDiagnostic {
+  return {
+    operation: runtimeDiagnosticOperation(value.operation),
+    durationMs: value.durationMs,
+    transportDurationMs: value.transportDurationMs,
+    outcome: value.outcome === NativeRuntimeDiagnosticOutcome.Succeeded
+      ? 'succeeded'
+      : 'failed',
+    terminalId: value.terminalId,
+    error: value.error,
+  };
+}
+
+function runtimeHostLatency(
+  value: NativeHostLatencyMeasurement,
+): RuntimeHostLatencyMeasurement {
+  return {
+    sshRttMs: value.sshRttMs,
+    totalMs: value.totalMs,
+    runtimeOverheadMs: value.runtimeOverheadMs,
+  };
+}
+
 function hostFreshness(value: HostFreshness): RuntimeHostState['freshness'] {
   switch (value) {
     case HostFreshness.Loading: return 'loading';
@@ -1325,6 +1391,9 @@ const hostRuntimeEventSink = {
           error: inner.error,
         });
         break;
+      case HostRuntimeEvent_Tags.Diagnostic:
+        handler({ type: 'diagnostic', diagnostic: runtimeDiagnostic(inner.diagnostic) });
+        break;
       case HostRuntimeEvent_Tags.FatalError:
         handler({ type: 'fatal-error', message: inner.message });
         break;
@@ -1403,6 +1472,14 @@ export class NativeHostRuntime {
       throw normalized;
     }
     return projected;
+  }
+
+  submitPastes(paneId: string, parts: string[]): Promise<void> {
+    return this.runtime.submitPastes(paneId, parts);
+  }
+
+  startHerdrServer(): Promise<void> {
+    return this.runtime.startHerdrServer();
   }
 
   async agentIntegrationStatus(kind: RuntimeAgentKind): Promise<RuntimeAgentIntegrationStatus> {
@@ -1617,7 +1694,9 @@ export class NativeHostRuntime {
 
   remoteHome(): Promise<string> { return this.runtime.remoteHome(); }
 
-  measureHostLatency(): Promise<number> { return this.runtime.measureHostLatency(); }
+  async measureHostLatency(): Promise<RuntimeHostLatencyMeasurement> {
+    return runtimeHostLatency(await this.runtime.measureHostLatency());
+  }
 
   async listDirectory(path?: string): Promise<RuntimeRemoteDirectoryListing> {
     return runtimeDirectory(await this.runtime.listDirectory(path));

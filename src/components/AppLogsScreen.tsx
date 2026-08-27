@@ -287,7 +287,7 @@ function AppLogsModal({
                   <View key={entry.id} className="mb-1.5">
                     <Text selectable className="font-mono text-[10px] leading-[14px] text-terminal-text">
                       {formatAppLogTime(entry.timestamp)} {entry.kind === 'slow'
-                        ? `SLOW SSH ${entry.sshRttMs}ms · TOTAL ${entry.totalMs}ms · DISPATCH ${entry.dispatchMs}ms`
+                        ? `SLOW SSH ${entry.sshRttMs}ms · TOTAL ${entry.totalMs}ms · RUNTIME ${entry.runtimeOverheadMs}ms`
                         : `FAIL ${entry.totalMs}ms · ${entry.error}`}
                     </Text>
                     <Text selectable className="font-mono text-[9px] leading-[12px] text-terminal-subtle">

@@ -29,6 +29,9 @@ const profile: ConnectionProfile = {
 
 type SemanticTestClient = SSHClient & {
   createTabWithLaunch: jest.Mock;
+  submitPastes: jest.Mock;
+  startHerdrServer: jest.Mock;
+  measureHostLatency: jest.Mock;
 };
 
 function apiClient(responseFor: (request: { method: string; params: Record<string, unknown> }) => unknown | Promise<unknown>) {
@@ -51,7 +54,13 @@ function apiClient(responseFor: (request: { method: string; params: Record<strin
       if (result instanceof Error) throw result;
       return result;
     }),
-    measureHostLatency: jest.fn(async () => 42),
+    submitPastes: jest.fn(async () => undefined),
+    startHerdrServer: jest.fn(async () => undefined),
+    measureHostLatency: jest.fn(async () => ({
+      sshRttMs: 42,
+      totalMs: 43,
+      runtimeOverheadMs: 1,
+    })),
     getRemoteHome: jest.fn(async () => '/home/herdr'),
     closeAllHerdrBridges: jest.fn(),
     off: jest.fn(),
@@ -158,8 +167,8 @@ describe('direct Herdr API requests', () => {
     await expect(client.measureLatency()).resolves.toMatchObject({
       latencyMs: 42,
       sshRttMs: 42,
-      totalMs: 42,
-      dispatchMs: 0,
+      totalMs: 43,
+      runtimeOverheadMs: 1,
     });
 
     expect(native.measureHostLatency).toHaveBeenCalledTimes(1);
@@ -185,13 +194,17 @@ describe('direct Herdr API requests', () => {
     const client = new HerdrClient();
     await client.connect(profile);
     await client.initialSnapshot();
-    jest.mocked(native.measureHostLatency).mockResolvedValueOnce(37);
+    jest.mocked(native.measureHostLatency).mockResolvedValueOnce({
+      sshRttMs: 37,
+      totalMs: 37.5,
+      runtimeOverheadMs: 0.5,
+    });
 
     await expect(client.measureLatency()).resolves.toMatchObject({
       latencyMs: 37,
       sshRttMs: 37,
-      totalMs: 37,
-      dispatchMs: 0,
+      totalMs: 37.5,
+      runtimeOverheadMs: 0.5,
     });
 
     const directMethods = jest.mocked(native.requestHerdrApi).mock.calls
@@ -357,7 +370,7 @@ describe('direct Herdr API requests', () => {
     expect(native.requestHerdrApi).not.toHaveBeenCalled();
   });
 
-  test('sends paste events through the pane input API in submission order', async () => {
+  test('consolidates a multi-part pane submission into one semantic native call', async () => {
     const native = apiClient(() => ({ type: 'ok' }));
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
@@ -367,19 +380,12 @@ describe('direct Herdr API requests', () => {
     await client.pasteIntoPane('pane-1', 'a long paste');
     await client.submitPastesToPane('pane-1', ['please inspect', '/tmp/image.png']);
 
-    const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, request]) => request);
-    expect(requests.map(request => request.method)).toEqual([
-      'pane.send_input',
-      'pane.send_input',
-      'pane.send_text',
-      'pane.send_input',
-    ]);
-    expect(requests.map(request => request.params)).toEqual([
-      { pane_id: 'pane-1', text: 'a long paste', keys: [] },
-      { pane_id: 'pane-1', text: 'please inspect', keys: [] },
-      { pane_id: 'pane-1', text: ' ' },
-      { pane_id: 'pane-1', text: '/tmp/image.png', keys: ['enter'] },
-    ]);
+    expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
+    expect(native.submitPastes).toHaveBeenCalledTimes(1);
+    expect(native.submitPastes).toHaveBeenCalledWith(
+      'pane-1',
+      ['please inspect', '/tmp/image.png'],
+    );
   });
 
   test('issues concurrent native requests and preserves multiline UTF-8 output', async () => {

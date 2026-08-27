@@ -111,6 +111,7 @@ import { deleteAgentChatCachesForHost } from './src/services/agentChatCache';
 import { defaultDevicePreferences } from './src/services/devicePreferences';
 import { HerdrClient, type TabCreationResult } from './src/services/HerdrClient';
 import {
+  SLOW_HOST_LATENCY_MS,
   isSlowHostLatency,
   recordHostLatencyFailure,
   recordSlowHostLatency,
@@ -202,19 +203,9 @@ function recordLatencyMeasurement(
     latencyMs: measurement.latencyMs,
     sshRttMs: measurement.sshRttMs,
     totalMs: measurement.totalMs,
-    dispatchMs: measurement.dispatchMs,
+    runtimeOverheadMs: measurement.runtimeOverheadMs,
   });
   recordSlowHostLatency(sessionId, measurement).catch(() => undefined);
-}
-
-function recordLatencyFailure(
-  sessionId: string,
-  startedAt: number,
-  error: unknown,
-): void {
-  const totalMs = Math.round((performance.now() - startedAt) * 10) / 10;
-  const message = networkErrorMessage(error);
-  recordHostLatencyFailure(sessionId, totalMs, message).catch(() => undefined);
 }
 
 const StableStatusBar = memo(function AppStatusBar({
@@ -241,6 +232,7 @@ interface LiveRuntime {
   profile: ConnectionProfile;
   previousStatuses: Map<string, AgentStatus> | null;
   latencyFailureActive: boolean;
+  latencyDiagnosticFailureRecorded: boolean;
   latencyFailures: number;
   acceptHostState: (state: HostRuntimeState, changedAgentPaneIds?: string[]) => void;
 }
@@ -697,6 +689,7 @@ function AppContent() {
       profile,
       previousStatuses: null,
       latencyFailureActive: false,
+      latencyDiagnosticFailureRecorded: false,
       latencyFailures: 0,
     } as LiveRuntime;
     const acceptHostState = (state: HostRuntimeState, changedAgentPaneIds: string[] = []) => {
@@ -761,7 +754,53 @@ function AppContent() {
       }
     };
     runtime.client.setRuntimeEventHandler(event => {
-      if (runtimes.current.get(sessionId) !== runtime) return;
+      const isInitialConnectDiagnostic = event.type === 'diagnostic'
+        && event.diagnostic.operation === 'ssh-connect';
+      if (runtimes.current.get(sessionId) !== runtime && !isInitialConnectDiagnostic) return;
+      if (event.type === 'diagnostic') {
+        const diagnostic = event.diagnostic;
+        recordNetworkDiagnostic(
+          diagnostic.outcome === 'failed'
+            ? 'error'
+            : diagnostic.durationMs >= SLOW_HOST_LATENCY_MS ? 'warn' : 'info',
+          'native-runtime-diagnostic',
+          {
+            sessionId,
+            operation: diagnostic.operation,
+            outcome: diagnostic.outcome,
+            durationMs: Math.round(diagnostic.durationMs * 10) / 10,
+            transportDurationMs: diagnostic.transportDurationMs === undefined
+              ? undefined
+              : Math.round(diagnostic.transportDurationMs * 10) / 10,
+            terminalId: diagnostic.terminalId,
+            error: diagnostic.error,
+          },
+        );
+        if (diagnostic.operation === 'host-latency-probe') {
+          if (
+            diagnostic.outcome === 'succeeded'
+            && diagnostic.transportDurationMs !== undefined
+          ) {
+            runtime.latencyDiagnosticFailureRecorded = false;
+            const sshRttMs = Math.round(diagnostic.transportDurationMs * 10) / 10;
+            const totalMs = Math.round(diagnostic.durationMs * 10) / 10;
+            recordLatencyMeasurement(sessionId, {
+              latencyMs: Math.round(sshRttMs),
+              sshRttMs,
+              totalMs,
+              runtimeOverheadMs: Math.max(0, Math.round((totalMs - sshRttMs) * 10) / 10),
+            });
+          } else if (!runtime.latencyDiagnosticFailureRecorded) {
+            runtime.latencyDiagnosticFailureRecorded = true;
+            recordHostLatencyFailure(
+              sessionId,
+              diagnostic.durationMs,
+              diagnostic.error || 'Host latency probe failed',
+            ).catch(() => undefined);
+          }
+        }
+        return;
+      }
       if (event.type === 'connection-state') {
         recordNetworkDiagnostic(event.state === 'failed' ? 'error' : 'info', 'native-connection-state', {
           sessionId,
@@ -796,6 +835,7 @@ function AppContent() {
       if (event.type === 'reconnected') {
         runtime.latencyFailures = 0;
         runtime.latencyFailureActive = false;
+        runtime.latencyDiagnosticFailureRecorded = false;
         recordNetworkDiagnostic('info', 'control-reconnect-recovered', {
           sessionId,
           generation: event.generation,
@@ -915,13 +955,12 @@ function AppContent() {
     if (!runtime || latencyPingsInFlight.current.get(sessionId) === runtime) return;
 
     latencyPingsInFlight.current.set(sessionId, runtime);
-    const latencyProbeStartedAt = performance.now();
     runtime.client.measureLatency()
       .then(measurement => {
         if (runtimes.current.get(sessionId) !== runtime) return;
         const { latencyMs } = measurement;
-        recordLatencyMeasurement(sessionId, measurement);
         runtime.latencyFailures = 0;
+        runtime.latencyDiagnosticFailureRecorded = false;
         if (runtime.latencyFailureActive) {
           runtime.latencyFailureActive = false;
           recordNetworkDiagnostic('info', 'latency-probe-recovered', {
@@ -946,7 +985,6 @@ function AppContent() {
         clearLiveHostLatency(sessionId);
         if (!runtime.latencyFailureActive) {
           runtime.latencyFailureActive = true;
-          recordLatencyFailure(sessionId, latencyProbeStartedAt, error);
           recordNetworkDiagnostic('warn', 'latency-probe-failed', {
             sessionId,
             failures: decision.failures,

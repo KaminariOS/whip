@@ -4643,6 +4643,57 @@ const FfiConverterTypeHostKeyChallenge = (() => {
   return new FFIConverter();
 })();
 
+export type HostLatencyMeasurement = {
+  sshRttMs: number;
+  totalMs: number;
+  runtimeOverheadMs: number;
+};
+
+/**
+ * Generated factory for {@link HostLatencyMeasurement} record objects.
+ */
+export const HostLatencyMeasurement = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HostLatencyMeasurement,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<HostLatencyMeasurement>,
+  });
+})();
+
+const FfiConverterTypeHostLatencyMeasurement = (() => {
+  type TypeName = HostLatencyMeasurement;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        sshRttMs: FfiConverterFloat64.read(from),
+        totalMs: FfiConverterFloat64.read(from),
+        runtimeOverheadMs: FfiConverterFloat64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterFloat64.write(value.sshRttMs, into);
+      FfiConverterFloat64.write(value.totalMs, into);
+      FfiConverterFloat64.write(value.runtimeOverheadMs, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterFloat64.allocationSize(value.sshRttMs) +
+        FfiConverterFloat64.allocationSize(value.totalMs) +
+        FfiConverterFloat64.allocationSize(value.runtimeOverheadMs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Enum: HostSshCredential
 export enum HostSshCredential_Tags {
   Password = 'Password',
@@ -5508,6 +5559,162 @@ const FfiConverterTypeRemoteDirectoryListing = (() => {
       return (
         FfiConverterString.allocationSize(value.path) +
         FfiConverterSequenceTypeRemoteFileEntry.allocationSize(value.entries)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum RuntimeDiagnosticOperation {
+  SshConnect,
+  SshReconnect,
+  HostLatencyProbe,
+  HerdrRequest,
+  TerminalAttach,
+  TerminalRecovery,
+  EventStreamRecovery,
+}
+
+const FfiConverterTypeRuntimeDiagnosticOperation = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = RuntimeDiagnosticOperation;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return RuntimeDiagnosticOperation.SshConnect;
+        case 2:
+          return RuntimeDiagnosticOperation.SshReconnect;
+        case 3:
+          return RuntimeDiagnosticOperation.HostLatencyProbe;
+        case 4:
+          return RuntimeDiagnosticOperation.HerdrRequest;
+        case 5:
+          return RuntimeDiagnosticOperation.TerminalAttach;
+        case 6:
+          return RuntimeDiagnosticOperation.TerminalRecovery;
+        case 7:
+          return RuntimeDiagnosticOperation.EventStreamRecovery;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case RuntimeDiagnosticOperation.SshConnect:
+          return ordinalConverter.write(1, into);
+        case RuntimeDiagnosticOperation.SshReconnect:
+          return ordinalConverter.write(2, into);
+        case RuntimeDiagnosticOperation.HostLatencyProbe:
+          return ordinalConverter.write(3, into);
+        case RuntimeDiagnosticOperation.HerdrRequest:
+          return ordinalConverter.write(4, into);
+        case RuntimeDiagnosticOperation.TerminalAttach:
+          return ordinalConverter.write(5, into);
+        case RuntimeDiagnosticOperation.TerminalRecovery:
+          return ordinalConverter.write(6, into);
+        case RuntimeDiagnosticOperation.EventStreamRecovery:
+          return ordinalConverter.write(7, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum RuntimeDiagnosticOutcome {
+  Succeeded,
+  Failed,
+}
+
+const FfiConverterTypeRuntimeDiagnosticOutcome = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = RuntimeDiagnosticOutcome;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return RuntimeDiagnosticOutcome.Succeeded;
+        case 2:
+          return RuntimeDiagnosticOutcome.Failed;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case RuntimeDiagnosticOutcome.Succeeded:
+          return ordinalConverter.write(1, into);
+        case RuntimeDiagnosticOutcome.Failed:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type RuntimeDiagnostic = {
+  operation: RuntimeDiagnosticOperation;
+  durationMs: number;
+  transportDurationMs?: number;
+  outcome: RuntimeDiagnosticOutcome;
+  terminalId?: string;
+  error?: string;
+};
+
+/**
+ * Generated factory for {@link RuntimeDiagnostic} record objects.
+ */
+export const RuntimeDiagnostic = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<RuntimeDiagnostic, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<RuntimeDiagnostic>,
+  });
+})();
+
+const FfiConverterTypeRuntimeDiagnostic = (() => {
+  type TypeName = RuntimeDiagnostic;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        operation: FfiConverterTypeRuntimeDiagnosticOperation.read(from),
+        durationMs: FfiConverterFloat64.read(from),
+        transportDurationMs: FfiConverterOptionalFloat64.read(from),
+        outcome: FfiConverterTypeRuntimeDiagnosticOutcome.read(from),
+        terminalId: FfiConverterOptionalString.read(from),
+        error: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeRuntimeDiagnosticOperation.write(value.operation, into);
+      FfiConverterFloat64.write(value.durationMs, into);
+      FfiConverterOptionalFloat64.write(value.transportDurationMs, into);
+      FfiConverterTypeRuntimeDiagnosticOutcome.write(value.outcome, into);
+      FfiConverterOptionalString.write(value.terminalId, into);
+      FfiConverterOptionalString.write(value.error, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeRuntimeDiagnosticOperation.allocationSize(
+          value.operation,
+        ) +
+        FfiConverterFloat64.allocationSize(value.durationMs) +
+        FfiConverterOptionalFloat64.allocationSize(value.transportDurationMs) +
+        FfiConverterTypeRuntimeDiagnosticOutcome.allocationSize(value.outcome) +
+        FfiConverterOptionalString.allocationSize(value.terminalId) +
+        FfiConverterOptionalString.allocationSize(value.error)
       );
     }
   }
@@ -12045,6 +12252,7 @@ export enum HostRuntimeError_Tags {
   TransferCancelled = 'TransferCancelled',
   GitFailure = 'GitFailure',
   PreviewFailure = 'PreviewFailure',
+  PaneSubmissionFailure = 'PaneSubmissionFailure',
 }
 export const HostRuntimeError = (() => {
   type AuthenticationFailure__interface = {
@@ -12620,6 +12828,47 @@ export const HostRuntimeError = (() => {
     }
   }
 
+  type PaneSubmissionFailure__interface = {
+    tag: HostRuntimeError_Tags.PaneSubmissionFailure;
+    inner: Readonly<{ submittedParts: number; message: string }>;
+  };
+  class PaneSubmissionFailure_
+    extends UniffiError
+    implements PaneSubmissionFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.PaneSubmissionFailure;
+    readonly inner: Readonly<{ submittedParts: number; message: string }>;
+    constructor(inner: { submittedParts: number; message: string }) {
+      super('HostRuntimeError', 'PaneSubmissionFailure');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      submittedParts: number;
+      message: string;
+    }): PaneSubmissionFailure_ {
+      return new PaneSubmissionFailure_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneSubmissionFailure_ {
+      return obj.tag === HostRuntimeError_Tags.PaneSubmissionFailure;
+    }
+    static hasInner(obj: any): obj is PaneSubmissionFailure_ {
+      return PaneSubmissionFailure_.instanceOf(obj);
+    }
+
+    static getInner(
+      obj: PaneSubmissionFailure_,
+    ): Readonly<{ submittedParts: number; message: string }> {
+      return obj.inner;
+    }
+  }
+
   function instanceOf(obj: any): obj is HostRuntimeError {
     return obj[uniffiTypeNameSymbol] === 'HostRuntimeError';
   }
@@ -12642,6 +12891,7 @@ export const HostRuntimeError = (() => {
     TransferCancelled: TransferCancelled_,
     GitFailure: GitFailure_,
     PreviewFailure: PreviewFailure_,
+    PaneSubmissionFailure: PaneSubmissionFailure_,
   });
 })();
 export type HostRuntimeError = InstanceType<
@@ -12661,7 +12911,8 @@ export type HostRuntimeError = InstanceType<
     | 'TransferFailure'
     | 'TransferCancelled'
     | 'GitFailure'
-    | 'PreviewFailure']
+    | 'PreviewFailure'
+    | 'PaneSubmissionFailure']
 >;
 
 // FfiConverter for enum HostRuntimeError
@@ -12733,6 +12984,11 @@ const FfiConverterTypeHostRuntimeError = (() => {
           return new HostRuntimeError.PreviewFailure(
             FfiConverterString.read(from),
           );
+        case 17:
+          return new HostRuntimeError.PaneSubmissionFailure({
+            submittedParts: FfiConverterUInt32.read(from),
+            message: FfiConverterString.read(from),
+          });
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -12833,6 +13089,13 @@ const FfiConverterTypeHostRuntimeError = (() => {
           ordinalConverter.write(16, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.PaneSubmissionFailure: {
+          ordinalConverter.write(17, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.submittedParts, into);
+          FfiConverterString.write(inner.message, into);
           return;
         }
         default:
@@ -12938,6 +13201,13 @@ const FfiConverterTypeHostRuntimeError = (() => {
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
+        case HostRuntimeError_Tags.PaneSubmissionFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(17);
+          size += FfiConverterUInt32.allocationSize(inner.submittedParts);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -13008,6 +13278,7 @@ export enum HostRuntimeEvent_Tags {
   EventSubscriptionRestored = 'EventSubscriptionRestored',
   TransferProgressChanged = 'TransferProgressChanged',
   PreviewStateChanged = 'PreviewStateChanged',
+  Diagnostic = 'Diagnostic',
   FatalError = 'FatalError',
 }
 export const HostRuntimeEvent = (() => {
@@ -13464,6 +13735,38 @@ export const HostRuntimeEvent = (() => {
     }
   }
 
+  type Diagnostic__interface = {
+    tag: HostRuntimeEvent_Tags.Diagnostic;
+    inner: Readonly<{ runtimeId: string; diagnostic: RuntimeDiagnostic }>;
+  };
+  class Diagnostic_ extends UniffiEnum implements Diagnostic__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.Diagnostic;
+    readonly inner: Readonly<{
+      runtimeId: string;
+      diagnostic: RuntimeDiagnostic;
+    }>;
+    constructor(inner: { runtimeId: string; diagnostic: RuntimeDiagnostic }) {
+      super('HostRuntimeEvent', 'Diagnostic');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      diagnostic: RuntimeDiagnostic;
+    }): Diagnostic_ {
+      return new Diagnostic_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Diagnostic_ {
+      return obj.tag === HostRuntimeEvent_Tags.Diagnostic;
+    }
+  }
+
   type FatalError__interface = {
     tag: HostRuntimeEvent_Tags.FatalError;
     inner: Readonly<{ runtimeId: string; message: string }>;
@@ -13507,6 +13810,7 @@ export const HostRuntimeEvent = (() => {
     EventSubscriptionRestored: EventSubscriptionRestored_,
     TransferProgressChanged: TransferProgressChanged_,
     PreviewStateChanged: PreviewStateChanged_,
+    Diagnostic: Diagnostic_,
     FatalError: FatalError_,
   });
 })();
@@ -13523,6 +13827,7 @@ export type HostRuntimeEvent = InstanceType<
     | 'EventSubscriptionRestored'
     | 'TransferProgressChanged'
     | 'PreviewStateChanged'
+    | 'Diagnostic'
     | 'FatalError']
 >;
 
@@ -13601,6 +13906,11 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             error: FfiConverterOptionalString.read(from),
           });
         case 12:
+          return new HostRuntimeEvent.Diagnostic({
+            runtimeId: FfiConverterString.read(from),
+            diagnostic: FfiConverterTypeRuntimeDiagnostic.read(from),
+          });
+        case 13:
           return new HostRuntimeEvent.FatalError({
             runtimeId: FfiConverterString.read(from),
             message: FfiConverterString.read(from),
@@ -13700,8 +14010,15 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           FfiConverterOptionalString.write(inner.error, into);
           return;
         }
-        case HostRuntimeEvent_Tags.FatalError: {
+        case HostRuntimeEvent_Tags.Diagnostic: {
           ordinalConverter.write(12, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterTypeRuntimeDiagnostic.write(inner.diagnostic, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.FatalError: {
+          ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.message, into);
@@ -13809,9 +14126,18 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           size += FfiConverterOptionalString.allocationSize(inner.error);
           return size;
         }
-        case HostRuntimeEvent_Tags.FatalError: {
+        case HostRuntimeEvent_Tags.Diagnostic: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(12);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterTypeRuntimeDiagnostic.allocationSize(
+            inner.diagnostic,
+          );
+          return size;
+        }
+        case HostRuntimeEvent_Tags.FatalError: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(13);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.message);
           return size;
@@ -14827,7 +15153,7 @@ export interface HostRuntimeLike {
   ): /*throws*/ Promise<RemoteDirectoryListing>;
   measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
-  }): /*throws*/ Promise<number>;
+  }): /*throws*/ Promise<HostLatencyMeasurement>;
   openAgentSession(
     agent: AgentTranscriptKind,
     terminalId: string,
@@ -14906,6 +15232,9 @@ export interface HostRuntimeLike {
   ): /*throws*/ AgentTranscriptState;
   startAttachmentUpload(localPath: string): /*throws*/ string;
   startDownload(remotePath: string, localDirectory: string): /*throws*/ string;
+  startHerdrServer(asyncOpts_?: {
+    signal: AbortSignal;
+  }): /*throws*/ Promise<void>;
   startHtmlPreview(
     remotePath: string,
     asyncOpts_?: { signal: AbortSignal },
@@ -14926,6 +15255,11 @@ export interface HostRuntimeLike {
   status(): HostRuntimeStatus;
   stopPreview(
     previewId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): /*throws*/ Promise<void>;
+  submitPastes(
+    paneId: string,
+    parts: Array<string>,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<void>;
   subscribeEvents(
@@ -15778,7 +16112,7 @@ export class HostRuntime
 
   async measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
-  }): Promise<number> /*throws*/ {
+  }): Promise<HostLatencyMeasurement> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
       return await uniffiRustCallAsync(
@@ -15788,17 +16122,22 @@ export class HostRuntime
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
           );
         },
-        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_f64,
-        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_f64,
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
         /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_f64,
-        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_f64,
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
         // Async returns always go through the JS-side converter: the
         // FFI symbol returns the future handle (u64), and the user-level
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterFloat64.lift.bind(FfiConverterFloat64),
+        /*liftFunc:*/ FfiConverterTypeHostLatencyMeasurement.lift.bind(
+          FfiConverterTypeHostLatencyMeasurement,
+        ),
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -16472,6 +16811,39 @@ export class HostRuntime
     );
   }
 
+  async startHerdrServer(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_herdr_server(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   async startHtmlPreview(
     remotePath: string,
     asyncOpts_?: { signal: AbortSignal },
@@ -16721,6 +17093,46 @@ export class HostRuntime
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             FfiConverterString.lower(
               previewId,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async submitPastes(
+    paneId: string,
+    parts: Array<string>,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_submit_pastes(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(paneId, nativeModule().rustbuffer_alloc),
+            FfiConverterSequenceString.lower(
+              parts,
               nativeModule().rustbuffer_alloc,
             ),
           );
@@ -18044,7 +18456,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency() !==
-    62744
+    15066
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency',
@@ -18203,6 +18615,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_herdr_server() !==
+    5282
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_herdr_server',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_html_preview() !==
     54439
   ) {
@@ -18256,6 +18676,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_stop_preview',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_submit_pastes() !==
+    8661
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_submit_pastes',
     );
   }
   if (
@@ -18404,6 +18832,7 @@ export default Object.freeze({
     FfiConverterTypeHostConnectionState,
     FfiConverterTypeHostFreshness,
     FfiConverterTypeHostKeyChallenge,
+    FfiConverterTypeHostLatencyMeasurement,
     FfiConverterTypeHostRuntime,
     FfiConverterTypeHostRuntimeConfig,
     FfiConverterTypeHostRuntimeError,
@@ -18423,6 +18852,9 @@ export default Object.freeze({
     FfiConverterTypeRemoteDirectoryListing,
     FfiConverterTypeRemoteFileEntry,
     FfiConverterTypeRemoteFileKind,
+    FfiConverterTypeRuntimeDiagnostic,
+    FfiConverterTypeRuntimeDiagnosticOperation,
+    FfiConverterTypeRuntimeDiagnosticOutcome,
     FfiConverterTypeTransferProgress,
     FfiConverterTypeTransferResult,
     FfiConverterTypeTransferState,

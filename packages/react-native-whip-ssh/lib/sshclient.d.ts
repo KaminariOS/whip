@@ -54,7 +54,19 @@ export type HostRuntimeLifecycleEvent =
   | { type: 'event-stream-restored'; generation: number }
   | { type: 'transfer-progress'; progress: RuntimeTransferProgress }
   | { type: 'preview-state'; previewId: string; state: RuntimePreviewState; error?: string }
+  | { type: 'diagnostic'; diagnostic: RuntimeDiagnostic }
   | { type: 'fatal-error'; message: string };
+
+export type RuntimeDiagnosticOperation = 'ssh-connect' | 'ssh-reconnect' | 'host-latency-probe' | 'herdr-request' | 'terminal-attach' | 'terminal-recovery' | 'event-stream-recovery';
+export interface RuntimeDiagnostic {
+  operation: RuntimeDiagnosticOperation;
+  durationMs: number;
+  transportDurationMs?: number;
+  outcome: 'succeeded' | 'failed';
+  terminalId?: string;
+  error?: string;
+}
+export interface RuntimeHostLatencyMeasurement { sshRttMs: number; totalMs: number; runtimeOverheadMs: number }
 
 export type RuntimeTransferState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type RuntimePreviewState = 'running' | 'disconnected' | 'stopped';
@@ -169,6 +181,8 @@ export interface HostRuntimeConnection {
   closeAgentTerminal(terminalId: string): string | undefined;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
   createTabWithLaunch(workspaceId: string, label: string, launch: RuntimeTabLaunch): Promise<Record<string, unknown>>;
+  submitPastes(paneId: string, parts: string[]): Promise<void>;
+  startHerdrServer(): Promise<void>;
   agentIntegrationStatus(kind: RuntimeAgentKind): Promise<RuntimeAgentIntegrationStatus>;
   installAgentIntegration(kind: RuntimeAgentKind): Promise<{ kind: RuntimeAgentKind; messages: string[] }>;
   requestHerdrApi(request: { method: string; params: object }): Promise<Record<string, unknown>>;
@@ -190,7 +204,7 @@ export interface HostRuntimeConnection {
   hasSshShell(terminalId: string): boolean;
   execute(command: string): Promise<string>;
   remoteHome(): Promise<string>;
-  measureHostLatency(): Promise<number>;
+  measureHostLatency(): Promise<RuntimeHostLatencyMeasurement>;
   listDirectory(path?: string): Promise<RuntimeRemoteDirectoryListing>;
   statRemotePath(path: string): Promise<RuntimeRemoteFileEntry>;
   readRemoteText(path: string, maxBytes?: number): Promise<string>;

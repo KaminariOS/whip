@@ -289,6 +289,8 @@ function createMockWhipSshModule() {
       installAgentIntegration(kind) {
         return runtime.controlClient.installAgentIntegration(kind);
       },
+      submitPastes(paneId, parts) { return runtime.controlClient.submitPastes(paneId, parts); },
+      startHerdrServer() { return runtime.controlClient.startHerdrServer(); },
       execute(command) { return runtime.controlClient.execute(command); },
       remoteHome() { return runtime.controlClient.getRemoteHome(); },
       measureHostLatency() { return runtime.controlClient.measureHostLatency(); },

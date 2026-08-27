@@ -7,7 +7,6 @@ import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import { DEFAULT_HERDR_COMMAND } from '../lib/hostProfiles';
 import { errorCode } from '../lib/connectionErrors';
 import { type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
-import { shellQuote } from '../lib/shell';
 import type { CodexIntegrationStatus } from '../lib/codexSession';
 import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
@@ -35,11 +34,7 @@ import {
   type TerminalInputTrace,
   type TerminalResizeTrace,
 } from './performanceTrace';
-import {
-  networkErrorKind,
-  networkErrorMessage,
-  recordNetworkDiagnostic,
-} from './networkDiagnostics';
+import { recordNetworkDiagnostic } from './networkDiagnostics';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
@@ -150,7 +145,6 @@ export class HerdrClient {
   private pendingTerminalResizeTraces = new Map<string, TerminalResizeTrace>();
   private terminalStateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
-    const startedAt = Date.now();
     const port = Number(profile.port);
     this.validateSshPort(port);
     jumpProfiles.forEach(jumpProfile => this.validateSshPort(Number(jumpProfile.port)));
@@ -193,18 +187,7 @@ export class HerdrClient {
     this.profile = profile;
     try {
       await runtime.connect();
-      recordNetworkDiagnostic('info', 'host-runtime-connect-succeeded', {
-        sessionId: profile.id,
-        durationMs: Date.now() - startedAt,
-      });
     } catch (error) {
-      recordNetworkDiagnostic('error', 'host-runtime-connect-failed', {
-        sessionId: profile.id,
-        endpoint,
-        durationMs: Date.now() - startedAt,
-        errorKind: networkErrorKind(error),
-        error: networkErrorMessage(error),
-      });
       if (this.runtime === runtime) {
         this.runtime = null;
       }
@@ -723,9 +706,8 @@ export class HerdrClient {
 
   /** Measure an SSH protocol ping/pong RTT without remote process startup. */
   async measureLatency(): Promise<HostLatencyMeasurement> {
-    const startedAt = performance.now();
-    const sshRttMs = await this.requireRuntime().measureHostLatency();
-    const elapsedMs = performance.now() - startedAt;
+    const measurement = await this.requireRuntime().measureHostLatency();
+    const { sshRttMs } = measurement;
     if (!Number.isFinite(sshRttMs) || sshRttMs <= 0) {
       throw new Error('Android returned an invalid host latency');
     }
@@ -733,14 +715,13 @@ export class HerdrClient {
     return {
       latencyMs: Math.round(sshRttMs),
       sshRttMs: roundMilliseconds(sshRttMs),
-      totalMs: roundMilliseconds(Math.max(sshRttMs, elapsedMs)),
-      dispatchMs: roundMilliseconds(Math.max(0, elapsedMs - sshRttMs)),
+      totalMs: roundMilliseconds(measurement.totalMs),
+      runtimeOverheadMs: roundMilliseconds(measurement.runtimeOverheadMs),
     };
   }
 
   async startServer(): Promise<void> {
-    const command = `nohup ${this.baseCommand()} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &`;
-    await this.requireRuntime().execute(this.loginShellCommand(command));
+    await this.requireRuntime().startHerdrServer();
   }
 
   readPane(paneId: string, lines = 160): Promise<string> {
@@ -876,20 +857,7 @@ export class HerdrClient {
   }
 
   async submitPastesToPane(paneId: string, parts: readonly string[]): Promise<void> {
-    const pasteEvents = parts.filter(Boolean);
-    for (const [index, text] of pasteEvents.entries()) {
-      if (index > 0) {
-        await this.apiRequest('pane.send_text', { pane_id: paneId, text: ' ' });
-      }
-      // Keep the final paste and Enter in one Herdr request so a successful
-      // outbox delivery means the message was submitted, not merely pasted.
-      await this.pasteIntoPane(
-        paneId,
-        text,
-        index === pasteEvents.length - 1 ? ['enter'] : [],
-      );
-    }
-    if (!pasteEvents.length) await this.sendPaneKeys(paneId, ['enter']);
+    await this.requireRuntime().submitPastes(paneId, [...parts]);
   }
 
   async sendPaneKeys(paneId: string, keys: string[]): Promise<void> {
@@ -919,21 +887,6 @@ export class HerdrClient {
     return performanceTracePrefix
       ? await withAppPerformanceTrace(`${performanceTracePrefix}: API round trip`, requestApi)
       : await requestApi();
-  }
-
-  /** Server startup is the only operation that needs the remote login environment. */
-  private loginShellCommand(command: string): string {
-    const bootstrap = 'exec "${SHELL:-/bin/sh}" -lc "$1"';
-    return `exec /bin/sh -c ${shellQuote(bootstrap)} whip ${shellQuote(command)}`;
-  }
-
-  private baseCommand(): string {
-    const profile = this.profile;
-    if (!profile) {
-      throw new Error('Not connected');
-    }
-    const command = shellQuote(profile.herdrCommand.trim() || DEFAULT_HERDR_COMMAND);
-    return profile.sessionName.trim() ? `${command} --session ${shellQuote(profile.sessionName.trim())}` : command;
   }
 
   private requireRuntime(): HostRuntimeConnection {

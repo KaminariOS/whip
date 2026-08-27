@@ -35,6 +35,8 @@ The control plane reads and mutates structured Herdr server state:
 
 Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. It also owns cohesive launch semantics: one typed shell/command/agent tab operation performs tab creation and the exact follow-up action, including managed-agent naming and typed partial failure. React Native chooses the launch intent but does not classify command strings or sequence `tab.create`, `agent.start`, and `pane.send_input`. Herdr calls an owned `SshSession` through ordinary Rust methods and closures; there is no C ABI, callback context, dynamic symbol lookup, or JSON dispatch between the SSH and Herdr modules. Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection.
 
+Transport/runtime timings are measured beside the Rust operations they describe and cross the native boundary as typed, coarse diagnostics. Connect/reconnect, terminal attach/recovery, and event-stream recovery produce one completion diagnostic; latency probes and ordinary Herdr requests produce diagnostics only when slow or failed. Successful latency calls still return a typed Rust-measured RTT/total/overhead record for live UI state. React Native owns bounded diagnostic history, thresholds, persistence, and display. It does not infer transport duration by timing an FFI promise.
+
 One Rust `HostRuntime` owns each connected host's authenticated `Arc<SshSession>`,
 ProxyJump chain, control generation, reconnect loop, event subscription, and
 Herdr terminal registry. Reconnect replaces the owned session, advances the
@@ -52,7 +54,10 @@ then replayed over the accepted snapshot so an older response cannot erase
 already-observed changes. Herdr does not currently expose a single revision
 shared by its request and subscription channels, so Rust coalesces a follow-up
 snapshot after gaps or inconsistent references instead of hiding that ordering
-limit with delays.
+limit with delays. `pane.output_changed` is treated as a non-projecting
+notification: terminal/transcript bytes and activity use their dedicated
+streams, so known-pane output does not mutate the host projection revision or
+send a redundant full snapshot.
 
 If Whip needs a new server capability, it should be a neutral Herdr socket API method or event, not a mobile-specific endpoint and not a second source of runtime truth.
 
