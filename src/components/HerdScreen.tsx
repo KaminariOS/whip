@@ -60,8 +60,10 @@ import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
-import type { RuntimeAgentKind } from 'react-native-whip-ssh';
-import type { TabLaunchIntent } from '@/src/services/HerdrClient';
+import {
+  tabLaunchIntentForCommand,
+  type TabLaunchIntent,
+} from '@/src/services/HerdrClient';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
@@ -165,7 +167,6 @@ export function HerdScreen({
   const [commandRunnerOpen, setCommandRunnerOpen] = useState(false);
   const [tabNameDraft, setTabNameDraft] = useState('');
   const [commandDraft, setCommandDraft] = useState('');
-  const [launchChoice, setLaunchChoice] = useState<'command' | RuntimeAgentKind>('command');
   const commandComposerRef = useRef<View | null>(null);
   const {
     inset: commandKeyboardInset,
@@ -308,15 +309,8 @@ export function HerdScreen({
   };
 
   const openCommandRunner = () => {
-    const configured = agentCommand.trim();
     setTabNameDraft('');
-    if (configured === 'claude' || configured === 'codex' || configured === 'opencode') {
-      setLaunchChoice(configured);
-      setCommandDraft('');
-    } else {
-      setLaunchChoice('command');
-      setCommandDraft(configured);
-    }
+    setCommandDraft(agentCommand.trim());
     resetCommandKeyboardInset();
     setCommandRunnerOpen(true);
   };
@@ -330,10 +324,8 @@ export function HerdScreen({
   const runCommand = async () => {
     const tabName = tabNameDraft.trim();
     const command = commandDraft.trim();
-    if (!selectedQueue || !selectedWorkspace || (launchChoice === 'command' && !command)) return;
-    const launch: TabLaunchIntent = launchChoice === 'command'
-      ? { type: 'command', command }
-      : { type: 'agent', kind: launchChoice };
+    if (!selectedQueue || !selectedWorkspace || !command) return;
+    const launch = tabLaunchIntentForCommand(command);
     const succeeded = await runWorkspaceAction(() => onLaunchTab(
       selectedQueue.id,
       selectedWorkspace.workspace_id,
@@ -668,23 +660,7 @@ export function HerdScreen({
                 onChangeText={setTabNameDraft}
                 onSubmitEditing={() => commandInputRef.current?.focus()}
               />
-              <View className="flex-row gap-2">
-                {(['command', 'claude', 'codex', 'opencode'] as const).map(choice => (
-                  <Button
-                    key={choice}
-                    accessibilityLabel={choice === 'command' ? t('herd.runCommand') : choice}
-                    className="h-10 flex-1 rounded-full px-2"
-                    disabled={workspaceBusy}
-                    variant={launchChoice === choice ? 'default' : 'outline'}
-                    onPress={hapticPress(() => setLaunchChoice(choice))}>
-                    <Icon as={choice === 'command' ? SquareTerminal : Bot} size={15} />
-                    <Text className="text-[12px] font-semibold">
-                      {choice === 'command' ? 'Command' : choice === 'claude' ? 'Claude' : choice === 'codex' ? 'Codex' : 'OpenCode'}
-                    </Text>
-                  </Button>
-                ))}
-              </View>
-              {launchChoice === 'command' ? <View className="flex-row items-center gap-2">
+              <View className="flex-row items-center gap-2">
                 <Input
                   ref={commandInputRef}
                   autoCapitalize="none"
@@ -705,18 +681,7 @@ export function HerdScreen({
                   onPress={hapticPress(runCommand)}>
                   <Icon as={Play} size={18} />
                 </Button>
-              </View> : (
-                <Button
-                  accessibilityLabel={`${launchChoice} launch`}
-                  className="h-12 rounded-full"
-                  disabled={workspaceBusy}
-                  onPress={hapticPress(runCommand)}>
-                  <Icon as={Bot} size={18} />
-                  <Text className="font-semibold">
-                    {launchChoice === 'claude' ? 'Launch Claude' : launchChoice === 'codex' ? 'Launch Codex' : 'Launch OpenCode'}
-                  </Text>
-                </Button>
-              )}
+              </View>
             </View>
 
             <View className="mb-1 mt-4 flex-row items-center gap-2 px-1">
@@ -739,10 +704,7 @@ export function HerdScreen({
                     className={index > 0 ? 'min-h-11 justify-start rounded-none border-t border-border px-2.5 py-2' : 'min-h-11 justify-start rounded-none px-2.5 py-2'}
                     disabled={workspaceBusy}
                     variant="ghost"
-                    onPress={hapticPress(() => {
-                      setLaunchChoice('command');
-                      setCommandDraft(entry);
-                    })}>
+                    onPress={hapticPress(() => setCommandDraft(entry))}>
                     <Text
                       className="flex-1 text-left font-mono text-[13px] leading-[18px]"
                       numberOfLines={2}

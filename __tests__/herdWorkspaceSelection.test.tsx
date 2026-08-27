@@ -72,6 +72,13 @@ jest.mock('@/src/hooks/useKeyboardInset', () => ({
 jest.mock('@/src/lib/terminalFonts', () => ({ terminalFontFamily: 'monospace' }), {
   virtual: true,
 });
+jest.mock('@/src/services/HerdrClient', () => ({
+  tabLaunchIntentForCommand: (command: string) => ({
+    type: 'agent',
+    kind: command,
+    args: [],
+  }),
+}), { virtual: true });
 jest.mock('@/src/theme', () => ({
   appGlassControlStyle: () => undefined,
   statusColor: () => '#000',
@@ -262,5 +269,58 @@ describe('Herd workspace selection intent', () => {
       title: 'herd.commandFailed',
       visible: true,
     }));
+  });
+
+  test('Run keeps the single command field and submits its configured command', async () => {
+    const onLaunchTab = jest.fn().mockResolvedValue(undefined);
+    act(() => {
+      renderer = create(<HerdScreen {...props({ onLaunchTab })} />);
+    });
+
+    const runButton = renderer.root.find(node =>
+      String(node.type) === 'Button'
+      && node.props.accessibilityLabel === 'herd.runCommand'
+      && node.props.className.includes('px-4'),
+    );
+    act(() => runButton.props.onPress());
+
+    const commandInput = renderer.root.find(node =>
+      String(node.type) === 'Input'
+      && node.props.placeholder === 'herd.commandPlaceholder',
+    );
+    expect(commandInput.props.value).toBe('codex');
+    expect(renderer.root.findAll(node =>
+      String(node.type) === 'Button'
+      && ['claude', 'codex', 'opencode'].includes(node.props.accessibilityLabel),
+    )).toHaveLength(0);
+
+    const submitButton = renderer.root.find(node =>
+      String(node.type) === 'Button'
+      && node.props.accessibilityLabel === 'herd.runCommand'
+      && node.props.className.includes('size-12'),
+    );
+    await act(async () => submitButton.props.onPress());
+
+    expect(onLaunchTab).toHaveBeenCalledWith(
+      'host-1',
+      'space-a',
+      '',
+      { type: 'agent', kind: 'codex', args: [] },
+    );
+  });
+
+  test('Open forwards the selected workspace intent', async () => {
+    const onOpenSpace = jest.fn().mockResolvedValue(undefined);
+    act(() => {
+      renderer = create(<HerdScreen {...props({ onOpenSpace })} />);
+    });
+
+    const openButton = renderer.root.find(node =>
+      String(node.type) === 'Button'
+      && node.props.accessibilityLabel === 'herd.openSpace',
+    );
+    await act(async () => openButton.props.onPress());
+
+    expect(onOpenSpace).toHaveBeenCalledWith('host-1', 'space-a');
   });
 });

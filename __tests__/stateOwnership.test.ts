@@ -158,3 +158,17 @@ test('semantic Herdr mutation callers do not append JavaScript snapshot refreshe
   expect(sessionScreen).not.toContain('if (refresh) await onRefresh()');
   expect(paneDetail).not.toContain('onChanged');
 });
+
+test('opening a populated Herd workspace uses the navigation-aware terminal path', () => {
+  const manager = readFileSync(
+    join(__dirname, '..', 'src/hooks/useSessionRuntimeManager.ts'),
+    'utf8',
+  );
+  const openWorkspace = manager.slice(
+    manager.indexOf('const openWorkspace = useCallback'),
+    manager.indexOf('const createWorkspace = useCallback'),
+  );
+
+  expect(openWorkspace).toMatch(/if \(pane\) \{\s*openPaneTerminal\(sessionId, pane\);/);
+  expect(openWorkspace).not.toContain('terminals.openPane(sessionId, pane)');
+});

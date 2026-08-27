@@ -1414,7 +1414,7 @@ export function useSessionRuntimeManager({
         : undefined;
       selectWorkspace(sessionId, workspaceId);
       if (pane) {
-        terminals.openPane(sessionId, pane);
+        openPaneTerminal(sessionId, pane);
         return;
       }
       select(sessionId, 'terminal');
@@ -1430,12 +1430,12 @@ export function useSessionRuntimeManager({
     },
     [
       activatePaneTerminal,
+      openPaneTerminal,
       refreshSnapshot,
       requireRuntime,
       select,
       selectWorkspace,
       t,
-      terminals,
     ],
   );
 
