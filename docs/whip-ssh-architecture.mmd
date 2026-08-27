@@ -10,13 +10,13 @@ flowchart TB
 
   subgraph Native["Whip Rust core · one Tokio runtime"]
     direction TB
-    Host["HostRuntime<br/>authenticated per-host owner<br/>generation guards · reconnect/lifecycle · restoration"]
+    Host["HostRuntime<br/>authenticated per-host owner<br/>generation guards · reconnect/lifecycle · restoration<br/>Herdr readiness/startup"]
 
     subgraph Services["HostRuntime-owned application services"]
       direction LR
-      Control["Herdr control/state<br/>typed tab/agent launch orchestration<br/>API requests · subscriptions/events · HostState"]
+      Control["Herdr control/state<br/>typed tab/agent launch + integration orchestration<br/>API requests · subscriptions/events · HostState"]
       Agents["Agent sessions/transcripts<br/>Herdr identity/context · independent sources<br/>Codex rollout · OpenCode export/events<br/>cache identity/version/checkpoints · retries"]
-      TerminalRuntime["Terminal runtime<br/>binary Herdr client protocol<br/>terminal registry/lifecycle"]
+      TerminalRuntime["Terminal services<br/>binary Herdr client protocol · registry/lifecycle<br/>direct SSH shell PTYs"]
       RemoteOps["Remote operations<br/>SFTP/files · transfers/attachments<br/>Git · previews/forwarding"]
       Diagnostics["Runtime diagnostics<br/>transport-owned coarse timings<br/>typed outcomes"]
     end
@@ -41,12 +41,14 @@ flowchart TB
     SSHD["OpenSSH server"]
     API["Herdr API + event Unix socket"]
     Terminal["Herdr terminal Unix socket"]
+    Shell["Interactive SSH shell / PTY"]
     AgentSources["Codex rollout JSONL<br/>OpenCode export + event database"]
     FilesGit["Filesystem · Git repositories"]
     Forwarded["Forwarded TCP services"]
 
     SSHD <--> API
     SSHD <--> Terminal
+    SSHD <--> Shell
     SSHD <--> AgentSources
     SSHD <--> FilesGit
     SSHD <--> Forwarded
@@ -68,4 +70,4 @@ flowchart TB
   class RN,Cache,SQLite ui
   class JSI native
   class Host,Control,Agents,TerminalRuntime,RemoteOps,Diagnostics,SSH,Pairing rust
-  class SSHD,API,Terminal,AgentSources,FilesGit,Forwarded remote
+  class SSHD,API,Terminal,Shell,AgentSources,FilesGit,Forwarded remote

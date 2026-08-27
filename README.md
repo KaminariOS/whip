@@ -188,6 +188,9 @@ Experimental**. On the Mac or Linux host, run the pairing helper with any one
 of these package managers:
 
 ```bash
+# Nix (GitHub flake)
+nix run github:KaminariOS/whip#whipair
+
 # uv
 uvx whipair
 
@@ -208,8 +211,9 @@ Whip, so it authorizes and saves the host without making it immediately
 connectable from that device.
 
 The uv, npm, and Cargo versions require `ssh-keyscan` from an OpenSSH client
-package. See the [`whipair` documentation](whipair/README.md) for the
-protocol, security boundaries, Nix command, and nonstandard-port options.
+package. The Nix app includes it. See the
+[`whipair` documentation](whipair/README.md) for the protocol, security
+boundaries, local-checkout Nix command, and nonstandard-port options.
 
 ### Enter a host manually
 
