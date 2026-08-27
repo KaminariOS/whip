@@ -1308,8 +1308,25 @@ fn reconcile_control_result(
     if !matches!(outcome, ApplyResult::IgnoredStale) {
         emit_host_state(inner, Vec::new());
     }
-    if let ApplyResult::NeedsResync(reason) = outcome {
-        schedule_state_resync(inner.clone(), reason);
+    match outcome {
+        ApplyResult::NeedsResync(reason) => schedule_state_resync(inner.clone(), reason),
+        ApplyResult::Applied
+            if matches!(
+                request,
+                HerdrControlRequest::WorkspaceCreate { .. }
+                    | HerdrControlRequest::WorkspaceClose { .. }
+                    | HerdrControlRequest::TabCreate { .. }
+                    | HerdrControlRequest::TabClose { .. }
+                    | HerdrControlRequest::PaneSplit { .. }
+                    | HerdrControlRequest::PaneClose { .. }
+            ) =>
+        {
+            schedule_state_resync(
+                inner.clone(),
+                "control result may have changed the pane event subscription set".to_owned(),
+            );
+        }
+        ApplyResult::Applied | ApplyResult::IgnoredStale => {}
     }
 }
 

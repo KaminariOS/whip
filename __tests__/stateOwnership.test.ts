@@ -136,3 +136,25 @@ test('App remains a composition root instead of reclaiming runtime ownership', (
   expect(app).not.toContain('setRuntimeEventHandler');
   expect(app).not.toContain('retainedBackgroundRuntimes');
 });
+
+test('semantic Herdr mutation callers do not append JavaScript snapshot refreshes', () => {
+  const manager = readFileSync(
+    join(__dirname, '..', 'src/hooks/useSessionRuntimeManager.ts'),
+    'utf8',
+  );
+  const sessionScreen = readFileSync(
+    join(__dirname, '..', 'src/components/SessionScreen.tsx'),
+    'utf8',
+  );
+  const paneDetail = readFileSync(
+    join(__dirname, '..', 'src/components/PaneDetail.tsx'),
+    'utf8',
+  );
+
+  expect(manager).not.toMatch(/client\.renameWorkspace\([^;]+;\s*await refresh/);
+  expect(manager).not.toMatch(/client\.closeWorkspace\([^;]+;\s*await refresh/);
+  expect(manager).not.toMatch(/client\.closeTab\([^;]+;\s*await refresh/);
+  expect(manager).not.toMatch(/client\.focus(?:Agent|Pane)\([^;]+[\s\S]{0,80}refresh\(/);
+  expect(sessionScreen).not.toContain('if (refresh) await onRefresh()');
+  expect(paneDetail).not.toContain('onChanged');
+});

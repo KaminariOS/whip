@@ -66,6 +66,13 @@ pub(crate) enum ApplyResult {
     NeedsResync(String),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ControlProjection {
+    Unchanged,
+    Applied,
+    AppliedNeedsResync(String),
+}
+
 #[derive(Debug)]
 pub(crate) struct HostState {
     revision: u64,
@@ -331,20 +338,29 @@ impl HostState {
         };
         let mut candidate = snapshot.clone();
         let applied =
-            apply_control_to_snapshot(&mut candidate, request, result).and_then(|changed| {
-                if changed {
+            apply_control_to_snapshot(&mut candidate, request, result).and_then(|projection| {
+                if !matches!(projection, ControlProjection::Unchanged) {
                     validate_snapshot(&candidate)?;
                 }
-                Ok(changed)
+                Ok(projection)
             });
         match applied {
-            Ok(true) => {
+            Ok(ControlProjection::Applied) => {
                 normalize_snapshot(&mut candidate);
                 *snapshot = candidate;
                 self.bump_revision();
                 ApplyResult::Applied
             }
-            Ok(false) => ApplyResult::Applied,
+            Ok(ControlProjection::AppliedNeedsResync(reason)) => {
+                normalize_snapshot(&mut candidate);
+                *snapshot = candidate;
+                self.needs_resync = true;
+                self.error = Some(reason.clone());
+                self.freshness = HostFreshness::Stale;
+                self.bump_revision();
+                ApplyResult::NeedsResync(reason)
+            }
+            Ok(ControlProjection::Unchanged) => ApplyResult::Applied,
             Err(reason) => {
                 self.needs_resync = true;
                 self.error = Some(reason.clone());
@@ -1095,7 +1111,7 @@ fn apply_control_to_snapshot(
     snapshot: &mut HerdrSessionSnapshot,
     request: &HerdrControlRequest,
     result: &HerdrControlResult,
-) -> Result<bool, String> {
+) -> Result<ControlProjection, String> {
     match result {
         HerdrControlResult::WorkspaceCreated {
             workspace,
@@ -1106,27 +1122,41 @@ fn apply_control_to_snapshot(
             upsert_tab(snapshot, tab.clone())?;
             upsert_pane(snapshot, root_pane.clone())?;
             focus_pane(snapshot, &root_pane.pane_id)?;
-            Ok(true)
+            Ok(ControlProjection::AppliedNeedsResync(
+                "workspace creation result omits the root tab layout".to_owned(),
+            ))
         }
         HerdrControlResult::WorkspaceInfo { workspace } => {
             upsert_workspace(snapshot, workspace.clone());
             if matches!(request, HerdrControlRequest::WorkspaceFocus { .. }) {
                 focus_workspace(snapshot, &workspace.workspace_id)?;
+                if snapshot.focused_tab_id.is_none() || snapshot.focused_pane_id.is_none() {
+                    return Ok(ControlProjection::AppliedNeedsResync(
+                        "workspace focus result omits post-focus pane topology".to_owned(),
+                    ));
+                }
             }
-            Ok(true)
+            Ok(ControlProjection::Applied)
         }
         HerdrControlResult::TabCreated { tab, root_pane } => {
             upsert_tab(snapshot, tab.clone())?;
             upsert_pane(snapshot, root_pane.clone())?;
             focus_pane(snapshot, &root_pane.pane_id)?;
-            Ok(true)
+            Ok(ControlProjection::AppliedNeedsResync(
+                "tab creation result omits the new tab layout".to_owned(),
+            ))
         }
         HerdrControlResult::TabInfo { tab } => {
             upsert_tab(snapshot, tab.clone())?;
             if matches!(request, HerdrControlRequest::TabFocus { .. }) {
                 focus_tab(snapshot, &tab.tab_id)?;
+                if snapshot.focused_pane_id.is_none() {
+                    return Ok(ControlProjection::AppliedNeedsResync(
+                        "tab focus result omits post-focus pane topology".to_owned(),
+                    ));
+                }
             }
-            Ok(true)
+            Ok(ControlProjection::Applied)
         }
         HerdrControlResult::PaneInfo { pane } => {
             upsert_pane(snapshot, pane.clone())?;
@@ -1136,7 +1166,13 @@ fn apply_control_to_snapshot(
             ) {
                 focus_pane(snapshot, &pane.pane_id)?;
             }
-            Ok(true)
+            if matches!(request, HerdrControlRequest::PaneSplit { .. }) {
+                Ok(ControlProjection::AppliedNeedsResync(
+                    "pane split result omits the updated tab layout".to_owned(),
+                ))
+            } else {
+                Ok(ControlProjection::Applied)
+            }
         }
         HerdrControlResult::AgentStarted { agent, .. }
         | HerdrControlResult::AgentInfo { agent }
@@ -1145,34 +1181,36 @@ fn apply_control_to_snapshot(
             if matches!(request, HerdrControlRequest::AgentFocus { .. }) {
                 focus_pane(snapshot, &agent.pane_id)?;
             }
-            Ok(true)
+            Ok(ControlProjection::Applied)
         }
         HerdrControlResult::PaneZoom { zoom } => {
             upsert_layout(snapshot, zoom.layout.clone())?;
             if zoom.focus_changed {
                 focus_pane(snapshot, &zoom.focused_pane_id)?;
             }
-            Ok(true)
+            Ok(ControlProjection::Applied)
         }
         HerdrControlResult::Ok => match request {
             HerdrControlRequest::WorkspaceClose { workspace_id } => {
                 remove_workspace(snapshot, workspace_id);
-                Ok(true)
+                Ok(ControlProjection::Applied)
             }
             HerdrControlRequest::TabClose { tab_id } => {
                 remove_tab(snapshot, tab_id);
-                Ok(true)
+                Ok(ControlProjection::Applied)
             }
             HerdrControlRequest::PaneClose { pane_id } => {
                 remove_pane(snapshot, pane_id);
-                Ok(true)
+                Ok(ControlProjection::AppliedNeedsResync(
+                    "pane close result omits the updated tab layout".to_owned(),
+                ))
             }
-            _ => Ok(false),
+            _ => Ok(ControlProjection::Unchanged),
         },
         HerdrControlResult::Pong { .. }
         | HerdrControlResult::SessionSnapshot { .. }
         | HerdrControlResult::IntegrationInstalled { .. }
-        | HerdrControlResult::PaneRead { .. } => Ok(false),
+        | HerdrControlResult::PaneRead { .. } => Ok(ControlProjection::Unchanged),
     }
 }
 
@@ -1236,11 +1274,21 @@ mod tests {
     }
 
     fn agent(pane_id: &str, kind: HerdrAgentKind, session_id: &str) -> HerdrAgentInfo {
+        agent_in(pane_id, "w1", "t1", kind, session_id)
+    }
+
+    fn agent_in(
+        pane_id: &str,
+        workspace_id: &str,
+        tab_id: &str,
+        kind: HerdrAgentKind,
+        session_id: &str,
+    ) -> HerdrAgentInfo {
         HerdrAgentInfo {
             pane_id: pane_id.to_owned(),
             terminal_id: format!("term-{pane_id}"),
-            workspace_id: "w1".to_owned(),
-            tab_id: "t1".to_owned(),
+            workspace_id: workspace_id.to_owned(),
+            tab_id: tab_id.to_owned(),
             focused: true,
             agent_status: HerdrAgentStatus::Working,
             revision: 1.0,
@@ -1264,6 +1312,32 @@ mod tests {
                 kind: HerdrAgentSessionKind::Id,
                 value: session_id.to_owned(),
             }),
+        }
+    }
+
+    fn layout(workspace_id: &str, tab_id: &str, pane_id: &str) -> HerdrPaneLayoutSnapshot {
+        HerdrPaneLayoutSnapshot {
+            workspace_id: workspace_id.to_owned(),
+            tab_id: tab_id.to_owned(),
+            zoomed: false,
+            area: HerdrPaneLayoutRect {
+                x: 0.0,
+                y: 0.0,
+                width: 100.0,
+                height: 100.0,
+            },
+            focused_pane_id: pane_id.to_owned(),
+            panes: vec![HerdrPaneLayoutPane {
+                pane_id: pane_id.to_owned(),
+                focused: true,
+                rect: HerdrPaneLayoutRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+            }],
+            splits: Vec::new(),
         }
     }
 
@@ -1507,7 +1581,7 @@ mod tests {
             tab: tab("t2", "w2"),
             root_pane: pane("p2", "w2", "t2", HerdrAgentStatus::Working),
         };
-        assert_eq!(
+        assert!(matches!(
             state.apply_control_result(
                 1,
                 &HerdrControlRequest::WorkspaceCreate {
@@ -1516,11 +1590,104 @@ mod tests {
                 },
                 &result,
             ),
-            ApplyResult::Applied
-        );
+            ApplyResult::NeedsResync(_)
+        ));
         let value = state.snapshot.unwrap();
         assert_eq!(value.focused_workspace_id.as_deref(), Some("w2"));
         assert_eq!(value.focused_pane_id.as_deref(), Some("p2"));
+    }
+
+    #[test]
+    fn confirmed_workspace_rename_updates_the_react_visible_projection() {
+        let mut state = synced_state();
+        let before = state.revision;
+        let mut renamed = workspace("w1");
+        renamed.label = "release train".to_owned();
+
+        assert_eq!(
+            state.apply_control_result(
+                1,
+                &HerdrControlRequest::WorkspaceRename {
+                    workspace_id: "w1".to_owned(),
+                    label: "release train".to_owned(),
+                },
+                &HerdrControlResult::WorkspaceInfo { workspace: renamed },
+            ),
+            ApplyResult::Applied
+        );
+
+        let projection = state.projection();
+        assert!(projection.revision > before);
+        assert_eq!(
+            projection.snapshot.unwrap().workspaces[0].label,
+            "release train"
+        );
+    }
+
+    #[test]
+    fn confirmed_tab_close_removes_its_panes_agents_and_layout() {
+        let mut state = synced_state();
+        let value = state.snapshot.as_mut().unwrap();
+        value.tabs.push(tab("t2", "w1"));
+        value
+            .panes
+            .push(pane("p2", "w1", "t2", HerdrAgentStatus::Working));
+        value.agents.push(agent_in(
+            "p2",
+            "w1",
+            "t2",
+            HerdrAgentKind::Codex,
+            "session-2",
+        ));
+        value.layouts.push(layout("w1", "t2", "p2"));
+        normalize_snapshot(value);
+
+        assert_eq!(
+            state.apply_control_result(
+                1,
+                &HerdrControlRequest::TabClose {
+                    tab_id: "t2".to_owned(),
+                },
+                &HerdrControlResult::Ok,
+            ),
+            ApplyResult::Applied
+        );
+
+        let value = state.snapshot.unwrap();
+        assert!(value.tabs.iter().all(|tab| tab.tab_id != "t2"));
+        assert!(value.panes.iter().all(|pane| pane.tab_id != "t2"));
+        assert!(value.agents.iter().all(|agent| agent.tab_id != "t2"));
+        assert!(value.layouts.iter().all(|layout| layout.tab_id != "t2"));
+        assert_eq!(value.workspaces[0].tab_count, 1.0);
+        assert_eq!(value.workspaces[0].pane_count, 1.0);
+    }
+
+    #[test]
+    fn incomplete_control_result_commits_known_topology_and_needs_resync() {
+        let mut state = synced_state();
+        let result = state.apply_control_result(
+            1,
+            &HerdrControlRequest::PaneSplit {
+                pane_id: "p1".to_owned(),
+                direction: crate::herdr_api::HerdrSplitDirection::Right,
+            },
+            &HerdrControlResult::PaneInfo {
+                pane: pane("p2", "w1", "t1", HerdrAgentStatus::Idle),
+            },
+        );
+
+        assert!(matches!(result, ApplyResult::NeedsResync(_)));
+        assert!(
+            state
+                .snapshot
+                .as_ref()
+                .unwrap()
+                .panes
+                .iter()
+                .any(|pane| pane.pane_id == "p2")
+        );
+        assert!(state.needs_resync);
+        assert_eq!(state.freshness, HostFreshness::Stale);
     }
 
     #[test]
@@ -1809,17 +1976,33 @@ mod tests {
     #[test]
     fn confirmed_close_results_remove_descendants_without_an_event_round_trip() {
         let mut state = synced_state();
-        state.apply_control_result(
-            1,
-            &HerdrControlRequest::WorkspaceClose {
-                workspace_id: "w1".to_owned(),
-            },
-            &HerdrControlResult::Ok,
+        state.snapshot.as_mut().unwrap().agents.push(agent(
+            "p1",
+            HerdrAgentKind::Codex,
+            "session-1",
+        ));
+        state
+            .snapshot
+            .as_mut()
+            .unwrap()
+            .layouts
+            .push(layout("w1", "t1", "p1"));
+        assert_eq!(
+            state.apply_control_result(
+                1,
+                &HerdrControlRequest::WorkspaceClose {
+                    workspace_id: "w1".to_owned(),
+                },
+                &HerdrControlResult::Ok,
+            ),
+            ApplyResult::Applied
         );
         let value = state.snapshot.unwrap();
         assert!(value.workspaces.is_empty());
         assert!(value.tabs.is_empty());
         assert!(value.panes.is_empty());
+        assert!(value.agents.is_empty());
+        assert!(value.layouts.is_empty());
         assert_eq!(value.focused_pane_id, None);
     }
 

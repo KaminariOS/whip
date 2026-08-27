@@ -627,13 +627,12 @@ export function SessionScreen({
     activateServerPane(serverPaneId);
   }, [followServerFocus, pendingCreatedPaneId, serverPaneId]);
 
-  const run = async (action: () => Promise<void>, refresh = true): Promise<boolean> => {
+  const run = async (action: () => Promise<void>): Promise<boolean> => {
     try {
       return await runWithInFlightGuard(mutationInFlight, async () => {
         setBusy(true);
         try {
           await action();
-          if (refresh) await onRefresh();
         } finally {
           setBusy(false);
         }
@@ -901,6 +900,7 @@ export function SessionScreen({
     try {
       await client.installCodexIntegration();
       if (request !== codexIntegrationInstallRequestRef.current) return;
+      // The install result contains messages, not refreshed agent identity.
       await onRefresh();
       if (request !== codexIntegrationInstallRequestRef.current) return;
       setPendingIntegrationPaneId(paneId);

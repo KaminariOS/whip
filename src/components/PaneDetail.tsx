@@ -15,11 +15,11 @@ import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 
-interface Props { pane: PaneInfo | null; client: HerdrClient; onClose: () => void; onChanged: () => Promise<void>; onOpenTerminal: (pane: PaneInfo) => void }
+interface Props { pane: PaneInfo | null; client: HerdrClient; onClose: () => void; onOpenTerminal: (pane: PaneInfo) => void }
 
 async function loadPane(client: HerdrClient, pane: PaneInfo, setOutput: (value: string) => void, errorText: (error: unknown) => string) { try { setOutput(await client.readPane(pane.pane_id)); } catch (error) { setOutput(errorText(error)); } }
 
-export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }: Props) {
+export function PaneDetail({ pane, client, onClose, onOpenTerminal }: Props) {
   const { colors: theme } = useTheme();
   const { t } = useTranslation();
   const loadedPaneId = useRef<string | null>(null);
@@ -49,7 +49,7 @@ export function PaneDetail({ pane, client, onClose, onChanged, onOpenTerminal }:
   }, [client, pane, t]);
   if (!pane) return null;
 
-  const run = async (action: () => Promise<void>, close = false) => { setBusy(true); try { await action(); await onChanged(); if (close) onClose(); else await read(); } catch (error) { setAppAlert({ title: t('herd.commandFailed'), message: String(error) }); } finally { setBusy(false); } };
+  const run = async (action: () => Promise<void>, close = false) => { setBusy(true); try { await action(); if (close) onClose(); else await read(); } catch (error) { setAppAlert({ title: t('herd.commandFailed'), message: String(error) }); } finally { setBusy(false); } };
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>

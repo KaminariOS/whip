@@ -95,7 +95,31 @@ function tabCreated(paneId: string, label: string) {
 describe('direct Herdr API requests', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
+    jest.mocked(SSHClient.createHostRuntime).mockClear();
     clearHerdrSocketPathCache();
+  });
+
+  test('reuses the failed native runtime after trusting an SSH host key', async () => {
+    const challenge = Object.assign(new Error('unknown SSH host key'), {
+      code: 'HOST_KEY_UNKNOWN',
+      details: {
+        host: profile.host,
+        port: Number(profile.port),
+        keyType: 'ssh-ed25519',
+        publicKey: 'test-public-key',
+      },
+    });
+    const native = apiClient(() => ({ type: 'ok' }));
+    connectWithPassword
+      .mockRejectedValueOnce(challenge)
+      .mockResolvedValueOnce(native);
+    const client = new HerdrClient();
+
+    await expect(client.connect(profile)).rejects.toBe(challenge);
+    await expect(client.connect(profile)).resolves.toBeUndefined();
+
+    expect(SSHClient.createHostRuntime).toHaveBeenCalledTimes(1);
+    expect(connectWithPassword).toHaveBeenCalledTimes(2);
   });
 
   test('sends control operations directly to the Unix socket', async () => {
@@ -119,6 +143,35 @@ describe('direct Herdr API requests', () => {
       '/home/herdr/.config/herdr/sessions/main/herdr.sock',
       expect.objectContaining({ method: 'tab.focus' }),
     );
+  });
+
+  test('workspace rename sends one mutation and no JavaScript snapshot request', async () => {
+    const native = apiClient(request => request.method === 'workspace.rename'
+      ? {
+          type: 'workspace_info',
+          workspace: {
+            workspace_id: 'space-1',
+            number: 1,
+            label: 'Renamed',
+            focused: true,
+            pane_count: 1,
+            tab_count: 1,
+            active_tab_id: 'tab-1',
+            agent_status: 'idle',
+          },
+        }
+      : { type: 'ok' });
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
+
+    await client.renameWorkspace('space-1', 'Renamed');
+
+    const methods = jest.mocked(native.requestHerdrApi).mock.calls
+      .map(([, request]) => request.method);
+    expect(methods).toEqual(['workspace.rename']);
+    expect(methods).not.toContain('session.snapshot');
   });
 
   test('uses the versioned session snapshot as the initial availability probe', async () => {

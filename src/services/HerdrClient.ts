@@ -45,6 +45,16 @@ type HerdrApiParams<Method extends HerdrApiMethod> = Extract<
   { method: Method }
 >['params'];
 
+const HOST_KEY_CHALLENGE_CODES = new Set([
+  'HOST_KEY_UNKNOWN',
+  'HOST_KEY_CHANGED',
+]);
+
+function isHostKeyChallenge(error: unknown): boolean {
+  const code = errorCode(error);
+  return code !== null && HOST_KEY_CHALLENGE_CODES.has(code);
+}
+
 export type WorkspaceCreationResult = Extract<ResponseResult, { type: 'workspace_created' }>;
 export type TabCreationResult = Extract<ResponseResult, { type: 'tab_created' }>;
 export type IntegrationInstall = Extract<ResponseResult, { type: 'integration_install' }>;
@@ -133,6 +143,7 @@ export class HerdrClient {
   }
 
   private runtime: HostRuntimeConnection | null = null;
+  private runtimeAwaitingHostKeyTrust = false;
   private runtimeEventHandler: ((event: HostRuntimeLifecycleEvent) => void) | null = null;
   private profile: ConnectionProfile | null = null;
   private terminalConnections = new Map<string, TerminalConnection>();
@@ -174,7 +185,15 @@ export class HerdrClient {
       explicitSocketPath: Boolean(profile.herdrSocketPath?.trim()),
       cachedSocketPath: Boolean(cachedSocketPath),
     });
-    const runtime = SSHClient.createHostRuntime({
+    const retryRuntime = this.runtimeAwaitingHostKeyTrust && this.profile === profile
+      ? this.runtime
+      : null;
+    if (this.runtimeAwaitingHostKeyTrust && !retryRuntime) {
+      await this.runtime?.disconnect().catch(() => undefined);
+      this.runtime = null;
+      this.runtimeAwaitingHostKeyTrust = false;
+    }
+    const runtime = retryRuntime ?? SSHClient.createHostRuntime({
       runtimeId: profile.id,
       ssh: sshConfig(profile),
       jumpHosts: jumpProfiles.map(sshConfig),
@@ -187,8 +206,10 @@ export class HerdrClient {
     this.profile = profile;
     try {
       await runtime.connect();
+      this.runtimeAwaitingHostKeyTrust = false;
     } catch (error) {
-      if (this.runtime === runtime) {
+      this.runtimeAwaitingHostKeyTrust = isHostKeyChallenge(error);
+      if (this.runtime === runtime && !this.runtimeAwaitingHostKeyTrust) {
         this.runtime = null;
       }
       throw error;
@@ -223,6 +244,7 @@ export class HerdrClient {
     }
     this.runtime?.disconnect().catch(() => undefined);
     this.runtime = null;
+    this.runtimeAwaitingHostKeyTrust = false;
     this.profile = null;
     this.terminalOpenings.clear();
     this.terminalConnections.clear();

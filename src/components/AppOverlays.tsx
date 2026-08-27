@@ -136,11 +136,6 @@ export function AppOverlays({
           pane={selectedPane}
           client={sessions.activeClient}
           onClose={() => navigation.selectPane(null)}
-          onChanged={() =>
-            activeSession
-              ? sessions.refresh(activeSession.id)
-              : Promise.resolve()
-          }
           onOpenTerminal={pane => {
             if (activeSession)
               sessions.openPaneTerminal(activeSession.id, pane);

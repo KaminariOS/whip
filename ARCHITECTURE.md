@@ -59,6 +59,12 @@ notification: terminal/transcript bytes and activity use their dedicated
 streams, so known-pane output does not mutate the host projection revision or
 send a redundant full snapshot.
 
+Successful Herdr mutations are reconciled into Rust-owned `HostState`, and
+React Native consumes the resulting projection without routinely requesting a
+follow-up full snapshot. Rust alone decides when an incomplete or inconsistent
+control result requires a resync; mobile navigation and selection remain
+React-owned.
+
 If Whip needs a new server capability, it should be a neutral Herdr socket API method or event, not a mobile-specific endpoint and not a second source of runtime truth.
 
 Herdr's Unix API accepts one normal request and then closes that socket

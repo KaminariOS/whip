@@ -1320,11 +1320,9 @@ export function useSessionRuntimeManager({
       const focus = focusAgent
         ? runtime?.client.focusAgent(pane.pane_id)
         : runtime?.client.focusPane(pane.pane_id);
-      focus
-        ?.then(() => refresh(sessionId))
-        .catch(error => scheduleReconnect(sessionId, error));
+      focus?.catch(error => scheduleReconnect(sessionId, error));
     },
-    [navigation, refresh, scheduleReconnect, select, terminals],
+    [navigation, scheduleReconnect, select, terminals],
   );
 
   const openAgentTerminal = useCallback(
@@ -1421,6 +1419,8 @@ export function useSessionRuntimeManager({
       }
       select(sessionId, 'terminal');
       await runtime.client.focusWorkspace(workspaceId);
+      // workspace.focus returns workspace metadata, not guaranteed post-focus
+      // pane topology. This caller needs a pane immediately to open a renderer.
       const refreshed = await refreshSnapshot(sessionId);
       const refreshedPane = refreshed
         ? preferredWorkspacePane(refreshed, workspaceId)
@@ -1449,25 +1449,22 @@ export function useSessionRuntimeManager({
   const renameWorkspace = useCallback(
     async (sessionId: string, workspaceId: string, name: string) => {
       await requireRuntime(sessionId).client.renameWorkspace(workspaceId, name);
-      await refresh(sessionId);
     },
-    [refresh, requireRuntime],
+    [requireRuntime],
   );
 
   const closeWorkspace = useCallback(
     async (sessionId: string, workspaceId: string) => {
       await requireRuntime(sessionId).client.closeWorkspace(workspaceId);
-      await refresh(sessionId);
     },
-    [refresh, requireRuntime],
+    [requireRuntime],
   );
 
   const closeTab = useCallback(
     async (sessionId: string, tabId: string) => {
       await requireRuntime(sessionId).client.closeTab(tabId);
-      await refresh(sessionId);
     },
-    [refresh, requireRuntime],
+    [requireRuntime],
   );
 
   const launchTab = useCallback(
