@@ -736,6 +736,7 @@ export const en = {
   'app.connectAuthenticationError': '{{host}} rejected the SSH credential. Check the username and key or password.',
   'app.connectKeyError': 'Whip couldn’t use the SSH key for {{host}}. Check the key and its passphrase.',
   'app.connectHostKeyError': 'WARNING: The SSH identity for {{host}} could not be verified or has changed. Review the known-host entry and verify the host before trying again.',
+  'app.connectUnsupportedHostCertificateError': 'This SSH server presents a host certificate, which Whip does not currently support.',
   'app.connectProtocolError': '{{host}} uses an incompatible Herdr protocol. Whip supports protocol {{expectedProtocol}}, but the server reports {{receivedProtocol}}. Update Whip or Herdr and try again.',
   'app.connectHerdrUnavailableError': 'SSH connected to {{host}}, but Herdr is unavailable. Check that Herdr is installed and running.',
   'app.connectUnknownError': 'Couldn’t connect to {{host}}. Check the host settings and try again.',

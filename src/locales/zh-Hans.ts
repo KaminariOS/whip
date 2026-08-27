@@ -717,6 +717,7 @@ export const zhHans = {
   'app.connectAuthenticationError': '{{host}} 拒绝了 SSH 凭证。检查用户名和密钥或密码。',
   'app.connectKeyError': 'Whip 无法将 SSH 密钥用于 {{host}}。检查密钥及其密码。',
   'app.connectHostKeyError': '警告：{{host}} 的 SSH 身份无法验证或已更改。查看已知主机条目并验证主机，然后重试。',
+  'app.connectUnsupportedHostCertificateError': '此 SSH 服务器提供了主机证书，而 Whip 目前不支持主机证书。',
   'app.connectProtocolError': '{{host}} 使用不兼容的 Herdr 协议。 Whip 支持协议 {{expectedProtocol}}，但服务器报告 {{receivedProtocol}}。更新 Whip 或 Herdr 并重试。',
   'app.connectHerdrUnavailableError': 'SSH 连接到 {{host}}，但 Herdr 不可用。检查 Herdr 是否已安装并正在运行。',
   'app.connectUnknownError': '无法连接到 {{host}}。检查主机设置并重试。',

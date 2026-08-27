@@ -274,12 +274,29 @@ fn transport_errors_have_stable_codes() {
         transport_error_code(&TransportError::Ssh(russh::Error::WrongChannel)),
         SshErrorCode::ChannelUnavailable,
     );
+    assert_eq!(
+        transport_error_code(&TransportError::UnsupportedHostCertificate),
+        SshErrorCode::UnsupportedHostCertificate,
+    );
     assert!(matches!(
         classify_direct_connect_error(TransportError::Ssh(russh::Error::IO(
             std::io::Error::other("host lookup failed"),
         ))),
         TransportError::HostUnreachable(_),
     ));
+}
+
+#[test]
+fn unsupported_host_certificates_keep_their_native_error_type() {
+    let compatibility =
+        serde_json::to_value(SshError::from(TransportError::UnsupportedHostCertificate)).unwrap();
+    assert_eq!(compatibility["code"], "UNSUPPORTED_HOST_CERTIFICATE");
+    assert!(compatibility.get("details").is_none());
+
+    assert_eq!(
+        SshFailure::from(TransportError::UnsupportedHostCertificate),
+        SshFailure::UnsupportedHostCertificate,
+    );
 }
 
 #[test]

@@ -296,6 +296,12 @@ test('parses structured native host-key errors without weakening changed-key beh
     fingerprint: 'SHA256:key',
   });
   expect(parseUnknownHostKey('HostKey has been changed')).toBeNull();
+  expect(parseUnknownHostKey({
+    code: 'UNSUPPORTED_HOST_CERTIFICATE',
+  })).toBeNull();
+  expect(hostKeyErrorHost({
+    code: 'UNSUPPORTED_HOST_CERTIFICATE',
+  })).toBeNull();
   expect(hostKeyErrorHost({
     code: 'HOST_KEY_CHANGED',
     details: { host: 'Jump.Example', port: 2222 },

@@ -123,6 +123,36 @@ describe('direct Herdr API requests', () => {
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
   });
 
+  test('does not enter the host-key trust retry path for a host certificate', async () => {
+    const unsupported = Object.assign(new Error('SSH host certificates are not supported'), {
+      code: 'UNSUPPORTED_HOST_CERTIFICATE',
+    });
+    const native = apiClient(() => ({ type: 'ok' }));
+    connectWithPassword
+      .mockRejectedValueOnce(unsupported)
+      .mockResolvedValueOnce(native);
+    const client = new HerdrClient();
+
+    await expect(client.connect(profile)).rejects.toBe(unsupported);
+    await expect(client.connect(profile)).resolves.toBeUndefined();
+
+    expect(SSHClient.createHostRuntime).toHaveBeenCalledTimes(2);
+    expect(connectWithPassword).toHaveBeenCalledTimes(2);
+  });
+
+  test('startServer delegates once without a JavaScript snapshot readiness probe', async () => {
+    const native = apiClient(() => ({ type: 'ok' }));
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    jest.mocked(native.requestHerdrApi).mockClear();
+
+    await client.startServer();
+
+    expect(native.startHerdrServer).toHaveBeenCalledTimes(1);
+    expect(native.requestHerdrApi).not.toHaveBeenCalled();
+  });
+
   test('sends control operations directly to the Unix socket', async () => {
     const native = apiClient(() => ({ type: 'ok' }));
     connectWithPassword.mockResolvedValue(native);

@@ -13,6 +13,10 @@ describe('connection error presentation', () => {
     [{ code: 'CONNECTION_TIMEOUT' }, 'timeout'],
     [{ code: 'HOST_UNREACHABLE' }, 'unreachable'],
     [{ code: 'HOST_KEY_UNKNOWN' }, 'hostKey'],
+    [{ code: 'HOST_KEY_CHANGED' }, 'hostKey'],
+    [{ code: 'UNSUPPORTED_HOST_CERTIFICATE' }, 'unsupportedHostCertificate'],
+    [{ code: 'HERDR_PROTOCOL_MISMATCH' }, 'incompatibleProtocol'],
+    [{ code: 'HERDR_READINESS_TIMEOUT' }, 'herdrUnavailable'],
     [{ code: 'INVALID_PRIVATE_KEY' }, 'invalidKey'],
     ['java.net.UnknownHostException: thinker', 'unreachable'],
     ['connect failed: ENETUNREACH (Network is unreachable)', 'unreachable'],
@@ -29,6 +33,9 @@ describe('connection error presentation', () => {
 
   it('uses translation keys instead of exposing native exception text', () => {
     expect(connectionErrorTranslationKeys.unreachable).toBe('app.connectUnreachableError');
+    expect(connectionErrorTranslationKeys.unsupportedHostCertificate).toBe(
+      'app.connectUnsupportedHostCertificateError',
+    );
     expect(Object.values(connectionErrorTranslationKeys)).not.toContain(
       'java.net.UnknownHostException',
     );

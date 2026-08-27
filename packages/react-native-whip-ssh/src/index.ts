@@ -465,36 +465,72 @@ function hostRuntimeError(error: unknown): Error & {
   nativeTag?: string;
   code?: string;
   details?: unknown;
+  expected?: string;
+  received?: number;
 } {
   const nativeError = error as {
     tag?: string;
-    inner?: readonly unknown[];
+    inner?: readonly unknown[] | Record<string, unknown>;
   };
   const hostKeyCode = nativeError.tag === 'HostKeyUnknown'
     ? 'HOST_KEY_UNKNOWN'
     : nativeError.tag === 'HostKeyChanged'
       ? 'HOST_KEY_CHANGED'
-      : undefined;
-  const details = hostKeyCode ? nativeError.inner?.[0] : undefined;
+      : nativeError.tag === 'UnsupportedHostCertificate'
+        ? 'UNSUPPORTED_HOST_CERTIFICATE'
+        : undefined;
+  const structuredInner: Record<string, unknown> | undefined =
+    nativeError.inner && !Array.isArray(nativeError.inner)
+    ? nativeError.inner as Record<string, unknown>
+    : undefined;
+  const expected = nativeError.tag === 'HerdrProtocolMismatch'
+    && typeof structuredInner?.expected === 'string'
+    ? structuredInner.expected
+    : undefined;
+  const received = nativeError.tag === 'HerdrProtocolMismatch'
+    && typeof structuredInner?.received === 'number'
+    ? structuredInner.received
+    : undefined;
+  const lastReadinessError = nativeError.tag === 'HerdrReadinessTimeout'
+    && typeof structuredInner?.lastError === 'string'
+    ? structuredInner.lastError
+    : undefined;
+  const details = hostKeyCode === 'HOST_KEY_UNKNOWN' || hostKeyCode === 'HOST_KEY_CHANGED'
+    ? (nativeError.inner as readonly unknown[] | undefined)?.[0]
+    : undefined;
   const message = hostKeyCode === 'HOST_KEY_UNKNOWN'
     ? 'unknown SSH host key'
     : hostKeyCode === 'HOST_KEY_CHANGED'
       ? 'SSH host key changed'
-      : typeof nativeError.inner?.[0] === 'string'
-        ? nativeError.inner[0]
-        : error instanceof Error
-          ? error.message
-          : String(error);
+      : hostKeyCode === 'UNSUPPORTED_HOST_CERTIFICATE'
+        ? 'SSH host certificates are not supported'
+        : expected !== undefined && received !== undefined
+          ? `Herdr protocol mismatch: Whip supports ${expected}, server reports ${received}`
+          : lastReadinessError
+            ? `Herdr did not become ready: ${lastReadinessError}`
+            : Array.isArray(nativeError.inner) && typeof nativeError.inner[0] === 'string'
+              ? nativeError.inner[0]
+              : error instanceof Error
+                ? error.message
+                : String(error);
   const result = new Error(message) as Error & {
     nativeTag?: string;
     code?: string;
     details?: unknown;
+    expected?: string;
+    received?: number;
   };
   result.name = 'HostRuntimeError';
   if (nativeError.tag) result.nativeTag = nativeError.tag;
   if (hostKeyCode) {
     result.code = hostKeyCode;
-    result.details = details;
+    if (details) result.details = details;
+  } else if (nativeError.tag === 'HerdrProtocolMismatch') {
+    result.code = 'HERDR_PROTOCOL_MISMATCH';
+    result.expected = expected;
+    result.received = received;
+  } else if (nativeError.tag === 'HerdrReadinessTimeout') {
+    result.code = 'HERDR_READINESS_TIMEOUT';
   }
   return result;
 }
@@ -1478,8 +1514,12 @@ export class NativeHostRuntime {
     return this.runtime.submitPastes(paneId, parts);
   }
 
-  startHerdrServer(): Promise<void> {
-    return this.runtime.startHerdrServer();
+  async startHerdrServer(): Promise<void> {
+    try {
+      await this.runtime.startHerdrServer();
+    } catch (error) {
+      throw hostRuntimeError(error);
+    }
   }
 
   async agentIntegrationStatus(kind: RuntimeAgentKind): Promise<RuntimeAgentIntegrationStatus> {

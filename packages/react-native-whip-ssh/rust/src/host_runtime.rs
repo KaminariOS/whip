@@ -3,6 +3,7 @@
 mod remote_files;
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::{
     Arc, OnceLock, Weak,
     atomic::{AtomicU64, Ordering},
@@ -10,15 +11,16 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use parking_lot::{Mutex, RwLock};
-use tokio::sync::{Notify, watch};
+use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
 use crate::agent_sessions::{AgentSessionError, AgentSessionManager, AgentSessionOpenResult};
 use crate::agent_transcript::{AgentTranscriptKind, AgentTranscriptState};
 use crate::herdr_api::{
     HerdrAgentKind, HerdrControlError, HerdrControlRequest, HerdrControlResult,
-    HerdrIntegrationInstallResult, HerdrTabLaunch, HerdrTabLaunchResult, HerdrTabLaunchStage,
-    request_on_runtime,
+    HerdrIntegrationInstallResult, HerdrSessionSnapshot, HerdrTabLaunch, HerdrTabLaunchResult,
+    HerdrTabLaunchStage, request_on_runtime,
 };
+use crate::herdr_codec::{MAX_PROTOCOL, MIN_PROTOCOL};
 use crate::herdr_events::{
     HerdrEvent, HerdrEventError, close_herdr_event_subscription, start_on_runtime as start_events,
 };
@@ -41,6 +43,10 @@ use remote_files::*;
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
 const INITIAL_RECONNECT_DELAY_MS: u64 = 750;
 const MAX_RECONNECT_DELAY_MS: u64 = 8_000;
+const HERDR_READINESS_TIMEOUT: Duration = Duration::from_secs(12);
+const HERDR_READINESS_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
+const HERDR_READINESS_INITIAL_BACKOFF: Duration = Duration::from_millis(75);
+const HERDR_READINESS_MAX_BACKOFF: Duration = Duration::from_millis(600);
 const SLOW_RUNTIME_DIAGNOSTIC_MS: f64 = 200.0;
 static NEXT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 static RUNTIMES: OnceLock<RwLock<HashMap<String, Weak<RuntimeInner>>>> = OnceLock::new();
@@ -239,10 +245,16 @@ pub enum HostRuntimeError {
     HostKeyUnknown(crate::ssh::HostKeyChallenge),
     #[error("SSH host key changed")]
     HostKeyChanged(crate::ssh::HostKeyChallenge),
+    #[error("SSH host certificates are not supported")]
+    UnsupportedHostCertificate,
     #[error("{0}")]
     SshTransportFailure(String),
     #[error("{0}")]
     HerdrUnavailable(String),
+    #[error("Herdr protocol mismatch: Whip supports {expected}, server reports {received}")]
+    HerdrProtocolMismatch { expected: String, received: u32 },
+    #[error("Herdr did not become ready within {timeout_ms} ms: {last_error}")]
+    HerdrReadinessTimeout { timeout_ms: u64, last_error: String },
     #[error("{0}")]
     ControlConnectionFailure(String),
     #[error("{0}")]
@@ -278,6 +290,7 @@ impl From<SshFailure> for HostRuntimeError {
             SshFailure::Authentication(message) => Self::AuthenticationFailure(message),
             SshFailure::HostKeyUnknown(challenge) => Self::HostKeyUnknown(*challenge),
             SshFailure::HostKeyChanged(challenge) => Self::HostKeyChanged(*challenge),
+            SshFailure::UnsupportedHostCertificate => Self::UnsupportedHostCertificate,
             SshFailure::Transport(message) => Self::SshTransportFailure(message),
         }
     }
@@ -430,6 +443,7 @@ struct RuntimeInner {
     jump_sessions: Mutex<Vec<Arc<SshSession>>>,
     agents: AgentSessionManager,
     operations: RemoteOperationManager,
+    herdr_startup: AsyncMutex<()>,
     cancellation: watch::Sender<u64>,
     settled: Notify,
 }
@@ -1304,6 +1318,295 @@ fn start_herdr_server_command(herdr_command: &str, session_name: &str) -> String
     )
 }
 
+struct ReadyHerdrSnapshot {
+    socket: String,
+    snapshot: HerdrSessionSnapshot,
+}
+
+enum HerdrReadinessProbeError {
+    Retryable(String),
+    Permanent(HostRuntimeError),
+}
+
+enum HerdrReadinessPollError {
+    Timeout(String),
+    Permanent(HostRuntimeError),
+}
+
+fn herdr_protocol_label() -> String {
+    format!("{MIN_PROTOCOL}\u{2013}{MAX_PROTOCOL}")
+}
+
+fn herdr_readiness_timeout(last_error: impl Into<String>) -> HostRuntimeError {
+    HostRuntimeError::HerdrReadinessTimeout {
+        timeout_ms: HERDR_READINESS_TIMEOUT.as_millis() as u64,
+        last_error: last_error.into(),
+    }
+}
+
+fn validate_herdr_protocol(protocol: u32) -> Result<(), HostRuntimeError> {
+    if (MIN_PROTOCOL..=MAX_PROTOCOL).contains(&protocol) {
+        Ok(())
+    } else {
+        Err(HostRuntimeError::HerdrProtocolMismatch {
+            expected: herdr_protocol_label(),
+            received: protocol,
+        })
+    }
+}
+
+fn readiness_probe_error(
+    inner: &RuntimeInner,
+    generation: u64,
+    error: HerdrControlError,
+) -> HerdrReadinessProbeError {
+    if let Err(error) = validate_generation(inner, generation) {
+        return HerdrReadinessProbeError::Permanent(error);
+    }
+    if let Err(error) = current_ssh(inner) {
+        return HerdrReadinessProbeError::Permanent(error);
+    }
+    match error {
+        HerdrControlError::TransportDisconnected(message)
+        | HerdrControlError::RequestTimeout(message) => {
+            HerdrReadinessProbeError::Retryable(message)
+        }
+        error => HerdrReadinessProbeError::Permanent(HostRuntimeError::ControlConnectionFailure(
+            error.to_string(),
+        )),
+    }
+}
+
+fn readiness_runtime_error(
+    inner: &RuntimeInner,
+    generation: u64,
+    error: HostRuntimeError,
+) -> HerdrReadinessProbeError {
+    if let Err(error) = validate_generation(inner, generation) {
+        return HerdrReadinessProbeError::Permanent(error);
+    }
+    if let Err(error) = current_ssh(inner) {
+        return HerdrReadinessProbeError::Permanent(error);
+    }
+    HerdrReadinessProbeError::Permanent(error)
+}
+
+async fn probe_herdr_readiness(
+    inner: Arc<RuntimeInner>,
+    generation: u64,
+) -> Result<ReadyHerdrSnapshot, HerdrReadinessProbeError> {
+    validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
+    let ssh = current_ssh(&inner).map_err(HerdrReadinessProbeError::Permanent)?;
+    let request = HerdrControlRequest::SessionSnapshot;
+    let mut socket = resolve_socket_path(&inner)
+        .await
+        .map_err(|error| readiness_runtime_error(&inner, generation, error))?;
+    validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
+    let mut result = request_on_runtime(
+        inner.id.clone(),
+        ssh.clone(),
+        socket.clone(),
+        request.clone(),
+    )
+    .await;
+    if should_rediscover_cached_socket(inner.state.lock().socket_from_cache, &request, &result) {
+        validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
+        invalidate_cached_socket(&mut inner.state.lock());
+        socket = resolve_socket_path(&inner)
+            .await
+            .map_err(|error| readiness_runtime_error(&inner, generation, error))?;
+        validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
+        result = request_on_runtime(inner.id.clone(), ssh, socket.clone(), request).await;
+    }
+    validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
+    let result = result.map_err(|error| readiness_probe_error(&inner, generation, error))?;
+    let HerdrControlResult::SessionSnapshot { snapshot } = result else {
+        return Err(HerdrReadinessProbeError::Permanent(
+            HostRuntimeError::ControlConnectionFailure(
+                "Herdr returned an unexpected result for session.snapshot".to_owned(),
+            ),
+        ));
+    };
+    validate_herdr_protocol(snapshot.protocol).map_err(HerdrReadinessProbeError::Permanent)?;
+    Ok(ReadyHerdrSnapshot { socket, snapshot })
+}
+
+async fn bounded_readiness_probe(
+    inner: Arc<RuntimeInner>,
+    generation: u64,
+    deadline: Instant,
+) -> Result<ReadyHerdrSnapshot, HerdrReadinessProbeError> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Err(HerdrReadinessProbeError::Retryable(
+            "Herdr readiness deadline expired".to_owned(),
+        ));
+    }
+    match tokio::time::timeout(
+        remaining.min(HERDR_READINESS_ATTEMPT_TIMEOUT),
+        probe_herdr_readiness(inner, generation),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(HerdrReadinessProbeError::Retryable(
+            "Herdr readiness probe timed out".to_owned(),
+        )),
+    }
+}
+
+async fn poll_herdr_readiness<F, Fut>(
+    deadline: Instant,
+    initial_backoff: Duration,
+    max_backoff: Duration,
+    mut probe: F,
+) -> Result<ReadyHerdrSnapshot, HerdrReadinessPollError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<ReadyHerdrSnapshot, HerdrReadinessProbeError>>,
+{
+    let mut backoff = initial_backoff;
+    loop {
+        let last_error = match probe().await {
+            Ok(ready) => return Ok(ready),
+            Err(HerdrReadinessProbeError::Permanent(error)) => {
+                return Err(HerdrReadinessPollError::Permanent(error));
+            }
+            Err(HerdrReadinessProbeError::Retryable(error)) => error,
+        };
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(HerdrReadinessPollError::Timeout(last_error));
+        }
+        tokio::time::sleep(backoff.min(remaining)).await;
+        backoff = backoff.saturating_mul(2).min(max_backoff);
+    }
+}
+
+fn fail_herdr_startup_sync(inner: &RuntimeInner, token: SnapshotToken, error: &HostRuntimeError) {
+    inner
+        .state
+        .lock()
+        .host_state
+        .fail_sync(token, error.to_string());
+    emit_host_state(inner, Vec::new());
+}
+
+async fn complete_herdr_startup_sync(
+    inner: Arc<RuntimeInner>,
+    generation: u64,
+    token: SnapshotToken,
+    ready: ReadyHerdrSnapshot,
+) -> Result<(), HostRuntimeError> {
+    let outcome = {
+        let mut state = inner.state.lock();
+        if state.connection != HostConnectionState::Connected || state.generation != generation {
+            return Err(HostRuntimeError::StaleOperation(
+                "Herdr startup completed after its host connection was replaced".to_owned(),
+            ));
+        }
+        state.socket_path = Some(ready.socket);
+        state.socket_from_cache = false;
+        state.protocol = Some(ready.snapshot.protocol);
+        state
+            .host_state
+            .complete_sync(token, ready.snapshot, now_ms())
+    };
+    emit_host_state(&inner, Vec::new());
+    if matches!(outcome, ApplyResult::IgnoredStale) {
+        return Err(HostRuntimeError::StaleOperation(
+            "Herdr startup state sync was superseded by a newer host-state operation".to_owned(),
+        ));
+    }
+    reconcile_host_state_subscription(inner.clone(), generation, outcome).await;
+    validate_generation(&inner, generation)?;
+    let projection = inner.state.lock().host_state.projection();
+    if projection.snapshot.is_none() {
+        return Err(HostRuntimeError::HerdrUnavailable(
+            projection
+                .error
+                .unwrap_or_else(|| "Herdr startup did not produce host state".to_owned()),
+        ));
+    }
+    Ok(())
+}
+
+async fn start_herdr_server_inner(inner: Arc<RuntimeInner>) -> Result<(), HostRuntimeError> {
+    let _startup = inner.herdr_startup.lock().await;
+    let generation = current_generation(&inner)?;
+    let (_, token) = begin_host_state_sync(&inner);
+    let deadline = Instant::now() + HERDR_READINESS_TIMEOUT;
+
+    match bounded_readiness_probe(inner.clone(), generation, deadline).await {
+        Ok(ready) => {
+            return complete_herdr_startup_sync(inner.clone(), generation, token, ready).await;
+        }
+        Err(HerdrReadinessProbeError::Permanent(error)) => {
+            fail_herdr_startup_sync(&inner, token, &error);
+            return Err(error);
+        }
+        Err(HerdrReadinessProbeError::Retryable(_)) => {}
+    }
+
+    validate_generation(&inner, generation)?;
+    let command =
+        start_herdr_server_command(&inner.config.herdr_command, &inner.config.session_name);
+    let ssh = current_ssh(&inner)?;
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let output = match tokio::time::timeout(remaining, ssh.execute(&command)).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(error)) => {
+            let error = current_ssh(&inner)
+                .err()
+                .unwrap_or_else(|| HostRuntimeError::from(error));
+            fail_herdr_startup_sync(&inner, token, &error);
+            return Err(error);
+        }
+        Err(_) => {
+            let error = herdr_readiness_timeout("Herdr server start command did not complete");
+            fail_herdr_startup_sync(&inner, token, &error);
+            return Err(error);
+        }
+    };
+    validate_generation(&inner, generation)?;
+    if output.exit_status.is_some_and(|status| status != 0) {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        let error = HostRuntimeError::HerdrUnavailable(if detail.is_empty() {
+            format!(
+                "Herdr server start command exited with status {}",
+                output.exit_status.unwrap_or_default()
+            )
+        } else {
+            format!(
+                "Herdr server start command exited with status {}: {detail}",
+                output.exit_status.unwrap_or_default()
+            )
+        });
+        fail_herdr_startup_sync(&inner, token, &error);
+        return Err(error);
+    }
+
+    let readiness = poll_herdr_readiness(
+        deadline,
+        HERDR_READINESS_INITIAL_BACKOFF,
+        HERDR_READINESS_MAX_BACKOFF,
+        || bounded_readiness_probe(inner.clone(), generation, deadline),
+    )
+    .await;
+    match readiness {
+        Ok(ready) => complete_herdr_startup_sync(inner.clone(), generation, token, ready).await,
+        Err(HerdrReadinessPollError::Permanent(error)) => {
+            fail_herdr_startup_sync(&inner, token, &error);
+            Err(error)
+        }
+        Err(HerdrReadinessPollError::Timeout(last_error)) => {
+            let error = herdr_readiness_timeout(last_error);
+            fail_herdr_startup_sync(&inner, token, &error);
+            Err(error)
+        }
+    }
+}
+
 fn integration_status_command(herdr_command: &str) -> String {
     let herdr_command = herdr_command.trim();
     let herdr_command = if herdr_command.is_empty() {
@@ -1432,6 +1735,46 @@ async fn request_host_state_snapshot(
     outcome
 }
 
+async fn reconcile_host_state_subscription(
+    inner: Arc<RuntimeInner>,
+    connection_generation: u64,
+    outcome: ApplyResult,
+) {
+    if matches!(outcome, ApplyResult::Applied)
+        && inner.state.lock().generation == connection_generation
+        && event_subscription_needs_update(&inner)
+    {
+        // Start the reconciliation generation before opening the subscription.
+        // Events can then be buffered as soon as Herdr acknowledges the stream,
+        // including events delivered before the follow-up snapshot request.
+        let (reconciliation_generation, reconciliation_token) = begin_host_state_sync(&inner);
+        match start_or_update_state_events(inner.clone()).await {
+            Ok(()) => {
+                let reconciliation =
+                    request_host_state_snapshot(inner.clone(), reconciliation_token).await;
+                if matches!(reconciliation, ApplyResult::Applied)
+                    && inner.state.lock().generation == reconciliation_generation
+                    && event_subscription_needs_update(&inner)
+                {
+                    schedule_state_resync(
+                        inner,
+                        "pane subscription set changed during snapshot reconciliation".to_owned(),
+                    );
+                }
+            }
+            Err(error) => {
+                let reason = error.to_string();
+                inner
+                    .state
+                    .lock()
+                    .host_state
+                    .fail_sync(reconciliation_token, reason.clone());
+                event_subscription_start_failed(inner, reason);
+            }
+        }
+    }
+}
+
 fn event_subscription_needs_update(inner: &RuntimeInner) -> bool {
     let state = inner.state.lock();
     let pane_ids = state.host_state.pane_ids();
@@ -1469,39 +1812,7 @@ async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostStateSnapshot
 
     let (connection_generation, token) = begin_host_state_sync(&inner);
     let outcome = request_host_state_snapshot(inner.clone(), token).await;
-    if matches!(outcome, ApplyResult::Applied)
-        && inner.state.lock().generation == connection_generation
-        && event_subscription_needs_update(&inner)
-    {
-        // Start the reconciliation generation before opening the subscription.
-        // Events can then be buffered as soon as Herdr acknowledges the stream,
-        // including events delivered before the follow-up snapshot request.
-        let (reconciliation_generation, reconciliation_token) = begin_host_state_sync(&inner);
-        match start_or_update_state_events(inner.clone()).await {
-            Ok(()) => {
-                let reconciliation =
-                    request_host_state_snapshot(inner.clone(), reconciliation_token).await;
-                if matches!(reconciliation, ApplyResult::Applied)
-                    && inner.state.lock().generation == reconciliation_generation
-                    && event_subscription_needs_update(&inner)
-                {
-                    schedule_state_resync(
-                        inner.clone(),
-                        "pane subscription set changed during snapshot reconciliation".to_owned(),
-                    );
-                }
-            }
-            Err(error) => {
-                let reason = error.to_string();
-                inner
-                    .state
-                    .lock()
-                    .host_state
-                    .fail_sync(reconciliation_token, reason.clone());
-                event_subscription_start_failed(inner.clone(), reason);
-            }
-        }
-    }
+    reconcile_host_state_subscription(inner.clone(), connection_generation, outcome).await;
     inner.state.lock().host_state.projection()
 }
 
@@ -2193,6 +2504,7 @@ pub fn create_host_runtime(
         operations: RemoteOperationManager::default(),
         ssh,
         jump_sessions: Mutex::new(Vec::new()),
+        herdr_startup: AsyncMutex::new(()),
         config,
         cancellation,
         settled: Notify::new(),
@@ -2446,11 +2758,16 @@ impl HostRuntime {
     }
 
     pub async fn start_herdr_server(&self) -> Result<(), HostRuntimeError> {
-        let command = start_herdr_server_command(
-            &self.inner.config.herdr_command,
-            &self.inner.config.session_name,
-        );
-        self.execute(command).await.map(|_| ())
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(start_herdr_server_inner(inner))
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!(
+                    "Herdr server startup task failed: {error}"
+                ))
+            })?
     }
 
     pub async fn agent_integration_status(
@@ -3541,6 +3858,50 @@ mod tests {
         }
     }
 
+    fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
+        let runtime_config = config();
+        let (cancellation, _) = watch::channel(0);
+        let ssh = Arc::new(RwLock::new(None));
+        let mut state = RuntimeState::new(&runtime_config);
+        state.connection = HostConnectionState::Connected;
+        state.generation = 1;
+        state.host_state.connection_installed(1);
+        state.event = Some(EventSubscriptionRuntime {
+            pane_ids: Vec::new(),
+            operation_epoch: 1,
+            retry_running: false,
+        });
+        Arc::new(RuntimeInner {
+            id: id.to_owned(),
+            config: runtime_config,
+            state: Mutex::new(state),
+            agents: AgentSessionManager::new(id.to_owned(), ssh.clone()),
+            operations: RemoteOperationManager::default(),
+            ssh,
+            jump_sessions: Mutex::new(Vec::new()),
+            herdr_startup: AsyncMutex::new(()),
+            cancellation,
+            settled: Notify::new(),
+        })
+    }
+
+    fn empty_ready_snapshot() -> ReadyHerdrSnapshot {
+        let mut snapshot = batch_test_snapshot();
+        snapshot.protocol = MAX_PROTOCOL;
+        snapshot.focused_workspace_id = None;
+        snapshot.focused_tab_id = None;
+        snapshot.focused_pane_id = None;
+        snapshot.agents.clear();
+        snapshot.workspaces.clear();
+        snapshot.tabs.clear();
+        snapshot.panes.clear();
+        snapshot.layouts.clear();
+        ReadyHerdrSnapshot {
+            socket: "/tmp/herdr.sock".to_owned(),
+            snapshot,
+        }
+    }
+
     #[test]
     fn managed_agent_names_are_native_owned_and_stable() {
         assert_eq!(
@@ -3595,6 +3956,171 @@ mod tests {
         assert!(command.contains("team"));
         assert!(command.contains("server"));
         assert!(command.contains("/tmp/whip-herdr-server.log"));
+    }
+
+    #[test]
+    fn readiness_retries_transient_socket_failures_until_snapshot_is_ready() {
+        crate::runtime().unwrap().block_on(async {
+            let attempts = Arc::new(AtomicU64::new(0));
+            let attempts_for_probe = attempts.clone();
+            let mut ready = Some(empty_ready_snapshot());
+            let result = poll_herdr_readiness(
+                Instant::now() + Duration::from_millis(100),
+                Duration::from_millis(1),
+                Duration::from_millis(2),
+                move || {
+                    let attempt = attempts_for_probe.fetch_add(1, Ordering::SeqCst) + 1;
+                    std::future::ready(if attempt < 3 {
+                        Err(HerdrReadinessProbeError::Retryable(
+                            "socket not ready yet".to_owned(),
+                        ))
+                    } else {
+                        Ok(ready.take().expect("ready result is returned once"))
+                    })
+                },
+            )
+            .await;
+
+            assert!(result.is_ok());
+            assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        });
+    }
+
+    #[test]
+    fn readiness_deadline_preserves_a_typed_timeout_reason() {
+        crate::runtime().unwrap().block_on(async {
+            let result = poll_herdr_readiness(
+                Instant::now() + Duration::from_millis(10),
+                Duration::from_millis(2),
+                Duration::from_millis(4),
+                || {
+                    std::future::ready(Err(HerdrReadinessProbeError::Retryable(
+                        "socket not ready yet".to_owned(),
+                    )))
+                },
+            )
+            .await;
+
+            assert!(matches!(
+                result,
+                Err(HerdrReadinessPollError::Timeout(message))
+                    if message == "socket not ready yet"
+            ));
+            assert!(matches!(
+                herdr_readiness_timeout("socket not ready yet"),
+                HostRuntimeError::HerdrReadinessTimeout {
+                    timeout_ms: 12_000,
+                    last_error,
+                } if last_error == "socket not ready yet"
+            ));
+        });
+    }
+
+    #[test]
+    fn unsupported_herdr_protocol_is_permanent_instead_of_timing_out() {
+        assert!(matches!(
+            validate_herdr_protocol(MIN_PROTOCOL - 1),
+            Err(HostRuntimeError::HerdrProtocolMismatch { expected, received })
+                if expected == herdr_protocol_label() && received == MIN_PROTOCOL - 1
+        ));
+        assert!(validate_herdr_protocol(MIN_PROTOCOL).is_ok());
+        assert!(validate_herdr_protocol(MAX_PROTOCOL).is_ok());
+    }
+
+    #[test]
+    fn ssh_disconnect_during_readiness_is_not_retried_as_socket_startup() {
+        let inner = connected_runtime_inner("readiness-disconnect-test");
+        let error = readiness_probe_error(
+            &inner,
+            1,
+            HerdrControlError::TransportDisconnected("channel closed".to_owned()),
+        );
+        assert!(matches!(
+            error,
+            HerdrReadinessProbeError::Permanent(HostRuntimeError::RuntimeDisconnected(_))
+        ));
+    }
+
+    #[test]
+    fn stale_startup_snapshot_cannot_install_into_a_replacement_generation() {
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("stale-startup-test");
+            let (_, token) = begin_host_state_sync(&inner);
+            {
+                let mut state = inner.state.lock();
+                state.generation = 2;
+                state.host_state.connection_installed(2);
+            }
+
+            let result =
+                complete_herdr_startup_sync(inner.clone(), 1, token, empty_ready_snapshot()).await;
+
+            assert!(matches!(result, Err(HostRuntimeError::StaleOperation(_))));
+            assert!(
+                inner
+                    .state
+                    .lock()
+                    .host_state
+                    .projection()
+                    .snapshot
+                    .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn startup_success_installs_authoritative_host_state_and_emits_it() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("startup-state-test");
+            let sink = Arc::new(RecordingRuntimeSink::default());
+            set_host_runtime_event_sink(sink.clone());
+            let (_, token) = begin_host_state_sync(&inner);
+
+            complete_herdr_startup_sync(inner.clone(), 1, token, empty_ready_snapshot())
+                .await
+                .unwrap();
+
+            clear_host_runtime_event_sink();
+            let state = inner.state.lock().host_state.projection();
+            assert!(state.snapshot.is_some());
+            assert_eq!(inner.state.lock().protocol, Some(MAX_PROTOCOL));
+            assert!(sink.events.lock().iter().any(|event| matches!(
+                event,
+                HostRuntimeEvent::HostStateChanged { state, .. } if state.snapshot.is_some()
+            )));
+        });
+    }
+
+    async fn simulated_serialized_start(
+        inner: Arc<RuntimeInner>,
+        ready: Arc<AtomicBool>,
+        launches: Arc<AtomicU64>,
+    ) {
+        let _startup = inner.herdr_startup.lock().await;
+        if ready.load(Ordering::SeqCst) {
+            return;
+        }
+        launches.fetch_add(1, Ordering::SeqCst);
+        tokio::task::yield_now().await;
+        ready.store(true, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn already_ready_and_duplicate_start_requests_do_not_duplicate_launches() {
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("duplicate-start-test");
+            let ready = Arc::new(AtomicBool::new(false));
+            let launches = Arc::new(AtomicU64::new(0));
+            tokio::join!(
+                simulated_serialized_start(inner.clone(), ready.clone(), launches.clone()),
+                simulated_serialized_start(inner.clone(), ready.clone(), launches.clone()),
+            );
+            assert_eq!(launches.load(Ordering::SeqCst), 1);
+
+            simulated_serialized_start(inner, ready, launches.clone()).await;
+            assert_eq!(launches.load(Ordering::SeqCst), 1);
+        });
     }
 
     #[test]
@@ -3784,6 +4310,11 @@ mod tests {
                 if challenge.host == "example.com" && challenge.port == 2222
         ));
 
+        assert_eq!(
+            HostRuntimeError::from(SshFailure::UnsupportedHostCertificate),
+            HostRuntimeError::UnsupportedHostCertificate,
+        );
+
         let transport = HostRuntimeError::from(SshFailure::Transport("timed out".to_owned()));
         assert!(matches!(
             transport,
@@ -3804,6 +4335,7 @@ mod tests {
             operations: RemoteOperationManager::default(),
             ssh,
             jump_sessions: Mutex::new(Vec::new()),
+            herdr_startup: AsyncMutex::new(()),
             cancellation,
             settled: Notify::new(),
         });
@@ -3893,6 +4425,7 @@ mod tests {
             operations: RemoteOperationManager::default(),
             ssh,
             jump_sessions: Mutex::new(Vec::new()),
+            herdr_startup: AsyncMutex::new(()),
             cancellation,
             settled: Notify::new(),
         });

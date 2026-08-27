@@ -717,6 +717,7 @@ export const es = {
   'app.connectAuthenticationError': '{{host}} rechazó la credencial SSH. Verifique el nombre de usuario y la clave o contraseña.',
   'app.connectKeyError': 'Whip no pudo usar la clave SSH para {{host}}. Verifique la clave y su frase de contraseña.',
   'app.connectHostKeyError': 'ADVERTENCIA: La identidad SSH para {{host}} no se pudo verificar o ha cambiado. Revise la entrada del host conocido y verifique el host antes de volver a intentarlo.',
+  'app.connectUnsupportedHostCertificateError': 'Este servidor SSH presenta un certificado de host, que Whip no admite actualmente.',
   'app.connectProtocolError': '{{host}} utiliza un protocolo Herdr incompatible. Whip admite el protocolo {{expectedProtocol}}, pero el servidor informa {{receivedProtocol}}. Actualice Whip o Herdr y vuelva a intentarlo.',
   'app.connectHerdrUnavailableError': 'SSH conectado a {{host}}, pero Herdr no está disponible. Compruebe que Herdr esté instalado y ejecutándose.',
   'app.connectUnknownError': 'No se pudo conectar a {{host}}. Verifique la configuración del host e inténtelo nuevamente.',

@@ -1499,13 +1499,11 @@ export function useSessionRuntimeManager({
       if (!runtime) return;
       try {
         await runtime.client.startServer();
-        await new Promise<void>(resolve => setTimeout(resolve, 800));
-        await refresh(sessionId);
       } catch (error) {
         scheduleReconnect(sessionId, error);
       }
     },
-    [refresh, scheduleReconnect],
+    [scheduleReconnect],
   );
 
   const terminalTargets = useMemo(

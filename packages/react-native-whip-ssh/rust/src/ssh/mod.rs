@@ -227,6 +227,7 @@ pub(crate) enum SshErrorCode {
     AuthenticationFailed,
     HostKeyUnknown,
     HostKeyChanged,
+    UnsupportedHostCertificate,
     ConnectionRefused,
     ConnectionTimeout,
     HostUnreachable,
@@ -286,7 +287,7 @@ fn transport_error_code(error: &TransportError) -> SshErrorCode {
         TransportError::HostUnreachable(_) => SshErrorCode::HostUnreachable,
         TransportError::HostKeyUnknown(_) => SshErrorCode::HostKeyUnknown,
         TransportError::HostKeyChanged(_) => SshErrorCode::HostKeyChanged,
-        TransportError::UnsupportedHostCertificate => SshErrorCode::HostKeyUnknown,
+        TransportError::UnsupportedHostCertificate => SshErrorCode::UnsupportedHostCertificate,
         TransportError::SessionClosed(_) => SshErrorCode::SessionClosed,
         TransportError::Ssh(error) => match error {
             russh::Error::WrongChannel | russh::Error::ChannelOpenFailure(_) => {
@@ -511,6 +512,7 @@ pub(crate) enum SshFailure {
     Authentication(String),
     HostKeyUnknown(Box<HostKeyChallenge>),
     HostKeyChanged(Box<HostKeyChallenge>),
+    UnsupportedHostCertificate,
     Transport(String),
 }
 
@@ -522,6 +524,9 @@ impl std::fmt::Display for SshFailure {
             }
             Self::HostKeyUnknown(_) => formatter.write_str("unknown SSH host key"),
             Self::HostKeyChanged(_) => formatter.write_str("SSH host key changed"),
+            Self::UnsupportedHostCertificate => {
+                formatter.write_str("SSH host certificates are not supported")
+            }
         }
     }
 }
@@ -533,6 +538,7 @@ impl From<TransportError> for SshFailure {
         match error {
             TransportError::HostKeyUnknown(challenge) => Self::HostKeyUnknown(Box::new(challenge)),
             TransportError::HostKeyChanged(challenge) => Self::HostKeyChanged(Box::new(challenge)),
+            TransportError::UnsupportedHostCertificate => Self::UnsupportedHostCertificate,
             error if transport_error_code(&error) == SshErrorCode::AuthenticationFailed => {
                 Self::Authentication(error.to_string())
             }

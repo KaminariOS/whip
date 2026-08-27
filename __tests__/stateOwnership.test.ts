@@ -159,6 +159,23 @@ test('semantic Herdr mutation callers do not append JavaScript snapshot refreshe
   expect(paneDetail).not.toContain('onChanged');
 });
 
+test('Herdr startup readiness is entirely native-owned', () => {
+  const manager = readFileSync(
+    join(__dirname, '..', 'src/hooks/useSessionRuntimeManager.ts'),
+    'utf8',
+  );
+  const startServer = manager.slice(
+    manager.indexOf('const startServer = useCallback'),
+    manager.indexOf('const terminalTargets = useMemo'),
+  );
+
+  expect(startServer).toContain('await runtime.client.startServer()');
+  expect(startServer).not.toContain('setTimeout');
+  expect(startServer).not.toMatch(/\brefresh\s*\(/);
+  expect(startServer).not.toContain('refreshSnapshot');
+  expect(startServer).not.toContain('session.snapshot');
+});
+
 test('opening a populated Herd workspace uses the navigation-aware terminal path', () => {
   const manager = readFileSync(
     join(__dirname, '..', 'src/hooks/useSessionRuntimeManager.ts'),

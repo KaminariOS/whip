@@ -6,6 +6,7 @@ export type ConnectionErrorKind =
   | 'incompatibleProtocol'
   | 'invalidKey'
   | 'timeout'
+  | 'unsupportedHostCertificate'
   | 'unreachable'
   | 'unknown';
 
@@ -17,6 +18,7 @@ export const connectionErrorTranslationKeys: Record<ConnectionErrorKind, string>
   incompatibleProtocol: 'app.connectProtocolError',
   invalidKey: 'app.connectKeyError',
   timeout: 'app.connectTimeoutError',
+  unsupportedHostCertificate: 'app.connectUnsupportedHostCertificateError',
   unreachable: 'app.connectUnreachableError',
   unknown: 'app.connectUnknownError',
 };
@@ -69,6 +71,12 @@ export function classifyConnectionError(error: unknown): ConnectionErrorKind {
     case 'HOST_KEY_UNKNOWN':
     case 'HOST_KEY_CHANGED':
       return 'hostKey';
+    case 'UNSUPPORTED_HOST_CERTIFICATE':
+      return 'unsupportedHostCertificate';
+    case 'HERDR_PROTOCOL_MISMATCH':
+      return 'incompatibleProtocol';
+    case 'HERDR_READINESS_TIMEOUT':
+      return 'herdrUnavailable';
     case 'INVALID_PRIVATE_KEY':
       return 'invalidKey';
     case 'CONNECTION_REFUSED':

@@ -717,6 +717,7 @@ export const ja = {
   'app.connectAuthenticationError': '{{host}} は SSH 資格情報を拒否しました。ユーザー名とキーまたはパスワードを確認してください。',
   'app.connectKeyError': 'Whip は、{{host}} の SSH キーを使用できませんでした。キーとそのパスフレーズを確認してください。',
   'app.connectHostKeyError': '警告: {{host}} の SSH ID が検証できなかったか、変更されました。既知のホストのエントリを確認し、ホストを確認してから再試行してください。',
+  'app.connectUnsupportedHostCertificateError': 'この SSH サーバーはホスト証明書を提示しますが、Whip は現在ホスト証明書をサポートしていません。',
   'app.connectProtocolError': '{{host}} は互換性のない Herdr プロトコルを使用しています。 Whip はプロトコル {{expectedProtocol}} をサポートしますが、サーバーは {{receivedProtocol}} を報告します。 Whip または Herdr を更新して、再試行してください。',
   'app.connectHerdrUnavailableError': 'SSH は {{host}} に接続されましたが、Herdr は使用できません。 Herdr がインストールされ、実行されていることを確認します。',
   'app.connectUnknownError': '{{host}} に接続できませんでした。ホストの設定を確認して、再試行してください。',

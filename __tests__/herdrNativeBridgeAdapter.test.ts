@@ -491,6 +491,57 @@ describe('native Herdr bridge adapter', () => {
     consoleError.mockRestore();
   });
 
+  it('projects an unsupported host certificate without a trust challenge', async () => {
+    const rustRuntime = {
+      runtimeId: jest.fn(() => 'runtime-host-certificate'),
+      connect: jest.fn().mockRejectedValue({
+        tag: 'UnsupportedHostCertificate',
+      }),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = nativeClient.createHostRuntime({
+      runtimeId: 'runtime-host-certificate',
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
+      },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(runtime.connect()).rejects.toMatchObject({
+      name: 'HostRuntimeError',
+      message: 'SSH host certificates are not supported',
+      nativeTag: 'UnsupportedHostCertificate',
+      code: 'UNSUPPORTED_HOST_CERTIFICATE',
+    });
+    await expect(runtime.connect()).rejects.not.toHaveProperty('details');
+    consoleError.mockRestore();
+  });
+
+  it('preserves structured Herdr protocol mismatch fields', async () => {
+    const rustRuntime = {
+      runtimeId: jest.fn(() => 'runtime-protocol-mismatch'),
+      startHerdrServer: jest.fn().mockRejectedValue({
+        tag: 'HerdrProtocolMismatch',
+        inner: { expected: '17–20', received: 21 },
+      }),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = nativeClient.createHostRuntime({
+      runtimeId: 'runtime-protocol-mismatch',
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
+      },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+
+    await expect(runtime.startHerdrServer()).rejects.toMatchObject({
+      code: 'HERDR_PROTOCOL_MISMATCH',
+      expected: '17–20',
+      received: 21,
+    });
+  });
+
   it('projects typed native transcript snapshots and callbacks without JSON', () => {
     const nativeState = {
       sessionId: 'session-1', agent: 0, revision: 4n, status: 1,

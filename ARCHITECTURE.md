@@ -20,7 +20,7 @@ The mobile device reaches a remote machine over SSH. A saved host profile owns h
 
 Metadata is stored in AsyncStorage. Passwords, private keys, and passphrases are stored through the platform credential store and referenced by profile ID; they must never be embedded in profile JSON, logs, screenshots, or fixtures. Android may back up only AES-GCM ciphertext, with its recovery token separated into Block Store. Global SSH keychain secrets are excluded from that recovery path.
 
-Both platforms link one `whip-ssh` static library and expose one WhipSsh TurboModule. The Rust core loads one process-wide OpenSSH-compatible known-host repository, returns typed unknown/changed challenges for explicit fingerprint approval, and parses and validates structured trusted-key records supplied by the platform store. React Native owns confirmation UI and durable storage, but never parses native error strings or constructs OpenSSH `known_hosts` lines. Direct hosts and every jump-host hop follow the same rule.
+Both platforms link one `whip-ssh` static library and expose one WhipSsh TurboModule. The Rust core loads one process-wide OpenSSH-compatible known-host repository, returns typed unknown/changed challenges for explicit fingerprint approval, and parses and validates structured trusted-key records supplied by the platform store. Unsupported SSH host certificates remain a separate typed failure through UniFFI and never enter the ordinary host-key approval flow. React Native owns confirmation UI and durable storage, but never parses native error strings or constructs OpenSSH `known_hosts` lines. Direct hosts and every jump-host hop follow the same rule.
 
 ### Control plane
 
@@ -83,6 +83,15 @@ untrusted, validates it through normal control traffic, and re-resolves it
 through its current SSH session if the hinted path stops accepting channels.
 Rust selects the
 protocol-specific terminal attach variant from the ping result.
+
+`startHerdrServer` is a readiness contract, not merely a remote shell launch.
+The runtime serializes callers, probes `session.snapshot` first so an already
+running server is not relaunched, starts Herdr only after retryable control-socket
+unavailability, and polls native control snapshots to a 12-second deadline with
+75–600 ms exponential backoff. Success requires a supported protocol, an
+accepted generation-scoped authoritative snapshot, normal event-subscription
+reconciliation, and a `HostStateChanged` projection. React Native neither sleeps
+nor requests a follow-up snapshot after this operation.
 
 ### Terminal plane
 
