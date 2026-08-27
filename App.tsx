@@ -1703,6 +1703,12 @@ function AppContent() {
     setLiveSessions(current => selectLiveHostWorkspaceView(current, sessionId, workspaceId));
   };
 
+  const focusHerdWorkspace = async (sessionId: string, workspaceId: string) => {
+    const runtime = runtimes.current.get(sessionId);
+    if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
+    await runtime.client.focusWorkspace(workspaceId);
+  };
+
   const openHerdWorkspace = async (sessionId: string, workspaceId: string) => {
     const runtime = runtimes.current.get(sessionId);
     if (!runtime) throw new Error(t('app.hostSessionUnavailable'));
@@ -1913,6 +1919,7 @@ function AppContent() {
                   onCloseHost={closeLiveHost}
                   onNewHost={() => selectTab('hosts')}
                   onSelectWorkspace={selectHerdWorkspace}
+                  onFocusWorkspace={focusHerdWorkspace}
                   onCreateWorkspace={createHerdWorkspace}
                   onRenameWorkspace={renameHerdWorkspace}
                   onCloseWorkspace={closeHerdWorkspace}

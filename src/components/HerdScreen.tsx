@@ -88,6 +88,7 @@ interface Props {
   onCloseHost: (hostId: string) => void;
   onNewHost: () => void;
   onSelectWorkspace: (hostId: string, workspaceId: string) => void;
+  onFocusWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
   onCreateWorkspace: (hostId: string, name: string, cwd: string) => Promise<WorkspaceInfo>;
   onRenameWorkspace: (hostId: string, workspaceId: string, name: string) => Promise<void>;
   onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
@@ -113,6 +114,7 @@ export function HerdScreen({
   onCloseHost,
   onNewHost,
   onSelectWorkspace,
+  onFocusWorkspace,
   onCreateWorkspace,
   onRenameWorkspace,
   onCloseWorkspace,
@@ -242,6 +244,7 @@ export function HerdScreen({
     if (workspaceId && selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, workspaceId);
       onSelectWorkspace(selectedQueue.id, workspaceId);
+      onFocusWorkspace(selectedQueue.id, workspaceId).catch(showHerdrError);
     } else if (selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, null);
     }
