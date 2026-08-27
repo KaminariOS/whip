@@ -285,6 +285,38 @@ describe('native Herdr bridge adapter', () => {
     });
   });
 
+  it('logs and unwraps typed HostRuntime connection failures', async () => {
+    const nativeError = {
+      tag: 'SshTransportFailure',
+      inner: ['SSH key exchange failed'],
+    };
+    const rustRuntime = {
+      runtimeId: jest.fn(() => 'runtime-failing'),
+      connect: jest.fn().mockRejectedValue(nativeError),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = nativeClient.createHostRuntime({
+      runtimeId: 'runtime-failing',
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
+      },
+      jumpHosts: [], sessionName: 'main',
+    });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(runtime.connect()).rejects.toMatchObject({
+      name: 'HostRuntimeError',
+      message: 'SSH key exchange failed',
+      nativeTag: 'SshTransportFailure',
+    });
+    expect(consoleError).toHaveBeenCalledWith('[WhipSsh] host runtime connect failed', {
+      runtimeId: 'runtime-failing',
+      tag: 'SshTransportFailure',
+      message: 'SSH key exchange failed',
+    });
+    consoleError.mockRestore();
+  });
+
   it('projects typed native transcript snapshots and callbacks without JSON', () => {
     const nativeState = {
       sessionId: 'session-1', agent: 0, revision: 4n, status: 1,

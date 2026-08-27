@@ -372,6 +372,22 @@ function eventError(error: unknown): Error {
   return result;
 }
 
+function hostRuntimeError(error: unknown): Error & { nativeTag?: string } {
+  const nativeError = error as {
+    tag?: string;
+    inner?: readonly unknown[];
+  };
+  const message = typeof nativeError.inner?.[0] === 'string'
+    ? nativeError.inner[0]
+    : error instanceof Error
+      ? error.message
+      : String(error);
+  const result = new Error(message) as Error & { nativeTag?: string };
+  result.name = 'HostRuntimeError';
+  if (nativeError.tag) result.nativeTag = nativeError.tag;
+  return result;
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
@@ -1240,7 +1256,19 @@ export class NativeHostRuntime {
     if (lifecycleHandler) runtimeHandlers.set(this.runtimeId, lifecycleHandler);
   }
 
-  connect(): Promise<void> { return this.runtime.connect(); }
+  async connect(): Promise<void> {
+    try {
+      await this.runtime.connect();
+    } catch (error) {
+      const normalized = hostRuntimeError(error);
+      console.error('[WhipSsh] host runtime connect failed', {
+        runtimeId: this.runtimeId,
+        tag: normalized.nativeTag || 'Unknown',
+        message: normalized.message,
+      });
+      throw normalized;
+    }
+  }
 
   async disconnect(): Promise<void> {
     runtimeHandlers.delete(this.runtimeId);
