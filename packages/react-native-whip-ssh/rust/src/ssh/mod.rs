@@ -94,6 +94,12 @@ const TERMINAL_INBOUND_RUST_FRAME_DELIVERY: &CStr = c"Whip terminal inbound Rust
 const TERMINAL_INBOUND_RUST_FRAME_RECEIVED: &CStr = c"Whip terminal inbound Rust frame received";
 const EXEC_INBOUND_RUST_CHUNK_DELIVERY: &CStr = c"Whip exec inbound Rust chunk delivery";
 const EXEC_INBOUND_RUST_CHUNK_RECEIVED: &CStr = c"Whip exec inbound Rust chunk received";
+const HOST_LATENCY_PING_DISPATCH: &CStr = c"Whip SSH latency ping dispatch";
+const HOST_LATENCY_PING_POLL: &CStr = c"Whip SSH latency ping future poll";
+const HOST_LATENCY_PING_REPLY: &CStr = c"Whip SSH latency ping reply";
+const HOST_LATENCY_PING_ERROR: &CStr = c"Whip SSH latency ping error";
+const HOST_LATENCY_DISCONNECTED: &CStr = c"Whip SSH latency transport disconnected";
+const HOST_LATENCY_TIMEOUT: &CStr = c"Whip SSH latency timeout";
 
 #[cfg(target_os = "android")]
 struct AndroidTraceSlice(bool);
@@ -118,6 +124,22 @@ impl Drop for AndroidTraceSlice {
             unsafe { ATrace_endSection() };
         }
     }
+}
+
+fn trace_instant(name: &'static CStr) {
+    let _trace = AndroidTraceSlice::begin(name);
+}
+
+async fn trace_polled<F>(name: &'static CStr, future: F) -> F::Output
+where
+    F: Future,
+{
+    tokio::pin!(future);
+    std::future::poll_fn(|context| {
+        let _trace = AndroidTraceSlice::begin(name);
+        future.as_mut().poll(context)
+    })
+    .await
 }
 
 #[cfg(target_os = "android")]
@@ -1139,13 +1161,23 @@ where
         ));
     }
     let start = Instant::now();
+    trace_instant(HOST_LATENCY_PING_DISPATCH);
+    let ping = trace_polled(HOST_LATENCY_PING_POLL, ping);
     tokio::select! {
         biased;
         disconnect = lifecycle.disconnected() => {
+            trace_instant(HOST_LATENCY_DISCONNECTED);
             return Err(TransportError::SessionClosed(disconnect.reason.clone()));
         }
-        result = ping => result?,
+        result = ping => match result {
+            Ok(()) => trace_instant(HOST_LATENCY_PING_REPLY),
+            Err(error) => {
+                trace_instant(HOST_LATENCY_PING_ERROR);
+                return Err(error.into());
+            }
+        },
         _ = tokio::time::sleep(HOST_LATENCY_PROBE_TIMEOUT) => {
+            trace_instant(HOST_LATENCY_TIMEOUT);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 "SSH latency probe timed out",

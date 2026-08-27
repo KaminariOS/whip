@@ -3,6 +3,7 @@ import { NativeModules, Platform } from 'react-native';
 type PerformanceTraceNativeModule = {
   beginAsyncSection: (name: string, cookie: number) => boolean;
   endAsyncSection: (name: string, cookie: number) => boolean;
+  setCounter?: (name: string, value: number) => boolean;
 };
 
 const performanceTrace = NativeModules.WhipPerformanceTrace as
@@ -22,6 +23,10 @@ const INBOUND_FRAME_TO_VISIBLE = 'Whip terminal inbound frame to visible';
 const INBOUND_JS_RECEIVE = 'Whip terminal inbound JS receive';
 const INBOUND_JS_DECODE = 'Whip terminal inbound JS decode';
 const INBOUND_RENDERER_DISPATCH = 'Whip terminal inbound renderer dispatch';
+const INBOUND_RENDERER_PREPARATION = 'Whip terminal inbound renderer preparation';
+const INBOUND_BASE64_ENCODING = 'Whip terminal inbound base64 encoding';
+const INBOUND_SCRIPT_BUILD = 'Whip terminal inbound script build';
+const INBOUND_FRAME_BYTES = 'Whip terminal inbound frame bytes';
 const INBOUND_WEBVIEW_INJECTION = 'Whip terminal inbound WebView injection';
 const INBOUND_WEBVIEW_DELIVERY = 'Whip terminal inbound WebView delivery';
 const INBOUND_XTERM_WRITE = 'Whip terminal inbound xterm write';
@@ -177,10 +182,40 @@ export function terminalInboundDecodeComplete(cookie: number | null): void {
 }
 
 /** Called at TerminalRendererHost's first instruction for the decoded frame. */
-export function terminalInboundRendererReceived(cookie: number | null): void {
+export function terminalInboundRendererReceived(
+  cookie: number | null,
+  frameByteLength: number,
+): void {
   if (cookie === null) return;
   const trace = pendingInboundTraces.get(cookie);
-  if (trace) endInboundStage(trace, INBOUND_RENDERER_DISPATCH);
+  if (!trace) return;
+  endInboundStage(trace, INBOUND_RENDERER_DISPATCH);
+  beginInboundStage(trace, INBOUND_RENDERER_PREPARATION);
+  performanceTrace?.setCounter?.(INBOUND_FRAME_BYTES, frameByteLength);
+}
+
+export function terminalInboundBase64Started(cookie: number | null): void {
+  if (cookie === null) return;
+  const trace = pendingInboundTraces.get(cookie);
+  if (trace) beginInboundStage(trace, INBOUND_BASE64_ENCODING);
+}
+
+export function terminalInboundBase64Ended(cookie: number | null): void {
+  if (cookie === null) return;
+  const trace = pendingInboundTraces.get(cookie);
+  if (trace) endInboundStage(trace, INBOUND_BASE64_ENCODING);
+}
+
+export function terminalInboundScriptBuildStarted(cookie: number | null): void {
+  if (cookie === null) return;
+  const trace = pendingInboundTraces.get(cookie);
+  if (trace) beginInboundStage(trace, INBOUND_SCRIPT_BUILD);
+}
+
+export function terminalInboundScriptBuildEnded(cookie: number | null): void {
+  if (cookie === null) return;
+  const trace = pendingInboundTraces.get(cookie);
+  if (trace) endInboundStage(trace, INBOUND_SCRIPT_BUILD);
 }
 
 /** Starts the exact injectJavaScript call and the wait for WebView receipt. */
@@ -188,6 +223,7 @@ export function terminalInboundWebViewInjectionStarted(cookie: number | null): v
   if (cookie === null) return;
   const trace = pendingInboundTraces.get(cookie);
   if (!trace) return;
+  endInboundStage(trace, INBOUND_RENDERER_PREPARATION);
   beginInboundStage(trace, INBOUND_WEBVIEW_INJECTION);
   beginInboundStage(trace, INBOUND_WEBVIEW_DELIVERY);
 }

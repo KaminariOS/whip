@@ -48,6 +48,7 @@ data_sources: {
       atrace_categories: "dalvik"
       atrace_categories: "gfx"
       atrace_categories: "input"
+      atrace_categories: "network"
       atrace_categories: "view"
       atrace_categories: "webview"
       atrace_apps: "$package_name"
@@ -83,4 +84,4 @@ EOF
 adb pull "$remote_path" "$output_path"
 adb shell rm "$remote_path"
 echo "Saved $output_path"
-echo "Open it at https://ui.perfetto.dev and search for: Whip terminal inbound"
+echo "Open it at https://ui.perfetto.dev and search for: Whip terminal inbound or Whip SSH latency"

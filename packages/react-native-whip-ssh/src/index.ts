@@ -1282,7 +1282,7 @@ function controlEvent(terminalId: string, event: HerdrTerminalControlEvent): Bri
 }
 
 const herdrTerminalEventSink: HerdrTerminalEventSink = {
-  terminalFrame(clientKey, terminalId, sequence, width, height, full, bytes): void {
+  terminalFrame(clientKey, terminalId, sequence, width, height, full, base64Bytes): void {
     const handler = bridgeHandler(clientKey, terminalId);
     if (!handler) return;
     const inboundTraceCookie = terminalInboundTrace()?.jsReceived() ?? null;
@@ -1294,7 +1294,7 @@ const herdrTerminalEventSink: HerdrTerminalEventSink = {
       width,
       height,
       full,
-      bytes,
+      bytes: base64Bytes,
       final: true,
       inboundTraceCookie,
     });

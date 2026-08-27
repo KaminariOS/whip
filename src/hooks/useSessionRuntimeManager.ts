@@ -251,6 +251,8 @@ function recordLatencyMeasurement(
   recordSlowHostLatency(sessionId, measurement).catch(() => undefined);
 }
 
+const HOST_LATENCY_PROBE_TRACE = 'Whip host latency probe end to end';
+
 /** Owns Rust runtime projections, live-session lifecycle, reconnect, and restore. */
 export function useSessionRuntimeManager({
   startupStorage,
@@ -795,8 +797,10 @@ export function useSessionRuntimeManager({
       )
         return;
       latencyPingsInFlightRef.current.set(sessionId, runtime);
-      runtime.client
-        .measureLatency()
+      withAppPerformanceTrace(
+        HOST_LATENCY_PROBE_TRACE,
+        () => runtime.client.measureLatency(),
+      )
         .then(measurement => {
           if (runtimesRef.current.get(sessionId) !== runtime) return;
           runtime.latencyFailures = 0;

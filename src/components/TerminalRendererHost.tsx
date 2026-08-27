@@ -53,8 +53,12 @@ import {
   beginTerminalResizeTrace,
   endAppPerformanceTrace,
   endTerminalWriteTrace,
+  terminalInboundBase64Ended,
+  terminalInboundBase64Started,
   terminalInboundFrameVisible,
   terminalInboundRendererReceived,
+  terminalInboundScriptBuildEnded,
+  terminalInboundScriptBuildStarted,
   terminalInboundWebViewInjectionEnded,
   terminalInboundWebViewInjectionStarted,
   terminalInboundWebViewReceived,
@@ -91,6 +95,13 @@ const DEFAULT_TERMINAL_VISUAL_VIEWPORT: TerminalVisualViewport = {
   insets: { top: 0, bottom: 0 },
   geometryBottomInset: 0,
 };
+
+function terminalFrameByteLength(frame: TerminalFrame): number {
+  if (typeof frame.bytes !== 'string') return frame.bytes.byteLength;
+  if (frame.encoding !== 'ansi') return frame.bytes.length;
+  const padding = frame.bytes.endsWith('==') ? 2 : frame.bytes.endsWith('=') ? 1 : 0;
+  return Math.floor(frame.bytes.length * 3 / 4) - padding;
+}
 
 interface WebViewHandle {
   injectJavaScript: (script: string) => void;
@@ -379,7 +390,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     resizeTraceCookie: number | null = terminalResizeFrameReceived(entry.target.key),
   ) => {
     const inboundTraceCookie = frame.inboundTraceCookie ?? null;
-    terminalInboundRendererReceived(inboundTraceCookie);
+    terminalInboundRendererReceived(inboundTraceCookie, terminalFrameByteLength(frame));
     if (!hostReady.current || !entry.rendererReady) {
       entry.pendingFrames.push({ frame, inputTraceCookie, resizeTraceCookie });
       return;
@@ -428,9 +439,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       injectTracedFrame(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
       return;
     }
+    terminalInboundBase64Started(inboundTraceCookie);
     const encoded = typeof frame.bytes === 'string'
       ? frame.bytes
       : arrayBufferToBase64(frame.bytes);
+    terminalInboundBase64Ended(inboundTraceCookie);
+    terminalInboundScriptBuildStarted(inboundTraceCookie);
     const writes: string[] = [];
     if (encoded.length === 0) {
       writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
@@ -445,7 +459,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
     }
     // A frame can require multiple chunks, but it crosses into the WebView once.
-    injectTracedFrame(`${resetScript}${writes.join('')}`);
+    const script = `${resetScript}${writes.join('')}`;
+    terminalInboundScriptBuildEnded(inboundTraceCookie);
+    injectTracedFrame(script);
   }, [inject, requestFullFrame]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {

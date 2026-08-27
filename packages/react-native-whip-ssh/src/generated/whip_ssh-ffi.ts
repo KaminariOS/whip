@@ -407,7 +407,7 @@ interface NativeModuleInterface {
     width: number,
     height: number,
     full: number,
-    bytes: Uint8Array,
+    base64Bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_graphics_frame(
@@ -928,7 +928,7 @@ type UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod0 = (
   width: number,
   height: number,
   full: number,
-  bytes: Uint8Array,
+  base64Bytes: Uint8Array,
 ) => UniffiResult<void>;
 type UniffiCallbackInterfaceWhipSshHerdrTerminalEventSinkMethod1 = (
   uniffiHandle: bigint,

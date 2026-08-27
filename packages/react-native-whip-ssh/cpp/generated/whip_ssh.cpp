@@ -107,7 +107,7 @@ typedef void (*UniffiCallbackInterfaceHerdrEventSinkMethod1)(
 typedef void (*UniffiCallbackInterfaceHerdrTerminalEventSinkMethod0)(
     uint64_t uniffi_handle, RustBuffer client_key, RustBuffer terminal_id,
     uint64_t sequence, uint16_t width, uint16_t height, int8_t full,
-    RustBuffer bytes, void *uniffi_out_return,
+    RustBuffer base64_bytes, void *uniffi_out_return,
     RustCallStatus *rust_call_status);
 typedef void (*UniffiCallbackInterfaceHerdrTerminalEventSinkMethod1)(
     uint64_t uniffi_handle, RustBuffer client_key, RustBuffer terminal_id,
@@ -190,7 +190,7 @@ void uniffi_whip_ssh_fn_init_callback_vtable_herdrterminaleventsink(
 void uniffi_whip_ssh_fn_method_herdrterminaleventsink_terminal_frame(
     /*handle*/ uint64_t ptr, RustBuffer client_key, RustBuffer terminal_id,
     uint64_t sequence, uint16_t width, uint16_t height, int8_t full,
-    RustBuffer bytes, RustCallStatus *uniffi_out_err);
+    RustBuffer base64_bytes, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_herdrterminaleventsink_graphics_frame(
     /*handle*/ uint64_t ptr, RustBuffer client_key, RustBuffer terminal_id,
     RustBuffer bytes, RustCallStatus *uniffi_out_err);
@@ -3418,7 +3418,7 @@ static void body(jsi::Runtime &rt,
                  uint64_t rs_uniffiHandle, RustBuffer rs_clientKey,
                  RustBuffer rs_terminalId, uint64_t rs_sequence,
                  uint16_t rs_width, uint16_t rs_height, int8_t rs_full,
-                 RustBuffer rs_bytes, void *rs_uniffiOutReturn,
+                 RustBuffer rs_base64Bytes, void *rs_uniffiOutReturn,
                  RustCallStatus *uniffi_call_status) {
 
   // Convert the arguments from Rust, into jsi::Values.
@@ -3436,8 +3436,8 @@ static void body(jsi::Runtime &rt,
   auto js_height =
       uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, rs_height);
   auto js_full = uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, rs_full);
-  auto js_bytes =
-      uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, rs_bytes);
+  auto js_base64Bytes = uniffi::whip_ssh::Bridging<RustBuffer>::toJs(
+      rt, callInvoker, rs_base64Bytes);
 
   // Now we are ready to call the callback.
   // We are already on the JS thread, because this `body` function was
@@ -3447,7 +3447,7 @@ static void body(jsi::Runtime &rt,
     auto cb = callbackValue->asObject(rt).asFunction(rt);
     auto uniffiResult =
         cb.call(rt, js_uniffiHandle, js_clientKey, js_terminalId, js_sequence,
-                js_width, js_height, js_full, js_bytes);
+                js_width, js_height, js_full, js_base64Bytes);
 
     // Now copy the result back from JS into the RustCallStatus object.
     uniffi::whip_ssh::Bridging<RustCallStatus>::copyFromJs(
@@ -3470,7 +3470,7 @@ static void body(jsi::Runtime &rt,
 static void callback(uint64_t rs_uniffiHandle, RustBuffer rs_clientKey,
                      RustBuffer rs_terminalId, uint64_t rs_sequence,
                      uint16_t rs_width, uint16_t rs_height, int8_t rs_full,
-                     RustBuffer rs_bytes, void *rs_uniffiOutReturn,
+                     RustBuffer rs_base64Bytes, void *rs_uniffiOutReturn,
                      RustCallStatus *uniffi_call_status) {
   // If the runtime has shutdown, then there is no point in trying to
   // call into Javascript. BUT how do we tell if the runtime has shutdown?
@@ -3488,7 +3488,7 @@ static void callback(uint64_t rs_uniffiHandle, RustBuffer rs_clientKey,
   // The runtime, the actual callback jsi::funtion, and the callInvoker
   // are all in the lambda.
   rsLambda(rs_uniffiHandle, rs_clientKey, rs_terminalId, rs_sequence, rs_width,
-           rs_height, rs_full, rs_bytes, rs_uniffiOutReturn,
+           rs_height, rs_full, rs_base64Bytes, rs_uniffiOutReturn,
            uniffi_call_status);
 }
 
@@ -3515,17 +3515,18 @@ makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfaceherdrterminaleve
                  uint64_t rs_uniffiHandle, RustBuffer rs_clientKey,
                  RustBuffer rs_terminalId, uint64_t rs_sequence,
                  uint16_t rs_width, uint16_t rs_height, int8_t rs_full,
-                 RustBuffer rs_bytes, void *rs_uniffiOutReturn,
+                 RustBuffer rs_base64Bytes, void *rs_uniffiOutReturn,
                  RustCallStatus *uniffi_call_status) {
     // We immediately make a lambda which will do the work of transforming the
     // arguments into JSI values and calling the callback.
     uniffi_runtime::UniffiCallFunc jsLambda =
         [callInvoker, callbackValue, rs_uniffiHandle, rs_clientKey,
-         rs_terminalId, rs_sequence, rs_width, rs_height, rs_full, rs_bytes,
-         rs_uniffiOutReturn, uniffi_call_status](jsi::Runtime &rt) mutable {
+         rs_terminalId, rs_sequence, rs_width, rs_height, rs_full,
+         rs_base64Bytes, rs_uniffiOutReturn,
+         uniffi_call_status](jsi::Runtime &rt) mutable {
           body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_clientKey,
                rs_terminalId, rs_sequence, rs_width, rs_height, rs_full,
-               rs_bytes, rs_uniffiOutReturn, uniffi_call_status);
+               rs_base64Bytes, rs_uniffiOutReturn, uniffi_call_status);
         };
     // We'll then call that lambda from the callInvoker which will
     // look after calling it on the correct thread.

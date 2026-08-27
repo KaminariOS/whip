@@ -7,6 +7,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::oneshot;
 
@@ -63,7 +64,7 @@ pub trait HerdrTerminalEventSink: Send + Sync {
         width: u16,
         height: u16,
         full: bool,
-        bytes: Vec<u8>,
+        base64_bytes: String,
     );
     fn graphics_frame(&self, client_key: String, terminal_id: String, bytes: Vec<u8>);
     fn control(&self, client_key: String, terminal_id: String, event: HerdrTerminalControlEvent);
@@ -307,7 +308,7 @@ impl Bridge {
                 width,
                 height,
                 full,
-                bytes,
+                STANDARD.encode(bytes),
             ),
             ServerMessage::Graphics { bytes } => {
                 sink.graphics_frame(self.client_key.clone(), terminal_id.to_owned(), bytes)
@@ -809,6 +810,7 @@ mod tests {
     #[derive(Default)]
     struct RecordingSink {
         controls: Mutex<Vec<(String, String, HerdrTerminalControlEvent)>>,
+        terminal_frames: Mutex<Vec<String>>,
     }
 
     impl HerdrTerminalEventSink for RecordingSink {
@@ -820,8 +822,9 @@ mod tests {
             _width: u16,
             _height: u16,
             _full: bool,
-            _bytes: Vec<u8>,
+            base64_bytes: String,
         ) {
+            self.terminal_frames.lock().push(base64_bytes);
         }
 
         fn graphics_frame(&self, _client_key: String, _terminal_id: String, _bytes: Vec<u8>) {}
@@ -918,6 +921,25 @@ mod tests {
         bridge.handle_frame(&[0, 20, 1, 0]);
         assert_eq!(received(receiver), Ok(()));
         assert!(matches!(*bridge.state.lock(), ProtocolState::Ready));
+    }
+
+    #[test]
+    fn terminal_frames_are_base64_encoded_before_crossing_uniffi() {
+        let (bridge, _) = test_bridge(20);
+        let sink = RecordingSink::default();
+        bridge.dispatch_to(
+            "term1",
+            ServerMessage::Terminal {
+                sequence: 7,
+                width: 80,
+                height: 24,
+                full: false,
+                bytes: vec![0, 255, 16, 32, 127],
+            },
+            &sink,
+        );
+
+        assert_eq!(*sink.terminal_frames.lock(), ["AP8QIH8="]);
     }
 
     #[test]

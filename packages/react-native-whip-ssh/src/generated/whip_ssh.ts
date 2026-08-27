@@ -14780,7 +14780,7 @@ export interface HerdrTerminalEventSink {
     width: number,
     height: number,
     full: boolean,
-    bytes: ArrayBuffer,
+    base64Bytes: string,
   ): void;
   graphicsFrame(
     clientKey: string,
@@ -14816,7 +14816,7 @@ export class HerdrTerminalEventSinkImpl
     width: number,
     height: number,
     full: boolean,
-    bytes: ArrayBuffer,
+    base64Bytes: string,
   ): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
@@ -14828,7 +14828,10 @@ export class HerdrTerminalEventSinkImpl
           FfiConverterUInt16.lower(width, nativeModule().rustbuffer_alloc),
           FfiConverterUInt16.lower(height, nativeModule().rustbuffer_alloc),
           FfiConverterBool.lower(full, nativeModule().rustbuffer_alloc),
-          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(
+            base64Bytes,
+            nativeModule().rustbuffer_alloc,
+          ),
           callStatus,
         );
       },
@@ -14982,7 +14985,7 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
       width: number,
       height: number,
       full: number,
-      bytes: Uint8Array,
+      base64Bytes: Uint8Array,
     ) => {
       const uniffiMakeCall = (): void => {
         const jsCallback =
@@ -14994,7 +14997,7 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
           FfiConverterUInt16.lift(width),
           FfiConverterUInt16.lift(height),
           FfiConverterBool.lift(full),
-          FfiConverterArrayBuffer.lift(bytes),
+          FfiConverterString.lift(base64Bytes),
         );
       };
       const uniffiResult = UniffiResult.ready<void>();
@@ -18224,7 +18227,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame() !==
-    7747
+    10189
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame',

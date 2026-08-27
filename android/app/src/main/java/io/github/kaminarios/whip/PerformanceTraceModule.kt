@@ -25,6 +25,13 @@ class PerformanceTraceModule(
     return true
   }
 
+  @ReactMethod(isBlockingSynchronousMethod = true)
+  fun setCounter(name: String, value: Double): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !Trace.isEnabled()) return false
+    Trace.setCounter(name.take(MAX_SECTION_NAME_LENGTH), value.toLong())
+    return true
+  }
+
   companion object {
     const val NAME = "WhipPerformanceTrace"
     private const val MAX_SECTION_NAME_LENGTH = 127
