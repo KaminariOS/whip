@@ -126,7 +126,7 @@ describe('floating chrome geometry', () => {
     expect(scrollbar).toContain('const ACTIVE_WIDTH = 22;');
     expect(scrollbar).toContain('const HIT_TARGET_WIDTH = 40;');
     expect(scrollbar).toContain('const MIN_HIT_TARGET_HEIGHT = 44;');
-    expect(scrollbar).toContain('const GLASS_OPACITY = 0.58;');
+    expect(scrollbar).toContain('const GLASS_OPACITY = 0.72;');
     expect(scrollbar).toContain('const glassEnabled = glass && !interacting;');
     expect(scrollbar).toContain('setInteracting(true);');
     expect(scrollbar).toContain('setInteracting(false);');
@@ -140,5 +140,14 @@ describe('floating chrome geometry', () => {
     expect(terminal).toContain('terminalLayoutKeyboardInset = composeOpen ? 0 : keyboardInset');
     expect(terminal).not.toMatch(/useEffect\(\(\) => \{[\s\S]*?renderer\.current\?\.fit\(\)[\s\S]*?\}, \[[^\]]*composerHeight/s);
     expect(terminal).not.toMatch(/useEffect\(\(\) => \{[\s\S]*?renderer\.current\?\.fit\(\)[\s\S]*?\}, \[[^\]]*scrollingInsets/s);
+  });
+
+  test('terminal view offers the same latest affordance without bypassing terminal scrolling', () => {
+    const terminal = source('src/components/TerminalScreen.tsx');
+
+    expect(terminal).toContain('accessibilityLabel="Jump to latest terminal output"');
+    expect(terminal).toContain('onPress={jumpTerminalToLatest}');
+    expect(terminal).toContain('requestTerminalScrollOffset(target, current.offset_from_bottom, 0);');
+    expect(terminal).toContain('{ bottom: scrollingInsets.bottom + 12 }');
   });
 });

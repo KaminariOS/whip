@@ -47,12 +47,13 @@ import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '../lib/v
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import { terminalFontFamily } from '../lib/terminalFonts';
 import type { TerminalSessionStatus } from '../terminalSessions';
-import { colors, useTheme } from '../theme';
+import { appGlassControlStyle, colors, useTheme } from '../theme';
 import {
   TerminalRendererHost,
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
 import { ComposerInput, MessageComposer } from './MessageComposer';
+import { useAppGlassEnabled } from './GlassSurface';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { useReducedMotion } from './app-ui';
 import { Button } from './ui/button';
@@ -313,6 +314,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   onStatus,
 }: Props, ref) {
   const { colors: appColors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const { bottom: bottomSafeAreaInset, top: topSafeAreaInset } = useSafeAreaInsets();
   const session = activeTarget?.session || null;
@@ -566,6 +568,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
       current.offset_from_bottom + (direction === 'up' ? amount : -amount),
     ));
     requestTerminalScrollOffset(target, current.offset_from_bottom, desiredOffset);
+  };
+
+  const jumpTerminalToLatest = () => {
+    const target = activeTargetRef.current;
+    const current = scrollPositionRef.current;
+    if (!target || !current || current.offset_from_bottom <= 0) return;
+    requestTerminalScrollOffset(target, current.offset_from_bottom, 0);
   };
 
   const finishTerminalScrollbarDrag = () => {
@@ -1530,6 +1539,20 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
             onDragEnd={finishTerminalScrollbarDrag}
             onDragStart={beginTerminalScrollbarDrag}
           />
+        )}
+        {!alternateScreen && (scrollPosition?.offset_from_bottom || 0) > 0 && (
+          <Button
+            accessibilityLabel="Jump to latest terminal output"
+            className={cn('absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg', appGlassEnabled && 'border')}
+            style={[
+              { bottom: scrollingInsets.bottom + 12 },
+              appGlassEnabled ? appGlassControlStyle(false, appColors) : undefined,
+            ]}
+            variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            onPress={jumpTerminalToLatest}>
+            <ChevronDown size={15} color={appColors.text} />
+            <Text className="text-[10px] font-semibold">Latest</Text>
+          </Button>
         )}
         {viewportOverlay && (
           <>
