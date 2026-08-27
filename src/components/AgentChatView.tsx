@@ -44,6 +44,7 @@ import type {
 } from '../agentChat';
 import type { ChatAgent } from '../lib/agentChatSession';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
+import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
 import { appGlassControlStyle, useTheme } from '../theme';
@@ -51,6 +52,7 @@ import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
 import { useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
+import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -62,6 +64,18 @@ interface Props {
 }
 
 const COPY_FEEDBACK_MS = 1_500;
+
+interface ChatScrollGeometry {
+  contentHeight: number;
+  offset: number;
+  viewportHeight: number;
+}
+
+interface ChatScrollbarDragSnapshot {
+  lastOffset: number;
+  maxOffset: number;
+  startOffset: number;
+}
 
 function ThinkingIndicator() {
   const reduceMotion = useReducedMotion();
@@ -880,11 +894,35 @@ export function AgentChatView({
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const [atBottom, setAtBottom] = useState(true);
+  const [scrollGeometry, setScrollGeometry] = useState<ChatScrollGeometry>({
+    contentHeight: 0,
+    offset: 0,
+    viewportHeight: 0,
+  });
   const turns = state.transcript.turns;
   const list = useRef<FlatList<TranscriptTurn>>(null);
+  const scrollGeometryRef = useRef(scrollGeometry);
+  const scrollbarDragRef = useRef<ChatScrollbarDragSnapshot | null>(null);
   const previousCount = useRef(0);
   const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
   const agentWorking = agentStatus === 'working';
+  const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
+  const scrollThumb = scrollThumbGeometry(
+    scrollGeometry.offset,
+    maxOffset,
+    scrollGeometry.viewportHeight,
+  );
+
+  const updateScrollGeometry = (next: ChatScrollGeometry) => {
+    scrollGeometryRef.current = next;
+    setScrollGeometry(current => (
+      current.contentHeight === next.contentHeight
+      && current.offset === next.offset
+      && current.viewportHeight === next.viewportHeight
+        ? current
+        : next
+    ));
+  };
 
   useEffect(() => {
     if (turns.length > previousCount.current && atBottom) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
@@ -897,7 +935,63 @@ export function AgentChatView({
 
   const trackScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    setAtBottom(contentSize.height - (contentOffset.y + layoutMeasurement.height) < 72);
+    const nextMaxOffset = Math.max(0, contentSize.height - layoutMeasurement.height);
+    const offset = Math.max(0, Math.min(nextMaxOffset, contentOffset.y));
+    updateScrollGeometry({
+      contentHeight: contentSize.height,
+      offset,
+      viewportHeight: layoutMeasurement.height,
+    });
+    setAtBottom(nextMaxOffset - offset < 72);
+  };
+  const beginScrollbarDrag = ({
+    trackHeight,
+    thumbHeight,
+  }: Omit<OverlayScrollbarDragEvent, 'dy'>) => {
+    const current = scrollGeometryRef.current;
+    const currentMaxOffset = Math.max(0, current.contentHeight - current.viewportHeight);
+    if (currentMaxOffset <= 0 || trackHeight <= thumbHeight) {
+      scrollbarDragRef.current = null;
+      return;
+    }
+    scrollbarDragRef.current = {
+      lastOffset: current.offset,
+      maxOffset: currentMaxOffset,
+      startOffset: current.offset,
+    };
+  };
+  const dragScrollbar = ({
+    dy,
+    trackHeight,
+    thumbHeight,
+  }: OverlayScrollbarDragEvent) => {
+    const drag = scrollbarDragRef.current;
+    if (!drag) return;
+    const desiredOffset = scrollOffsetFromDrag({
+      startOffset: drag.startOffset,
+      dragDistance: dy,
+      maxOffset: drag.maxOffset,
+      trackHeight,
+      thumbHeight,
+    });
+    if (desiredOffset === drag.lastOffset) return;
+    drag.lastOffset = desiredOffset;
+    const current = scrollGeometryRef.current;
+    updateScrollGeometry({ ...current, offset: desiredOffset });
+    setAtBottom(drag.maxOffset - desiredOffset < 72);
+    list.current?.scrollToOffset({ offset: desiredOffset, animated: false });
+  };
+  const adjustScrollbar = (direction: 'up' | 'down') => {
+    const current = scrollGeometryRef.current;
+    const currentMaxOffset = Math.max(0, current.contentHeight - current.viewportHeight);
+    const desiredOffset = Math.max(0, Math.min(
+      currentMaxOffset,
+      current.offset + (direction === 'down' ? current.viewportHeight : -current.viewportHeight),
+    ));
+    if (desiredOffset === current.offset) return;
+    updateScrollGeometry({ ...current, offset: desiredOffset });
+    setAtBottom(currentMaxOffset - desiredOffset < 72);
+    list.current?.scrollToOffset({ offset: desiredOffset, animated: false });
   };
   const openTranscriptLink = useCallback((url: string) => {
     const file = transcriptFileLinkTarget(url, state.transcript.info?.directory);
@@ -935,6 +1029,7 @@ export function AgentChatView({
           contentContainerClassName="flex-grow px-4 pb-6 pt-4"
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={state.status === 'live' && agentWorking
             ? <ThinkingIndicator />
             : state.status === 'live' ? (
@@ -943,8 +1038,27 @@ export function AgentChatView({
               <Text className="mt-1 max-w-[280px] text-center text-[12px] leading-[18px] text-muted-foreground">Open the composer from the controls below to send a message.</Text>
             </View>
           ) : null}
+          onContentSizeChange={(_width, height) => {
+            const current = scrollGeometryRef.current;
+            const nextMaxOffset = Math.max(0, height - current.viewportHeight);
+            updateScrollGeometry({
+              ...current,
+              contentHeight: height,
+              offset: Math.min(current.offset, nextMaxOffset),
+            });
+          }}
+          onLayout={event => {
+            const current = scrollGeometryRef.current;
+            const viewportHeight = event.nativeEvent.layout.height;
+            const nextMaxOffset = Math.max(0, current.contentHeight - viewportHeight);
+            updateScrollGeometry({
+              ...current,
+              offset: Math.min(current.offset, nextMaxOffset),
+              viewportHeight,
+            });
+          }}
           onScroll={trackScroll}
-          scrollEventThrottle={80}
+          scrollEventThrottle={16}
         />
         {!atBottom && (
           <Button
@@ -955,6 +1069,19 @@ export function AgentChatView({
             onPress={() => list.current?.scrollToEnd({ animated: true })}>
             <ChevronDown size={15} color={colors.text} /><Text className="text-[10px] font-semibold">Latest</Text>
           </Button>
+        )}
+        {scrollThumb && (
+          <OverlayScrollbar
+            accessibilityLabel="Conversation scroll position"
+            heightPercent={scrollThumb.heightPercent}
+            topPercent={scrollThumb.topPercent}
+            onAccessibilityAdjust={adjustScrollbar}
+            onDrag={dragScrollbar}
+            onDragEnd={() => {
+              scrollbarDragRef.current = null;
+            }}
+            onDragStart={beginScrollbarDrag}
+          />
         )}
       </View>
     </View>

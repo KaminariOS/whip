@@ -30,7 +30,11 @@ import {
 } from '../services/performanceTrace';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import { applyTerminalModifiers, type TerminalModifierState } from '../lib/terminalInput';
-import { moveTerminalScroll, terminalScrollThumb } from '../lib/terminalScroll';
+import {
+  moveTerminalScroll,
+  scrollOffsetFromDrag,
+  terminalScrollThumb,
+} from '../lib/terminalScroll';
 import { composeTerminalSubmission } from '../lib/terminalSubmission';
 import { terminalSerializedTranscript } from '../lib/terminalTranscript';
 import { resolveTerminalVolumeKeyAction, type TerminalVolumeKey } from '../lib/volumeKeys';
@@ -43,6 +47,7 @@ import {
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
 import { ComposerInput, MessageComposer } from './MessageComposer';
+import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { useReducedMotion } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -173,6 +178,16 @@ const TERMINAL_CONTROL_LABEL_STYLE = {
   includeFontPadding: false,
   textAlignVertical: 'center',
 } as const;
+
+interface TerminalScrollbarDragSnapshot {
+  target: TerminalRenderTarget;
+  startOffset: number;
+  maxOffset: number;
+  lastOffset: number;
+  thumbHeight: number;
+  trackHeight: number;
+}
+
 export function TerminalBackground({ preferences }: { preferences: TerminalPreferences }) {
   if (!preferences.backgroundImageUri) return null;
 
@@ -347,6 +362,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
     kittyKeyboardReportAll: false,
   });
   const [scrollPosition, setScrollPosition] = useState(activeTarget?.scroll);
+  const scrollPositionRef = useRef(scrollPosition);
+  const terminalScrollbarDragRef = useRef<TerminalScrollbarDragSnapshot | null>(null);
+  const pendingTerminalScrollRef = useRef<{
+    targetKey: string;
+    scroll: TerminalRenderTarget['scroll'];
+  } | null>(null);
   const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
   const scrollThumb = alternateScreen ? null : terminalScrollThumb(scrollPosition);
   const title = reportedTitle || sessionTitle;
@@ -359,6 +380,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const keyboardControlDisabled = status !== 'connected' && !composeOpen;
   const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
   activeTargetRef.current = activeTarget;
+  scrollPositionRef.current = scrollPosition;
   targetsRef.current = targets;
 
   const restoreKeyboardAfterCompose = useCallback(() => {
@@ -421,10 +443,107 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   const activeTargetKey = activeTarget?.key || '';
   const activeRemoteScroll = activeTarget?.scroll;
   useEffect(() => {
-    setScrollPosition(activeUsesOfflineScroll && activeTargetKey
+    const nextScroll = activeUsesOfflineScroll && activeTargetKey
       ? offlineBackendRef.current.snapshot(activeTargetKey).scroll
-      : activeRemoteScroll);
+      : activeRemoteScroll;
+    if (terminalScrollbarDragRef.current?.target.key === activeTargetKey) {
+      pendingTerminalScrollRef.current = { targetKey: activeTargetKey, scroll: nextScroll };
+      return;
+    }
+    pendingTerminalScrollRef.current = null;
+    scrollPositionRef.current = nextScroll;
+    setScrollPosition(nextScroll);
   }, [activeRemoteScroll, activeTargetKey, activeUsesOfflineScroll]);
+
+  useEffect(() => {
+    terminalScrollbarDragRef.current = null;
+    pendingTerminalScrollRef.current = null;
+  }, [activeTargetKey]);
+
+  const requestTerminalScrollOffset = (
+    target: TerminalRenderTarget,
+    previousOffset: number,
+    desiredOffset: number,
+  ) => {
+    const lineDifference = desiredOffset - previousOffset;
+    const active = activeTargetRef.current;
+    if (lineDifference === 0 || target.key !== active?.key) return;
+
+    const current = scrollPositionRef.current;
+    if (!current) return;
+    const nextScroll = { ...current, offset_from_bottom: desiredOffset };
+    scrollPositionRef.current = nextScroll;
+    setScrollPosition(nextScroll);
+
+    const direction = lineDifference > 0 ? 'up' : 'down';
+    const lines = Math.abs(lineDifference);
+    if (active.session.status === 'connected') {
+      active.client.scrollTerminal(active.session.terminalId, direction, lines).catch(reason => {
+        if (active.key === activeTargetRef.current?.key) setError(String(reason));
+      });
+    } else {
+      renderer.current?.scroll(direction, lines);
+    }
+  };
+
+  const beginTerminalScrollbarDrag = ({
+    trackHeight,
+    thumbHeight,
+  }: Omit<OverlayScrollbarDragEvent, 'dy'>) => {
+    const target = activeTargetRef.current;
+    const current = scrollPositionRef.current;
+    if (!target || !current || trackHeight <= thumbHeight) {
+      terminalScrollbarDragRef.current = null;
+      return;
+    }
+    terminalScrollbarDragRef.current = {
+      target,
+      startOffset: current.offset_from_bottom,
+      maxOffset: current.max_offset_from_bottom,
+      lastOffset: current.offset_from_bottom,
+      thumbHeight,
+      trackHeight,
+    };
+  };
+
+  const dragTerminalScrollbar = ({ dy }: OverlayScrollbarDragEvent) => {
+    const drag = terminalScrollbarDragRef.current;
+    if (!drag) return;
+    const desiredOffset = scrollOffsetFromDrag({
+      startOffset: drag.startOffset,
+      dragDistance: dy,
+      maxOffset: drag.maxOffset,
+      trackHeight: drag.trackHeight,
+      thumbHeight: drag.thumbHeight,
+      direction: -1,
+      step: 1,
+    });
+    if (desiredOffset === drag.lastOffset) return;
+    const previousOffset = drag.lastOffset;
+    drag.lastOffset = desiredOffset;
+    requestTerminalScrollOffset(drag.target, previousOffset, desiredOffset);
+  };
+
+  const adjustTerminalScrollbar = (direction: 'up' | 'down') => {
+    const target = activeTargetRef.current;
+    const current = scrollPositionRef.current;
+    if (!target || !current) return;
+    const amount = Math.max(1, Math.round(current.viewport_rows));
+    const desiredOffset = Math.max(0, Math.min(
+      current.max_offset_from_bottom,
+      current.offset_from_bottom + (direction === 'up' ? amount : -amount),
+    ));
+    requestTerminalScrollOffset(target, current.offset_from_bottom, desiredOffset);
+  };
+
+  const finishTerminalScrollbarDrag = () => {
+    terminalScrollbarDragRef.current = null;
+    const correction = pendingTerminalScrollRef.current;
+    pendingTerminalScrollRef.current = null;
+    if (!correction || correction.targetKey !== activeTargetRef.current?.key) return;
+    scrollPositionRef.current = correction.scroll;
+    setScrollPosition(correction.scroll);
+  };
 
   const writeInput = async (
     data: string,
@@ -1339,6 +1458,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           onPaste={(_target, text) => onHistoryEntry(text)}
           onBufferModeChange={(target, alternate) => {
             if (target.key !== activeTarget?.key) return;
+            terminalScrollbarDragRef.current = null;
+            pendingTerminalScrollRef.current = null;
             setAlternateScreen(alternate);
             setTerminalSelectionActive(false);
             setSearchResult({ count: 0, index: -1, invalid: false });
@@ -1365,15 +1486,15 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
           style={WEBVIEW_STYLE}
         />
         {scrollThumb && (
-          <View
-            accessibilityElementsHidden
-            pointerEvents="none"
-            className="absolute inset-y-0 right-0.5 w-0.5">
-            <View
-              className="absolute inset-x-0 rounded-full bg-terminal-text/70"
-              style={{ height: `${scrollThumb.heightPercent}%`, top: `${scrollThumb.topPercent}%` }}
-            />
-          </View>
+          <OverlayScrollbar
+            accessibilityLabel="Terminal scroll position"
+            heightPercent={scrollThumb.heightPercent}
+            topPercent={scrollThumb.topPercent}
+            onAccessibilityAdjust={adjustTerminalScrollbar}
+            onDrag={dragTerminalScrollbar}
+            onDragEnd={finishTerminalScrollbarDrag}
+            onDragStart={beginTerminalScrollbarDrag}
+          />
         )}
         {viewportOverlay && (
           <>
