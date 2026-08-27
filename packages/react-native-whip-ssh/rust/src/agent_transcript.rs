@@ -2474,6 +2474,19 @@ enum OpenCodeMutation {
     },
 }
 
+/// Compares the metadata from `message.updated` that does not determine turn
+/// structure. Message identity is matched by `message_indexes`, while parts
+/// have their own mutations.
+fn same_open_code_nonstructural_message_metadata(
+    current: &AgentTranscriptMessage,
+    incoming: &AgentTranscriptMessage,
+) -> bool {
+    current.created_at_ms == incoming.created_at_ms
+        && current.completed_at_ms == incoming.completed_at_ms
+        && current.error == incoming.error
+        && current.diffs == incoming.diffs
+}
+
 /// OpenCode export/event adapter with an opaque, cursor-bearing cache. Remote
 /// I/O stays in `AgentSessionManager`; this type is deterministic and testable.
 #[derive(Clone, Debug)]
@@ -2869,19 +2882,29 @@ impl OpenCodeSessionCore {
                         deltas.push(AgentTranscriptDelta::InfoChanged { info: Some(info) });
                     }
                 }
-                OpenCodeMutation::Message(mut message) => {
+                OpenCodeMutation::Message(message) => {
                     if let Some(index) = self.message_indexes.get(&message.id).copied() {
-                        let current = &self.messages[index];
-                        message.parts = current.parts.clone();
-                        if *current == message {
+                        let current = &mut self.messages[index];
+                        debug_assert_eq!(current.id, message.id);
+                        let structural_changed =
+                            current.role != message.role || current.parent_id != message.parent_id;
+                        if !structural_changed
+                            && same_open_code_nonstructural_message_metadata(current, &message)
+                        {
                             continue;
                         }
-                        structural |=
-                            current.role != message.role || current.parent_id != message.parent_id;
+
+                        structural |= structural_changed;
+                        current.role = message.role;
+                        current.parent_id = message.parent_id;
+                        current.created_at_ms = message.created_at_ms;
+                        current.completed_at_ms = message.completed_at_ms;
+                        current.error = message.error;
+                        current.diffs = message.diffs;
+                        let message = current.clone();
                         if let Some(turn) = self.message_turns.get(&message.id).copied() {
                             affected_turns.push(turn);
                         }
-                        self.messages[index] = message.clone();
                         deltas.push(AgentTranscriptDelta::MessageUpserted {
                             index: u32::try_from(index).unwrap_or(u32::MAX),
                             message,
@@ -3466,6 +3489,41 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn open_code_message_test_core() -> OpenCodeSessionCore {
+        let export = serde_json::json!({
+            "info": { "id": "ses_messages" },
+            "messages": [
+                {
+                    "info": { "id": "user-1", "role": "user", "time": { "created": 1_u64 } },
+                    "parts": [{ "id": "prompt-1", "type": "text", "text": "First" }]
+                },
+                {
+                    "info": { "id": "user-2", "role": "user", "time": { "created": 3_u64 } },
+                    "parts": [{ "id": "prompt-2", "type": "text", "text": "Second" }]
+                },
+                {
+                    "info": {
+                        "id": "assistant", "role": "assistant", "parentID": "user-1",
+                        "time": { "created": 2_u64 }
+                    },
+                    "parts": [{ "id": "answer", "type": "text", "text": "Original" }]
+                }
+            ]
+        });
+        let mut core = OpenCodeSessionCore::new("ses_messages");
+        core.bootstrap(0, &export.to_string()).unwrap();
+        core
+    }
+
+    fn open_code_message_updated_event(sequence: u64, info: Value) -> String {
+        serde_json::json!([{
+            "seq": sequence,
+            "type": "message.updated.1",
+            "data": { "info": info }
+        }])
+        .to_string()
     }
 
     #[test]
@@ -4315,6 +4373,139 @@ mod tests {
                 .iter()
                 .any(|part| part.id() == "reasoning")
         );
+    }
+
+    #[test]
+    fn opencode_identical_message_metadata_is_a_noop() {
+        let mut core = open_code_message_test_core();
+        let before = core.state();
+        let revision = core.revision();
+        let parts_ptr = core.messages[2].parts.as_ptr();
+        let events = open_code_message_updated_event(
+            1,
+            serde_json::json!({
+                "id": "assistant", "role": "assistant", "parentID": "user-1",
+                "time": { "created": 2_u64 }
+            }),
+        );
+
+        assert!(core.apply_events_incremental(1, &events).unwrap().is_none());
+        assert_eq!(core.revision(), revision);
+        assert_eq!(core.state(), before);
+        assert_eq!(core.messages[2].parts.as_ptr(), parts_ptr);
+    }
+
+    #[test]
+    fn opencode_message_metadata_update_preserves_existing_parts() {
+        let mut core = open_code_message_test_core();
+        let before = core.messages[2].clone();
+        let parts_ptr = core.messages[2].parts.as_ptr();
+        let events = open_code_message_updated_event(
+            1,
+            serde_json::json!({
+                "id": "assistant", "role": "assistant", "parentID": "user-1",
+                "time": { "created": 2_u64, "completed": 20_u64 }
+            }),
+        );
+
+        let update = core
+            .apply_events_incremental(1, &events)
+            .unwrap()
+            .expect("completion metadata changes the message");
+        assert_eq!(update.deltas.len(), 2);
+        assert!(matches!(
+            &update.deltas[0],
+            AgentTranscriptDelta::MessageUpserted { index: 2, message }
+                if message.completed_at_ms == Some(20) && message.parts == before.parts
+        ));
+        assert!(matches!(
+            &update.deltas[1],
+            AgentTranscriptDelta::TurnUpserted { index: 0, turn }
+                if turn.id == "user-1" && turn.completed_at_ms == Some(20)
+        ));
+
+        let current = &core.messages[2];
+        assert_eq!(current.id, before.id);
+        assert_eq!(current.role, before.role);
+        assert_eq!(current.parent_id, before.parent_id);
+        assert_eq!(current.created_at_ms, before.created_at_ms);
+        assert_eq!(current.completed_at_ms, Some(20));
+        assert_eq!(current.error, before.error);
+        assert_eq!(current.diffs, before.diffs);
+        assert_eq!(current.parts, before.parts);
+        assert_eq!(current.parts.as_ptr(), parts_ptr);
+    }
+
+    #[test]
+    fn opencode_parent_change_rebuilds_turns_and_indexes() {
+        let mut core = open_code_message_test_core();
+        let parts_ptr = core.messages[2].parts.as_ptr();
+        let events = open_code_message_updated_event(
+            1,
+            serde_json::json!({
+                "id": "assistant", "role": "assistant", "parentID": "user-2",
+                "time": { "created": 2_u64 }
+            }),
+        );
+
+        let update = core
+            .apply_events_incremental(1, &events)
+            .unwrap()
+            .expect("parent metadata changes the turn structure");
+        assert_eq!(update.deltas.len(), 4);
+        assert!(matches!(
+            &update.deltas[0],
+            AgentTranscriptDelta::MessageUpserted { index: 2, message }
+                if message.parent_id.as_deref() == Some("user-2")
+        ));
+        assert!(matches!(
+            &update.deltas[1],
+            AgentTranscriptDelta::TurnsTruncated { length: 0 }
+        ));
+        assert_eq!(core.turns[0].assistant_message_ids, Vec::<String>::new());
+        assert_eq!(core.turns[1].assistant_message_ids, ["assistant"]);
+        assert_eq!(core.message_indexes.get("assistant"), Some(&2));
+        assert_eq!(core.message_turns.get("assistant"), Some(&1));
+        assert_eq!(core.messages[2].parts.as_ptr(), parts_ptr);
+    }
+
+    #[test]
+    fn opencode_part_update_still_replaces_the_matching_part() {
+        let mut core = open_code_message_test_core();
+        let events = serde_json::json!([{
+            "seq": 1_u64,
+            "type": "message.part.updated.1",
+            "data": {
+                "part": {
+                    "id": "answer", "messageID": "assistant",
+                    "type": "text", "text": "Updated"
+                }
+            }
+        }]);
+
+        let update = core
+            .apply_events_incremental(1, &events.to_string())
+            .unwrap()
+            .expect("part text changes the message");
+        assert_eq!(update.deltas.len(), 2);
+        assert!(matches!(
+            &update.deltas[0],
+            AgentTranscriptDelta::MessageUpserted { index: 2, message }
+                if message.parts.len() == 1
+                    && matches!(&message.parts[0], AgentTranscriptPart::Text { id, text, .. }
+                        if id == "answer" && text == "Updated")
+        ));
+        assert!(matches!(
+            &update.deltas[1],
+            AgentTranscriptDelta::TurnUpserted { index: 0, turn }
+                if turn.id == "user-1"
+        ));
+        assert_eq!(core.messages[2].parts.len(), 1);
+        assert!(matches!(
+            &core.messages[2].parts[0],
+            AgentTranscriptPart::Text { id, text, .. }
+                if id == "answer" && text == "Updated"
+        ));
     }
 
     #[test]
