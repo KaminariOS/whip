@@ -465,6 +465,15 @@ fn aggregate_status<'a>(statuses: impl Iterator<Item = &'a HerdrAgentStatus>) ->
 }
 
 fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
+    for agent in &snapshot.agents {
+        if let Some(pane) = snapshot
+            .panes
+            .iter_mut()
+            .find(|pane| pane.pane_id == agent.pane_id)
+        {
+            pane.agent_session.clone_from(&agent.agent_session);
+        }
+    }
     for tab in &mut snapshot.tabs {
         let panes = snapshot
             .panes
@@ -1493,6 +1502,32 @@ mod tests {
                 Some(session_id)
             );
         }
+    }
+
+    #[test]
+    fn full_snapshot_projects_agent_session_identity_onto_the_pane() {
+        let mut incoming = snapshot();
+        incoming
+            .agents
+            .push(agent("p1", HerdrAgentKind::OpenCode, "ses_123456789"));
+        assert_eq!(incoming.panes[0].agent_session, None);
+
+        let mut state = HostState::default();
+        state.connection_installed(1);
+        let token = state.begin_sync(1);
+        assert_eq!(
+            state.complete_sync(token, incoming, 10),
+            ApplyResult::Applied
+        );
+
+        let snapshot = state.snapshot.unwrap();
+        assert_eq!(
+            snapshot.panes[0]
+                .agent_session
+                .as_ref()
+                .map(|session| session.value.as_str()),
+            Some("ses_123456789")
+        );
     }
 
     #[test]

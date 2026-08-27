@@ -1,6 +1,7 @@
 //! Rust-owned lifecycle for remote coding-agent transcript sessions.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
@@ -1242,16 +1243,29 @@ fn opencode_export_command(session_id: &str) -> String {
     format!("opencode export {}", shell_quote(session_id))
 }
 
+fn sqlite_text_literal(value: &str) -> String {
+    let mut literal = String::from("char(");
+    for (index, byte) in value.bytes().enumerate() {
+        if index != 0 {
+            literal.push(',');
+        }
+        write!(literal, "{byte}").expect("writing to a String cannot fail");
+    }
+    literal.push(')');
+    literal
+}
+
 fn opencode_cursor_command(session_id: &str) -> String {
-    let query = format!(
-        "SELECT COALESCE(MAX(seq), 0) AS seq FROM event WHERE aggregate_id = '{session_id}'"
-    );
+    let session_id = sqlite_text_literal(session_id);
+    let query =
+        format!("SELECT COALESCE(MAX(seq), 0) AS seq FROM event WHERE aggregate_id = {session_id}");
     format!("opencode db {} --format json", shell_quote(&query))
 }
 
 fn opencode_events_command(session_id: &str, after_sequence: u64) -> String {
+    let session_id = sqlite_text_literal(session_id);
     let query = format!(
-        "SELECT seq, type, data FROM event WHERE aggregate_id = '{session_id}' AND seq > {after_sequence} ORDER BY seq"
+        "SELECT seq, type, data FROM event WHERE aggregate_id = {session_id} AND seq > {after_sequence} ORDER BY seq"
     );
     format!("opencode db {} --format json", shell_quote(&query))
 }
@@ -1409,8 +1423,14 @@ mod tests {
             opencode_export_command("ses_abc123"),
             "opencode export 'ses_abc123'"
         );
-        assert!(opencode_cursor_command("ses_abc123").contains("MAX(seq)"));
-        assert!(opencode_events_command("ses_abc123", 42).contains("seq > 42"));
+        let session_literal = "char(115,101,115,95,97,98,99,49,50,51)";
+        assert!(opencode_cursor_command("ses_abc123").contains(&format!(
+            "MAX(seq), 0) AS seq FROM event WHERE aggregate_id = {session_literal}"
+        )));
+        assert!(
+            opencode_events_command("ses_abc123", 42)
+                .contains(&format!("aggregate_id = {session_literal} AND seq > 42"))
+        );
         assert_eq!(
             opencode_login_command("opencode export 'ses_abc123'"),
             concat!(

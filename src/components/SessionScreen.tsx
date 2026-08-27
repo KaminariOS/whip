@@ -917,9 +917,28 @@ export function SessionScreen({
 
   const openAgentChat = async () => {
     if (!activePane || !activeTerminalSession) return;
-    const agent = chatAgentForPane(activePane);
+    let chatPane = activePane;
+    let agent = chatAgentForPane(chatPane);
+    const projectedSessionId = agent === 'codex'
+      ? codexSessionIdForPane(chatPane)
+      : agent === 'opencode'
+        ? openCodeSessionIdForPane(chatPane)
+        : null;
+    if (agent && !projectedSessionId) {
+      setBusy(true);
+      try {
+        const refreshed = await client.snapshot();
+        chatPane = refreshed.panes.find(item => item.pane_id === chatPane.pane_id) || chatPane;
+        agent = chatAgentForPane(chatPane);
+      } catch (error) {
+        showAppAlert('Could not refresh agent identity', error);
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
     if (agent === 'opencode') {
-      const sessionId = openCodeSessionIdForPane(activePane);
+      const sessionId = openCodeSessionIdForPane(chatPane);
       if (!sessionId) {
         setAgentIdentityWarning({
           agent: 'opencode',
@@ -941,9 +960,9 @@ export function SessionScreen({
       return;
     }
     if (agent !== 'codex') return;
-    const action = codexChatAction(activePane);
+    const action = codexChatAction(chatPane);
     if (action === 'open') {
-      const sessionId = codexSessionIdForPane(activePane)!;
+      const sessionId = codexSessionIdForPane(chatPane)!;
       const key = codexTranscriptService.activate(hostSessionId, activeTerminalSession.terminalId, sessionId, client);
       if (!codexTranscriptService.hasCachedHistory(key)) {
         setCodexHistoryWarmup({ key, sessionId, terminalId: activeTerminalSession.terminalId });
@@ -961,7 +980,7 @@ export function SessionScreen({
       return;
     }
     if (action !== 'setup') return;
-    const paneId = activePane.pane_id;
+    const paneId = chatPane.pane_id;
     setBusy(true);
     try {
       const integrationStatus = await client.codexIntegrationStatus();
