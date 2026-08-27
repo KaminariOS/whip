@@ -9,6 +9,7 @@ use crate::codex::rollout_wire::{Event as CodexEvent, ResponseItem as CodexRespo
 use crate::codex::{CodexRolloutReducer, RolloutRecord, decode_rollout_record};
 
 pub const MAX_TRANSCRIPT_LINE_BYTES: usize = 4 * 1024 * 1024;
+const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 pub enum AgentTranscriptKind {
@@ -2636,7 +2637,7 @@ impl OpenCodeSessionCore {
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
         let cached: CachedOpenCodeSession = serde_json::from_slice(bytes)
             .map_err(|error| AgentCacheError::Malformed(error.to_string()))?;
-        if cached.schema_version != 1 {
+        if cached.schema_version != OPENCODE_CACHE_SCHEMA_VERSION {
             return Err(AgentCacheError::Malformed("unsupported schema".to_owned()));
         }
         if cached.session_id != self.session_id
@@ -2674,7 +2675,7 @@ impl OpenCodeSessionCore {
             AgentCacheError::Malformed("OpenCode cursor is unavailable".to_owned())
         })?;
         serde_json::to_vec(&CachedOpenCodeSessionRef {
-            schema_version: 1,
+            schema_version: OPENCODE_CACHE_SCHEMA_VERSION,
             session_id: &self.session_id,
             cursor,
             transcript: AgentTranscriptStateRef {
@@ -3268,13 +3269,25 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
         "tool" => {
             let state = object(part.get("state"));
             let state_time = state.and_then(|state| object(state.get("time")));
+            let tool = canonical_tool_name(nonempty(part.get("tool")).unwrap_or("tool"));
+            if tool == "todowrite"
+                && let Some(text) = open_code_todo_plan(state)
+            {
+                return Some(AgentTranscriptPart::Plan {
+                    id,
+                    text,
+                    timestamp_ms: state_time
+                        .and_then(|time| timestamp_ms(time.get("start")))
+                        .or(at),
+                });
+            }
             let status = parse_tool_status(
                 state.and_then(|state| state.get("status")),
                 AgentToolStatus::Pending,
             );
             Some(AgentTranscriptPart::Tool {
                 call_id: nonempty(part.get("callID")).unwrap_or(&id).to_owned(),
-                tool: canonical_tool_name(nonempty(part.get("tool")).unwrap_or("tool")),
+                tool,
                 timestamp_ms: state_time
                     .and_then(|time| timestamp_ms(time.get("start")))
                     .or(at),
@@ -3311,6 +3324,32 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
         }),
         _ => None,
     }
+}
+
+fn open_code_todo_plan(state: Option<&Map<String, Value>>) -> Option<String> {
+    let todos = state
+        .and_then(|state| object(state.get("input")))
+        .and_then(|input| input.get("todos"))
+        .and_then(Value::as_array)
+        .or_else(|| {
+            state
+                .and_then(|state| object(state.get("metadata")))
+                .and_then(|metadata| metadata.get("todos"))
+                .and_then(Value::as_array)
+        })?;
+    let lines = todos
+        .iter()
+        .filter_map(Value::as_object)
+        .filter_map(|todo| {
+            let content = nonempty(todo.get("content"))?;
+            let completed = nonempty(todo.get("status")) == Some("completed");
+            Some(format!(
+                "- [{}] {content}",
+                if completed { "x" } else { " " }
+            ))
+        })
+        .collect::<Vec<_>>();
+    (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
 fn open_code_diffs(value: &Value) -> Vec<AgentFileDiff> {
@@ -4279,6 +4318,52 @@ mod tests {
     }
 
     #[test]
+    fn opencode_todowrite_is_projected_as_a_task_plan() {
+        let raw = serde_json::json!({
+            "id": "todo-part",
+            "type": "tool",
+            "callID": "todo-call",
+            "tool": "todowrite",
+            "state": {
+                "status": "completed",
+                "input": {
+                    "todos": [
+                        { "content": "Inspect the parser", "status": "completed", "priority": "high" },
+                        { "content": "Render the task list", "status": "in_progress", "priority": "high" },
+                        { "content": "Run the tests", "status": "pending", "priority": "medium" }
+                    ]
+                },
+                "time": { "start": 1_700_000_000_000_u64 }
+            }
+        });
+        assert_eq!(
+            open_code_part(raw.as_object().unwrap()),
+            Some(AgentTranscriptPart::Plan {
+                id: "todo-part".to_owned(),
+                text: concat!(
+                    "- [x] Inspect the parser\n",
+                    "- [ ] Render the task list\n",
+                    "- [ ] Run the tests"
+                )
+                .to_owned(),
+                timestamp_ms: Some(1_700_000_000_000),
+            })
+        );
+
+        let pending = serde_json::json!({
+            "id": "todo-pending",
+            "type": "tool",
+            "callID": "todo-pending-call",
+            "tool": "todowrite",
+            "state": { "status": "pending", "input": {} }
+        });
+        assert!(matches!(
+            open_code_part(pending.as_object().unwrap()),
+            Some(AgentTranscriptPart::Tool { tool, .. }) if tool == "todowrite"
+        ));
+    }
+
+    #[test]
     fn opencode_cache_restores_cursor_and_rejects_divergence() {
         let export = serde_json::json!({
             "info": { "id": "ses_cache" },
@@ -4293,6 +4378,19 @@ mod tests {
         core.mark_live();
         let blob = core.cache_blob().unwrap();
         assert!(core.confirm_cache(generation, 4));
+        let cached: Value = serde_json::from_slice(&blob).unwrap();
+        assert_eq!(
+            cached.get("schema_version").and_then(Value::as_u64),
+            Some(u64::from(OPENCODE_CACHE_SCHEMA_VERSION))
+        );
+
+        let mut legacy = cached;
+        legacy["schema_version"] = serde_json::json!(1);
+        assert!(matches!(
+            OpenCodeSessionCore::new("ses_cache")
+                .restore_cache(&serde_json::to_vec(&legacy).unwrap()),
+            Err(AgentCacheError::Malformed(_))
+        ));
 
         let mut restored = OpenCodeSessionCore::new("ses_cache");
         let state = restored.restore_cache(&blob).unwrap();
