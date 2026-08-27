@@ -5,6 +5,45 @@ export interface CreatedTabFocusResult {
   root_pane: PaneInfo;
 }
 
+export interface TerminalSelectionResources {
+  tabs: readonly TabInfo[];
+  panes: readonly PaneInfo[];
+}
+
+/** Keep a successful creation selectable until both resources reach the snapshot. */
+export function includePendingCreatedSelection(
+  resources: TerminalSelectionResources,
+  pending: CreatedTabFocusResult | null,
+): TerminalSelectionResources {
+  if (!pending) return resources;
+  return {
+    tabs: resources.tabs.some(tab => tab.tab_id === pending.tab.tab_id)
+      ? resources.tabs
+      : [...resources.tabs, pending.tab],
+    panes: resources.panes.some(pane => pane.pane_id === pending.root_pane.pane_id)
+      ? resources.panes
+      : [...resources.panes, pending.root_pane],
+  };
+}
+
+/** Release local creation authority only after the snapshot contains its tab and root pane. */
+export function reconcilePendingCreatedSelection(
+  pending: CreatedTabFocusResult | null,
+  resources: TerminalSelectionResources,
+): CreatedTabFocusResult | null {
+  if (!pending) return null;
+  const tabConfirmed = resources.tabs.some(tab => (
+    tab.tab_id === pending.tab.tab_id
+      && tab.workspace_id === pending.tab.workspace_id
+  ));
+  const paneConfirmed = resources.panes.some(pane => (
+    pane.pane_id === pending.root_pane.pane_id
+      && pane.terminal_id === pending.root_pane.terminal_id
+      && pane.tab_id === pending.tab.tab_id
+  ));
+  return tabConfirmed && paneConfirmed ? null : pending;
+}
+
 /** Couple a locally requested tab selection to its authoritative root terminal. */
 export function activateCreatedTabLocally<Created extends CreatedTabFocusResult>(
   created: Created,

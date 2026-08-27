@@ -1227,7 +1227,15 @@ fn shell_quote(value: &str) -> String {
 }
 
 fn opencode_login_command(command: &str) -> String {
-    format!("exec \"${{SHELL:-/bin/sh}}\" -lc {}", shell_quote(command))
+    // SSH hands this string to the user's login shell first. Keep that outer
+    // layer valid in Bash and Fish, then let POSIX sh select the configured
+    // login shell so its PATH setup remains available to OpenCode.
+    let login_dispatch = r#"exec "${SHELL:-/bin/sh}" -lc "$1""#;
+    format!(
+        "exec /bin/sh -c {} whip-opencode {}",
+        shell_quote(login_dispatch),
+        shell_quote(command)
+    )
 }
 
 fn opencode_export_command(session_id: &str) -> String {
@@ -1403,9 +1411,12 @@ mod tests {
         );
         assert!(opencode_cursor_command("ses_abc123").contains("MAX(seq)"));
         assert!(opencode_events_command("ses_abc123", 42).contains("seq > 42"));
-        assert!(
-            opencode_login_command("opencode export 'ses_abc123'")
-                .starts_with("exec \"${SHELL:-/bin/sh}\" -lc ")
+        assert_eq!(
+            opencode_login_command("opencode export 'ses_abc123'"),
+            concat!(
+                "exec /bin/sh -c 'exec \"${SHELL:-/bin/sh}\" -lc \"$1\"' ",
+                "whip-opencode 'opencode export '\\''ses_abc123'\\'''"
+            )
         );
     }
 

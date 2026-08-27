@@ -28,7 +28,7 @@ test('SessionScreen only renders Chat for a supported active terminal pane', () 
     /const activeTerminalSession = terminalState\.sessions\.find\(\s*session => session\.terminalId === terminalState\.activeTerminalId,\s*\);/,
   );
   expect(sessionScreen).toContain(
-    'const activePane = snapshot.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);',
+    'const activePane = selectableResources.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);',
   );
   expect(sessionScreen).toContain('const activeChatAgent = chatAgentForPane(activePane);');
   expect(sessionScreen).toContain('chatControl={activeChatAgent ? {');

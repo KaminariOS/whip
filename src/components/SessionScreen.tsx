@@ -22,8 +22,11 @@ import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { cn } from '@/src/lib/utils';
 import {
   activateCreatedTabLocally,
+  includePendingCreatedSelection,
+  reconcilePendingCreatedSelection,
   serverFocusMatchesPendingPane,
   shouldFollowServerTerminalFocus,
+  type CreatedTabFocusResult,
 } from '@/src/lib/terminalFocus';
 import { terminalWebLinkTarget } from '@/src/lib/terminalLinks';
 import { resolveTranscriptFilePath, type TranscriptFileLinkTarget } from '@/src/lib/transcriptLinks';
@@ -170,6 +173,7 @@ export function SessionScreen({
   const focusedWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const [workspaceId, setWorkspaceId] = useState(focusedWorkspace?.workspace_id || '');
   const [tabId, setTabId] = useState(focusedWorkspace?.active_tab_id || '');
+  const [pendingCreatedSelection, setPendingCreatedSelection] = useState<CreatedTabFocusResult | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode | null>(null);
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -233,8 +237,9 @@ export function SessionScreen({
   useEffect(() => () => cancelAnimation(tabSwipeTranslateX), [tabSwipeTranslateX]);
 
   const workspace = snapshot.workspaces.find(item => item.workspace_id === workspaceId) || focusedWorkspace;
+  const selectableResources = includePendingCreatedSelection(snapshot, pendingCreatedSelection);
   const tabs = orderByAgentStatusPriority(
-    snapshot.tabs.filter(item => item.workspace_id === workspace?.workspace_id),
+    selectableResources.tabs.filter(item => item.workspace_id === workspace?.workspace_id),
     item => item.agent_status,
     item => tabAgentStateChangeSequence(item, snapshot.agents),
   );
@@ -247,7 +252,7 @@ export function SessionScreen({
   const editorContext = editorMode === 'rename-pane'
     ? selectedTab?.label || selectedTab?.tab_id
     : workspace?.label || workspace?.workspace_id;
-  const panes = snapshot.panes.filter(item => item.tab_id === selectedTab?.tab_id);
+  const panes = selectableResources.panes.filter(item => item.tab_id === selectedTab?.tab_id);
   const topOverlayInset = 55 + (selectedTab && panes.length > 1 ? 37 : 0);
   const serverWorkspace = snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const serverTab = snapshot.tabs.find(item => (
@@ -259,13 +264,17 @@ export function SessionScreen({
   const serverWorkspaceId = serverWorkspace?.workspace_id || '';
   const serverTabId = serverTab?.tab_id || '';
   const serverPaneId = serverPane?.pane_id || '';
+  const pendingCreatedPaneId = pendingCreatedSelection?.tab.workspace_id === workspaceId
+    && pendingCreatedSelection.tab.tab_id === tabId
+    ? pendingCreatedSelection.root_pane.pane_id
+    : null;
   const selectedPane = panes.find(item => item.terminal_id === terminalState.activeTerminalId)
     || panes.find(item => item.focused)
     || panes[0];
   const activeTerminalSession = terminalState.sessions.find(
     session => session.terminalId === terminalState.activeTerminalId,
   );
-  const activePane = snapshot.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);
+  const activePane = selectableResources.panes.find(pane => pane.terminal_id === activeTerminalSession?.terminalId);
   const activeChatAgent = chatAgentForPane(activePane);
   const activeChatView = activeTerminalSession && activeChatAgent
     ? chatViews.get(activeTerminalSession.terminalId) || null
@@ -309,7 +318,7 @@ export function SessionScreen({
 
   const registerInteraction = (target: TerminalRenderTarget | null = activeTarget) => {
     if (!target || target.session.kind === 'ssh') return;
-    const pane = snapshot.panes.find(item => item.pane_id === target.session.paneId);
+    const pane = selectableResources.panes.find(item => item.pane_id === target.session.paneId);
     const interactionTabId = pane?.tab_id || selectedTab?.tab_id;
     if (interactionTabId) onInteraction(interactionTabId);
   };
@@ -386,6 +395,7 @@ export function SessionScreen({
     pendingPaneFocus.current = null;
     lastActivePaneId.current = null;
     pendingFocus.current = null;
+    setPendingCreatedSelection(null);
     browserRequestRef.current += 1;
     setEditorMode(null);
     setEditingPaneId(null);
@@ -405,6 +415,10 @@ export function SessionScreen({
     setCodexIntegrationInstalling(false);
     setCodexIntegrationPrompt(null);
   }, [hostSessionId]);
+
+  useEffect(() => {
+    setPendingCreatedSelection(current => reconcilePendingCreatedSelection(current, snapshot));
+  }, [snapshot]);
 
   useEffect(() => () => {
     for (const [terminalId, view] of chatViewsRef.current) {
@@ -544,7 +558,8 @@ export function SessionScreen({
   useEffect(() => {
     const pending = pendingFocus.current;
     if (pending) {
-      const previousStillPresent = snapshot.tabs.some(item => item.tab_id === pending.previousId);
+      const previousStillPresent = snapshot.tabs.some(item => item.tab_id === pending.previousId)
+        || pendingCreatedSelection?.tab.tab_id === pending.previousId;
       const focusedServerWorkspace = snapshot.workspaces.find(item => item.focused) || workspace;
       const serverTabs = snapshot.tabs.filter(item => item.workspace_id === focusedServerWorkspace?.workspace_id);
       const nextTab = serverTabs.find(item => item.focused)
@@ -558,22 +573,26 @@ export function SessionScreen({
     }
     if (workspace && workspace.workspace_id !== workspaceId) setWorkspaceId(workspace.workspace_id);
     if (selectedTab && selectedTab.tab_id !== tabId) setTabId(selectedTab.tab_id);
-  }, [selectedTab, snapshot.tabs, snapshot.workspaces, tabId, workspace, workspaceId]);
+  }, [pendingCreatedSelection, selectedTab, snapshot.tabs, snapshot.workspaces, tabId, workspace, workspaceId]);
 
   // Follow server focus while hidden or before a usable local selection exists.
   // Once visible, keep the selected terminal stable while startup focus events settle.
   useEffect(() => {
     if (!followServerFocus || !serverWorkspaceId) return;
     if (!serverTabId) {
+      if (pendingCreatedPaneId) return;
       pendingPaneFocus.current = null;
       setWorkspaceId(serverWorkspaceId);
       setTabId('');
       return;
     }
-    if (!serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)) return;
+    if (!serverFocusMatchesPendingPane(
+      serverPaneId,
+      pendingCreatedPaneId || pendingPaneFocus.current,
+    )) return;
     setWorkspaceId(serverWorkspaceId);
     setTabId(serverTabId);
-  }, [followServerFocus, serverPaneId, serverTabId, serverWorkspaceId]);
+  }, [followServerFocus, pendingCreatedPaneId, serverPaneId, serverTabId, serverWorkspaceId]);
 
   // Preserve an explicit terminal choice until Herdr confirms the same pane.
   useEffect(() => {
@@ -599,10 +618,13 @@ export function SessionScreen({
   // Keep a hidden or uninitialized terminal aligned with the server-focused pane.
   useEffect(() => {
     if (!followServerFocus || !serverPaneId) return;
-    if (!serverFocusMatchesPendingPane(serverPaneId, pendingPaneFocus.current)) return;
+    if (!serverFocusMatchesPendingPane(
+      serverPaneId,
+      pendingCreatedPaneId || pendingPaneFocus.current,
+    )) return;
     pendingPaneFocus.current = null;
     activateServerPane(serverPaneId);
-  }, [followServerFocus, serverPaneId]);
+  }, [followServerFocus, pendingCreatedPaneId, serverPaneId]);
 
   const run = async (action: () => Promise<void>, refresh = true): Promise<boolean> => {
     try {
@@ -622,7 +644,7 @@ export function SessionScreen({
   };
 
   const chooseTab = (item: TabInfo) => {
-    const nextPanes = snapshot.panes.filter(pane => pane.tab_id === item.tab_id);
+    const nextPanes = selectableResources.panes.filter(pane => pane.tab_id === item.tab_id);
     const nextPane = nextPanes.find(pane => pane.focused) || nextPanes[0];
     if (nextPane) terminalTabSelectionStarted(nextPane.terminal_id);
     setWorkspaceId(item.workspace_id);
@@ -634,8 +656,8 @@ export function SessionScreen({
     });
   };
 
-  const swipeContextRef = useRef({ tabs, selectedTab, activeTerminalSession, snapshot });
-  swipeContextRef.current = { tabs, selectedTab, activeTerminalSession, snapshot };
+  const swipeContextRef = useRef({ tabs, selectedTab, activeTerminalSession, panes: selectableResources.panes });
+  swipeContextRef.current = { tabs, selectedTab, activeTerminalSession, panes: selectableResources.panes };
   const chooseTabRef = useRef(chooseTab);
   chooseTabRef.current = chooseTab;
 
@@ -663,7 +685,7 @@ export function SessionScreen({
     const targetIndex = neighborTabIndex(currentIndex, context.tabs.length, direction);
     if (targetIndex === null || !context.selectedTab) return null;
     const target = context.tabs[targetIndex];
-    const targetPanes = context.snapshot.panes.filter(pane => pane.tab_id === target.tab_id);
+    const targetPanes = context.panes.filter(pane => pane.tab_id === target.tab_id);
     const targetPane = targetPanes.find(pane => pane.focused) || targetPanes[0];
     const nextSwipe: TerminalTabSwipe = {
       direction,
@@ -764,12 +786,11 @@ export function SessionScreen({
     } else if (editorMode === 'rename-pane' && editingPaneId) {
       succeeded = await run(() => client.renamePane(editingPaneId, name));
     } else if (workspace) {
-      // Creating a focused tab intentionally replaces the current pane choice.
-      // Do not let the old pane's pending-focus guard reject the new server pane.
-      pendingPaneFocus.current = null;
       pendingFocus.current = null;
       succeeded = await run(async () => {
         const created = await client.createTab(workspace.workspace_id, name);
+        setPendingCreatedSelection(created);
+        pendingPaneFocus.current = created.root_pane.pane_id;
         activateCreatedTabLocally(created, {
           select: (workspaceId, createdTabId) => {
             setWorkspaceId(workspaceId);
@@ -778,7 +799,7 @@ export function SessionScreen({
           terminalSelectionStarted: terminalTabSelectionStarted,
           activateTerminal: onActivateTerminal,
         });
-      }, false);
+      });
     }
     if (!succeeded) pendingFocus.current = null;
     setName('');
@@ -799,7 +820,11 @@ export function SessionScreen({
     // Herdr focuses a surviving tab after closing the current one.
     pendingPaneFocus.current = null;
     pendingFocus.current = { previousId: item.tab_id };
-    if (!await run(() => client.closeTab(item.tab_id))) pendingFocus.current = null;
+    if (!await run(() => client.closeTab(item.tab_id))) {
+      pendingFocus.current = null;
+    } else if (pendingCreatedSelection?.tab.tab_id === item.tab_id) {
+      setPendingCreatedSelection(null);
+    }
   };
 
   const openRenamePane = (pane: PaneInfo) => {
@@ -992,7 +1017,7 @@ export function SessionScreen({
             <ScrollView className="min-w-0 flex-1" horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
               {tabs.map(item => {
                 const active = item.tab_id === selectedTab?.tab_id;
-                const itemPanes = snapshot.panes.filter(pane => pane.tab_id === item.tab_id);
+                const itemPanes = selectableResources.panes.filter(pane => pane.tab_id === item.tab_id);
                 const itemSession = terminalState.sessions.find(session => itemPanes.some(pane => pane.terminal_id === session.terminalId));
                 const label = item.label || item.tab_id;
                 return (
