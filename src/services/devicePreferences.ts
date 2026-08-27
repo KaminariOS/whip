@@ -27,6 +27,10 @@ import {
   storageErrorDetails,
   storageParseErrorDetails,
 } from './storageDiagnostics';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
 
 export const DEVICE_PREFERENCES_KEY = 'herdr.device.preferences.v3';
 export const LEGACY_DEVICE_PREFERENCES_KEYS = [
@@ -170,6 +174,7 @@ async function readDevicePreferencesValue(storageKey: string): Promise<string | 
 async function migrateDevicePreferences(preferences: DevicePreferences): Promise<DevicePreferences> {
   const previousTerminalUri = preferences.terminal.backgroundImageUri;
   const previousAppUri = preferences.appBackgroundImageUri;
+  let failureDiagnosed = false;
   try {
     const [terminalBackgroundImageUri, appBackgroundImageUri] = await Promise.all([
       migrateTerminalBackgroundImage(previousTerminalUri),
@@ -189,6 +194,7 @@ async function migrateDevicePreferences(preferences: DevicePreferences): Promise
       await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(migrated));
     } catch (error) {
       recordDevicePreferencesWriteFailure(error, 'startup-migration');
+      failureDiagnosed = true;
       throw error;
     }
     if (terminalBackgroundImageUri !== previousTerminalUri) {
@@ -198,8 +204,14 @@ async function migrateDevicePreferences(preferences: DevicePreferences): Promise
       await removeAppBackgroundImage(previousAppUri);
     }
     return migrated;
-  } catch {
+  } catch (error) {
     // Keep using the previous setting and retry the migration next launch.
+    if (!failureDiagnosed) {
+      recordOperationalDiagnostic('warn', 'Application', 'background-image-migration-failed', {
+        fallbackUsed: 'previous-preferences',
+        ...operationalErrorDetails(error),
+      });
+    }
     return preferences;
   }
 }

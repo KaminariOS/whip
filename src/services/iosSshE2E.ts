@@ -1,6 +1,10 @@
 import SSHClient, { PtyType } from 'react-native-whip-ssh';
 import { Directory, File, Paths } from 'expo-file-system';
 import { errorCode } from '../lib/connectionErrors';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
 
 export const IOS_SSH_E2E_CONFIG_FILE = 'whip-ios-ssh-e2e-config.json';
 export const IOS_SSH_E2E_RESULT_FILE = 'whip-ios-ssh-e2e-result.json';
@@ -207,14 +211,24 @@ export async function runIosSshE2E(
         5_000,
         'local forwarding cleanup',
       )
-        .catch(() => undefined);
+        .catch(error => {
+          recordOperationalDiagnostic('warn', 'Application', 'ios-ssh-e2e-cleanup-failed', {
+            stage: 'local-forward',
+            ...operationalErrorDetails(error),
+          });
+        });
     }
     if (resources.cleanupClient && remoteDirectory) {
       await withTimeout(
         resources.cleanupClient.execute(`rm -rf '${remoteDirectory}'`),
         5_000,
         'remote SFTP cleanup',
-      ).catch(() => undefined);
+      ).catch(error => {
+        recordOperationalDiagnostic('warn', 'Application', 'ios-ssh-e2e-cleanup-failed', {
+          stage: 'remote-directory',
+          ...operationalErrorDetails(error),
+        });
+      });
     }
     for (const client of clients.reverse()) client.disconnect();
   }

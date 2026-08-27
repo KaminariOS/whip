@@ -37,6 +37,7 @@ import {
   backupCredential,
   credentialRecoveryStatus,
   ensureCredentialBackup,
+  recoverCredentialForHost,
   removeCredentialBackup,
   restoreCredentialBackups,
 } from '../src/services/credentialVault';
@@ -129,4 +130,58 @@ test('clears the Block Store recovery key after the final backup is removed', as
 
   expect(mockStoredBackups).toBe('{}');
   expect(mockNativeVault.clearRecoveryKey).toHaveBeenCalledTimes(1);
+});
+
+test('blocks backup mutation when the existing backup store is corrupted', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  mockStoredBackups = '{corrupted backup storage';
+
+  await expect(backupCredential(host.id, {
+    secret: 'PRIVATE KEY',
+    passphrase: 'key phrase',
+  })).resolves.toBe(false);
+
+  expect(mockNativeVault.encryptCredential).not.toHaveBeenCalled();
+  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(String(consoleError.mock.calls[0]?.[0])).toContain('storage-parse-failed');
+  expect(String(consoleError.mock.calls[0]?.[0])).not.toContain('corrupted backup storage');
+  consoleError.mockRestore();
+});
+
+test('diagnoses credential backup encryption failures without logging credential material', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  mockNativeVault.encryptCredential.mockRejectedValueOnce(new Error('native encryption unavailable'));
+
+  await expect(backupCredential(host.id, {
+    secret: 'PRIVATE KEY',
+    passphrase: 'key phrase',
+  })).resolves.toBe(false);
+
+  const diagnostic = String(consoleError.mock.calls[0]?.[0]);
+  expect(diagnostic).toContain('credential-backup-encrypt-failed');
+  expect(diagnostic).not.toContain('PRIVATE KEY');
+  expect(diagnostic).not.toContain('key phrase');
+  consoleError.mockRestore();
+});
+
+test('diagnoses credential backup write failures', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('storage unavailable'));
+
+  await expect(backupCredential(host.id, {
+    secret: 'PRIVATE KEY',
+    passphrase: 'key phrase',
+  })).resolves.toBe(false);
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('storage-write-failed'));
+  consoleError.mockRestore();
+});
+
+test('keeps missing recovery backups quiet', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+
+  await expect(recoverCredentialForHost(host)).resolves.toBeNull();
+
+  expect(consoleError).not.toHaveBeenCalled();
+  consoleError.mockRestore();
 });

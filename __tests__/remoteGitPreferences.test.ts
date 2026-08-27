@@ -41,10 +41,13 @@ it('loads the mode only for the matching host and canonical repository root', as
   expect(getItem).toHaveBeenCalledWith(REMOTE_GIT_PREFERENCES_KEY);
 });
 
-it('falls back to disabled for malformed persisted data', async () => {
+it('diagnoses malformed persisted data instead of treating it as disabled', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
   getItem.mockResolvedValue('{broken');
 
-  await expect(loadRemoteGitMode('host-a', '/repo')).resolves.toBe(false);
+  await expect(loadRemoteGitMode('host-a', '/repo')).rejects.toBeInstanceOf(SyntaxError);
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('storage-parse-failed'));
+  consoleError.mockRestore();
 });
 
 it('persists enabled repositories and removes disabled repositories', async () => {
@@ -103,4 +106,28 @@ it('persists collapsed directories per host and repository', async () => {
     REMOTE_GIT_TREE_PREFERENCES_KEY,
     expect.stringContaining('"collapsedPaths":["src"]'),
   );
+});
+
+it('does not overwrite repository preferences after a transient read failure', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const readError = new Error('AsyncStorage unavailable');
+  getItem.mockRejectedValueOnce(readError);
+
+  await expect(saveRemoteGitMode('host-a', '/repo', true)).rejects.toBe(readError);
+
+  expect(setItem).not.toHaveBeenCalled();
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('storage-read-failed'));
+  consoleError.mockRestore();
+});
+
+it('does not overwrite tree preferences after corrupted state is read', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  getItem.mockResolvedValueOnce('{broken');
+
+  await expect(saveRemoteGitCollapsedPaths('host-a', '/repo', ['src']))
+    .rejects.toBeInstanceOf(SyntaxError);
+
+  expect(setItem).not.toHaveBeenCalled();
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('storage-parse-failed'));
+  consoleError.mockRestore();
 });

@@ -24,6 +24,7 @@ jest.mock('react-native', () => ({
 import {
   authenticateAppAccess,
   authenticateGlobalKeychain,
+  recordAppAuthenticationFailure,
 } from '../src/services/appAuthentication';
 
 beforeEach(() => {
@@ -74,4 +75,30 @@ it('keeps Android on the existing native authentication implementation', async (
   expect(mockAuthenticateAppAccess).toHaveBeenCalledTimes(1);
   expect(mockAuthenticateGlobalKeychain).toHaveBeenCalledTimes(1);
   expect(mockAuthenticateAsync).not.toHaveBeenCalled();
+});
+
+it('keeps explicit app authentication cancellation quiet', () => {
+  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
+  const cancellation = Object.assign(new Error('cancelled'), {
+    code: 'E_APP_AUTH_CANCELLED',
+  });
+
+  recordAppAuthenticationFailure('biometric-locked-app-auth-failed', cancellation);
+
+  expect(consoleWarn).not.toHaveBeenCalled();
+  consoleWarn.mockRestore();
+});
+
+it('diagnoses non-cancellation app authentication failures', () => {
+  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
+
+  recordAppAuthenticationFailure(
+    'biometric-locked-app-auth-failed',
+    Object.assign(new Error('native authentication unavailable'), { code: 'E_NATIVE_FAILURE' }),
+  );
+
+  expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining(
+    'biometric-locked-app-auth-failed',
+  ));
+  consoleWarn.mockRestore();
 });

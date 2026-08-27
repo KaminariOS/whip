@@ -1,5 +1,10 @@
 import Constants from 'expo-constants';
 
+import {
+  operationalParseErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
+
 import type { TipProductId } from './revenueCat';
 
 export type FeedbackRequestType = 'bug' | 'feature';
@@ -73,7 +78,15 @@ async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
       },
       signal: controller.signal,
     });
-    const payload = (await response.json().catch(() => null)) as {
+    const payload = (await response.json().catch(error => {
+      recordOperationalDiagnostic('warn', 'Application', 'feedback-response-parse-failed', {
+        operation: 'response.json',
+        status: response.status,
+        ...operationalParseErrorDetails(error),
+      });
+      if (response.ok) throw new Error('Feedback service returned malformed JSON');
+      return null;
+    })) as {
       error?: string;
     } | null;
     if (!response.ok) {

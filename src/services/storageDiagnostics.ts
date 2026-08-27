@@ -4,7 +4,8 @@ export type StorageDiagnosticEvent =
   | 'startup-storage-multiget-failed'
   | 'storage-read-failed'
   | 'storage-parse-failed'
-  | 'storage-write-failed';
+  | 'storage-write-failed'
+  | 'storage-remove-failed';
 
 type StorageDiagnosticValue = string | number | boolean | null | undefined;
 

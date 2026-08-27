@@ -6,12 +6,18 @@ import {
   CREDENTIAL_BACKUP_MIGRATION_KEY,
   CREDENTIAL_BACKUP_MIGRATION_VERSION,
   deleteHostProfile,
+  loadConnectionProfile,
   loadHostProfiles,
   loadHostProfilesFromStorage,
   migrateCredentialBackupsIfNeeded,
   saveConnectionProfile,
 } from '../src/services/hostProfiles';
-import { backupCredential, ensureCredentialBackup, removeCredentialBackup } from '../src/services/credentialVault';
+import {
+  backupCredential,
+  ensureCredentialBackup,
+  recoverCredentialForHost,
+  removeCredentialBackup,
+} from '../src/services/credentialVault';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -117,6 +123,46 @@ test('runs credential backup migration once per recorded version', async () => {
   await migrateCredentialBackupsIfNeeded([toHostProfile(profile)]);
   expect(Keychain.getGenericPassword).not.toHaveBeenCalled();
   expect(ensureCredentialBackup).not.toHaveBeenCalled();
+});
+
+test('falls back to credential recovery when primary Keychain material is malformed', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({
+    service: 'host',
+    storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH,
+    username: profile.username,
+    password: '{malformed credential',
+  });
+  jest.mocked(recoverCredentialForHost).mockResolvedValueOnce({
+    secret: 'RECOVERED KEY',
+    passphrase: 'recovered phrase',
+  });
+
+  await expect(loadConnectionProfile(toHostProfile(profile))).resolves.toMatchObject({
+    secret: 'RECOVERED KEY',
+    passphrase: 'recovered phrase',
+  });
+
+  expect(recoverCredentialForHost).toHaveBeenCalledWith(expect.objectContaining({ id: profile.id }));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('keychain-credential-parse-failed'));
+  consoleError.mockRestore();
+});
+
+test('diagnoses failed credential backup migration items and retries next launch', async () => {
+  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
+  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(null);
+  jest.mocked(Keychain.getGenericPassword).mockRejectedValueOnce(new Error('keychain unavailable'));
+
+  await migrateCredentialBackupsIfNeeded([toHostProfile(profile)]);
+
+  expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining(
+    'credential-backup-migration-item-failed',
+  ));
+  expect(AsyncStorage.setItem).not.toHaveBeenCalledWith(
+    CREDENTIAL_BACKUP_MIGRATION_KEY,
+    CREDENTIAL_BACKUP_MIGRATION_VERSION,
+  );
+  consoleWarn.mockRestore();
 });
 
 test('always stores a provided credential', async () => {

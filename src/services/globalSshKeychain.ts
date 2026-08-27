@@ -4,6 +4,16 @@ import * as Keychain from 'react-native-keychain';
 import type { GlobalSshKey, GlobalSshKeyMaterial } from '../types';
 import { createSecureId } from '../lib/secureId';
 import { authenticateGlobalKeychain } from './appAuthentication';
+import {
+  operationalErrorDetails,
+  operationalParseErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
 
 export const GLOBAL_SSH_KEYS_STORAGE_KEY = 'herdr.global-ssh-keys.v1';
 export const GLOBAL_SSH_KEYCHAIN_SERVICE = 'io.github.kaminarios.whip.ssh.global-keychain.v1';
@@ -25,14 +35,35 @@ export interface SaveGlobalSshKeyInput {
 let keychainMutation = Promise.resolve();
 
 export async function loadGlobalSshKeys(): Promise<GlobalSshKey[]> {
-  const value = await AsyncStorage.getItem(GLOBAL_SSH_KEYS_STORAGE_KEY);
-  if (!value) return [];
+  let value: string | null;
   try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isGlobalSshKey).sort((left, right) => left.name.localeCompare(right.name));
-  } catch {
-    return [];
+    value = await AsyncStorage.getItem(GLOBAL_SSH_KEYS_STORAGE_KEY);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'global-ssh-key-metadata',
+      storageKey: GLOBAL_SSH_KEYS_STORAGE_KEY,
+      phase: 'load',
+      operation: 'getItem',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
+  if (value === null) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed) || parsed.some(entry => !isGlobalSshKey(entry))) {
+      throw new TypeError('Stored global SSH key metadata is malformed');
+    }
+    return parsed.sort((left, right) => left.name.localeCompare(right.name));
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-parse-failed', {
+      store: 'global-ssh-key-metadata',
+      storageKey: GLOBAL_SSH_KEYS_STORAGE_KEY,
+      phase: 'load',
+      operation: 'parse',
+      ...storageParseErrorDetails(error),
+    });
+    throw error;
   }
 }
 
@@ -42,11 +73,29 @@ export async function unlockGlobalSshKeychain(): Promise<GlobalSshKeyMaterial[]>
 }
 
 async function loadGlobalSshKeyMaterials(): Promise<GlobalSshKeyMaterial[]> {
-  const [keys, credential] = await Promise.all([
-    loadGlobalSshKeys(),
-    Keychain.getGenericPassword({ service: GLOBAL_SSH_KEYCHAIN_SERVICE }),
-  ]);
+  const keys = await loadGlobalSshKeys();
+  let credential: false | Keychain.UserCredentials;
+  try {
+    credential = await Keychain.getGenericPassword({ service: GLOBAL_SSH_KEYCHAIN_SERVICE });
+  } catch (error) {
+    recordGlobalKeychainFailure('global-ssh-key-material-read-failed', 'keychain-read', error);
+    throw error;
+  }
   const materials = parseMaterials(credential ? credential.password : null);
+  const materialIds = new Set(materials.map(material => material.id));
+  const metadataIds = new Set(keys.map(key => key.id));
+  if (
+    materialIds.size !== metadataIds.size
+    || [...materialIds].some(id => !metadataIds.has(id))
+  ) {
+    const error = new Error('Global SSH key metadata and Keychain material are inconsistent');
+    recordOperationalDiagnostic('error', 'GlobalSshKeychain', 'global-ssh-key-material-inconsistent', {
+      metadataCount: keys.length,
+      materialCount: materials.length,
+      ...operationalErrorDetails(error),
+    });
+    throw error;
+  }
   return keys.flatMap(key => {
     const material = materials.find(candidate => candidate.id === key.id);
     return material ? [{ ...key, secret: material.secret, passphrase: material.passphrase }] : [];
@@ -71,7 +120,7 @@ export async function saveGlobalSshKey(
       updatedAt: now,
     },
   ].sort((left, right) => left.name.localeCompare(right.name));
-  await replaceGlobalSshKeys(next);
+  await replaceGlobalSshKeys(keys, next);
   return next;
 }
 
@@ -80,7 +129,7 @@ export async function deleteGlobalSshKey(
   id: string,
 ): Promise<GlobalSshKeyMaterial[]> {
   const next = keys.filter(key => key.id !== id);
-  await replaceGlobalSshKeys(next);
+  await replaceGlobalSshKeys(keys, next);
   return next;
 }
 
@@ -88,43 +137,103 @@ function createGlobalSshKeyId(): string {
   return createSecureId('key');
 }
 
-async function replaceGlobalSshKeys(keys: GlobalSshKeyMaterial[]): Promise<void> {
+async function replaceGlobalSshKeys(
+  previousKeys: GlobalSshKeyMaterial[],
+  keys: GlobalSshKeyMaterial[],
+): Promise<void> {
   const operation = keychainMutation.then(async () => {
-    const materials: StoredKeyMaterial[] = keys.map(key => ({
-      id: key.id,
-      secret: key.secret,
-      passphrase: key.passphrase,
-    }));
-    if (materials.length > 0) {
-      await Keychain.setGenericPassword('global-ssh-keychain', JSON.stringify(materials), {
-        accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-        service: GLOBAL_SSH_KEYCHAIN_SERVICE,
-      });
-    } else {
-      await Keychain.resetGenericPassword({ service: GLOBAL_SSH_KEYCHAIN_SERVICE });
+    try {
+      await writeMaterials(keys, previousKeys.length > 0);
+    } catch (error) {
+      recordGlobalKeychainFailure('global-ssh-key-material-write-failed', 'keychain-write', error);
+      throw error;
     }
     const metadata: GlobalSshKey[] = keys.map(({ secret: _secret, passphrase: _passphrase, ...key }) => key);
-    await AsyncStorage.setItem(GLOBAL_SSH_KEYS_STORAGE_KEY, JSON.stringify(metadata));
+    try {
+      await AsyncStorage.setItem(GLOBAL_SSH_KEYS_STORAGE_KEY, JSON.stringify(metadata));
+    } catch (error) {
+      recordStorageDiagnostic('error', 'storage-write-failed', {
+        store: 'global-ssh-key-metadata',
+        storageKey: GLOBAL_SSH_KEYS_STORAGE_KEY,
+        phase: 'persistence',
+        operation: 'setItem',
+        fallbackUsed: 'keychain-rollback',
+        ...storageErrorDetails(error),
+      });
+      try {
+        await writeMaterials(previousKeys, keys.length > 0);
+      } catch (rollbackError) {
+        recordGlobalKeychainFailure(
+          'global-ssh-key-material-rollback-failed',
+          'keychain-rollback',
+          rollbackError,
+        );
+      }
+      throw error;
+    }
   });
-  keychainMutation = operation.catch(() => undefined);
+  keychainMutation = operation.then(
+    () => undefined,
+    () => undefined,
+  );
   await operation;
+}
+
+async function writeMaterials(
+  keys: GlobalSshKeyMaterial[],
+  requireExistingMaterialForClear = false,
+): Promise<void> {
+  const materials: StoredKeyMaterial[] = keys.map(key => ({
+    id: key.id,
+    secret: key.secret,
+    passphrase: key.passphrase,
+  }));
+  if (materials.length > 0) {
+    const result = await Keychain.setGenericPassword('global-ssh-keychain', JSON.stringify(materials), {
+      accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      service: GLOBAL_SSH_KEYCHAIN_SERVICE,
+    });
+    if (!result) throw new Error('Keychain did not store global SSH key material');
+  } else {
+    const cleared = await Keychain.resetGenericPassword({ service: GLOBAL_SSH_KEYCHAIN_SERVICE });
+    if (requireExistingMaterialForClear && !cleared) {
+      throw new Error('Keychain did not clear global SSH key material');
+    }
+  }
 }
 
 function parseMaterials(value: string | null): StoredKeyMaterial[] {
   if (!value) return [];
   try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((entry): entry is StoredKeyMaterial => Boolean(
-      entry
-      && typeof entry === 'object'
-      && typeof entry.id === 'string'
-      && typeof entry.secret === 'string'
-      && typeof entry.passphrase === 'string',
-    ));
-  } catch {
-    return [];
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed) || parsed.some(entry => !isStoredKeyMaterial(entry))) {
+      throw new TypeError('Stored global SSH key material is malformed');
+    }
+    return parsed;
+  } catch (error) {
+    recordOperationalDiagnostic('error', 'GlobalSshKeychain', 'global-ssh-key-material-parse-failed', {
+      stage: 'keychain-parse',
+      ...operationalParseErrorDetails(error),
+    });
+    throw new SyntaxError('Stored global SSH key material is malformed');
   }
+}
+
+function isStoredKeyMaterial(value: unknown): value is StoredKeyMaterial {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Partial<StoredKeyMaterial>;
+  return typeof entry.id === 'string'
+    && Boolean(entry.id)
+    && typeof entry.secret === 'string'
+    && Boolean(entry.secret)
+    && typeof entry.passphrase === 'string';
+}
+
+function recordGlobalKeychainFailure(event: string, stage: string, error: unknown): void {
+  recordOperationalDiagnostic('error', 'GlobalSshKeychain', event, {
+    stage,
+    ...operationalErrorDetails(error),
+  });
 }
 
 function isGlobalSshKey(value: unknown): value is GlobalSshKey {

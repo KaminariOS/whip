@@ -115,3 +115,27 @@ test('does not collect while disabled and removes previously persisted diagnosti
   );
   expect(storage.setItem).not.toHaveBeenCalled();
 });
+
+test('diagnoses persistence failures and makes flush report the failed write', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  const storage = mockedStorage();
+  storage.getItem.mockResolvedValue(null);
+  storage.setItem.mockRejectedValueOnce(new Error('latency storage unavailable'));
+  const diagnostics =
+    require('../src/services/latencyDiagnostics') as typeof import('../src/services/latencyDiagnostics');
+  await diagnostics.setLatencyDiagnosticsEnabled(true);
+  await diagnostics.recordSlowHostLatency('host-1', {
+    latencyMs: 200,
+    sshRttMs: 200,
+    totalMs: 201,
+    runtimeOverheadMs: 1,
+  });
+
+  await expect(diagnostics.flushLatencyDiagnosticWrites()).rejects.toThrow(
+    'latency storage unavailable',
+  );
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('storage-write-failed'));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('latency-diagnostics'));
+  consoleError.mockRestore();
+});

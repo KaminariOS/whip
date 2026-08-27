@@ -1,5 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
+
 export const REMOTE_GIT_PREFERENCES_KEY = 'whip.remote-git-mode.v1';
 export const REMOTE_GIT_TREE_PREFERENCES_KEY = 'whip.remote-git-tree.v1';
 const MAX_REPOSITORIES = 100;
@@ -35,9 +41,10 @@ export async function saveRemoteGitMode(
     entry => entry.hostId !== hostId || entry.root !== root,
   );
   if (enabled) entries.unshift({ hostId, root, updatedAt: Date.now() });
-  await AsyncStorage.setItem(
+  await writeEntries(
     REMOTE_GIT_PREFERENCES_KEY,
-    JSON.stringify(entries.slice(0, MAX_REPOSITORIES)),
+    entries.slice(0, MAX_REPOSITORIES),
+    'remote-git-mode',
   );
 }
 
@@ -66,52 +73,113 @@ export async function saveRemoteGitCollapsedPaths(
     collapsedPaths: [...new Set(collapsedPaths)].slice(0, MAX_COLLAPSED_PATHS),
     updatedAt: Date.now(),
   });
-  await AsyncStorage.setItem(
+  await writeEntries(
     REMOTE_GIT_TREE_PREFERENCES_KEY,
-    JSON.stringify(entries.slice(0, MAX_REPOSITORIES)),
+    entries.slice(0, MAX_REPOSITORIES),
+    'remote-git-tree',
   );
 }
 
 async function loadEntries(): Promise<StoredRepositoryMode[]> {
+  const parsed = await readEntries(REMOTE_GIT_PREFERENCES_KEY, 'remote-git-mode');
   try {
-    const value = await AsyncStorage.getItem(REMOTE_GIT_PREFERENCES_KEY);
-    if (!value) return [];
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (entry): entry is StoredRepositoryMode =>
-          entry &&
-          typeof entry.hostId === 'string' &&
-          typeof entry.root === 'string' &&
-          typeof entry.updatedAt === 'number',
-      )
-      .sort((first, second) => second.updatedAt - first.updatedAt);
-  } catch {
-    return [];
+    if (!parsed.every(isStoredRepositoryMode)) {
+      throw new TypeError('Stored remote Git mode preferences contain an invalid entry');
+    }
+    return parsed.sort((first, second) => second.updatedAt - first.updatedAt);
+  } catch (error) {
+    recordParseFailure(REMOTE_GIT_PREFERENCES_KEY, 'remote-git-mode', error);
+    throw error;
   }
 }
 
 async function loadTreeEntries(): Promise<StoredRepositoryTree[]> {
+  const parsed = await readEntries(REMOTE_GIT_TREE_PREFERENCES_KEY, 'remote-git-tree');
   try {
-    const value = await AsyncStorage.getItem(REMOTE_GIT_TREE_PREFERENCES_KEY);
-    if (!value) return [];
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (entry): entry is StoredRepositoryTree =>
-          entry &&
-          typeof entry.hostId === 'string' &&
-          typeof entry.root === 'string' &&
-          Array.isArray(entry.collapsedPaths) &&
-          entry.collapsedPaths.every(
-            (path: unknown) => typeof path === 'string',
-          ) &&
-          typeof entry.updatedAt === 'number',
-      )
-      .sort((first, second) => second.updatedAt - first.updatedAt);
-  } catch {
-    return [];
+    if (!parsed.every(isStoredRepositoryTree)) {
+      throw new TypeError('Stored remote Git tree preferences contain an invalid entry');
+    }
+    return parsed.sort((first, second) => second.updatedAt - first.updatedAt);
+  } catch (error) {
+    recordParseFailure(REMOTE_GIT_TREE_PREFERENCES_KEY, 'remote-git-tree', error);
+    throw error;
   }
+}
+
+async function readEntries(storageKey: string, store: string): Promise<unknown[]> {
+  let value: string | null;
+  try {
+    value = await AsyncStorage.getItem(storageKey);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store,
+      storageKey,
+      phase: 'load-before-mutation',
+      operation: 'getItem',
+      fallbackUsed: 'mutation-blocked',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
+  if (value === null) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new TypeError('Stored remote Git preferences must be an array');
+    }
+    return parsed;
+  } catch (error) {
+    recordParseFailure(storageKey, store, error);
+    throw error;
+  }
+}
+
+async function writeEntries(
+  storageKey: string,
+  entries: readonly (StoredRepositoryMode | StoredRepositoryTree)[],
+  store: string,
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(storageKey, JSON.stringify(entries));
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-write-failed', {
+      store,
+      storageKey,
+      phase: 'persistence',
+      operation: 'setItem',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
+}
+
+function recordParseFailure(storageKey: string, store: string, error: unknown): void {
+  recordStorageDiagnostic('error', 'storage-parse-failed', {
+    store,
+    storageKey,
+    phase: 'load-before-mutation',
+    operation: 'parse',
+    fallbackUsed: 'mutation-blocked',
+    ...storageParseErrorDetails(error),
+  });
+}
+
+function isStoredRepositoryMode(entry: unknown): entry is StoredRepositoryMode {
+  return Boolean(
+    entry
+    && typeof entry === 'object'
+    && typeof (entry as StoredRepositoryMode).hostId === 'string'
+    && typeof (entry as StoredRepositoryMode).root === 'string'
+    && typeof (entry as StoredRepositoryMode).updatedAt === 'number',
+  );
+}
+
+function isStoredRepositoryTree(entry: unknown): entry is StoredRepositoryTree {
+  if (!entry || typeof entry !== 'object') return false;
+  const candidate = entry as StoredRepositoryTree;
+  return typeof candidate.hostId === 'string'
+    && typeof candidate.root === 'string'
+    && Array.isArray(candidate.collapsedPaths)
+    && candidate.collapsedPaths.every(path => typeof path === 'string')
+    && typeof candidate.updatedAt === 'number';
 }

@@ -7,6 +7,10 @@ import { es } from './locales/es';
 import { ja } from './locales/ja';
 import { zhHans } from './locales/zh-Hans';
 import { zhHant } from './locales/zh-Hant';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './services/operationalDiagnostics';
 
 type LocalePreference = Pick<ReturnType<typeof getLocales>[number], 'languageCode' | 'languageScriptCode' | 'regionCode'>;
 export type SupportedLanguage = 'en' | 'zh-Hant' | 'zh-Hans' | 'ja' | 'es';
@@ -40,6 +44,10 @@ i18n.use(initReactI18next).init({
   keySeparator: false,
   interpolation: { escapeValue: false },
   react: { useSuspense: false },
-}).catch(() => undefined);
+}).catch(error => {
+  recordOperationalDiagnostic('error', 'Application', 'localization-initialization-failed', {
+    ...operationalErrorDetails(error),
+  });
+});
 
 export default i18n;

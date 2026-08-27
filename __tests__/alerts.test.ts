@@ -41,6 +41,7 @@ import {
   dismissAgentAlerts,
   dismissAgentAlertsForPane,
   dismissAgentAlertsForTab,
+  prepareAlerts,
 } from '../src/services/alerts';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from '../src/services/backgroundMonitoring';
 
@@ -262,4 +263,34 @@ test('prevents a resolved pane alert from posting after speech finishes', async 
 
   expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
   expect(armPersistentAgentAlert).not.toHaveBeenCalled();
+});
+
+test('diagnoses notification initialization rejection', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation();
+  jest.mocked(Notifications.setNotificationChannelAsync)
+    .mockRejectedValueOnce(new Error('notification service unavailable'));
+
+  await expect(prepareAlerts()).rejects.toThrow('notification service unavailable');
+
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('notification-setup-failed'));
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('android-channels'));
+  consoleError.mockRestore();
+});
+
+test('keeps expected notification dismissal races quiet', async () => {
+  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
+  await alertAgent(agent, false, {
+    hostId: 'host-1',
+    paneId: agent.pane_id,
+  });
+  jest.mocked(Notifications.dismissNotificationAsync).mockRejectedValueOnce(
+    Object.assign(new Error('notification already dismissed'), {
+      code: 'ERR_NOTIFICATION_NOT_FOUND',
+    }),
+  );
+
+  await dismissAgentAlerts();
+
+  expect(consoleWarn).not.toHaveBeenCalledWith(expect.stringContaining('notification-dismiss-failed'));
+  consoleWarn.mockRestore();
 });

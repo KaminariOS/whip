@@ -4,6 +4,15 @@ import { NativeModules, Platform } from 'react-native';
 
 import { hostCredentialService } from '../lib/hostProfiles';
 import type { HostProfile } from '../types';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
 
 const CREDENTIAL_BACKUPS_KEY = 'herdr.credential.backups.v1';
 
@@ -43,20 +52,25 @@ export async function backupCredential(
 ): Promise<boolean> {
   const module = nativeModule();
   if (!module || !credential.secret) return false;
-  let backedUp = false;
   const operation = backupMutation.then(async () => {
-    const ciphertext = await module.encryptCredential(JSON.stringify(credential), hostId);
-    const backups = await loadBackups();
-    await AsyncStorage.setItem(CREDENTIAL_BACKUPS_KEY, JSON.stringify({
-      ...backups,
-      [hostId]: ciphertext,
-    }));
-    backedUp = true;
+    const backups = await loadBackups('backup-read');
+    let ciphertext: string;
+    try {
+      ciphertext = await module.encryptCredential(JSON.stringify(credential), hostId);
+      if (!ciphertext) throw new Error('Native credential encryption returned empty ciphertext');
+    } catch (error) {
+      recordCredentialFailure('credential-backup-encrypt-failed', hostId, error);
+      throw error;
+    }
+    await writeBackups({ ...backups, [hostId]: ciphertext }, 'backup-write', hostId);
   });
-  backupMutation = operation.catch(() => undefined);
+  backupMutation = operation.then(
+    () => undefined,
+    () => undefined,
+  );
   try {
     await operation;
-    return backedUp;
+    return true;
   } catch {
     return false;
   }
@@ -77,7 +91,11 @@ export async function removeCredentialBackup(hostId: string): Promise<void> {
     return next;
   });
   if (Object.keys(remaining).length === 0) {
-    await nativeModule()?.clearRecoveryKey().catch(() => undefined);
+    try {
+      await nativeModule()?.clearRecoveryKey();
+    } catch (error) {
+      recordCredentialFailure('credential-recovery-key-clear-failed', hostId, error, 'warn');
+    }
   }
 }
 
@@ -92,7 +110,11 @@ export async function credentialRecoveryStatus(): Promise<CredentialRecoveryStat
       state: await module.hasLocalRecoveryKey() ? 'ready' : 'locked',
       count,
     };
-  } catch {
+  } catch (error) {
+    recordOperationalDiagnostic('error', 'Credential', 'credential-recovery-status-failed', {
+      operation: 'hasLocalRecoveryKey',
+      ...operationalErrorDetails(error),
+    });
     return { state: 'unavailable', count };
   }
 }
@@ -104,19 +126,36 @@ export async function restoreCredentialBackups(
   if (!module) throw new Error('Credential recovery requires a new Android app build');
   const backups = await loadBackups();
   if (Object.keys(backups).length === 0) return { restored: 0, failed: 0 };
-  await module.unlockRecoveryKey();
+  try {
+    await module.unlockRecoveryKey();
+  } catch (error) {
+    if ((error as { code?: unknown })?.code !== 'E_CREDENTIAL_VAULT_CANCELLED') {
+      recordOperationalDiagnostic('error', 'Credential', 'credential-recovery-unlock-failed', {
+        operation: 'unlockRecoveryKey',
+        ...operationalErrorDetails(error),
+      });
+    }
+    throw error;
+  }
 
   let restored = 0;
   let failed = 0;
   for (const host of hosts) {
     const ciphertext = backups[host.id];
     if (!ciphertext) continue;
+    let stage = 'decrypt';
     try {
       const credential = parseCredential(await module.decryptCredential(ciphertext, host.id));
       if (!credential.secret) throw new Error('Credential backup is empty');
+      stage = 'keychain-write';
       await writeKeychainCredential(host, credential);
       restored += 1;
-    } catch {
+    } catch (error) {
+      recordOperationalDiagnostic('error', 'Credential', 'credential-backup-restore-host-failed', {
+        hostId: host.id,
+        stage,
+        ...operationalErrorDetails(error),
+      });
       failed += 1;
     }
   }
@@ -128,43 +167,108 @@ export async function recoverCredentialForHost(
 ): Promise<StoredCredential | null> {
   const module = nativeModule();
   if (!module) return null;
-  const ciphertext = (await loadBackups())[host.id];
-  if (!ciphertext || !await module.hasLocalRecoveryKey()) return null;
+  const ciphertext = (await loadBackups('recovery-read'))[host.id];
+  if (!ciphertext) return null;
+  let stage = 'recovery-key-inspection';
   try {
+    if (!await module.hasLocalRecoveryKey()) return null;
+    stage = 'decrypt';
     const credential = parseCredential(await module.decryptCredential(ciphertext, host.id));
-    if (!credential.secret) return null;
+    if (!credential.secret) throw new Error('Recovered credential is empty');
+    stage = 'keychain-write';
     await writeKeychainCredential(host, credential);
     return credential;
-  } catch {
+  } catch (error) {
+    recordOperationalDiagnostic('error', 'Credential', 'credential-recovery-failed', {
+      hostId: host.id,
+      stage,
+      ...operationalErrorDetails(error),
+    });
     return null;
   }
 }
 
 async function writeKeychainCredential(host: HostProfile, credential: StoredCredential): Promise<void> {
-  await Keychain.setGenericPassword(host.username, JSON.stringify(credential), {
+  const result = await Keychain.setGenericPassword(host.username, JSON.stringify(credential), {
     accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     service: hostCredentialService(host.id),
   });
+  if (!result) throw new Error('Keychain did not store the recovered credential');
 }
 
 function parseCredential(value: string): StoredCredential {
-  const parsed = JSON.parse(value) as Partial<StoredCredential>;
-  return {
-    secret: typeof parsed.secret === 'string' ? parsed.secret : '',
-    passphrase: typeof parsed.passphrase === 'string' ? parsed.passphrase : '',
-  };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    throw new SyntaxError('Stored credential backup JSON is malformed');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new TypeError('Stored credential backup must be an object');
+  }
+  const credential = parsed as Partial<StoredCredential>;
+  if (typeof credential.secret !== 'string' || typeof credential.passphrase !== 'string') {
+    throw new TypeError('Stored credential backup has invalid fields');
+  }
+  return { secret: credential.secret, passphrase: credential.passphrase };
 }
 
-async function loadBackups(): Promise<Record<string, string>> {
-  const value = await AsyncStorage.getItem(CREDENTIAL_BACKUPS_KEY);
-  if (!value) return {};
+async function loadBackups(phase = 'load'): Promise<Record<string, string>> {
+  let value: string | null;
   try {
-    const parsed = JSON.parse(value) as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-    );
-  } catch {
-    return {};
+    value = await AsyncStorage.getItem(CREDENTIAL_BACKUPS_KEY);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'credential-backups',
+      storageKey: CREDENTIAL_BACKUPS_KEY,
+      phase,
+      operation: 'getItem',
+      fallbackUsed: 'mutation-blocked',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
+  if (value === null) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new TypeError('Stored credential backups must be an object');
+    }
+    const entries = Object.entries(parsed);
+    if (entries.some(([hostId, ciphertext]) => !hostId || typeof ciphertext !== 'string' || !ciphertext)) {
+      throw new TypeError('Stored credential backups contain an invalid entry');
+    }
+    return Object.fromEntries(entries) as Record<string, string>;
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-parse-failed', {
+      store: 'credential-backups',
+      storageKey: CREDENTIAL_BACKUPS_KEY,
+      phase,
+      operation: 'parse',
+      fallbackUsed: 'mutation-blocked',
+      ...storageParseErrorDetails(error),
+    });
+    throw error;
+  }
+}
+
+async function writeBackups(
+  backups: Record<string, string>,
+  phase: string,
+  hostId?: string,
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(CREDENTIAL_BACKUPS_KEY, JSON.stringify(backups));
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-write-failed', {
+      store: 'credential-backups',
+      storageKey: CREDENTIAL_BACKUPS_KEY,
+      phase,
+      operation: 'setItem',
+      hostId,
+      ...storageErrorDetails(error),
+    });
+    throw error;
   }
 }
 
@@ -173,10 +277,25 @@ async function mutateBackups(
 ): Promise<Record<string, string>> {
   let result: Record<string, string> = {};
   const operation = backupMutation.then(async () => {
-    result = mutation(await loadBackups());
-    await AsyncStorage.setItem(CREDENTIAL_BACKUPS_KEY, JSON.stringify(result));
+    result = mutation(await loadBackups('mutation-read'));
+    await writeBackups(result, 'mutation-write');
   });
-  backupMutation = operation.catch(() => undefined);
+  backupMutation = operation.then(
+    () => undefined,
+    () => undefined,
+  );
   await operation;
   return result;
+}
+
+function recordCredentialFailure(
+  event: string,
+  hostId: string,
+  error: unknown,
+  level: 'warn' | 'error' = 'error',
+): void {
+  recordOperationalDiagnostic(level, 'Credential', event, {
+    hostId,
+    ...operationalErrorDetails(error),
+  });
 }

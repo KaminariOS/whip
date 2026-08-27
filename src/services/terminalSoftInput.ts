@@ -1,5 +1,10 @@
 import { NativeModules, Platform } from 'react-native';
 
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
+
 interface HerdrSoftInputNativeModule {
   setComposerOverlayEnabled(owner: string, enabled: boolean): Promise<void>;
 }
@@ -12,8 +17,22 @@ export async function setTerminalComposerOverlay(
 
   const module = NativeModules.HerdrSoftInput as HerdrSoftInputNativeModule | undefined;
   if (!module) {
-    throw new Error('HerdrSoftInput native module is not installed in this build');
+    const error = new Error('HerdrSoftInput native module is not installed in this build');
+    recordTerminalSoftInputFailure(enabled, error);
+    throw error;
   }
 
-  await module.setComposerOverlayEnabled(owner, enabled);
+  try {
+    await module.setComposerOverlayEnabled(owner, enabled);
+  } catch (error) {
+    recordTerminalSoftInputFailure(enabled, error);
+    throw error;
+  }
+}
+
+function recordTerminalSoftInputFailure(enabled: boolean, error: unknown): void {
+  recordOperationalDiagnostic('warn', 'Application', 'terminal-composer-overlay-update-failed', {
+    enabled,
+    ...operationalErrorDetails(error),
+  });
 }

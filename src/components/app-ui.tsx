@@ -35,6 +35,10 @@ import {
   statusTone,
 } from '@/src/lib/statusMotion';
 import { appGlassControlStyle, colorWithAlpha, useTheme } from '@/src/theme';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from '@/src/services/operationalDiagnostics';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { NativeAgentSpinner } from './NativeAgentSpinner';
 import { Badge } from './ui/badge';
@@ -54,7 +58,13 @@ export function ReducedMotionProvider({ children }: { children: ReactNode }) {
       .then(value => {
         if (mounted) setReduceMotion(value);
       })
-      .catch(() => undefined);
+      .catch(error => {
+        recordOperationalDiagnostic('warn', 'Application', 'reduced-motion-preference-read-failed', {
+          operation: 'isReduceMotionEnabled',
+          fallbackUsed: 'animations-enabled',
+          ...operationalErrorDetails(error),
+        });
+      });
     const subscription = AccessibilityInfo.addEventListener(
       'reduceMotionChanged',
       setReduceMotion,

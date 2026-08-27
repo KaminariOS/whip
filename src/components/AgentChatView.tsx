@@ -43,6 +43,10 @@ import type {
   TranscriptTurn,
 } from '../agentChat';
 import type { ChatAgent } from '../lib/agentChatSession';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from '../services/operationalDiagnostics';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
 import { insetContentPadding, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
@@ -375,7 +379,7 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
       className={cn('w-full overflow-hidden', failed && 'rounded-md bg-destructive/10 px-2')}
       onPress={() => {
         if (hasDetail) setExpanded(value => !value);
-        else if (presentation.href) Linking.openURL(presentation.href).catch(() => undefined);
+        else if (presentation.href) openExternalUrl(presentation.href);
       }}
     >
       <View className="min-h-7 flex-row items-center py-1">
@@ -414,7 +418,7 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
           </View>
         )}
         {presentation.href && !isRunning(item) && (
-          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" onPress={event => { event.stopPropagation(); Linking.openURL(presentation.href!).catch(() => undefined); }}>
+          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" onPress={event => { event.stopPropagation(); openExternalUrl(presentation.href!); }}>
             <ExternalLink size={14} color={colors.textTertiary} />
           </Pressable>
         )}
@@ -1021,7 +1025,7 @@ export function AgentChatView({
       onOpenFile(file);
       return;
     }
-    if (/^(?:https?:|mailto:|tel:)/i.test(url)) Linking.openURL(url).catch(() => undefined);
+    if (/^(?:https?:|mailto:|tel:)/i.test(url)) openExternalUrl(url);
   }, [onOpenFile, state.transcript.info?.directory]);
 
   return (
@@ -1119,4 +1123,13 @@ export function AgentChatView({
       </View>
     </View>
   );
+}
+
+function openExternalUrl(url: string): void {
+  Linking.openURL(url).catch(error => {
+    recordOperationalDiagnostic('warn', 'Application', 'external-link-open-failed', {
+      operation: 'Linking.openURL',
+      ...operationalErrorDetails(error),
+    });
+  });
 }

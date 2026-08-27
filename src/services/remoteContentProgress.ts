@@ -1,5 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
+
 const REMOTE_CONTENT_PROGRESS_PREFIX = 'whip.remote-content-progress.v1:';
 
 export interface RemoteContentIdentity {
@@ -35,19 +41,34 @@ interface StoredRemoteContentProgress {
 export async function loadRemoteContentProgress(
   identity: RemoteContentIdentity,
 ): Promise<RemoteContentProgress | null> {
+  let value: string | null;
   try {
-    const value = await AsyncStorage.getItem(remoteContentProgressKey(identity));
-    if (!value) return null;
+    value = await AsyncStorage.getItem(remoteContentProgressKey(identity));
+  } catch (error) {
+    recordProgressStorageFailure('storage-read-failed', 'getItem', error);
+    return null;
+  }
+  if (value === null) return null;
+  try {
     const stored = JSON.parse(value) as Partial<StoredRemoteContentProgress>;
     if (
       stored.fileSize !== identity.fileSize
       || stored.modificationDate !== identity.modificationDate
-      || !isRemoteContentProgress(stored.progress)
     ) {
       return null;
     }
+    if (!isRemoteContentProgress(stored.progress)) {
+      throw new TypeError('Stored remote content progress is malformed');
+    }
     return stored.progress;
-  } catch {
+  } catch (error) {
+    recordStorageDiagnostic('warn', 'storage-parse-failed', {
+      store: 'remote-content-progress',
+      phase: 'hydration',
+      operation: 'parse',
+      fallbackUsed: 'no-progress',
+      ...storageParseErrorDetails(error),
+    });
     return null;
   }
 }
@@ -62,13 +83,23 @@ export async function saveRemoteContentProgress(
     updatedAt: Date.now(),
     progress,
   };
-  await AsyncStorage.setItem(remoteContentProgressKey(identity), JSON.stringify(stored));
+  try {
+    await AsyncStorage.setItem(remoteContentProgressKey(identity), JSON.stringify(stored));
+  } catch (error) {
+    recordProgressStorageFailure('storage-write-failed', 'setItem', error);
+    throw error;
+  }
 }
 
 export async function clearRemoteContentProgress(
   identity: RemoteContentIdentity,
 ): Promise<void> {
-  await AsyncStorage.removeItem(remoteContentProgressKey(identity));
+  try {
+    await AsyncStorage.removeItem(remoteContentProgressKey(identity));
+  } catch (error) {
+    recordProgressStorageFailure('storage-remove-failed', 'removeItem', error);
+    throw error;
+  }
 }
 
 export function shouldSaveMediaProgress(
@@ -110,4 +141,18 @@ function isFiniteNonNegative(value: unknown): value is number {
 
 function isFinitePositive(value: unknown): value is number {
   return isFiniteNonNegative(value) && value > 0;
+}
+
+function recordProgressStorageFailure(
+  event: 'storage-read-failed' | 'storage-write-failed' | 'storage-remove-failed',
+  operation: 'getItem' | 'setItem' | 'removeItem',
+  error: unknown,
+): void {
+  recordStorageDiagnostic('warn', event, {
+    store: 'remote-content-progress',
+    phase: operation === 'getItem' ? 'hydration' : 'persistence',
+    operation,
+    fallbackUsed: operation === 'getItem' ? 'no-progress' : undefined,
+    ...storageErrorDetails(error),
+  });
 }

@@ -1,6 +1,11 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import { NativeModules, Platform } from 'react-native';
 
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
+
 interface AppAuthenticationNativeModule {
   authenticateAppAccess(): Promise<boolean>;
   authenticateGlobalKeychain(): Promise<boolean>;
@@ -12,6 +17,21 @@ function nativeModule(): AppAuthenticationNativeModule | null {
 }
 
 type AuthenticationPurpose = 'app' | 'keychain';
+
+export function isAppAuthenticationCancellation(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && (error as { code?: unknown }).code === 'E_APP_AUTH_CANCELLED',
+  );
+}
+
+export function recordAppAuthenticationFailure(event: string, error: unknown): void {
+  if (isAppAuthenticationCancellation(error)) return;
+  recordOperationalDiagnostic('warn', 'Security', event, {
+    ...operationalErrorDetails(error),
+  });
+}
 
 async function authenticateIos(purpose: AuthenticationPurpose): Promise<void> {
   const result = await LocalAuthentication.authenticateAsync({

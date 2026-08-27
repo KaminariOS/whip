@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 
 import { biometricResumeAction } from '../lib/appAccess';
-import { authenticateAppAccess } from '../services/appAuthentication';
+import {
+  authenticateAppAccess,
+  isAppAuthenticationCancellation,
+  recordAppAuthenticationFailure,
+} from '../services/appAuthentication';
 
 interface ApplicationSecurityOptions {
   preferencesLoaded: boolean;
@@ -43,8 +47,9 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
     try {
       await authenticateAppAccess();
       setLocked(false);
-    } catch {
+    } catch (error) {
       // Cancellation and failed checks leave the app locked for an explicit retry.
+      recordAppAuthenticationFailure('biometric-locked-app-auth-failed', error);
     } finally {
       authenticationInFlightRef.current = false;
       setAuthenticating(false);
@@ -56,7 +61,8 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
       await authenticateAppAccess();
       return true;
     } catch (error) {
-      if ((error as { code?: string }).code !== 'E_APP_AUTH_CANCELLED') {
+      if (!isAppAuthenticationCancellation(error)) {
+        recordAppAuthenticationFailure('biometric-verification-failed', error);
         Alert.alert(
           biometricUnavailableTitle,
           biometricUnavailableMessage(error),

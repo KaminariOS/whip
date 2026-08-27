@@ -3,6 +3,10 @@ import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
 import { dismissAgentAlerts, prepareAlerts } from '../services/alerts';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from '../services/operationalDiagnostics';
 
 /** Owns notification setup, response delivery, and foreground cleanup. */
 export function useAgentNotifications() {
@@ -24,7 +28,12 @@ export function useAgentNotifications() {
       .then(value => {
         if (active && !receivedResponse && value) setResponse(value);
       })
-      .catch(() => undefined);
+      .catch(error => {
+        recordOperationalDiagnostic('warn', 'Notification', 'last-notification-response-read-failed', {
+          operation: 'getLastNotificationResponseAsync',
+          ...operationalErrorDetails(error),
+        });
+      });
     return () => {
       active = false;
       subscription.remove();

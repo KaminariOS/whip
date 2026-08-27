@@ -18,6 +18,10 @@ import {
 } from '../services/devicePreferences';
 import { setAppLogCaptureEnabled } from '../services/appLogs';
 import { setLatencyDiagnosticsEnabled } from '../services/latencyDiagnostics';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from '../services/operationalDiagnostics';
 import type { StartupStorageSnapshot } from '../services/startupStorage';
 import type { AppTab } from '../types';
 import type { LoadState } from './useStartupStorage';
@@ -113,7 +117,12 @@ export function useDevicePreferences(
       ? languageForLocale(locales[0])
       : state.value.language;
   useEffect(() => {
-    i18n.changeLanguage(resolvedLanguage).catch(() => undefined);
+    i18n.changeLanguage(resolvedLanguage).catch(error => {
+      recordOperationalDiagnostic('warn', 'Application', 'language-change-failed', {
+        language: resolvedLanguage,
+        ...operationalErrorDetails(error),
+      });
+    });
   }, [resolvedLanguage]);
 
   useEffect(() => {

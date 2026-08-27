@@ -1,3 +1,8 @@
+import {
+  recordStorageDiagnostic,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
+
 interface PersistedHerdrSocketPathHint {
   hostId: string;
   socketPath: string;
@@ -32,12 +37,20 @@ export function hydrateHerdrSocketPathCache(value: string | null): void {
   if (!value) return;
   try {
     const parsed = JSON.parse(value) as Partial<PersistedHerdrSocketPathHints>;
-    if (!Array.isArray(parsed.entries)) return;
+    if (!Array.isArray(parsed.entries)) {
+      throw new TypeError('Stored socket path cache must contain an entries array');
+    }
+    let invalidEntry = false;
     for (const entry of parsed.entries) {
       if (validEntry(entry)) persistedHints[entry.hostId] = entry.socketPath;
+      else invalidEntry = true;
     }
-  } catch {
+    if (invalidEntry) {
+      recordSocketPathCacheParseFailure(new TypeError('Stored socket path cache contains invalid entries'));
+    }
+  } catch (error) {
     // A malformed performance cache is equivalent to a cold start.
+    recordSocketPathCacheParseFailure(error);
   }
 }
 
@@ -61,4 +74,14 @@ export function persistHerdrSocketPathHint(hostId: string, socketPath: string): 
 /** Clears only process memory. Persisted data is reloaded explicitly at startup. */
 export function clearHerdrSocketPathCache(): void {
   for (const hostId of Object.keys(persistedHints)) delete persistedHints[hostId];
+}
+
+function recordSocketPathCacheParseFailure(error: unknown): void {
+  recordStorageDiagnostic('warn', 'storage-parse-failed', {
+    store: 'herdr-socket-path-cache',
+    phase: 'hydration',
+    operation: 'parse',
+    fallbackUsed: 'cold-cache',
+    ...storageParseErrorDetails(error),
+  });
 }

@@ -21,6 +21,11 @@ import {
   removeCredentialBackup,
 } from './credentialVault';
 import {
+  operationalErrorDetails,
+  operationalParseErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
+import {
   recordStorageDiagnostic,
   storageErrorDetails,
   storageParseErrorDetails,
@@ -75,7 +80,8 @@ export async function loadHostProfilesFromStorage(
   if (!legacy) return [];
 
   const credential = await Keychain.getGenericPassword({ service: LEGACY_CREDENTIAL_SERVICE });
-  const secrets = parseCredential(credential ? credential.password : null);
+  const secrets = parseCredential(credential ? credential.password : null, legacy.id)
+    || { secret: '', passphrase: '' };
   const migrated = { ...legacy, ...secrets };
   const host = toHostProfile(migrated);
 
@@ -114,11 +120,24 @@ export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfi
   if (migrationVersion === CREDENTIAL_BACKUP_MIGRATION_VERSION) return;
   let complete = true;
   for (const host of hosts) {
+    let stage = 'keychain-read';
     try {
       const credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
-      const secrets = parseCredential(credential ? credential.password : null);
-      if (secrets.secret) await ensureCredentialBackup(host.id, secrets);
-    } catch {
+      if (!credential) continue;
+      stage = 'credential-parse';
+      const secrets = parseCredential(credential.password, host.id);
+      if (!secrets) throw new Error('Stored Keychain credential is malformed or empty');
+      stage = 'credential-backup';
+      if (!await ensureCredentialBackup(host.id, secrets)) {
+        throw new Error('Credential backup was not created');
+      }
+    } catch (error) {
+      recordOperationalDiagnostic('warn', 'Credential', 'credential-backup-migration-item-failed', {
+        hostId: host.id,
+        stage,
+        fallbackUsed: 'retry-next-launch',
+        ...operationalErrorDetails(error),
+      });
       complete = false;
     }
   }
@@ -140,10 +159,19 @@ export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfi
 }
 
 export async function loadConnectionProfile(host: HostProfile): Promise<ConnectionProfile> {
-  const credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
-  const secrets = credential
-    ? parseCredential(credential.password)
-    : await recoverCredentialForHost(host) || { secret: '', passphrase: '' };
+  let credential: false | Keychain.UserCredentials = false;
+  try {
+    credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
+  } catch (error) {
+    recordOperationalDiagnostic('error', 'Credential', 'keychain-credential-read-failed', {
+      hostId: host.id,
+      ...operationalErrorDetails(error),
+    });
+  }
+  const primary = credential ? parseCredential(credential.password, host.id) : null;
+  const secrets = primary
+    || await recoverCredentialForHost(host)
+    || { secret: '', passphrase: '' };
   return {
     ...host,
     ...secrets,
@@ -200,13 +228,22 @@ export async function deleteHostProfile(hosts: HostProfile[], id: string): Promi
 }
 
 async function writeCredential(profile: ConnectionProfile): Promise<void> {
-  await Keychain.setGenericPassword(profile.username, JSON.stringify({
-    secret: profile.secret,
-    passphrase: profile.passphrase,
-  }), {
-    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    service: hostCredentialService(profile.id),
-  });
+  try {
+    const result = await Keychain.setGenericPassword(profile.username, JSON.stringify({
+      secret: profile.secret,
+      passphrase: profile.passphrase,
+    }), {
+      accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      service: hostCredentialService(profile.id),
+    });
+    if (!result) throw new Error('Keychain did not store the host credential');
+  } catch (error) {
+    recordOperationalDiagnostic('error', 'Credential', 'keychain-credential-write-failed', {
+      hostId: profile.id,
+      ...operationalErrorDetails(error),
+    });
+    throw error;
+  }
   await backupCredential(profile.id, {
     secret: profile.secret,
     passphrase: profile.passphrase,
@@ -243,15 +280,40 @@ function recordHostProfilesParseFailure(
   });
 }
 
-function parseCredential(value: string | null): Required<StoredCredential> {
-  if (!value) return { secret: '', passphrase: '' };
+function parseCredential(
+  value: string | null,
+  hostId: string,
+): Required<StoredCredential> | null {
+  if (value === null) return null;
   try {
-    const parsed = JSON.parse(value) as StoredCredential;
-    return {
-      secret: typeof parsed.secret === 'string' ? parsed.secret : '',
-      passphrase: typeof parsed.passphrase === 'string' ? parsed.passphrase : '',
-    };
-  } catch {
-    return { secret: '', passphrase: '' };
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new TypeError('Stored Keychain credential must be an object');
+    }
+    const credential = parsed as StoredCredential;
+    if (
+      typeof credential.secret !== 'string'
+      || (
+        credential.passphrase !== undefined
+        && typeof credential.passphrase !== 'string'
+      )
+    ) {
+      throw new TypeError('Stored Keychain credential has invalid fields');
+    }
+    if (!credential.secret) {
+      recordOperationalDiagnostic('error', 'Credential', 'keychain-credential-empty', {
+        hostId,
+        fallbackUsed: 'credential-recovery',
+      });
+      return null;
+    }
+    return { secret: credential.secret, passphrase: credential.passphrase || '' };
+  } catch (error) {
+    recordOperationalDiagnostic('error', 'Credential', 'keychain-credential-parse-failed', {
+      hostId,
+      fallbackUsed: 'credential-recovery',
+      ...operationalParseErrorDetails(error),
+    });
+    return null;
   }
 }

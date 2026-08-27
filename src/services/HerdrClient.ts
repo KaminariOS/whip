@@ -34,7 +34,11 @@ import {
   type TerminalInputTrace,
   type TerminalResizeTrace,
 } from './performanceTrace';
-import { recordNetworkDiagnostic } from './networkDiagnostics';
+import {
+  networkErrorKind,
+  networkErrorMessage,
+  recordNetworkDiagnostic,
+} from './networkDiagnostics';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
@@ -236,7 +240,9 @@ export class HerdrClient {
       ? this.runtime
       : null;
     if (this.runtimeAwaitingHostKeyTrust && !retryRuntime) {
-      await this.runtime?.disconnect().catch(() => undefined);
+      await this.runtime?.disconnect().catch(error => {
+        recordRuntimeCleanupFailure('stale-runtime-disconnect-failed', error);
+      });
       this.runtime = null;
       this.runtimeAwaitingHostKeyTrust = false;
     }
@@ -271,8 +277,16 @@ export class HerdrClient {
     return this.requireRuntime().hostState();
   }
 
-  refreshHostState(): Promise<HostRuntimeState> {
-    return this.requireRuntime().refreshState();
+  async refreshHostState(): Promise<HostRuntimeState> {
+    try {
+      return await this.requireRuntime().refreshState();
+    } catch (error) {
+      recordNetworkDiagnostic('warn', 'host-state-refresh-rejected', {
+        error: networkErrorMessage(error),
+        errorKind: networkErrorKind(error),
+      });
+      throw error;
+    }
   }
 
   /** Ask the Rust-owned runtime to recover its transport and native resources. */
@@ -289,7 +303,9 @@ export class HerdrClient {
     for (const terminalId of this.sshShellConnections.keys()) {
       this.closeSshShell(terminalId);
     }
-    this.runtime?.disconnect().catch(() => undefined);
+    this.runtime?.disconnect().catch(error => {
+      recordRuntimeCleanupFailure('host-runtime-disconnect-failed', error);
+    });
     this.runtime = null;
     this.runtimeAwaitingHostKeyTrust = false;
     this.profile = null;
@@ -1098,7 +1114,9 @@ export class HerdrClient {
     }
     this.terminalStateRefreshTimer = setTimeout(() => {
       this.terminalStateRefreshTimer = null;
-      this.runtime?.refreshState().catch(() => undefined);
+      this.runtime?.refreshState().catch(error => {
+        recordRuntimeCleanupFailure('terminal-state-refresh-failed', error);
+      });
     }, TERMINAL_STATE_REFRESH_DEBOUNCE_MS);
   }
 
@@ -1236,4 +1254,11 @@ export class HerdrClient {
       terminalNativeResponseDelivered(trace);
     }
   }
+}
+
+function recordRuntimeCleanupFailure(event: string, error: unknown): void {
+  recordNetworkDiagnostic('warn', event, {
+    error: networkErrorMessage(error),
+    errorKind: networkErrorKind(error),
+  });
 }

@@ -1,5 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {
+  recordStorageDiagnostic,
+  storageErrorDetails,
+  storageParseErrorDetails,
+} from './storageDiagnostics';
+
 export const LATENCY_DIAGNOSTICS_STORAGE_KEY = 'whip.latency-diagnostics.v1';
 export const SLOW_HOST_LATENCY_MS = 200;
 
@@ -41,6 +47,7 @@ let snapshot: readonly LatencyDiagnosticEntry[] = [];
 let hydrated = false;
 let hydration: Promise<void> | null = null;
 let persistenceQueue: Promise<void> = Promise.resolve();
+let persistenceError: unknown = null;
 let persistenceTimer: ReturnType<typeof setTimeout> | null = null;
 let nextId = 1;
 let collectionEnabled = false;
@@ -87,12 +94,18 @@ export function latencyDiagnosticsFromStorage(value: string | null): LatencyDiag
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
+    if (!Array.isArray(parsed)) {
+      throw new TypeError('Stored latency diagnostics must be an array');
+    }
+    const validEntries = parsed
       .map(parseEntry)
-      .filter((entry): entry is LatencyDiagnosticEntry => entry !== null)
-      .slice(-MAX_ENTRIES);
-  } catch {
+      .filter((entry): entry is LatencyDiagnosticEntry => entry !== null);
+    if (validEntries.length !== parsed.length) {
+      recordLatencyStorageParseFailure(new TypeError('Stored latency diagnostics contain invalid entries'));
+    }
+    return validEntries.slice(-MAX_ENTRIES);
+  } catch (error) {
+    recordLatencyStorageParseFailure(error);
     return [];
   }
 }
@@ -112,7 +125,15 @@ export async function loadLatencyDiagnostics(): Promise<void> {
       if (collectionEnabled && !hydrated) publish(latencyDiagnosticsFromStorage(value));
       hydrated = true;
     })
-    .catch(() => {
+    .catch(error => {
+      recordStorageDiagnostic('error', 'storage-read-failed', {
+        store: 'latency-diagnostics',
+        storageKey: LATENCY_DIAGNOSTICS_STORAGE_KEY,
+        phase: 'hydration',
+        operation: 'getItem',
+        fallbackUsed: 'memory-only',
+        ...storageErrorDetails(error),
+      });
       hydrated = true;
     })
     .finally(() => {
@@ -130,16 +151,22 @@ export async function setLatencyDiagnosticsEnabled(enabled: boolean): Promise<vo
   }
   hydrated = false;
   publish([]);
-  persistenceQueue = persistenceQueue
-    .then(() => AsyncStorage.removeItem(LATENCY_DIAGNOSTICS_STORAGE_KEY))
-    .catch(() => undefined);
+  enqueuePersistence(
+    () => AsyncStorage.removeItem(LATENCY_DIAGNOSTICS_STORAGE_KEY),
+    'storage-remove-failed',
+    'removeItem',
+  );
   await persistenceQueue;
+  if (persistenceError) throw persistenceError;
 }
 
 function persist(): void {
-  persistenceQueue = persistenceQueue
-    .then(() => AsyncStorage.setItem(LATENCY_DIAGNOSTICS_STORAGE_KEY, JSON.stringify(entries)))
-    .catch(() => undefined);
+  const value = JSON.stringify(entries);
+  enqueuePersistence(
+    () => AsyncStorage.setItem(LATENCY_DIAGNOSTICS_STORAGE_KEY, value),
+    'storage-write-failed',
+    'setItem',
+  );
 }
 
 function schedulePersistence(): void {
@@ -235,4 +262,39 @@ export async function flushLatencyDiagnosticWrites(): Promise<void> {
     persist();
   }
   await persistenceQueue;
+  if (persistenceError) throw persistenceError;
+}
+
+function enqueuePersistence(
+  operation: () => Promise<void>,
+  event: 'storage-write-failed' | 'storage-remove-failed',
+  storageOperation: 'setItem' | 'removeItem',
+): void {
+  persistenceQueue = persistenceQueue.then(async () => {
+    try {
+      await operation();
+      persistenceError = null;
+    } catch (error) {
+      persistenceError = error;
+      recordStorageDiagnostic('error', event, {
+        store: 'latency-diagnostics',
+        storageKey: LATENCY_DIAGNOSTICS_STORAGE_KEY,
+        phase: 'persistence',
+        operation: storageOperation,
+        fallbackUsed: 'memory-only',
+        ...storageErrorDetails(error),
+      });
+    }
+  });
+}
+
+function recordLatencyStorageParseFailure(error: unknown): void {
+  recordStorageDiagnostic('error', 'storage-parse-failed', {
+    store: 'latency-diagnostics',
+    storageKey: LATENCY_DIAGNOSTICS_STORAGE_KEY,
+    phase: 'hydration',
+    operation: 'parse',
+    fallbackUsed: 'valid-entries-only',
+    ...storageParseErrorDetails(error),
+  });
 }

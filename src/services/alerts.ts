@@ -7,6 +7,10 @@ import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from './backgroundMonitoring';
 import i18n from '../i18n';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
 
 const PERSISTENT_CHANNEL_ID = 'agent-state-v3';
 const BRIEF_CHANNEL_ID = 'agent-state-brief-v1';
@@ -48,23 +52,37 @@ Notifications.setNotificationHandler({
 
 export async function prepareAlerts(): Promise<void> {
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync(PERSISTENT_CHANNEL_ID, {
-      name: i18n.t('alerts.channelName'),
-      importance: Notifications.AndroidImportance.HIGH,
-      bypassDnd: true,
-      enableLights: true,
-      enableVibrate: true,
-      vibrationPattern: ALERT_VIBRATION_PATTERN,
-    });
-    await Notifications.setNotificationChannelAsync(BRIEF_CHANNEL_ID, {
-      name: i18n.t('alerts.channelName'),
-      importance: Notifications.AndroidImportance.HIGH,
-      enableLights: true,
-      enableVibrate: true,
-      vibrationPattern: BRIEF_VIBRATION_PATTERN,
-    });
+    try {
+      await Notifications.setNotificationChannelAsync(PERSISTENT_CHANNEL_ID, {
+        name: i18n.t('alerts.channelName'),
+        importance: Notifications.AndroidImportance.HIGH,
+        bypassDnd: true,
+        enableLights: true,
+        enableVibrate: true,
+        vibrationPattern: ALERT_VIBRATION_PATTERN,
+      });
+      await Notifications.setNotificationChannelAsync(BRIEF_CHANNEL_ID, {
+        name: i18n.t('alerts.channelName'),
+        importance: Notifications.AndroidImportance.HIGH,
+        enableLights: true,
+        enableVibrate: true,
+        vibrationPattern: BRIEF_VIBRATION_PATTERN,
+      });
+    } catch (error) {
+      recordNotificationFailure('error', 'notification-setup-failed', error, {
+        stage: 'android-channels',
+      });
+      throw error;
+    }
   }
-  await Notifications.requestPermissionsAsync();
+  try {
+    await Notifications.requestPermissionsAsync();
+  } catch (error) {
+    recordNotificationFailure('error', 'notification-setup-failed', error, {
+      stage: 'permissions',
+    });
+    throw error;
+  }
 }
 
 export async function alertAgent(
@@ -107,19 +125,27 @@ export async function alertAgent(
     if (Platform.OS !== 'android') Vibration.vibrate();
     const persistent = duration === 'persistent';
     const channelId = persistent ? PERSISTENT_CHANNEL_ID : BRIEF_CHANNEL_ID;
-    const notificationIdentifier = await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sound: 'default',
-        vibrate: persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
-        priority: Notifications.AndroidNotificationPriority.MAX,
-        data: target,
-      },
-      trigger: { channelId },
-    });
+    let notificationIdentifier: string;
+    try {
+      notificationIdentifier = await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: 'default',
+          vibrate: persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          data: target,
+        },
+        trigger: { channelId },
+      });
+    } catch (error) {
+      recordNotificationFailure('error', 'agent-notification-schedule-failed', error, {
+        stage: 'schedule',
+      });
+      throw error;
+    }
     if (wasDismissed()) {
-      await Notifications.dismissNotificationAsync(notificationIdentifier).catch(() => undefined);
+      await dismissScheduledNotification(notificationIdentifier, 'stale-generation-cleanup');
       return;
     }
     activeAgentNotifications.set(notificationIdentifier, { ...targets, persistent });
@@ -129,7 +155,10 @@ export async function alertAgent(
         notificationIdentifier,
         PERSISTENT_CHANNEL_ID,
         persistentAlertTimeoutMs,
-      ).catch(() => {
+      ).catch(error => {
+        recordNotificationFailure('error', 'persistent-agent-alert-arm-failed', error, {
+          stage: 'background-monitoring',
+        });
         if (persistentAgentNotificationId === notificationIdentifier) {
           persistentAgentNotificationId = null;
         }
@@ -147,11 +176,11 @@ export async function dismissAgentAlerts(): Promise<void> {
   activeAgentNotifications.clear();
   persistentAgentNotificationId = null;
   speakingAgentAlertTargets = null;
-  await Speech.stop().catch(() => undefined);
+  await stopSpeech('dismiss-all');
   await Promise.all(notificationIds.map(identifier => (
-    Notifications.dismissNotificationAsync(identifier).catch(() => undefined)
+    dismissScheduledNotification(identifier, 'dismiss-all')
   )));
-  await dismissPersistentAgentAlert().catch(() => undefined);
+  await dismissPersistentAlert('dismiss-all');
 }
 
 export async function dismissAgentAlertsForTab(hostId: string, tabId: string): Promise<void> {
@@ -167,14 +196,14 @@ export async function dismissAgentAlertsForTab(hostId: string, tabId: string): P
 
   if (speakingAgentAlertTargets?.tabTargetKey === targetKey) {
     speakingAgentAlertTargets = null;
-    await Speech.stop().catch(() => undefined);
+    await stopSpeech('dismiss-tab');
   }
   await Promise.all(notificationIds.map(identifier => (
-    Notifications.dismissNotificationAsync(identifier).catch(() => undefined)
+    dismissScheduledNotification(identifier, 'dismiss-tab')
   )));
   if (persistentAgentNotificationId && notificationIds.includes(persistentAgentNotificationId)) {
     persistentAgentNotificationId = null;
-    await dismissPersistentAgentAlert().catch(() => undefined);
+    await dismissPersistentAlert('dismiss-tab');
   }
 }
 
@@ -191,14 +220,14 @@ export async function dismissAgentAlertsForPane(hostId: string, paneId: string):
 
   if (speakingAgentAlertTargets?.paneTargetKey === targetKey) {
     speakingAgentAlertTargets = null;
-    await Speech.stop().catch(() => undefined);
+    await stopSpeech('dismiss-pane');
   }
   await Promise.all(notificationIds.map(identifier => (
-    Notifications.dismissNotificationAsync(identifier).catch(() => undefined)
+    dismissScheduledNotification(identifier, 'dismiss-pane')
   )));
   if (persistentAgentNotificationId && notificationIds.includes(persistentAgentNotificationId)) {
     persistentAgentNotificationId = null;
-    await dismissPersistentAgentAlert().catch(() => undefined);
+    await dismissPersistentAlert('dismiss-pane');
   }
 }
 
@@ -217,7 +246,7 @@ function decrementAlertCount(counts: Map<string, number>, targetKey: string): vo
 }
 
 async function speakBeforeAlert(title: string): Promise<void> {
-  await Speech.stop().catch(() => undefined);
+  await stopSpeech('before-speak');
   await new Promise<void>(resolve => {
     let completed = false;
     let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -229,7 +258,7 @@ async function speakBeforeAlert(title: string): Promise<void> {
     };
 
     timeout = setTimeout(() => {
-      Speech.stop().catch(() => undefined).finally(finish);
+      stopSpeech('speech-timeout').finally(finish);
     }, SPEECH_TIMEOUT_MS);
     try {
       Speech.speak(title, {
@@ -242,10 +271,68 @@ async function speakBeforeAlert(title: string): Promise<void> {
         }[i18n.resolvedLanguage || 'en'] || 'en-US',
         onDone: finish,
         onStopped: finish,
-        onError: finish,
+        onError: error => {
+          recordNotificationFailure('warn', 'agent-alert-speech-failed', error, {
+            stage: 'speech-callback',
+          });
+          finish();
+        },
       });
-    } catch {
+    } catch (error) {
+      recordNotificationFailure('warn', 'agent-alert-speech-failed', error, {
+        stage: 'speech-start',
+      });
       finish();
     }
+  });
+}
+
+async function dismissScheduledNotification(identifier: string, stage: string): Promise<void> {
+  try {
+    await Notifications.dismissNotificationAsync(identifier);
+  } catch (error) {
+    if (isExpectedDismissalRace(error)) return;
+    recordNotificationFailure('warn', 'notification-dismiss-failed', error, { stage });
+  }
+}
+
+async function dismissPersistentAlert(stage: string): Promise<void> {
+  try {
+    await dismissPersistentAgentAlert();
+  } catch (error) {
+    if (isExpectedDismissalRace(error)) return;
+    recordNotificationFailure('warn', 'persistent-agent-alert-dismiss-failed', error, { stage });
+  }
+}
+
+async function stopSpeech(stage: string): Promise<void> {
+  try {
+    await Speech.stop();
+  } catch (error) {
+    recordNotificationFailure('warn', 'agent-alert-speech-stop-failed', error, { stage });
+  }
+}
+
+function isExpectedDismissalRace(error: unknown): boolean {
+  const candidate = error && typeof error === 'object'
+    ? error as { code?: unknown; message?: unknown }
+    : null;
+  if (
+    candidate?.code === 'ERR_NOTIFICATION_NOT_FOUND'
+    || candidate?.code === 'E_NOTIFICATION_NOT_FOUND'
+  ) return true;
+  return typeof candidate?.message === 'string'
+    && /already (?:dismissed|removed)|not found|does not exist/i.test(candidate.message);
+}
+
+function recordNotificationFailure(
+  level: 'warn' | 'error',
+  event: string,
+  error: unknown,
+  details: Readonly<Record<string, string>>,
+): void {
+  recordOperationalDiagnostic(level, 'Notification', event, {
+    ...details,
+    ...operationalErrorDetails(error),
   });
 }

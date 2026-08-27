@@ -4,6 +4,10 @@ import Purchases, {
   type PurchasesError,
   type PurchasesStoreProduct,
 } from 'react-native-purchases';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
 
 export const TIP_PRODUCT_IDS = [
   'whip_tip_small',
@@ -45,7 +49,8 @@ export function initializeRevenueCat(): Promise<boolean> {
         automaticDeviceIdentifierCollectionEnabled: false,
       });
       return true;
-    } catch {
+    } catch (error) {
+      recordRevenueCatFailure('error', 'revenuecat-initialization-failed', error);
       return false;
     }
   });
@@ -56,7 +61,8 @@ export async function getRevenueCatAppUserId(): Promise<string | null> {
   if (!(await initializeRevenueCat())) return null;
   try {
     return await Purchases.getAppUserID();
-  } catch {
+  } catch (error) {
+    recordRevenueCatFailure('warn', 'revenuecat-app-user-id-read-failed', error);
     return null;
   }
 }
@@ -64,10 +70,16 @@ export async function getRevenueCatAppUserId(): Promise<string | null> {
 export async function loadTipProducts(): Promise<TipProduct[]> {
   if (!(await initializeRevenueCat())) return [];
 
-  const products = await Purchases.getProducts(
-    [...TIP_PRODUCT_IDS],
-    Purchases.PRODUCT_CATEGORY.NON_SUBSCRIPTION,
-  );
+  let products: PurchasesStoreProduct[];
+  try {
+    products = await Purchases.getProducts(
+      [...TIP_PRODUCT_IDS],
+      Purchases.PRODUCT_CATEGORY.NON_SUBSCRIPTION,
+    );
+  } catch (error) {
+    recordRevenueCatFailure('error', 'revenuecat-products-load-failed', error);
+    throw error;
+  }
   const byId = new Map(products.map(product => [product.identifier, product]));
   return TIP_PRODUCT_IDS.flatMap(id => {
     const storeProduct = byId.get(id);
@@ -85,8 +97,19 @@ export async function purchaseTipProduct(
     return 'purchased';
   } catch (error) {
     if (isPurchaseCancellation(error)) return 'cancelled';
+    recordRevenueCatFailure('error', 'revenuecat-purchase-failed', error);
     throw error;
   }
+}
+
+function recordRevenueCatFailure(
+  level: 'warn' | 'error',
+  event: string,
+  error: unknown,
+): void {
+  recordOperationalDiagnostic(level, 'RevenueCat', event, {
+    ...operationalErrorDetails(error),
+  });
 }
 
 function isPurchaseCancellation(error: unknown): boolean {

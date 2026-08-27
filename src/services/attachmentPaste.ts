@@ -4,6 +4,10 @@ import { NativeModules, Platform } from 'react-native';
 
 import { attachmentUploadName } from '../lib/attachmentPaste';
 import { pickImageFromLibrary, type PickedLibraryImage } from './imageLibraryPicker';
+import {
+  operationalErrorDetails,
+  recordOperationalDiagnostic,
+} from './operationalDiagnostics';
 
 export type AttachmentSource = 'camera' | 'photo' | 'file' | 'clipboard';
 
@@ -35,7 +39,12 @@ export async function hasClipboardAttachment(): Promise<boolean> {
   if (!clipboardAttachment) return false;
   try {
     return await clipboardAttachment.hasAttachment();
-  } catch {
+  } catch (error) {
+    recordOperationalDiagnostic('warn', 'Application', 'clipboard-attachment-inspection-failed', {
+      operation: 'hasAttachment',
+      fallbackUsed: 'no-clipboard-attachment',
+      ...operationalErrorDetails(error),
+    });
     return false;
   }
 }

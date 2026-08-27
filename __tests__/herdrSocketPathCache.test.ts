@@ -73,3 +73,15 @@ test('ignores malformed and relative persisted paths', () => {
 
   expect(persistedHerdrSocketPathHint(profile.id)).toBeNull();
 });
+
+test('diagnoses cache write failure and makes flush report it', async () => {
+  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
+  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('cache storage unavailable'));
+
+  persistHerdrSocketPathHint(profile.id, '/tmp/herdr.sock');
+
+  await expect(flushHerdrSocketPathCacheWrites()).rejects.toThrow('cache storage unavailable');
+  expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('storage-write-failed'));
+  expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('herdr-socket-path-cache'));
+  consoleWarn.mockRestore();
+});
