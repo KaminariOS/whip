@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-use crate::ssh::SshSession;
+use crate::herdr_connection::{HerdrConnection, HerdrConnectionError, HerdrRequestReplay};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
@@ -886,8 +886,10 @@ fn next_request_id(client_key: &str) -> String {
     format!("android_{sequence}")
 }
 
-fn transport_error(message: String) -> HerdrControlError {
-    if message.to_ascii_lowercase().contains("timed out") {
+fn transport_error(error: HerdrConnectionError) -> HerdrControlError {
+    let timed_out = error.is_timeout();
+    let message = error.to_string();
+    if timed_out {
         HerdrControlError::RequestTimeout(message)
     } else {
         HerdrControlError::TransportDisconnected(message)
@@ -895,23 +897,22 @@ fn transport_error(message: String) -> HerdrControlError {
 }
 
 pub(crate) async fn request_on_runtime(
-    client_key: String,
-    ssh: Arc<SshSession>,
-    socket_path: String,
+    connection: Arc<HerdrConnection>,
     request: HerdrControlRequest,
+    replay: HerdrRequestReplay,
 ) -> Result<HerdrControlResult, HerdrControlError> {
-    let request_id = next_request_id(&client_key);
+    let request_id = next_request_id(connection.client_key());
     let bytes = request.encode(&request_id)?;
-    let response = ssh
-        .request_unix_socket(
-            &socket_path,
+    let response = connection
+        .request(
             &bytes,
             b'\n',
             CONTROL_TIMEOUT_MS,
             MAX_CONTROL_RESPONSE_BYTES,
+            replay,
         )
         .await
-        .map_err(|error| transport_error(error.to_string()))?;
+        .map_err(transport_error)?;
     parse_response(&request, &response)
 }
 
@@ -922,10 +923,14 @@ pub async fn herdr_control_request(
     request: HerdrControlRequest,
 ) -> Result<HerdrControlResult, HerdrControlError> {
     let runtime = crate::runtime().map_err(HerdrControlError::TransportDisconnected)?;
-    let ssh = SshSession::registered(&client_key)
+    let connection = HerdrConnection::registered(client_key, socket_path)
         .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
     runtime
-        .spawn(request_on_runtime(client_key, ssh, socket_path, request))
+        .spawn(request_on_runtime(
+            connection,
+            request,
+            HerdrRequestReplay::Never,
+        ))
         .await
         .map_err(|error| {
             HerdrControlError::RequestCancelled(format!(

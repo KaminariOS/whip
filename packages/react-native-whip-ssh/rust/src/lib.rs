@@ -5,6 +5,7 @@ mod agent_transcript;
 mod codex;
 mod herdr_api;
 mod herdr_codec;
+mod herdr_connection;
 mod herdr_events;
 mod herdr_terminal;
 mod host_runtime;

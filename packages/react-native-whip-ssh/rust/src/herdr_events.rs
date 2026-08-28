@@ -13,7 +13,8 @@ use crate::herdr_api::{
     object, optional_string, pane, pane_layout, required, required_string, string_array,
     string_map, tab, workspace, worktree,
 };
-use crate::{herdr_codec, ssh::SshSession};
+use crate::herdr_codec;
+use crate::herdr_connection::{HerdrConnection, HerdrStream, HerdrStreamFraming, HerdrStreamKind};
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -666,8 +667,7 @@ fn subscription_request(protocol: u32, pane_ids: &[String]) -> Result<Vec<u8>, H
 struct EventSubscription {
     id: u64,
     client_key: String,
-    channel_id: String,
-    ssh: Arc<SshSession>,
+    stream: Mutex<Option<Arc<HerdrStream>>>,
     parser: Mutex<JsonlEventParser>,
     acknowledgement: Mutex<Option<oneshot::Sender<Result<(), HerdrEventError>>>>,
 }
@@ -676,6 +676,12 @@ impl EventSubscription {
     fn finish_acknowledgement(&self, result: Result<(), HerdrEventError>) {
         if let Some(sender) = self.acknowledgement.lock().take() {
             let _ = sender.send(result);
+        }
+    }
+
+    fn close_stream(&self) {
+        if let Some(stream) = self.stream.lock().take() {
+            let _ = stream.close();
         }
     }
 }
@@ -762,29 +768,26 @@ fn fail_subscription(subscription: &EventSubscription, reason: String) {
     {
         sink.closed(subscription.client_key.clone(), reason);
     }
-    let _ = subscription.ssh.close_unix_socket(&subscription.channel_id);
+    subscription.close_stream();
     remove_subscription(subscription.id);
 }
 
 pub(crate) async fn start_on_runtime(
-    client_key: String,
-    ssh: Arc<SshSession>,
-    socket_path: String,
+    connection: Arc<HerdrConnection>,
     protocol: u32,
     pane_ids: Vec<String>,
 ) -> Result<(), HerdrEventError> {
+    let client_key = connection.client_key().to_owned();
     if registry().lock().by_client.contains_key(&client_key) {
         return Ok(());
     }
     let request = subscription_request(protocol, &pane_ids)?;
     let id = NEXT_SUBSCRIPTION_ID.fetch_add(1, Ordering::Relaxed);
-    let channel_id = format!("whip-herdr-events-{id}");
     let (acknowledgement_sender, acknowledgement_receiver) = oneshot::channel();
     let subscription = Arc::new(EventSubscription {
         id,
         client_key: client_key.clone(),
-        channel_id: channel_id.clone(),
-        ssh: ssh.clone(),
+        stream: Mutex::new(None),
         parser: Mutex::new(JsonlEventParser::default()),
         acknowledgement: Mutex::new(Some(acknowledgement_sender)),
     });
@@ -795,35 +798,50 @@ pub(crate) async fn start_on_runtime(
     }
     let frame = Arc::new(move |bytes| transport_frame(id, bytes));
     let closed = Arc::new(move |reason| transport_closed(id, reason));
-    if let Err(error) = ssh
-        .open_unix_socket(
-            &channel_id,
-            &socket_path,
+    let stream = match connection
+        .open_stream(
+            HerdrStreamKind::Events,
+            HerdrStreamFraming::Raw,
             EVENT_READ_CHUNK_BYTES,
             frame,
             closed,
         )
         .await
     {
+        Ok(stream) => stream,
+        Err(error) => {
+            remove_subscription(id);
+            return Err(HerdrEventError::TransportDisconnected(error.to_string()));
+        }
+    };
+    *subscription.stream.lock() = Some(stream.clone());
+    if let Err(error) = stream.write(request) {
+        subscription.close_stream();
         remove_subscription(id);
         return Err(HerdrEventError::TransportDisconnected(error.to_string()));
     }
-    if let Err(error) = ssh.write_unix_socket(&channel_id, request, false) {
-        let _ = ssh.close_unix_socket(&channel_id);
-        remove_subscription(id);
-        return Err(HerdrEventError::TransportDisconnected(error.to_string()));
-    }
-    match tokio::time::timeout(SUBSCRIPTION_ACK_TIMEOUT, acknowledgement_receiver).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err(HerdrEventError::SubscriptionUnavailable(
+    match stream
+        .wait_current(tokio::time::timeout(
+            SUBSCRIPTION_ACK_TIMEOUT,
+            acknowledgement_receiver,
+        ))
+        .await
+    {
+        Ok(Ok(Ok(result))) => result,
+        Ok(Ok(Err(_))) => Err(HerdrEventError::SubscriptionUnavailable(
             "Herdr event subscription acknowledgement was cancelled".to_owned(),
         )),
-        Err(_) => {
+        Ok(Err(_)) => {
             remove_subscription(id);
-            let _ = ssh.close_unix_socket(&channel_id);
+            subscription.close_stream();
             Err(HerdrEventError::SubscriptionUnavailable(
                 "timed out waiting for Herdr event subscription acknowledgement".to_owned(),
             ))
+        }
+        Err(error) => {
+            remove_subscription(id);
+            subscription.close_stream();
+            Err(HerdrEventError::TransportDisconnected(error.to_string()))
         }
     }
 }
@@ -846,16 +864,10 @@ pub async fn start_herdr_event_subscription(
     pane_ids: Vec<String>,
 ) -> Result<(), HerdrEventError> {
     let runtime = crate::runtime().map_err(HerdrEventError::TransportDisconnected)?;
-    let ssh = SshSession::registered(&client_key)
+    let connection = HerdrConnection::registered(client_key, socket_path)
         .map_err(|error| HerdrEventError::TransportDisconnected(error.to_string()))?;
     runtime
-        .spawn(start_on_runtime(
-            client_key,
-            ssh,
-            socket_path,
-            protocol,
-            pane_ids,
-        ))
+        .spawn(start_on_runtime(connection, protocol, pane_ids))
         .await
         .map_err(|error| {
             HerdrEventError::SubscriptionUnavailable(format!(
@@ -879,7 +891,7 @@ pub fn close_herdr_event_subscription(client_key: String) {
             "Herdr event subscription was closed before acknowledgement".to_owned(),
         )));
         remove_subscription(subscription.id);
-        let _ = subscription.ssh.close_unix_socket(&subscription.channel_id);
+        subscription.close_stream();
     }
 }
 

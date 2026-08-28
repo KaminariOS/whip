@@ -33,20 +33,26 @@ The control plane reads and mutates structured Herdr server state:
 - agents, status, metadata, and recent output
 - create, focus, rename, split, resize, send, close, and launch actions
 
-Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. It also owns cohesive launch semantics: one typed shell/command/agent tab operation performs tab creation and the exact follow-up action, including managed-agent naming and typed partial failure. React Native supplies explicit shell or agent intents for dedicated UI actions and passes command-runner text as a command intent without tokenizing it. Rust alone interprets direct managed-agent command lines, preserves shell-bearing input as an ordinary command, and sequences `tab.create` with exactly one `agent.start` or `pane.send_input`. Herdr calls an owned `SshSession` through ordinary Rust methods and closures; there is no C ABI, callback context, dynamic symbol lookup, or JSON dispatch between the SSH and Herdr modules. Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection.
+Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. It also owns cohesive launch semantics: one typed shell/command/agent tab operation performs tab creation and the exact follow-up action, including managed-agent naming and typed partial failure. React Native supplies explicit shell or agent intents for dedicated UI actions and passes command-runner text as a command intent without tokenizing it. Rust alone interprets direct managed-agent command lines, preserves shell-bearing input as an ordinary command, and sequences `tab.create` with exactly one `agent.start` or `pane.send_input`.
+
+Herdr protocol code asks a stable `HerdrConnection` for control, event, or terminal streams; it does not receive an `SshSession`, socket path, stream-local channel ID, framing flag, or SSH generation. The connection owns socket discovery and cached-hint invalidation, selects the API or client socket for the logical stream, filters callbacks from replaced sessions, and cancels in-flight handshakes when its transport is replaced. There is no C ABI, callback context, dynamic symbol lookup, or JSON dispatch between the SSH and Herdr modules. Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection.
 
 Runtime failures cross UniFFI as tagged errors. SSH failures retain a stable `SshErrorCode` plus their diagnostic message, and protocol mismatches retain their expected and received versions. The native TypeScript adapter maps those fields mechanically to presentation codes; React Native does not classify native exception text or extract structured fields with regular expressions.
 
 Transport/runtime timings are measured beside the Rust operations they describe and cross the native boundary as typed, coarse diagnostics. Connect/reconnect, terminal attach/recovery, and event-stream recovery produce one completion diagnostic; latency probes and ordinary Herdr requests produce diagnostics only when slow or failed. Successful latency calls still return a typed Rust-measured RTT/total/overhead record for live UI state. React Native owns bounded diagnostic history, thresholds, persistence, and display. It does not infer transport duration by timing an FFI promise.
 
-One Rust `HostRuntime` owns each connected host's authenticated `Arc<SshSession>`,
-ProxyJump chain, control generation, reconnect loop, event subscription, and
-Herdr terminal registry. Reconnect replaces the owned session, advances the
-existing generation/epoch state, cancels stale work, and restores requested
-resources without bouncing through JavaScript. Shell, command, remote-home,
-latency, forwarding, SFTP, upload cancellation, and file-server operations all
-use the runtime's owned session directly; no string-key session alias is
-published for React Native.
+One Rust `HostRuntime` owns each connected host's stable
+`Arc<HerdrConnection>`, ProxyJump chain, reconnect loop, event subscription, and
+Herdr terminal registry. `HerdrConnection` is the sole owner of the installed
+authenticated `Arc<SshSession>` and its generation. Reconnect installs a new
+session into the same connection object, advances the existing runtime
+generation/epoch state, cancels stale work, and restores requested resources
+without bouncing through JavaScript. Transcript sources likewise request
+generation-guarded commands and logical exec streams from this connection
+instead of retaining an SSH session or manufacturing channel IDs. Shell,
+remote-file, forwarding, and preview workflows remain HostRuntime operations
+and borrow the connection's current owned session; no string-key session alias
+is published for React Native.
 
 `HostState` owns workspace/tab/pane topology, layouts, server focus, derived
 agent status, snapshot sync generations, monotonic state revisions, and
@@ -101,9 +107,9 @@ Each opened Herdr terminal owns an independent SSH stream-local channel to the
 server's client-protocol socket. The Whip Rust core owns protocol validation,
 binary encoding/decoding, the `Hello` / `Welcome` / `AttachTerminal` state
 machine, prepared connections, and protocol-level cleanup. Its Herdr bridge
-opens and drives the length-prefixed channel directly on the owned Rust SSH
-session; terminal frames do not travel through a JavaScript codec, generic JSON
-event path, or a second native library. React Native sends
+asks the shared connection for a logical length-prefixed terminal stream;
+terminal frames do not travel through a JavaScript codec, generic JSON event
+path, or a second native library. React Native sends
 semantic input, resize, scroll, and close operations and receives typed control
 events plus raw binary terminal/graphics payloads for the renderer. Do not
 substitute the human-facing
@@ -128,8 +134,8 @@ Codex and OpenCode panes can expose two presentations of the same live process. 
 Herdr terminal stream continues to feed the mounted xterm Terminal View. After
 the user explicitly opens Chat, the Rust `HostRuntime` uses the pane's Herdr
 `agent_session` ID to open an `AgentSessionManager` entry and resolve that exact
-Codex rollout or OpenCode export/event source over the existing authenticated
-SSH transport:
+Codex rollout or OpenCode export/event source through the existing stable
+connection:
 
 ```text
 Herdr terminal stream       Codex rollout JSONL       OpenCode export + event DB
@@ -147,8 +153,11 @@ Herdr terminal stream       Codex rollout JSONL       OpenCode export + event DB
 ```
 
 Rust owns rollout identity, byte-oriented JSONL framing, partial lines,
-received/committable/durable offsets, generation guards, source replacement and
-truncation detection, catch-up, retry/rebind, and incremental normalization.
+received/committable/durable offsets, source replacement and truncation
+detection, catch-up, retry/rebind, and incremental normalization. The shared
+connection layer guards the SSH generation and suppresses data and close
+callbacks from replaced transcript streams; transcript state uses its own
+operation and source epochs for reducer correctness.
 Each state projection has a monotonic revision and can be fetched in full, so a
 missed callback does not lose transcript correctness. The remote rollout remains
 authoritative. Rust constructs the host/agent/session-qualified opaque cache key,

@@ -13,7 +13,7 @@ use crate::agent_transcript::{
     AgentTranscriptUpdate, AgentTurnStatus, CodexSessionCore, OpenCodeSessionCore,
     parse_open_code_cursor,
 };
-use crate::ssh::SshSession;
+use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
 
 const RETRY_DELAY: Duration = Duration::from_millis(1_500);
 const OPENCODE_POLL_DELAY: Duration = Duration::from_millis(1_200);
@@ -100,10 +100,9 @@ struct SessionRuntime {
     session_id: String,
     terminals: HashSet<String>,
     core: AgentSessionCore,
-    host_generation: u64,
     operation_epoch: u64,
     stream_context: Option<u64>,
-    stream_channel_id: Option<String>,
+    stream: Option<Arc<ConnectionExecStream>>,
     retry_running: bool,
     pending_cache_offset: Option<u64>,
     started: bool,
@@ -178,7 +177,7 @@ struct PendingCheckpoint {
 
 #[derive(Debug)]
 struct ManagerState {
-    connected_generation: Option<u64>,
+    connected: bool,
     sessions: HashMap<String, SessionRuntime>,
     terminal_bindings: HashMap<String, String>,
     checkpoints: HashMap<String, PendingCheckpoint>,
@@ -188,7 +187,7 @@ struct ManagerState {
 
 struct AgentSessionManagerInner {
     runtime_id: String,
-    ssh: Arc<RwLock<Option<Arc<SshSession>>>>,
+    connection: Arc<HerdrConnection>,
     state: Mutex<ManagerState>,
 }
 
@@ -201,19 +200,18 @@ pub(crate) struct AgentSessionManager {
 struct StreamContext {
     manager: Weak<AgentSessionManagerInner>,
     session_key: String,
-    host_generation: u64,
     source_generation: u64,
     operation_epoch: u64,
 }
 
 impl AgentSessionManager {
-    pub(crate) fn new(runtime_id: String, ssh: Arc<RwLock<Option<Arc<SshSession>>>>) -> Self {
+    pub(crate) fn new(runtime_id: String, connection: Arc<HerdrConnection>) -> Self {
         Self {
             inner: Arc::new(AgentSessionManagerInner {
                 runtime_id,
-                ssh,
+                connection,
                 state: Mutex::new(ManagerState {
-                    connected_generation: None,
+                    connected: false,
                     sessions: HashMap::new(),
                     terminal_bindings: HashMap::new(),
                     checkpoints: HashMap::new(),
@@ -224,10 +222,10 @@ impl AgentSessionManager {
         }
     }
 
-    pub(crate) fn connected(&self, generation: u64) {
+    pub(crate) fn connected(&self) {
         let keys = {
             let mut state = self.inner.state.lock();
-            state.connected_generation = Some(generation);
+            state.connected = true;
             state.closed = false;
             state
                 .sessions
@@ -244,9 +242,8 @@ impl AgentSessionManager {
     pub(crate) fn disconnected(&self, closed: bool, reason: &str) {
         let emissions = {
             let mut state = self.inner.state.lock();
-            state.connected_generation = None;
+            state.connected = false;
             state.closed = closed;
-            let ssh = self.inner.ssh.read().clone();
             let mut emissions = Vec::new();
             for session in state.sessions.values_mut() {
                 session.operation_epoch = session.operation_epoch.saturating_add(1);
@@ -254,10 +251,8 @@ impl AgentSessionManager {
                 if let Some(context) = session.stream_context.take() {
                     streams().write().remove(&context);
                 }
-                if let Some(channel) = session.stream_channel_id.take()
-                    && let Some(ssh) = &ssh
-                {
-                    let _ = ssh.close_exec(&channel);
+                if let Some(stream) = session.stream.take() {
+                    let _ = stream.close();
                 }
                 let update = if closed {
                     session.closed = true;
@@ -344,7 +339,6 @@ impl AgentSessionManager {
                 old.terminals.remove(&terminal_id);
                 old.terminals.is_empty().then_some(old_key)
             });
-            let generation = state.connected_generation;
             let session = state.sessions.entry(key.clone()).or_insert_with(|| {
                 let core = match kind {
                     AgentTranscriptKind::Codex => {
@@ -359,10 +353,9 @@ impl AgentSessionManager {
                     session_id: session_id.clone(),
                     terminals: HashSet::new(),
                     core,
-                    host_generation: generation.unwrap_or(0),
                     operation_epoch: 0,
                     stream_context: None,
-                    stream_channel_id: None,
+                    stream: None,
                     retry_running: false,
                     pending_cache_offset: None,
                     started: false,
@@ -397,7 +390,7 @@ impl AgentSessionManager {
                     "terminal {terminal_id} is no longer bound to {key}"
                 )));
             }
-            let generation = state.connected_generation;
+            let connected = state.connected;
             let session = state.sessions.get_mut(key).ok_or_else(|| {
                 AgentSessionError::SessionClosed(format!(
                     "agent transcript session {key} is closed"
@@ -416,7 +409,7 @@ impl AgentSessionManager {
             }
             (
                 session.core.state(),
-                generation.is_some() && session.operation_epoch == 0,
+                connected && session.operation_epoch == 0,
                 session.core.kind(),
             )
         };
@@ -468,10 +461,8 @@ impl AgentSessionManager {
             if let Some(context) = session.stream_context.take() {
                 streams().write().remove(&context);
             }
-            if let Some(channel) = session.stream_channel_id.take()
-                && let Some(ssh) = self.inner.ssh.read().clone()
-            {
-                let _ = ssh.close_exec(&channel);
+            if let Some(stream) = session.stream.take() {
+                let _ = stream.close();
             }
             (session.key.clone(), session.core.close_update())
         };
@@ -502,9 +493,9 @@ impl AgentSessionManager {
     fn restart(&self, key: String, reason: String) {
         let operation = {
             let mut state = self.inner.state.lock();
-            let Some(host_generation) = state.connected_generation else {
+            if !state.connected {
                 return;
-            };
+            }
             let Some(session) = state.sessions.get_mut(&key) else {
                 return;
             };
@@ -512,16 +503,13 @@ impl AgentSessionManager {
                 return;
             }
             session.operation_epoch = session.operation_epoch.saturating_add(1);
-            session.host_generation = host_generation;
             session.retry_running = false;
             session.pending_cache_offset = None;
             if let Some(context) = session.stream_context.take() {
                 streams().write().remove(&context);
             }
-            if let Some(channel) = session.stream_channel_id.take()
-                && let Some(ssh) = self.inner.ssh.read().clone()
-            {
-                let _ = ssh.close_exec(&channel);
+            if let Some(stream) = session.stream.take() {
+                let _ = stream.close();
             }
             let kind = session.core.kind();
             if let AgentSessionCore::OpenCode(core) = &mut session.core {
@@ -529,52 +517,34 @@ impl AgentSessionManager {
             }
             let update = session.core.mark_stale_update(reason.clone());
             (
-                host_generation,
                 session.operation_epoch,
                 session.session_id.clone(),
                 update,
                 kind,
             )
         };
-        emit(&self.inner, key.clone(), operation.3, None);
+        emit(&self.inner, key.clone(), operation.2, None);
         let manager = self.clone();
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
-                match operation.4 {
+                match operation.3 {
                     AgentTranscriptKind::Codex => {
                         manager
-                            .resolve_and_open(key, operation.0, operation.1, operation.2)
+                            .resolve_and_open(key, operation.0, operation.1)
                             .await;
                     }
                     AgentTranscriptKind::OpenCode => {
-                        manager
-                            .sync_opencode(key, operation.0, operation.1, operation.2)
-                            .await;
+                        manager.sync_opencode(key, operation.0, operation.1).await;
                     }
                 }
             });
         }
     }
 
-    async fn resolve_and_open(
-        &self,
-        key: String,
-        host_generation: u64,
-        operation_epoch: u64,
-        session_id: String,
-    ) {
-        let Some(ssh) = self.inner.ssh.read().clone() else {
-            self.fail_and_retry(
-                key,
-                host_generation,
-                operation_epoch,
-                "host SSH session is disconnected".to_owned(),
-                false,
-            );
-            return;
-        };
+    async fn resolve_and_open(&self, key: String, operation_epoch: u64, session_id: String) {
+        let connection = self.inner.connection.clone();
         let result = async {
-            let output = execute(&ssh, codex_rollout_find_command(&session_id)).await?;
+            let output = execute(&connection, codex_rollout_find_command(&session_id)).await?;
             let path = resolve_rollout_path(&output, &session_id)?;
             let Some(path) = path else {
                 return Err(AgentSessionError::SourceUnavailable(
@@ -582,7 +552,7 @@ impl AgentSessionManager {
                 ));
             };
             let metadata = execute(
-                &ssh,
+                &connection,
                 format!(
                     "stat -c '%d:%i %s' {} 2>/dev/null || stat -f '%d:%i %z' {}",
                     shell_quote(&path),
@@ -598,19 +568,13 @@ impl AgentSessionManager {
             Ok(result) => result,
             Err(error) => {
                 let unavailable = matches!(error, AgentSessionError::SourceUnavailable(_));
-                self.fail_and_retry(
-                    key,
-                    host_generation,
-                    operation_epoch,
-                    error.to_string(),
-                    unavailable,
-                );
+                self.fail_and_retry(key, operation_epoch, error.to_string(), unavailable);
                 return;
             }
         };
         let opened = {
             let mut state = self.inner.state.lock();
-            if state.connected_generation != Some(host_generation) {
+            if !state.connected {
                 return;
             }
             let Some(session) = state.sessions.get_mut(&key) else {
@@ -628,51 +592,57 @@ impl AgentSessionManager {
                 .rebuilt
                 .then(|| AgentTranscriptUpdate::reset(core.state()));
             let context = NEXT_STREAM_CONTEXT.fetch_add(1, Ordering::Relaxed);
-            let channel_id = format!("agent-transcript-{context}");
             streams().write().insert(
                 context,
                 StreamContext {
                     manager: Arc::downgrade(&self.inner),
                     session_key: key.clone(),
-                    host_generation,
                     source_generation: binding.source_generation,
                     operation_epoch,
                 },
             );
             session.stream_context = Some(context);
-            session.stream_channel_id = Some(channel_id.clone());
-            (context, channel_id, binding.start_offset, reset)
+            (context, binding.start_offset, reset)
         };
-        if let Some(update) = opened.3 {
+        if let Some(update) = opened.2 {
             emit(&self.inner, key.clone(), update, None);
         }
-        let command = codex_stream_command(&path, opened.2);
+        let command = codex_stream_command(&path, opened.1);
         let context = opened.0;
         let data = Arc::new(move |bytes| stream_data(context, bytes));
         let closed = Arc::new(move |reason| stream_failed(context, reason));
-        let stream_requested =
-            if let Err(error) = ssh.open_exec(&opened.1, &command, data, closed).await {
+        let stream_requested = match connection
+            .open_exec_stream("agent-transcript", &command, data, closed)
+            .await
+        {
+            Err(error) => {
                 streams().write().remove(&opened.0);
-                self.fail_and_retry(
-                    key.clone(),
-                    host_generation,
-                    operation_epoch,
-                    error.to_string(),
-                    false,
-                );
+                self.fail_and_retry(key.clone(), operation_epoch, error.to_string(), false);
                 false
-            } else {
-                true
-            };
-        if stream_requested && size == opened.2 {
+            }
+            Ok(stream) => {
+                let accepted = stream.is_current() && {
+                    let mut state = self.inner.state.lock();
+                    current_session_mut(&mut state, &key, operation_epoch)
+                        .map(|session| session.stream = Some(stream.clone()))
+                        .is_some()
+                };
+                if !accepted {
+                    streams().write().remove(&opened.0);
+                    let _ = stream.close();
+                }
+                accepted
+            }
+        };
+        if stream_requested && size == opened.1 {
             let emission = {
                 let mut state = self.inner.state.lock();
-                current_session_mut(&mut state, &key, host_generation, operation_epoch).and_then(
-                    |session| match &mut session.core {
+                current_session_mut(&mut state, &key, operation_epoch).and_then(|session| {
+                    match &mut session.core {
                         AgentSessionCore::Codex(core) => core.mark_live_update(),
                         AgentSessionCore::OpenCode(_) => None,
-                    },
-                )
+                    }
+                })
             };
             if let Some(update) = emission {
                 emit(&self.inner, key, update, None);
@@ -680,59 +650,30 @@ impl AgentSessionManager {
         }
     }
 
-    async fn sync_opencode(
-        &self,
-        key: String,
-        host_generation: u64,
-        operation_epoch: u64,
-        session_id: String,
-    ) {
-        let Some(ssh) = self.inner.ssh.read().clone() else {
-            self.fail_and_retry(
-                key,
-                host_generation,
-                operation_epoch,
-                "host SSH session is disconnected".to_owned(),
-                false,
-            );
-            return;
-        };
+    async fn sync_opencode(&self, key: String, operation_epoch: u64, session_id: String) {
+        let connection = self.inner.connection.clone();
         let cursor_output = match execute(
-            &ssh,
+            &connection,
             opencode_login_command(&opencode_cursor_command(&session_id)),
         )
         .await
         {
             Ok(output) => output,
             Err(error) => {
-                self.fail_and_retry(
-                    key,
-                    host_generation,
-                    operation_epoch,
-                    error.to_string(),
-                    false,
-                );
+                self.fail_and_retry(key, operation_epoch, error.to_string(), false);
                 return;
             }
         };
         let remote_cursor = match parse_open_code_cursor(&cursor_output) {
             Ok(cursor) => cursor,
             Err(error) => {
-                self.fail_and_retry(
-                    key,
-                    host_generation,
-                    operation_epoch,
-                    error.to_string(),
-                    false,
-                );
+                self.fail_and_retry(key, operation_epoch, error.to_string(), false);
                 return;
             }
         };
         let local_cursor = {
             let mut state = self.inner.state.lock();
-            let Some(session) =
-                current_session_mut(&mut state, &key, host_generation, operation_epoch)
-            else {
+            let Some(session) = current_session_mut(&mut state, &key, operation_epoch) else {
                 return;
             };
             let AgentSessionCore::OpenCode(core) = &mut session.core else {
@@ -744,18 +685,18 @@ impl AgentSessionManager {
         if local_cursor == Some(remote_cursor) {
             let update = {
                 let mut state = self.inner.state.lock();
-                current_session_mut(&mut state, &key, host_generation, operation_epoch).and_then(
-                    |session| match &mut session.core {
+                current_session_mut(&mut state, &key, operation_epoch).and_then(|session| {
+                    match &mut session.core {
                         AgentSessionCore::OpenCode(core) => Some(core.mark_live_update()),
                         AgentSessionCore::Codex(_) => None,
-                    },
-                )
+                    }
+                })
             };
             if let Some(update) = update {
                 if let Some(update) = update {
                     emit(&self.inner, key.clone(), update, None);
                 }
-                self.schedule_opencode_poll(key, host_generation, operation_epoch, session_id);
+                self.schedule_opencode_poll(key, operation_epoch, session_id);
             }
             return;
         }
@@ -766,34 +707,22 @@ impl AgentSessionManager {
         } else {
             opencode_events_command(&session_id, local_cursor.unwrap_or_default())
         };
-        let payload = match execute(&ssh, opencode_login_command(&command)).await {
+        let payload = match execute(&connection, opencode_login_command(&command)).await {
             Ok(output) => output,
             Err(error) => {
-                self.fail_and_retry(
-                    key,
-                    host_generation,
-                    operation_epoch,
-                    error.to_string(),
-                    false,
-                );
+                self.fail_and_retry(key, operation_epoch, error.to_string(), false);
                 return;
             }
         };
-        let applied = self.finish_opencode_sync(
-            &key,
-            host_generation,
-            operation_epoch,
-            remote_cursor,
-            &payload,
-            needs_full,
-        );
+        let applied =
+            self.finish_opencode_sync(&key, operation_epoch, remote_cursor, &payload, needs_full);
         if let Err(error) = applied {
             if needs_full {
-                self.fail_and_retry(key, host_generation, operation_epoch, error, false);
+                self.fail_and_retry(key, operation_epoch, error, false);
                 return;
             }
             let export = execute(
-                &ssh,
+                &connection,
                 opencode_login_command(&opencode_export_command(&session_id)),
             )
             .await;
@@ -801,26 +730,18 @@ impl AgentSessionManager {
                 Ok(export) => {
                     if let Err(export_error) = self.finish_opencode_sync(
                         &key,
-                        host_generation,
                         operation_epoch,
                         remote_cursor,
                         &export,
                         true,
                     ) {
-                        self.fail_and_retry(
-                            key,
-                            host_generation,
-                            operation_epoch,
-                            export_error,
-                            false,
-                        );
+                        self.fail_and_retry(key, operation_epoch, export_error, false);
                         return;
                     }
                 }
                 Err(export_error) => {
                     self.fail_and_retry(
                         key,
-                        host_generation,
                         operation_epoch,
                         format!("{error}; fallback export failed: {export_error}"),
                         false,
@@ -829,13 +750,12 @@ impl AgentSessionManager {
                 }
             }
         }
-        self.schedule_opencode_poll(key, host_generation, operation_epoch, session_id);
+        self.schedule_opencode_poll(key, operation_epoch, session_id);
     }
 
     fn finish_opencode_sync(
         &self,
         key: &str,
-        host_generation: u64,
         operation_epoch: u64,
         remote_cursor: u64,
         payload: &str,
@@ -844,9 +764,8 @@ impl AgentSessionManager {
         let emission = {
             let mut state = self.inner.state.lock();
             let (update, cache_candidate) = {
-                let session =
-                    current_session_mut(&mut state, key, host_generation, operation_epoch)
-                        .ok_or_else(|| "OpenCode transcript operation became stale".to_owned())?;
+                let session = current_session_mut(&mut state, key, operation_epoch)
+                    .ok_or_else(|| "OpenCode transcript operation became stale".to_owned())?;
                 let AgentSessionCore::OpenCode(core) = &mut session.core else {
                     return Err("OpenCode transcript was rebound to another agent".to_owned());
                 };
@@ -918,18 +837,10 @@ impl AgentSessionManager {
         Ok(())
     }
 
-    fn schedule_opencode_poll(
-        &self,
-        key: String,
-        host_generation: u64,
-        operation_epoch: u64,
-        session_id: String,
-    ) {
+    fn schedule_opencode_poll(&self, key: String, operation_epoch: u64, session_id: String) {
         let scheduled = {
             let mut state = self.inner.state.lock();
-            let Some(session) =
-                current_session_mut(&mut state, &key, host_generation, operation_epoch)
-            else {
+            let Some(session) = current_session_mut(&mut state, &key, operation_epoch) else {
                 return;
             };
             if session.retry_running || session.terminals.is_empty() {
@@ -948,8 +859,7 @@ impl AgentSessionManager {
                 tokio::time::sleep(OPENCODE_POLL_DELAY).await;
                 let should_poll = {
                     let mut state = manager.inner.state.lock();
-                    let Some(session) =
-                        current_session_mut(&mut state, &key, host_generation, operation_epoch)
+                    let Some(session) = current_session_mut(&mut state, &key, operation_epoch)
                     else {
                         return;
                     };
@@ -958,24 +868,17 @@ impl AgentSessionManager {
                 };
                 if should_poll {
                     manager
-                        .sync_opencode(key, host_generation, operation_epoch, session_id)
+                        .sync_opencode(key, operation_epoch, session_id)
                         .await;
                 }
             });
         }
     }
 
-    fn fail_and_retry(
-        &self,
-        key: String,
-        host_generation: u64,
-        operation_epoch: u64,
-        reason: String,
-        unavailable: bool,
-    ) {
+    fn fail_and_retry(&self, key: String, operation_epoch: u64, reason: String, unavailable: bool) {
         let emission = {
             let mut state = self.inner.state.lock();
-            let session = current_session_mut(&mut state, &key, host_generation, operation_epoch);
+            let session = current_session_mut(&mut state, &key, operation_epoch);
             let Some(session) = session else {
                 return;
             };
@@ -996,8 +899,7 @@ impl AgentSessionManager {
                 tokio::time::sleep(RETRY_DELAY).await;
                 let should_retry = {
                     let mut state = manager.inner.state.lock();
-                    let Some(session) =
-                        current_session_mut(&mut state, &key, host_generation, operation_epoch)
+                    let Some(session) = current_session_mut(&mut state, &key, operation_epoch)
                     else {
                         return;
                     };
@@ -1015,17 +917,15 @@ impl AgentSessionManager {
 fn current_session_mut<'a>(
     state: &'a mut ManagerState,
     key: &str,
-    host_generation: u64,
     operation_epoch: u64,
 ) -> Option<&'a mut SessionRuntime> {
-    if state.connected_generation != Some(host_generation) {
+    if !state.connected {
         return None;
     }
-    state.sessions.get_mut(key).filter(|session| {
-        session.host_generation == host_generation
-            && session.operation_epoch == operation_epoch
-            && !session.closed
-    })
+    state
+        .sessions
+        .get_mut(key)
+        .filter(|session| session.operation_epoch == operation_epoch && !session.closed)
 }
 
 fn merge_updates(
@@ -1086,7 +986,6 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
             let Some(session) = current_session_mut(
                 &mut state,
                 &context_value.session_key,
-                context_value.host_generation,
                 context_value.operation_epoch,
             ) else {
                 return;
@@ -1167,15 +1066,17 @@ fn stream_failed(context: u64, reason: String) {
     };
     AgentSessionManager { inner: manager }.fail_and_retry(
         context_value.session_key,
-        context_value.host_generation,
         context_value.operation_epoch,
         reason,
         false,
     );
 }
 
-async fn execute(ssh: &SshSession, command: String) -> Result<String, AgentSessionError> {
-    let output = ssh
+async fn execute(
+    connection: &HerdrConnection,
+    command: String,
+) -> Result<String, AgentSessionError> {
+    let output = connection
         .execute(&command)
         .await
         .map_err(|error| AgentSessionError::ReadFailed(error.to_string()))?;
@@ -1411,6 +1312,13 @@ mod tests {
 
     const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 
+    fn test_manager(runtime_id: &str) -> AgentSessionManager {
+        AgentSessionManager::new(
+            runtime_id.to_owned(),
+            HerdrConnection::new(runtime_id.to_owned(), String::new(), None, None),
+        )
+    }
+
     #[test]
     fn validates_session_ids_before_building_remote_commands() {
         assert!(validate_codex_session_id(SESSION).is_ok());
@@ -1523,7 +1431,7 @@ mod tests {
 
     #[test]
     fn two_sessions_and_terminal_bindings_are_independent() {
-        let manager = AgentSessionManager::new("host".into(), Arc::new(RwLock::new(None)));
+        let manager = test_manager("host");
         let second = "22222222-2222-4222-8222-222222222222";
         let (first_key, _) = manager
             .open_codex("terminal-1".into(), SESSION.into(), None)
@@ -1539,10 +1447,10 @@ mod tests {
 
     #[test]
     fn cache_identity_is_host_qualified_agent_qualified_and_reconnect_stable() {
-        let first_host = AgentSessionManager::new("host-a".into(), Arc::new(RwLock::new(None)));
-        let second_host = AgentSessionManager::new("host-b".into(), Arc::new(RwLock::new(None)));
-        first_host.connected(1);
-        second_host.connected(1);
+        let first_host = test_manager("host-a");
+        let second_host = test_manager("host-b");
+        first_host.connected();
+        second_host.connected();
 
         let (codex_key, _) = first_host
             .bind_codex("terminal-codex".into(), SESSION.into())
@@ -1560,7 +1468,7 @@ mod tests {
         assert_ne!(codex_key, other_host_key);
 
         first_host.disconnected(false, "network changed");
-        first_host.connected(2);
+        first_host.connected();
         let (rebound_key, _) = first_host
             .bind_codex("terminal-rebound".into(), SESSION.into())
             .unwrap();
@@ -1569,7 +1477,7 @@ mod tests {
 
     #[test]
     fn shared_session_lives_until_its_last_terminal_detaches() {
-        let manager = AgentSessionManager::new("host".into(), Arc::new(RwLock::new(None)));
+        let manager = test_manager("host");
         let (key, _) = manager
             .bind_codex("terminal-1".into(), SESSION.into())
             .unwrap();
@@ -1587,7 +1495,7 @@ mod tests {
 
     #[test]
     fn late_cache_start_cannot_restore_a_rebound_terminal() {
-        let manager = AgentSessionManager::new("host".into(), Arc::new(RwLock::new(None)));
+        let manager = test_manager("host");
         let (old_key, _) = manager
             .bind_codex("terminal".into(), SESSION.into())
             .unwrap();

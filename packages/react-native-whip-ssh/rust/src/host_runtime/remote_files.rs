@@ -98,7 +98,7 @@ pub(super) fn invalidate_remote_operations(
             error: Some(reason.to_owned()),
         });
     }
-    let ssh = inner.ssh.read().clone();
+    let ssh = current_ssh(inner).ok();
     if let (Some(ssh), Ok(runtime)) = (ssh, crate::runtime()) {
         runtime.spawn(async move {
             for (_, preview) in previews {

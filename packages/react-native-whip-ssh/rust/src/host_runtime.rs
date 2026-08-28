@@ -21,6 +21,7 @@ use crate::herdr_api::{
     HerdrTabLaunchStage, request_on_runtime,
 };
 use crate::herdr_codec::{MAX_PROTOCOL, MIN_PROTOCOL};
+use crate::herdr_connection::{HerdrConnection, HerdrRequestReplay};
 use crate::herdr_events::{
     HerdrEvent, HerdrEventError, close_herdr_event_subscription, start_on_runtime as start_events,
 };
@@ -330,8 +331,6 @@ struct RuntimeState {
     reconnect_running: bool,
     explicit_disconnect: bool,
     last_error: Option<String>,
-    socket_path: Option<String>,
-    socket_from_cache: bool,
     protocol: Option<u32>,
     event: Option<EventSubscriptionRuntime>,
     terminals: HashMap<String, TerminalRuntime>,
@@ -339,11 +338,7 @@ struct RuntimeState {
 }
 
 impl RuntimeState {
-    fn new(config: &HostRuntimeConfig) -> Self {
-        let socket_path = config
-            .socket_path
-            .clone()
-            .or_else(|| config.cached_socket_path.clone());
+    fn new(_config: &HostRuntimeConfig) -> Self {
         Self {
             connection: HostConnectionState::Disconnected,
             generation: 0,
@@ -352,8 +347,6 @@ impl RuntimeState {
             reconnect_running: false,
             explicit_disconnect: false,
             last_error: None,
-            socket_path,
-            socket_from_cache: config.socket_path.is_none() && config.cached_socket_path.is_some(),
             protocol: None,
             event: None,
             terminals: HashMap::new(),
@@ -445,7 +438,7 @@ struct RuntimeInner {
     id: String,
     config: HostRuntimeConfig,
     state: Mutex<RuntimeState>,
-    ssh: Arc<RwLock<Option<Arc<SshSession>>>>,
+    herdr: Arc<HerdrConnection>,
     jump_sessions: Mutex<Vec<Arc<SshSession>>>,
     agents: AgentSessionManager,
     operations: RemoteOperationManager,
@@ -549,15 +542,9 @@ fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRuntimeError> {
 }
 
 fn current_ssh(inner: &RuntimeInner) -> Result<Arc<SshSession>, HostRuntimeError> {
-    let ssh = inner.ssh.read().clone().ok_or_else(|| {
-        HostRuntimeError::RuntimeDisconnected("host SSH session is disconnected".to_owned())
-    })?;
-    if !ssh.is_alive() {
-        return Err(HostRuntimeError::RuntimeDisconnected(
-            "host SSH transport is disconnected".to_owned(),
-        ));
-    }
-    Ok(ssh)
+    inner.herdr.current_ssh().map_err(|error| {
+        HostRuntimeError::RuntimeDisconnected(format!("host SSH transport is unavailable: {error}"))
+    })
 }
 
 fn current_generation(inner: &RuntimeInner) -> Result<u64, HostRuntimeError> {
@@ -660,7 +647,7 @@ async fn finish_connection(
         if !state.install_connection(epoch) {
             None
         } else {
-            let old_ssh = inner.ssh.write().replace(ssh.clone());
+            let old_ssh = inner.herdr.install(state.generation, ssh.clone());
             let old_jumps = std::mem::replace(&mut *inner.jump_sessions.lock(), jumps.clone());
             Some((old_ssh, old_jumps))
         }
@@ -681,7 +668,7 @@ async fn finish_connection(
     for jump in jumps {
         observe_transport_lifecycle(&inner, generation, jump);
     }
-    inner.agents.connected(generation);
+    inner.agents.connected();
     publish_lifecycle_status(&inner);
     emit_host_state(&inner, Vec::new());
     let restored = if restoring {
@@ -777,7 +764,7 @@ fn begin_reconnect_for_generation(
     }) else {
         return false;
     };
-    let ssh = inner.ssh.write().take();
+    let ssh = inner.herdr.clear(generation);
     let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
     invalidate_remote_operations(&inner, generation, &reason);
     let _ = inner.cancellation.send(epoch);
@@ -923,39 +910,6 @@ async fn wait_for_reconnect(
     }
 }
 
-async fn resolve_socket_path(inner: &RuntimeInner) -> Result<String, HostRuntimeError> {
-    if let Some(path) = inner.state.lock().socket_path.clone() {
-        return Ok(path);
-    }
-    let output = current_ssh(inner)?.execute(r#"printf %s "$HOME""#).await?;
-    let home = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    let home = (!home.is_empty()).then_some(home).ok_or_else(|| {
-        HostRuntimeError::ControlConnectionFailure(
-            "SSH transport returned an invalid remote home directory".to_owned(),
-        )
-    })?;
-    let data_dir = if inner.config.session_name.trim().is_empty() {
-        format!("{home}/.config/herdr")
-    } else {
-        format!(
-            "{home}/.config/herdr/sessions/{}",
-            inner.config.session_name.trim()
-        )
-    };
-    let socket = format!("{data_dir}/herdr.sock");
-    let mut state = inner.state.lock();
-    state.socket_path = Some(socket.clone());
-    state.socket_from_cache = false;
-    Ok(socket)
-}
-
-fn client_socket_path(api_socket: &str) -> String {
-    api_socket
-        .strip_suffix(".sock")
-        .map(|prefix| format!("{prefix}-client.sock"))
-        .unwrap_or_else(|| format!("{api_socket}-client"))
-}
-
 fn is_transport_control_error(error: &HerdrControlError) -> bool {
     matches!(
         error,
@@ -973,7 +927,7 @@ fn idempotent_replay(request: &HerdrControlRequest) -> bool {
     )
 }
 
-fn safe_socket_path_replay(request: &HerdrControlRequest) -> bool {
+fn safe_control_replay(request: &HerdrControlRequest) -> bool {
     idempotent_replay(request)
         || matches!(
             request,
@@ -983,39 +937,22 @@ fn safe_socket_path_replay(request: &HerdrControlRequest) -> bool {
         )
 }
 
-fn should_rediscover_cached_socket(
-    socket_from_cache: bool,
-    request: &HerdrControlRequest,
-    result: &Result<HerdrControlResult, HerdrControlError>,
-) -> bool {
-    socket_from_cache
-        && safe_socket_path_replay(request)
-        && result
-            .as_ref()
-            .err()
-            .is_some_and(is_transport_control_error)
-}
-
-fn invalidate_cached_socket(state: &mut RuntimeState) -> bool {
-    if !state.socket_from_cache {
-        return false;
+fn request_replay(request: &HerdrControlRequest) -> HerdrRequestReplay {
+    if safe_control_replay(request) {
+        HerdrRequestReplay::AfterSocketRediscovery
+    } else {
+        HerdrRequestReplay::Never
     }
-    state.socket_path = None;
-    state.socket_from_cache = false;
-    true
 }
 
-fn update_server_from_result(inner: &RuntimeInner, socket: String, result: &HerdrControlResult) {
+fn update_server_from_result(inner: &RuntimeInner, result: &HerdrControlResult) {
     let protocol = match result {
         HerdrControlResult::Pong { protocol, .. } => Some(*protocol),
         HerdrControlResult::SessionSnapshot { snapshot } => Some(snapshot.protocol),
         _ => None,
     };
     if let Some(protocol) = protocol {
-        let mut state = inner.state.lock();
-        state.socket_path = Some(socket);
-        state.socket_from_cache = false;
-        state.protocol = Some(protocol);
+        inner.state.lock().protocol = Some(protocol);
     }
 }
 
@@ -1023,31 +960,14 @@ async fn ensure_herdr_server(inner: &Arc<RuntimeInner>) -> Result<(), HostRuntim
     if inner.state.lock().protocol.is_some() {
         return Ok(());
     }
-    let mut socket = resolve_socket_path(inner).await?;
-    let mut result = request_on_runtime(
-        inner.id.clone(),
-        current_ssh(inner)?,
-        socket.clone(),
+    let result = request_on_runtime(
+        inner.herdr.clone(),
         HerdrControlRequest::Ping,
+        HerdrRequestReplay::AfterSocketRediscovery,
     )
     .await;
-    if should_rediscover_cached_socket(
-        inner.state.lock().socket_from_cache,
-        &HerdrControlRequest::Ping,
-        &result,
-    ) {
-        invalidate_cached_socket(&mut inner.state.lock());
-        socket = resolve_socket_path(inner).await?;
-        result = request_on_runtime(
-            inner.id.clone(),
-            current_ssh(inner)?,
-            socket.clone(),
-            HerdrControlRequest::Ping,
-        )
-        .await;
-    }
     let result = result.map_err(|error| HostRuntimeError::HerdrUnavailable(error.to_string()))?;
-    update_server_from_result(inner, socket, &result);
+    update_server_from_result(inner, &result);
     if inner.state.lock().protocol.is_none() {
         return Err(HostRuntimeError::HerdrUnavailable(
             "Herdr ping response did not include a protocol".to_owned(),
@@ -1074,31 +994,12 @@ async fn control_request_inner(
         )));
     }
     let started_at = Instant::now();
-    let mut socket = resolve_socket_path(&inner)
-        .await
-        .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
-    let mut result = request_on_runtime(
-        inner.id.clone(),
-        current_ssh(&inner)
-            .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?,
-        socket.clone(),
+    let result = request_on_runtime(
+        inner.herdr.clone(),
         request.clone(),
+        request_replay(&request),
     )
     .await;
-    if should_rediscover_cached_socket(inner.state.lock().socket_from_cache, &request, &result) {
-        invalidate_cached_socket(&mut inner.state.lock());
-        socket = resolve_socket_path(&inner)
-            .await
-            .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
-        result = request_on_runtime(
-            inner.id.clone(),
-            current_ssh(&inner)
-                .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?,
-            socket.clone(),
-            request.clone(),
-        )
-        .await;
-    }
     emit_slow_or_failed_diagnostic(
         &inner,
         RuntimeDiagnosticOperation::HerdrRequest,
@@ -1107,7 +1008,7 @@ async fn control_request_inner(
     );
     match result {
         Ok(result) => {
-            update_server_from_result(&inner, socket, &result);
+            update_server_from_result(&inner, &result);
             reconcile_control_result(
                 &inner,
                 &request_for_state,
@@ -1130,19 +1031,13 @@ async fn control_request_inner(
                 wait_for_reconnect(status_rx)
                     .await
                     .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
-                let socket = resolve_socket_path(&inner)
-                    .await
-                    .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
                 let result = request_on_runtime(
-                    inner.id.clone(),
-                    current_ssh(&inner).map_err(|error| {
-                        HerdrControlError::TransportDisconnected(error.to_string())
-                    })?,
-                    socket.clone(),
+                    inner.herdr.clone(),
                     request,
+                    request_replay(&request_for_state),
                 )
                 .await?;
-                update_server_from_result(&inner, socket, &result);
+                update_server_from_result(&inner, &result);
                 reconcile_control_result(
                     &inner,
                     &request_for_state,
@@ -1398,7 +1293,6 @@ fn start_herdr_server_command(herdr_command: &str, session_name: &str) -> String
 }
 
 struct ReadyHerdrSnapshot {
-    socket: String,
     snapshot: HerdrSessionSnapshot,
 }
 
@@ -1456,47 +1350,18 @@ fn readiness_probe_error(
     }
 }
 
-fn readiness_runtime_error(
-    inner: &RuntimeInner,
-    generation: u64,
-    error: HostRuntimeError,
-) -> HerdrReadinessProbeError {
-    if let Err(error) = validate_generation(inner, generation) {
-        return HerdrReadinessProbeError::Permanent(error);
-    }
-    if let Err(error) = current_ssh(inner) {
-        return HerdrReadinessProbeError::Permanent(error);
-    }
-    HerdrReadinessProbeError::Permanent(error)
-}
-
 async fn probe_herdr_readiness(
     inner: Arc<RuntimeInner>,
     generation: u64,
 ) -> Result<ReadyHerdrSnapshot, HerdrReadinessProbeError> {
     validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
-    let ssh = current_ssh(&inner).map_err(HerdrReadinessProbeError::Permanent)?;
     let request = HerdrControlRequest::SessionSnapshot;
-    let mut socket = resolve_socket_path(&inner)
-        .await
-        .map_err(|error| readiness_runtime_error(&inner, generation, error))?;
-    validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
-    let mut result = request_on_runtime(
-        inner.id.clone(),
-        ssh.clone(),
-        socket.clone(),
-        request.clone(),
+    let result = request_on_runtime(
+        inner.herdr.clone(),
+        request,
+        HerdrRequestReplay::AfterSocketRediscovery,
     )
     .await;
-    if should_rediscover_cached_socket(inner.state.lock().socket_from_cache, &request, &result) {
-        validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
-        invalidate_cached_socket(&mut inner.state.lock());
-        socket = resolve_socket_path(&inner)
-            .await
-            .map_err(|error| readiness_runtime_error(&inner, generation, error))?;
-        validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
-        result = request_on_runtime(inner.id.clone(), ssh, socket.clone(), request).await;
-    }
     validate_generation(&inner, generation).map_err(HerdrReadinessProbeError::Permanent)?;
     let result = result.map_err(|error| readiness_probe_error(&inner, generation, error))?;
     let HerdrControlResult::SessionSnapshot { snapshot } = result else {
@@ -1507,7 +1372,7 @@ async fn probe_herdr_readiness(
         ));
     };
     validate_herdr_protocol(snapshot.protocol).map_err(HerdrReadinessProbeError::Permanent)?;
-    Ok(ReadyHerdrSnapshot { socket, snapshot })
+    Ok(ReadyHerdrSnapshot { snapshot })
 }
 
 async fn bounded_readiness_probe(
@@ -1584,8 +1449,6 @@ async fn complete_herdr_startup_sync(
                 "Herdr startup completed after its host connection was replaced".to_owned(),
             ));
         }
-        state.socket_path = Some(ready.socket);
-        state.socket_from_cache = false;
         state.protocol = Some(ready.snapshot.protocol);
         state
             .host_state
@@ -1924,7 +1787,7 @@ fn schedule_state_resync(inner: Arc<RuntimeInner>, reason: String) {
 }
 
 async fn start_desired_events(inner: Arc<RuntimeInner>, epoch: u64) -> Result<(), HerdrEventError> {
-    let (socket, protocol, pane_ids, operation_epoch) = {
+    let (protocol, pane_ids, operation_epoch) = {
         let state = inner.state.lock();
         let event = state.event.as_ref().ok_or_else(|| {
             HerdrEventError::SubscriptionUnavailable(
@@ -1932,9 +1795,6 @@ async fn start_desired_events(inner: Arc<RuntimeInner>, epoch: u64) -> Result<()
             )
         })?;
         (
-            state.socket_path.clone().ok_or_else(|| {
-                HerdrEventError::SubscriptionUnavailable("Herdr socket is unknown".to_owned())
-            })?,
             state.protocol.ok_or_else(|| {
                 HerdrEventError::UnsupportedProtocol("Herdr protocol is unknown".to_owned())
             })?,
@@ -1942,9 +1802,7 @@ async fn start_desired_events(inner: Arc<RuntimeInner>, epoch: u64) -> Result<()
             event.operation_epoch,
         )
     };
-    let ssh = current_ssh(&inner)
-        .map_err(|error| HerdrEventError::TransportDisconnected(error.to_string()))?;
-    start_events(inner.id.clone(), ssh, socket, protocol, pane_ids).await?;
+    start_events(inner.herdr.clone(), protocol, pane_ids).await?;
     let state = inner.state.lock();
     if state.epoch != epoch
         || state
@@ -2078,7 +1936,7 @@ async fn open_terminal_inner(
         RuntimeDiagnosticOperation::TerminalAttach
     };
     ensure_herdr_server(&inner).await?;
-    let (socket, protocol, terminal) = {
+    let (protocol, terminal) = {
         let state = inner.state.lock();
         if state.connection != HostConnectionState::Connected {
             return Err(HostRuntimeError::RuntimeDisconnected(
@@ -2091,9 +1949,6 @@ async fn open_terminal_inner(
             ))
         })?;
         (
-            state.socket_path.clone().ok_or_else(|| {
-                HostRuntimeError::HerdrUnavailable("Herdr socket is unknown".to_owned())
-            })?,
             state.protocol.ok_or_else(|| {
                 HostRuntimeError::HerdrUnavailable("Herdr protocol is unknown".to_owned())
             })?,
@@ -2103,9 +1958,7 @@ async fn open_terminal_inner(
     let claim_inner = inner.clone();
     let claim_terminal_id = terminal_id.clone();
     let mut result = start_bridge_on_runtime(
-        inner.id.clone(),
-        current_ssh(&inner)?,
-        client_socket_path(&socket),
+        inner.herdr.clone(),
         protocol,
         terminal_id.clone(),
         terminal.takeover,
@@ -2720,13 +2573,18 @@ pub fn create_host_runtime(
     let state = RuntimeState::new(&config);
     let (cancellation, _) = watch::channel(0);
     let (status_tx, _) = watch::channel(state.status());
-    let ssh = Arc::new(RwLock::new(None));
+    let herdr = HerdrConnection::new(
+        id.clone(),
+        config.session_name.clone(),
+        config.socket_path.clone(),
+        config.cached_socket_path.clone(),
+    );
     let inner = Arc::new(RuntimeInner {
         id: id.clone(),
         state: Mutex::new(state),
-        agents: AgentSessionManager::new(id.clone(), ssh.clone()),
+        agents: AgentSessionManager::new(id.clone(), herdr.clone()),
         operations: RemoteOperationManager::default(),
-        ssh,
+        herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
         config,
@@ -2842,14 +2700,20 @@ impl HostRuntime {
     }
 
     pub fn resolved_socket_path(&self) -> Option<String> {
-        self.inner.state.lock().socket_path.clone()
+        self.inner.herdr.resolved_socket_path()
     }
 
     pub async fn resolve_control_socket(&self) -> Result<String, HostRuntimeError> {
         let inner = self.inner.clone();
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
-            .spawn(async move { resolve_socket_path(&inner).await })
+            .spawn(async move {
+                inner
+                    .herdr
+                    .resolve_control_socket()
+                    .await
+                    .map_err(|error| HostRuntimeError::ControlConnectionFailure(error.to_string()))
+            })
             .await
             .map_err(|error| {
                 HostRuntimeError::SshTransportFailure(format!(
@@ -2892,7 +2756,7 @@ impl HostRuntime {
                 inner.agents.disconnected(true, "Host runtime disconnected");
                 close_herdr_event_subscription(inner.id.clone());
                 close_all_herdr_terminal_bridges(inner.id.clone());
-                let ssh = inner.ssh.write().take();
+                let ssh = inner.herdr.clear(generation);
                 let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
                 if let Some(ssh) = ssh {
                     ssh.disconnect().await;
@@ -4029,9 +3893,9 @@ impl Drop for HostRuntime {
         inner.agents.disconnected(true, "Host runtime dropped");
         close_herdr_event_subscription(inner.id.clone());
         close_all_herdr_terminal_bridges(inner.id.clone());
+        let ssh = inner.herdr.clear(generation);
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
-                let ssh = inner.ssh.write().take();
                 let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
                 if let Some(ssh) = ssh {
                     ssh.disconnect().await;
@@ -4116,14 +3980,19 @@ mod tests {
     ) -> Arc<RuntimeInner> {
         let (cancellation, _) = watch::channel(0);
         let (status_tx, _) = watch::channel(state.status());
-        let ssh = Arc::new(RwLock::new(None));
+        let herdr = HerdrConnection::new(
+            id.to_owned(),
+            runtime_config.session_name.clone(),
+            runtime_config.socket_path.clone(),
+            runtime_config.cached_socket_path.clone(),
+        );
         Arc::new(RuntimeInner {
             id: id.to_owned(),
             config: runtime_config,
             state: Mutex::new(state),
-            agents: AgentSessionManager::new(id.to_owned(), ssh.clone()),
+            agents: AgentSessionManager::new(id.to_owned(), herdr.clone()),
             operations: RemoteOperationManager::default(),
-            ssh,
+            herdr,
             jump_sessions: Mutex::new(Vec::new()),
             herdr_startup: AsyncMutex::new(()),
             cancellation,
@@ -4157,10 +4026,7 @@ mod tests {
         snapshot.tabs.clear();
         snapshot.panes.clear();
         snapshot.layouts.clear();
-        ReadyHerdrSnapshot {
-            socket: "/tmp/herdr.sock".to_owned(),
-            snapshot,
-        }
+        ReadyHerdrSnapshot { snapshot }
     }
 
     #[test]
@@ -5349,38 +5215,6 @@ mod tests {
     }
 
     #[test]
-    fn socket_path_preserves_override_and_cached_origin() {
-        let mut explicit = config();
-        explicit.socket_path = Some("/run/herdr.sock".to_owned());
-        explicit.cached_socket_path = Some("/old.sock".to_owned());
-        let state = RuntimeState::new(&explicit);
-        assert_eq!(state.socket_path.as_deref(), Some("/run/herdr.sock"));
-        assert!(!state.socket_from_cache);
-        let mut cached = config();
-        cached.cached_socket_path = Some("/cached.sock".to_owned());
-        let mut cached_state = RuntimeState::new(&cached);
-        assert!(cached_state.socket_from_cache);
-        assert!(invalidate_cached_socket(&mut cached_state));
-        assert!(cached_state.socket_path.is_none());
-
-        let mut explicit_state = RuntimeState::new(&explicit);
-        assert!(!invalidate_cached_socket(&mut explicit_state));
-        assert_eq!(
-            explicit_state.socket_path.as_deref(),
-            Some("/run/herdr.sock")
-        );
-    }
-
-    #[test]
-    fn client_socket_derivation_matches_existing_behavior() {
-        assert_eq!(
-            client_socket_path("/tmp/herdr.sock"),
-            "/tmp/herdr-client.sock"
-        );
-        assert_eq!(client_socket_path("/tmp/control"), "/tmp/control-client");
-    }
-
-    #[test]
     fn malformed_config_is_rejected_without_panicking() {
         let mut invalid = config();
         invalid.ssh.port = 0;
@@ -5594,48 +5428,25 @@ mod tests {
             pane_id: "p".to_owned(),
             text: "hello".to_owned()
         }));
-        assert!(safe_socket_path_replay(
-            &HerdrControlRequest::SessionSnapshot
-        ));
-        assert!(safe_socket_path_replay(&HerdrControlRequest::PaneRead {
+        assert!(safe_control_replay(&HerdrControlRequest::SessionSnapshot));
+        assert!(safe_control_replay(&HerdrControlRequest::PaneRead {
             pane_id: "p".to_owned(),
             lines: 10
         }));
-        assert!(!safe_socket_path_replay(
-            &HerdrControlRequest::PaneSendText {
-                pane_id: "p".to_owned(),
-                text: "hello".to_owned()
-            }
-        ));
-        let unavailable = Err(HerdrControlError::TransportDisconnected(
-            "cached socket refused the channel".to_owned(),
-        ));
-        assert!(should_rediscover_cached_socket(
-            true,
-            &HerdrControlRequest::SessionSnapshot,
-            &unavailable,
-        ));
-        assert!(!should_rediscover_cached_socket(
-            false,
-            &HerdrControlRequest::SessionSnapshot,
-            &unavailable,
-        ));
-        assert!(!should_rediscover_cached_socket(
-            true,
-            &HerdrControlRequest::PaneSendText {
+        assert!(!safe_control_replay(&HerdrControlRequest::PaneSendText {
+            pane_id: "p".to_owned(),
+            text: "hello".to_owned()
+        }));
+        assert_eq!(
+            request_replay(&HerdrControlRequest::SessionSnapshot),
+            HerdrRequestReplay::AfterSocketRediscovery
+        );
+        assert_eq!(
+            request_replay(&HerdrControlRequest::PaneSendText {
                 pane_id: "p".to_owned(),
                 text: "do not replay".to_owned(),
-            },
-            &unavailable,
-        ));
-        let protocol_error = Err(HerdrControlError::ProtocolError(
-            "invalid_request".to_owned(),
-            "bad request".to_owned(),
-        ));
-        assert!(!should_rediscover_cached_socket(
-            true,
-            &HerdrControlRequest::SessionSnapshot,
-            &protocol_error,
-        ));
+            },),
+            HerdrRequestReplay::Never
+        );
     }
 }
