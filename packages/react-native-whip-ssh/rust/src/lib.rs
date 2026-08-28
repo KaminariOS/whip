@@ -26,7 +26,6 @@ pub use remote_ops::*;
 
 use std::sync::OnceLock;
 
-use serde_json::json;
 use tokio::runtime::Runtime;
 
 uniffi::setup_scaffolding!();
@@ -40,32 +39,76 @@ fn runtime() -> Result<&'static Runtime, String> {
         .map_err(Clone::clone)
 }
 
-async fn pair_host_on_runtime(code: String, public_key: String, device_name: String) -> String {
-    match pairing::pair_host(&code, &public_key, &device_name).await {
-        Ok(value) => json!({ "ok": true, "value": value }).to_string(),
-        Err(error) => json!({ "ok": false, "error": error.to_string() }).to_string(),
+#[derive(Clone, Debug, thiserror::Error, uniffi::Error, PartialEq, Eq)]
+pub enum PairHostError {
+    #[error("pairing code has the wrong prefix or version")]
+    BadPrefix,
+    #[error("pairing code is not valid Base45")]
+    BadEncoding,
+    #[error("pairing code contains an invalid SSH profile")]
+    BadPayload,
+    #[error("SSH pairing connection timed out")]
+    ConnectionTimeout,
+    #[error("host approval timed out")]
+    ApprovalTimeout,
+    #[error("temporary SSH authentication failed")]
+    AuthenticationFailed,
+    #[error("SSH host key did not match the fingerprint pinned in the QR code")]
+    HostKeyMismatch,
+    #[error("SSH host certificates are not supported for pairing")]
+    UnsupportedHostCertificate,
+    #[error("restricted pairing command returned invalid data")]
+    InvalidResponse,
+    #[error("restricted pairing command failed: {0}")]
+    CommandFailed(String),
+    #[error("enrollment refused ({code}): {message}")]
+    Refused { code: String, message: String },
+    #[error("{0}")]
+    SshFailure(String),
+    #[error("failed to initialize pairing runtime: {0}")]
+    RuntimeInitialization(String),
+    #[error("pairing runtime task failed: {0}")]
+    RuntimeTaskFailed(String),
+}
+
+impl From<pairing::PairingError> for PairHostError {
+    fn from(error: pairing::PairingError) -> Self {
+        match error {
+            pairing::PairingError::BadPrefix => Self::BadPrefix,
+            pairing::PairingError::BadEncoding => Self::BadEncoding,
+            pairing::PairingError::BadPayload => Self::BadPayload,
+            pairing::PairingError::ConnectionTimeout => Self::ConnectionTimeout,
+            pairing::PairingError::ApprovalTimeout => Self::ApprovalTimeout,
+            pairing::PairingError::AuthenticationFailed => Self::AuthenticationFailed,
+            pairing::PairingError::HostKeyMismatch => Self::HostKeyMismatch,
+            pairing::PairingError::UnsupportedHostCertificate => Self::UnsupportedHostCertificate,
+            pairing::PairingError::InvalidResponse => Self::InvalidResponse,
+            pairing::PairingError::CommandFailed(message) => Self::CommandFailed(message),
+            pairing::PairingError::Refused { code, message } => Self::Refused { code, message },
+            pairing::PairingError::Ssh(error) => Self::SshFailure(error.to_string()),
+            pairing::PairingError::SshKey(error) => Self::SshFailure(error.to_string()),
+            pairing::PairingError::Json(error) => Self::SshFailure(error.to_string()),
+        }
     }
 }
 
 #[uniffi::export]
-pub async fn pair_host(code: String, public_key: String, device_name: String) -> String {
+pub async fn pair_host(
+    code: String,
+    public_key: String,
+    device_name: String,
+) -> Result<pairing::PairHostResult, PairHostError> {
     let task = match runtime() {
-        Ok(runtime) => runtime.spawn(pair_host_on_runtime(code, public_key, device_name)),
-        Err(error) => {
-            return json!({
-                "ok": false,
-                "error": format!("failed to initialize pairing runtime: {error}"),
-            })
-            .to_string();
-        }
+        Ok(runtime) => runtime.spawn(async move {
+            pairing::pair_host(&code, &public_key, &device_name)
+                .await
+                .map_err(PairHostError::from)
+        }),
+        Err(error) => return Err(PairHostError::RuntimeInitialization(error)),
     };
     match task.await {
         Ok(response) => response,
-        Err(error) => json!({
-            "ok": false,
-            "error": format!("pairing runtime task failed: {error}"),
-        })
-        .to_string(),
+        Err(error) => Err(PairHostError::RuntimeTaskFailed(error.to_string())),
     }
 }
 
@@ -77,8 +120,6 @@ mod tests {
         task::{Context, Poll, Wake, Waker},
         thread,
     };
-
-    use serde_json::Value;
 
     use super::{pair_host, ssh};
 
@@ -133,39 +174,35 @@ mod tests {
 
     #[test]
     fn exported_pairing_future_supplies_its_own_tokio_runtime() {
-        let response = block_on_without_tokio(pair_host(
+        let error = block_on_without_tokio(pair_host(
             unreachable_pairing_code(),
             "ssh-ed25519 AAAA test".to_owned(),
             "test device".to_owned(),
-        ));
-        let response: Value = serde_json::from_str(&response).unwrap();
-        let error = response["error"].as_str().unwrap();
+        ))
+        .unwrap_err();
+        let message = error.to_string();
 
-        assert_eq!(response["ok"], false);
-        assert!(!error.contains("no reactor running"), "{error}");
-        assert!(!error.contains("pairing runtime task failed"), "{error}");
+        assert!(!message.contains("no reactor running"), "{message}");
+        assert!(!matches!(error, super::PairHostError::RuntimeTaskFailed(_)));
     }
 
     #[test]
     fn exported_ssh_future_uses_the_core_tokio_runtime() {
-        let request = serde_json::json!({
-            "operation": "connect",
-            "params": {
-                "key": "direct-core-test",
-                "host": "127.0.0.1",
-                "port": 1,
-                "username": "test",
-                "credential": { "type": "password", "password": "test" }
-            }
-        })
-        .to_string();
-        let response = block_on_without_tokio(ssh::call_async(request));
-        let response: Value = serde_json::from_str(&response).unwrap();
-        let error = response["error"]["message"].as_str().unwrap();
+        let error = block_on_without_tokio(ssh::connect_ssh(
+            "127.0.0.1".to_owned(),
+            1,
+            "test".to_owned(),
+            ssh::SshAuthentication::Password {
+                password: "test".to_owned(),
+            },
+            "direct-core-test".to_owned(),
+            None,
+        ))
+        .unwrap_err();
+        let message = error.to_string();
 
-        assert_eq!(response["ok"], false);
-        assert!(!error.contains("no reactor running"), "{error}");
-        assert!(!error.contains("SSH runtime task failed"), "{error}");
-        assert!(!error.contains("native transport"), "{error}");
+        assert!(!message.contains("no reactor running"), "{message}");
+        assert!(!message.contains("SSH runtime task failed"), "{message}");
+        assert!(!message.contains("native transport"), "{message}");
     }
 }

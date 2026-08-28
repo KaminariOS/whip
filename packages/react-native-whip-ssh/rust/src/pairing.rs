@@ -10,7 +10,6 @@ use russh::{
     keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use ssh_key::{PrivateKey, private::Ed25519Keypair};
 use tokio::time::timeout;
@@ -58,6 +57,18 @@ pub enum PairingError {
     SshKey(#[from] ssh_key::Error),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
+pub struct PairHostResult {
+    pub ssh_host: String,
+    pub ssh_port: u16,
+    pub ssh_user: String,
+    pub ssh_host_fingerprint: String,
+    pub ssh_host_key_type: String,
+    pub ssh_host_public_key: String,
+    pub key_fingerprint: Option<String>,
+    pub already_present: bool,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -129,7 +140,7 @@ pub async fn pair_host(
     code: &str,
     public_key: &str,
     device_name: &str,
-) -> Result<Value, PairingError> {
+) -> Result<PairHostResult, PairingError> {
     let payload = decode_pairing_code(code.trim())?;
     let public_key = public_key.trim();
     if public_key.is_empty() || public_key.len() > 4096 || public_key.chars().any(char::is_control)
@@ -220,16 +231,16 @@ pub async fn pair_host(
         STANDARD_NO_PAD.encode(payload.ssh_host_key_sha256)
     );
 
-    Ok(json!({
-        "sshHost": payload.ssh_host,
-        "sshPort": payload.ssh_port,
-        "sshUser": payload.ssh_user,
-        "sshHostFingerprint": ssh_host_fingerprint,
-        "sshHostKeyType": accepted.key_type,
-        "sshHostPublicKey": accepted.public_key,
-        "keyFingerprint": response.fingerprint,
-        "alreadyPresent": response.already_present.unwrap_or(false),
-    }))
+    Ok(PairHostResult {
+        ssh_host: payload.ssh_host,
+        ssh_port: payload.ssh_port,
+        ssh_user: payload.ssh_user,
+        ssh_host_fingerprint,
+        ssh_host_key_type: accepted.key_type,
+        ssh_host_public_key: accepted.public_key,
+        key_fingerprint: response.fingerprint,
+        already_present: response.already_present.unwrap_or(false),
+    })
 }
 
 fn temporary_private_key(seed: &[u8; ED25519_SEED_BYTES]) -> PrivateKey {

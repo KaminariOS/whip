@@ -1,10 +1,44 @@
 import {
-  call,
-  callAsync,
+  cancelSshSftpDownload,
+  cancelSshSftpUpload,
+  chmodSshSftpPath,
   clearEventSink,
+  closeSshExecChannel,
+  closeSshLocalForward,
+  closeSshSftpFileServer,
+  closeSshShell,
+  closeSshUnixSocketChannel,
+  connectSsh,
+  connectSshSftp,
+  createSshSftpDirectory,
+  createSshSftpDirectoryAll,
+  disconnectSsh,
+  disconnectSshSftp,
+  downloadSshSftp,
+  executeSshCommand,
+  generateSshKeyPair,
+  getSshKeyDetails,
+  getSshRemoteHome,
+  listSshSftpDirectory,
+  measureSshHostLatency,
+  openLengthPrefixedSshUnixSocketChannel,
+  openSshExecChannel,
+  openSshLocalForward,
+  openSshUnixSocketChannel,
+  removeSshSftpDirectory,
+  removeSshSftpFile,
+  renameSshSftpPath,
+  requestSshUnixSocket,
   resizeShellFast,
+  setKnownHosts,
+  setSshAgentForwarding,
   setEventSink,
   shutdown as shutdownRust,
+  SshAuthentication,
+  startSshSftpFileServer,
+  startSshShell,
+  uploadSshSftp,
+  uploadSshSftpToPath,
   type WhipSshEventSink,
   writeUnixSocketChannel as writeUnixSocketChannelRust,
   writeLengthPrefixedUnixSocketChannel as writeLengthPrefixedUnixSocketChannelRust,
@@ -14,21 +48,10 @@ import {
 
 export * from './generated-entry';
 
-type Params = Record<string, unknown>;
 type Callback = (error?: Error | string | null, value?: unknown) => void;
 type Listener = (event: Record<string, unknown>) => void;
 
-type RustError = {
-  code: string;
-  message: string;
-  details?: unknown;
-};
-
-type RustResponse = {
-  ok: boolean;
-  value?: unknown;
-  error?: RustError | string;
-};
+type LegacyKey = { privateKey?: string; passphrase?: string | null };
 
 const listeners = new Map<string, Set<Listener>>();
 
@@ -46,57 +69,55 @@ function dispatchEvent(name: string, event: Record<string, unknown>): void {
   for (const listener of listeners.get(name) || []) listener(event);
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+const SSH_ERROR_CODES = {
+  AuthenticationFailed: 'AUTHENTICATION_FAILED',
+  HostKeyUnknown: 'HOST_KEY_UNKNOWN',
+  HostKeyChanged: 'HOST_KEY_CHANGED',
+  UnsupportedHostCertificate: 'UNSUPPORTED_HOST_CERTIFICATE',
+  ConnectionRefused: 'CONNECTION_REFUSED',
+  ConnectionTimeout: 'CONNECTION_TIMEOUT',
+  HostUnreachable: 'HOST_UNREACHABLE',
+  ChannelUnavailable: 'CHANNEL_UNAVAILABLE',
+  SessionClosed: 'SESSION_CLOSED',
+  InvalidPrivateKey: 'INVALID_PRIVATE_KEY',
+  SftpFailure: 'SFTP_FAILURE',
+  InvalidRequest: 'INVALID_REQUEST',
+  Unknown: 'UNKNOWN',
+} as const;
+
+function sshError(error: unknown): Error {
+  if (error instanceof Error && error.name === 'SshError') return error;
+  const native = error as { tag?: keyof typeof SSH_ERROR_CODES; inner?: readonly unknown[] };
+  const tag = native?.tag;
+  const details = tag === 'HostKeyUnknown' || tag === 'HostKeyChanged'
+    ? native.inner?.[0]
+    : undefined;
+  const message = tag === 'HostKeyUnknown'
+    ? 'unknown SSH host key'
+    : tag === 'HostKeyChanged'
+      ? 'SSH host key changed'
+      : tag === 'UnsupportedHostCertificate'
+        ? 'SSH host certificates are not supported'
+        : typeof native?.inner?.[0] === 'string'
+          ? native.inner[0]
+          : error instanceof Error
+            ? error.message
+            : String(error);
+  const result = error instanceof Error ? error : new Error(message);
+  result.message = message;
+  result.name = 'SshError';
+  if (tag) Object.assign(result, { code: SSH_ERROR_CODES[tag] });
+  if (details) Object.assign(result, { details });
+  return result;
 }
 
-function decodeError(value: unknown, fallback = 'Rust SSH operation failed'): Error {
-  let error = value;
-  if (typeof error === 'string' && error.startsWith('{')) {
-    try {
-      error = JSON.parse(error);
-    } catch {
-      // Older native builds return a plain error string.
-    }
-  }
-  if (error && typeof error === 'object') {
-    const payload = error as Partial<RustError>;
-    const result = new Error(typeof payload.message === 'string' ? payload.message : fallback);
-    result.name = 'SshError';
-    if (typeof payload.code === 'string') Object.assign(result, { code: payload.code });
-    if ('details' in payload) Object.assign(result, { details: payload.details });
-    return result;
-  }
-  return new Error(typeof error === 'string' && error ? error : fallback);
-}
-
-function decodeResponse(responseJson: string): unknown {
-  let response: RustResponse;
+async function logged<T>(label: string, promise: Promise<T>): Promise<T> {
   try {
-    response = JSON.parse(responseJson) as RustResponse;
-  } catch {
-    throw new Error('Rust SSH returned invalid JSON');
-  }
-  if (!response.ok) {
-    throw decodeError(response.error);
-  }
-  return response.value;
-}
-
-function request(operation: string, params: Params = {}): string {
-  return JSON.stringify({ operation, params });
-}
-
-function invokeSync(operation: string, params: Params = {}): unknown {
-  return decodeResponse(call(request(operation, params)));
-}
-
-async function invokeAsync(operation: string, params: Params = {}): Promise<unknown> {
-  try {
-    return decodeResponse(await callAsync(request(operation, params)));
+    return await promise;
   } catch (error) {
-    console.error(`[WhipSsh] ${operation} failed: ${errorMessage(error)}`);
-    throw error;
+    const converted = sshError(error);
+    console.error(`[WhipSsh] ${label} failed: ${converted.message}`);
+    throw converted;
   }
 }
 
@@ -105,41 +126,40 @@ function finish(promise: Promise<unknown>, callback: Callback, select?: (value: 
     const selected = select ? select(value) : value;
     if (selected === undefined || selected === null) callback();
     else callback(null, selected);
-  }).catch(error => callback(error instanceof Error ? error : decodeError(error)));
+  }).catch(error => callback(sshError(error)));
 }
 
-function finishSync(operation: string, params: Params, callback: Callback): void {
+function finishSync(invoke: () => unknown, callback: Callback): void {
   try {
-    const value = invokeSync(operation, params);
+    const value = invoke();
     if (value === undefined || value === null) callback();
     else callback(null, value);
   } catch (error) {
-    callback(error instanceof Error ? error : decodeError(error));
+    callback(sshError(error));
   }
 }
 
-function fireSync(operation: string, params: Params): void {
+function fireSync(invoke: () => void): void {
   try {
-    invokeSync(operation, params);
+    invoke();
   } catch {
     // Matches the legacy void native methods, which cannot report failures.
   }
 }
 
-function fireAsync(operation: string, params: Params): void {
-  invokeAsync(operation, params).catch(() => {
+function fireAsync(promise: Promise<unknown>): void {
+  promise.catch(() => {
     // Matches the legacy disconnect methods, which intentionally ignore errors.
   });
 }
 
-function credential(passwordOrKey: string | { privateKey?: string; passphrase?: string | null }): Params {
+function credential(passwordOrKey: string | LegacyKey) {
   return typeof passwordOrKey === 'string'
-    ? { type: 'password', password: passwordOrKey }
-    : {
-        type: 'key',
+    ? SshAuthentication.Password.new({ password: passwordOrKey })
+    : SshAuthentication.Key.new({
         privateKey: passwordOrKey.privateKey || '',
-        passphrase: passwordOrKey.passphrase ?? null,
-      };
+        passphrase: passwordOrKey.passphrase ?? undefined,
+      });
 }
 
 const eventSink: WhipSshEventSink = {
@@ -186,14 +206,14 @@ const eventSink: WhipSshEventSink = {
   },
 };
 
-function finishFast(operation: string, invoke: () => string | undefined, callback: Callback): void {
+function finishFast(label: string, invoke: () => void, callback: Callback): void {
   try {
-    const error = invoke();
-    if (error) console.error(`[WhipSsh] ${operation} failed: ${error}`);
-    callback(error ? decodeError(error) : undefined);
+    invoke();
+    callback();
   } catch (error) {
-    console.error(`[WhipSsh] ${operation} failed: ${errorMessage(error)}`);
-    callback(error instanceof Error ? error : decodeError(error));
+    const converted = sshError(error);
+    console.error(`[WhipSsh] ${label} failed: ${converted.message}`);
+    callback(converted);
   }
 }
 
@@ -223,39 +243,46 @@ const nativeClient = {
   removeListeners(_count: number) {},
 
   setKnownHosts(contents: string) {
-    fireSync('setKnownHosts', { contents: contents || '' });
+    fireSync(() => setKnownHosts(contents || ''));
   },
 
   getKeyDetails(privateKey: string, passphrase: string | null) {
-    return invokeAsync('getKeyDetails', { privateKey: privateKey || '', passphrase });
+    return Promise.resolve().then(() => getSshKeyDetails(privateKey || '', passphrase ?? undefined)).catch(error => {
+      throw sshError(error);
+    });
   },
 
   generateKeyPair(type: string, passphrase: string, keySize: number, comment: string, callback: Callback) {
-    finish(invokeAsync('generateKeyPair', { type: type || 'ed25519', passphrase: passphrase || '', keySize, comment: comment || 'whip-ssh' }), callback);
+    finish(Promise.resolve().then(() => generateSshKeyPair(
+      type || 'ed25519',
+      passphrase || '',
+      keySize,
+      comment || 'whip-ssh',
+    )), callback);
   },
 
-  connectToHost(host: string, port: number, username: string, passwordOrKey: string | Params, key: string, callback: Callback) {
-    finish(invokeAsync('connect', { host, port, username, credential: credential(passwordOrKey as any), key }), callback);
+  connectToHost(host: string, port: number, username: string, passwordOrKey: string | LegacyKey, key: string, callback: Callback) {
+    finish(logged('connectSsh', connectSsh(host, port, username, credential(passwordOrKey), key, undefined)), callback);
   },
 
   connectToHostByPasswordViaJump(host: string, port: number, username: string, password: string, jumpKey: string, key: string, callback: Callback) {
-    finish(invokeAsync('connect', { host, port, username, credential: credential(password), jumpKey, key }), callback);
+    finish(logged('connectSsh', connectSsh(host, port, username, credential(password), key, jumpKey)), callback);
   },
 
-  connectToHostByKeyViaJump(host: string, port: number, username: string, keyData: Params, jumpKey: string, key: string, callback: Callback) {
-    finish(invokeAsync('connect', { host, port, username, credential: credential(keyData as any), jumpKey, key }), callback);
+  connectToHostByKeyViaJump(host: string, port: number, username: string, keyData: LegacyKey, jumpKey: string, key: string, callback: Callback) {
+    finish(logged('connectSsh', connectSsh(host, port, username, credential(keyData), key, jumpKey)), callback);
   },
 
   setAgentForwarding(key: string, enabled: boolean) {
-    fireSync('setAgentForwarding', { key, enabled });
+    fireSync(() => setSshAgentForwarding(key, enabled));
   },
 
   execute(command: string, key: string, callback: Callback) {
-    finish(invokeAsync('execute', { command, key }), callback, value => value?.stdout || '');
+    finish(logged('executeSshCommand', executeSshCommand(key, command)), callback);
   },
 
   startShell(key: string, ptyType: string, callback: Callback) {
-    finish(invokeAsync('startShell', { key, ptyType: ptyType || 'xterm-256color' }), callback);
+    finish(logged('startSshShell', startSshShell(key, ptyType || 'xterm-256color')), callback);
   },
 
   writeToShell(data: string, key: string, callback: Callback) {
@@ -271,99 +298,115 @@ const nativeClient = {
   },
 
   closeShell(key: string) {
-    fireSync('closeShell', { key });
+    fireSync(() => closeSshShell(key));
   },
 
   measureHostLatency(key: string, callback: Callback) {
-    finish(invokeAsync('measureHostLatency', { key }), callback);
+    finish(logged('measureSshHostLatency', measureSshHostLatency(key)), callback);
   },
 
   getRemoteHome(key: string, callback: Callback) {
-    finish(invokeAsync('getRemoteHome', { key }), callback);
+    finish(logged('getSshRemoteHome', getSshRemoteHome(key)), callback);
   },
 
   disconnect(key: string) {
-    fireAsync('disconnect', { key });
+    fireAsync(disconnectSsh(key));
   },
 
   connectSFTP(key: string, callback: Callback) {
-    finish(invokeAsync('connectSFTP', { key }), callback);
+    finish(logged('connectSshSftp', connectSshSftp(key)), callback);
   },
 
   sftpLs(path: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpLs', { path, key }), callback);
+    finish(logged('listSshSftpDirectory', listSshSftpDirectory(key, path)).then(entries => entries.map(entry => ({
+      filename: entry.filename,
+      isDirectory: entry.isDirectory,
+      modificationDate: entry.modificationDate,
+      lastAccess: entry.lastAccess,
+      fileSize: Number(entry.fileSize),
+      ownerUserID: entry.ownerUserId,
+      ownerGroupID: entry.ownerGroupId,
+      permissions: entry.permissions,
+      flags: entry.flags,
+    }))), callback);
   },
 
   sftpMkdir(path: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpMkdir', { path, key }), callback);
+    finish(logged('createSshSftpDirectory', createSshSftpDirectory(key, path)), callback);
   },
 
   sftpCreateDirAll(path: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpCreateDirAll', { path, key }), callback);
+    finish(logged('createSshSftpDirectoryAll', createSshSftpDirectoryAll(key, path)), callback);
   },
 
   sftpRm(path: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpRm', { path, key }), callback);
+    finish(logged('removeSshSftpFile', removeSshSftpFile(key, path)), callback);
   },
 
   sftpRmdir(path: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpRmdir', { path, key }), callback);
+    finish(logged('removeSshSftpDirectory', removeSshSftpDirectory(key, path)), callback);
   },
 
   sftpRename(oldPath: string, newPath: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpRename', { oldPath, newPath, key }), callback);
+    finish(logged('renameSshSftpPath', renameSshSftpPath(key, oldPath, newPath)), callback);
   },
 
   sftpChmod(path: string, permissions: number, key: string, callback: Callback) {
-    finish(invokeAsync('sftpChmod', { path, permissions, key }), callback);
+    finish(logged('chmodSshSftpPath', chmodSshSftpPath(key, path, permissions)), callback);
   },
 
   sftpUpload(localPath: string, remoteDirectoryPath: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpUpload', { localPath, remotePath: remoteDirectoryPath, key }), callback);
+    finish(logged('uploadSshSftp', uploadSshSftp(key, localPath, remoteDirectoryPath)), callback);
   },
 
   sftpUploadToPath(localPath: string, remotePath: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpUploadToPath', { localPath, remotePath, key }), callback);
+    finish(logged('uploadSshSftpToPath', uploadSshSftpToPath(key, localPath, remotePath)), callback);
   },
 
   sftpDownload(remotePath: string, localPath: string, key: string, callback: Callback) {
-    finish(invokeAsync('sftpDownload', { localPath, remotePath, key }), callback);
+    finish(logged('downloadSshSftp', downloadSshSftp(key, remotePath, localPath)), callback);
   },
 
   startSftpFileServer(remotePath: string, key: string, callback: Callback) {
-    finish(invokeAsync('startSftpFileServer', { remotePath, key }), callback);
+    finish(logged('startSshSftpFileServer', startSshSftpFileServer(key, remotePath)), callback);
   },
 
   closeSftpFileServer(localPort: number, key: string, callback: Callback) {
-    finishSync('closeSftpFileServer', { localPort, key }, callback);
+    finishSync(() => closeSshSftpFileServer(key, localPort), callback);
   },
 
   sftpCancelUpload(key: string) {
-    fireSync('sftpCancelUpload', { key });
+    cancelSshSftpUpload(key);
   },
 
   sftpCancelDownload(key: string) {
-    fireSync('sftpCancelDownload', { key });
+    cancelSshSftpDownload(key);
   },
 
   disconnectSFTP(key: string) {
-    fireAsync('disconnectSFTP', { key });
+    fireAsync(disconnectSshSftp(key));
   },
 
   openLocalForward(remoteHost: string, remotePort: number, key: string, callback: Callback) {
-    finish(invokeAsync('openLocalForward', { remoteHost, remotePort, key }), callback);
+    finish(logged('openSshLocalForward', openSshLocalForward(key, remoteHost, remotePort)), callback);
   },
 
   closeLocalForward(localPort: number, key: string, callback: Callback) {
-    finishSync('closeLocalForward', { localPort, key }, callback);
+    finishSync(() => closeSshLocalForward(key, localPort), callback);
   },
 
   openUnixSocketChannel(socketPath: string, channelId: string, key: string, callback: Callback) {
-    finish(invokeAsync('openUnixSocketChannel', { socketPath, channelId, key }), callback);
+    finish(logged('openSshUnixSocketChannel', openSshUnixSocketChannel(key, socketPath, channelId)), callback);
   },
 
   openLengthPrefixedUnixSocketChannel(socketPath: string, channelId: string, lengthFormat: string, maxFrameBytes: number, key: string, callback: Callback) {
-    finish(invokeAsync('openLengthPrefixedUnixSocketChannel', { socketPath, channelId, lengthFormat, maxFrameBytes, key }), callback);
+    finish(logged('openLengthPrefixedSshUnixSocketChannel', openLengthPrefixedSshUnixSocketChannel(
+      key,
+      socketPath,
+      channelId,
+      lengthFormat,
+      maxFrameBytes,
+    )), callback);
   },
 
   writeUnixSocketChannel(channelId: string, bytes: ArrayBuffer, key: string, callback: Callback) {
@@ -383,22 +426,22 @@ const nativeClient = {
   },
 
   closeUnixSocketChannel(channelId: string, key: string, callback: Callback) {
-    finishSync('closeUnixSocketChannel', { channelId, key }, callback);
+    finishSync(() => closeSshUnixSocketChannel(key, channelId), callback);
   },
 
   requestUnixSocket(socketPath: string, requestText: string, responseTerminator: string, timeoutMs: number, maxResponseBytes: number, key: string, callback: Callback) {
-    finish(invokeAsync('requestUnixSocket', {
+    finish(logged('requestSshUnixSocket', requestSshUnixSocket(
+      key,
       socketPath,
-      request: requestText,
+      requestText,
       responseTerminator,
       timeoutMs,
       maxResponseBytes,
-      key,
-    }), callback);
+    )), callback);
   },
 
   openExecChannel(command: string, channelId: string, key: string, callback: Callback) {
-    finish(invokeAsync('openExecChannel', { command, channelId, key }), callback);
+    finish(logged('openSshExecChannel', openSshExecChannel(key, command, channelId)), callback);
   },
 
   writeExecChannel(channelId: string, bytes: ArrayBuffer, key: string, callback: Callback) {
@@ -410,7 +453,7 @@ const nativeClient = {
   },
 
   closeExecChannel(channelId: string, key: string, callback: Callback) {
-    finishSync('closeExecChannel', { channelId, key }, callback);
+    finishSync(() => closeSshExecChannel(key, channelId), callback);
   },
 };
 

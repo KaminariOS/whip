@@ -223,41 +223,6 @@ fn grouped_channels_scope_shared_ids_by_owner_and_prune_empty_owners() {
     assert!(channels.0.is_empty());
 }
 
-async fn live_call(operation: &str, params: Value) -> Value {
-    dispatch(Request {
-        operation: operation.to_owned(),
-        params,
-    })
-    .await
-    .unwrap_or_else(|error| panic!("{operation} failed: {error}"))
-}
-
-#[test]
-fn invalid_json_is_a_structured_failure() {
-    let result: Value = serde_json::from_str(&process_json("{")).unwrap();
-    assert_eq!(result["ok"], false);
-    assert_eq!(result["error"]["code"], "INVALID_REQUEST");
-    assert!(
-        result["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("invalid request JSON")
-    );
-}
-
-#[test]
-fn missing_parameter_is_a_structured_failure() {
-    let result: Value = serde_json::from_str(&process_json(r#"{"operation":"connect"}"#)).unwrap();
-    assert_eq!(result["ok"], false);
-    assert_eq!(result["error"]["code"], "INVALID_REQUEST");
-    assert!(
-        result["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("missing string parameter 'key'")
-    );
-}
-
 #[test]
 fn transport_errors_have_stable_codes() {
     assert_eq!(
@@ -288,10 +253,10 @@ fn transport_errors_have_stable_codes() {
 
 #[test]
 fn unsupported_host_certificates_keep_their_native_error_type() {
-    let compatibility =
-        serde_json::to_value(SshError::from(TransportError::UnsupportedHostCertificate)).unwrap();
-    assert_eq!(compatibility["code"], "UNSUPPORTED_HOST_CERTIFICATE");
-    assert!(compatibility.get("details").is_none());
+    assert_eq!(
+        SshError::from(TransportError::UnsupportedHostCertificate),
+        SshError::UnsupportedHostCertificate,
+    );
 
     assert_eq!(
         SshFailure::from(TransportError::UnsupportedHostCertificate),
@@ -310,24 +275,16 @@ fn host_key_errors_carry_structured_challenges() {
         HostKeyDecision::Unknown(challenge) => challenge,
         _ => panic!("empty known_hosts should reject the key as unknown"),
     };
-    let error =
-        serde_json::to_value(SshError::from(TransportError::HostKeyUnknown(challenge))).unwrap();
-    assert_eq!(error["code"], "HOST_KEY_UNKNOWN");
-    assert_eq!(error["details"]["host"], "example.com");
-    assert_eq!(error["details"]["port"], 2222);
-    assert_eq!(error["details"]["keyType"], "ssh-ed25519");
-    assert!(
-        error["details"]["fingerprint"]
-            .as_str()
-            .unwrap()
-            .starts_with("SHA256:")
-    );
-    assert!(
-        error["details"]["publicKey"]
-            .as_str()
-            .unwrap()
-            .starts_with("ssh-ed25519 ")
-    );
+    let SshError::HostKeyUnknown(details) =
+        SshError::from(TransportError::HostKeyUnknown(challenge))
+    else {
+        panic!("host-key challenge lost its typed error variant");
+    };
+    assert_eq!(details.host, "example.com");
+    assert_eq!(details.port, 2222);
+    assert_eq!(details.key_type, "ssh-ed25519");
+    assert!(details.fingerprint.starts_with("SHA256:"));
+    assert!(details.public_key.starts_with("ssh-ed25519 "));
 }
 
 #[test]
@@ -439,56 +396,36 @@ fn assigns_inline_media_content_types() {
 
 #[test]
 fn typed_fast_paths_report_missing_channels_without_json() {
-    let shell_error: Value = serde_json::from_str(
-        &write_shell_input("missing-shell".to_owned(), "x".to_owned()).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(shell_error["code"], "SESSION_CLOSED");
-    assert!(
+    assert!(matches!(
+        write_shell_input("missing-shell".to_owned(), "x".to_owned()),
+        Err(SshError::SessionClosed(_)),
+    ));
+    for error in [
         write_unix_socket_channel(
             "missing-client".to_owned(),
             "missing-channel".to_owned(),
             vec![1, 2, 3],
-        )
-        .is_some_and(|error| {
-            let error: Value = serde_json::from_str(&error).unwrap();
-            error["code"] == "CHANNEL_UNAVAILABLE"
-                && error["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("Unix-socket channel 'missing-channel' is not open")
-        })
-    );
-    assert!(
+        ),
         write_length_prefixed_unix_socket_channel(
             "missing-client".to_owned(),
             "missing-channel".to_owned(),
             vec![1, 2, 3],
-        )
-        .is_some_and(|error| {
-            let error: Value = serde_json::from_str(&error).unwrap();
-            error["code"] == "CHANNEL_UNAVAILABLE"
-                && error["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("Unix-socket channel 'missing-channel' is not open")
-        })
-    );
-    assert!(
-        write_exec_channel(
-            "missing-client".to_owned(),
-            "missing-channel".to_owned(),
-            vec![1, 2, 3],
-        )
-        .is_some_and(|error| {
-            let error: Value = serde_json::from_str(&error).unwrap();
-            error["code"] == "CHANNEL_UNAVAILABLE"
-                && error["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("exec channel 'missing-channel' is not open")
-        })
-    );
+        ),
+    ] {
+        let SshError::ChannelUnavailable(message) = error.unwrap_err() else {
+            panic!("missing Unix-socket channel lost its typed error variant");
+        };
+        assert!(message.contains("Unix-socket channel 'missing-channel' is not open"));
+    }
+    let SshError::ChannelUnavailable(message) = write_exec_channel(
+        "missing-client".to_owned(),
+        "missing-channel".to_owned(),
+        vec![1, 2, 3],
+    )
+    .unwrap_err() else {
+        panic!("missing exec channel lost its typed error variant");
+    };
+    assert!(message.contains("exec channel 'missing-channel' is not open"));
 }
 
 #[test]
@@ -639,26 +576,12 @@ fn refuses_unknown_keyboard_interactive_challenges() {
 
 #[test]
 fn generated_ed25519_key_round_trips_through_inspection() {
-    let generated = generate_key_pair(&json!({
-        "type": "ed25519",
-        "passphrase": "test-passphrase",
-        "comment": "russh-test",
-    }))
-    .unwrap();
-    let details = key_details(&json!({
-        "privateKey": generated["privateKey"],
-        "passphrase": "test-passphrase",
-    }))
-    .unwrap();
-    assert_eq!(details["keyType"], "ssh-ed25519");
-    assert_eq!(details["keySize"], 256);
-    assert_eq!(details["publicKey"], generated["publicKey"]);
-    assert!(
-        details["fingerprint"]
-            .as_str()
-            .unwrap()
-            .starts_with("SHA256:")
-    );
+    let generated = generate_key_pair("ed25519", "test-passphrase", "russh-test").unwrap();
+    let details = key_details(&generated.private_key, Some("test-passphrase")).unwrap();
+    assert_eq!(details.key_type, "ssh-ed25519");
+    assert_eq!(details.key_size, 256);
+    assert_eq!(details.public_key, generated.public_key);
+    assert!(details.fingerprint.starts_with("SHA256:"));
 }
 
 #[test]
@@ -710,7 +633,7 @@ fn live_openssh_feature_matrix() {
         std::env::var("RUSSH_SSH_TEST_PRIVATE_KEY").expect("missing private key path"),
     )
     .expect("could not read private key");
-    let known_hosts = std::fs::read_to_string(
+    let known_hosts_contents = std::fs::read_to_string(
         std::env::var("RUSSH_SSH_TEST_KNOWN_HOSTS").expect("missing known_hosts path"),
     )
     .expect("could not read known_hosts");
@@ -719,285 +642,246 @@ fn live_openssh_feature_matrix() {
     );
 
     runtime().unwrap().block_on(async {
-            live_call("setKnownHosts", json!({"contents": known_hosts})).await;
-            let credential = json!({
-                "type": "key",
-                "privateKey": private_key,
-                "passphrase": null,
-            });
-            live_call(
-                "connect",
-                json!({
-                    "host": host,
-                    "port": port,
-                    "username": username,
-                    "credential": credential,
-                    "key": "live-main",
-                }),
-            )
-            .await;
-            let executed = live_call(
-                "execute",
-                json!({"key": "live-main", "command": "printf russh-live"}),
-            )
-            .await;
-            assert_eq!(executed["stdout"], "russh-live");
-
-            live_call(
-                "setAgentForwarding",
-                json!({"key": "live-main", "enabled": true}),
-            )
-            .await;
-            let agent = live_call(
-                "execute",
-                json!({"key": "live-main", "command": "ssh-add -L"}),
-            )
-            .await;
-            assert!(agent["stdout"].as_str().unwrap_or_default().contains("ssh-ed25519"));
-
-            live_call("connectSFTP", json!({"key": "live-main"})).await;
-            live_call(
-                "sftpCreateDirAll",
-                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
-            )
-            .await;
-            live_call(
-                "sftpCreateDirAll",
-                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
-            )
-            .await;
-            let client_dir = shared.join("client");
-            let download_dir = shared.join("download");
-            fs::create_dir_all(&client_dir).await.unwrap();
-            fs::create_dir_all(&download_dir).await.unwrap();
-            let payload = client_dir.join("payload.txt");
-            fs::write(&payload, b"sftp-live-payload").await.unwrap();
-            live_call(
-                "sftpUpload",
-                json!({
-                    "key": "live-main",
-                    "localPath": payload,
-                    "remotePath": "/workspace/remote/nested",
-                }),
-            )
-            .await;
-            let mkdir_collision = dispatch(Request {
-                operation: "sftpCreateDirAll".to_owned(),
-                params: json!({
-                    "key": "live-main",
-                    "path": "/workspace/remote/nested/payload.txt/child",
-                }),
-            })
+        *known_hosts().write() = KnownHosts::parse(&known_hosts_contents);
+        let key_authentication = SshAuthentication::Key {
+            private_key: private_key.clone(),
+            passphrase: None,
+        };
+        connect_compatibility_session(
+            host.clone(),
+            port,
+            username.clone(),
+            key_authentication.clone(),
+            "live-main".to_owned(),
+            None,
+        )
+        .await
+        .unwrap();
+        let main_session = session_for_key("live-main").unwrap();
+        let executed = execute_on(&main_session, "printf russh-live")
             .await
-            .unwrap_err();
-            assert!(mkdir_collision.to_string().contains("is not a directory"));
-            fs::write(&payload, b"sftp-live-replacement").await.unwrap();
-            live_call(
-                "sftpUploadToPath",
-                json!({
-                    "key": "live-main",
-                    "localPath": payload,
-                    "remotePath": "/workspace/remote/nested/generated-name.txt",
-                }),
-            )
-            .await;
-            live_call(
-                "sftpUploadToPath",
-                json!({
-                    "key": "live-main",
-                    "localPath": payload,
-                    "remotePath": "/workspace/remote/nested/generated-name.txt",
-                }),
-            )
-            .await;
-            live_call(
-                "sftpChmod",
-                json!({"key": "live-main", "path": "/workspace/remote/nested/generated-name.txt", "permissions": 0o640}),
-            )
-            .await;
-            live_call(
-                "sftpRename",
-                json!({
-                    "key": "live-main",
-                    "oldPath": "/workspace/remote/nested/generated-name.txt",
-                    "newPath": "/workspace/remote/nested/renamed.txt",
-                }),
-            )
-            .await;
-            let entries = live_call(
-                "sftpLs",
-                json!({"key": "live-main", "path": "/workspace/remote/nested"}),
-            )
-            .await;
-            assert!(entries.as_array().unwrap().iter().any(|entry| {
-                entry["filename"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .contains("renamed.txt")
-            }));
-            assert!(!entries.as_array().unwrap().iter().any(|entry| {
-                let filename = entry["filename"].as_str().unwrap_or_default();
-                filename.contains("russh-part") || filename.contains("russh-backup")
-            }));
-            let downloaded = live_call(
-                "sftpDownload",
-                json!({
-                    "key": "live-main",
-                    "remotePath": "/workspace/remote/nested/renamed.txt",
-                    "localPath": download_dir,
-                }),
-            )
-            .await;
-            assert_eq!(
-                fs::read(downloaded.as_str().unwrap()).await.unwrap(),
-                b"sftp-live-replacement"
-            );
+            .unwrap();
+        assert_eq!(executed.stdout, b"russh-live");
 
-            let file_server = live_call(
-                "startSftpFileServer",
-                json!({
-                    "key": "live-main",
-                    "remotePath": "/workspace/remote/nested/renamed.txt",
-                }),
+        main_session.agent.enabled.store(true, Ordering::Relaxed);
+        let agent = execute_on(&main_session, "ssh-add -L").await.unwrap();
+        assert!(String::from_utf8_lossy(&agent.stdout).contains("ssh-ed25519"));
+
+        connect_sftp_on("live-main", &main_session).await.unwrap();
+        let remote_nested = "/workspace/remote/nested";
+        sftp_create_dir_all_on(&sftp_for_key("live-main").unwrap(), remote_nested)
+            .await
+            .unwrap();
+        sftp_create_dir_all_on(&sftp_for_key("live-main").unwrap(), remote_nested)
+            .await
+            .unwrap();
+        let client_dir = shared.join("client");
+        let download_dir = shared.join("download");
+        fs::create_dir_all(&client_dir).await.unwrap();
+        fs::create_dir_all(&download_dir).await.unwrap();
+        let payload = client_dir.join("payload.txt");
+        fs::write(&payload, b"sftp-live-payload").await.unwrap();
+        sftp_transfer_on(
+            "live-main".to_owned(),
+            sftp_for_key("live-main").unwrap(),
+            payload.to_string_lossy().into_owned(),
+            remote_nested.to_owned(),
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+        let mkdir_collision = sftp_create_dir_all_on(
+            &sftp_for_key("live-main").unwrap(),
+            "/workspace/remote/nested/payload.txt/child",
+        )
+        .await
+        .unwrap_err();
+        assert!(mkdir_collision.to_string().contains("is not a directory"));
+        fs::write(&payload, b"sftp-live-replacement").await.unwrap();
+        for _ in 0..2 {
+            sftp_transfer_on(
+                "live-main".to_owned(),
+                sftp_for_key("live-main").unwrap(),
+                payload.to_string_lossy().into_owned(),
+                "/workspace/remote/nested/generated-name.txt".to_owned(),
+                true,
+                true,
             )
-            .await;
-            let file_server_port = file_server["localPort"].as_u64().unwrap() as u16;
-            let file_server_token = file_server["token"].as_str().unwrap();
-            let mut preview = tokio::net::TcpStream::connect(("127.0.0.1", file_server_port))
-                .await
-                .unwrap();
-            preview
-                .write_all(
-                    format!(
-                        "GET /{file_server_token}/renamed.txt HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=10-20\r\n\r\n"
-                    )
-                    .as_bytes(),
+            .await
+            .unwrap();
+        }
+        sftp_mutation(
+            "live-main",
+            "/workspace/remote/nested/generated-name.txt".to_owned(),
+            SftpMutation::Chmod(0o640),
+        )
+        .await
+        .unwrap();
+        sftp_for_key("live-main")
+            .unwrap()
+            .rename(
+                "/workspace/remote/nested/generated-name.txt".to_owned(),
+                "/workspace/remote/nested/renamed.txt".to_owned(),
+            )
+            .await
+            .unwrap();
+        let entries = sftp_list_on(&sftp_for_key("live-main").unwrap(), remote_nested)
+            .await
+            .unwrap();
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.filename.contains("renamed.txt"))
+        );
+        assert!(!entries.iter().any(|entry| {
+            entry.filename.contains("russh-part") || entry.filename.contains("russh-backup")
+        }));
+        let downloaded = sftp_transfer_on(
+            "live-main".to_owned(),
+            sftp_for_key("live-main").unwrap(),
+            download_dir.to_string_lossy().into_owned(),
+            "/workspace/remote/nested/renamed.txt".to_owned(),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fs::read(downloaded).await.unwrap(),
+            b"sftp-live-replacement"
+        );
+
+        let file_server = start_sftp_file_server_on(
+            "live-main".to_owned(),
+            main_session.clone(),
+            "/workspace/remote/nested/renamed.txt".to_owned(),
+        )
+        .await
+        .unwrap();
+        let mut preview = tokio::net::TcpStream::connect(("127.0.0.1", file_server.local_port))
+            .await
+            .unwrap();
+        preview
+            .write_all(
+                format!(
+                    "GET /{}/renamed.txt HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=10-20\r\n\r\n",
+                    file_server.token,
                 )
-                .await
-                .unwrap();
-            let mut preview_response = Vec::new();
-            preview.read_to_end(&mut preview_response).await.unwrap();
-            let preview_response = String::from_utf8(preview_response).unwrap();
-            assert!(preview_response.starts_with("HTTP/1.1 206 Partial Content\r\n"));
-            assert!(preview_response.contains("Content-Range: bytes 10-20/21\r\n"));
-            assert!(preview_response.ends_with("replacement"));
-            live_call(
-                "closeSftpFileServer",
-                json!({"key": "live-main", "localPort": file_server_port}),
-            )
-            .await;
-
-            let cancel_payload = client_dir.join("cancel.bin");
-            fs::write(&cancel_payload, vec![7u8; 16 * 1024 * 1024])
-                .await
-                .unwrap();
-            let transfer = runtime().unwrap().spawn(dispatch(Request {
-                operation: "sftpUpload".to_owned(),
-                params: json!({
-                    "key": "live-main",
-                    "localPath": cancel_payload,
-                    "remotePath": "/workspace/remote",
-                }),
-            }));
-            while !transfers()
-                .read()
-                .contains_key(&("live-main".to_owned(), "upload"))
-            {
-                tokio::task::yield_now().await;
-            }
-            live_call("sftpCancelUpload", json!({"key": "live-main"})).await;
-            let transfer_error = tokio::time::timeout(Duration::from_secs(1), transfer)
-                .await
-                .expect("cancelled upload should settle promptly")
-                .unwrap()
-                .unwrap_err()
-                .to_string();
-            assert!(transfer_error.contains("cancelled"));
-            let entries = live_call(
-                "sftpLs",
-                json!({"key": "live-main", "path": "/workspace/remote"}),
-            )
-            .await;
-            assert!(!entries.as_array().unwrap().iter().any(|entry| {
-                let filename = entry["filename"].as_str().unwrap_or_default();
-                filename == "cancel.bin" || filename.contains("russh-part")
-            }));
-            live_call(
-                "sftpUploadToPath",
-                json!({
-                    "key": "live-main",
-                    "localPath": payload,
-                    "remotePath": "/workspace/remote/after-cancel.txt",
-                }),
-            )
-            .await;
-            let entries = live_call(
-                "sftpLs",
-                json!({"key": "live-main", "path": "/workspace/remote"}),
-            )
-            .await;
-            assert!(entries.as_array().unwrap().iter().any(|entry| {
-                entry["filename"].as_str() == Some("after-cancel.txt")
-            }));
-
-            let forward_port = live_call(
-                "openLocalForward",
-                json!({
-                    "key": "live-main",
-                    "remoteHost": "127.0.0.1",
-                    "remotePort": target_port,
-                }),
+                .as_bytes(),
             )
             .await
-            .as_u64()
-            .unwrap() as u16;
-            let mut forwarded = tokio::net::TcpStream::connect(("127.0.0.1", forward_port))
-                .await
-                .unwrap();
-            let mut banner = [0u8; 4];
-            tokio::time::timeout(Duration::from_secs(5), forwarded.read_exact(&mut banner))
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(&banner, b"SSH-");
-            live_call(
-                "closeLocalForward",
-                json!({"key": "live-main", "localPort": forward_port}),
-            )
-            .await;
+            .unwrap();
+        let mut preview_response = Vec::new();
+        preview.read_to_end(&mut preview_response).await.unwrap();
+        let preview_response = String::from_utf8(preview_response).unwrap();
+        assert!(preview_response.starts_with("HTTP/1.1 206 Partial Content\r\n"));
+        assert!(preview_response.contains("Content-Range: bytes 10-20/21\r\n"));
+        assert!(preview_response.ends_with("replacement"));
+        close_ssh_sftp_file_server("live-main".to_owned(), file_server.local_port);
 
-            live_call(
-                "connect",
-                json!({
-                    "host": "127.0.0.1",
-                    "port": target_port,
-                    "username": username,
-                    "credential": credential,
-                    "jumpKey": "live-main",
-                    "key": "live-jump-target",
-                }),
-            )
-            .await;
-            let jumped = live_call(
-                "execute",
-                json!({"key": "live-jump-target", "command": "printf jumped"}),
-            )
-            .await;
-            assert_eq!(jumped["stdout"], "jumped");
+        let cancel_payload = client_dir.join("cancel.bin");
+        fs::write(&cancel_payload, vec![7u8; 16 * 1024 * 1024])
+            .await
+            .unwrap();
+        let transfer = runtime().unwrap().spawn(sftp_transfer_on(
+            "live-main".to_owned(),
+            sftp_for_key("live-main").unwrap(),
+            cancel_payload.to_string_lossy().into_owned(),
+            "/workspace/remote".to_owned(),
+            true,
+            false,
+        ));
+        while !transfers()
+            .read()
+            .contains_key(&("live-main".to_owned(), "upload"))
+        {
+            tokio::task::yield_now().await;
+        }
+        assert!(cancel_ssh_sftp_upload("live-main".to_owned()));
+        let transfer_error = tokio::time::timeout(Duration::from_secs(1), transfer)
+            .await
+            .expect("cancelled upload should settle promptly")
+            .unwrap()
+            .unwrap_err()
+            .to_string();
+        assert!(transfer_error.contains("cancelled"));
+        let entries = sftp_list_on(&sftp_for_key("live-main").unwrap(), "/workspace/remote")
+            .await
+            .unwrap();
+        assert!(!entries.iter().any(|entry| {
+            entry.filename == "cancel.bin" || entry.filename.contains("russh-part")
+        }));
+        sftp_transfer_on(
+            "live-main".to_owned(),
+            sftp_for_key("live-main").unwrap(),
+            payload.to_string_lossy().into_owned(),
+            "/workspace/remote/after-cancel.txt".to_owned(),
+            true,
+            true,
+        )
+        .await
+        .unwrap();
+        let entries = sftp_list_on(&sftp_for_key("live-main").unwrap(), "/workspace/remote")
+            .await
+            .unwrap();
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.filename == "after-cancel.txt")
+        );
 
-            live_call(
-                "connect",
-                json!({
-                    "host": host,
-                    "port": port,
-                    "username": username,
-                    "credential": {"type": "password", "password": "russh-test-password"},
-                    "key": "live-password",
-                }),
-            )
-            .await;
-            live_call("disconnect", json!({"key": "live-password"})).await;
-            live_call("disconnect", json!({"key": "live-jump-target"})).await;
-            live_call("disconnect", json!({"key": "live-main"})).await;
-        });
+        let forward_port = open_local_forward_on(
+            "live-main".to_owned(),
+            main_session,
+            "127.0.0.1".to_owned(),
+            target_port,
+        )
+        .await
+        .unwrap();
+        let mut forwarded = tokio::net::TcpStream::connect(("127.0.0.1", forward_port))
+            .await
+            .unwrap();
+        let mut banner = [0u8; 4];
+        tokio::time::timeout(Duration::from_secs(5), forwarded.read_exact(&mut banner))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&banner, b"SSH-");
+        close_local_forward_for_key("live-main", forward_port);
+
+        connect_compatibility_session(
+            "127.0.0.1".to_owned(),
+            target_port,
+            username.clone(),
+            key_authentication,
+            "live-jump-target".to_owned(),
+            Some("live-main".to_owned()),
+        )
+        .await
+        .unwrap();
+        let jumped = execute_on(
+            &session_for_key("live-jump-target").unwrap(),
+            "printf jumped",
+        )
+        .await
+        .unwrap();
+        assert_eq!(jumped.stdout, b"jumped");
+
+        connect_compatibility_session(
+            host,
+            port,
+            username,
+            SshAuthentication::Password {
+                password: "russh-test-password".to_owned(),
+            },
+            "live-password".to_owned(),
+            None,
+        )
+        .await
+        .unwrap();
+        disconnect_key("live-password".to_owned()).await;
+        disconnect_key("live-jump-target".to_owned()).await;
+        disconnect_key("live-main".to_owned()).await;
+    });
 }

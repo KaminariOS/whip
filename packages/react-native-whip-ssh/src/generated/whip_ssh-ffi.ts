@@ -227,11 +227,19 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_whipssheventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
   ): void;
-  ubrn_uniffi_whip_ssh_fn_func_call(
-    requestJson: Uint8Array,
+  ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download(
+    key: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_func_call_async(requestJson: Uint8Array): bigint;
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_upload(
+    key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_func_chmod_ssh_sftp_path(
+    key: Uint8Array,
+    path: Uint8Array,
+    permissions: number,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_clear_agent_transcript_event_sink(
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
@@ -260,10 +268,75 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_close_ssh_exec_channel(
+    key: Uint8Array,
+    channelId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_close_ssh_local_forward(
+    key: Uint8Array,
+    localPort: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_close_ssh_sftp_file_server(
+    key: Uint8Array,
+    localPort: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_close_ssh_shell(
+    key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_close_ssh_unix_socket_channel(
+    key: Uint8Array,
+    channelId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_connect_ssh(
+    host: Uint8Array,
+    port: number,
+    username: Uint8Array,
+    authentication: Uint8Array,
+    key: Uint8Array,
+    jumpKey: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_connect_ssh_sftp(key: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_create_host_runtime(
     config: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_create_ssh_sftp_directory(
+    key: Uint8Array,
+    path: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_create_ssh_sftp_directory_all(
+    key: Uint8Array,
+    path: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh(key: Uint8Array): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh_sftp(key: Uint8Array): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_download_ssh_sftp(
+    key: Uint8Array,
+    remotePath: Uint8Array,
+    localDirectoryPath: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_execute_ssh_command(
+    key: Uint8Array,
+    command: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_generate_ssh_key_pair(
+    keyType: Uint8Array,
+    passphrase: Uint8Array,
+    keySize: number,
+    comment: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_get_ssh_key_details(
+    privateKey: Uint8Array,
+    passphrase: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_get_ssh_remote_home(key: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_herdr_control_request(
     clientKey: Uint8Array,
     socketPath: Uint8Array,
@@ -294,6 +367,35 @@ interface NativeModuleInterface {
     modifiers: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_list_ssh_sftp_directory(
+    key: Uint8Array,
+    path: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_measure_ssh_host_latency(
+    key: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_open_length_prefixed_ssh_unix_socket_channel(
+    key: Uint8Array,
+    socketPath: Uint8Array,
+    channelId: Uint8Array,
+    lengthFormat: Uint8Array,
+    maxFrameBytes: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_open_ssh_exec_channel(
+    key: Uint8Array,
+    command: Uint8Array,
+    channelId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_open_ssh_local_forward(
+    key: Uint8Array,
+    remoteHost: Uint8Array,
+    remotePort: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_open_ssh_unix_socket_channel(
+    key: Uint8Array,
+    socketPath: Uint8Array,
+    channelId: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_pair_host(
     code: Uint8Array,
     publicKey: Uint8Array,
@@ -308,12 +410,33 @@ interface NativeModuleInterface {
     cellWidthPx: number,
     cellHeightPx: number,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_remove_ssh_sftp_directory(
+    key: Uint8Array,
+    path: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_remove_ssh_sftp_file(
+    key: Uint8Array,
+    path: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_rename_ssh_sftp_path(
+    key: Uint8Array,
+    oldPath: Uint8Array,
+    newPath: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_request_ssh_unix_socket(
+    key: Uint8Array,
+    socketPath: Uint8Array,
+    request: Uint8Array,
+    responseTerminator: Uint8Array,
+    timeoutMs: number,
+    maxResponseBytes: number,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_resize_shell_fast(
     key: Uint8Array,
     columns: number,
     rows: number,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): void;
   ubrn_uniffi_whip_ssh_fn_func_set_agent_transcript_event_sink(
     sink: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -332,6 +455,15 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_func_set_host_runtime_event_sink(
     sink: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_set_known_hosts(
+    contents: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_set_ssh_agent_forwarding(
+    key: Uint8Array,
+    enabled: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_uniffi_whip_ssh_fn_func_set_trusted_host_keys(
@@ -359,29 +491,47 @@ interface NativeModuleInterface {
     cellHeightPx: number,
     terminalAttachLaunchMode: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_start_ssh_sftp_file_server(
+    key: Uint8Array,
+    remotePath: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_start_ssh_shell(
+    key: Uint8Array,
+    ptyType: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_upload_ssh_sftp(
+    key: Uint8Array,
+    localPath: Uint8Array,
+    remoteDirectoryPath: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_upload_ssh_sftp_to_path(
+    key: Uint8Array,
+    localPath: Uint8Array,
+    remotePath: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_write_exec_channel(
     key: Uint8Array,
     channelId: Uint8Array,
     bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): void;
   ubrn_uniffi_whip_ssh_fn_func_write_length_prefixed_unix_socket_channel(
     key: Uint8Array,
     channelId: Uint8Array,
     bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): void;
   ubrn_uniffi_whip_ssh_fn_func_write_shell_input(
     key: Uint8Array,
     data: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): void;
   ubrn_uniffi_whip_ssh_fn_func_write_unix_socket_channel(
     key: Uint8Array,
     channelId: Uint8Array,
     bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_agenttranscripteventsink_event(
     uniffiSelf: bigint,
     event: Uint8Array,
@@ -737,8 +887,9 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_ffi_whip_ssh_uniffi_contract_version(): number;
-  ubrn_uniffi_whip_ssh_checksum_func_call(): number;
-  ubrn_uniffi_whip_ssh_checksum_func_call_async(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_herdr_event_sink(): number;
@@ -747,23 +898,55 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_close_all_herdr_terminal_bridges(): number;
   ubrn_uniffi_whip_ssh_checksum_func_close_herdr_event_subscription(): number;
   ubrn_uniffi_whip_ssh_checksum_func_close_herdr_terminal_bridge(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_close_ssh_exec_channel(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_close_ssh_local_forward(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_close_ssh_sftp_file_server(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_close_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_close_ssh_unix_socket_channel(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_connect_ssh(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_connect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory_all(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_get_ssh_key_details(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_get_ssh_remote_home(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_open_ssh_exec_channel(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_open_ssh_local_forward(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_open_ssh_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_pair_host(): number;
   ubrn_uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_rename_ssh_sftp_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_request_ssh_unix_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_agent_transcript_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_herdr_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_herdr_terminal_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_set_known_hosts(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_set_ssh_agent_forwarding(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_trusted_host_keys(): number;
   ubrn_uniffi_whip_ssh_checksum_func_shutdown(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_event_subscription(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_start_ssh_sftp_file_server(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_start_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp_to_path(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_exec_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_shell_input(): number;

@@ -85,6 +85,7 @@ import {
   type RemoteDirectoryListing as NativeRemoteDirectoryListing,
   type TransferProgress as NativeTransferProgress,
   type TransferResult as NativeTransferResult,
+  type PairHostResult as NativePairHostResult,
   type AgentTranscriptEvent,
   type AgentTranscriptDelta,
   type AgentTranscriptMessage,
@@ -92,12 +93,6 @@ import {
   type AgentTranscriptTurn,
 } from './generated-entry';
 import sshNativeClient from './ssh-native';
-
-type PairingResponse = {
-  ok: boolean;
-  value?: unknown;
-  error?: string;
-};
 
 type BridgeEvent = Record<string, unknown> & { type: string; terminalId: string };
 type BridgeHandler = (event: BridgeEvent) => void;
@@ -1927,10 +1922,8 @@ const nativeClient = {
     });
     return new NativeHostRuntime(runtime, handler);
   },
-  async pairHost(code: string, publicKey: string, deviceName: string): Promise<unknown> {
-    const response = JSON.parse(await pairHostRust(code, publicKey, deviceName)) as PairingResponse;
-    if (!response.ok) throw new Error(response.error || 'WP4 pairing failed');
-    return response.value;
+  pairHost(code: string, publicKey: string, deviceName: string): Promise<NativePairHostResult> {
+    return pairHostRust(code, publicKey, deviceName);
   },
 
   async prepareHerdrBridge(

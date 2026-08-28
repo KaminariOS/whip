@@ -1,9 +1,9 @@
 //! SSH transport owned by the Whip Rust core.
 //!
-//! The public boundary keeps a small JSON API for control-plane operations and
-//! uses typed UniFFI calls for latency-sensitive terminal traffic. HostRuntime
-//! composes with this module through ordinary typed Rust handles; there is no
-//! native callback ABI between the SSH and Herdr implementations.
+//! Control-plane operations and latency-sensitive terminal traffic cross the
+//! public boundary through typed UniFFI calls. HostRuntime composes with this
+//! module through ordinary typed Rust handles; there is no native callback ABI
+//! between the SSH and Herdr implementations.
 
 mod known_hosts;
 mod session;
@@ -14,19 +14,18 @@ use std::ffi::CStr;
 use std::ffi::c_char;
 use std::future::Future;
 use std::io::SeekFrom;
-use std::panic::AssertUnwindSafe;
 use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
 
-use futures::{FutureExt, channel::mpsc as futures_mpsc, future::try_join_all};
+use futures::{channel::mpsc as futures_mpsc, future::try_join_all};
 use parking_lot::RwLock;
 use russh::client;
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh_sftp::client::SftpSession;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tokio::{
@@ -239,41 +238,105 @@ pub enum SshErrorCode {
     Unknown,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SshError {
-    code: SshErrorCode,
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    details: Option<Value>,
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SshAuthentication {
+    Password {
+        password: String,
+    },
+    Key {
+        private_key: String,
+        passphrase: Option<String>,
+    },
 }
 
-impl SshError {
-    fn new(code: SshErrorCode, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-            details: None,
-        }
-    }
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SshKeyDetails {
+    pub key_type: String,
+    pub key_size: u32,
+    pub fingerprint: String,
+    pub public_key: String,
+}
 
-    fn unknown(message: impl Into<String>) -> Self {
-        Self::new(SshErrorCode::Unknown, message)
-    }
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SshGeneratedKeyPair {
+    pub private_key: String,
+    pub public_key: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct LegacySftpEntry {
+    pub filename: String,
+    pub is_directory: bool,
+    pub modification_date: String,
+    pub last_access: String,
+    pub file_size: u64,
+    pub owner_user_id: u32,
+    pub owner_group_id: u32,
+    pub permissions: String,
+    pub flags: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct LegacySftpFileServer {
+    pub local_port: u16,
+    pub token: String,
+}
+
+#[derive(Clone, Debug, thiserror::Error, uniffi::Error, PartialEq, Eq)]
+pub enum SshError {
+    #[error("{0}")]
+    AuthenticationFailed(String),
+    #[error("unknown SSH host key")]
+    HostKeyUnknown(HostKeyChallenge),
+    #[error("SSH host key changed")]
+    HostKeyChanged(HostKeyChallenge),
+    #[error("SSH host certificates are not supported")]
+    UnsupportedHostCertificate,
+    #[error("{0}")]
+    ConnectionRefused(String),
+    #[error("{0}")]
+    ConnectionTimeout(String),
+    #[error("{0}")]
+    HostUnreachable(String),
+    #[error("{0}")]
+    ChannelUnavailable(String),
+    #[error("{0}")]
+    SessionClosed(String),
+    #[error("{0}")]
+    InvalidPrivateKey(String),
+    #[error("{0}")]
+    SftpFailure(String),
+    #[error("{0}")]
+    InvalidRequest(String),
+    #[error("{0}")]
+    Unknown(String),
 }
 
 impl From<TransportError> for SshError {
     fn from(error: TransportError) -> Self {
         let code = transport_error_code(&error);
-        let details = match &error {
-            TransportError::HostKeyUnknown(challenge)
-            | TransportError::HostKeyChanged(challenge) => Some(json!(challenge)),
-            _ => None,
-        };
-        Self {
-            code,
-            message: error.to_string(),
-            details,
+        match error {
+            TransportError::HostKeyUnknown(challenge) => Self::HostKeyUnknown(challenge),
+            TransportError::HostKeyChanged(challenge) => Self::HostKeyChanged(challenge),
+            TransportError::UnsupportedHostCertificate => Self::UnsupportedHostCertificate,
+            error => {
+                let message = error.to_string();
+                match code {
+                    SshErrorCode::AuthenticationFailed => Self::AuthenticationFailed(message),
+                    SshErrorCode::ConnectionRefused => Self::ConnectionRefused(message),
+                    SshErrorCode::ConnectionTimeout => Self::ConnectionTimeout(message),
+                    SshErrorCode::HostUnreachable => Self::HostUnreachable(message),
+                    SshErrorCode::ChannelUnavailable => Self::ChannelUnavailable(message),
+                    SshErrorCode::SessionClosed => Self::SessionClosed(message),
+                    SshErrorCode::InvalidPrivateKey => Self::InvalidPrivateKey(message),
+                    SshErrorCode::SftpFailure => Self::SftpFailure(message),
+                    SshErrorCode::InvalidRequest => Self::InvalidRequest(message),
+                    SshErrorCode::Unknown => Self::Unknown(message),
+                    SshErrorCode::HostKeyUnknown
+                    | SshErrorCode::HostKeyChanged
+                    | SshErrorCode::UnsupportedHostCertificate => Self::Unknown(message),
+                }
+            }
         }
     }
 }
@@ -337,41 +400,6 @@ fn classify_direct_connect_error(error: TransportError) -> TransportError {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Request {
-    operation: String,
-    #[serde(default)]
-    params: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct Response {
-    ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    value: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<SshError>,
-}
-
-impl Response {
-    fn success(value: Value) -> Self {
-        Self {
-            ok: true,
-            value: Some(value),
-            error: None,
-        }
-    }
-
-    fn failure(error: impl Into<SshError>) -> Self {
-        Self {
-            ok: false,
-            value: None,
-            error: Some(error.into()),
-        }
-    }
-}
-
 #[uniffi::export(with_foreign)]
 pub trait WhipSshEventSink: Send + Sync {
     fn emit(&self, event_json: String);
@@ -381,8 +409,6 @@ pub trait WhipSshEventSink: Send + Sync {
 
 struct Session {
     handle: client::Handle<RusshHandler>,
-    host: String,
-    port: u16,
     agent: Arc<AgentState>,
     lifecycle: Arc<ConnectionLifecycle>,
 }
@@ -774,27 +800,11 @@ fn emit_event(value: Value) {
     }
 }
 
-fn required_string(params: &Value, name: &str) -> Result<String, TransportError> {
-    params
-        .get(name)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| TransportError::InvalidRequest(format!("missing string parameter '{name}'")))
-}
-
-fn required_u16(params: &Value, name: &str) -> Result<u16, TransportError> {
-    let number = params.get(name).and_then(Value::as_u64).ok_or_else(|| {
-        TransportError::InvalidRequest(format!("missing integer parameter '{name}'"))
-    })?;
-    u16::try_from(number).map_err(|_| {
-        TransportError::InvalidRequest(format!("parameter '{name}' is outside the port range"))
-    })
-}
-
-fn key_details(params: &Value) -> Result<Value, TransportError> {
-    let private_key = required_string(params, "privateKey")?;
-    let passphrase = params.get("passphrase").and_then(Value::as_str);
-    let key = russh::keys::decode_secret_key(&private_key, passphrase)?;
+fn key_details(
+    private_key: &str,
+    passphrase: Option<&str>,
+) -> Result<SshKeyDetails, TransportError> {
+    let key = russh::keys::decode_secret_key(private_key, passphrase)?;
     let public_key = key.public_key();
     let key_size = match public_key.algorithm() {
         russh::keys::Algorithm::Ed25519 => 256,
@@ -810,29 +820,26 @@ fn key_details(params: &Value) -> Result<Value, TransportError> {
             .unwrap_or_default(),
         _ => 0,
     };
-    Ok(json!({
-        "keyType": public_key.algorithm().as_str(),
-        "keySize": key_size,
-        "fingerprint": public_key.fingerprint(russh::keys::HashAlg::Sha256).to_string(),
-        "publicKey": public_key.to_openssh()?,
-    }))
+    Ok(SshKeyDetails {
+        key_type: public_key.algorithm().as_str().to_owned(),
+        key_size,
+        fingerprint: public_key
+            .fingerprint(russh::keys::HashAlg::Sha256)
+            .to_string(),
+        public_key: public_key.to_openssh()?,
+    })
 }
 
-fn generate_key_pair(params: &Value) -> Result<Value, TransportError> {
-    let key_type = required_string(params, "type")?;
+fn generate_key_pair(
+    key_type: &str,
+    passphrase: &str,
+    comment: &str,
+) -> Result<SshGeneratedKeyPair, TransportError> {
     if key_type != "ed25519" && key_type != "ssh-ed25519" {
         return Err(TransportError::InvalidRequest(
             "the iOS Rust preview currently generates Ed25519 keys only".to_owned(),
         ));
     }
-    let passphrase = params
-        .get("passphrase")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let comment = params
-        .get("comment")
-        .and_then(Value::as_str)
-        .unwrap_or("whip-ssh");
     let mut rng =
         russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
     let mut private_key =
@@ -846,7 +853,10 @@ fn generate_key_pair(params: &Value) -> Result<Value, TransportError> {
     let private_key = private_key
         .to_openssh(russh::keys::ssh_key::LineEnding::LF)?
         .to_string();
-    Ok(json!({ "privateKey": private_key, "publicKey": public_key }))
+    Ok(SshGeneratedKeyPair {
+        private_key,
+        public_key,
+    })
 }
 
 async fn initialize_agent(
@@ -874,36 +884,33 @@ async fn initialize_agent(
     Ok(())
 }
 
-async fn connect(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let credential = params
-        .get("credential")
-        .ok_or_else(|| TransportError::InvalidRequest("missing credential parameter".to_owned()))?;
-    let credential = match credential.get("type").and_then(Value::as_str) {
-        Some("password") => SshCredential::Password(required_string(credential, "password")?),
-        Some("key") => SshCredential::Key {
-            private_key: required_string(credential, "privateKey")?,
-            passphrase: credential
-                .get("passphrase")
-                .and_then(Value::as_str)
-                .map(str::to_owned),
+async fn connect_compatibility_session(
+    host: String,
+    port: u16,
+    username: String,
+    authentication: SshAuthentication,
+    key: String,
+    jump_key: Option<String>,
+) -> Result<(), TransportError> {
+    let credential = match authentication {
+        SshAuthentication::Password { password } => SshCredential::Password(password),
+        SshAuthentication::Key {
+            private_key,
+            passphrase,
+        } => SshCredential::Key {
+            private_key,
+            passphrase,
         },
-        _ => {
-            return Err(TransportError::InvalidRequest(
-                "credential.type must be 'password' or 'key'".to_owned(),
-            ));
-        }
     };
     let config = SshConnectionConfig {
-        host: required_string(params, "host")?,
-        port: required_u16(params, "port")?,
-        username: required_string(params, "username")?,
+        host,
+        port,
+        username,
         credential,
         forward_agent: false,
     };
-    let jump = params
-        .get("jumpKey")
-        .and_then(Value::as_str)
+    let jump = jump_key
+        .as_deref()
         .map(|jump_key| {
             sessions().read().get(jump_key).cloned().ok_or_else(|| {
                 TransportError::InvalidRequest("jump host SSH connection is not active".to_owned())
@@ -919,7 +926,7 @@ async fn connect(params: &Value) -> Result<Value, TransportError> {
             .disconnect(russh::Disconnect::ByApplication, "", "en")
             .await;
     }
-    Ok(Value::Null)
+    Ok(())
 }
 
 async fn connect_inner(
@@ -989,8 +996,6 @@ async fn connect_inner(
     }
     let session = Arc::new(Session {
         handle,
-        host,
-        port,
         agent,
         lifecycle,
     });
@@ -1075,25 +1080,11 @@ fn append_capped(destination: &mut Vec<u8>, source: &[u8]) -> bool {
     source.len() > remaining
 }
 
-async fn execute(params: &Value) -> Result<Value, TransportError> {
-    let command = required_string(params, "command")?;
-    let session = session_for(params)?;
-    let output = execute_on(&session, &command).await?;
-    Ok(json!({
-        "stdout": String::from_utf8_lossy(&output.stdout),
-        "stderr": String::from_utf8_lossy(&output.stderr),
-        "exitStatus": output.exit_status,
-        "stdoutTruncated": output.stdout_truncated,
-        "stderrTruncated": output.stderr_truncated,
-    }))
-}
-
 pub(crate) struct CommandOutput {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub exit_status: Option<u32>,
     pub stdout_truncated: bool,
-    pub stderr_truncated: bool,
 }
 
 async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, TransportError> {
@@ -1131,18 +1122,7 @@ async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, T
         stderr,
         exit_status,
         stdout_truncated,
-        stderr_truncated,
     })
-}
-
-async fn latency(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let session = sessions()
-        .read()
-        .get(&key)
-        .cloned()
-        .ok_or(TransportError::UnknownClient)?;
-    Ok(json!(latency_on(&session).await?))
 }
 
 async fn latency_on(session: &Session) -> Result<f64, TransportError> {
@@ -1232,32 +1212,6 @@ fn shell_eof_reason(close_reason: &str) -> String {
     } else {
         close_reason.to_owned()
     }
-}
-
-async fn start_shell(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let pty_type = params
-        .get("ptyType")
-        .and_then(Value::as_str)
-        .unwrap_or("xterm-256color");
-    let columns = params.get("columns").and_then(Value::as_u64).unwrap_or(80) as u32;
-    let rows = params.get("rows").and_then(Value::as_u64).unwrap_or(24) as u32;
-    let session = sessions()
-        .read()
-        .get(&key)
-        .cloned()
-        .ok_or(TransportError::UnknownClient)?;
-    start_shell_on(
-        key,
-        COMPATIBILITY_SHELL_ID.to_owned(),
-        session,
-        pty_type.to_owned(),
-        columns,
-        rows,
-        ShellDelivery::ReactNative,
-    )
-    .await?;
-    Ok(Value::Null)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1364,12 +1318,6 @@ async fn start_shell_on(
     Ok(())
 }
 
-fn shell_command(params: &Value, command: ShellCommand) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    shell_command_for_key(&key, command)?;
-    Ok(Value::Null)
-}
-
 fn shell_command_for_key(key: &str, command: ShellCommand) -> Result<(), TransportError> {
     shell_command_for_id(key, COMPATIBILITY_SHELL_ID, command)
 }
@@ -1390,22 +1338,6 @@ fn shell_command_for_id(
     Ok(())
 }
 
-fn session_for(params: &Value) -> Result<Arc<Session>, TransportError> {
-    let key = required_string(params, "key")?;
-    sessions()
-        .read()
-        .get(&key)
-        .cloned()
-        .ok_or(TransportError::UnknownClient)
-}
-
-async fn connect_sftp(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let session = session_for(params)?;
-    connect_sftp_on(&key, &session).await?;
-    Ok(Value::Null)
-}
-
 async fn connect_sftp_on(key: &str, session: &Session) -> Result<(), TransportError> {
     session.ensure_alive()?;
     if sftp_sessions().read().contains_key(key) {
@@ -1418,11 +1350,6 @@ async fn connect_sftp_on(key: &str, session: &Session) -> Result<(), TransportEr
         .write()
         .insert(key.to_owned(), Arc::new(sftp));
     Ok(())
-}
-
-fn sftp_for(params: &Value) -> Result<(String, Arc<SftpSession>), TransportError> {
-    let key = required_string(params, "key")?;
-    Ok((key.clone(), sftp_for_key(&key)?))
 }
 
 fn sftp_for_key(key: &str) -> Result<Arc<SftpSession>, TransportError> {
@@ -1469,28 +1396,6 @@ impl From<russh_sftp::protocol::FileAttributes> for SftpMetadata {
     }
 }
 
-async fn sftp_list(params: &Value) -> Result<Value, TransportError> {
-    let (_, sftp) = sftp_for(params)?;
-    let path = required_string(params, "path")?;
-    let entries = sftp_list_on(&sftp, &path).await?;
-    Ok(json!(
-        entries
-            .into_iter()
-            .map(|entry| json!({
-                "filename": entry.filename,
-                "isDirectory": if entry.is_directory { 1 } else { 0 },
-                "modificationDate": entry.metadata.modified_at.unwrap_or_default().to_string(),
-                "lastAccess": entry.metadata.accessed_at.unwrap_or_default().to_string(),
-                "fileSize": entry.metadata.size.unwrap_or_default(),
-                "ownerUserID": entry.metadata.owner_user_id.unwrap_or_default(),
-                "ownerGroupID": entry.metadata.owner_group_id.unwrap_or_default(),
-                "permissions": entry.metadata.permissions.unwrap_or_default().to_string(),
-                "flags": 0,
-            }))
-            .collect::<Vec<_>>()
-    ))
-}
-
 async fn sftp_list_on(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>, TransportError> {
     let entries = sftp
         .read_dir(path)
@@ -1513,42 +1418,31 @@ async fn sftp_list_on(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>, 
     Ok(entries)
 }
 
-async fn sftp_mutation(params: &Value, operation: &str) -> Result<Value, TransportError> {
-    let (_, sftp) = sftp_for(params)?;
-    let path = required_string(params, "path")?;
-    match operation {
-        "mkdir" => sftp.create_dir(path).await?,
-        "rm" => sftp.remove_file(path).await?,
-        "rmdir" => sftp.remove_dir(path).await?,
-        "chmod" => {
+enum SftpMutation {
+    CreateDirectory,
+    RemoveFile,
+    RemoveDirectory,
+    Chmod(u32),
+}
+
+async fn sftp_mutation(
+    key: &str,
+    path: String,
+    mutation: SftpMutation,
+) -> Result<(), TransportError> {
+    let sftp = sftp_for_key(key)?;
+    match mutation {
+        SftpMutation::CreateDirectory => sftp.create_dir(path).await?,
+        SftpMutation::RemoveFile => sftp.remove_file(path).await?,
+        SftpMutation::RemoveDirectory => sftp.remove_dir(path).await?,
+        SftpMutation::Chmod(requested) => {
             let mut metadata = sftp.metadata(path.clone()).await?;
-            let requested = params
-                .get("permissions")
-                .and_then(Value::as_u64)
-                .and_then(|value| u32::try_from(value).ok())
-                .ok_or_else(|| {
-                    TransportError::InvalidRequest(
-                        "missing integer parameter 'permissions'".to_owned(),
-                    )
-                })?;
             let file_type = metadata.permissions.unwrap_or_default() & !0o7777;
             metadata.permissions = Some(file_type | (requested & 0o7777));
             sftp.set_metadata(path, metadata).await?;
         }
-        _ => {
-            return Err(TransportError::InvalidRequest(format!(
-                "unsupported SFTP mutation '{operation}'"
-            )));
-        }
     }
-    Ok(Value::Null)
-}
-
-async fn sftp_create_dir_all(params: &Value) -> Result<Value, TransportError> {
-    let (_, sftp) = sftp_for(params)?;
-    let remote_path = required_string(params, "path")?;
-    sftp_create_dir_all_on(&sftp, &remote_path).await?;
-    Ok(Value::Null)
+    Ok(())
 }
 
 async fn sftp_create_dir_all_on(
@@ -1821,19 +1715,6 @@ async fn sftp_transfer_managed_on(
     }
 }
 
-async fn sftp_transfer(
-    params: &Value,
-    upload: bool,
-    upload_to_exact_path: bool,
-) -> Result<Value, TransportError> {
-    let (key, sftp) = sftp_for(params)?;
-    let local = required_string(params, "localPath")?;
-    let remote_path = required_string(params, "remotePath")?;
-    Ok(Value::String(
-        sftp_transfer_on(key, sftp, local, remote_path, upload, upload_to_exact_path).await?,
-    ))
-}
-
 async fn sftp_transfer_on(
     key: String,
     sftp: Arc<SftpSession>,
@@ -1985,43 +1866,6 @@ async fn sftp_transfer_on(
     result
 }
 
-async fn request_unix_socket_bytes(
-    params: &Value,
-    request: &[u8],
-) -> Result<Vec<u8>, TransportError> {
-    let session = session_for(params)?;
-    let socket_path = required_string(params, "socketPath")?;
-    let terminator = params
-        .get("responseTerminator")
-        .and_then(Value::as_str)
-        .unwrap_or("\n")
-        .as_bytes();
-    if terminator.len() != 1 {
-        return Err(TransportError::InvalidRequest(
-            "responseTerminator must encode to exactly one byte".to_owned(),
-        ));
-    }
-    let timeout_ms = params
-        .get("timeoutMs")
-        .and_then(Value::as_u64)
-        .unwrap_or(15_000)
-        .clamp(1, 300_000);
-    let max_response_bytes = params
-        .get("maxResponseBytes")
-        .and_then(Value::as_u64)
-        .unwrap_or(8 * 1024 * 1024)
-        .clamp(1, 32 * 1024 * 1024);
-    request_unix_socket_bytes_on(
-        &session,
-        &socket_path,
-        request,
-        terminator[0],
-        timeout_ms,
-        max_response_bytes as usize,
-    )
-    .await
-}
-
 async fn request_unix_socket_bytes_on(
     session: &Session,
     socket_path: &str,
@@ -2059,12 +1903,6 @@ async fn request_unix_socket_bytes_on(
     }
     response.pop();
     Ok(response)
-}
-
-async fn request_unix_socket(params: &Value) -> Result<Value, TransportError> {
-    let request = required_string(params, "request")?;
-    let response = request_unix_socket_bytes(params, request.as_bytes()).await?;
-    Ok(json!(String::from_utf8_lossy(&response)))
 }
 
 fn emit_unix_socket_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>) {
@@ -2460,41 +2298,6 @@ async fn open_unix_socket_channel_with_framing(
     Ok(())
 }
 
-async fn open_unix_socket_channel(params: &Value) -> Result<Value, TransportError> {
-    open_unix_socket_channel_from_params(params, None).await
-}
-
-async fn open_length_prefixed_unix_socket_channel(params: &Value) -> Result<Value, TransportError> {
-    let format = LengthFormat::parse(&required_string(params, "lengthFormat")?)?;
-    open_unix_socket_channel_from_params(params, Some(format)).await
-}
-
-async fn open_unix_socket_channel_from_params(
-    params: &Value,
-    framing: Option<LengthFormat>,
-) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let channel_id = required_string(params, "channelId")?;
-    let session = session_for(params)?;
-    let socket_path = required_string(params, "socketPath")?;
-    let max_frame_bytes = params
-        .get("maxFrameBytes")
-        .and_then(Value::as_u64)
-        .unwrap_or(32 * 1024 * 1024)
-        .clamp(1, 128 * 1024 * 1024) as usize;
-    open_unix_socket_channel_with_framing(
-        key,
-        channel_id,
-        session,
-        socket_path,
-        framing,
-        max_frame_bytes,
-        UnixSocketDelivery::ReactNative,
-    )
-    .await?;
-    Ok(Value::Null)
-}
-
 fn unix_socket_channel_command_for_key(
     key: &str,
     channel_id: &str,
@@ -2558,23 +2361,6 @@ fn write_unix_socket_channel_for_key(
                 "Unix-socket channel '{channel_id}' rejected input: {error}"
             ))
         })
-}
-
-fn close_unix_socket_channel(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let channel_id = required_string(params, "channelId")?;
-    unix_socket_channel_command_for_key(&key, &channel_id, StreamCommand::Close)?;
-    Ok(Value::Null)
-}
-
-async fn open_local_forward(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let remote_host = required_string(params, "remoteHost")?;
-    let remote_port = required_u16(params, "remotePort")?;
-    let session = session_for(params)?;
-    Ok(json!(
-        open_local_forward_on(key, session, remote_host, remote_port).await?
-    ))
 }
 
 async fn open_local_forward_on(
@@ -2856,14 +2642,6 @@ async fn serve_sftp_http_connection(
     Ok(())
 }
 
-async fn start_sftp_file_server(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let remote_path = required_string(params, "remotePath")?;
-    let session = session_for(params)?;
-    let server = start_sftp_file_server_on(key, session, remote_path).await?;
-    Ok(json!({ "localPort": server.local_port, "token": server.token }))
-}
-
 pub(crate) struct SftpFileServer {
     pub local_port: u16,
     pub token: String,
@@ -3093,18 +2871,6 @@ fn exec_channel_close_reason(exit_status: Option<u32>, stderr: &[u8]) -> String 
     }
 }
 
-async fn open_exec_channel(params: &Value) -> Result<Value, TransportError> {
-    open_exec_channel_with_delivery(
-        required_string(params, "key")?,
-        required_string(params, "channelId")?,
-        session_for(params)?,
-        required_string(params, "command")?,
-        ExecDelivery::ReactNative,
-    )
-    .await?;
-    Ok(Value::Null)
-}
-
 fn exec_channel_command_for_key(
     key: &str,
     channel_id: &str,
@@ -3122,13 +2888,6 @@ fn exec_channel_command_for_key(
             "exec channel '{channel_id}' rejected input: {error}"
         ))
     })
-}
-
-fn close_exec_channel(params: &Value) -> Result<Value, TransportError> {
-    let key = required_string(params, "key")?;
-    let channel_id = required_string(params, "channelId")?;
-    exec_channel_command_for_key(&key, &channel_id, StreamCommand::Close)?;
-    Ok(Value::Null)
 }
 
 async fn disconnect_key(key: String) {
@@ -3194,256 +2953,496 @@ async fn shutdown_all() {
     *known_hosts().write() = KnownHosts::default();
 }
 
-async fn dispatch(request: Request) -> Result<Value, TransportError> {
-    match request.operation.as_str() {
-        "setKnownHosts" => {
-            let contents = required_string(&request.params, "contents")?;
-            *known_hosts().write() = KnownHosts::parse(&contents);
-            Ok(Value::Null)
-        }
-        "getKeyDetails" => key_details(&request.params),
-        "generateKeyPair" => generate_key_pair(&request.params),
-        "connect" => connect(&request.params).await,
-        "setAgentForwarding" => {
-            let session = session_for(&request.params)?;
-            let enabled = request
-                .params
-                .get("enabled")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            if enabled && session.agent.sender.read().is_none() {
-                return Err(TransportError::InvalidRequest(
-                    "agent forwarding requires a private-key-authenticated SSH session".to_owned(),
-                ));
-            }
-            session.agent.enabled.store(enabled, Ordering::Relaxed);
-            Ok(Value::Null)
-        }
-        "execute" => execute(&request.params).await,
-        "startShell" => start_shell(&request.params).await,
-        "writeToShell" => {
-            let data = required_string(&request.params, "data")?.into_bytes();
-            shell_command(&request.params, ShellCommand::Write(data))
-        }
-        "resizeShell" => {
-            let columns = request
-                .params
-                .get("columns")
-                .and_then(Value::as_u64)
-                .unwrap_or(80) as u32;
-            let rows = request
-                .params
-                .get("rows")
-                .and_then(Value::as_u64)
-                .unwrap_or(24) as u32;
-            shell_command(&request.params, ShellCommand::Resize { columns, rows })
-        }
-        "closeShell" => shell_command(&request.params, ShellCommand::Close),
-        "measureHostLatency" => latency(&request.params).await,
-        "getRemoteHome" => {
-            let mut params = request.params.clone();
-            params["command"] = json!(REMOTE_HOME_COMMAND);
-            let value = execute(&params).await?;
-            Ok(json!(value["stdout"].as_str().unwrap_or_default()))
-        }
-        "connectSFTP" => connect_sftp(&request.params).await,
-        "disconnectSFTP" => {
-            let key = required_string(&request.params, "key")?;
-            let removed_sftp = { sftp_sessions().write().remove(&key) };
-            if let Some(sftp) = removed_sftp {
-                sftp.close().await?;
-            }
-            Ok(Value::Null)
-        }
-        "sftpLs" => sftp_list(&request.params).await,
-        "sftpRename" => {
-            let (_, sftp) = sftp_for(&request.params)?;
-            sftp.rename(
-                required_string(&request.params, "oldPath")?,
-                required_string(&request.params, "newPath")?,
-            )
-            .await?;
-            Ok(Value::Null)
-        }
-        "sftpMkdir" => sftp_mutation(&request.params, "mkdir").await,
-        "sftpCreateDirAll" => sftp_create_dir_all(&request.params).await,
-        "sftpRm" => sftp_mutation(&request.params, "rm").await,
-        "sftpRmdir" => sftp_mutation(&request.params, "rmdir").await,
-        "sftpChmod" => sftp_mutation(&request.params, "chmod").await,
-        "sftpUpload" => sftp_transfer(&request.params, true, false).await,
-        "sftpUploadToPath" => sftp_transfer(&request.params, true, true).await,
-        "sftpDownload" => sftp_transfer(&request.params, false, false).await,
-        "startSftpFileServer" => start_sftp_file_server(&request.params).await,
-        "closeSftpFileServer" => {
-            let key = required_string(&request.params, "key")?;
-            let port = required_u16(&request.params, "localPort")?;
-            if let Some(cancel) = sftp_file_servers().write().remove(&(key, port)) {
-                let _ = cancel.send(true);
-            }
-            Ok(Value::Null)
-        }
-        "sftpCancelUpload" | "sftpCancelDownload" => {
-            let key = required_string(&request.params, "key")?;
-            let direction = if request.operation.ends_with("Upload") {
-                "upload"
-            } else {
-                "download"
-            };
-            if let Some(cancel) = transfers().read().get(&(key, direction)) {
-                let _ = cancel.send(true);
-            }
-            Ok(Value::Null)
-        }
-        "openLocalForward" => open_local_forward(&request.params).await,
-        "closeLocalForward" => {
-            let key = required_string(&request.params, "key")?;
-            let port = required_u16(&request.params, "localPort")?;
-            if let Some(cancel) = forwards().write().remove(&(key, port)) {
-                let _ = cancel.send(true);
-            }
-            Ok(Value::Null)
-        }
-        "openUnixSocketChannel" => open_unix_socket_channel(&request.params).await,
-        "openLengthPrefixedUnixSocketChannel" => {
-            open_length_prefixed_unix_socket_channel(&request.params).await
-        }
-        "closeUnixSocketChannel" => close_unix_socket_channel(&request.params),
-        "requestUnixSocket" => request_unix_socket(&request.params).await,
-        "openExecChannel" => open_exec_channel(&request.params).await,
-        "closeExecChannel" => close_exec_channel(&request.params),
-        "disconnect" => {
-            let key = required_string(&request.params, "key")?;
-            disconnect_key(key).await;
-            Ok(Value::Null)
-        }
-        "debugSession" => {
-            let key = required_string(&request.params, "key")?;
-            let session = sessions()
-                .read()
-                .get(&key)
-                .cloned()
-                .ok_or(TransportError::UnknownClient)?;
-            Ok(json!({ "host": session.host, "port": session.port }))
-        }
-        operation => Err(TransportError::InvalidRequest(format!(
-            "unsupported operation '{operation}'"
-        ))),
-    }
-}
-
-fn serialize_response(response: &Response) -> String {
-    serde_json::to_string(response).unwrap_or_else(|error| {
-        format!(
-            r#"{{"ok":false,"error":{{"code":"UNKNOWN","message":"response serialization failed: {error}"}}}}"#
-        )
-    })
-}
-
-async fn dispatch_json(input: &str) -> String {
-    let response = match serde_json::from_str::<Request>(input) {
-        Ok(request) => match dispatch(request).await {
-            Ok(value) => Response::success(value),
-            Err(error) => Response::failure(error),
-        },
-        Err(error) => Response::failure(SshError::new(
-            SshErrorCode::InvalidRequest,
-            format!("invalid request JSON: {error}"),
-        )),
-    };
-    serialize_response(&response)
-}
-
-async fn process_json_async(input: &str) -> String {
-    match AssertUnwindSafe(dispatch_json(input)).catch_unwind().await {
-        Ok(response) => response,
-        Err(_) => serialize_response(&Response::failure(SshError::unknown(
-            "Rust SSH operation panicked",
-        ))),
-    }
-}
-
-fn process_json(input: &str) -> String {
-    match runtime() {
-        Ok(runtime) => runtime.block_on(process_json_async(input)),
-        Err(error) => serialize_response(&Response::failure(SshError::unknown(format!(
-            "failed to initialize SSH runtime: {error}"
-        )))),
-    }
-}
-
-async fn process_json_for_lifecycle(input: Option<String>, lifecycle_epoch: u64) -> String {
-    let request_key = input.as_deref().and_then(|input| {
-        serde_json::from_str::<Request>(input)
-            .ok()
-            .and_then(|request| request.params.get("key")?.as_str().map(str::to_owned))
-    });
-    let mut response = match input {
-        Some(input) => process_json_async(&input).await,
-        None => serialize_response(&Response::failure(SshError::new(
-            SshErrorCode::InvalidRequest,
-            "request pointer was null",
-        ))),
-    };
-    if LIFECYCLE_EPOCH.load(Ordering::Acquire) != lifecycle_epoch {
-        if let Some(key) = request_key {
-            disconnect_key(key).await;
-        }
-        response = serialize_response(&Response::failure(SshError::new(
-            SshErrorCode::SessionClosed,
-            "Rust SSH bridge was invalidated",
-        )));
-    }
-    response
-}
-
-#[uniffi::export]
-pub fn call(request_json: String) -> String {
-    process_json(&request_json)
-}
-
-#[uniffi::export]
-pub async fn call_async(request_json: String) -> String {
+async fn run_ssh_task<T, F>(key: Option<String>, future: F) -> Result<T, SshError>
+where
+    T: Send + 'static,
+    F: Future<Output = Result<T, TransportError>> + Send + 'static,
+{
     let lifecycle_epoch = LIFECYCLE_EPOCH.load(Ordering::Acquire);
     let task = match runtime() {
-        Ok(runtime) => runtime.spawn(process_json_for_lifecycle(
-            Some(request_json),
-            lifecycle_epoch,
-        )),
+        Ok(runtime) => runtime.spawn(async move {
+            let result = future.await;
+            if LIFECYCLE_EPOCH.load(Ordering::Acquire) != lifecycle_epoch {
+                if let Some(key) = key {
+                    disconnect_key(key).await;
+                }
+                return Err(SshError::SessionClosed(
+                    "Rust SSH bridge was invalidated".to_owned(),
+                ));
+            }
+            result.map_err(SshError::from)
+        }),
         Err(error) => {
-            return serialize_response(&Response::failure(SshError::unknown(format!(
+            return Err(SshError::Unknown(format!(
                 "failed to initialize SSH runtime: {error}"
-            ))));
+            )));
         }
     };
     match task.await {
         Ok(response) => response,
-        Err(error) => serialize_response(&Response::failure(SshError::unknown(format!(
+        Err(error) => Err(SshError::Unknown(format!(
             "SSH runtime task failed: {error}"
-        )))),
+        ))),
     }
 }
 
-fn fast_path_result(result: Result<(), TransportError>) -> Option<String> {
-    result
-        .err()
-        .map(SshError::from)
-        .and_then(|error| serde_json::to_string(&error).ok())
+fn session_for_key(key: &str) -> Result<Arc<Session>, TransportError> {
+    sessions()
+        .read()
+        .get(key)
+        .cloned()
+        .ok_or(TransportError::UnknownClient)
 }
 
 #[uniffi::export]
-pub fn write_shell_input(key: String, data: String) -> Option<String> {
-    fast_path_result(shell_command_for_key(
-        &key,
-        ShellCommand::Write(data.into_bytes()),
-    ))
+pub fn set_known_hosts(contents: String) {
+    *known_hosts().write() = KnownHosts::parse(&contents);
 }
 
 #[uniffi::export]
-pub fn resize_shell_fast(key: String, columns: u32, rows: u32) -> Option<String> {
-    fast_path_result(shell_command_for_key(
-        &key,
-        ShellCommand::Resize { columns, rows },
-    ))
+pub fn get_ssh_key_details(
+    private_key: String,
+    passphrase: Option<String>,
+) -> Result<SshKeyDetails, SshError> {
+    key_details(&private_key, passphrase.as_deref()).map_err(SshError::from)
+}
+
+#[uniffi::export]
+pub fn generate_ssh_key_pair(
+    key_type: String,
+    passphrase: String,
+    key_size: u32,
+    comment: String,
+) -> Result<SshGeneratedKeyPair, SshError> {
+    let _ = key_size;
+    generate_key_pair(&key_type, &passphrase, &comment).map_err(SshError::from)
+}
+
+#[uniffi::export]
+pub async fn connect_ssh(
+    host: String,
+    port: u16,
+    username: String,
+    authentication: SshAuthentication,
+    key: String,
+    jump_key: Option<String>,
+) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        connect_compatibility_session(host, port, username, authentication, key, jump_key).await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub fn set_ssh_agent_forwarding(key: String, enabled: bool) -> Result<(), SshError> {
+    let session = session_for_key(&key).map_err(SshError::from)?;
+    if enabled && session.agent.sender.read().is_none() {
+        return Err(SshError::InvalidRequest(
+            "agent forwarding requires a private-key-authenticated SSH session".to_owned(),
+        ));
+    }
+    session.agent.enabled.store(enabled, Ordering::Relaxed);
+    Ok(())
+}
+
+#[uniffi::export]
+pub async fn execute_ssh_command(key: String, command: String) -> Result<String, SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        let output = execute_on(&session, &command).await?;
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn start_ssh_shell(key: String, pty_type: String) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        start_shell_on(
+            key,
+            COMPATIBILITY_SHELL_ID.to_owned(),
+            session,
+            pty_type,
+            80,
+            24,
+            ShellDelivery::ReactNative,
+        )
+        .await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub fn close_ssh_shell(key: String) -> Result<(), SshError> {
+    shell_command_for_key(&key, ShellCommand::Close).map_err(SshError::from)
+}
+
+#[uniffi::export]
+pub async fn measure_ssh_host_latency(key: String) -> Result<f64, SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        latency_on(&session).await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn get_ssh_remote_home(key: String) -> Result<String, SshError> {
+    execute_ssh_command(key, REMOTE_HOME_COMMAND.to_owned()).await
+}
+
+#[uniffi::export]
+pub async fn disconnect_ssh(key: String) -> Result<(), SshError> {
+    run_ssh_task(None, async move {
+        disconnect_key(key).await;
+        Ok(())
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn connect_ssh_sftp(key: String) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        connect_sftp_on(&key, &session).await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn disconnect_ssh_sftp(key: String) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let removed = { sftp_sessions().write().remove(&key) };
+        if let Some(sftp) = removed {
+            sftp.close().await?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn list_ssh_sftp_directory(
+    key: String,
+    path: String,
+) -> Result<Vec<LegacySftpEntry>, SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let sftp = sftp_for_key(&key)?;
+        Ok(sftp_list_on(&sftp, &path)
+            .await?
+            .into_iter()
+            .map(|entry| LegacySftpEntry {
+                filename: entry.filename,
+                is_directory: entry.is_directory,
+                modification_date: entry.metadata.modified_at.unwrap_or_default().to_string(),
+                last_access: entry.metadata.accessed_at.unwrap_or_default().to_string(),
+                file_size: entry.metadata.size.unwrap_or_default(),
+                owner_user_id: entry.metadata.owner_user_id.unwrap_or_default(),
+                owner_group_id: entry.metadata.owner_group_id.unwrap_or_default(),
+                permissions: entry.metadata.permissions.unwrap_or_default().to_string(),
+                flags: 0,
+            })
+            .collect())
+    })
+    .await
+}
+
+async fn mutate_ssh_sftp_path(
+    key: String,
+    path: String,
+    mutation: SftpMutation,
+) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        sftp_mutation(&key, path, mutation).await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn create_ssh_sftp_directory(key: String, path: String) -> Result<(), SshError> {
+    mutate_ssh_sftp_path(key, path, SftpMutation::CreateDirectory).await
+}
+
+#[uniffi::export]
+pub async fn create_ssh_sftp_directory_all(key: String, path: String) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let sftp = sftp_for_key(&key)?;
+        sftp_create_dir_all_on(&sftp, &path).await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn remove_ssh_sftp_file(key: String, path: String) -> Result<(), SshError> {
+    mutate_ssh_sftp_path(key, path, SftpMutation::RemoveFile).await
+}
+
+#[uniffi::export]
+pub async fn remove_ssh_sftp_directory(key: String, path: String) -> Result<(), SshError> {
+    mutate_ssh_sftp_path(key, path, SftpMutation::RemoveDirectory).await
+}
+
+#[uniffi::export]
+pub async fn rename_ssh_sftp_path(
+    key: String,
+    old_path: String,
+    new_path: String,
+) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        sftp_for_key(&key)?.rename(old_path, new_path).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn chmod_ssh_sftp_path(
+    key: String,
+    path: String,
+    permissions: u32,
+) -> Result<(), SshError> {
+    mutate_ssh_sftp_path(key, path, SftpMutation::Chmod(permissions)).await
+}
+
+async fn transfer_ssh_sftp(
+    key: String,
+    local_path: String,
+    remote_path: String,
+    upload: bool,
+    exact_path: bool,
+) -> Result<String, SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let sftp = sftp_for_key(&key)?;
+        sftp_transfer_on(key, sftp, local_path, remote_path, upload, exact_path).await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn upload_ssh_sftp(
+    key: String,
+    local_path: String,
+    remote_directory_path: String,
+) -> Result<String, SshError> {
+    transfer_ssh_sftp(key, local_path, remote_directory_path, true, false).await
+}
+
+#[uniffi::export]
+pub async fn upload_ssh_sftp_to_path(
+    key: String,
+    local_path: String,
+    remote_path: String,
+) -> Result<String, SshError> {
+    transfer_ssh_sftp(key, local_path, remote_path, true, true).await
+}
+
+#[uniffi::export]
+pub async fn download_ssh_sftp(
+    key: String,
+    remote_path: String,
+    local_directory_path: String,
+) -> Result<String, SshError> {
+    transfer_ssh_sftp(key, local_directory_path, remote_path, false, false).await
+}
+
+#[uniffi::export]
+pub fn cancel_ssh_sftp_upload(key: String) -> bool {
+    transfers()
+        .read()
+        .get(&(key, "upload"))
+        .is_some_and(|cancel| cancel.send(true).is_ok())
+}
+
+#[uniffi::export]
+pub fn cancel_ssh_sftp_download(key: String) -> bool {
+    transfers()
+        .read()
+        .get(&(key, "download"))
+        .is_some_and(|cancel| cancel.send(true).is_ok())
+}
+
+#[uniffi::export]
+pub async fn start_ssh_sftp_file_server(
+    key: String,
+    remote_path: String,
+) -> Result<LegacySftpFileServer, SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        let server = start_sftp_file_server_on(key, session, remote_path).await?;
+        Ok(LegacySftpFileServer {
+            local_port: server.local_port,
+            token: server.token,
+        })
+    })
+    .await
+}
+
+#[uniffi::export]
+pub fn close_ssh_sftp_file_server(key: String, local_port: u16) {
+    if let Some(cancel) = sftp_file_servers().write().remove(&(key, local_port)) {
+        let _ = cancel.send(true);
+    }
+}
+
+#[uniffi::export]
+pub async fn open_ssh_local_forward(
+    key: String,
+    remote_host: String,
+    remote_port: u16,
+) -> Result<u16, SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        open_local_forward_on(key, session, remote_host, remote_port).await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub fn close_ssh_local_forward(key: String, local_port: u16) {
+    if let Some(cancel) = forwards().write().remove(&(key, local_port)) {
+        let _ = cancel.send(true);
+    }
+}
+
+#[uniffi::export]
+pub async fn open_ssh_unix_socket_channel(
+    key: String,
+    socket_path: String,
+    channel_id: String,
+) -> Result<(), SshError> {
+    open_ssh_unix_socket_channel_inner(key, socket_path, channel_id, None, 32 * 1024 * 1024).await
+}
+
+#[uniffi::export]
+pub async fn open_length_prefixed_ssh_unix_socket_channel(
+    key: String,
+    socket_path: String,
+    channel_id: String,
+    length_format: String,
+    max_frame_bytes: u32,
+) -> Result<(), SshError> {
+    let framing = LengthFormat::parse(&length_format).map_err(SshError::from)?;
+    open_ssh_unix_socket_channel_inner(
+        key,
+        socket_path,
+        channel_id,
+        Some(framing),
+        max_frame_bytes.clamp(1, 128 * 1024 * 1024) as usize,
+    )
+    .await
+}
+
+async fn open_ssh_unix_socket_channel_inner(
+    key: String,
+    socket_path: String,
+    channel_id: String,
+    framing: Option<LengthFormat>,
+    max_frame_bytes: usize,
+) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        open_unix_socket_channel_with_framing(
+            key,
+            channel_id,
+            session,
+            socket_path,
+            framing,
+            max_frame_bytes,
+            UnixSocketDelivery::ReactNative,
+        )
+        .await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub fn close_ssh_unix_socket_channel(key: String, channel_id: String) -> Result<(), SshError> {
+    unix_socket_channel_command_for_key(&key, &channel_id, StreamCommand::Close)
+        .map_err(SshError::from)
+}
+
+#[uniffi::export]
+pub async fn request_ssh_unix_socket(
+    key: String,
+    socket_path: String,
+    request: String,
+    response_terminator: String,
+    timeout_ms: u32,
+    max_response_bytes: u32,
+) -> Result<String, SshError> {
+    let terminator = response_terminator.as_bytes();
+    if terminator.len() != 1 {
+        return Err(SshError::InvalidRequest(
+            "responseTerminator must encode to exactly one byte".to_owned(),
+        ));
+    }
+    let terminator = terminator[0];
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        let response = request_unix_socket_bytes_on(
+            &session,
+            &socket_path,
+            request.as_bytes(),
+            terminator,
+            u64::from(timeout_ms.clamp(1, 300_000)),
+            max_response_bytes.clamp(1, 32 * 1024 * 1024) as usize,
+        )
+        .await?;
+        Ok(String::from_utf8_lossy(&response).into_owned())
+    })
+    .await
+}
+
+#[uniffi::export]
+pub async fn open_ssh_exec_channel(
+    key: String,
+    command: String,
+    channel_id: String,
+) -> Result<(), SshError> {
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        let session = session_for_key(&key)?;
+        open_exec_channel_with_delivery(
+            key,
+            channel_id,
+            session,
+            command,
+            ExecDelivery::ReactNative,
+        )
+        .await
+    })
+    .await
+}
+
+#[uniffi::export]
+pub fn close_ssh_exec_channel(key: String, channel_id: String) -> Result<(), SshError> {
+    exec_channel_command_for_key(&key, &channel_id, StreamCommand::Close).map_err(SshError::from)
+}
+
+#[uniffi::export]
+pub fn write_shell_input(key: String, data: String) -> Result<(), SshError> {
+    shell_command_for_key(&key, ShellCommand::Write(data.into_bytes())).map_err(SshError::from)
+}
+
+#[uniffi::export]
+pub fn resize_shell_fast(key: String, columns: u32, rows: u32) -> Result<(), SshError> {
+    shell_command_for_key(&key, ShellCommand::Resize { columns, rows }).map_err(SshError::from)
 }
 
 #[uniffi::export]
@@ -3451,13 +3450,8 @@ pub fn write_unix_socket_channel(
     key: String,
     channel_id: String,
     bytes: Vec<u8>,
-) -> Option<String> {
-    fast_path_result(write_unix_socket_channel_for_key(
-        &key,
-        &channel_id,
-        bytes,
-        false,
-    ))
+) -> Result<(), SshError> {
+    write_unix_socket_channel_for_key(&key, &channel_id, bytes, false).map_err(SshError::from)
 }
 
 #[uniffi::export]
@@ -3465,22 +3459,14 @@ pub fn write_length_prefixed_unix_socket_channel(
     key: String,
     channel_id: String,
     bytes: Vec<u8>,
-) -> Option<String> {
-    fast_path_result(write_unix_socket_channel_for_key(
-        &key,
-        &channel_id,
-        bytes,
-        true,
-    ))
+) -> Result<(), SshError> {
+    write_unix_socket_channel_for_key(&key, &channel_id, bytes, true).map_err(SshError::from)
 }
 
 #[uniffi::export]
-pub fn write_exec_channel(key: String, channel_id: String, bytes: Vec<u8>) -> Option<String> {
-    fast_path_result(exec_channel_command_for_key(
-        &key,
-        &channel_id,
-        StreamCommand::Write(bytes),
-    ))
+pub fn write_exec_channel(key: String, channel_id: String, bytes: Vec<u8>) -> Result<(), SshError> {
+    exec_channel_command_for_key(&key, &channel_id, StreamCommand::Write(bytes))
+        .map_err(SshError::from)
 }
 
 #[uniffi::export]

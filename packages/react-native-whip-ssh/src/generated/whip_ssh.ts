@@ -64,21 +64,12 @@ const uniffiIsDebug =
 
 // Public interface members begin here.
 
-export function call(requestJson: string): string {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
+export function cancelSshSftpDownload(key: string): boolean {
+  return FfiConverterBool.lift(
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_call(
-          FfiConverterString.lower(
-            requestJson,
-            nativeModule().rustbuffer_alloc,
-          ),
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
           callStatus,
         );
       },
@@ -87,38 +78,51 @@ export function call(requestJson: string): string {
   );
 }
 
-export async function callAsync(
-  requestJson: string,
+export function cancelSshSftpUpload(key: string): boolean {
+  return FfiConverterBool.lift(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_upload(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export async function chmodSshSftpPath(
+  key: string,
+  path: string,
+  permissions: number,
   asyncOpts_?: { signal: AbortSignal },
-): Promise<string> {
+): Promise<void> /*throws*/ {
   const __stack = uniffiIsDebug ? new Error().stack : undefined;
   try {
     return await uniffiRustCallAsync(
       /*rustCaller:*/ uniffiCaller,
       /*rustFutureFunc:*/ () => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_call_async(
-          FfiConverterString.lower(
-            requestJson,
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_chmod_ssh_sftp_path(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(
+            permissions,
             nativeModule().rustbuffer_alloc,
           ),
         );
       },
-      /*pollFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
-      /*cancelFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
       /*completeFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
-      /*freeFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
-      // Async returns always go through the JS-side converter: the
-      // FFI symbol returns the future handle (u64), and the user-level
-      // RustBuffer comes back via the shared `rust_future_complete_*`
-      // export. The bytes the runtime hands back must be deserialized
-      // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
     );
   } catch (__error: any) {
     if (uniffiIsDebug && __error instanceof Error) {
@@ -221,6 +225,161 @@ export function closeHerdrTerminalBridge(
   );
 }
 
+export function closeSshExecChannel(
+  key: string,
+  channelId: string,
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_close_ssh_exec_channel(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function closeSshLocalForward(key: string, localPort: number): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_close_ssh_local_forward(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt16.lower(localPort, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function closeSshSftpFileServer(key: string, localPort: number): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_close_ssh_sftp_file_server(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt16.lower(localPort, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function closeSshShell(key: string): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_close_ssh_shell(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function closeSshUnixSocketChannel(
+  key: string,
+  channelId: string,
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_close_ssh_unix_socket_channel(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export async function connectSsh(
+  host: string,
+  port: number,
+  username: string,
+  authentication: SshAuthentication,
+  key: string,
+  jumpKey: string | undefined,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_connect_ssh(
+          FfiConverterString.lower(host, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt16.lower(port, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(username, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeSshAuthentication.lower(
+            authentication,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterOptionalString.lower(
+            jumpKey,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function connectSshSftp(
+  key: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_connect_ssh_sftp(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export function createHostRuntime(
   config: HostRuntimeConfig,
 ): HostRuntimeLike /*throws*/ {
@@ -241,6 +400,335 @@ export function createHostRuntime(
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     ),
   );
+}
+
+export async function createSshSftpDirectory(
+  key: string,
+  path: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_create_ssh_sftp_directory(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function createSshSftpDirectoryAll(
+  key: string,
+  path: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_create_ssh_sftp_directory_all(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function disconnectSsh(
+  key: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function disconnectSshSftp(
+  key: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh_sftp(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function downloadSshSftp(
+  key: string,
+  remotePath: string,
+  localDirectoryPath: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_download_ssh_sftp(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(remotePath, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(
+            localDirectoryPath,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function executeSshCommand(
+  key: string,
+  command: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_execute_ssh_command(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(command, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export function generateSshKeyPair(
+  keyType: string,
+  passphrase: string,
+  keySize: number,
+  comment: string,
+): SshGeneratedKeyPair /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeSshGeneratedKeyPair.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_generate_ssh_key_pair(
+          FfiConverterString.lower(keyType, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(passphrase, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(keySize, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(comment, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function getSshKeyDetails(
+  privateKey: string,
+  passphrase: string | undefined,
+): SshKeyDetails /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeSshKeyDetails.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_get_ssh_key_details(
+          FfiConverterString.lower(privateKey, nativeModule().rustbuffer_alloc),
+          FfiConverterOptionalString.lower(
+            passphrase,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export async function getSshRemoteHome(
+  key: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_get_ssh_remote_home(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
 }
 
 export async function herdrControlRequest(
@@ -373,12 +861,258 @@ export function herdrTerminalScroll(
   );
 }
 
+export async function listSshSftpDirectory(
+  key: string,
+  path: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<Array<LegacySftpEntry>> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_list_ssh_sftp_directory(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterSequenceTypeLegacySftpEntry.lift.bind(
+        FfiConverterSequenceTypeLegacySftpEntry,
+      ),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function measureSshHostLatency(
+  key: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<number> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_measure_ssh_host_latency(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_f64,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_f64,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_f64,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_f64,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterFloat64.lift.bind(FfiConverterFloat64),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function openLengthPrefixedSshUnixSocketChannel(
+  key: string,
+  socketPath: string,
+  channelId: string,
+  lengthFormat: string,
+  maxFrameBytes: number,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_open_length_prefixed_ssh_unix_socket_channel(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(socketPath, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(
+            lengthFormat,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt32.lower(
+            maxFrameBytes,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function openSshExecChannel(
+  key: string,
+  command: string,
+  channelId: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_open_ssh_exec_channel(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(command, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function openSshLocalForward(
+  key: string,
+  remoteHost: string,
+  remotePort: number,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<number> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_open_ssh_local_forward(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(remoteHost, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt16.lower(remotePort, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_u16,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_u16,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_u16,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_u16,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterUInt16.lift.bind(FfiConverterUInt16),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function openSshUnixSocketChannel(
+  key: string,
+  socketPath: string,
+  channelId: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_open_ssh_unix_socket_channel(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(socketPath, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export async function pairHost(
   code: string,
   publicKey: string,
   deviceName: string,
   asyncOpts_?: { signal: AbortSignal },
-): Promise<string> {
+): Promise<PairHostResult> /*throws*/ {
   const __stack = uniffiIsDebug ? new Error().stack : undefined;
   try {
     return await uniffiRustCallAsync(
@@ -403,9 +1137,14 @@ export async function pairHost(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftFunc:*/ FfiConverterTypePairHostResult.lift.bind(
+        FfiConverterTypePairHostResult,
+      ),
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypePairHostError.lift.bind(
+        FfiConverterTypePairHostError,
+      ),
     );
   } catch (__error: any) {
     if (uniffiIsDebug && __error instanceof Error) {
@@ -466,29 +1205,186 @@ export async function prepareHerdrTerminalBridge(
   }
 }
 
+export async function removeSshSftpDirectory(
+  key: string,
+  path: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_remove_ssh_sftp_directory(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function removeSshSftpFile(
+  key: string,
+  path: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_remove_ssh_sftp_file(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function renameSshSftpPath(
+  key: string,
+  oldPath: string,
+  newPath: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_rename_ssh_sftp_path(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(oldPath, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(newPath, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function requestSshUnixSocket(
+  key: string,
+  socketPath: string,
+  request: string,
+  responseTerminator: string,
+  timeoutMs: number,
+  maxResponseBytes: number,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_request_ssh_unix_socket(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(socketPath, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(request, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(
+            responseTerminator,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt32.lower(timeoutMs, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(
+            maxResponseBytes,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export function resizeShellFast(
   key: string,
   columns: number,
   rows: number,
-): string | undefined {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterOptionalString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_resize_shell_fast(
-          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_resize_shell_fast(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
 }
 
@@ -562,6 +1458,35 @@ export function setHostRuntimeEventSink(sink: HostRuntimeEventSink): void {
           sink,
           nativeModule().rustbuffer_alloc,
         ),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function setKnownHosts(contents: string): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_known_hosts(
+        FfiConverterString.lower(contents, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function setSshAgentForwarding(
+  key: string,
+  enabled: boolean,
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_ssh_agent_forwarding(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterBool.lower(enabled, nativeModule().rustbuffer_alloc),
         callStatus,
       );
     },
@@ -700,29 +1625,195 @@ export async function startHerdrTerminalBridge(
   }
 }
 
+export async function startSshSftpFileServer(
+  key: string,
+  remotePath: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<LegacySftpFileServer> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_start_ssh_sftp_file_server(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(remotePath, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterTypeLegacySftpFileServer.lift.bind(
+        FfiConverterTypeLegacySftpFileServer,
+      ),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function startSshShell(
+  key: string,
+  ptyType: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_start_ssh_shell(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(ptyType, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function uploadSshSftp(
+  key: string,
+  localPath: string,
+  remoteDirectoryPath: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_upload_ssh_sftp(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(localPath, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(
+            remoteDirectoryPath,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function uploadSshSftpToPath(
+  key: string,
+  localPath: string,
+  remotePath: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_upload_ssh_sftp_to_path(
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(localPath, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(remotePath, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
+        FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export function writeExecChannel(
   key: string,
   channelId: string,
   bytes: ArrayBuffer,
-): string | undefined {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterOptionalString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_exec_channel(
-          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
-          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_exec_channel(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+        FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
 }
 
@@ -730,46 +1821,32 @@ export function writeLengthPrefixedUnixSocketChannel(
   key: string,
   channelId: string,
   bytes: ArrayBuffer,
-): string | undefined {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterOptionalString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_length_prefixed_unix_socket_channel(
-          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
-          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_length_prefixed_unix_socket_channel(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+        FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
 }
 
-export function writeShellInput(key: string, data: string): string | undefined {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterOptionalString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_shell_input(
-          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(data, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
+export function writeShellInput(key: string, data: string): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_shell_input(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(data, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
 }
 
@@ -777,25 +1854,18 @@ export function writeUnixSocketChannel(
   key: string,
   channelId: string,
   bytes: ArrayBuffer,
-): string | undefined {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterOptionalString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_unix_socket_channel(
-          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
-          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
+): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeSshError.lift.bind(FfiConverterTypeSshError),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_unix_socket_channel(
+        FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(channelId, nativeModule().rustbuffer_alloc),
+        FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
 }
 
@@ -5392,6 +6462,194 @@ const FfiConverterTypeHostStateSnapshot = (() => {
   return new FFIConverter();
 })();
 
+export type LegacySftpEntry = {
+  filename: string;
+  isDirectory: boolean;
+  modificationDate: string;
+  lastAccess: string;
+  fileSize: bigint;
+  ownerUserId: number;
+  ownerGroupId: number;
+  permissions: string;
+  flags: number;
+};
+
+/**
+ * Generated factory for {@link LegacySftpEntry} record objects.
+ */
+export const LegacySftpEntry = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<LegacySftpEntry, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<LegacySftpEntry>,
+  });
+})();
+
+const FfiConverterTypeLegacySftpEntry = (() => {
+  type TypeName = LegacySftpEntry;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        filename: FfiConverterString.read(from),
+        isDirectory: FfiConverterBool.read(from),
+        modificationDate: FfiConverterString.read(from),
+        lastAccess: FfiConverterString.read(from),
+        fileSize: FfiConverterUInt64.read(from),
+        ownerUserId: FfiConverterUInt32.read(from),
+        ownerGroupId: FfiConverterUInt32.read(from),
+        permissions: FfiConverterString.read(from),
+        flags: FfiConverterUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.filename, into);
+      FfiConverterBool.write(value.isDirectory, into);
+      FfiConverterString.write(value.modificationDate, into);
+      FfiConverterString.write(value.lastAccess, into);
+      FfiConverterUInt64.write(value.fileSize, into);
+      FfiConverterUInt32.write(value.ownerUserId, into);
+      FfiConverterUInt32.write(value.ownerGroupId, into);
+      FfiConverterString.write(value.permissions, into);
+      FfiConverterUInt32.write(value.flags, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.filename) +
+        FfiConverterBool.allocationSize(value.isDirectory) +
+        FfiConverterString.allocationSize(value.modificationDate) +
+        FfiConverterString.allocationSize(value.lastAccess) +
+        FfiConverterUInt64.allocationSize(value.fileSize) +
+        FfiConverterUInt32.allocationSize(value.ownerUserId) +
+        FfiConverterUInt32.allocationSize(value.ownerGroupId) +
+        FfiConverterString.allocationSize(value.permissions) +
+        FfiConverterUInt32.allocationSize(value.flags)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type LegacySftpFileServer = {
+  localPort: number;
+  token: string;
+};
+
+/**
+ * Generated factory for {@link LegacySftpFileServer} record objects.
+ */
+export const LegacySftpFileServer = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      LegacySftpFileServer,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<LegacySftpFileServer>,
+  });
+})();
+
+const FfiConverterTypeLegacySftpFileServer = (() => {
+  type TypeName = LegacySftpFileServer;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        localPort: FfiConverterUInt16.read(from),
+        token: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt16.write(value.localPort, into);
+      FfiConverterString.write(value.token, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt16.allocationSize(value.localPort) +
+        FfiConverterString.allocationSize(value.token)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type PairHostResult = {
+  sshHost: string;
+  sshPort: number;
+  sshUser: string;
+  sshHostFingerprint: string;
+  sshHostKeyType: string;
+  sshHostPublicKey: string;
+  keyFingerprint?: string;
+  alreadyPresent: boolean;
+};
+
+/**
+ * Generated factory for {@link PairHostResult} record objects.
+ */
+export const PairHostResult = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<PairHostResult, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<PairHostResult>,
+  });
+})();
+
+const FfiConverterTypePairHostResult = (() => {
+  type TypeName = PairHostResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        sshHost: FfiConverterString.read(from),
+        sshPort: FfiConverterUInt16.read(from),
+        sshUser: FfiConverterString.read(from),
+        sshHostFingerprint: FfiConverterString.read(from),
+        sshHostKeyType: FfiConverterString.read(from),
+        sshHostPublicKey: FfiConverterString.read(from),
+        keyFingerprint: FfiConverterOptionalString.read(from),
+        alreadyPresent: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.sshHost, into);
+      FfiConverterUInt16.write(value.sshPort, into);
+      FfiConverterString.write(value.sshUser, into);
+      FfiConverterString.write(value.sshHostFingerprint, into);
+      FfiConverterString.write(value.sshHostKeyType, into);
+      FfiConverterString.write(value.sshHostPublicKey, into);
+      FfiConverterOptionalString.write(value.keyFingerprint, into);
+      FfiConverterBool.write(value.alreadyPresent, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.sshHost) +
+        FfiConverterUInt16.allocationSize(value.sshPort) +
+        FfiConverterString.allocationSize(value.sshUser) +
+        FfiConverterString.allocationSize(value.sshHostFingerprint) +
+        FfiConverterString.allocationSize(value.sshHostKeyType) +
+        FfiConverterString.allocationSize(value.sshHostPublicKey) +
+        FfiConverterOptionalString.allocationSize(value.keyFingerprint) +
+        FfiConverterBool.allocationSize(value.alreadyPresent)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum PreviewKind {
   WebForward,
   Html,
@@ -5829,6 +7087,104 @@ const FfiConverterTypeRuntimeDiagnostic = (() => {
         FfiConverterTypeRuntimeDiagnosticOutcome.allocationSize(value.outcome) +
         FfiConverterOptionalString.allocationSize(value.terminalId) +
         FfiConverterOptionalString.allocationSize(value.error)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type SshGeneratedKeyPair = {
+  privateKey: string;
+  publicKey: string;
+};
+
+/**
+ * Generated factory for {@link SshGeneratedKeyPair} record objects.
+ */
+export const SshGeneratedKeyPair = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<SshGeneratedKeyPair, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<SshGeneratedKeyPair>,
+  });
+})();
+
+const FfiConverterTypeSshGeneratedKeyPair = (() => {
+  type TypeName = SshGeneratedKeyPair;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        privateKey: FfiConverterString.read(from),
+        publicKey: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.privateKey, into);
+      FfiConverterString.write(value.publicKey, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.privateKey) +
+        FfiConverterString.allocationSize(value.publicKey)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type SshKeyDetails = {
+  keyType: string;
+  keySize: number;
+  fingerprint: string;
+  publicKey: string;
+};
+
+/**
+ * Generated factory for {@link SshKeyDetails} record objects.
+ */
+export const SshKeyDetails = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<SshKeyDetails, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<SshKeyDetails>,
+  });
+})();
+
+const FfiConverterTypeSshKeyDetails = (() => {
+  type TypeName = SshKeyDetails;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        keyType: FfiConverterString.read(from),
+        keySize: FfiConverterUInt32.read(from),
+        fingerprint: FfiConverterString.read(from),
+        publicKey: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.keyType, into);
+      FfiConverterUInt32.write(value.keySize, into);
+      FfiConverterString.write(value.fingerprint, into);
+      FfiConverterString.write(value.publicKey, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.keyType) +
+        FfiConverterUInt32.allocationSize(value.keySize) +
+        FfiConverterString.allocationSize(value.fingerprint) +
+        FfiConverterString.allocationSize(value.publicKey)
       );
     }
   }
@@ -14868,6 +16224,1530 @@ const FfiConverterTypeKnownHostStoreError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: PairHostError
+export enum PairHostError_Tags {
+  BadPrefix = 'BadPrefix',
+  BadEncoding = 'BadEncoding',
+  BadPayload = 'BadPayload',
+  ConnectionTimeout = 'ConnectionTimeout',
+  ApprovalTimeout = 'ApprovalTimeout',
+  AuthenticationFailed = 'AuthenticationFailed',
+  HostKeyMismatch = 'HostKeyMismatch',
+  UnsupportedHostCertificate = 'UnsupportedHostCertificate',
+  InvalidResponse = 'InvalidResponse',
+  CommandFailed = 'CommandFailed',
+  Refused = 'Refused',
+  SshFailure = 'SshFailure',
+  RuntimeInitialization = 'RuntimeInitialization',
+  RuntimeTaskFailed = 'RuntimeTaskFailed',
+}
+export const PairHostError = (() => {
+  type BadPrefix__interface = {
+    tag: PairHostError_Tags.BadPrefix;
+  };
+  class BadPrefix_ extends UniffiError implements BadPrefix__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.BadPrefix;
+    constructor() {
+      super('PairHostError', 'BadPrefix');
+    }
+
+    static new(): BadPrefix_ {
+      return new BadPrefix_();
+    }
+
+    static instanceOf(obj: any): obj is BadPrefix_ {
+      return obj.tag === PairHostError_Tags.BadPrefix;
+    }
+    static hasInner(obj: any): obj is BadPrefix_ {
+      return false;
+    }
+  }
+
+  type BadEncoding__interface = {
+    tag: PairHostError_Tags.BadEncoding;
+  };
+  class BadEncoding_ extends UniffiError implements BadEncoding__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.BadEncoding;
+    constructor() {
+      super('PairHostError', 'BadEncoding');
+    }
+
+    static new(): BadEncoding_ {
+      return new BadEncoding_();
+    }
+
+    static instanceOf(obj: any): obj is BadEncoding_ {
+      return obj.tag === PairHostError_Tags.BadEncoding;
+    }
+    static hasInner(obj: any): obj is BadEncoding_ {
+      return false;
+    }
+  }
+
+  type BadPayload__interface = {
+    tag: PairHostError_Tags.BadPayload;
+  };
+  class BadPayload_ extends UniffiError implements BadPayload__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.BadPayload;
+    constructor() {
+      super('PairHostError', 'BadPayload');
+    }
+
+    static new(): BadPayload_ {
+      return new BadPayload_();
+    }
+
+    static instanceOf(obj: any): obj is BadPayload_ {
+      return obj.tag === PairHostError_Tags.BadPayload;
+    }
+    static hasInner(obj: any): obj is BadPayload_ {
+      return false;
+    }
+  }
+
+  type ConnectionTimeout__interface = {
+    tag: PairHostError_Tags.ConnectionTimeout;
+  };
+  class ConnectionTimeout_
+    extends UniffiError
+    implements ConnectionTimeout__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.ConnectionTimeout;
+    constructor() {
+      super('PairHostError', 'ConnectionTimeout');
+    }
+
+    static new(): ConnectionTimeout_ {
+      return new ConnectionTimeout_();
+    }
+
+    static instanceOf(obj: any): obj is ConnectionTimeout_ {
+      return obj.tag === PairHostError_Tags.ConnectionTimeout;
+    }
+    static hasInner(obj: any): obj is ConnectionTimeout_ {
+      return false;
+    }
+  }
+
+  type ApprovalTimeout__interface = {
+    tag: PairHostError_Tags.ApprovalTimeout;
+  };
+  class ApprovalTimeout_
+    extends UniffiError
+    implements ApprovalTimeout__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.ApprovalTimeout;
+    constructor() {
+      super('PairHostError', 'ApprovalTimeout');
+    }
+
+    static new(): ApprovalTimeout_ {
+      return new ApprovalTimeout_();
+    }
+
+    static instanceOf(obj: any): obj is ApprovalTimeout_ {
+      return obj.tag === PairHostError_Tags.ApprovalTimeout;
+    }
+    static hasInner(obj: any): obj is ApprovalTimeout_ {
+      return false;
+    }
+  }
+
+  type AuthenticationFailed__interface = {
+    tag: PairHostError_Tags.AuthenticationFailed;
+  };
+  class AuthenticationFailed_
+    extends UniffiError
+    implements AuthenticationFailed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.AuthenticationFailed;
+    constructor() {
+      super('PairHostError', 'AuthenticationFailed');
+    }
+
+    static new(): AuthenticationFailed_ {
+      return new AuthenticationFailed_();
+    }
+
+    static instanceOf(obj: any): obj is AuthenticationFailed_ {
+      return obj.tag === PairHostError_Tags.AuthenticationFailed;
+    }
+    static hasInner(obj: any): obj is AuthenticationFailed_ {
+      return false;
+    }
+  }
+
+  type HostKeyMismatch__interface = {
+    tag: PairHostError_Tags.HostKeyMismatch;
+  };
+  class HostKeyMismatch_
+    extends UniffiError
+    implements HostKeyMismatch__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.HostKeyMismatch;
+    constructor() {
+      super('PairHostError', 'HostKeyMismatch');
+    }
+
+    static new(): HostKeyMismatch_ {
+      return new HostKeyMismatch_();
+    }
+
+    static instanceOf(obj: any): obj is HostKeyMismatch_ {
+      return obj.tag === PairHostError_Tags.HostKeyMismatch;
+    }
+    static hasInner(obj: any): obj is HostKeyMismatch_ {
+      return false;
+    }
+  }
+
+  type UnsupportedHostCertificate__interface = {
+    tag: PairHostError_Tags.UnsupportedHostCertificate;
+  };
+  class UnsupportedHostCertificate_
+    extends UniffiError
+    implements UnsupportedHostCertificate__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.UnsupportedHostCertificate;
+    constructor() {
+      super('PairHostError', 'UnsupportedHostCertificate');
+    }
+
+    static new(): UnsupportedHostCertificate_ {
+      return new UnsupportedHostCertificate_();
+    }
+
+    static instanceOf(obj: any): obj is UnsupportedHostCertificate_ {
+      return obj.tag === PairHostError_Tags.UnsupportedHostCertificate;
+    }
+    static hasInner(obj: any): obj is UnsupportedHostCertificate_ {
+      return false;
+    }
+  }
+
+  type InvalidResponse__interface = {
+    tag: PairHostError_Tags.InvalidResponse;
+  };
+  class InvalidResponse_
+    extends UniffiError
+    implements InvalidResponse__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.InvalidResponse;
+    constructor() {
+      super('PairHostError', 'InvalidResponse');
+    }
+
+    static new(): InvalidResponse_ {
+      return new InvalidResponse_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidResponse_ {
+      return obj.tag === PairHostError_Tags.InvalidResponse;
+    }
+    static hasInner(obj: any): obj is InvalidResponse_ {
+      return false;
+    }
+  }
+
+  type CommandFailed__interface = {
+    tag: PairHostError_Tags.CommandFailed;
+    inner: Readonly<[string]>;
+  };
+  class CommandFailed_ extends UniffiError implements CommandFailed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.CommandFailed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('PairHostError', 'CommandFailed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): CommandFailed_ {
+      return new CommandFailed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is CommandFailed_ {
+      return obj.tag === PairHostError_Tags.CommandFailed;
+    }
+    static hasInner(obj: any): obj is CommandFailed_ {
+      return CommandFailed_.instanceOf(obj);
+    }
+
+    static getInner(obj: CommandFailed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type Refused__interface = {
+    tag: PairHostError_Tags.Refused;
+    inner: Readonly<{ code: string; message: string }>;
+  };
+  class Refused_ extends UniffiError implements Refused__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.Refused;
+    readonly inner: Readonly<{ code: string; message: string }>;
+    constructor(inner: { code: string; message: string }) {
+      super('PairHostError', 'Refused');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { code: string; message: string }): Refused_ {
+      return new Refused_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Refused_ {
+      return obj.tag === PairHostError_Tags.Refused;
+    }
+    static hasInner(obj: any): obj is Refused_ {
+      return Refused_.instanceOf(obj);
+    }
+
+    static getInner(
+      obj: Refused_,
+    ): Readonly<{ code: string; message: string }> {
+      return obj.inner;
+    }
+  }
+
+  type SshFailure__interface = {
+    tag: PairHostError_Tags.SshFailure;
+    inner: Readonly<[string]>;
+  };
+  class SshFailure_ extends UniffiError implements SshFailure__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.SshFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('PairHostError', 'SshFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): SshFailure_ {
+      return new SshFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is SshFailure_ {
+      return obj.tag === PairHostError_Tags.SshFailure;
+    }
+    static hasInner(obj: any): obj is SshFailure_ {
+      return SshFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: SshFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type RuntimeInitialization__interface = {
+    tag: PairHostError_Tags.RuntimeInitialization;
+    inner: Readonly<[string]>;
+  };
+  class RuntimeInitialization_
+    extends UniffiError
+    implements RuntimeInitialization__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.RuntimeInitialization;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('PairHostError', 'RuntimeInitialization');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): RuntimeInitialization_ {
+      return new RuntimeInitialization_(v0);
+    }
+
+    static instanceOf(obj: any): obj is RuntimeInitialization_ {
+      return obj.tag === PairHostError_Tags.RuntimeInitialization;
+    }
+    static hasInner(obj: any): obj is RuntimeInitialization_ {
+      return RuntimeInitialization_.instanceOf(obj);
+    }
+
+    static getInner(obj: RuntimeInitialization_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type RuntimeTaskFailed__interface = {
+    tag: PairHostError_Tags.RuntimeTaskFailed;
+    inner: Readonly<[string]>;
+  };
+  class RuntimeTaskFailed_
+    extends UniffiError
+    implements RuntimeTaskFailed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.RuntimeTaskFailed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('PairHostError', 'RuntimeTaskFailed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): RuntimeTaskFailed_ {
+      return new RuntimeTaskFailed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is RuntimeTaskFailed_ {
+      return obj.tag === PairHostError_Tags.RuntimeTaskFailed;
+    }
+    static hasInner(obj: any): obj is RuntimeTaskFailed_ {
+      return RuntimeTaskFailed_.instanceOf(obj);
+    }
+
+    static getInner(obj: RuntimeTaskFailed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is PairHostError {
+    return obj[uniffiTypeNameSymbol] === 'PairHostError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    BadPrefix: BadPrefix_,
+    BadEncoding: BadEncoding_,
+    BadPayload: BadPayload_,
+    ConnectionTimeout: ConnectionTimeout_,
+    ApprovalTimeout: ApprovalTimeout_,
+    AuthenticationFailed: AuthenticationFailed_,
+    HostKeyMismatch: HostKeyMismatch_,
+    UnsupportedHostCertificate: UnsupportedHostCertificate_,
+    InvalidResponse: InvalidResponse_,
+    CommandFailed: CommandFailed_,
+    Refused: Refused_,
+    SshFailure: SshFailure_,
+    RuntimeInitialization: RuntimeInitialization_,
+    RuntimeTaskFailed: RuntimeTaskFailed_,
+  });
+})();
+export type PairHostError = InstanceType<
+  (typeof PairHostError)[
+    | 'BadPrefix'
+    | 'BadEncoding'
+    | 'BadPayload'
+    | 'ConnectionTimeout'
+    | 'ApprovalTimeout'
+    | 'AuthenticationFailed'
+    | 'HostKeyMismatch'
+    | 'UnsupportedHostCertificate'
+    | 'InvalidResponse'
+    | 'CommandFailed'
+    | 'Refused'
+    | 'SshFailure'
+    | 'RuntimeInitialization'
+    | 'RuntimeTaskFailed']
+>;
+
+// FfiConverter for enum PairHostError
+const FfiConverterTypePairHostError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = PairHostError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new PairHostError.BadPrefix();
+        case 2:
+          return new PairHostError.BadEncoding();
+        case 3:
+          return new PairHostError.BadPayload();
+        case 4:
+          return new PairHostError.ConnectionTimeout();
+        case 5:
+          return new PairHostError.ApprovalTimeout();
+        case 6:
+          return new PairHostError.AuthenticationFailed();
+        case 7:
+          return new PairHostError.HostKeyMismatch();
+        case 8:
+          return new PairHostError.UnsupportedHostCertificate();
+        case 9:
+          return new PairHostError.InvalidResponse();
+        case 10:
+          return new PairHostError.CommandFailed(FfiConverterString.read(from));
+        case 11:
+          return new PairHostError.Refused({
+            code: FfiConverterString.read(from),
+            message: FfiConverterString.read(from),
+          });
+        case 12:
+          return new PairHostError.SshFailure(FfiConverterString.read(from));
+        case 13:
+          return new PairHostError.RuntimeInitialization(
+            FfiConverterString.read(from),
+          );
+        case 14:
+          return new PairHostError.RuntimeTaskFailed(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case PairHostError_Tags.BadPrefix: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case PairHostError_Tags.BadEncoding: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case PairHostError_Tags.BadPayload: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case PairHostError_Tags.ConnectionTimeout: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case PairHostError_Tags.ApprovalTimeout: {
+          ordinalConverter.write(5, into);
+          return;
+        }
+        case PairHostError_Tags.AuthenticationFailed: {
+          ordinalConverter.write(6, into);
+          return;
+        }
+        case PairHostError_Tags.HostKeyMismatch: {
+          ordinalConverter.write(7, into);
+          return;
+        }
+        case PairHostError_Tags.UnsupportedHostCertificate: {
+          ordinalConverter.write(8, into);
+          return;
+        }
+        case PairHostError_Tags.InvalidResponse: {
+          ordinalConverter.write(9, into);
+          return;
+        }
+        case PairHostError_Tags.CommandFailed: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case PairHostError_Tags.Refused: {
+          ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.code, into);
+          FfiConverterString.write(inner.message, into);
+          return;
+        }
+        case PairHostError_Tags.SshFailure: {
+          ordinalConverter.write(12, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case PairHostError_Tags.RuntimeInitialization: {
+          ordinalConverter.write(13, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case PairHostError_Tags.RuntimeTaskFailed: {
+          ordinalConverter.write(14, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that PairHostError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case PairHostError_Tags.BadPrefix: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case PairHostError_Tags.BadEncoding: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case PairHostError_Tags.BadPayload: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case PairHostError_Tags.ConnectionTimeout: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case PairHostError_Tags.ApprovalTimeout: {
+          return ordinalConverter.allocationSize(5);
+        }
+        case PairHostError_Tags.AuthenticationFailed: {
+          return ordinalConverter.allocationSize(6);
+        }
+        case PairHostError_Tags.HostKeyMismatch: {
+          return ordinalConverter.allocationSize(7);
+        }
+        case PairHostError_Tags.UnsupportedHostCertificate: {
+          return ordinalConverter.allocationSize(8);
+        }
+        case PairHostError_Tags.InvalidResponse: {
+          return ordinalConverter.allocationSize(9);
+        }
+        case PairHostError_Tags.CommandFailed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case PairHostError_Tags.Refused: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterString.allocationSize(inner.code);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
+        case PairHostError_Tags.SshFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(12);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case PairHostError_Tags.RuntimeInitialization: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(13);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case PairHostError_Tags.RuntimeTaskFailed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(14);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: SshAuthentication
+export enum SshAuthentication_Tags {
+  Password = 'Password',
+  Key = 'Key',
+}
+export const SshAuthentication = (() => {
+  type Password__interface = {
+    tag: SshAuthentication_Tags.Password;
+    inner: Readonly<{ password: string }>;
+  };
+  class Password_ extends UniffiEnum implements Password__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshAuthentication';
+    readonly tag = SshAuthentication_Tags.Password;
+    readonly inner: Readonly<{ password: string }>;
+    constructor(inner: { password: string }) {
+      super('SshAuthentication', 'Password');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { password: string }): Password_ {
+      return new Password_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Password_ {
+      return obj.tag === SshAuthentication_Tags.Password;
+    }
+  }
+
+  type Key__interface = {
+    tag: SshAuthentication_Tags.Key;
+    inner: Readonly<{ privateKey: string; passphrase?: string }>;
+  };
+  class Key_ extends UniffiEnum implements Key__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshAuthentication';
+    readonly tag = SshAuthentication_Tags.Key;
+    readonly inner: Readonly<{ privateKey: string; passphrase?: string }>;
+    constructor(inner: { privateKey: string; passphrase?: string }) {
+      super('SshAuthentication', 'Key');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { privateKey: string; passphrase?: string }): Key_ {
+      return new Key_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Key_ {
+      return obj.tag === SshAuthentication_Tags.Key;
+    }
+  }
+
+  function instanceOf(obj: any): obj is SshAuthentication {
+    return obj[uniffiTypeNameSymbol] === 'SshAuthentication';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Password: Password_,
+    Key: Key_,
+  });
+})();
+export type SshAuthentication = InstanceType<
+  (typeof SshAuthentication)['Password' | 'Key']
+>;
+
+// FfiConverter for enum SshAuthentication
+const FfiConverterTypeSshAuthentication = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SshAuthentication;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new SshAuthentication.Password({
+            password: FfiConverterString.read(from),
+          });
+        case 2:
+          return new SshAuthentication.Key({
+            privateKey: FfiConverterString.read(from),
+            passphrase: FfiConverterOptionalString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case SshAuthentication_Tags.Password: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.password, into);
+          return;
+        }
+        case SshAuthentication_Tags.Key: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.privateKey, into);
+          FfiConverterOptionalString.write(inner.passphrase, into);
+          return;
+        }
+        default:
+          // Throwing from here means that SshAuthentication_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case SshAuthentication_Tags.Password: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.password);
+          return size;
+        }
+        case SshAuthentication_Tags.Key: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.privateKey);
+          size += FfiConverterOptionalString.allocationSize(inner.passphrase);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: SshError
+export enum SshError_Tags {
+  AuthenticationFailed = 'AuthenticationFailed',
+  HostKeyUnknown = 'HostKeyUnknown',
+  HostKeyChanged = 'HostKeyChanged',
+  UnsupportedHostCertificate = 'UnsupportedHostCertificate',
+  ConnectionRefused = 'ConnectionRefused',
+  ConnectionTimeout = 'ConnectionTimeout',
+  HostUnreachable = 'HostUnreachable',
+  ChannelUnavailable = 'ChannelUnavailable',
+  SessionClosed = 'SessionClosed',
+  InvalidPrivateKey = 'InvalidPrivateKey',
+  SftpFailure = 'SftpFailure',
+  InvalidRequest = 'InvalidRequest',
+  Unknown = 'Unknown',
+}
+export const SshError = (() => {
+  type AuthenticationFailed__interface = {
+    tag: SshError_Tags.AuthenticationFailed;
+    inner: Readonly<[string]>;
+  };
+  class AuthenticationFailed_
+    extends UniffiError
+    implements AuthenticationFailed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.AuthenticationFailed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'AuthenticationFailed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): AuthenticationFailed_ {
+      return new AuthenticationFailed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is AuthenticationFailed_ {
+      return obj.tag === SshError_Tags.AuthenticationFailed;
+    }
+    static hasInner(obj: any): obj is AuthenticationFailed_ {
+      return AuthenticationFailed_.instanceOf(obj);
+    }
+
+    static getInner(obj: AuthenticationFailed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type HostKeyUnknown__interface = {
+    tag: SshError_Tags.HostKeyUnknown;
+    inner: Readonly<[HostKeyChallenge]>;
+  };
+  class HostKeyUnknown_
+    extends UniffiError
+    implements HostKeyUnknown__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.HostKeyUnknown;
+    readonly inner: Readonly<[HostKeyChallenge]>;
+    constructor(v0: HostKeyChallenge) {
+      super('SshError', 'HostKeyUnknown');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: HostKeyChallenge): HostKeyUnknown_ {
+      return new HostKeyUnknown_(v0);
+    }
+
+    static instanceOf(obj: any): obj is HostKeyUnknown_ {
+      return obj.tag === SshError_Tags.HostKeyUnknown;
+    }
+    static hasInner(obj: any): obj is HostKeyUnknown_ {
+      return HostKeyUnknown_.instanceOf(obj);
+    }
+
+    static getInner(obj: HostKeyUnknown_): Readonly<[HostKeyChallenge]> {
+      return obj.inner;
+    }
+  }
+
+  type HostKeyChanged__interface = {
+    tag: SshError_Tags.HostKeyChanged;
+    inner: Readonly<[HostKeyChallenge]>;
+  };
+  class HostKeyChanged_
+    extends UniffiError
+    implements HostKeyChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.HostKeyChanged;
+    readonly inner: Readonly<[HostKeyChallenge]>;
+    constructor(v0: HostKeyChallenge) {
+      super('SshError', 'HostKeyChanged');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: HostKeyChallenge): HostKeyChanged_ {
+      return new HostKeyChanged_(v0);
+    }
+
+    static instanceOf(obj: any): obj is HostKeyChanged_ {
+      return obj.tag === SshError_Tags.HostKeyChanged;
+    }
+    static hasInner(obj: any): obj is HostKeyChanged_ {
+      return HostKeyChanged_.instanceOf(obj);
+    }
+
+    static getInner(obj: HostKeyChanged_): Readonly<[HostKeyChallenge]> {
+      return obj.inner;
+    }
+  }
+
+  type UnsupportedHostCertificate__interface = {
+    tag: SshError_Tags.UnsupportedHostCertificate;
+  };
+  class UnsupportedHostCertificate_
+    extends UniffiError
+    implements UnsupportedHostCertificate__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.UnsupportedHostCertificate;
+    constructor() {
+      super('SshError', 'UnsupportedHostCertificate');
+    }
+
+    static new(): UnsupportedHostCertificate_ {
+      return new UnsupportedHostCertificate_();
+    }
+
+    static instanceOf(obj: any): obj is UnsupportedHostCertificate_ {
+      return obj.tag === SshError_Tags.UnsupportedHostCertificate;
+    }
+    static hasInner(obj: any): obj is UnsupportedHostCertificate_ {
+      return false;
+    }
+  }
+
+  type ConnectionRefused__interface = {
+    tag: SshError_Tags.ConnectionRefused;
+    inner: Readonly<[string]>;
+  };
+  class ConnectionRefused_
+    extends UniffiError
+    implements ConnectionRefused__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.ConnectionRefused;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'ConnectionRefused');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): ConnectionRefused_ {
+      return new ConnectionRefused_(v0);
+    }
+
+    static instanceOf(obj: any): obj is ConnectionRefused_ {
+      return obj.tag === SshError_Tags.ConnectionRefused;
+    }
+    static hasInner(obj: any): obj is ConnectionRefused_ {
+      return ConnectionRefused_.instanceOf(obj);
+    }
+
+    static getInner(obj: ConnectionRefused_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type ConnectionTimeout__interface = {
+    tag: SshError_Tags.ConnectionTimeout;
+    inner: Readonly<[string]>;
+  };
+  class ConnectionTimeout_
+    extends UniffiError
+    implements ConnectionTimeout__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.ConnectionTimeout;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'ConnectionTimeout');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): ConnectionTimeout_ {
+      return new ConnectionTimeout_(v0);
+    }
+
+    static instanceOf(obj: any): obj is ConnectionTimeout_ {
+      return obj.tag === SshError_Tags.ConnectionTimeout;
+    }
+    static hasInner(obj: any): obj is ConnectionTimeout_ {
+      return ConnectionTimeout_.instanceOf(obj);
+    }
+
+    static getInner(obj: ConnectionTimeout_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type HostUnreachable__interface = {
+    tag: SshError_Tags.HostUnreachable;
+    inner: Readonly<[string]>;
+  };
+  class HostUnreachable_
+    extends UniffiError
+    implements HostUnreachable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.HostUnreachable;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'HostUnreachable');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): HostUnreachable_ {
+      return new HostUnreachable_(v0);
+    }
+
+    static instanceOf(obj: any): obj is HostUnreachable_ {
+      return obj.tag === SshError_Tags.HostUnreachable;
+    }
+    static hasInner(obj: any): obj is HostUnreachable_ {
+      return HostUnreachable_.instanceOf(obj);
+    }
+
+    static getInner(obj: HostUnreachable_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type ChannelUnavailable__interface = {
+    tag: SshError_Tags.ChannelUnavailable;
+    inner: Readonly<[string]>;
+  };
+  class ChannelUnavailable_
+    extends UniffiError
+    implements ChannelUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.ChannelUnavailable;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'ChannelUnavailable');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): ChannelUnavailable_ {
+      return new ChannelUnavailable_(v0);
+    }
+
+    static instanceOf(obj: any): obj is ChannelUnavailable_ {
+      return obj.tag === SshError_Tags.ChannelUnavailable;
+    }
+    static hasInner(obj: any): obj is ChannelUnavailable_ {
+      return ChannelUnavailable_.instanceOf(obj);
+    }
+
+    static getInner(obj: ChannelUnavailable_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type SessionClosed__interface = {
+    tag: SshError_Tags.SessionClosed;
+    inner: Readonly<[string]>;
+  };
+  class SessionClosed_ extends UniffiError implements SessionClosed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.SessionClosed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'SessionClosed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): SessionClosed_ {
+      return new SessionClosed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is SessionClosed_ {
+      return obj.tag === SshError_Tags.SessionClosed;
+    }
+    static hasInner(obj: any): obj is SessionClosed_ {
+      return SessionClosed_.instanceOf(obj);
+    }
+
+    static getInner(obj: SessionClosed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type InvalidPrivateKey__interface = {
+    tag: SshError_Tags.InvalidPrivateKey;
+    inner: Readonly<[string]>;
+  };
+  class InvalidPrivateKey_
+    extends UniffiError
+    implements InvalidPrivateKey__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.InvalidPrivateKey;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'InvalidPrivateKey');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): InvalidPrivateKey_ {
+      return new InvalidPrivateKey_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidPrivateKey_ {
+      return obj.tag === SshError_Tags.InvalidPrivateKey;
+    }
+    static hasInner(obj: any): obj is InvalidPrivateKey_ {
+      return InvalidPrivateKey_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidPrivateKey_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type SftpFailure__interface = {
+    tag: SshError_Tags.SftpFailure;
+    inner: Readonly<[string]>;
+  };
+  class SftpFailure_ extends UniffiError implements SftpFailure__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.SftpFailure;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'SftpFailure');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): SftpFailure_ {
+      return new SftpFailure_(v0);
+    }
+
+    static instanceOf(obj: any): obj is SftpFailure_ {
+      return obj.tag === SshError_Tags.SftpFailure;
+    }
+    static hasInner(obj: any): obj is SftpFailure_ {
+      return SftpFailure_.instanceOf(obj);
+    }
+
+    static getInner(obj: SftpFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type InvalidRequest__interface = {
+    tag: SshError_Tags.InvalidRequest;
+    inner: Readonly<[string]>;
+  };
+  class InvalidRequest_
+    extends UniffiError
+    implements InvalidRequest__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.InvalidRequest;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'InvalidRequest');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): InvalidRequest_ {
+      return new InvalidRequest_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidRequest_ {
+      return obj.tag === SshError_Tags.InvalidRequest;
+    }
+    static hasInner(obj: any): obj is InvalidRequest_ {
+      return InvalidRequest_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidRequest_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type Unknown__interface = {
+    tag: SshError_Tags.Unknown;
+    inner: Readonly<[string]>;
+  };
+  class Unknown_ extends UniffiError implements Unknown__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshError';
+    readonly tag = SshError_Tags.Unknown;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('SshError', 'Unknown');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): Unknown_ {
+      return new Unknown_(v0);
+    }
+
+    static instanceOf(obj: any): obj is Unknown_ {
+      return obj.tag === SshError_Tags.Unknown;
+    }
+    static hasInner(obj: any): obj is Unknown_ {
+      return Unknown_.instanceOf(obj);
+    }
+
+    static getInner(obj: Unknown_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is SshError {
+    return obj[uniffiTypeNameSymbol] === 'SshError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    AuthenticationFailed: AuthenticationFailed_,
+    HostKeyUnknown: HostKeyUnknown_,
+    HostKeyChanged: HostKeyChanged_,
+    UnsupportedHostCertificate: UnsupportedHostCertificate_,
+    ConnectionRefused: ConnectionRefused_,
+    ConnectionTimeout: ConnectionTimeout_,
+    HostUnreachable: HostUnreachable_,
+    ChannelUnavailable: ChannelUnavailable_,
+    SessionClosed: SessionClosed_,
+    InvalidPrivateKey: InvalidPrivateKey_,
+    SftpFailure: SftpFailure_,
+    InvalidRequest: InvalidRequest_,
+    Unknown: Unknown_,
+  });
+})();
+export type SshError = InstanceType<
+  (typeof SshError)[
+    | 'AuthenticationFailed'
+    | 'HostKeyUnknown'
+    | 'HostKeyChanged'
+    | 'UnsupportedHostCertificate'
+    | 'ConnectionRefused'
+    | 'ConnectionTimeout'
+    | 'HostUnreachable'
+    | 'ChannelUnavailable'
+    | 'SessionClosed'
+    | 'InvalidPrivateKey'
+    | 'SftpFailure'
+    | 'InvalidRequest'
+    | 'Unknown']
+>;
+
+// FfiConverter for enum SshError
+const FfiConverterTypeSshError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SshError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new SshError.AuthenticationFailed(
+            FfiConverterString.read(from),
+          );
+        case 2:
+          return new SshError.HostKeyUnknown(
+            FfiConverterTypeHostKeyChallenge.read(from),
+          );
+        case 3:
+          return new SshError.HostKeyChanged(
+            FfiConverterTypeHostKeyChallenge.read(from),
+          );
+        case 4:
+          return new SshError.UnsupportedHostCertificate();
+        case 5:
+          return new SshError.ConnectionRefused(FfiConverterString.read(from));
+        case 6:
+          return new SshError.ConnectionTimeout(FfiConverterString.read(from));
+        case 7:
+          return new SshError.HostUnreachable(FfiConverterString.read(from));
+        case 8:
+          return new SshError.ChannelUnavailable(FfiConverterString.read(from));
+        case 9:
+          return new SshError.SessionClosed(FfiConverterString.read(from));
+        case 10:
+          return new SshError.InvalidPrivateKey(FfiConverterString.read(from));
+        case 11:
+          return new SshError.SftpFailure(FfiConverterString.read(from));
+        case 12:
+          return new SshError.InvalidRequest(FfiConverterString.read(from));
+        case 13:
+          return new SshError.Unknown(FfiConverterString.read(from));
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case SshError_Tags.AuthenticationFailed: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.HostKeyUnknown: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypeHostKeyChallenge.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.HostKeyChanged: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterTypeHostKeyChallenge.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.UnsupportedHostCertificate: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case SshError_Tags.ConnectionRefused: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.ConnectionTimeout: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.HostUnreachable: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.ChannelUnavailable: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.SessionClosed: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.InvalidPrivateKey: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.SftpFailure: {
+          ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.InvalidRequest: {
+          ordinalConverter.write(12, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case SshError_Tags.Unknown: {
+          ordinalConverter.write(13, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that SshError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case SshError_Tags.AuthenticationFailed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.HostKeyUnknown: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypeHostKeyChallenge.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.HostKeyChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterTypeHostKeyChallenge.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.UnsupportedHostCertificate: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case SshError_Tags.ConnectionRefused: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.ConnectionTimeout: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.HostUnreachable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.ChannelUnavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.SessionClosed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.InvalidPrivateKey: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.SftpFailure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.InvalidRequest: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(12);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case SshError_Tags.Unknown: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(13);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 export interface AgentTranscriptEventSink {
   event(event: AgentTranscriptEvent): void;
 }
@@ -18416,6 +21296,11 @@ const FfiConverterOptionalTypeTransferProgress = new FfiConverterOptional(
   FfiConverterTypeTransferProgress,
 );
 
+// FfiConverter for Array<LegacySftpEntry>
+const FfiConverterSequenceTypeLegacySftpEntry = new FfiConverterArray(
+  FfiConverterTypeLegacySftpEntry,
+);
+
 // FfiConverter for Array<TrustedHostKey>
 const FfiConverterSequenceTypeTrustedHostKey = new FfiConverterArray(
   FfiConverterTypeTrustedHostKey,
@@ -18443,16 +21328,28 @@ function uniffiEnsureInitialized() {
       bindingsContractVersion,
     );
   }
-  if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_call() !== 49736) {
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download() !==
+    11309
+  ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_func_call',
+      'uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download',
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_call_async() !== 42366
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload() !==
+    20670
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_func_call_async',
+      'uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path() !==
+    7818
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path',
     );
   }
   if (
@@ -18520,11 +21417,137 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_ssh_exec_channel() !==
+    45096
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_close_ssh_exec_channel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_ssh_local_forward() !==
+    35600
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_close_ssh_local_forward',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_ssh_sftp_file_server() !==
+    12973
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_close_ssh_sftp_file_server',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_ssh_shell() !==
+    50738
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_close_ssh_shell',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_close_ssh_unix_socket_channel() !==
+    28564
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_close_ssh_unix_socket_channel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_connect_ssh() !== 20299
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_connect_ssh',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_connect_ssh_sftp() !==
+    10911
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_connect_ssh_sftp',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime() !==
     51482
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_create_host_runtime',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory() !==
+    9306
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory_all() !==
+    47183
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory_all',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh() !== 1310
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_disconnect_ssh',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp() !==
+    44842
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp() !==
+    59622
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_download_ssh_sftp',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command() !==
+    30596
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_execute_ssh_command',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair() !==
+    64028
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_generate_ssh_key_pair',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_get_ssh_key_details() !==
+    52519
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_get_ssh_key_details',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_get_ssh_remote_home() !==
+    60710
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_get_ssh_remote_home',
     );
   }
   if (
@@ -18559,7 +21582,55 @@ function uniffiEnsureInitialized() {
       'uniffi_whip_ssh_checksum_func_herdr_terminal_scroll',
     );
   }
-  if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_pair_host() !== 50253) {
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory() !==
+    10627
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency() !==
+    593
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_measure_ssh_host_latency',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel() !==
+    58014
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_open_ssh_exec_channel() !==
+    17207
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_open_ssh_exec_channel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_open_ssh_local_forward() !==
+    4932
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_open_ssh_local_forward',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_open_ssh_unix_socket_channel() !==
+    47251
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_open_ssh_unix_socket_channel',
+    );
+  }
+  if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_pair_host() !== 2345) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_pair_host',
     );
@@ -18573,8 +21644,40 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory() !==
+    58429
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file() !==
+    10137
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_rename_ssh_sftp_path() !==
+    34601
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_rename_ssh_sftp_path',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_request_ssh_unix_socket() !==
+    64778
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_request_ssh_unix_socket',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast() !==
-    25889
+    62289
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_resize_shell_fast',
@@ -18620,6 +21723,21 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_known_hosts() !== 2202
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_known_hosts',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_ssh_agent_forwarding() !==
+    21682
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_ssh_agent_forwarding',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_trusted_host_keys() !==
     44993
   ) {
@@ -18649,8 +21767,40 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_start_ssh_sftp_file_server() !==
+    27105
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_start_ssh_sftp_file_server',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_start_ssh_shell() !==
+    46088
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_start_ssh_shell',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp() !==
+    21597
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_upload_ssh_sftp',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp_to_path() !==
+    20695
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_upload_ssh_sftp_to_path',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_write_exec_channel() !==
-    7490
+    7202
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_write_exec_channel',
@@ -18658,7 +21808,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel() !==
-    65090
+    45026
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel',
@@ -18666,7 +21816,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_write_shell_input() !==
-    55933
+    15622
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_write_shell_input',
@@ -18674,7 +21824,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_write_unix_socket_channel() !==
-    22522
+    12646
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_write_unix_socket_channel',
@@ -19330,6 +22480,10 @@ export default Object.freeze({
     FfiConverterTypeHostSyncStatus,
     FfiConverterTypeHostTerminalState,
     FfiConverterTypeKnownHostStoreError,
+    FfiConverterTypeLegacySftpEntry,
+    FfiConverterTypeLegacySftpFileServer,
+    FfiConverterTypePairHostError,
+    FfiConverterTypePairHostResult,
     FfiConverterTypePreviewInfo,
     FfiConverterTypePreviewKind,
     FfiConverterTypePreviewState,
@@ -19339,7 +22493,11 @@ export default Object.freeze({
     FfiConverterTypeRuntimeDiagnostic,
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,
+    FfiConverterTypeSshAuthentication,
+    FfiConverterTypeSshError,
     FfiConverterTypeSshErrorCode,
+    FfiConverterTypeSshGeneratedKeyPair,
+    FfiConverterTypeSshKeyDetails,
     FfiConverterTypeTransferProgress,
     FfiConverterTypeTransferResult,
     FfiConverterTypeTransferState,
