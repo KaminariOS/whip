@@ -13,7 +13,6 @@ import {
   createTipIntent,
   isFeedbackApiConfigured,
   submitFeedbackRequest,
-  type FeedbackRequestType,
 } from '@/src/services/feedbackApi';
 import {
   getRevenueCatAppUserId,
@@ -36,7 +35,6 @@ type SubmittedRequest = {
 export function FeedbackSection() {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const [type, setType] = useState<FeedbackRequestType>('feature');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -93,7 +91,6 @@ export function FeedbackSection() {
     try {
       const revenueCatUserId = await getRevenueCatAppUserId();
       const request = await submitFeedbackRequest({
-        type,
         title: trimmedTitle,
         body: trimmedBody,
         revenueCatUserId,
@@ -247,21 +244,7 @@ export function FeedbackSection() {
             </View>
           ) : (
             <View>
-              <View className="flex-row gap-2">
-                {(['feature', 'bug'] as const).map(value => (
-                  <Button
-                    key={value}
-                    accessibilityState={{ selected: type === value }}
-                    className="flex-1"
-                    variant={type === value ? 'default' : 'outline'}
-                    onPress={hapticPress(() => setType(value))}
-                  >
-                    <Text>{t(`feedback.type.${value}`)}</Text>
-                  </Button>
-                ))}
-              </View>
               <Input
-                className="mt-4"
                 editable={!submitting}
                 maxLength={120}
                 placeholder={t('feedback.requestTitle')}

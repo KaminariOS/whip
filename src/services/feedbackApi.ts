@@ -8,8 +8,6 @@ import {
 import type { TipProductId } from './revenueCat';
 import { isUnknownRecord } from '../lib/unknown';
 
-export type FeedbackRequestType = 'bug' | 'feature';
-
 export interface SubmittedFeedbackRequest {
   id: string;
   status: string;
@@ -31,7 +29,6 @@ export function isFeedbackApiConfigured(): boolean {
 }
 
 export async function submitFeedbackRequest(input: {
-  type: FeedbackRequestType;
   title: string;
   body: string;
   revenueCatUserId: string | null;
@@ -39,7 +36,7 @@ export async function submitFeedbackRequest(input: {
   return requestJson<SubmittedFeedbackRequest>('/api/requests', {
     method: 'POST',
     body: JSON.stringify({
-      type: input.type,
+      type: 'feature',
       title: input.title,
       body: input.body,
       revenuecatUserId: input.revenueCatUserId,
