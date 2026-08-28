@@ -25,8 +25,10 @@ use crate::herdr_events::{
     HerdrEvent, HerdrEventError, close_herdr_event_subscription, start_on_runtime as start_events,
 };
 use crate::herdr_terminal::{
-    HerdrTerminalAttachLaunchMode, close_all_herdr_terminal_bridges, close_herdr_terminal_bridge,
-    herdr_terminal_input, herdr_terminal_resize, herdr_terminal_scroll, start_bridge_on_runtime,
+    HerdrBridgeError, HerdrBridgeId, HerdrTerminalAttachLaunchMode,
+    active_herdr_terminal_bridge_id, close_all_herdr_terminal_bridges, close_herdr_terminal_bridge,
+    close_owned_herdr_terminal_bridge, herdr_terminal_input, herdr_terminal_resize,
+    herdr_terminal_scroll, start_bridge_on_runtime,
 };
 use crate::host_state::{ApplyResult, HostState, HostStateSnapshot, SnapshotToken, now_ms};
 use crate::remote_ops::{
@@ -307,6 +309,7 @@ struct TerminalRuntime {
     operation_epoch: u64,
     reconnect_attempt: u32,
     retry_running: bool,
+    bridge_id: Option<HerdrBridgeId>,
 }
 
 #[derive(Clone, Debug)]
@@ -429,6 +432,7 @@ impl RuntimeState {
             terminal.state = HostTerminalState::Closed;
             terminal.reconnect_attempt = 0;
             terminal.retry_running = false;
+            terminal.bridge_id = None;
         }
         self.host_state.mark_disconnected();
         self.epoch
@@ -1940,8 +1944,17 @@ async fn start_or_update_state_events(inner: Arc<RuntimeInner>) -> Result<(), He
 
 fn close_terminal_intent(inner: &Arc<RuntimeInner>, terminal_id: String) {
     inner.agents.close_terminal(&terminal_id);
-    inner.state.lock().terminals.remove(&terminal_id);
-    close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
+    let bridge_id = inner
+        .state
+        .lock()
+        .terminals
+        .remove(&terminal_id)
+        .and_then(|terminal| terminal.bridge_id);
+    if let Some(bridge_id) = bridge_id {
+        close_owned_herdr_terminal_bridge(&inner.id, &terminal_id, bridge_id);
+    } else {
+        close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
+    }
     emit(HostRuntimeEvent::TerminalStateChanged {
         runtime_id: inner.id.clone(),
         terminal_id,
@@ -1951,6 +1964,53 @@ fn close_terminal_intent(inner: &Arc<RuntimeInner>, terminal_id: String) {
         error: None,
     });
     inner.terminal_settled.notify_waiters();
+}
+
+fn claim_terminal_bridge(
+    inner: &RuntimeInner,
+    terminal_id: &str,
+    operation_epoch: u64,
+    bridge_id: HerdrBridgeId,
+) -> Result<(), HerdrBridgeError> {
+    let mut state = inner.state.lock();
+    if state.connection != HostConnectionState::Connected {
+        return Err(HerdrBridgeError::BridgeUnavailable(
+            "host runtime disconnected while claiming terminal bridge".to_owned(),
+        ));
+    }
+    let terminal = state.terminals.get_mut(terminal_id).ok_or_else(|| {
+        HerdrBridgeError::BridgeUnavailable(format!(
+            "terminal {terminal_id} closed while claiming bridge {bridge_id}"
+        ))
+    })?;
+    if terminal.operation_epoch != operation_epoch
+        || !matches!(
+            terminal.state,
+            HostTerminalState::Opening | HostTerminalState::Restoring
+        )
+    {
+        return Err(HerdrBridgeError::BridgeUnavailable(format!(
+            "terminal {terminal_id} no longer accepts bridge {bridge_id}"
+        )));
+    }
+    terminal.bridge_id = Some(bridge_id);
+    Ok(())
+}
+
+fn live_terminal_bridge_id(inner: &RuntimeInner, terminal_id: &str) -> Option<HerdrBridgeId> {
+    let bridge_id = {
+        let state = inner.state.lock();
+        if state.connection != HostConnectionState::Connected {
+            return None;
+        }
+        let terminal = state.terminals.get(terminal_id)?;
+        if terminal.state != HostTerminalState::Attached {
+            return None;
+        }
+        terminal.bridge_id?
+    };
+    (active_herdr_terminal_bridge_id(&inner.id, terminal_id) == Some(bridge_id))
+        .then_some(bridge_id)
 }
 
 async fn open_terminal_inner(
@@ -1988,7 +2048,9 @@ async fn open_terminal_inner(
             terminal,
         )
     };
-    let result = start_bridge_on_runtime(
+    let claim_inner = inner.clone();
+    let claim_terminal_id = terminal_id.clone();
+    let mut result = start_bridge_on_runtime(
         inner.id.clone(),
         current_ssh(&inner)?,
         client_socket_path(&socket),
@@ -2000,12 +2062,23 @@ async fn open_terminal_inner(
         terminal.cell_width_px,
         terminal.cell_height_px,
         HerdrTerminalAttachLaunchMode::for_protocol(protocol),
+        move |bridge_id| {
+            claim_terminal_bridge(
+                claim_inner.as_ref(),
+                &claim_terminal_id,
+                operation_epoch,
+                bridge_id,
+            )
+        },
     )
     .await;
+    let opened_bridge_id = result.as_ref().ok().copied();
     let mut state = inner.state.lock();
     let Some(current) = state.terminals.get_mut(&terminal_id) else {
         drop(state);
-        close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
+        if let Some(bridge_id) = opened_bridge_id {
+            close_owned_herdr_terminal_bridge(&inner.id, &terminal_id, bridge_id);
+        }
         inner.terminal_settled.notify_waiters();
         return Err(HostRuntimeError::StaleOperation(format!(
             "terminal {terminal_id} was closed while opening"
@@ -2013,14 +2086,29 @@ async fn open_terminal_inner(
     };
     if current.operation_epoch != operation_epoch || current.state == HostTerminalState::Closed {
         drop(state);
-        close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
+        if let Some(bridge_id) = opened_bridge_id {
+            close_owned_herdr_terminal_bridge(&inner.id, &terminal_id, bridge_id);
+        }
         inner.terminal_settled.notify_waiters();
         return Err(HostRuntimeError::StaleOperation(format!(
             "stale open completed for terminal {terminal_id}"
         )));
     }
+    if let Ok(&bridge_id) = result.as_ref()
+        && (current.bridge_id != Some(bridge_id)
+            || !matches!(
+                current.state,
+                HostTerminalState::Opening | HostTerminalState::Restoring
+            )
+            || active_herdr_terminal_bridge_id(&inner.id, &terminal_id) != Some(bridge_id))
+    {
+        result = Err(HerdrBridgeError::BridgeClosed(format!(
+            "terminal {terminal_id} bridge {bridge_id} closed before attachment committed"
+        )));
+    }
     match result {
-        Ok(()) => {
+        Ok(bridge_id) => {
+            debug_assert_eq!(current.bridge_id, Some(bridge_id));
             current.state = HostTerminalState::Attached;
             current.reconnect_attempt = 0;
             drop(state);
@@ -2044,6 +2132,7 @@ async fn open_terminal_inner(
             Ok(())
         }
         Err(error) => {
+            let failed_bridge_id = current.bridge_id.take().or(opened_bridge_id);
             current.state = HostTerminalState::Failed;
             let reconnect_attempt = current.reconnect_attempt;
             let retrying = current.retry_running;
@@ -2053,6 +2142,9 @@ async fn open_terminal_inner(
             } else {
                 error.to_string()
             };
+            if let Some(bridge_id) = failed_bridge_id {
+                close_owned_herdr_terminal_bridge(&inner.id, &terminal_id, bridge_id);
+            }
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: inner.id.clone(),
                 terminal_id: terminal_id.clone(),
@@ -2128,6 +2220,7 @@ async fn open_terminal_with_retry(
             if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
                 terminal.state = HostTerminalState::Opening;
                 terminal.reconnect_attempt = attempt - 1;
+                terminal.bridge_id = None;
             }
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: inner.id.clone(),
@@ -2211,6 +2304,7 @@ async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u32 {
                     terminal.state = HostTerminalState::Restoring;
                     terminal.reconnect_attempt = 0;
                     terminal.retry_running = true;
+                    terminal.bridge_id = None;
                     Some((id.clone(), terminal.operation_epoch))
                 }
             })
@@ -2237,7 +2331,7 @@ async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u32 {
                 if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
                     terminal.retry_running = false;
                 }
-                schedule_terminal_retry(inner.clone(), terminal_id, error.to_string());
+                schedule_terminal_retry(inner.clone(), terminal_id, None, error.to_string());
             }
         }
     }
@@ -2327,33 +2421,59 @@ fn schedule_event_retry(inner: Arc<RuntimeInner>, reason: String) {
     }
 }
 
-fn schedule_terminal_retry(inner: Arc<RuntimeInner>, terminal_id: String, reason: String) {
-    let (epoch, operation_epoch) = {
+fn schedule_terminal_retry(
+    inner: Arc<RuntimeInner>,
+    terminal_id: String,
+    closed_bridge_id: Option<HerdrBridgeId>,
+    reason: String,
+) {
+    let (epoch, operation_epoch, start_worker, reconnect_attempt, bridge_to_close) = {
         let mut state = inner.state.lock();
         let epoch = state.epoch;
         let explicit_disconnect = state.explicit_disconnect;
         let Some(terminal) = state.terminals.get_mut(&terminal_id) else {
             return;
         };
-        if terminal.retry_running
-            || terminal.state == HostTerminalState::Closed
-            || explicit_disconnect
-        {
+        if terminal.state == HostTerminalState::Closed || explicit_disconnect {
             return;
         }
-        terminal.retry_running = true;
+        if closed_bridge_id.is_some_and(|bridge_id| terminal.bridge_id != Some(bridge_id)) {
+            return;
+        }
+        let bridge_to_close = closed_bridge_id
+            .is_none()
+            .then_some(terminal.bridge_id)
+            .flatten();
+        terminal.bridge_id = None;
         terminal.state = HostTerminalState::Failed;
-        terminal.reconnect_attempt = 0;
-        (epoch, terminal.operation_epoch)
+        let start_worker = !terminal.retry_running;
+        if start_worker {
+            terminal.retry_running = true;
+            terminal.reconnect_attempt = 0;
+        }
+        (
+            epoch,
+            terminal.operation_epoch,
+            start_worker,
+            terminal.reconnect_attempt,
+            bridge_to_close,
+        )
     };
+    if let Some(bridge_id) = bridge_to_close {
+        close_owned_herdr_terminal_bridge(&inner.id, &terminal_id, bridge_id);
+    }
     emit(HostRuntimeEvent::TerminalStateChanged {
         runtime_id: inner.id.clone(),
         terminal_id: terminal_id.clone(),
         state: HostTerminalState::Failed,
-        reconnect_attempt: 0,
+        reconnect_attempt,
         retrying: true,
         error: Some(reason.clone()),
     });
+    inner.terminal_settled.notify_waiters();
+    if !start_worker {
+        return;
+    }
     if let Ok(runtime) = crate::runtime() {
         runtime.spawn(async move {
             let mut last_error = reason;
@@ -2361,6 +2481,7 @@ fn schedule_terminal_retry(inner: Arc<RuntimeInner>, terminal_id: String, reason
                 if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
                     terminal.state = HostTerminalState::Restoring;
                     terminal.reconnect_attempt = attempt;
+                    terminal.bridge_id = None;
                 }
                 emit(HostRuntimeEvent::TerminalStateChanged {
                     runtime_id: inner.id.clone(),
@@ -2501,13 +2622,18 @@ pub(crate) fn event_subscription_closed(client_key: &str, reason: String) -> boo
     true
 }
 
-pub(crate) fn terminal_bridge_closed(client_key: &str, terminal_id: &str, reason: String) -> bool {
+pub(crate) fn terminal_bridge_closed(
+    client_key: &str,
+    terminal_id: &str,
+    bridge_id: HerdrBridgeId,
+    reason: String,
+) -> bool {
     let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
     let Some(runtime) = runtime else { return false };
     if runtime.state.lock().connection != HostConnectionState::Connected {
         return true;
     }
-    schedule_terminal_retry(runtime, terminal_id.to_owned(), reason);
+    schedule_terminal_retry(runtime, terminal_id.to_owned(), Some(bridge_id), reason);
     true
 }
 
@@ -2905,7 +3031,14 @@ impl HostRuntime {
                         terminal.cell_width_px = cell_width_px;
                         terminal.cell_height_px = cell_height_px;
                         if terminal.state == HostTerminalState::Attached {
-                            return Ok(());
+                            let bridge_is_live = terminal.bridge_id.is_some_and(|bridge_id| {
+                                active_herdr_terminal_bridge_id(&inner.id, &terminal_id)
+                                    == Some(bridge_id)
+                            });
+                            if bridge_is_live {
+                                return Ok(());
+                            }
+                            terminal.bridge_id = None;
                         }
                         if matches!(
                             terminal.state,
@@ -2917,6 +3050,7 @@ impl HostRuntime {
                             terminal.state = HostTerminalState::Opening;
                             terminal.reconnect_attempt = 0;
                             terminal.retry_running = true;
+                            terminal.bridge_id = None;
                             (terminal.operation_epoch, false)
                         }
                     } else {
@@ -2932,6 +3066,7 @@ impl HostRuntime {
                                 operation_epoch: 1,
                                 reconnect_attempt: 0,
                                 retry_running: true,
+                                bridge_id: None,
                             },
                         );
                         (1, false)
@@ -2961,20 +3096,23 @@ impl HostRuntime {
         terminal_id: String,
         text: String,
     ) -> Result<(), HostRuntimeError> {
-        let state = self.inner.state.lock();
-        if state.connection != HostConnectionState::Connected
-            || state
-                .terminals
-                .get(&terminal_id)
-                .is_none_or(|terminal| terminal.state != HostTerminalState::Attached)
-        {
+        if live_terminal_bridge_id(&self.inner, &terminal_id).is_none() {
+            let reason = format!("terminal {terminal_id} has no live bridge");
+            schedule_terminal_retry(
+                self.inner.clone(),
+                terminal_id.clone(),
+                None,
+                reason.clone(),
+            );
             return Err(HostRuntimeError::TerminalUnavailable(format!(
-                "terminal {terminal_id} is unavailable"
+                "terminal {terminal_id} is unavailable: {reason}"
             )));
         }
-        drop(state);
-        herdr_terminal_input(self.inner.id.clone(), terminal_id, text)
-            .map_err(|error| HostRuntimeError::TerminalUnavailable(error.to_string()))
+        herdr_terminal_input(self.inner.id.clone(), terminal_id.clone(), text).map_err(|error| {
+            let reason = error.to_string();
+            schedule_terminal_retry(self.inner.clone(), terminal_id, None, reason.clone());
+            HostRuntimeError::TerminalUnavailable(reason)
+        })
     }
 
     pub fn resize_terminal(
@@ -2985,7 +3123,7 @@ impl HostRuntime {
         cell_width_px: u32,
         cell_height_px: u32,
     ) -> Result<(), HostRuntimeError> {
-        {
+        let attached = {
             let mut state = self.inner.state.lock();
             let terminal = state.terminals.get_mut(&terminal_id).ok_or_else(|| {
                 HostRuntimeError::TerminalUnavailable(format!(
@@ -2996,19 +3134,34 @@ impl HostRuntime {
             terminal.rows = rows.max(8);
             terminal.cell_width_px = cell_width_px;
             terminal.cell_height_px = cell_height_px;
-            if terminal.state != HostTerminalState::Attached {
-                return Ok(());
-            }
+            terminal.state == HostTerminalState::Attached
+        };
+        if !attached {
+            return Ok(());
+        }
+        if live_terminal_bridge_id(&self.inner, &terminal_id).is_none() {
+            let reason = format!("terminal {terminal_id} has no live bridge while resizing");
+            schedule_terminal_retry(
+                self.inner.clone(),
+                terminal_id.clone(),
+                None,
+                reason.clone(),
+            );
+            return Err(HostRuntimeError::TerminalUnavailable(reason));
         }
         herdr_terminal_resize(
             self.inner.id.clone(),
-            terminal_id,
+            terminal_id.clone(),
             columns.max(20),
             rows.max(8),
             cell_width_px,
             cell_height_px,
         )
-        .map_err(|error| HostRuntimeError::TerminalUnavailable(error.to_string()))
+        .map_err(|error| {
+            let reason = error.to_string();
+            schedule_terminal_retry(self.inner.clone(), terminal_id, None, reason.clone());
+            HostRuntimeError::TerminalUnavailable(reason)
+        })
     }
 
     pub fn scroll_terminal(
@@ -3020,16 +3173,30 @@ impl HostRuntime {
         row: Option<f64>,
         modifiers: u8,
     ) -> Result<(), HostRuntimeError> {
+        if live_terminal_bridge_id(&self.inner, &terminal_id).is_none() {
+            let reason = format!("terminal {terminal_id} has no live bridge while scrolling");
+            schedule_terminal_retry(
+                self.inner.clone(),
+                terminal_id.clone(),
+                None,
+                reason.clone(),
+            );
+            return Err(HostRuntimeError::TerminalUnavailable(reason));
+        }
         herdr_terminal_scroll(
             self.inner.id.clone(),
-            terminal_id,
+            terminal_id.clone(),
             up,
             lines,
             column,
             row,
             modifiers,
         )
-        .map_err(|error| HostRuntimeError::TerminalUnavailable(error.to_string()))
+        .map_err(|error| {
+            let reason = error.to_string();
+            schedule_terminal_retry(self.inner.clone(), terminal_id, None, reason.clone());
+            HostRuntimeError::TerminalUnavailable(reason)
+        })
     }
 
     pub fn close_terminal(&self, terminal_id: String) {
@@ -3061,12 +3228,7 @@ impl HostRuntime {
     }
 
     pub fn has_terminal(&self, terminal_id: String) -> bool {
-        self.inner
-            .state
-            .lock()
-            .terminals
-            .get(&terminal_id)
-            .is_some_and(|terminal| terminal.state == HostTerminalState::Attached)
+        live_terminal_bridge_id(&self.inner, &terminal_id).is_some()
     }
 
     pub fn is_terminal_opening(&self, terminal_id: String) -> bool {
@@ -4560,6 +4722,7 @@ mod tests {
                         operation_epoch: 1,
                         reconnect_attempt: 0,
                         retry_running: false,
+                        bridge_id: Some(1),
                     },
                 );
             }
@@ -4788,6 +4951,7 @@ mod tests {
                     operation_epoch: 1,
                     reconnect_attempt: 0,
                     retry_running: true,
+                    bridge_id: None,
                 },
             );
             let waiter_inner = inner.clone();
@@ -4804,11 +4968,118 @@ mod tests {
                     .expect("terminal remains registered");
                 terminal.state = HostTerminalState::Attached;
                 terminal.retry_running = false;
+                terminal.bridge_id = Some(1);
             }
             inner.terminal_settled.notify_waiters();
 
             assert!(matches!(waiter.await, Ok(Ok(()))));
         });
+    }
+
+    #[test]
+    fn bridge_close_during_open_invalidates_owned_attempt_without_second_worker() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        clear_host_runtime_event_sink();
+        let inner = connected_runtime_inner("terminal-close-during-open-test");
+        inner.state.lock().terminals.insert(
+            "terminal-1".to_owned(),
+            TerminalRuntime {
+                state: HostTerminalState::Opening,
+                takeover: true,
+                columns: 80,
+                rows: 24,
+                cell_width_px: 8,
+                cell_height_px: 16,
+                operation_epoch: 7,
+                reconnect_attempt: 2,
+                retry_running: true,
+                bridge_id: Some(41),
+            },
+        );
+
+        schedule_terminal_retry(
+            inner.clone(),
+            "terminal-1".to_owned(),
+            Some(41),
+            "bridge closed before attach committed".to_owned(),
+        );
+
+        let state = inner.state.lock();
+        let terminal = &state.terminals["terminal-1"];
+        assert_eq!(terminal.state, HostTerminalState::Failed);
+        assert_eq!(terminal.bridge_id, None);
+        assert!(terminal.retry_running);
+        assert_eq!(terminal.operation_epoch, 7);
+        assert_eq!(terminal.reconnect_attempt, 2);
+    }
+
+    #[test]
+    fn stale_bridge_close_cannot_invalidate_replacement() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        clear_host_runtime_event_sink();
+        let inner = connected_runtime_inner("stale-terminal-close-test");
+        inner.state.lock().terminals.insert(
+            "terminal-1".to_owned(),
+            TerminalRuntime {
+                state: HostTerminalState::Attached,
+                takeover: true,
+                columns: 80,
+                rows: 24,
+                cell_width_px: 8,
+                cell_height_px: 16,
+                operation_epoch: 8,
+                reconnect_attempt: 0,
+                retry_running: false,
+                bridge_id: Some(42),
+            },
+        );
+
+        schedule_terminal_retry(
+            inner.clone(),
+            "terminal-1".to_owned(),
+            Some(41),
+            "old bridge closed late".to_owned(),
+        );
+
+        let state = inner.state.lock();
+        let terminal = &state.terminals["terminal-1"];
+        assert_eq!(terminal.state, HostTerminalState::Attached);
+        assert_eq!(terminal.bridge_id, Some(42));
+        assert!(!terminal.retry_running);
+    }
+
+    #[test]
+    fn bridge_claim_is_scoped_to_the_current_open_operation() {
+        let inner = connected_runtime_inner("terminal-bridge-claim-test");
+        inner.state.lock().terminals.insert(
+            "terminal-1".to_owned(),
+            TerminalRuntime {
+                state: HostTerminalState::Restoring,
+                takeover: true,
+                columns: 80,
+                rows: 24,
+                cell_width_px: 8,
+                cell_height_px: 16,
+                operation_epoch: 9,
+                reconnect_attempt: 1,
+                retry_running: true,
+                bridge_id: None,
+            },
+        );
+
+        assert_eq!(claim_terminal_bridge(&inner, "terminal-1", 9, 51), Ok(()));
+        assert_eq!(
+            inner.state.lock().terminals["terminal-1"].bridge_id,
+            Some(51)
+        );
+        assert!(matches!(
+            claim_terminal_bridge(&inner, "terminal-1", 8, 50),
+            Err(HerdrBridgeError::BridgeUnavailable(_))
+        ));
+        assert_eq!(
+            inner.state.lock().terminals["terminal-1"].bridge_id,
+            Some(51)
+        );
     }
 
     #[test]
@@ -4921,6 +5192,7 @@ mod tests {
                 operation_epoch: 2,
                 reconnect_attempt: 3,
                 retry_running: true,
+                bridge_id: None,
             },
         );
         state.disconnect();
@@ -4966,6 +5238,7 @@ mod tests {
             operation_epoch: 7,
             reconnect_attempt: 2,
             retry_running: false,
+            bridge_id: None,
         };
         assert_eq!(
             (
@@ -5106,6 +5379,7 @@ mod tests {
             operation_epoch: 5,
             reconnect_attempt: 1,
             retry_running: true,
+            bridge_id: None,
         };
         let restoring = terminal.operation_epoch;
         terminal.operation_epoch = terminal.operation_epoch.wrapping_add(1);
@@ -5131,6 +5405,7 @@ mod tests {
                 operation_epoch: 1,
                 reconnect_attempt: 5,
                 retry_running: false,
+                bridge_id: None,
             },
         );
         assert_eq!(state.connection, HostConnectionState::Connected);
@@ -5149,6 +5424,7 @@ mod tests {
             operation_epoch: 1,
             reconnect_attempt: 1,
             retry_running: false,
+            bridge_id: None,
         };
         let attached = failed.clone();
         failed.state = HostTerminalState::Failed;

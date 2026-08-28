@@ -122,6 +122,8 @@ struct Bridge {
     welcomed: Mutex<Option<oneshot::Sender<Result<(), HerdrBridgeError>>>>,
 }
 
+pub(crate) type HerdrBridgeId = u64;
+
 #[derive(Default)]
 struct Registry {
     bridges: HashMap<u64, Arc<Bridge>>,
@@ -176,6 +178,13 @@ fn active_bridge(client_key: &str, terminal_id: &str) -> Option<Arc<Bridge>> {
         .active_id(client_key, terminal_id)
         .and_then(|id| registry.bridges.get(&id))
         .cloned()
+}
+
+pub(crate) fn active_herdr_terminal_bridge_id(
+    client_key: &str,
+    terminal_id: &str,
+) -> Option<HerdrBridgeId> {
+    registry().lock().active_id(client_key, terminal_id)
 }
 
 fn remove_bridge(id: u64) {
@@ -392,6 +401,7 @@ impl Bridge {
         if crate::host_runtime::terminal_bridge_closed(
             &self.client_key,
             &terminal_id,
+            self.id,
             reason.clone(),
         ) {
             return;
@@ -552,7 +562,7 @@ async fn prepare_bridge_on_runtime(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn start_bridge_on_runtime(
+pub(crate) async fn start_bridge_on_runtime<F>(
     client_key: String,
     ssh: Arc<SshSession>,
     socket_path: String,
@@ -564,9 +574,14 @@ pub(crate) async fn start_bridge_on_runtime(
     cell_width_px: u32,
     cell_height_px: u32,
     terminal_attach_launch_mode: HerdrTerminalAttachLaunchMode,
-) -> Result<(), HerdrBridgeError> {
-    if active_bridge(&client_key, &terminal_id).is_some() {
-        return Ok(());
+    claim: F,
+) -> Result<HerdrBridgeId, HerdrBridgeError>
+where
+    F: FnOnce(HerdrBridgeId) -> Result<(), HerdrBridgeError>,
+{
+    if let Some(bridge) = active_bridge(&client_key, &terminal_id) {
+        claim(bridge.id)?;
+        return Ok(bridge.id);
     }
     let prepared_id = registry().lock().prepared.remove(&client_key);
     let mut bridge = prepared_id.and_then(bridge_for_id);
@@ -591,6 +606,10 @@ pub(crate) async fn start_bridge_on_runtime(
         }
     };
     let ssh = bridge.ssh()?.clone();
+    if let Err(error) = claim(bridge.id) {
+        bridge.close_transport();
+        return Err(error);
+    }
     *bridge.state.lock() = ProtocolState::Attached(terminal_id.clone());
     registry()
         .lock()
@@ -603,7 +622,13 @@ pub(crate) async fn start_bridge_on_runtime(
         bridge.close_transport();
         return Err(HerdrBridgeError::BridgeClosed(error.to_string()));
     }
-    Ok(())
+    if active_herdr_terminal_bridge_id(&client_key, &terminal_id) != Some(bridge.id) {
+        return Err(HerdrBridgeError::BridgeClosed(format!(
+            "Herdr bridge {} closed while attaching terminal {terminal_id}",
+            bridge.id
+        )));
+    }
+    Ok(bridge.id)
 }
 
 #[uniffi::export]
@@ -668,6 +693,7 @@ pub async fn start_herdr_terminal_bridge(
             cell_width_px,
             cell_height_px,
             terminal_attach_launch_mode,
+            |_| Ok(()),
         ))
         .await
         .map_err(|error| {
@@ -675,6 +701,7 @@ pub async fn start_herdr_terminal_bridge(
                 "Herdr bridge runtime task failed: {error}"
             ))
         })?
+        .map(|_| ())
 }
 
 fn require_active_bridge(
@@ -749,6 +776,31 @@ pub fn close_herdr_terminal_bridge(client_key: String, terminal_id: String) {
     {
         let mut registry = registry().lock();
         registry.remove_active(&client_key, &terminal_id);
+    }
+    *bridge.state.lock() = ProtocolState::Closing;
+    if let Some(ssh) = &bridge.ssh {
+        let _ = ssh.write_unix_socket(&bridge.channel_id, herdr_codec::detach(), true);
+    }
+    bridge.close_transport();
+}
+
+pub(crate) fn close_owned_herdr_terminal_bridge(
+    client_key: &str,
+    terminal_id: &str,
+    bridge_id: HerdrBridgeId,
+) {
+    let Some(bridge) = active_bridge(client_key, terminal_id) else {
+        return;
+    };
+    if bridge.id != bridge_id {
+        return;
+    }
+    {
+        let mut registry = registry().lock();
+        if registry.active_id(client_key, terminal_id) != Some(bridge_id) {
+            return;
+        }
+        registry.remove_active(client_key, terminal_id);
     }
     *bridge.state.lock() = ProtocolState::Closing;
     if let Some(ssh) = &bridge.ssh {
