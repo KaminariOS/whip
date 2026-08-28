@@ -10,12 +10,58 @@ export interface TerminalViewportLayout {
   terminalInsets: VisualContentInsets;
 }
 
+export const TERMINAL_CONTROL_BAR_BASE_HEIGHT = 50;
 export const SESSION_TAB_BAR_HEIGHT = 55;
 export const SESSION_PANE_BAR_HEIGHT = 44;
-export const TERMINAL_CONTROL_BAR_BASE_HEIGHT = 50;
+export const TERMINAL_FLOATING_ACTION_GAP = 12;
 
-export function sessionTopChromeInset(paneCount: number): number {
+export function terminalSessionChromeHeight(paneCount: number): number {
   return SESSION_TAB_BAR_HEIGHT + (paneCount > 1 ? SESSION_PANE_BAR_HEIGHT : 0);
+}
+
+export function terminalLatestButtonBottom({
+  sessionChromeInset,
+  sessionChromeVisible,
+  terminalBottomInset,
+}: {
+  sessionChromeInset: number;
+  sessionChromeVisible: boolean;
+  terminalBottomInset: number;
+}): number {
+  return (
+    terminalBottomChromeClearance({
+      sessionChromeInset,
+      sessionChromeVisible,
+      terminalBottomInset,
+    }) + TERMINAL_FLOATING_ACTION_GAP
+  );
+}
+
+export function terminalBottomChromeClearance({
+  sessionChromeInset,
+  sessionChromeVisible,
+  terminalBottomInset,
+}: {
+  sessionChromeInset: number;
+  sessionChromeVisible: boolean;
+  terminalBottomInset: number;
+}): number {
+  return (
+    Math.max(0, terminalBottomInset) +
+    (sessionChromeVisible ? Math.max(0, sessionChromeInset) : 0)
+  );
+}
+
+export function shouldShowTerminalSessionChrome({
+  composerVisible,
+  keyboardEnabled,
+  keyboardVisible,
+}: {
+  composerVisible: boolean;
+  keyboardEnabled: boolean;
+  keyboardVisible: boolean;
+}): boolean {
+  return !composerVisible && !keyboardEnabled && !keyboardVisible;
 }
 
 export function visualContentInsets(

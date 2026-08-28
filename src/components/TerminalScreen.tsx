@@ -65,7 +65,10 @@ import { useTranslation } from 'react-i18next';
 
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import {
+  shouldShowTerminalSessionChrome,
+  terminalBottomChromeClearance,
   terminalControlBarInset,
+  terminalLatestButtonBottom,
   terminalViewportLayout,
   type VisualContentInsets,
 } from '@/src/lib/floatingChrome';
@@ -74,6 +77,7 @@ import { cn } from '@/src/lib/utils';
 import { retryDelay } from '../lib/retryDelay';
 import {
   orderTerminalControls,
+  TERMINAL_CONTROL_HIT_SLOP,
   TERMINAL_ICON_CONTROL_CLASS,
   TERMINAL_TEXT_CONTROL_CLASS,
   type TerminalControlId,
@@ -124,7 +128,7 @@ import {
   type OverlayScrollbarDragEvent,
 } from './OverlayScrollbar';
 import { useReducedMotion } from './app-ui';
-import { Button } from './ui/button';
+import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
@@ -140,7 +144,8 @@ interface Props {
   controlUsage: TerminalControlUsage;
   historyEntries: readonly string[];
   compact?: boolean;
-  topOverlayInset?: number;
+  sessionChromeInset?: number;
+  onSessionChromeVisibilityChange?: (visible: boolean) => void;
   latencyMs?: number | null;
   latencyWarningActive?: boolean;
   swipe?: {
@@ -173,7 +178,10 @@ interface Props {
     loading: boolean;
     onPress: () => void;
   };
-  renderViewportOverlay?: (insets: VisualContentInsets) => ReactNode;
+  renderViewportOverlay?: (
+    insets: VisualContentInsets,
+    latestButtonBottom: number,
+  ) => ReactNode;
   viewportOverlayBackground?: ReactNode;
   onOpenLink?: (link: string) => void;
   onLinksScanned?: (links: string[]) => void;
@@ -389,7 +397,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       controlUsage,
       historyEntries,
       compact = false,
-      topOverlayInset = 0,
+      sessionChromeInset = 0,
+      onSessionChromeVisibilityChange,
       latencyMs = null,
       latencyWarningActive = false,
       swipe,
@@ -518,8 +527,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composerKeyboardEnabled = composeOpen && keyboardEnabled;
     const keyboardControlDisabled = status !== 'connected' && !composeOpen;
     const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
+    const sessionChromeVisible = shouldShowTerminalSessionChrome({
+      composerVisible: composeOpen,
+      keyboardEnabled,
+      keyboardVisible,
+    });
     composeOpenRef.current = composeOpen;
-    const viewportTopOcclusion = searchOpen ? 0 : topOverlayInset;
     const viewportLayout = useMemo(
       () =>
         terminalViewportLayout({
@@ -528,7 +541,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           composerVisible: composeOpen,
           controlBarHeight,
           keyboardInset,
-          topInset: viewportTopOcclusion,
+          topInset: 0,
         }),
       [
         composeExpanded,
@@ -536,11 +549,20 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         composerHeight,
         controlBarHeight,
         keyboardInset,
-        viewportTopOcclusion,
       ],
     );
     const terminalLayoutKeyboardInset = viewportLayout.layoutKeyboardInset;
-    const terminalScrollingInsets = viewportLayout.terminalInsets;
+    const terminalScrollingInsets = useMemo(
+      () => ({
+        ...viewportLayout.terminalInsets,
+        bottom: terminalBottomChromeClearance({
+          sessionChromeInset,
+          sessionChromeVisible,
+          terminalBottomInset: viewportLayout.terminalInsets.bottom,
+        }),
+      }),
+      [sessionChromeInset, sessionChromeVisible, viewportLayout.terminalInsets],
+    );
     const viewportOverlayInsets = viewportLayout.overlayInsets;
     const terminalVisualViewport = useMemo(
       () => ({
@@ -553,10 +575,27 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       }),
       [alternateScreen, scrollPosition, terminalScrollingInsets],
     );
-    const viewportOverlay = renderViewportOverlay?.(viewportOverlayInsets);
+    const terminalLatestButtonOffset = terminalLatestButtonBottom({
+      sessionChromeInset,
+      sessionChromeVisible,
+      terminalBottomInset: controlBarHeight,
+    });
+    const viewportLatestButtonBottom = terminalLatestButtonBottom({
+      sessionChromeInset,
+      sessionChromeVisible,
+      terminalBottomInset: viewportOverlayInsets.bottom,
+    });
+    const viewportOverlay = renderViewportOverlay?.(
+      viewportOverlayInsets,
+      viewportLatestButtonBottom,
+    );
     activeTargetRef.current = activeTarget;
     scrollPositionRef.current = scrollPosition;
     targetsRef.current = targets;
+
+    useEffect(() => {
+      onSessionChromeVisibilityChange?.(sessionChromeVisible);
+    }, [onSessionChromeVisibilityChange, sessionChromeVisible]);
 
     const restoreKeyboardAfterCompose = useCallback(() => {
       const previouslyEnabled = keyboardEnabledBeforeComposeRef.current;
@@ -1476,7 +1515,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       }
       if (control === 'keyboard') {
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={
               keyboardControlSelected
@@ -1526,12 +1565,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 }
               />
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       if (control === 'paste') {
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={t('terminal.paste')}
             className={TERMINAL_ICON_CONTROL_CLASS}
@@ -1547,12 +1586,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 color={appColors.text}
               />
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       if (control === 'history') {
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={t('terminal.history')}
             accessibilityState={{ expanded: historyOpen }}
@@ -1582,12 +1621,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 color={historyOpen ? appColors.primary : appColors.text}
               />
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       if (control === 'compose') {
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={t('terminal.compose')}
             accessibilityState={{ selected: composeOpen }}
@@ -1609,13 +1648,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             <View className={TERMINAL_ICON_BOX_CLASS}>
               <MessageCircle size={TERMINAL_ICON_SIZE} color={appColors.text} />
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       if (control === 'chat') {
         if (!chatControl) return null;
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={chatControl.accessibilityLabel}
             accessibilityState={{
@@ -1646,12 +1685,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 <BookOpen size={TERMINAL_ICON_SIZE} color={appColors.text} />
               )}
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       if (control === 'attach') {
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={t('terminal.attach')}
             className={TERMINAL_ICON_CONTROL_CLASS}
@@ -1664,12 +1703,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             <View className={TERMINAL_ICON_BOX_CLASS}>
               <Paperclip size={TERMINAL_ICON_SIZE} color={appColors.text} />
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       if (control === 'files') {
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={t('terminal.openFiles')}
             className={TERMINAL_ICON_CONTROL_CLASS}
@@ -1682,12 +1721,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             <View className={TERMINAL_ICON_BOX_CLASS}>
               <FolderOpen size={TERMINAL_ICON_SIZE} color={appColors.text} />
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       if (control === 'links') {
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={t('terminal.scanLinks')}
             className={TERMINAL_ICON_CONTROL_CLASS}
@@ -1701,12 +1740,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             <View className={TERMINAL_ICON_BOX_CLASS}>
               <Globe2 size={TERMINAL_ICON_SIZE} color={appColors.text} />
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       if (control === 'find') {
         return (
-          <Button
+          <TerminalControlButton
             key={control}
             accessibilityLabel={t('terminal.find')}
             accessibilityState={{ selected: searchOpen }}
@@ -1736,7 +1775,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 color={searchOpen ? appColors.primary : appColors.text}
               />
             </View>
-          </Button>
+          </TerminalControlButton>
         );
       }
       const modifier =
@@ -1771,7 +1810,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         modifier.value === 'locked' && 'text-primary-foreground',
       );
       return (
-        <Button
+        <TerminalControlButton
           key={control}
           accessibilityLabel={t(modifier.accessibilityKey)}
           accessibilityState={{ selected: modifier.value !== 'off' }}
@@ -1802,7 +1841,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               className={modifierClassName}
             />
           )}
-        </Button>
+        </TerminalControlButton>
       );
     };
 
@@ -1838,12 +1877,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           </View>
         )}
         {searchOpen && (
-          <View
-            className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]"
-            style={
-              topOverlayInset > 0 ? { marginTop: topOverlayInset } : undefined
-            }
-          >
+          <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
             <Input
               autoFocus
               value={searchQuery}
@@ -2047,7 +2081,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   appGlassEnabled && 'border',
                 )}
                 style={[
-                  { bottom: terminalScrollingInsets.bottom + 12 },
+                  { bottom: terminalLatestButtonOffset },
                   appGlassEnabled
                     ? appGlassControlStyle(false, appColors)
                     : undefined,
@@ -2074,7 +2108,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         </View>
         <TerminalLatencyWarning
           latencyMs={latencyMs}
-          top={topOverlayInset}
+          top={0}
           visible={Boolean(
             session &&
               status === 'connected' &&
@@ -2086,7 +2120,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           <View
             pointerEvents="box-none"
             className="absolute inset-x-2 z-20"
-            style={{ top: topOverlayInset + 8 }}
+            style={{ top: 8 }}
           >
             <View className="flex-row items-center gap-2 rounded-lg border border-terminal-divider bg-terminal-panel/95 p-2 shadow-lg">
               <View
@@ -2231,8 +2265,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             keyboardShouldPersistTaps="always"
             showsHorizontalScrollIndicator={false}
             className="flex-grow-0"
-            contentContainerClassName="items-center gap-[5px] px-1.5 pt-[3px]"
-            contentContainerStyle={{ paddingBottom: 3 + bottomSafeAreaInset }}
+            contentContainerClassName="items-center gap-[5px] px-1.5 pt-[7px]"
+            contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}
           >
             {controlOrder.map(renderTerminalControl)}
           </ScrollView>
@@ -2570,6 +2604,10 @@ function ComposeAttachmentsStrip({
   );
 }
 
+function TerminalControlButton(props: ButtonProps) {
+  return <Button hitSlop={TERMINAL_CONTROL_HIT_SLOP} {...props} />;
+}
+
 function TerminalKey({
   label,
   icon,
@@ -2584,7 +2622,7 @@ function TerminalKey({
   onPress: () => void;
 }) {
   return (
-    <Button
+    <TerminalControlButton
       accessibilityLabel={accessibilityLabel}
       className={
         icon || symbolic
@@ -2599,7 +2637,7 @@ function TerminalKey({
       ) : (
         <TerminalControlLabel label={label} symbolic={symbolic} />
       )}
-    </Button>
+    </TerminalControlButton>
   );
 }
 

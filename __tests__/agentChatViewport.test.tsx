@@ -71,13 +71,14 @@ describe('AgentChatView viewport insets', () => {
   });
 
   test('keeps the viewport edge-to-edge while insetting content and indicators', () => {
-    const contentInsets = { top: 92, bottom: 186 };
+    const contentInsets = { top: 0, bottom: 186 };
     act(() => {
       renderer = create(
         <AgentChatView
           agent="codex"
           agentStatus="idle"
           contentInsets={contentInsets}
+          latestButtonBottom={297}
           onOpenFile={jest.fn()}
           state={{
             sessionId: 'session-1',
@@ -107,6 +108,20 @@ describe('AgentChatView viewport insets', () => {
           ? [node.props.style.height]
           : [],
       );
-    expect(spacerHeights).toEqual([108, 210]);
+    expect(spacerHeights).toEqual([16, 210]);
+
+    act(() => {
+      list.props.onScroll({
+        nativeEvent: {
+          contentOffset: { y: 0 },
+          contentSize: { height: 1_000 },
+          layoutMeasurement: { height: 400 },
+        },
+      });
+    });
+    const latestButton = renderer.root.find(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    );
+    expect(latestButton.props.style[0]).toEqual({ bottom: 297 });
   });
 });

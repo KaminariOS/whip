@@ -61,6 +61,7 @@ interface Props {
   agent: ChatAgent;
   agentStatus: AgentStatus;
   contentInsets: VisualContentInsets;
+  latestButtonBottom: number;
   onOpenFile: (target: TranscriptFileLinkTarget) => void;
 }
 
@@ -667,6 +668,7 @@ export function AgentChatView({
   agent,
   agentStatus,
   contentInsets,
+  latestButtonBottom,
   onOpenFile,
 }: Props) {
   const { colors } = useTheme();
@@ -854,7 +856,7 @@ export function AgentChatView({
             accessibilityLabel="Jump to latest"
             className={cn('absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg', appGlassEnabled && 'border')}
             style={[
-              { bottom: contentInsets.bottom + 12 },
+              { bottom: latestButtonBottom },
               appGlassEnabled ? appGlassControlStyle(false, colors) : undefined,
             ]}
             variant={appGlassEnabled ? 'ghost' : 'secondary'}

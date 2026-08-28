@@ -1,16 +1,63 @@
 import {
   insetContentPadding,
-  sessionTopChromeInset,
+  terminalBottomChromeClearance,
   terminalBottomChromeInset,
   terminalControlBarInset,
+  terminalLatestButtonBottom,
+  terminalSessionChromeHeight,
   visualContentInsets,
 } from '../src/lib/floatingChrome';
 
 describe('floating chrome geometry', () => {
-  test('uses one tab-bar height and adds the pane bar only for multiple panes', () => {
-    expect(sessionTopChromeInset(0)).toBe(55);
-    expect(sessionTopChromeInset(1)).toBe(55);
-    expect(sessionTopChromeInset(2)).toBe(99);
+  test('places the latest button above the visible session rail', () => {
+    const terminalBottomInset = terminalControlBarInset(34);
+    const singlePaneChromeInset = terminalSessionChromeHeight(1);
+    const multiPaneChromeInset = terminalSessionChromeHeight(2);
+
+    expect(singlePaneChromeInset).toBe(55);
+    expect(multiPaneChromeInset).toBe(99);
+    expect(
+      terminalBottomChromeClearance({
+        sessionChromeInset: singlePaneChromeInset,
+        sessionChromeVisible: true,
+        terminalBottomInset,
+      }),
+    ).toBe(139);
+    expect(
+      terminalBottomChromeClearance({
+        sessionChromeInset: multiPaneChromeInset,
+        sessionChromeVisible: true,
+        terminalBottomInset,
+      }),
+    ).toBe(183);
+    expect(
+      terminalBottomChromeClearance({
+        sessionChromeInset: multiPaneChromeInset,
+        sessionChromeVisible: false,
+        terminalBottomInset,
+      }),
+    ).toBe(84);
+    expect(
+      terminalLatestButtonBottom({
+        sessionChromeInset: singlePaneChromeInset,
+        sessionChromeVisible: true,
+        terminalBottomInset,
+      }),
+    ).toBe(151);
+    expect(
+      terminalLatestButtonBottom({
+        sessionChromeInset: multiPaneChromeInset,
+        sessionChromeVisible: true,
+        terminalBottomInset,
+      }),
+    ).toBe(195);
+    expect(
+      terminalLatestButtonBottom({
+        sessionChromeInset: multiPaneChromeInset,
+        sessionChromeVisible: false,
+        terminalBottomInset,
+      }),
+    ).toBe(96);
   });
 
   test('includes safe area, keyboard, and a dynamically measured composer', () => {
@@ -35,9 +82,9 @@ describe('floating chrome geometry', () => {
   });
 
   test('content padding places first and last items outside occluded regions', () => {
-    const insets = visualContentInsets(92, 186);
+    const insets = visualContentInsets(0, 186);
     expect(insetContentPadding(insets, { top: 16, bottom: 24 })).toEqual({
-      top: 108,
+      top: 16,
       bottom: 210,
     });
   });

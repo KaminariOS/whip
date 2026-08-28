@@ -38,7 +38,10 @@ import {
   tabAgentStateChangeSequence,
 } from '@/src/herdQueue';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
-import { sessionTopChromeInset } from '@/src/lib/floatingChrome';
+import {
+  terminalControlBarInset,
+  terminalSessionChromeHeight,
+} from '@/src/lib/floatingChrome';
 import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { cn } from '@/src/lib/utils';
 import {
@@ -246,6 +249,8 @@ export function SessionScreen({
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [terminalSessionChromeVisible, setTerminalSessionChromeVisible] =
+    useState(true);
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [terminalWidth, setTerminalWidth] = useState(0);
   const [tabSwipe, setTabSwipe] = useState<TerminalTabSwipe | null>(null);
@@ -352,7 +357,7 @@ export function SessionScreen({
   const panes = selectableResources.panes.filter(
     item => item.tab_id === selectedTab?.tab_id,
   );
-  const topOverlayInset = sessionTopChromeInset(panes.length);
+  const sessionChromeInset = terminalSessionChromeHeight(panes.length);
   const serverWorkspace =
     snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const serverTab =
@@ -1407,8 +1412,19 @@ export function SessionScreen({
       )}
     >
       <TerminalBackground preferences={terminalPreferences} />
-      <View className="absolute inset-x-0 top-0 z-30">
-        <View className="h-[55px] flex-row border-b border-border bg-transparent">
+      <View
+        className="absolute inset-x-0 z-30"
+        style={{ bottom: terminalControlBarInset(safeAreaInsets.bottom) }}
+      >
+        <View
+          accessibilityElementsHidden={!terminalSessionChromeVisible}
+          importantForAccessibility={
+            terminalSessionChromeVisible ? 'auto' : 'no-hide-descendants'
+          }
+          pointerEvents={terminalSessionChromeVisible ? 'auto' : 'none'}
+          className="h-[55px] flex-row border-b border-border bg-transparent"
+          style={terminalSessionChromeVisible ? undefined : { display: 'none' }}
+        >
           <Button
             accessibilityLabel={t('session.backToHerd')}
             className={cn(
@@ -1590,7 +1606,7 @@ export function SessionScreen({
           </ResourceEditorField>
         </ResourceEditorSheet>
 
-        {selectedTab && panes.length > 1 && (
+        {terminalSessionChromeVisible && selectedTab && panes.length > 1 && (
           <View className="h-11 flex-row border-b border-border bg-transparent">
             <ScrollView
               horizontal
@@ -1674,7 +1690,8 @@ export function SessionScreen({
             previewTarget={previewTarget}
             targets={terminalTargets}
             compact
-            topOverlayInset={topOverlayInset}
+            sessionChromeInset={sessionChromeInset}
+            onSessionChromeVisibilityChange={setTerminalSessionChromeVisible}
             latencyMs={latencyMs}
             latencyWarningActive={latencyWarningActive}
             visible={visible && Boolean(activeTarget)}
@@ -1729,12 +1746,13 @@ export function SessionScreen({
             }
             renderViewportOverlay={
               activeChatView && activePane
-                ? insets => (
+                ? (insets, latestButtonBottom) => (
                     <AgentChatView
                       state={activeChatView.state}
                       agent={activeChatView.agent}
                       agentStatus={activePane.agent_status}
                       contentInsets={insets}
+                      latestButtonBottom={latestButtonBottom}
                       onOpenFile={openChatFile}
                     />
                   )
