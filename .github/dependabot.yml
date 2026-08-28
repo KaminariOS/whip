@@ -6,10 +6,20 @@ updates:
     schedule:
       interval: daily
     groups:
+      expo-patches:
+        applies-to: version-updates
+        patterns:
+          - expo
+          - 'expo-*'
+        update-types:
+          - patch
       npm-patches:
         applies-to: version-updates
         patterns:
           - '*'
+        exclude-patterns:
+          - expo
+          - 'expo-*'
         update-types:
           - patch
     ignore:
