@@ -45,6 +45,7 @@ import {
   touchTerminalRendererEntry,
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
+import type { TerminalAttachmentId } from '../services/HerdrClient';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import {
   abandonTerminalInboundTrace,
@@ -117,6 +118,7 @@ interface RendererEntry {
   rendererReady: boolean;
   sizeReady: boolean;
   controllerAttached: boolean;
+  controllerAttachment: Promise<TerminalAttachmentId> | null;
   connecting: boolean;
   pendingFrames: Array<{
     frame: TerminalFrame;
@@ -280,6 +282,23 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     webView.current?.injectJavaScript(`${script} true;`);
   }, []);
 
+  const relinquishController = useCallback((
+    entry: RendererEntry,
+    releaseBridge: boolean,
+  ) => {
+    const attachment = entry.controllerAttachment;
+    entry.controllerAttachment = null;
+    entry.controllerAttached = false;
+    entry.connecting = false;
+    if (!attachment) return;
+    const { client, session } = entry.target;
+    attachment.then(attachmentId => (
+      releaseBridge
+        ? client.releaseTerminal(session.terminalId, attachmentId)
+        : client.detachTerminal(session.terminalId, attachmentId)
+    )).catch(() => undefined);
+  }, []);
+
   const disposeEntry = useCallback((
     key: string,
     entry: RendererEntry,
@@ -288,17 +307,18 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     resumeScrolls.current.delete(key);
     abandonTerminalRendererReadinessTrace(entry.readinessTrace);
     entry.readinessTrace = null;
-    entry.controllerAttached = false;
-    entry.connecting = false;
     for (const waiter of entry.writableWaiters.splice(0)) {
       waiter.reject(new Error('Terminal renderer was disposed'));
     }
     entries.current.delete(key);
     const terminalId = entry.target.session.terminalId;
     if (closeBridge) {
+      entry.controllerAttachment = null;
+      entry.controllerAttached = false;
+      entry.connecting = false;
       entry.target.client.closeTerminalBridge(terminalId).catch(() => undefined);
     } else {
-      entry.target.client.detachTerminal(terminalId).catch(() => undefined);
+      relinquishController(entry, false);
     }
     if (hostReady.current) {
       const serializedKey = JSON.stringify(key);
@@ -309,7 +329,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         : '';
       inject(`${snapshot}window.herdrRemove(${serializedKey});`);
     }
-  }, [inject]);
+  }, [inject, relinquishController]);
 
   const pruneEntries = useCallback((protectedKeys: ReadonlySet<string>) => {
     const evictions = terminalRendererEvictionKeys(
@@ -604,7 +624,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         // There is no passive terminal status. Keep the cached surface usable
         // so its next real input can reclaim ownership through this host.
         reportStatus(entry.target, 'connected', undefined, 0);
-        entry.target.client.releaseTerminal(terminalId).catch(() => undefined);
+        relinquishController(entry, true);
         return;
       }
       // HostRuntime owns terminal retry/backoff and native bridge generations.
@@ -616,7 +636,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportStatus(entry.target, 'error', reason, 0);
       for (const waiter of entry.writableWaiters.splice(0)) waiter.reject(new Error(reason));
     };
-    client.openTerminal(
+    const attachment = client.openTerminal(
       terminalId,
       frame => injectFrame(entry, frame),
       reason => scheduleReconnect(reason || 'Remote terminal closed', true),
@@ -630,8 +650,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           reportTitle(entry.target, event.title);
         }
       },
-    ).then(() => {
+    );
+    entry.controllerAttachment = attachment;
+    attachment.then(() => {
       if (entries.current.get(entry.target.key) !== entry) return;
+      if (entry.controllerAttachment !== attachment) return;
       if (!entry.controllerAttached) return;
       entry.connecting = false;
       settleResumeConnection(entry);
@@ -647,13 +670,21 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
     }).catch(reason => {
       if (entries.current.get(entry.target.key) !== entry) return;
+      if (entry.controllerAttachment !== attachment) return;
       const message = String(reason);
+      entry.controllerAttachment = null;
       entry.connecting = false;
       entry.controllerAttached = false;
       reportError(entry.target, message);
       scheduleReconnect(message, false);
     });
-  }, [injectFrame, preferences.pauseResizeInBackground, requestFullFrame, settleResumeConnection]);
+  }, [
+    injectFrame,
+    preferences.pauseResizeInBackground,
+    relinquishController,
+    requestFullFrame,
+    settleResumeConnection,
+  ]);
 
   const ensureEntry = useCallback((target: TerminalRenderTarget | null | undefined): RendererEntry | null => {
     if (!target) return null;
@@ -665,6 +696,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         rendererReady: false,
         sizeReady: false,
         controllerAttached: false,
+        controllerAttachment: null,
         connecting: false,
         pendingFrames: [],
         resetOnNextFrame: true,
@@ -818,6 +850,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const entry = key ? entries.current.get(key) : null;
       if (!entry) return;
       entry.controllerAttached = false;
+      entry.controllerAttachment = null;
       entry.connecting = false;
       entry.arbitration.resumeManually();
       entry.target.client.closeTerminal(entry.target.session.terminalId);
@@ -1036,9 +1069,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
                 restoring: false,
               });
             }
-            entry.controllerAttached = false;
-            entry.connecting = false;
-            entry.target.client.releaseTerminal(entry.target.session.terminalId).catch(() => undefined);
+            relinquishController(entry, true);
           }
         }
         return;
@@ -1068,8 +1099,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           preferences.pauseResizeInBackground
           || !entry.target.client.isTerminalBridgeRetained(entry.target.session.terminalId)
         ) {
-          entry.controllerAttached = false;
-          entry.connecting = false;
+          relinquishController(entry, false);
           connectEntry(entry, !preferences.pauseResizeInBackground);
         }
       }
@@ -1078,7 +1108,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
     });
     return () => subscription.remove();
-  }, [connectEntry, inject, preferences.pauseResizeInBackground, visible]);
+  }, [
+    connectEntry,
+    inject,
+    preferences.pauseResizeInBackground,
+    relinquishController,
+    visible,
+  ]);
 
   useEffect(() => () => {
     resumeScrolls.current.clear();
@@ -1090,14 +1126,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       ) {
         inject(`window.herdrSnapshot(${JSON.stringify(entry.target.key)}, "detach");`);
       }
-      entry.target.client.detachTerminal(entry.target.session.terminalId).catch(() => undefined);
+      relinquishController(entry, false);
     }
     for (const trace of serializationTraces.current.values()) {
       endAppPerformanceTrace(trace);
     }
     serializationTraces.current.clear();
     entries.current.clear();
-  }, [inject]);
+  }, [inject, relinquishController]);
 
   const handleMessage = async (event: WebViewMessageEvent) => {
     const message = JSON.parse(event.nativeEvent.data);

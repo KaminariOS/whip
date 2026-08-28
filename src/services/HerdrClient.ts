@@ -65,6 +65,13 @@ export type IntegrationInstall = Extract<ResponseResult, { type: 'integration_in
 
 export type TabLaunchIntent = RuntimeTabLaunch;
 
+declare const terminalAttachmentIdBrand: unique symbol;
+
+/** Opaque ownership token for one installed terminal controller. */
+export type TerminalAttachmentId = {
+  readonly [terminalAttachmentIdBrand]: true;
+};
+
 const DIRECT_AGENT_KINDS = new Set(['claude', 'codex', 'opencode']);
 
 /** Preserve shell syntax while using structured agent launches when it is safe. */
@@ -135,6 +142,7 @@ export function isUnavailableSshChannel(error: unknown): boolean {
 }
 
 interface TerminalConnection {
+  attachmentId: TerminalAttachmentId;
   onFrame: TerminalFrameHandler;
   onClosed?: TerminalClosedHandler;
   onControl?: TerminalControlHandler;
@@ -206,6 +214,11 @@ export class HerdrClient {
   private terminalInputTraces = new Map<string, TerminalInputTrace[]>();
   private pendingTerminalResizeTraces = new Map<string, TerminalResizeTrace>();
   private terminalStateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private createTerminalAttachmentId(): TerminalAttachmentId {
+    return Object.freeze({}) as TerminalAttachmentId;
+  }
+
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
     const port = Number(profile.port);
     this.validateSshPort(port);
@@ -459,37 +472,45 @@ export class HerdrClient {
     onFrame: TerminalFrameHandler,
     onClosed?: TerminalClosedHandler,
     onControl?: TerminalControlHandler,
-  ): Promise<void> {
+  ): Promise<TerminalAttachmentId> {
+    const attachmentId = this.createTerminalAttachmentId();
     if (isSshShellTerminalId(terminalId)) {
       const connection = this.sshShellConnections.get(terminalId);
       if (connection) {
+        connection.attachmentId = attachmentId;
         connection.onFrame = onFrame;
         connection.onClosed = onClosed;
         connection.onControl = onControl;
-        return;
+        return attachmentId;
       }
       const opening = this.terminalOpenings.get(terminalId);
       if (opening) {
         await opening;
         const opened = this.sshShellConnections.get(terminalId);
         if (opened) {
+          opened.attachmentId = attachmentId;
           opened.onFrame = onFrame;
           opened.onClosed = onClosed;
           opened.onControl = onControl;
         }
-        return;
+        return attachmentId;
       }
-      const task = this.createSshShell(terminalId, onFrame, onClosed);
+      const task = this.createSshShell(terminalId, attachmentId, onFrame, onClosed);
       this.terminalOpenings.set(terminalId, task);
       try {
         await task;
       } finally {
         this.terminalOpenings.delete(terminalId);
       }
-      return;
+      return attachmentId;
     }
 
-    this.terminalConnections.set(terminalId, { onFrame, onClosed, onControl });
+    this.terminalConnections.set(terminalId, {
+      attachmentId,
+      onFrame,
+      onClosed,
+      onControl,
+    });
     const protocolState = this.terminalProtocolStates.get(terminalId);
     if (protocolState) onControl?.({ type: 'protocol-state', state: protocolState });
 
@@ -502,6 +523,7 @@ export class HerdrClient {
     } finally {
       endAppPerformanceTrace(bridgeAttachTrace);
     }
+    return attachmentId;
   }
 
   async writeToTerminal(
@@ -666,30 +688,34 @@ export class HerdrClient {
     return Boolean(this.runtime?.hasHerdrBridge(terminalId)) || this.sshShellConnections.has(terminalId) || this.terminalOpenings.has(terminalId);
   }
 
-  async releaseTerminal(terminalId: string): Promise<void> {
+  async releaseTerminal(
+    terminalId: string,
+    attachmentId: TerminalAttachmentId,
+  ): Promise<void> {
     if (isSshShellTerminalId(terminalId)) {
       const opening = this.terminalOpenings.get(terminalId);
       if (opening) await opening.catch(() => undefined);
-      this.closeSshShell(terminalId);
+      this.closeSshShell(terminalId, attachmentId);
       return;
     }
     const connection = this.terminalConnections.get(terminalId);
-    if (this.terminalConnections.get(terminalId) !== connection) return;
+    if (connection?.attachmentId !== attachmentId) return;
 
     this.terminalConnections.delete(terminalId);
     this.clearTerminalBridgeState(terminalId);
     this.runtime?.closeHerdrBridge(terminalId);
   }
 
-  async detachTerminal(terminalId: string): Promise<void> {
+  async detachTerminal(
+    terminalId: string,
+    attachmentId: TerminalAttachmentId,
+  ): Promise<void> {
     if (isSshShellTerminalId(terminalId)) {
-      this.closeSshShell(terminalId);
+      this.closeSshShell(terminalId, attachmentId);
       return;
     }
     const connection = this.terminalConnections.get(terminalId);
-    // Do not detach a replacement controller installed while this renderer was
-    // unmounting. The SSH bridge remains open until the terminal or host closes.
-    if (this.terminalConnections.get(terminalId) !== connection) return;
+    if (connection?.attachmentId !== attachmentId) return;
     this.terminalConnections.delete(terminalId);
   }
 
@@ -992,8 +1018,14 @@ export class HerdrClient {
     }
   }
 
-  private async createSshShell(terminalId: string, onFrame: TerminalFrameHandler, onClosed?: TerminalClosedHandler): Promise<void> {
+  private async createSshShell(
+    terminalId: string,
+    attachmentId: TerminalAttachmentId,
+    onFrame: TerminalFrameHandler,
+    onClosed?: TerminalClosedHandler,
+  ): Promise<void> {
     const connection: SshShellConnection = {
+      attachmentId,
       onFrame,
       onClosed,
       sequence: 0,
@@ -1034,9 +1066,13 @@ export class HerdrClient {
     }
   }
 
-  private closeSshShell(terminalId: string): void {
+  private closeSshShell(
+    terminalId: string,
+    attachmentId?: TerminalAttachmentId,
+  ): void {
     const connection = this.sshShellConnections.get(terminalId);
     if (!connection) return;
+    if (attachmentId && connection.attachmentId !== attachmentId) return;
     this.sshShellConnections.delete(terminalId);
     this.terminalDispatchedSizes.delete(terminalId);
     this.runtime?.closeSshShell(terminalId);

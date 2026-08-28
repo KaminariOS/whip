@@ -112,12 +112,22 @@ describe('TerminalRendererHost lifecycle', () => {
     viewport_rows: number;
   }>) => {
     let retained = false;
+    let nextAttachmentId = 0;
     return {
       closeTerminalBridge: jest.fn(async () => undefined),
-      detachTerminal: jest.fn(async () => undefined),
+      detachTerminal: jest.fn(async (
+        _terminalId: string,
+        _attachmentId: unknown,
+      ): Promise<void> => undefined),
       isTerminalBridgeRetained: jest.fn(() => retained),
-      openTerminal: jest.fn(async () => { retained = true; }),
-      releaseTerminal: jest.fn(async () => { retained = false; }),
+      openTerminal: jest.fn(async () => {
+        retained = true;
+        return { testAttachmentId: ++nextAttachmentId };
+      }),
+      releaseTerminal: jest.fn(async (
+        _terminalId: string,
+        _attachmentId: unknown,
+      ): Promise<void> => { retained = false; }),
       resizeTerminal: jest.fn(async () => undefined),
       scrollTerminal: jest.fn(async () => ''),
       snapshot: jest.fn(async () => ({
@@ -429,7 +439,10 @@ describe('TerminalRendererHost lifecycle', () => {
       cellHeightPx: 16,
     });
 
-    expect(client.releaseTerminal).toHaveBeenCalledWith('term-1');
+    expect(client.releaseTerminal).toHaveBeenCalledWith(
+      'term-1',
+      expect.objectContaining({ testAttachmentId: 1 }),
+    );
     expect(client.snapshot).toHaveBeenCalledTimes(1);
     expect(client.releaseTerminal.mock.invocationCallOrder[0]).toBeLessThan(
       client.openTerminal.mock.invocationCallOrder.at(-1)!,
@@ -479,6 +492,72 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(client.releaseTerminal).not.toHaveBeenCalled();
     expect(client.snapshot).not.toHaveBeenCalled();
     expect(client.scrollTerminal).not.toHaveBeenCalled();
+  });
+
+  test('an old renderer unmount cannot detach a replacement renderer controller', async () => {
+    const client = createClient({
+      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 },
+    });
+    let owner: object | null = null;
+    client.openTerminal.mockImplementation(async () => {
+      owner = {};
+      return owner as { testAttachmentId: number };
+    });
+    client.detachTerminal.mockImplementation(async (_terminalId, attachmentId) => {
+      if (owner === attachmentId) owner = null;
+    });
+    const target = createTarget(
+      'term-1',
+      client,
+      { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 },
+    );
+    const mount = async (): Promise<ReactTestRenderer> => {
+      let host!: ReactTestRenderer;
+      act(() => {
+        host = create(
+          <TerminalRendererHost
+            {...createCallbacks()}
+            activeTarget={target}
+            preferences={preferences}
+            targets={[target]}
+            visible
+          />,
+          {
+            createNodeMock: element => element.type === 'WebView' ? {
+              injectJavaScript: jest.fn(),
+              requestFocus: jest.fn(),
+            } : null,
+          },
+        );
+      });
+      const webView = host.root.find(node => typeof node.props.onMessage === 'function');
+      await sendRendererMessage(webView, { type: 'ready' });
+      await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+      await sendRendererMessage(webView, {
+        type: 'resize',
+        source: 'fit',
+        key: target.key,
+        cols: 80,
+        rows: 24,
+        cellWidthPx: 8,
+        cellHeightPx: 16,
+      });
+      return host;
+    };
+
+    const oldRenderer = await mount();
+    const oldOwner = owner;
+    renderer = await mount();
+    const replacementOwner = owner;
+    expect(replacementOwner).not.toBe(oldOwner);
+
+    await act(async () => {
+      oldRenderer.unmount();
+      await Promise.resolve();
+    });
+
+    expect(client.detachTerminal).toHaveBeenCalledWith('term-1', oldOwner);
+    expect(owner).toBe(replacementOwner);
   });
 
   test('explicit user scrolling cancels a pending resume restore', async () => {

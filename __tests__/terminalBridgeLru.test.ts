@@ -100,8 +100,8 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await client.openTerminal('term-1', jest.fn());
-    await client.releaseTerminal('term-1');
+    const attachmentId = await client.openTerminal('term-1', jest.fn());
+    await client.releaseTerminal('term-1', attachmentId);
 
     expect(client.isTerminalBridgeRetained('term-1')).toBe(false);
     expect(native.closeHerdrBridge).toHaveBeenCalledWith('term-1');
@@ -113,8 +113,8 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await client.openTerminal('term-1', jest.fn());
-    await client.detachTerminal('term-1');
+    const attachmentId = await client.openTerminal('term-1', jest.fn());
+    await client.detachTerminal('term-1', attachmentId);
 
     expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
@@ -131,6 +131,50 @@ describe('terminal bridge channels', () => {
 
     expect(native.herdrBridgeInput).toHaveBeenCalledWith('term-1', '\u001b[B');
     await write;
+  });
+
+  test('a stale detach cannot remove a replacement controller', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const firstOnFrame = jest.fn();
+    const replacementOnFrame = jest.fn();
+    await client.connect(profile);
+
+    const firstAttachmentId = await client.openTerminal('term-1', firstOnFrame);
+    await client.openTerminal('term-1', replacementOnFrame);
+    await client.detachTerminal('term-1', firstAttachmentId);
+
+    const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
+    bridgeHandler({
+      type: 'terminal',
+      seq: 1,
+      full: false,
+      width: 80,
+      height: 24,
+      bytes: '',
+    });
+
+    expect(firstOnFrame).not.toHaveBeenCalled();
+    expect(replacementOnFrame).toHaveBeenCalledTimes(1);
+  });
+
+  test('a stale release cannot close a replacement controller bridge', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+
+    const firstAttachmentId = await client.openTerminal('term-1', jest.fn());
+    const replacementAttachmentId = await client.openTerminal('term-1', jest.fn());
+    await client.releaseTerminal('term-1', firstAttachmentId);
+
+    expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
+    expect(native.closeHerdrBridge).not.toHaveBeenCalled();
+
+    await client.releaseTerminal('term-1', replacementAttachmentId);
+    expect(client.isTerminalBridgeRetained('term-1')).toBe(false);
+    expect(native.closeHerdrBridge).toHaveBeenCalledWith('term-1');
   });
 
   test('keeps the native enqueue trace open until a deferred write resolves', async () => {
@@ -334,12 +378,12 @@ describe('terminal bridge channels', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn(), undefined, jest.fn());
+    const attachmentId = await client.openTerminal('term-1', jest.fn(), undefined, jest.fn());
 
     const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
     bridgeHandler({ type: 'mouse_capture', flag: true });
     bridgeHandler({ type: 'kitty_keyboard_report_all', flag: true });
-    await client.detachTerminal('term-1');
+    await client.detachTerminal('term-1', attachmentId);
 
     const onControl = jest.fn();
     await client.openTerminal('term-1', jest.fn(), undefined, onControl);
