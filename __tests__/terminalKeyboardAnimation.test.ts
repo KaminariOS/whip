@@ -74,7 +74,7 @@ describe('terminal keyboard and composer geometry', () => {
       composerVisible: false,
       keyboardEnabled: true,
       keyboardVisible: false,
-      visible: false,
+      visible: true,
     },
     {
       composerVisible: false,
@@ -86,10 +86,16 @@ describe('terminal keyboard and composer geometry', () => {
       composerVisible: true,
       keyboardEnabled: false,
       keyboardVisible: false,
-      visible: false,
+      visible: true,
+    },
+    {
+      composerVisible: true,
+      keyboardEnabled: true,
+      keyboardVisible: true,
+      visible: true,
     },
   ])(
-    'shows session chrome only with the keyboard off and composer closed',
+    'keeps session chrome stable until a direct keyboard is visible',
     ({ visible, ...state }) => {
       expect(shouldShowTerminalSessionChrome(state)).toBe(visible);
     },
