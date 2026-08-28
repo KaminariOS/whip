@@ -166,7 +166,7 @@ function formatLogArgument(value: unknown): string {
   if (value === undefined) return 'undefined';
 
   try {
-    const seen = new WeakSet<object>();
+    const seen = new WeakSet();
     return (
       JSON.stringify(value, (_key, nestedValue: unknown) => {
         if (typeof nestedValue === 'bigint')
@@ -176,9 +176,9 @@ function formatLogArgument(value: unknown): string {
           seen.add(nestedValue);
         }
         return nestedValue;
-      }) ?? String(value)
+      }) ?? '[Unserializable value]'
     );
   } catch {
-    return String(value);
+    return '[Unserializable value]';
   }
 }

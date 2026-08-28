@@ -47,8 +47,7 @@ export function openCodeSessionIdForPane(
 ): string | null {
   const session = pane?.agent_session;
   if (
-    !session ||
-    session.agent.toLowerCase() !== 'opencode' ||
+    session?.agent.toLowerCase() !== 'opencode' ||
     session.kind !== 'id'
   )
     return null;

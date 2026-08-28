@@ -6,6 +6,7 @@ import {
 } from './operationalDiagnostics';
 
 import type { TipProductId } from './revenueCat';
+import { isUnknownRecord } from '../lib/unknown';
 
 export type FeedbackRequestType = 'bug' | 'feature';
 
@@ -18,7 +19,8 @@ export interface SubmittedFeedbackRequest {
 const REQUEST_TIMEOUT_MS = 15_000;
 
 function apiBaseUrl(): string | null {
-  const value = Constants.expoConfig?.extra?.feedbackApiUrl;
+  const extra: unknown = Constants.expoConfig?.extra;
+  const value = isUnknownRecord(extra) ? extra.feedbackApiUrl : undefined;
   return typeof value === 'string' && value.trim()
     ? value.trim().replace(/\/+$/, '')
     : null;

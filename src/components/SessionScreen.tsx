@@ -514,7 +514,7 @@ export function SessionScreen({
     setLinksBusy(true);
     setLinksError(null);
     try {
-      await closeActiveTunnel();
+      closeActiveTunnel();
       const target = terminalWebLinkTarget(value);
       if (!terminalPreferences.openLinksInApp) {
         await Linking.openURL(target.url);
@@ -705,7 +705,7 @@ export function SessionScreen({
           service.subscribe(view.key, state => {
             setChatViews(current => {
               const active = current.get(terminalId);
-              if (!active || active.key !== view.key || active.state === state)
+              if (active?.key !== view.key || active.state === state)
                 return current;
               const next = new Map(current);
               next.set(terminalId, { ...active, state });
@@ -1016,8 +1016,7 @@ export function SessionScreen({
   ) => {
     const swipe = tabSwipeRef.current;
     if (
-      !swipe ||
-      swipe.originTabId !== originTabId ||
+      swipe?.originTabId !== originTabId ||
       swipe.targetTabId !== targetTabId
     )
       return;
@@ -1140,8 +1139,8 @@ export function SessionScreen({
         setPendingCreatedSelection(created);
         pendingPaneFocus.current = created.root_pane.pane_id;
         activateCreatedTabLocally(created, {
-          select: (workspaceId, createdTabId) => {
-            setWorkspaceId(workspaceId);
+          select: (selectedWorkspaceId, createdTabId) => {
+            setWorkspaceId(selectedWorkspaceId);
             setTabId(createdTabId);
           },
           terminalSelectionStarted: terminalTabSelectionStarted,
@@ -1217,7 +1216,7 @@ export function SessionScreen({
   };
 
   const openAttachments = () => {
-    if (!activeTerminalSession || activeTerminalSession.status !== 'connected')
+    if (activeTerminalSession?.status !== 'connected')
       return;
     setAttachmentTerminalId(activeTerminalSession.terminalId);
     setAttachmentsOpen(true);
@@ -1929,7 +1928,7 @@ export function SessionScreen({
                   <WebView
                     ref={value => {
                       browserWebView.current =
-                        value as BrowserWebViewHandle | null;
+                        value;
                     }}
                     source={{ uri: browserUrl }}
                     javaScriptEnabled

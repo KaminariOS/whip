@@ -41,7 +41,7 @@ let speakingAgentAlertTargets: AgentAlertTargets | null = null;
 export type AgentAlertDuration = 'brief' | 'persistent';
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
+  handleNotification: () => Promise.resolve({
     shouldPlaySound: true,
     shouldSetBadge: false,
     shouldShowBanner: true,

@@ -65,8 +65,8 @@ describe('opaque agent chat persistence adapter', () => {
     const cache = new SQLiteAgentChatCache(async () => database as never);
     await expect(cache.loadNative(codexKey)).resolves.toEqual(new Uint8Array([7, 8]).buffer);
 
-    const schema = String(execAsync.mock.calls[0]?.[0]);
-    const migration = String(execAsync.mock.calls[1]?.[0]);
+    const schema = execAsync.mock.calls[0]?.[0] ?? '';
+    const migration = execAsync.mock.calls[1]?.[0] ?? '';
     expect(migration).toContain('host_profile_id || char(10) || agent || char(10) || agent_session_id');
     expect(migration).toContain('DROP TABLE native_agent_chat_cache');
     expect(schema).toContain('DROP TABLE IF EXISTS agent_chat_session');

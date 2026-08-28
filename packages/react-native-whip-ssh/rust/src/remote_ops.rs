@@ -222,6 +222,7 @@ impl RemoteOperationManager {
                 notify: notify.clone(),
             },
         );
+        drop(transfers);
         Ok((transfer_id, receiver, notify))
     }
 
@@ -238,6 +239,7 @@ impl RemoteOperationManager {
         }
         slot.progress.state = TransferState::Cancelled;
         let _ = slot.cancel.send(true);
+        drop(transfers);
         true
     }
 
@@ -261,12 +263,8 @@ impl RemoteOperationManager {
 
     pub fn disconnect_previews(&self, generation: u64) -> Vec<(String, ManagedPreview)> {
         let mut previews = self.previews.lock();
-        let ids = previews
-            .iter()
-            .filter_map(|(id, preview)| (preview.generation == generation).then_some(id.clone()))
-            .collect::<Vec<_>>();
-        ids.into_iter()
-            .filter_map(|id| previews.remove(&id).map(|preview| (id, preview)))
+        previews
+            .extract_if(|_, preview| preview.generation == generation)
             .collect()
     }
 }
@@ -595,10 +593,7 @@ pub(crate) fn attachment_filename(source: &str) -> Result<String, String> {
     let mut token = [0u8; 12];
     russh::keys::ssh_key::getrandom::fill(&mut token)
         .map_err(|error| format!("could not create a unique attachment name: {error}"))?;
-    let suffix = token
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let suffix = crate::lower_hex(&token);
     attachment_filename_with_suffix(source, &suffix)
 }
 
@@ -636,7 +631,7 @@ fn attachment_filename_with_suffix(source: &str, suffix: &str) -> Result<String,
     };
     let extension = extension
         .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
+        .filter(char::is_ascii_alphanumeric)
         .take(16)
         .collect::<String>();
     Ok(if extension.is_empty() {
@@ -768,6 +763,7 @@ mod tests {
         assert!(manager.cancel_transfer(&id));
         let transfers = manager.transfers.lock();
         assert_eq!(transfers[&id].progress.state, TransferState::Cancelled);
+        drop(transfers);
     }
 
     #[test]
@@ -803,6 +799,7 @@ mod tests {
                 .unwrap_err(),
             "transport disconnected"
         );
+        drop(transfers);
     }
 
     #[test]

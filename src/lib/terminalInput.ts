@@ -58,7 +58,7 @@ function applyKittyKeyboardReportAll(
     return `\u001b[${keyField};${modifierField}${textField}u`;
   }
 
-  const text = [...data].map(character => character.codePointAt(0)).filter(
+  const text = Array.from(data).map(character => character.codePointAt(0)).filter(
     (codePoint): codePoint is number => codePoint !== undefined && codePoint >= 0x20,
   );
   if (text.length === 0) return data;

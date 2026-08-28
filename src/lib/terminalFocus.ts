@@ -45,8 +45,8 @@ export function reconcilePendingCreatedSelection(
 }
 
 /** Couple a locally requested tab selection to its authoritative root terminal. */
-export function activateCreatedTabLocally<Created extends CreatedTabFocusResult>(
-  created: Created,
+export function activateCreatedTabLocally(
+  created: CreatedTabFocusResult,
   actions: {
     select: (workspaceId: string, tabId: string) => void;
     terminalSelectionStarted: (terminalId: string) => void;

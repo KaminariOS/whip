@@ -16,7 +16,7 @@ import {
   terminalDoubleTapActions,
   type TerminalDoubleTapAction,
 } from '@/src/lib/terminalDoubleTap';
-import { deviceLanguage, type SupportedLanguage } from '@/src/i18n';
+import { deviceLanguage } from '@/src/i18n';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { useTheme } from '@/src/theme';
 import {
@@ -532,7 +532,7 @@ function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange:
 function LanguageSelectionSheet({ value, visible, onClose, onSelect }: { value: LanguagePreference; visible: boolean; onClose: () => void; onSelect: (value: LanguagePreference) => void }) {
   const { bottom } = useSafeAreaInsets();
   const { t } = useTranslation();
-  const systemLanguage = deviceLanguage() as SupportedLanguage;
+  const systemLanguage = deviceLanguage();
   const systemOption = languageOptions.find(option => option.value === systemLanguage) || languageOptions[1];
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
@@ -650,7 +650,7 @@ function XtermCacheCapacityRow({ value, onChange }: { value: number; onChange: (
         selectTextOnFocus
         value={draft}
         onBlur={commit}
-        onChangeText={text => setDraft(text.replace(/[^0-9]/g, ''))}
+        onChangeText={text => setDraft(text.replace(/\D/g, ''))}
         onSubmitEditing={commit}
       />
     </View>

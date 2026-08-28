@@ -94,7 +94,7 @@ export function parseHosts(
 ): HostProfile[] {
   if (!value) return [];
   try {
-    const parsed = JSON.parse(value);
+    const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) {
       onParseError?.(new TypeError('Stored host profiles must be an array'));
       return [];

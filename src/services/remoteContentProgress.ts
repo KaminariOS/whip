@@ -122,11 +122,11 @@ function isRemoteContentProgress(value: unknown): value is RemoteContentProgress
   if (!value || typeof value !== 'object') return false;
   const progress = value as Partial<RemoteContentProgress>;
   if (progress.kind === 'media') {
-    const media = progress as Partial<RemoteMediaProgress>;
+    const media = progress;
     return isFiniteNonNegative(media.positionSeconds) && isFiniteNonNegative(media.durationSeconds);
   }
   if (progress.kind === 'text') {
-    const text = progress as Partial<RemoteTextProgress>;
+    const text = progress;
     return isFiniteNonNegative(text.offsetX)
       && isFiniteNonNegative(text.offsetY)
       && isFiniteNonNegative(text.contentWidth)

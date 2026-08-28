@@ -106,8 +106,8 @@ export async function pickLocalAttachment(source: AttachmentSource): Promise<Loc
 }
 
 function isImageAttachment(name: string, mimeType?: string): boolean {
-  return Boolean(
-    mimeType?.startsWith('image/')
-    || /\.(?:gif|heic|heif|jpe?g|png|webp)$/i.test(name),
+  return (
+    mimeType?.startsWith('image/') === true
+    || /\.(?:gif|heic|heif|jpe?g|png|webp)$/i.test(name)
   );
 }

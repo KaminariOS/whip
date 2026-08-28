@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SSHClient from 'react-native-whip-ssh';
+import { setTrustedHostKeys } from 'react-native-whip-ssh';
 
 import { createSecureId } from '../lib/secureId';
 import type { KnownHost } from '../types';
@@ -157,7 +157,7 @@ function structuredHostKeyPayload(
 }
 
 function configureNativeKnownHosts(hosts: KnownHost[]): void {
-  SSHClient.setTrustedHostKeys(hosts.map(({ host, port, keyType, publicKey }) => ({
+  setTrustedHostKeys(hosts.map(({ host, port, keyType, publicKey }) => ({
     host,
     port,
     keyType,
@@ -207,17 +207,18 @@ export function parseKnownHosts(value: string | null): KnownHost[] {
   if (!Array.isArray(parsed)) {
     throw new TypeError('Stored known hosts must be an array');
   }
+  const entries = parsed.filter(isKnownHost);
   const invalidIndex = parsed.findIndex(entry => !isKnownHost(entry));
   if (invalidIndex !== -1) {
     throw new TypeError(`Stored known host at index ${invalidIndex} is malformed`);
   }
-  return [...parsed].sort(compareKnownHosts);
+  return entries.sort(compareKnownHosts);
 }
 
 function isKnownHost(value: unknown): value is KnownHost {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<KnownHost>;
-  return Boolean(
+  return (
     typeof entry.id === 'string'
     && entry.id.length > 0
     && typeof entry.host === 'string'
@@ -233,7 +234,7 @@ function isKnownHost(value: unknown): value is KnownHost {
     && typeof entry.fingerprint === 'string'
     && entry.fingerprint.length > 0
     && typeof entry.createdAt === 'string'
-    && entry.createdAt.length > 0,
+    && entry.createdAt.length > 0
   );
 }
 

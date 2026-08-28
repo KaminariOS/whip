@@ -262,6 +262,7 @@ impl AgentSessionManager {
                 };
                 emissions.push((session.key.clone(), update));
             }
+            drop(state);
             emissions
         };
         for (key, update) in emissions {
@@ -364,7 +365,9 @@ impl AgentSessionManager {
             });
             session.terminals.insert(terminal_id);
             session.closed = false;
-            (session.core.state(), orphaned)
+            let state_snapshot = session.core.state();
+            drop(state);
+            (state_snapshot, orphaned)
         };
         if let Some(orphaned) = orphaned {
             self.close_session(&orphaned);
@@ -407,11 +410,13 @@ impl AgentSessionManager {
                 }
                 session.started = true;
             }
-            (
+            let result = (
                 session.core.state(),
                 connected && session.operation_epoch == 0,
                 session.core.kind(),
-            )
+            );
+            drop(state);
+            result
         };
         if should_start {
             let label = match kind {
@@ -438,7 +443,9 @@ impl AgentSessionManager {
             let key = state.terminal_bindings.remove(terminal_id)?;
             let session = state.sessions.get_mut(&key)?;
             session.terminals.remove(terminal_id);
-            session.terminals.is_empty().then_some(key)
+            let close = session.terminals.is_empty().then_some(key);
+            drop(state);
+            close
         };
         if let Some(key) = close {
             self.close_session(&key);
@@ -464,7 +471,9 @@ impl AgentSessionManager {
             if let Some(stream) = session.stream.take() {
                 let _ = stream.close();
             }
-            (session.key.clone(), session.core.close_update())
+            let emission = (session.key.clone(), session.core.close_update());
+            drop(state);
+            emission
         };
         emit(&self.inner, emission.0, emission.1, None);
     }
@@ -487,6 +496,7 @@ impl AgentSessionManager {
         {
             session.pending_cache_offset = None;
         }
+        drop(state);
         confirmed
     }
 
@@ -515,13 +525,15 @@ impl AgentSessionManager {
             if let AgentSessionCore::OpenCode(core) = &mut session.core {
                 core.begin_sync_generation();
             }
-            let update = session.core.mark_stale_update(reason.clone());
-            (
+            let update = session.core.mark_stale_update(reason);
+            let operation = (
                 session.operation_epoch,
                 session.session_id.clone(),
                 update,
                 kind,
-            )
+            );
+            drop(state);
+            operation
         };
         emit(&self.inner, key.clone(), operation.2, None);
         let manager = self.clone();
@@ -602,7 +614,9 @@ impl AgentSessionManager {
                 },
             );
             session.stream_context = Some(context);
-            (context, binding.start_offset, reset)
+            let opened = (context, binding.start_offset, reset);
+            drop(state);
+            opened
         };
         if let Some(update) = opened.2 {
             emit(&self.inner, key.clone(), update, None);
@@ -829,7 +843,9 @@ impl AgentSessionManager {
                     confirmation_token: token,
                 }
             });
-            update.map(|update| (update, cache))
+            let emission = update.map(|update| (update, cache));
+            drop(state);
+            emission
         };
         if let Some((update, cache)) = emission {
             emit(&self.inner, key.to_owned(), update, cache);
@@ -886,11 +902,13 @@ impl AgentSessionManager {
                 return;
             }
             session.retry_running = true;
-            if unavailable {
-                session.core.mark_unavailable_update(reason.clone())
+            let emission = if unavailable {
+                session.core.mark_unavailable_update(reason)
             } else {
-                session.core.mark_stale_update(reason.clone())
-            }
+                session.core.mark_stale_update(reason)
+            };
+            drop(state);
+            emission
         };
         emit(&self.inner, key.clone(), emission, None);
         let manager = self.clone();

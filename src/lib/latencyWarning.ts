@@ -22,11 +22,11 @@ export function shouldDisplayLatencyWarning(
   active: boolean,
   latencyMs: number | null,
 ): boolean {
-  return Boolean(
+  return (
     active
     && latencyMs !== null
     && Number.isFinite(latencyMs)
-    && latencyMs > HIGH_LATENCY_RECOVERY_MS,
+    && latencyMs > HIGH_LATENCY_RECOVERY_MS
   );
 }
 

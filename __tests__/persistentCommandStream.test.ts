@@ -1,4 +1,4 @@
-import SSHClient from 'react-native-whip-ssh';
+import { createHostRuntime } from 'react-native-whip-ssh';
 
 import {
   clearHerdrSocketPathCache,
@@ -10,7 +10,8 @@ jest.mock('react-native-whip-ssh', () => (
   require('./mockWhipSsh').createMockWhipSshModule()
 ));
 
-const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
+const mockWhipSsh = require('./mockWhipSsh').getMockWhipSshControl();
+const connectWithPassword: jest.Mock = mockWhipSsh.connectWithPassword;
 
 const profile: ConnectionProfile = {
   id: 'host-1',
@@ -27,14 +28,7 @@ const profile: ConnectionProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-type SemanticTestClient = SSHClient & {
-  createTabWithLaunch: jest.Mock;
-  submitPastes: jest.Mock;
-  startHerdrServer: jest.Mock;
-  measureHostLatency: jest.Mock;
-};
-
-function apiClient(responseFor: (request: { method: string; params: Record<string, unknown> }) => unknown | Promise<unknown>) {
+function apiClient(responseFor: (request: { method: string; params: Record<string, unknown> }) => unknown) {
   const requestHerdrApi = jest.fn(async (_socketPath: string, request: { method: string; params: Record<string, unknown> }) => {
     const result = await responseFor(request);
     if (result instanceof Error) throw result.message;
@@ -65,7 +59,7 @@ function apiClient(responseFor: (request: { method: string; params: Record<strin
     closeAllHerdrBridges: jest.fn(),
     off: jest.fn(),
     disconnect: jest.fn(),
-  } as unknown as SemanticTestClient;
+  };
 }
 
 function tabCreated(paneId: string, label: string) {
@@ -95,7 +89,7 @@ function tabCreated(paneId: string, label: string) {
 describe('direct Herdr API requests', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
-    jest.mocked(SSHClient.createHostRuntime).mockClear();
+    jest.mocked(createHostRuntime).mockClear();
     clearHerdrSocketPathCache();
   });
 
@@ -118,7 +112,7 @@ describe('direct Herdr API requests', () => {
     await expect(client.connect(profile)).rejects.toBe(challenge);
     await expect(client.connect(profile)).resolves.toBeUndefined();
 
-    expect(SSHClient.createHostRuntime).toHaveBeenCalledTimes(1);
+    expect(createHostRuntime).toHaveBeenCalledTimes(1);
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
   });
 
@@ -135,7 +129,7 @@ describe('direct Herdr API requests', () => {
     await expect(client.connect(profile)).rejects.toBe(unsupported);
     await expect(client.connect(profile)).resolves.toBeUndefined();
 
-    expect(SSHClient.createHostRuntime).toHaveBeenCalledTimes(2);
+    expect(createHostRuntime).toHaveBeenCalledTimes(2);
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
   });
 
@@ -150,7 +144,7 @@ describe('direct Herdr API requests', () => {
     const client = new HerdrClient();
     const connection = client.connect(profile);
     await Promise.resolve();
-    const runtime = jest.mocked(SSHClient.createHostRuntime).mock.results[0].value;
+    const runtime = jest.mocked(createHostRuntime).mock.results[0].value;
     let finishDisconnect!: () => void;
     let markDisconnectStarted!: () => void;
     const disconnectStarted = new Promise<void>(resolve => {
@@ -184,7 +178,7 @@ describe('direct Herdr API requests', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    const runtime = jest.mocked(SSHClient.createHostRuntime).mock.results[0].value;
+    const runtime = jest.mocked(createHostRuntime).mock.results[0].value;
     let finishDisconnect!: () => void;
     runtime.disconnect = jest.fn(
       () => new Promise<void>(resolve => {
@@ -588,7 +582,7 @@ describe('direct Herdr API requests', () => {
       getRemoteHome: jest.fn(async () => '/home/herdr'),
       off: jest.fn(),
       disconnect: jest.fn(),
-    } as unknown as SSHClient;
+    };
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
@@ -630,7 +624,7 @@ describe('direct Herdr API requests', () => {
       closeAllHerdrBridges: jest.fn(),
       off: jest.fn(),
       disconnect: jest.fn(),
-    } as unknown as SSHClient;
+    };
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
@@ -769,7 +763,7 @@ describe('direct Herdr API requests', () => {
       closeAllHerdrBridges: jest.fn(),
       off: jest.fn(),
       disconnect: jest.fn(),
-    } as unknown as SSHClient;
+    };
     connectWithPassword.mockResolvedValueOnce(secondNative);
     const second = new HerdrClient();
     await second.connect(profile);

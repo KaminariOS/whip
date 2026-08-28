@@ -1,5 +1,3 @@
-import SSHClient from 'react-native-whip-ssh';
-
 import { HerdrClient } from '../src/services/HerdrClient';
 import { SSH_SHELL_TERMINAL_ID } from '../src/terminalSessions';
 import type { ConnectionProfile } from '../src/types';
@@ -8,7 +6,8 @@ jest.mock('react-native-whip-ssh', () => ({
   ...require('./mockWhipSsh').createMockWhipSshModule(),
 }));
 
-const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
+const mockWhipSsh = require('./mockWhipSsh').getMockWhipSshControl();
+const connectWithPassword: jest.Mock = mockWhipSsh.connectWithPassword;
 
 const profile: ConnectionProfile = {
   id: 'host-1',
@@ -39,7 +38,7 @@ function sshClient() {
       closeShell: jest.fn(),
       closeAllHerdrBridges: jest.fn(),
       disconnect: jest.fn(),
-    } as unknown as SSHClient,
+    },
     emitShell: (data: string) => shellHandler?.(data),
   };
 }

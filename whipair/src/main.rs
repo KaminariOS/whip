@@ -248,7 +248,7 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
                     handle_exchange(stream, &authorized_keys, args.yes, deadline),
                 ).await {
                     Ok(Ok(ExchangeOutcome::Enrolled)) => break Ok(()),
-                    Ok(Ok(ExchangeOutcome::Ignored)) => continue,
+                    Ok(Ok(ExchangeOutcome::Ignored)) => {}
                     Ok(Err(error)) => eprintln!("ignored pairing exchange: {error}"),
                     Err(_) => break Err(Error::Message("pairing code expired".into())),
                 }
@@ -323,7 +323,7 @@ async fn handle_exchange(
         }
     };
     let fingerprint = fingerprint_public_key(&public_key);
-    let verification_code = verification_code_public_key(&public_key);
+    let verification_code = verification_code_public_key(&public_key)?;
     let device_name = printable_device_name(&request.device_name);
     println!("\n{device_name} wants SSH access.");
     println!("Verify: {verification_code}");
@@ -449,8 +449,6 @@ async fn request(args: RequestArgs) -> Result<(), Error> {
 
 struct PairingResult {
     response: EnrollmentResponse,
-    #[allow(dead_code)]
-    host_public_key: String,
 }
 
 async fn pair_over_ssh(
@@ -520,15 +518,12 @@ async fn pair_over_ssh(
         )));
     }
     let response: EnrollmentResponse = serde_json::from_slice(trim_line_ending(&stdout))?;
-    let host_public_key = accepted_host_key
+    accepted_host_key
         .lock()
         .ok()
         .and_then(|key| key.clone())
         .ok_or_else(|| Error::Message("SSH server did not present a host key".into()))?;
-    Ok(PairingResult {
-        response,
-        host_public_key,
-    })
+    Ok(PairingResult { response })
 }
 
 #[derive(Clone)]
@@ -814,8 +809,10 @@ fn confirm_enrollment(deadline: std::time::Instant) -> Result<Option<bool>, io::
             println!("\nPairing code expired.");
             return Ok(None);
         }
-        let timeout_ms = remaining.as_millis().min(i32::MAX as u128) as i32;
-        let ready = unsafe { libc::poll(&mut descriptor, 1, timeout_ms) };
+        let timeout_ms = i32::try_from(remaining.as_millis()).unwrap_or(i32::MAX);
+        // SAFETY: descriptor is an initialized pollfd, the pointer is valid for
+        // one element, and poll only mutates that element during this call.
+        let ready = unsafe { libc::poll(&raw mut descriptor, 1, timeout_ms) };
         if ready > 0 && descriptor.revents & libc::POLLIN != 0 {
             break;
         }

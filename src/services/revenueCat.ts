@@ -8,6 +8,7 @@ import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
 } from './operationalDiagnostics';
+import { isUnknownRecord } from '../lib/unknown';
 
 export const TIP_PRODUCT_IDS = [
   'whip_tip_small',
@@ -26,10 +27,10 @@ export interface TipProduct {
 let initialization: Promise<boolean> | null = null;
 
 function publicSdkKey(): string | null {
-  const extra = Constants.expoConfig?.extra;
+  const extra: unknown = Constants.expoConfig?.extra;
   const value = Platform.select({
-    ios: extra?.revenueCatIosPublicSdkKey,
-    android: extra?.revenueCatAndroidPublicSdkKey,
+    ios: isUnknownRecord(extra) ? extra.revenueCatIosPublicSdkKey : undefined,
+    android: isUnknownRecord(extra) ? extra.revenueCatAndroidPublicSdkKey : undefined,
     default: null,
   });
   return typeof value === 'string' && value.trim() ? value.trim() : null;

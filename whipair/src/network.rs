@@ -1,4 +1,9 @@
-use std::{collections::HashSet, io, net::IpAddr, process::Command};
+use std::{
+    collections::HashSet,
+    io::{self, Write as _},
+    net::IpAddr,
+    process::Command,
+};
 
 use if_addrs::get_if_addrs;
 
@@ -82,7 +87,6 @@ pub fn select_address(candidates: &[AddressCandidate]) -> Result<AddressSelectio
         "Public/other"
     );
     eprint!("\nSelection [1]: ");
-    use std::io::Write as _;
     std::io::stderr()
         .flush()
         .map_err(|error| error.to_string())?;
@@ -148,7 +152,7 @@ fn candidate_rank(candidate: &AddressCandidate) -> (u8, u8, String) {
         "Public" => 3,
         _ => 4,
     };
-    let family_rank = if candidate.address.is_ipv4() { 0 } else { 1 };
+    let family_rank = u8::from(!candidate.address.is_ipv4());
     (network_rank, family_rank, candidate.interface.clone())
 }
 

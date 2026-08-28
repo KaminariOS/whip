@@ -1,4 +1,4 @@
-import SSHClient, { type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, type RuntimeGitDiff, type RuntimeGitRepository, type RuntimeGitStatusEntry, type RuntimeRemoteDirectoryListing, type RuntimeTabLaunch, type RuntimeTransfer } from 'react-native-whip-ssh';
+import { createHostRuntime, type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, type RuntimeGitDiff, type RuntimeGitRepository, type RuntimeGitStatusEntry, type RuntimeRemoteDirectoryListing, type RuntimeTabLaunch, type RuntimeTransfer } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
 import type { ResponseResult } from '../generated/herdrApi';
 
@@ -116,12 +116,11 @@ const DEFAULT_TERMINAL_SIZE: TerminalSize = {
 const TERMINAL_STATE_REFRESH_DEBOUNCE_MS = 120;
 
 function terminalSizesEqual(left: TerminalSize | undefined, right: TerminalSize): boolean {
-  return Boolean(
-    left
-    && left.columns === right.columns
+  return (
+    left?.columns === right.columns
     && left.rows === right.rows
     && left.cellWidthPx === right.cellWidthPx
-    && left.cellHeightPx === right.cellHeightPx,
+    && left.cellHeightPx === right.cellHeightPx
   );
 }
 
@@ -141,12 +140,6 @@ export function isTerminalAttachmentUploadCancelled(error: unknown): boolean {
 }
 
 export class HerdrClient {
-  static addNetworkChangeListener(listener: () => void): {
-    remove: () => void;
-  } {
-    return SSHClient.addNetworkChangeListener(listener);
-  }
-
   private runtime: HostRuntimeConnection | null = null;
   private disconnecting: Promise<void> | null = null;
   private runtimeAwaitingHostKeyTrust = false;
@@ -207,7 +200,7 @@ export class HerdrClient {
       this.runtime = null;
       this.runtimeAwaitingHostKeyTrust = false;
     }
-    const runtime = retryRuntime ?? SSHClient.createHostRuntime({
+    const runtime = retryRuntime ?? createHostRuntime({
       runtimeId: profile.id,
       ssh: sshConfig(profile),
       jumpHosts: jumpProfiles.map(sshConfig),
@@ -417,7 +410,7 @@ export class HerdrClient {
       type: 'integration_install',
       target: result.kind,
       details: { messages: result.messages },
-    } as IntegrationInstall));
+    }));
   }
 
   /** Lazily check setup only after the user requests Chat. */
@@ -664,33 +657,35 @@ export class HerdrClient {
     this.runtime?.closeHerdrBridge(terminalId);
   }
 
-  async detachTerminal(
+  detachTerminal(
     terminalId: string,
     attachmentId: TerminalAttachmentId,
   ): Promise<void> {
     if (isSshShellTerminalId(terminalId)) {
       this.closeSshShell(terminalId, attachmentId);
-      return;
+      return Promise.resolve();
     }
     const connection = this.terminalConnections.get(terminalId);
-    if (connection?.attachmentId !== attachmentId) return;
+    if (connection?.attachmentId !== attachmentId) return Promise.resolve();
     this.terminalConnections.delete(terminalId);
+    return Promise.resolve();
   }
 
-  async closeTerminalBridge(terminalId: string): Promise<void> {
+  closeTerminalBridge(terminalId: string): Promise<void> {
     if (isSshShellTerminalId(terminalId)) {
       this.closeSshShell(terminalId);
       this.terminalOpenings.delete(terminalId);
       this.terminalSizes.delete(terminalId);
-      return;
+      return Promise.resolve();
     }
     this.terminalConnections.delete(terminalId);
     this.terminalSizes.delete(terminalId);
     this.clearTerminalBridgeState(terminalId);
     this.runtime?.closeHerdrBridge(terminalId);
+    return Promise.resolve();
   }
 
-  async releaseAllTerminals(): Promise<void> {
+  releaseAllTerminals(): Promise<void> {
     for (const terminalId of this.sshShellConnections.keys()) {
       this.closeSshShell(terminalId);
     }
@@ -698,6 +693,7 @@ export class HerdrClient {
     this.terminalConnections.clear();
     this.terminalOpenings.clear();
     this.clearAllTerminalBridgeState();
+    return Promise.resolve();
   }
 
   async snapshot(): Promise<HerdrSnapshot> {
@@ -1231,13 +1227,15 @@ export class HerdrClient {
   private takeTerminalInputTrace(terminalId: string): TerminalInputTrace | null {
     const queue = this.terminalInputTraces.get(terminalId);
     if (!queue) return null;
-    let trace: TerminalInputTrace | undefined;
-    while ((trace = queue.shift())) {
-      if (terminalNativeResponseReceived(trace)) break;
-      trace = undefined;
+    while (queue.length > 0) {
+      const trace = queue.shift();
+      if (trace && terminalNativeResponseReceived(trace)) {
+        if (queue.length === 0) this.terminalInputTraces.delete(terminalId);
+        return trace;
+      }
     }
-    if (!queue.length) this.terminalInputTraces.delete(terminalId);
-    return trace || null;
+    this.terminalInputTraces.delete(terminalId);
+    return null;
   }
 
   private deliverTracedTerminalFrame(terminalId: string, deliver: () => void): void {

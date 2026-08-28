@@ -1,4 +1,11 @@
-import SSHClient, { PtyType } from 'react-native-whip-ssh';
+import {
+  createHostRuntime,
+  getKeyDetails,
+  setKnownHosts,
+  type HostRuntimeConnection,
+  type RuntimeSshConfig,
+  type RuntimeSshShellHandler,
+} from 'react-native-whip-ssh';
 import { Directory, File, Paths } from 'expo-file-system';
 import { errorCode } from '../lib/connectionErrors';
 import {
@@ -31,15 +38,57 @@ export interface IosSshE2EResult {
   durationMs: number;
 }
 
+let runtimeSequence = 0;
+
+function sshConfig(
+  config: IosSshE2EConfig,
+  authMode: 'password' | 'key',
+  options: { host?: string; port?: number; forwardAgent?: boolean } = {},
+): RuntimeSshConfig {
+  return {
+    host: options.host ?? config.host,
+    port: options.port ?? config.port,
+    username: config.username,
+    authMode,
+    secret: authMode === 'password' ? config.password : config.privateKey,
+    forwardAgent: options.forwardAgent ?? false,
+  };
+}
+
+async function connectRuntime(
+  ssh: RuntimeSshConfig,
+  jumpHosts: RuntimeSshConfig[] = [],
+): Promise<HostRuntimeConnection> {
+  const runtime = createHostRuntime({
+    runtimeId: `ios-ssh-e2e-${Date.now()}-${++runtimeSequence}`,
+    ssh,
+    jumpHosts,
+    sessionName: '',
+    herdrCommand: 'herdr',
+  });
+  try {
+    await runtime.connect();
+    return runtime;
+  } catch (error) {
+    await runtime.disconnect().catch(disconnectError => {
+      recordOperationalDiagnostic('warn', 'Application', 'ios-ssh-e2e-cleanup-failed', {
+        stage: 'failed-connect',
+        ...operationalErrorDetails(disconnectError),
+      });
+    });
+    throw error;
+  }
+}
+
 export async function runIosSshE2E(
   onStep: (name: string) => void = () => undefined,
 ): Promise<IosSshE2EResult> {
   const startedAt = Date.now();
   const steps: IosSshE2EStep[] = [];
-  const clients: SSHClient[] = [];
+  const runtimes: HostRuntimeConnection[] = [];
   const resources: {
-    cleanupClient?: SSHClient;
-    localForward?: { client: SSHClient; port: number };
+    cleanupRuntime?: HostRuntimeConnection;
+    localForward?: { runtime: HostRuntimeConnection; previewId: string };
   } = {};
   let remoteDirectory: string | null = null;
   let result: IosSshE2EResult;
@@ -59,102 +108,82 @@ export async function runIosSshE2E(
     const config = await step('load simulator configuration', loadConfig);
 
     await step('reject unknown host key', async () => {
-      SSHClient.setKnownHosts('');
+      setKnownHosts('');
       await expectConnectionFailure(
-        () => SSHClient.connectWithKey(
-          config.host,
-          config.port,
-          config.username,
-          config.privateKey,
-        ),
+        () => connectRuntime(sshConfig(config, 'key')),
         'HOST_KEY_UNKNOWN',
       );
     });
 
     await step('reject changed host key', async () => {
-      SSHClient.setKnownHosts(config.changedHostLine);
+      setKnownHosts(config.changedHostLine);
       await expectConnectionFailure(
-        () => SSHClient.connectWithKey(
-          config.host,
-          config.port,
-          config.username,
-          config.privateKey,
-        ),
+        () => connectRuntime(sshConfig(config, 'key')),
         'HOST_KEY_CHANGED',
       );
     });
 
-    SSHClient.setKnownHosts(config.knownHostLine);
-    const passwordClient = await step('authenticate with password', async () => {
-      const client = await SSHClient.connectWithPassword(
-        config.host,
-        config.port,
-        config.username,
-        config.password,
-      );
-      clients.push(client);
-      assertIncludes(await client.execute('printf whip-password-auth'), 'whip-password-auth');
-      return client;
+    setKnownHosts(config.knownHostLine);
+    const passwordRuntime = await step('authenticate with password', async () => {
+      const runtime = await connectRuntime(sshConfig(config, 'password'));
+      runtimes.push(runtime);
+      assertIncludes(await runtime.execute('printf whip-password-auth'), 'whip-password-auth');
+      return runtime;
     });
-    passwordClient.disconnect();
+    await passwordRuntime.disconnect();
 
-    const keyClient = await step('authenticate with Ed25519 key', async () => {
-      const details = await SSHClient.getKeyDetails(config.privateKey);
+    const keyRuntime = await step('authenticate with Ed25519 key', async () => {
+      const details = getKeyDetails(config.privateKey);
       if (details.keyType !== 'ssh-ed25519') {
         throw new Error(`Expected ssh-ed25519 key, received ${details.keyType}`);
       }
-      const client = await SSHClient.connectWithKey(
-        config.host,
-        config.port,
-        config.username,
-        config.privateKey,
-      );
-      clients.push(client);
-      resources.cleanupClient = client;
-      return client;
+      const runtime = await connectRuntime(sshConfig(config, 'key', { forwardAgent: true }));
+      runtimes.push(runtime);
+      resources.cleanupRuntime = runtime;
+      return runtime;
     });
 
     await step('execute command', async () => {
-      assertIncludes(await keyClient.execute('printf whip-execute'), 'whip-execute');
+      assertIncludes(await keyRuntime.execute('printf whip-execute'), 'whip-execute');
     });
 
     await step('open interactive PTY shell', async () => {
-      await keyClient.startShell(PtyType.XTERM);
-      const shellOutput = waitForShellToken(keyClient, 'whip-shell-ready');
-      await keyClient.writeToShell("printf 'whip-shell-ready\\n'\n");
-      await shellOutput;
-      keyClient.closeShell();
+      const terminalId = 'ios-ssh-e2e-shell';
+      const shell = shellTokenWaiter('whip-shell-ready');
+      await keyRuntime.openSshShell(terminalId, 80, 24, shell.handler);
+      keyRuntime.sshShellInput(terminalId, utf8Buffer("printf 'whip-shell-ready\\n'\n"));
+      await shell.result;
+      keyRuntime.closeSshShell(terminalId);
     });
 
     await step('forward authenticated SSH agent', async () => {
-      keyClient.setAgentForwarding(true);
-      assertIncludes(await keyClient.execute('ssh-add -L'), 'ssh-ed25519');
+      assertIncludes(await keyRuntime.execute('ssh-add -L'), 'ssh-ed25519');
     });
 
     await step('upload and download with SFTP', async () => {
-      const remoteHome = (await keyClient.getRemoteHome()).trim();
+      const remoteHome = (await keyRuntime.remoteHome()).trim();
       remoteDirectory = `${remoteHome}/.whip-ios-e2e-${Date.now()}`;
-      await keyClient.execute(`mkdir -p '${remoteDirectory}'`);
-      await keyClient.connectSFTP();
+      await keyRuntime.execute(`mkdir -p '${remoteDirectory}'`);
 
       const localDirectory = new Directory(Paths.cache, `whip-ios-e2e-${Date.now()}`);
       localDirectory.create({ idempotent: true });
       const upload = new File(localDirectory, 'payload.txt');
       upload.write('whip-sftp-payload');
-      await keyClient.sftpUpload(nativePath(upload.uri), remoteDirectory);
+      await keyRuntime.startUpload(nativePath(upload.uri), remoteDirectory).result;
 
-      const listing = await keyClient.sftpLs(remoteDirectory);
-      if (!listing.some(entry => entry.filename === 'payload.txt')) {
+      const listing = await keyRuntime.listDirectory(remoteDirectory);
+      if (!listing.entries.some(entry => entry.name === 'payload.txt')) {
         throw new Error('Uploaded SFTP file was not present in directory listing');
       }
 
       const downloadDirectory = new Directory(localDirectory, 'download');
       downloadDirectory.create({ idempotent: true });
-      const downloadedPath = await keyClient.sftpDownload(
+      const download = await keyRuntime.startDownload(
         `${remoteDirectory}/payload.txt`,
         `${nativePath(downloadDirectory.uri)}/`,
-      );
-      const downloaded = new File(fileUri(downloadedPath));
+      ).result;
+      if (!download.localPath) throw new Error('Native download returned no local path');
+      const downloaded = new File(fileUri(download.localPath));
       if (await downloaded.text() !== 'whip-sftp-payload') {
         throw new Error('Downloaded SFTP content did not match the uploaded file');
       }
@@ -162,32 +191,30 @@ export async function runIosSshE2E(
     });
 
     await step('connect through ProxyJump chain', async () => {
-      const jumped = await SSHClient.connectWithKeyViaJump(
-        config.host,
-        config.port,
-        config.username,
-        config.privateKey,
-        undefined,
-        keyClient,
+      const jumped = await connectRuntime(
+        sshConfig(config, 'key'),
+        [sshConfig(config, 'key')],
       );
-      clients.push(jumped);
+      runtimes.push(jumped);
       assertIncludes(await jumped.execute('printf whip-jump'), 'whip-jump');
     });
 
     await step('connect through local TCP forwarding', async () => {
-      const localPort = await keyClient.openLocalForward(config.host, config.port);
-      resources.localForward = { client: keyClient, port: localPort };
-      SSHClient.setKnownHosts([
+      const preview = await keyRuntime.startWebPreview(`http://${config.host}:${config.port}`);
+      resources.localForward = { runtime: keyRuntime, previewId: preview.id };
+      const localPort = Number(new URL(preview.url).port);
+      if (!Number.isInteger(localPort) || localPort <= 0) {
+        throw new Error(`Native forwarding returned an invalid local URL: ${preview.url}`);
+      }
+      setKnownHosts([
         config.knownHostLine,
         knownHostLineForPort(config.knownHostLine, config.host, localPort),
       ].join('\n'));
-      const forwarded = await SSHClient.connectWithKey(
-        '127.0.0.1',
-        localPort,
-        config.username,
-        config.privateKey,
-      );
-      clients.push(forwarded);
+      const forwarded = await connectRuntime(sshConfig(config, 'key', {
+        host: '127.0.0.1',
+        port: localPort,
+      }));
+      runtimes.push(forwarded);
       assertIncludes(await forwarded.execute('printf whip-local-forward'), 'whip-local-forward');
     });
 
@@ -207,20 +234,19 @@ export async function runIosSshE2E(
   } finally {
     if (resources.localForward) {
       await withTimeout(
-        resources.localForward.client.closeLocalForward(resources.localForward.port),
+        resources.localForward.runtime.stopPreview(resources.localForward.previewId),
         5_000,
         'local forwarding cleanup',
-      )
-        .catch(error => {
-          recordOperationalDiagnostic('warn', 'Application', 'ios-ssh-e2e-cleanup-failed', {
-            stage: 'local-forward',
-            ...operationalErrorDetails(error),
-          });
+      ).catch(error => {
+        recordOperationalDiagnostic('warn', 'Application', 'ios-ssh-e2e-cleanup-failed', {
+          stage: 'local-forward',
+          ...operationalErrorDetails(error),
         });
+      });
     }
-    if (resources.cleanupClient && remoteDirectory) {
+    if (resources.cleanupRuntime && remoteDirectory) {
       await withTimeout(
-        resources.cleanupClient.execute(`rm -rf '${remoteDirectory}'`),
+        resources.cleanupRuntime.execute(`rm -rf '${remoteDirectory}'`),
         5_000,
         'remote SFTP cleanup',
       ).catch(error => {
@@ -230,7 +256,14 @@ export async function runIosSshE2E(
         });
       });
     }
-    for (const client of clients.reverse()) client.disconnect();
+    for (const runtime of runtimes.reverse()) {
+      await runtime.disconnect().catch(error => {
+        recordOperationalDiagnostic('warn', 'Application', 'ios-ssh-e2e-cleanup-failed', {
+          stage: 'runtime-disconnect',
+          ...operationalErrorDetails(error),
+        });
+      });
+    }
   }
   writeResult(result);
   return result;
@@ -251,27 +284,50 @@ async function loadConfig(): Promise<IosSshE2EConfig> {
   return parsed as IosSshE2EConfig;
 }
 
-async function expectConnectionFailure(connect: () => Promise<SSHClient>, expected: string): Promise<void> {
-  let client: SSHClient;
+async function expectConnectionFailure(
+  connect: () => Promise<HostRuntimeConnection>,
+  expected: string,
+): Promise<void> {
+  let runtime: HostRuntimeConnection;
   try {
-    client = await connect();
+    runtime = await connect();
   } catch (error) {
     if (errorCode(error) === expected || errorMessage(error).includes(expected)) return;
     throw error;
   }
-  client.disconnect();
+  await runtime.disconnect();
   throw new Error(`Connection unexpectedly succeeded; expected ${expected}`);
 }
 
-function waitForShellToken(client: SSHClient, token: string): Promise<void> {
-  return withTimeout(new Promise(resolve => {
-    client.on('Shell', value => {
-      if (String(value).includes(token)) {
-        client.off('Shell');
-        resolve();
-      }
-    });
+function shellTokenWaiter(token: string): {
+  handler: RuntimeSshShellHandler;
+  result: Promise<void>;
+} {
+  const decoder = new TextDecoder();
+  let output = '';
+  let settle: (() => void) | undefined;
+  let fail: ((error: Error) => void) | undefined;
+  const result = withTimeout(new Promise<void>((resolve, reject) => {
+    settle = resolve;
+    fail = reject;
   }), 10_000, 'interactive shell output');
+  return {
+    handler: {
+      data(bytes): void {
+        output += decoder.decode(bytes, { stream: true });
+        if (output.includes(token)) settle?.();
+      },
+      closed(reason): void {
+        fail?.(new Error(`Interactive shell closed before ${token}: ${reason}`));
+      },
+    },
+    result,
+  };
+}
+
+function utf8Buffer(value: string): ArrayBuffer {
+  const bytes = new TextEncoder().encode(value);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 function knownHostLineForPort(line: string, host: string, port: number): string {

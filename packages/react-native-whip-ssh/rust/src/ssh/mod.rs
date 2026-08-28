@@ -184,7 +184,7 @@ const EXECUTE_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 const SFTP_HTTP_HEADER_LIMIT: usize = 16 * 1024;
 const SFTP_HTTP_PIPELINE_DEPTH: usize = 8;
 const SFTP_HTTP_READ_SIZE: u64 = 256 * 1024;
-const SFTP_HTTP_SERVER_LIFETIME: Duration = Duration::from_secs(60 * 60);
+const SFTP_HTTP_SERVER_LIFETIME: Duration = Duration::from_hours(1);
 const REMOTE_HOME_COMMAND: &str = r#"printf %s "$HOME""#;
 const COMPATIBILITY_SHELL_ID: &str = "default";
 
@@ -331,8 +331,8 @@ impl From<TransportError> for SshError {
                     SshErrorCode::InvalidPrivateKey => Self::InvalidPrivateKey(message),
                     SshErrorCode::SftpFailure => Self::SftpFailure(message),
                     SshErrorCode::InvalidRequest => Self::InvalidRequest(message),
-                    SshErrorCode::Unknown => Self::Unknown(message),
-                    SshErrorCode::HostKeyUnknown
+                    SshErrorCode::Unknown
+                    | SshErrorCode::HostKeyUnknown
                     | SshErrorCode::HostKeyChanged
                     | SshErrorCode::UnsupportedHostCertificate => Self::Unknown(message),
                 }
@@ -344,14 +344,15 @@ impl From<TransportError> for SshError {
 fn transport_error_code(error: &TransportError) -> SshErrorCode {
     match error {
         TransportError::InvalidRequest(_) => SshErrorCode::InvalidRequest,
-        TransportError::UnknownClient => SshErrorCode::SessionClosed,
+        TransportError::UnknownClient | TransportError::SessionClosed(_) => {
+            SshErrorCode::SessionClosed
+        }
         TransportError::AuthenticationFailed => SshErrorCode::AuthenticationFailed,
         TransportError::ChannelUnavailable(_) => SshErrorCode::ChannelUnavailable,
         TransportError::HostUnreachable(_) => SshErrorCode::HostUnreachable,
         TransportError::HostKeyUnknown(_) => SshErrorCode::HostKeyUnknown,
         TransportError::HostKeyChanged(_) => SshErrorCode::HostKeyChanged,
         TransportError::UnsupportedHostCertificate => SshErrorCode::UnsupportedHostCertificate,
-        TransportError::SessionClosed(_) => SshErrorCode::SessionClosed,
         TransportError::Ssh(error) => match error {
             russh::Error::WrongChannel | russh::Error::ChannelOpenFailure(_) => {
                 SshErrorCode::ChannelUnavailable
@@ -816,7 +817,7 @@ fn key_details(
         russh::keys::Algorithm::Rsa { .. } => public_key
             .key_data()
             .rsa()
-            .map(|key| key.key_size())
+            .map(ssh_key::public::RsaPublicKey::key_size)
             .unwrap_or_default(),
         _ => 0,
     };
@@ -954,7 +955,7 @@ async fn connect_inner(
     let mut handle = if let Some(jump) = jump {
         let channel = jump
             .handle
-            .channel_open_direct_tcpip(host.clone(), port as u32, "127.0.0.1", 0)
+            .channel_open_direct_tcpip(host.clone(), u32::from(port), "127.0.0.1", 0)
             .await?;
         client::connect_stream(config, channel.into_stream(), handler).await?
     } else {
@@ -1100,10 +1101,10 @@ async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, T
     while let Some(message) = channel.wait().await {
         match message {
             russh::ChannelMsg::Data { data } => {
-                stdout_truncated |= append_capped(&mut stdout, &data)
+                stdout_truncated |= append_capped(&mut stdout, &data);
             }
             russh::ChannelMsg::ExtendedData { data, ext: 1 } => {
-                stderr_truncated |= append_capped(&mut stderr, &data)
+                stderr_truncated |= append_capped(&mut stderr, &data);
             }
             russh::ChannelMsg::ExitStatus {
                 exit_status: status,
@@ -1214,7 +1215,10 @@ fn shell_eof_reason(close_reason: &str) -> String {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "shell identity, geometry, transport, and delivery are independent protocol inputs"
+)]
 async fn start_shell_on(
     key: String,
     shell_id: String,
@@ -1255,8 +1259,10 @@ async fn start_shell_on(
             let mut close_reason = "remote shell closed".to_owned();
             loop {
                 match reader.wait().await {
-                    Some(russh::ChannelMsg::Data { data })
-                    | Some(russh::ChannelMsg::ExtendedData { data, .. }) => match &read_delivery {
+                    Some(
+                        russh::ChannelMsg::Data { data }
+                        | russh::ChannelMsg::ExtendedData { data, .. },
+                    ) => match &read_delivery {
                         ShellDelivery::ReactNative => emit_event(json!({
                             "name": "Shell",
                             "key": read_key,
@@ -1641,7 +1647,7 @@ async fn sftp_transfer_managed_on(
         let prior_metadata = sftp.metadata(remote_path.clone()).await.ok();
         if prior_metadata
             .as_ref()
-            .is_some_and(|metadata| metadata.is_dir())
+            .is_some_and(russh_sftp::protocol::FileAttributes::is_dir)
         {
             let _ = sftp.remove_file(temp_path).await;
             return Err(TransportError::InvalidRequest(
@@ -2062,7 +2068,8 @@ async fn enqueue_unix_socket_frame(
     // A frame larger than the byte budget reserves the whole budget. This
     // permits the configured maximum frame size while ensuring that no other
     // completed frame can queue behind it.
-    let byte_permits = bytes.len().clamp(1, INBOUND_DELIVERY_BYTE_CAPACITY) as u32;
+    let byte_permits =
+        u32::try_from(bytes.len().clamp(1, INBOUND_DELIVERY_BYTE_CAPACITY)).unwrap_or(u32::MAX);
     let byte_permit = byte_budget
         .clone()
         .acquire_many_owned(byte_permits)
@@ -2384,7 +2391,7 @@ async fn open_local_forward_on(
                 },
                 accepted = listener.accept() => {
                     let Ok((mut local, _)) = accepted else { break };
-                    let Ok(channel) = session.handle.channel_open_direct_tcpip(remote_host.clone(), remote_port as u32, "127.0.0.1", local_port as u32).await else { continue };
+                    let Ok(channel) = session.handle.channel_open_direct_tcpip(remote_host.clone(), u32::from(remote_port), "127.0.0.1", u32::from(local_port)).await else { continue };
                     let mut tunnel_cancel = cancel_rx.clone();
                     tokio::spawn(async move {
                         let mut remote = channel.into_stream();
@@ -2493,13 +2500,11 @@ fn sftp_http_content_type(remote_path: &str) -> &'static str {
         "avi" => "video/x-msvideo",
         "flac" => "audio/flac",
         "m4a" => "audio/mp4",
-        "m4v" => "video/mp4",
+        "m4v" | "mp4" => "video/mp4",
         "mkv" => "video/x-matroska",
         "mov" => "video/quicktime",
         "mp3" => "audio/mpeg",
-        "mp4" => "video/mp4",
-        "oga" | "ogg" => "audio/ogg",
-        "opus" => "audio/ogg",
+        "oga" | "ogg" | "opus" => "audio/ogg",
         "pdf" => "application/pdf",
         "wav" => "audio/wav",
         "webm" => "video/webm",
@@ -2553,7 +2558,9 @@ async fn stream_sftp_http_range(
                 .zip(specs.iter())
                 .map(|(file, (position, length))| async move {
                     file.seek(SeekFrom::Start(*position)).await?;
-                    let mut bytes = vec![0u8; *length as usize];
+                    let length = usize::try_from(*length)
+                        .map_err(|_| std::io::Error::other("SFTP read chunk is too large"))?;
+                    let mut bytes = vec![0u8; length];
                     file.read_exact(&mut bytes).await?;
                     Ok::<Vec<u8>, std::io::Error>(bytes)
                 });
@@ -2597,28 +2604,22 @@ async fn serve_sftp_http_connection(
         }
     }
 
-    let request = match parse_sftp_http_request(&request_bytes) {
-        Ok(request) => request,
-        Err(_) => {
-            write_sftp_http_error(&mut stream, "400 Bad Request", "").await?;
-            return Ok(());
-        }
+    let Ok(request) = parse_sftp_http_request(&request_bytes) else {
+        write_sftp_http_error(&mut stream, "400 Bad Request", "").await?;
+        return Ok(());
     };
     if !request.path.starts_with(&format!("/{token}/")) {
         write_sftp_http_error(&mut stream, "404 Not Found", "").await?;
         return Ok(());
     }
-    let (start, end, partial) = match parse_sftp_http_range(request.range.as_deref(), size) {
-        Ok(range) => range,
-        Err(()) => {
-            write_sftp_http_error(
-                &mut stream,
-                "416 Range Not Satisfiable",
-                &format!("Content-Range: bytes */{size}\r\n"),
-            )
-            .await?;
-            return Ok(());
-        }
+    let Ok((start, end, partial)) = parse_sftp_http_range(request.range.as_deref(), size) else {
+        write_sftp_http_error(
+            &mut stream,
+            "416 Range Not Satisfiable",
+            &format!("Content-Range: bytes */{size}\r\n"),
+        )
+        .await?;
+        return Ok(());
     };
     let content_length = if size == 0 { 0 } else { end - start + 1 };
     let range_header = if partial {
@@ -2669,10 +2670,7 @@ async fn start_sftp_file_server_on(
     russh::keys::ssh_key::getrandom::fill(&mut token_bytes).map_err(|error| {
         TransportError::InvalidRequest(format!("could not secure file preview: {error}"))
     })?;
-    let token = token_bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let token = crate::lower_hex(&token_bytes);
     let (cancel_tx, mut cancel_rx) = watch::channel(false);
     sftp_file_servers()
         .write()
@@ -2810,7 +2808,7 @@ async fn open_exec_channel_with_delivery(
                     Some(russh::ChannelMsg::Close) | None => {
                         break (exec_channel_close_reason(exit_status, &stderr), false);
                     }
-                    Some(russh::ChannelMsg::Eof) | Some(_) => {}
+                    Some(_) => {}
                 }
             }
         };
@@ -2862,7 +2860,7 @@ fn exec_channel_close_reason(exit_status: Option<u32>, stderr: &[u8]) -> String 
     let stderr = String::from_utf8_lossy(stderr);
     let stderr = stderr.trim().replace(['\r', '\n'], " ");
     match (exit_status, stderr.is_empty()) {
-        (Some(0), true) | (None, true) => "remote exec channel reached EOF".to_owned(),
+        (Some(0) | None, true) => "remote exec channel reached EOF".to_owned(),
         (Some(status), true) => format!("remote exec channel exited with status {status}"),
         (Some(status), false) => {
             format!("remote exec channel exited with status {status}: {stderr}")

@@ -1,4 +1,4 @@
-import SSHClient from 'react-native-whip-ssh';
+import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Plus, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, NativeModules, Platform, Pressable, ScrollView, ToastAndroid, View } from 'react-native';
@@ -87,7 +87,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
   const generatePrivateKey = async () => {
     setBusy(true);
     try {
-      const generated = await SSHClient.generateKeyPair('ed25519', passphrase, 256, name.trim() || 'herdr');
+      const generated = generateKeyPair('ed25519', passphrase, 256, name.trim() || 'herdr');
       applyPrivateKey(generated.privateKey);
     } catch (error) {
       Alert.alert(t('connection.generateKeyError'), String(error));
@@ -99,7 +99,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
     if (!name.trim() || !privateKey) return;
     setBusy(true);
     try {
-      const details = await SSHClient.getKeyDetails(privateKey, passphrase || undefined);
+      const details = getKeyDetails(privateKey, passphrase || undefined);
       updateKeys(await saveGlobalSshKey(keys, {
         name,
         fingerprint: details.fingerprint,
@@ -136,7 +136,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
   const copyPublicKey = async () => {
     if (!copyTarget) return;
     try {
-      const details = await SSHClient.getKeyDetails(
+      const details = getKeyDetails(
         normalizePrivateKey(copyTarget.secret),
         copyTarget.passphrase || undefined,
       );

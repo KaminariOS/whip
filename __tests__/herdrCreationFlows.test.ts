@@ -11,7 +11,7 @@ import type { WorkspaceInfo } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => ({
   __esModule: true,
-  default: {},
+  createHostRuntime: jest.fn(),
 }));
 
 const workspace = {

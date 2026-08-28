@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { ChevronLeft, ChevronRight, Keyboard, ScanLine, X } from 'lucide-react-native';
-import SSHClient from 'react-native-whip-ssh';
+import { generateKeyPair, getKeyDetails, pairHost } from 'react-native-whip-ssh';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -53,8 +53,8 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
         return;
       }
 
-      const generated = await SSHClient.generateKeyPair('ed25519', '', 256, 'whip');
-      const details = await SSHClient.getKeyDetails(generated.privateKey);
+      const generated = generateKeyPair('ed25519', '', 256, 'whip');
+      const details = getKeyDetails(generated.privateKey);
       const publicKey = generated.publicKey || details.publicKey;
       setVerificationCode(await publicKeyVerificationCode(publicKey));
       setSelectedKey({
@@ -89,7 +89,7 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
     setPairing(true);
     setError(null);
     try {
-      const result = await SSHClient.pairHost(data.trim(), selectedKey.publicKey, t('pairing.deviceName'));
+      const result = await pairHost(data.trim(), selectedKey.publicKey, t('pairing.deviceName'));
       await onPaired(result, selectedKey);
     } catch (pairingError) {
       setError(t('pairing.pairError', { error: String(pairingError) }));

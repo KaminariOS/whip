@@ -88,7 +88,7 @@ export function markdownImageTargets(markdown: string): MarkdownImageTarget[] {
     }
     if (targetEnd > targetStart) {
       targets.push({
-        target: markdown.slice(targetStart, targetEnd).replace(/\\([\\`*{}\[\]()#+.!_>-])/g, '$1'),
+        target: markdown.slice(targetStart, targetEnd).replace(/\\([\\`*{}[\]()#+.!_>-])/g, '$1'),
         start: targetStart,
         end: targetEnd,
       });
@@ -97,7 +97,7 @@ export function markdownImageTargets(markdown: string): MarkdownImageTarget[] {
   }
 
   const seenDefinitions = new Set<string>();
-  const definition = /^(?: {0,3})\[([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|([^\s\n]+))/gm;
+  const definition = /^(?: {0,3})\[([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|([^\s]+))/gm;
   for (const match of markdown.matchAll(definition)) {
     if (codeRanges.some(range => (match.index || 0) >= range.start && (match.index || 0) < range.end)) continue;
     const label = normalizeReferenceLabel(match[1]);

@@ -751,7 +751,7 @@ function commandComposerStyle(keyboardInset: number) {
 }
 
 const AgentRow = memo(
-  function AgentRow({
+  function AgentRowComponent({
     item,
     showHost,
     showSpace,

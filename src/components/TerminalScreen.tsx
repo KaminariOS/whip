@@ -2179,7 +2179,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                     closeLabel: t('terminal.closeCompose'),
                     expandLabel: t('terminal.expandComposer'),
                     onAttach: () => onRequestAttachment?.(),
-                    onClose: closeCompose,
+                    onClose: () => {
+                      reportBackgroundFailure(closeCompose(), 'terminal-compose-close');
+                    },
                     onExpand: expandCompose,
                     onSend: submitCompose,
                     sendClassName: 'bg-white',

@@ -3,7 +3,7 @@ const MAX_TRANSCRIPT_CHARACTERS = 1_000_000;
 
 // OSC commands can mutate terminal state (including the clipboard and title) when
 // replayed. Keep CSI styling for xterm, but remove those side effects from a cache.
-// eslint-disable-next-line no-control-regex
+// eslint-disable-next-line no-control-regex -- OSC sanitization must match literal terminal control bytes.
 const OSC_SEQUENCE = /\u001b\](?:[^\u0007\u001b]|\u001b(?!\\))*(?:\u0007|\u001b\\)/g;
 
 function safeTerminalState(value: string): string {

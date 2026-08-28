@@ -34,7 +34,9 @@ pub(super) fn update_transfer_progress(
         slot.progress.state = TransferState::Running;
         slot.progress.bytes_transferred = slot.progress.bytes_transferred.max(bytes_transferred);
         slot.progress.total_bytes = total_bytes;
-        slot.progress.clone()
+        let progress = slot.progress.clone();
+        drop(transfers);
+        progress
     };
     emit(HostRuntimeEvent::TransferProgressChanged {
         runtime_id: inner.id.clone(),
@@ -74,7 +76,9 @@ pub(super) fn finish_transfer(
             };
             slot.result = Some(result);
         }
-        (slot.progress.clone(), slot.notify.clone())
+        let result = (slot.progress.clone(), slot.notify.clone());
+        drop(transfers);
+        result
     };
     emit(HostRuntimeEvent::TransferProgressChanged {
         runtime_id: inner.id.clone(),
@@ -123,6 +127,7 @@ pub(super) fn register_preview(
             preview,
         )));
     }
+    drop(state);
     let mut previews = inner.operations.previews.lock();
     if previews.len() >= MAX_ACTIVE_PREVIEWS {
         return Err(Box::new((
@@ -133,6 +138,7 @@ pub(super) fn register_preview(
         )));
     }
     previews.insert(id, preview);
+    drop(previews);
     Ok(())
 }
 

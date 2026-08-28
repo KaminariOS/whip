@@ -605,19 +605,18 @@ export function useSessionRuntimeManager({
           );
           if (
             diagnostic.operation === 'host-latency-probe' &&
-            diagnostic.outcome === 'failed'
+            diagnostic.outcome === 'failed' &&
+            !runtime.latencyDiagnosticFailureRecorded
           ) {
-            if (!runtime.latencyDiagnosticFailureRecorded) {
-              runtime.latencyDiagnosticFailureRecorded = true;
-              reportBackgroundFailure(
+            runtime.latencyDiagnosticFailureRecorded = true;
+            reportBackgroundFailure(
                 recordHostLatencyFailure(
                   sessionId,
                   diagnostic.durationMs,
                   diagnostic.error || 'Host latency probe failed',
                 ),
                 'host-latency-failure-persist',
-              );
-            }
+            );
           }
           return;
         }

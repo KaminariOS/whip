@@ -197,7 +197,10 @@ impl SshSession {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the session wrapper forwards explicit shell geometry and lifecycle callbacks"
+    )]
     pub(crate) async fn open_shell(
         &self,
         shell_id: &str,

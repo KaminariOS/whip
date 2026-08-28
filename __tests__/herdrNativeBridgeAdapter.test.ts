@@ -121,128 +121,18 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   startHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
 }));
 
-import nativeClient from '../packages/react-native-whip-ssh/src';
+import { createHostRuntime } from '../packages/react-native-whip-ssh/src';
 
 const mockGenerated = jest.requireMock(
   '../packages/react-native-whip-ssh/src/generated-entry',
 );
 const mockEventSink = mockGenerated.setHerdrTerminalEventSink.mock.calls[0][0];
-const mockApiEventSink = mockGenerated.setHerdrEventSink.mock.calls[0][0];
 const mockRuntimeEventSink = mockGenerated.setHostRuntimeEventSink.mock.calls[0][0];
 const mockAgentEventSink = mockGenerated.setAgentTranscriptEventSink.mock.calls[0][0];
 
-describe('native Herdr bridge adapter', () => {
+describe('native HostRuntime adapter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-  });
-
-  it('forwards native binary frames without string, base64, or JSON conversion', async () => {
-    const handler = jest.fn();
-    await nativeClient.startHerdrBridge(
-      'client-1',
-      '/tmp/herdr.sock',
-      20,
-      'terminal-1',
-      true,
-      80,
-      24,
-      8,
-      16,
-      1,
-      handler,
-    );
-
-    const payload = Uint8Array.from([0, 0xff, 0x80, 0x1b]).buffer;
-    mockEventSink.terminalFrame('client-1', 'terminal-1', 42n, 80, 24, true, payload);
-
-    expect(handler).toHaveBeenCalledWith({
-      type: 'terminal',
-      terminalId: 'terminal-1',
-      seq: 42,
-      width: 80,
-      height: 24,
-      full: true,
-      bytes: payload,
-      final: true,
-      inboundTraceCookie: null,
-    });
-    expect(handler.mock.calls[0][0].bytes).toBe(payload);
-  });
-
-  it('maps typed native control records to the existing public event shape', async () => {
-    const handler = jest.fn();
-    await nativeClient.startHerdrBridge(
-      'client-1',
-      '/tmp/herdr.sock',
-      17,
-      'terminal-1',
-      false,
-      80,
-      24,
-      0,
-      0,
-      1,
-      handler,
-    );
-
-    mockEventSink.control('client-1', 'terminal-1', {
-      tag: 'Notify',
-      inner: { kind: 2, text: 'done', body: 'body' },
-    });
-
-    expect(handler).toHaveBeenCalledWith({
-      type: 'notify',
-      terminalId: 'terminal-1',
-      text: 'done',
-      body: 'body',
-      kind: 2,
-    });
-  });
-
-  it('sends semantic control requests and returns typed native results', async () => {
-    mockGenerated.herdrControlRequest.mockResolvedValueOnce({ tag: 'Ok' });
-
-    await expect(nativeClient.requestHerdrApi(
-      'client-1',
-      '/tmp/herdr.sock',
-      { method: 'workspace.focus', params: { workspace_id: 'w1' } },
-    )).resolves.toEqual({ type: 'ok' });
-
-    expect(mockGenerated.herdrControlRequest).toHaveBeenCalledWith(
-      'client-1',
-      '/tmp/herdr.sock',
-      { tag: 'WorkspaceFocus', inner: { workspaceId: 'w1' } },
-    );
-
-    await nativeClient.requestHerdrApi(
-      'client-1', '/tmp/herdr.sock', { method: 'agent.focus', params: { target: 'codex-1' } },
-    );
-    expect(mockGenerated.herdrControlRequest).toHaveBeenLastCalledWith(
-      'client-1', '/tmp/herdr.sock', { tag: 'AgentFocus', inner: { target: 'codex-1' } },
-    );
-  });
-
-  it('forwards typed native API events without exposing JSON envelopes', async () => {
-    const handler = jest.fn();
-    await nativeClient.startHerdrEventStream(
-      'client-1', '/tmp/herdr.sock', 20, ['p1'], handler,
-    );
-
-    mockApiEventSink.event('client-1', {
-      tag: 'PaneFocused',
-      inner: { workspaceId: 'w1', paneId: 'p1' },
-    });
-
-    expect(handler).toHaveBeenCalledWith({
-      type: 'event',
-      event: {
-        event: 'pane.focused',
-        data: { workspace_id: 'w1', pane_id: 'p1' },
-      },
-    });
-    expect(mockGenerated.startHerdrEventSubscription).toHaveBeenCalledWith(
-      'client-1', '/tmp/herdr.sock', 20, ['p1'],
-    );
   });
 
   it('exposes semantic HostRuntime operations and typed lifecycle events', async () => {
@@ -267,7 +157,7 @@ describe('native Herdr bridge adapter', () => {
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
     const handler = jest.fn();
-    const runtime = nativeClient.createHostRuntime({
+    const runtime = createHostRuntime({
       runtimeId: 'runtime-1',
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
@@ -408,7 +298,7 @@ describe('native Herdr bridge adapter', () => {
       connect: jest.fn().mockRejectedValue(nativeError),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
-    const runtime = nativeClient.createHostRuntime({
+    const runtime = createHostRuntime({
       runtimeId: 'runtime-failing',
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
@@ -461,7 +351,7 @@ describe('native Herdr bridge adapter', () => {
       connect: jest.fn().mockRejectedValue({ tag, inner }),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
-    const runtime = nativeClient.createHostRuntime({
+    const runtime = createHostRuntime({
       runtimeId: `runtime-${tag}`,
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
@@ -496,7 +386,7 @@ describe('native Herdr bridge adapter', () => {
       }),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
-    const runtime = nativeClient.createHostRuntime({
+    const runtime = createHostRuntime({
       runtimeId: 'runtime-launch',
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
@@ -532,7 +422,7 @@ describe('native Herdr bridge adapter', () => {
       connect: jest.fn().mockRejectedValue({ tag, inner: [challenge] }),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
-    const runtime = nativeClient.createHostRuntime({
+    const runtime = createHostRuntime({
       runtimeId: `runtime-${tag}`,
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
@@ -559,7 +449,7 @@ describe('native Herdr bridge adapter', () => {
       }),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
-    const runtime = nativeClient.createHostRuntime({
+    const runtime = createHostRuntime({
       runtimeId: 'runtime-host-certificate',
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
@@ -587,7 +477,7 @@ describe('native Herdr bridge adapter', () => {
       }),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
-    const runtime = nativeClient.createHostRuntime({
+    const runtime = createHostRuntime({
       runtimeId: 'runtime-protocol-mismatch',
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
@@ -644,7 +534,7 @@ describe('native Herdr bridge adapter', () => {
       confirmAgentTranscriptCache: jest.fn(() => true),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
-    const runtime = nativeClient.createHostRuntime({
+    const runtime = createHostRuntime({
       runtimeId: 'runtime-agent',
       ssh: {
         host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',

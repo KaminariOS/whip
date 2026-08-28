@@ -55,7 +55,10 @@ pub enum HerdrTerminalControlEvent {
 
 #[uniffi::export(with_foreign)]
 pub trait HerdrTerminalEventSink: Send + Sync {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the UniFFI event callback mirrors the terminal frame wire fields"
+    )]
     fn terminal_frame(
         &self,
         client_key: String,
@@ -248,7 +251,7 @@ impl Bridge {
         let state = self.state.lock().clone();
         match state {
             ProtocolState::AwaitingWelcome => self.handle_welcome(message),
-            ProtocolState::Ready => {
+            ProtocolState::Ready | ProtocolState::Closing | ProtocolState::Closed => {
                 // A prepared bridge has negotiated but is not attached yet.
                 // Herdr should not send normal traffic in this state.
             }
@@ -257,7 +260,6 @@ impl Bridge {
                     self.dispatch(&terminal_id, message);
                 }
             }
-            ProtocolState::Closing | ProtocolState::Closed => {}
         }
     }
 
@@ -334,7 +336,7 @@ impl Bridge {
                 STANDARD.encode(bytes),
             ),
             ServerMessage::Graphics { bytes } => {
-                sink.graphics_frame(self.client_key.clone(), terminal_id.to_owned(), bytes)
+                sink.graphics_frame(self.client_key.clone(), terminal_id.to_owned(), bytes);
             }
             ServerMessage::Closed { reason } => {
                 self.emit_control(
@@ -385,7 +387,7 @@ impl Bridge {
                 HerdrTerminalControlEvent::TerminalBell { count },
             ),
             ServerMessage::Ignored { .. } => {
-                self.emit_control(sink, terminal_id, HerdrTerminalControlEvent::Ignored)
+                self.emit_control(sink, terminal_id, HerdrTerminalControlEvent::Ignored);
             }
             ServerMessage::Welcome { .. } => {}
         }
@@ -460,7 +462,10 @@ impl Bridge {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "bridge setup keeps protocol geometry and launch mode explicit at the transport boundary"
+)]
 async fn open_bridge(
     connection: Arc<HerdrConnection>,
     protocol: u32,
@@ -547,7 +552,10 @@ pub fn clear_herdr_terminal_event_sink() {
     *event_sink().write() = None;
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "prepared bridge state requires the complete terminal geometry from its caller"
+)]
 async fn prepare_bridge_on_runtime(
     connection: Arc<HerdrConnection>,
     protocol: u32,
@@ -574,7 +582,10 @@ async fn prepare_bridge_on_runtime(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "runtime bridge startup forwards the stable native terminal API without an allocation-only parameter bag"
+)]
 pub(crate) async fn start_bridge_on_runtime<F>(
     connection: Arc<HerdrConnection>,
     protocol: u32,
@@ -667,7 +678,10 @@ pub async fn prepare_herdr_terminal_bridge(
         })?
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the exported UniFFI function preserves the established native terminal API"
+)]
 #[uniffi::export]
 pub async fn start_herdr_terminal_bridge(
     client_key: String,
@@ -747,7 +761,10 @@ pub fn herdr_terminal_resize(
         .map_err(|error| HerdrBridgeError::BridgeClosed(error.to_string()))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the exported scroll function mirrors the compact terminal input protocol"
+)]
 #[uniffi::export]
 pub fn herdr_terminal_scroll(
     client_key: String,

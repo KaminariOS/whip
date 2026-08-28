@@ -46,9 +46,10 @@ export function connectionErrorContext(error: unknown): Record<string, string> {
     if (typeof mismatch.expected === 'number' || typeof mismatch.expected === 'string') {
       return {
         expectedProtocol: String(mismatch.expected),
-        receivedProtocol: mismatch.received === undefined
-          ? 'unavailable'
-          : String(mismatch.received),
+        receivedProtocol:
+          typeof mismatch.received === 'number' || typeof mismatch.received === 'string'
+            ? String(mismatch.received)
+            : 'unavailable',
       };
     }
   }
@@ -57,6 +58,8 @@ export function connectionErrorContext(error: unknown): Record<string, string> {
 
 export function classifyConnectionError(error: unknown): ConnectionErrorKind {
   switch (errorCode(error)) {
+    case null:
+      return 'unknown';
     case 'AUTHENTICATION_FAILED':
       return 'authentication';
     case 'HOST_KEY_UNKNOWN':

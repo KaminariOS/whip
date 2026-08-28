@@ -104,7 +104,7 @@ export function MermaidPreview({ content, filename }: Props) {
     >
       <WebView
         ref={value => {
-          webView.current = value as WebViewHandle | null;
+          webView.current = value;
         }}
         allowFileAccess
         allowFileAccessFromFileURLs

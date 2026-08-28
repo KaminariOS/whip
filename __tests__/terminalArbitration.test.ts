@@ -183,8 +183,8 @@ describe('terminal client arbitration', () => {
     let owner: number | null = null;
     let takeovers = 0;
     const connect = (client: number) => {
-      if (owner !== null && owner !== client) {
-        if (!clients[owner].recordDisplacement()) reconnectQueue.push(owner);
+      if (owner !== null && owner !== client && !clients[owner].recordDisplacement()) {
+        reconnectQueue.push(owner);
       }
       owner = client;
       takeovers += 1;

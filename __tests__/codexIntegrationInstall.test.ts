@@ -1,5 +1,3 @@
-import SSHClient from 'react-native-whip-ssh';
-
 import { codexChatAction, codexMissingIdentityAction } from '../src/lib/codexSession';
 import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile, PaneInfo } from '../src/types';
@@ -7,6 +5,9 @@ import type { ConnectionProfile, PaneInfo } from '../src/types';
 jest.mock('react-native-whip-ssh', () => (
   require('./mockWhipSsh').createMockWhipSshModule()
 ));
+
+const mockWhipSsh = require('./mockWhipSsh').getMockWhipSshControl();
+const connectWithPassword: jest.Mock = mockWhipSsh.connectWithPassword;
 
 const id = '11111111-1111-4111-8111-111111111111';
 const profile: ConnectionProfile = {
@@ -21,7 +22,7 @@ const pane = (agent: string, session?: string): PaneInfo => ({
 });
 
 describe('Codex integration installation flow', () => {
-  beforeEach(() => jest.mocked(SSHClient.connectWithPassword).mockReset());
+  beforeEach(() => connectWithPassword.mockReset());
 
   test('Codex with session opens, missing session asks setup, non-Codex is unavailable', () => {
     expect(codexChatAction(pane('codex', id))).toBe('open');
@@ -48,7 +49,7 @@ describe('Codex integration installation flow', () => {
       off: jest.fn(),
       disconnect: jest.fn(),
     };
-    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native as unknown as SSHClient);
+    connectWithPassword.mockResolvedValueOnce(native);
     const client = new HerdrClient();
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
@@ -73,7 +74,7 @@ describe('Codex integration installation flow', () => {
       off: jest.fn(),
       disconnect: jest.fn(),
     };
-    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native as unknown as SSHClient);
+    connectWithPassword.mockResolvedValueOnce(native);
     const client = new HerdrClient();
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
@@ -92,7 +93,7 @@ describe('Codex integration installation flow', () => {
       off: jest.fn(),
       disconnect: jest.fn(),
     };
-    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native as unknown as SSHClient);
+    connectWithPassword.mockResolvedValueOnce(native);
     const client = new HerdrClient();
     await client.connect(profile);
     await expect(client.codexIntegrationStatus()).resolves.toBe('current');

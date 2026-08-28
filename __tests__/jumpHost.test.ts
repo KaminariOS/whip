@@ -1,5 +1,3 @@
-import SSHClient from 'react-native-whip-ssh';
-
 import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
 
@@ -7,9 +5,10 @@ jest.mock('react-native-whip-ssh', () => (
   require('./mockWhipSsh').createMockWhipSshModule()
 ));
 
-const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
-const connectWithPasswordViaJump = jest.mocked(SSHClient.connectWithPasswordViaJump);
-const connectWithKey = jest.mocked(SSHClient.connectWithKey);
+const mockWhipSsh = require('./mockWhipSsh').getMockWhipSshControl();
+const connectWithPassword: jest.Mock = mockWhipSsh.connectWithPassword;
+const connectWithPasswordViaJump: jest.Mock = mockWhipSsh.connectWithPasswordViaJump;
+const connectWithKey: jest.Mock = mockWhipSsh.connectWithKey;
 
 function profile(
   id: string,
@@ -38,7 +37,7 @@ function nativeClient() {
     off: jest.fn(),
     disconnect: jest.fn(),
     setAgentForwarding: jest.fn(),
-  } as unknown as SSHClient;
+  };
 }
 
 describe('SSH jump hosts', () => {

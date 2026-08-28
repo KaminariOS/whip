@@ -1,5 +1,18 @@
-const HTML_TAG =
-  /<\/?(?:a|article|aside|b|blockquote|body|br|code|del|details|div|em|figcaption|figure|footer|h[1-6]|head|header|hr|html|i|img|kbd|li|main|ol|p|pre|s|section|small|span|strong|summary|table|tbody|td|tfoot|th|thead|tr|u|ul)\b/i;
+const HTML_TAG_PATTERN = /<\/?([a-z][a-z0-9]*)\b/gi;
+const HTML_TAG_NAMES = new Set([
+  'a', 'article', 'aside', 'b', 'blockquote', 'body', 'br', 'code', 'del',
+  'details', 'div', 'em', 'figcaption', 'figure', 'footer', 'h1', 'h2',
+  'h3', 'h4', 'h5', 'h6', 'head', 'header', 'hr', 'html', 'i', 'img',
+  'kbd', 'li', 'main', 'ol', 'p', 'pre', 's', 'section', 'small', 'span',
+  'strong', 'summary', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr',
+  'u', 'ul',
+]);
+
+function containsSupportedHtmlTag(value: string): boolean {
+  return Array.from(value.matchAll(HTML_TAG_PATTERN)).some(match =>
+    HTML_TAG_NAMES.has(match[1].toLowerCase()),
+  );
+}
 
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&',
@@ -303,7 +316,7 @@ function normalizeOpenCodeInlineMath(value: string): string {
  * markup stay examples instead of becoming rendered elements.
  */
 export function normalizeRichTextMarkdown(value: string): string {
-  if (!HTML_TAG.test(value)) return normalizeOpenCodeInlineMath(value);
+  if (!containsSupportedHtmlTag(value)) return normalizeOpenCodeInlineMath(value);
 
   const protectedMarkdown: string[] = [];
   const protect = (match: string) => {

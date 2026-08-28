@@ -26,16 +26,38 @@ the Whip crate, executor, native module, and platform library.
 
 ## App API
 
-Import the client and its types from this package:
+Create one typed runtime per host and use its semantic SSH, Herdr, terminal,
+transfer, preview, and agent APIs:
 
 ```ts
-import SSHClient, { PtyType, type LsResult } from 'react-native-whip-ssh';
+import {
+  createHostRuntime,
+  type RuntimeConfig,
+} from 'react-native-whip-ssh';
+
+const config: RuntimeConfig = {
+  runtimeId: 'primary-host',
+  ssh: {
+    host: 'server.example.com',
+    port: 22,
+    username: 'alice',
+    authMode: 'key',
+    secret: privateKey,
+    forwardAgent: false,
+  },
+  jumpHosts: [],
+  sessionName: 'whip',
+  herdrCommand: 'herdr',
+};
+
+const runtime = createHostRuntime(config);
+await runtime.connect();
+const output = await runtime.execute('uname -a');
 ```
 
-The JavaScript `SSHClient` export is one facade, not a subclass layered over a
-second transport. Whip host connections use its typed `HostRuntime`; generic
-methods retained for key management and native diagnostics call the same native
-module and Rust implementation.
+Key management and WP4 pairing are named typed exports from the same package.
+There is no generic `SSHClient` compatibility facade or dynamic method adapter;
+all host operations go through `NativeHostRuntime` and generated UniFFI APIs.
 
 Run the terminal-path copy benchmark from the repository root:
 
@@ -45,12 +67,11 @@ npm run benchmark:terminal-bridge
 
 ## Provenance
 
-The public `SSHClient` shape originated in the
+The removed compatibility facade originated in the
 [`react-native-ssh-sftp`](https://github.com/enatividad/react-native-ssh-sftp)
 fork family, including the Dylan Kenneally fork previously vendored under its
-package name. Whip now maintains that compatibility facade as part of its own
-Russh implementation; none of the upstream native transports are included or
-linked.
+package name. Whip's current API and Russh implementation are project-owned;
+none of the upstream facade or native transports are included or linked.
 
 Whip's package and transport changes are licensed under
 `AGPL-3.0-or-later`; see the repository root `LICENSE`.

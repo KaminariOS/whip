@@ -235,14 +235,14 @@ struct Encoder {
 impl Encoder {
     fn unsigned(&mut self, value: u64) {
         match value {
-            0..=250 => self.bytes.push(value as u8),
+            0..=250 => self.bytes.push(value.to_le_bytes()[0]),
             251..=0xffff => {
                 self.bytes.push(251);
-                self.bytes.extend_from_slice(&(value as u16).to_le_bytes());
+                self.bytes.extend_from_slice(&value.to_le_bytes()[..2]);
             }
             0x1_0000..=0xffff_ffff => {
                 self.bytes.push(252);
-                self.bytes.extend_from_slice(&(value as u32).to_le_bytes());
+                self.bytes.extend_from_slice(&value.to_le_bytes()[..4]);
             }
             _ => {
                 self.bytes.push(253);
@@ -432,6 +432,22 @@ pub fn attach(terminal_id: &str, takeover: bool) -> Vec<u8> {
     encoder.finish()
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the coordinate is finite, non-negative, rounded, and range-checked before conversion"
+)]
+fn scroll_coordinate(value: Option<f64>, name: &'static str) -> Result<Option<u16>, CodecError> {
+    let Some(value) = value.filter(|value| value.is_finite()) else {
+        return Ok(None);
+    };
+    let rounded = value.round().max(0.0);
+    if rounded > f64::from(u16::MAX) {
+        return Err(CodecError::InvalidValue(name));
+    }
+    Ok(Some(rounded as u16))
+}
+
 pub fn scroll(
     up: bool,
     lines: u32,
@@ -440,18 +456,8 @@ pub fn scroll(
     modifiers: u8,
 ) -> Result<Vec<u8>, CodecError> {
     let lines = u16::try_from(lines).map_err(|_| CodecError::InvalidValue("scroll line count"))?;
-    fn coordinate(value: Option<f64>, name: &'static str) -> Result<Option<u16>, CodecError> {
-        let Some(value) = value.filter(|value| value.is_finite()) else {
-            return Ok(None);
-        };
-        let rounded = value.round().max(0.0);
-        if rounded > f64::from(u16::MAX) {
-            return Err(CodecError::InvalidValue(name));
-        }
-        Ok(Some(rounded as u16))
-    }
-    let column = coordinate(column, "scroll column")?;
-    let row = coordinate(row, "scroll row")?;
+    let column = scroll_coordinate(column, "scroll column")?;
+    let row = scroll_coordinate(row, "scroll row")?;
     let mut encoder = Encoder::default();
     encoder.unsigned(ClientMessageTag::Scroll as u64);
     encoder.unsigned(AttachScrollSource::Wheel as u64);
@@ -553,7 +559,7 @@ mod tests {
                     HerdrTerminalAttachLaunchMode::LegacyTerminalAttach,
                 )
                 .unwrap(),
-                vec![0, protocol as u8, 80, 24, 8, 16, 1, 0, 1]
+                vec![0, u8::try_from(protocol).unwrap(), 80, 24, 8, 16, 1, 0, 1]
             );
             assert_eq!(
                 hello(
@@ -565,7 +571,7 @@ mod tests {
                     HerdrTerminalAttachLaunchMode::TerminalAttach,
                 )
                 .unwrap(),
-                vec![0, protocol as u8, 80, 24, 8, 16, 1, 0, 2]
+                vec![0, u8::try_from(protocol).unwrap(), 80, 24, 8, 16, 1, 0, 2]
             );
         }
     }

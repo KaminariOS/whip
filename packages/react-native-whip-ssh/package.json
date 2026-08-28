@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Whip SSH, Herdr, host runtime, and WP4 native core",
-  "main": "lib/sshclient.js",
-  "react-native": "lib/sshclient.js",
-  "types": "lib/sshclient.d.ts",
+  "main": "src/index.ts",
+  "react-native": "src/index.ts",
+  "types": "src/index.ts",
   "homepage": "https://github.com/kaminarios/whip",
   "license": "AGPL-3.0-or-later",
   "author": {

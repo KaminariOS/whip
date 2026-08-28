@@ -188,7 +188,7 @@ async function receiveRevenueCatWebhook(
 
   const payload = await readJson(request);
   const event = isObject(payload.event) ? payload.event : null;
-  if (!event || event.type !== 'NON_RENEWING_PURCHASE') {
+  if (event?.type !== 'NON_RENEWING_PURCHASE') {
     return json({ received: true, ignored: true });
   }
 
@@ -451,8 +451,10 @@ function revenueCatAliases(
   event: Record<string, unknown>,
   primary: string,
 ): string[] {
-  const values = [primary, event.original_app_user_id];
-  if (Array.isArray(event.aliases)) values.push(...event.aliases);
+  const values: unknown[] = [primary, event.original_app_user_id];
+  if (Array.isArray(event.aliases)) {
+    for (const alias of event.aliases) values.push(alias);
+  }
   return [
     ...new Set(
       values.flatMap(value => {
@@ -504,7 +506,7 @@ function requiredRevenueCatUserId(value: unknown): string {
     typeof value !== 'string' ||
     value.length < 1 ||
     value.length > 100 ||
-    [...value].some(character => {
+    Array.from(value).some(character => {
       const code = character.charCodeAt(0);
       return code <= 31 || code === 127;
     })

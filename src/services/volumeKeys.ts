@@ -28,7 +28,7 @@ export function addTerminalVolumeKeyListener(
   listener: (key: TerminalVolumeKey) => void,
 ): { remove: () => void } {
   if (Platform.OS !== 'android') return { remove: () => undefined };
-  return DeviceEventEmitter.addListener(VOLUME_KEY_EVENT, value => {
+  return DeviceEventEmitter.addListener(VOLUME_KEY_EVENT, (value: unknown) => {
     if (value === 'up' || value === 'down') listener(value);
   });
 }

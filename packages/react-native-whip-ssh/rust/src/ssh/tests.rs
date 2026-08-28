@@ -270,10 +270,10 @@ fn host_key_errors_carry_structured_challenges() {
         russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
     let private_key =
         russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap();
-    let challenge = match KnownHosts::default().check("Example.COM", 2222, private_key.public_key())
-    {
-        HostKeyDecision::Unknown(challenge) => challenge,
-        _ => panic!("empty known_hosts should reject the key as unknown"),
+    let HostKeyDecision::Unknown(challenge) =
+        KnownHosts::default().check("Example.COM", 2222, private_key.public_key())
+    else {
+        panic!("empty known_hosts should reject the key as unknown");
     };
     let SshError::HostKeyUnknown(details) =
         SshError::from(TransportError::HostKeyUnknown(challenge))
@@ -618,6 +618,10 @@ fn forwarded_agent_lists_and_signs_with_the_authenticated_key() {
 
 #[test]
 #[ignore = "run through tests/live-ssh.sh"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the live integration test intentionally exercises one sequential OpenSSH feature matrix"
+)]
 fn live_openssh_feature_matrix() {
     let host = std::env::var("RUSSH_SSH_TEST_HOST").expect("missing test host");
     let port = std::env::var("RUSSH_SSH_TEST_PORT")

@@ -3,20 +3,12 @@ import {
   AgentMessageRole,
   AgentNoticeLevel,
   AgentIntegrationStatus,
-  AgentScalarValue_Tags,
   AgentToolStatus,
   AgentTranscriptKind,
   AgentTranscriptDelta_Tags,
   AgentTranscriptPart_Tags,
   AgentTranscriptStatus,
   AgentTurnStatus,
-  closeHerdrEventSubscription,
-  closeAllHerdrTerminalBridges,
-  closeHerdrTerminalBridge,
-  herdrControlRequest,
-  herdrTerminalInput,
-  herdrTerminalResize,
-  herdrTerminalScroll,
   HerdrControlRequest,
   HerdrControlResult_Tags,
   HerdrAgentSessionKind,
@@ -26,7 +18,6 @@ import {
   HerdrTabLaunch,
   HerdrTabLaunchResult_Tags,
   HerdrTabLaunchStage,
-  HerdrTerminalAttachLaunchMode,
   HerdrTerminalNotificationKind,
   HerdrTerminalControlEvent_Tags,
   HostConnectionState,
@@ -34,6 +25,8 @@ import {
   HostTerminalState,
   GitDiffKind,
   GitDiffRowKind,
+  generateSshKeyPair as generateSshKeyPairRust,
+  getSshKeyDetails as getSshKeyDetailsRust,
   PreviewKind,
   PreviewState,
   RemoteFileKind,
@@ -45,21 +38,13 @@ import {
   RuntimeDiagnosticOperation as NativeRuntimeDiagnosticOperation,
   RuntimeDiagnosticOutcome as NativeRuntimeDiagnosticOutcome,
   createHostRuntime as createHostRuntimeRust,
-  HerdrEvent_Tags,
   pairHost as pairHostRust,
-  prepareHerdrTerminalBridge,
-  setHerdrEventSink,
   setAgentTranscriptEventSink,
   setHerdrTerminalEventSink,
   setHostRuntimeEventSink,
   setTrustedHostKeys as setTrustedHostKeysRust,
-  startHerdrEventSubscription,
-  startHerdrTerminalBridge,
-  type HerdrBridgeError,
-  type HerdrControlError,
+  setKnownHosts as setKnownHostsRust,
   type HerdrControlResult,
-  type HerdrEvent,
-  type HerdrEventSink,
   type HerdrAgentInfo,
   type HerdrAgentSessionInfo,
   type HerdrPaneInfo,
@@ -75,11 +60,12 @@ import {
   type HerdrWorktreeInfo,
   type HostRuntimeEvent,
   type HostRuntimeLike,
+  type SshGeneratedKeyPair,
+  type SshKeyDetails,
   type HostStateSnapshot,
   type HostLatencyMeasurement as NativeHostLatencyMeasurement,
   type RuntimeDiagnostic as NativeRuntimeDiagnostic,
   type GitDiff as NativeGitDiff,
-  type GitRepository as NativeGitRepository,
   type GitStatusEntry as NativeGitStatusEntry,
   type PreviewInfo as NativePreviewInfo,
   type RemoteDirectoryListing as NativeRemoteDirectoryListing,
@@ -92,22 +78,46 @@ import {
   type AgentTranscriptState,
   type AgentTranscriptTurn,
 } from './generated-entry';
-import sshNativeClient from './ssh-native';
 
-type BridgeEvent = Record<string, unknown> & { type: string; terminalId: string };
+export interface HerdrBridgeEvent {
+  type:
+    | 'terminal'
+    | 'closed'
+    | 'graphics'
+    | 'notify'
+    | 'clipboard'
+    | 'title'
+    | 'reload_sound_config'
+    | 'mouse_capture'
+    | 'kitty_keyboard_report_all'
+    | 'prefix_input_source'
+    | 'terminal_bell'
+    | 'ignored';
+  terminalId?: string;
+  seq?: number;
+  width?: number;
+  height?: number;
+  full?: boolean;
+  bytes?: string | ArrayBuffer | ArrayBufferView;
+  final?: boolean;
+  text?: string;
+  body?: string;
+  flag?: boolean;
+  kind?: number;
+  count?: number;
+  inboundTraceCookie?: number | null;
+}
+
+type BridgeEvent = HerdrBridgeEvent & { terminalId: string };
 type BridgeHandler = (event: BridgeEvent) => void;
-type ApiRequest = { method: string; params: Record<string, unknown> };
+type ApiRequest = { method: string; params: object };
 type ApiResult = Record<string, unknown> & { type: string };
-type ApiEvent = { event: string; data: Record<string, unknown> };
-type EventStreamEvent = { type: 'event'; event: ApiEvent } | { type: 'closed'; reason?: string };
-type EventHandler = (event: EventStreamEvent) => void;
 type WhipTerminalInboundTrace = {
   jsReceived: () => number | null;
   decodeComplete: (cookie: number | null) => void;
 };
 
 const bridgeHandlers = new Map<string, Map<string, BridgeHandler>>();
-const eventHandlers = new Map<string, EventHandler>();
 const runtimeHandlers = new Map<string, (event: RuntimeLifecycleEvent) => void>();
 const agentTranscriptHandlers = new Map<string, Map<string, (event: NativeAgentTranscriptUpdate) => void>>();
 const runtimeSshShellHandlers = new Map<string, Map<string, RuntimeSshShellHandler>>();
@@ -432,12 +442,17 @@ function removeBridgeHandler(clientKey: string, terminalId: string): void {
   if (handlers?.size === 0) bridgeHandlers.delete(clientKey);
 }
 
-function bridgeError(error: unknown): Error {
-  const nativeError = error as Partial<HerdrBridgeError> & {
-    tag?: string;
-    inner?: readonly unknown[];
+function nativeErrorParts(error: unknown): { tag?: string; inner: unknown[] } {
+  if (!isRecord(error)) return { inner: [] };
+  return {
+    tag: optionalString(error.tag),
+    inner: isUnknownArray(error.inner) ? error.inner : [],
   };
-  const message = typeof nativeError.inner?.[0] === 'string'
+}
+
+function bridgeError(error: unknown): Error {
+  const nativeError = nativeErrorParts(error);
+  const message = typeof nativeError.inner[0] === 'string'
     ? nativeError.inner[0]
     : error instanceof Error
       ? error.message
@@ -449,14 +464,11 @@ function bridgeError(error: unknown): Error {
 }
 
 function controlError(error: unknown): Error {
-  const nativeError = error as Partial<HerdrControlError> & {
-    tag?: string;
-    inner?: readonly unknown[];
-  };
+  const nativeError = nativeErrorParts(error);
   const protocolError = nativeError.tag === 'ProtocolError';
-  const message = protocolError && typeof nativeError.inner?.[1] === 'string'
+  const message = protocolError && typeof nativeError.inner[1] === 'string'
     ? nativeError.inner[1]
-    : typeof nativeError.inner?.[0] === 'string'
+    : typeof nativeError.inner[0] === 'string'
       ? nativeError.inner[0]
       : error instanceof Error
         ? error.message
@@ -470,20 +482,7 @@ function controlError(error: unknown): Error {
   return result;
 }
 
-function eventError(error: unknown): Error {
-  const nativeError = error as { tag?: string; inner?: readonly unknown[] };
-  const message = typeof nativeError.inner?.[0] === 'string'
-    ? nativeError.inner[0]
-    : error instanceof Error
-      ? error.message
-      : String(error);
-  const result = new Error(message);
-  result.name = 'HerdrEventError';
-  if (nativeError.tag) Object.assign(result, { code: nativeError.tag });
-  return result;
-}
-
-const SSH_ERROR_CODES = {
+const SSH_ERROR_CODES: Readonly<Partial<Record<number, string>>> = {
   [NativeSshErrorCode.AuthenticationFailed]: 'AUTHENTICATION_FAILED',
   [NativeSshErrorCode.HostKeyUnknown]: 'HOST_KEY_UNKNOWN',
   [NativeSshErrorCode.HostKeyChanged]: 'HOST_KEY_CHANGED',
@@ -497,95 +496,119 @@ const SSH_ERROR_CODES = {
   [NativeSshErrorCode.SftpFailure]: 'SFTP_FAILURE',
   [NativeSshErrorCode.InvalidRequest]: 'INVALID_REQUEST',
   [NativeSshErrorCode.Unknown]: 'UNKNOWN',
-} as const satisfies Record<NativeSshErrorCode, string>;
+};
 
-function hostRuntimeError(error: unknown): Error & {
+class HostRuntimeBridgeError extends Error {
   nativeTag?: string;
   code?: string;
   details?: unknown;
   expected?: string;
   received?: number;
-} {
-  const nativeError = error as {
-    tag?: string;
-    inner?: readonly unknown[] | Record<string, unknown>;
-  };
-  const hostKeyCode = nativeError.tag === 'HostKeyUnknown'
-    ? 'HOST_KEY_UNKNOWN'
-    : nativeError.tag === 'HostKeyChanged'
-      ? 'HOST_KEY_CHANGED'
-      : nativeError.tag === 'UnsupportedHostCertificate'
-        ? 'UNSUPPORTED_HOST_CERTIFICATE'
-        : undefined;
-  const structuredInner: Record<string, unknown> | undefined =
-    nativeError.inner && !Array.isArray(nativeError.inner)
-    ? nativeError.inner as Record<string, unknown>
-    : undefined;
-  const expected = nativeError.tag === 'HerdrProtocolMismatch'
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'HostRuntimeError';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function hostKeyErrorCode(tag: string | undefined): string | undefined {
+  switch (tag) {
+    case undefined: return undefined;
+    case 'HostKeyUnknown': return 'HOST_KEY_UNKNOWN';
+    case 'HostKeyChanged': return 'HOST_KEY_CHANGED';
+    case 'UnsupportedHostCertificate': return 'UNSUPPORTED_HOST_CERTIFICATE';
+    default: return undefined;
+  }
+}
+
+function hostRuntimeMessage(
+  error: unknown,
+  inner: unknown,
+  hostKeyCode: string | undefined,
+  expected: string | undefined,
+  received: number | undefined,
+  lastReadinessError: string | undefined,
+  sshFailureMessage: string | undefined,
+): string {
+  if (hostKeyCode === 'HOST_KEY_UNKNOWN') return 'unknown SSH host key';
+  if (hostKeyCode === 'HOST_KEY_CHANGED') return 'SSH host key changed';
+  if (hostKeyCode === 'UNSUPPORTED_HOST_CERTIFICATE') {
+    return 'SSH host certificates are not supported';
+  }
+  if (expected !== undefined && received !== undefined) {
+    return `Herdr protocol mismatch: Whip supports ${expected}, server reports ${received}`;
+  }
+  if (lastReadinessError) return `Herdr did not become ready: ${lastReadinessError}`;
+  if (sshFailureMessage) return sshFailureMessage;
+  if (Array.isArray(inner) && typeof inner[0] === 'string') return inner[0];
+  return error instanceof Error ? error.message : String(error);
+}
+
+function hostRuntimeError(error: unknown): HostRuntimeBridgeError {
+  const nativeError = isRecord(error) ? error : {};
+  const tag = optionalString(nativeError.tag);
+  const inner = nativeError.inner;
+  const hostKeyCode = hostKeyErrorCode(tag);
+  const structuredInner = isRecord(inner) ? inner : undefined;
+  const expected = tag === 'HerdrProtocolMismatch'
     && typeof structuredInner?.expected === 'string'
     ? structuredInner.expected
     : undefined;
-  const received = nativeError.tag === 'HerdrProtocolMismatch'
+  const received = tag === 'HerdrProtocolMismatch'
     && typeof structuredInner?.received === 'number'
     ? structuredInner.received
     : undefined;
-  const lastReadinessError = nativeError.tag === 'HerdrReadinessTimeout'
+  const lastReadinessError = tag === 'HerdrReadinessTimeout'
     && typeof structuredInner?.lastError === 'string'
     ? structuredInner.lastError
     : undefined;
-  const sshFailureMessage = nativeError.tag === 'SshConnectionFailure'
+  const sshFailureMessage = tag === 'SshConnectionFailure'
     && typeof structuredInner?.message === 'string'
     ? structuredInner.message
     : undefined;
-  const sshFailureCode = nativeError.tag === 'SshConnectionFailure'
+  const sshFailureCode = tag === 'SshConnectionFailure'
     && typeof structuredInner?.code === 'number'
-    ? SSH_ERROR_CODES[structuredInner.code as NativeSshErrorCode]
+    ? SSH_ERROR_CODES[structuredInner.code]
     : undefined;
-  const details = hostKeyCode === 'HOST_KEY_UNKNOWN' || hostKeyCode === 'HOST_KEY_CHANGED'
-    ? (nativeError.inner as readonly unknown[] | undefined)?.[0]
+  const details = (hostKeyCode === 'HOST_KEY_UNKNOWN' || hostKeyCode === 'HOST_KEY_CHANGED')
+    && isUnknownArray(inner)
+    ? inner[0]
     : undefined;
-  const message = hostKeyCode === 'HOST_KEY_UNKNOWN'
-    ? 'unknown SSH host key'
-    : hostKeyCode === 'HOST_KEY_CHANGED'
-      ? 'SSH host key changed'
-      : hostKeyCode === 'UNSUPPORTED_HOST_CERTIFICATE'
-        ? 'SSH host certificates are not supported'
-        : expected !== undefined && received !== undefined
-          ? `Herdr protocol mismatch: Whip supports ${expected}, server reports ${received}`
-          : lastReadinessError
-            ? `Herdr did not become ready: ${lastReadinessError}`
-            : sshFailureMessage
-              ? sshFailureMessage
-              : Array.isArray(nativeError.inner) && typeof nativeError.inner[0] === 'string'
-                ? nativeError.inner[0]
-                : error instanceof Error
-                  ? error.message
-                  : String(error);
-  const result = new Error(message) as Error & {
-    nativeTag?: string;
-    code?: string;
-    details?: unknown;
-    expected?: string;
-    received?: number;
-  };
-  result.name = 'HostRuntimeError';
-  if (nativeError.tag) result.nativeTag = nativeError.tag;
+  const message = hostRuntimeMessage(
+    error,
+    inner,
+    hostKeyCode,
+    expected,
+    received,
+    lastReadinessError,
+    sshFailureMessage,
+  );
+  const result = new HostRuntimeBridgeError(message);
+  if (tag) result.nativeTag = tag;
   if (sshFailureCode) {
     result.code = sshFailureCode;
-  } else if (nativeError.tag === 'AuthenticationFailure') {
+  } else if (tag === 'AuthenticationFailure') {
     result.code = 'AUTHENTICATION_FAILED';
   } else if (hostKeyCode) {
     result.code = hostKeyCode;
     if (details) result.details = details;
-  } else if (nativeError.tag === 'HerdrUnavailable') {
+  } else if (tag === 'HerdrUnavailable') {
     result.code = 'HERDR_UNAVAILABLE';
-  } else if (nativeError.tag === 'TransferCancelled') {
+  } else if (tag === 'TransferCancelled') {
     result.code = 'TRANSFER_CANCELLED';
-  } else if (nativeError.tag === 'HerdrProtocolMismatch') {
+  } else if (tag === 'HerdrProtocolMismatch') {
     result.code = 'HERDR_PROTOCOL_MISMATCH';
     result.expected = expected;
     result.received = received;
-  } else if (nativeError.tag === 'HerdrReadinessTimeout') {
+  } else if (tag === 'HerdrReadinessTimeout') {
     result.code = 'HERDR_READINESS_TIMEOUT';
   }
   return result;
@@ -611,23 +634,27 @@ function nativeNumber(value: bigint | undefined): number | undefined {
   return value === undefined ? undefined : Number(value);
 }
 
+function nativeRequiredNumber(value: number | bigint): number {
+  return typeof value === 'number' ? value : Number(value);
+}
+
 function nativeAgentStatus(value: AgentTranscriptStatus): NativeAgentTranscriptState['status'] {
   switch (value) {
+    case AgentTranscriptStatus.Loading: return 'loading';
     case AgentTranscriptStatus.Live: return 'live';
     case AgentTranscriptStatus.Stale: return 'stale';
     case AgentTranscriptStatus.Unavailable: return 'unavailable';
     case AgentTranscriptStatus.Error: return 'error';
     case AgentTranscriptStatus.Closed: return 'closed';
-    default: return 'loading';
   }
 }
 
 function nativeToolStatus(value: AgentToolStatus): 'pending' | 'running' | 'completed' | 'error' {
   switch (value) {
+    case AgentToolStatus.Pending: return 'pending';
     case AgentToolStatus.Running: return 'running';
     case AgentToolStatus.Completed: return 'completed';
     case AgentToolStatus.Error: return 'error';
-    default: return 'pending';
   }
 }
 
@@ -635,10 +662,10 @@ function nativeDiagnosticSeverity(
   value: AgentDiagnosticSeverity,
 ): NativeAgentToolDiagnostic['severity'] {
   switch (value) {
+    case AgentDiagnosticSeverity.Error: return 'error';
     case AgentDiagnosticSeverity.Warning: return 'warning';
     case AgentDiagnosticSeverity.Info: return 'info';
     case AgentDiagnosticSeverity.Hint: return 'hint';
-    default: return 'error';
   }
 }
 
@@ -664,15 +691,9 @@ function nativeAgentPart(part: AgentTranscriptState['messages'][number]['parts']
       };
     }
     case AgentTranscriptPart_Tags.Tool: {
-      const inner = part.inner as Extract<AgentTranscriptState['messages'][number]['parts'][number], { tag: AgentTranscriptPart_Tags.Tool }>['inner'];
+      const inner = part.inner;
       const input: Record<string, string | number | boolean> = {};
-      for (const field of inner.state.input) {
-        switch (field.value.tag) {
-          case AgentScalarValue_Tags.String: input[field.key] = field.value.inner.value; break;
-          case AgentScalarValue_Tags.Number: input[field.key] = field.value.inner.value; break;
-          case AgentScalarValue_Tags.Boolean: input[field.key] = field.value.inner.value; break;
-        }
-      }
+      for (const field of inner.state.input) input[field.key] = field.value.inner.value;
       return {
         type: 'tool', id: inner.id, callId: inner.callId, tool: inner.tool,
         timestamp: nativeNumber(inner.timestampMs),
@@ -798,12 +819,6 @@ function agentSessionKind(value: HerdrAgentSessionKind): 'id' | 'path' {
   return value === HerdrAgentSessionKind.Path ? 'path' : 'id';
 }
 
-function nativeTerminalAttachLaunchMode(value: number): HerdrTerminalAttachLaunchMode {
-  if (value === 1) return HerdrTerminalAttachLaunchMode.LegacyTerminalAttach;
-  if (value === 2) return HerdrTerminalAttachLaunchMode.TerminalAttach;
-  throw new Error(`unsupported Herdr terminal attach launch mode ${value}`);
-}
-
 function terminalNotificationKind(value: HerdrTerminalNotificationKind): 0 | 1 | 2 {
   switch (value) {
     case HerdrTerminalNotificationKind.Sound: return 0;
@@ -813,8 +828,13 @@ function terminalNotificationKind(value: HerdrTerminalNotificationKind): 0 | 1 |
 }
 
 function controlRequest(request: ApiRequest): HerdrControlRequest {
-  const params = request.params || {};
-  const text = (key: string): string => String(params[key] ?? '');
+  const params: Record<string, unknown> = { ...request.params };
+  const text = (key: string): string => {
+    const value = params[key];
+    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+      ? String(value)
+      : '';
+  };
   switch (request.method) {
     case 'ping': return HerdrControlRequest.Ping.new();
     case 'session.snapshot': return HerdrControlRequest.SessionSnapshot.new();
@@ -1230,137 +1250,6 @@ function apiResult(value: HerdrControlResult): ApiResult {
   }
 }
 
-function apiEvent(value: HerdrEvent): ApiEvent {
-  const { tag: eventTag, inner } = value;
-  switch (eventTag) {
-    case HerdrEvent_Tags.WorkspaceCreated:
-      return { event: 'workspace.created', data: { workspace: workspace(inner.workspace) } };
-    case HerdrEvent_Tags.WorkspaceUpdated:
-      return { event: 'workspace.updated', data: { workspace: workspace(inner.workspace) } };
-    case HerdrEvent_Tags.WorkspaceMetadataUpdated:
-      return { event: 'workspace.metadata_updated', data: { workspace: workspace(inner.workspace) } };
-    case HerdrEvent_Tags.WorkspaceClosed: {
-      const data: Record<string, unknown> = { workspace_id: inner.workspaceId };
-      assignOptional(data, 'workspace', inner.workspace && workspace(inner.workspace));
-      return { event: 'workspace.closed', data };
-    }
-    case HerdrEvent_Tags.WorkspaceRenamed:
-      return { event: 'workspace.renamed', data: { workspace_id: inner.workspaceId, label: inner.label } };
-    case HerdrEvent_Tags.WorkspaceMoved:
-      return { event: 'workspace.moved', data: {
-        workspace_id: inner.workspaceId,
-        insert_index: inner.insertIndex,
-        workspaces: inner.workspaces.map(workspace),
-      } };
-    case HerdrEvent_Tags.WorkspaceReordered: {
-      const data: Record<string, unknown> = {
-        workspace_ids: inner.workspaceIds,
-        workspaces: inner.workspaces.map(workspace),
-      };
-      assignOptional(data, 'before_workspace_id', inner.beforeWorkspaceId);
-      return { event: 'workspace.reordered', data };
-    }
-    case HerdrEvent_Tags.WorkspaceFocused:
-      return { event: 'workspace.focused', data: { workspace_id: inner.workspaceId } };
-    case HerdrEvent_Tags.WorktreeCreated:
-      return { event: 'worktree.created', data: {
-        workspace: workspace(inner.workspace),
-        worktree: worktree(inner.worktree),
-      } };
-    case HerdrEvent_Tags.WorktreeOpened:
-      return { event: 'worktree.opened', data: {
-        workspace: workspace(inner.workspace),
-        worktree: worktree(inner.worktree),
-        already_open: inner.alreadyOpen,
-      } };
-    case HerdrEvent_Tags.WorktreeRemoved: {
-      const data: Record<string, unknown> = {
-        workspace_id: inner.workspaceId,
-        worktree: worktree(inner.worktree),
-        forced: inner.forced,
-      };
-      assignOptional(data, 'workspace', inner.workspace && workspace(inner.workspace));
-      return { event: 'worktree.removed', data };
-    }
-    case HerdrEvent_Tags.TabCreated:
-      return { event: 'tab.created', data: { tab: tab(inner.tab) } };
-    case HerdrEvent_Tags.TabClosed:
-      return { event: 'tab.closed', data: { workspace_id: inner.workspaceId, tab_id: inner.tabId } };
-    case HerdrEvent_Tags.TabFocused:
-      return { event: 'tab.focused', data: { workspace_id: inner.workspaceId, tab_id: inner.tabId } };
-    case HerdrEvent_Tags.TabRenamed:
-      return { event: 'tab.renamed', data: {
-        workspace_id: inner.workspaceId,
-        tab_id: inner.tabId,
-        label: inner.label,
-      } };
-    case HerdrEvent_Tags.TabMoved:
-      return { event: 'tab.moved', data: {
-        workspace_id: inner.workspaceId,
-        tab_id: inner.tabId,
-        insert_index: inner.insertIndex,
-        tabs: inner.tabs.map(tab),
-      } };
-    case HerdrEvent_Tags.PaneCreated:
-      return { event: 'pane.created', data: { pane: pane(inner.pane) } };
-    case HerdrEvent_Tags.PaneUpdated:
-      return { event: 'pane.updated', data: { pane: pane(inner.pane) } };
-    case HerdrEvent_Tags.PaneClosed:
-      return { event: 'pane.closed', data: { workspace_id: inner.workspaceId, pane_id: inner.paneId } };
-    case HerdrEvent_Tags.PaneFocused:
-      return { event: 'pane.focused', data: { workspace_id: inner.workspaceId, pane_id: inner.paneId } };
-    case HerdrEvent_Tags.PaneExited:
-      return { event: 'pane.exited', data: { workspace_id: inner.workspaceId, pane_id: inner.paneId } };
-    case HerdrEvent_Tags.PaneMoved: {
-      const data: Record<string, unknown> = {
-        previous_pane_id: inner.previousPaneId,
-        previous_workspace_id: inner.previousWorkspaceId,
-        previous_tab_id: inner.previousTabId,
-        pane: pane(inner.pane),
-      };
-      assignOptional(data, 'created_workspace', inner.createdWorkspace && workspace(inner.createdWorkspace));
-      assignOptional(data, 'created_tab', inner.createdTab && tab(inner.createdTab));
-      assignOptional(data, 'closed_workspace_id', inner.closedWorkspaceId);
-      assignOptional(data, 'closed_tab_id', inner.closedTabId);
-      return { event: 'pane.moved', data };
-    }
-    case HerdrEvent_Tags.PaneOutputChanged:
-      return { event: 'pane.output_changed', data: {
-        workspace_id: inner.workspaceId,
-        pane_id: inner.paneId,
-        revision: inner.revision,
-      } };
-    case HerdrEvent_Tags.PaneAgentDetected: {
-      const data: Record<string, unknown> = {
-        workspace_id: inner.workspaceId,
-        pane_id: inner.paneId,
-        released: inner.released,
-      };
-      assignOptional(data, 'agent', inner.agent);
-      assignOptional(data, 'final_status', inner.finalStatus === undefined ? undefined : agentStatus(inner.finalStatus));
-      return { event: 'pane.agent_detected', data };
-    }
-    case HerdrEvent_Tags.PaneAgentStatusChanged: {
-      const data: Record<string, unknown> = {
-        workspace_id: inner.workspaceId,
-        pane_id: inner.paneId,
-        agent_status: agentStatus(inner.agentStatus),
-      };
-      assignOptional(data, 'agent', inner.agent);
-      assignOptional(data, 'title', inner.title);
-      assignOptional(data, 'display_agent', inner.displayAgent);
-      assignOptional(data, 'state_labels', stringRecord(inner.stateLabels));
-      return { event: 'pane.agent_status_changed', data };
-    }
-    case HerdrEvent_Tags.LayoutUpdated:
-      return { event: 'layout.updated', data: { layout: layout(inner.layout) } };
-    case HerdrEvent_Tags.ProtocolUnknown:
-      return { event: 'protocol.unknown', data: { raw_event: inner.rawEvent } };
-    case HerdrEvent_Tags.ProtocolInvalid:
-      return { event: 'protocol.invalid', data: { raw_event: inner.rawEvent, reason: inner.reason } };
-  }
-}
-
 function controlEvent(terminalId: string, event: HerdrTerminalControlEvent): BridgeEvent {
   switch (event.tag) {
     case HerdrTerminalControlEvent_Tags.Closed:
@@ -1424,17 +1313,6 @@ const herdrTerminalEventSink: HerdrTerminalEventSink = {
   },
 };
 
-const herdrEventSink: HerdrEventSink = {
-  event(clientKey, event): void {
-    eventHandlers.get(clientKey)?.({ type: 'event', event: apiEvent(event) });
-  },
-  closed(clientKey, reason): void {
-    const handler = eventHandlers.get(clientKey);
-    eventHandlers.delete(clientKey);
-    handler?.({ type: 'closed', reason });
-  },
-};
-
 const hostRuntimeEventSink = {
   event(event: HostRuntimeEvent): void {
     const { tag, inner } = event;
@@ -1458,7 +1336,7 @@ const hostRuntimeEventSink = {
           type: 'connection-state',
           state: runtimeConnectionState(inner.status.state),
           generation: Number(inner.status.generation),
-          reconnectAttempt: inner.status.reconnectAttempt,
+          reconnectAttempt: nativeRequiredNumber(inner.status.reconnectAttempt),
           error: inner.status.error,
         });
         break;
@@ -1473,7 +1351,7 @@ const hostRuntimeEventSink = {
           type: 'terminal-state',
           terminalId: inner.terminalId,
           state: runtimeTerminalState(inner.state),
-          reconnectAttempt: Number(inner.reconnectAttempt),
+          reconnectAttempt: nativeRequiredNumber(inner.reconnectAttempt),
           retrying: inner.retrying,
           error: inner.error,
         });
@@ -1526,7 +1404,6 @@ const agentTranscriptEventSink = {
 };
 
 setHerdrTerminalEventSink(herdrTerminalEventSink);
-setHerdrEventSink(herdrEventSink);
 setHostRuntimeEventSink(hostRuntimeEventSink);
 setAgentTranscriptEventSink(agentTranscriptEventSink);
 
@@ -1600,11 +1477,11 @@ export class NativeHostRuntime {
   async agentIntegrationStatus(kind: RuntimeAgentKind): Promise<RuntimeAgentIntegrationStatus> {
     const status = await this.runtime.agentIntegrationStatus(runtimeAgentKind(kind));
     switch (status) {
+      case AgentIntegrationStatus.Unknown: return 'unknown';
       case AgentIntegrationStatus.NotInstalled: return 'not-installed';
       case AgentIntegrationStatus.Current: return 'current';
       case AgentIntegrationStatus.Outdated: return 'outdated';
       case AgentIntegrationStatus.NeedsRepair: return 'needs-repair';
-      default: return 'unknown';
     }
   }
 
@@ -1620,7 +1497,6 @@ export class NativeHostRuntime {
     runtimeHandlers.delete(this.runtimeId);
     agentTranscriptHandlers.delete(this.runtimeId);
     runtimeSshShellHandlers.delete(this.runtimeId);
-    eventHandlers.delete(this.runtimeId);
     bridgeHandlers.delete(this.runtimeId);
     await this.runtime.disconnect();
   }
@@ -1879,7 +1755,7 @@ export class NativeHostRuntime {
 
   async gitDiff(repository: RuntimeGitRepository, status: RuntimeGitStatusEntry): Promise<RuntimeGitDiff> {
     return runtimeGitDiff(await this.runtime.gitDiff(
-      repository as NativeGitRepository,
+      repository,
       nativeGitStatus(status),
     ));
   }
@@ -1900,177 +1776,105 @@ export class NativeHostRuntime {
 
 }
 
-const nativeClient = {
-  ...sshNativeClient,
-  setTrustedHostKeys(entries: Array<{
-    host: string;
-    port: number;
-    keyType: string;
-    publicKey: string;
-  }>): void {
-    setTrustedHostKeysRust(entries);
-  },
-  createHostRuntime(config: RuntimeConfig, handler?: (event: RuntimeLifecycleEvent) => void): NativeHostRuntime {
-    const runtime = createHostRuntimeRust({
-      runtimeId: config.runtimeId,
-      ssh: runtimeSshConfig(config.ssh),
-      jumpHosts: config.jumpHosts.map(runtimeSshConfig),
-      sessionName: config.sessionName,
-      herdrCommand: config.herdrCommand,
-      socketPath: config.socketPath,
-      cachedSocketPath: config.cachedSocketPath,
-    });
-    return new NativeHostRuntime(runtime, handler);
-  },
-  pairHost(code: string, publicKey: string, deviceName: string): Promise<NativePairHostResult> {
-    return pairHostRust(code, publicKey, deviceName);
-  },
+export type HostRuntimeConnection = NativeHostRuntime;
+export type HostRuntimeLifecycleEvent = RuntimeLifecycleEvent;
+export type HostRuntimeState = RuntimeHostState;
+export type GeneratedKeyPair = SshGeneratedKeyPair;
+export type KeyDetails = SshKeyDetails;
 
-  async prepareHerdrBridge(
-    clientKey: string,
-    socketPath: string,
-    protocol: number,
-    columns: number,
-    rows: number,
-    cellWidthPx: number,
-    cellHeightPx: number,
-  ): Promise<void> {
-    try {
-      await prepareHerdrTerminalBridge(
-        clientKey,
-        socketPath,
-        protocol,
-        columns,
-        rows,
-        cellWidthPx,
-        cellHeightPx,
-      );
-    } catch (error) {
-      throw bridgeError(error);
-    }
-  },
-
-  async requestHerdrApi(
-    clientKey: string,
-    socketPath: string,
-    request: ApiRequest,
-  ): Promise<ApiResult> {
-    try {
-      return apiResult(await herdrControlRequest(clientKey, socketPath, controlRequest(request)));
-    } catch (error) {
-      throw controlError(error);
-    }
-  },
-
-  async startHerdrEventStream(
-    clientKey: string,
-    socketPath: string,
-    protocol: number,
-    paneIds: string[],
-    handler: EventHandler,
-  ): Promise<void> {
-    eventHandlers.set(clientKey, handler);
-    try {
-      await startHerdrEventSubscription(clientKey, socketPath, protocol, paneIds);
-    } catch (error) {
-      eventHandlers.delete(clientKey);
-      throw eventError(error);
-    }
-  },
-
-  closeHerdrEventStream(clientKey: string): void {
-    eventHandlers.delete(clientKey);
-    closeHerdrEventSubscription(clientKey);
-  },
-
-  async startHerdrBridge(
-    clientKey: string,
-    socketPath: string,
-    protocol: number,
-    terminalId: string,
-    takeover: boolean,
-    columns: number,
-    rows: number,
-    cellWidthPx: number,
-    cellHeightPx: number,
-    terminalAttachLaunchMode: number,
-    handler: BridgeHandler,
-  ): Promise<void> {
-    setBridgeHandler(clientKey, terminalId, handler);
-    try {
-      await startHerdrTerminalBridge(
-        clientKey,
-        socketPath,
-        protocol,
-        terminalId,
-        takeover,
-        columns,
-        rows,
-        cellWidthPx,
-        cellHeightPx,
-        nativeTerminalAttachLaunchMode(terminalAttachLaunchMode),
-      );
-    } catch (error) {
-      removeBridgeHandler(clientKey, terminalId);
-      throw bridgeError(error);
-    }
-  },
-
-  async herdrBridgeInput(clientKey: string, terminalId: string, text: string): Promise<void> {
-    try {
-      herdrTerminalInput(clientKey, terminalId, text);
-    } catch (error) {
-      throw bridgeError(error);
-    }
-  },
-
-  async herdrBridgeResize(
-    clientKey: string,
-    terminalId: string,
-    columns: number,
-    rows: number,
-    cellWidthPx: number,
-    cellHeightPx: number,
-  ): Promise<void> {
-    try {
-      herdrTerminalResize(
-        clientKey,
-        terminalId,
-        columns,
-        rows,
-        cellWidthPx,
-        cellHeightPx,
-      );
-    } catch (error) {
-      throw bridgeError(error);
-    }
-  },
-
-  async herdrBridgeScroll(
-    clientKey: string,
-    terminalId: string,
-    up: boolean,
-    lines: number,
-    column: number | undefined,
-    row: number | undefined,
-    modifiers: number,
-  ): Promise<void> {
-    try {
-      herdrTerminalScroll(clientKey, terminalId, up, lines, column, row, modifiers);
-    } catch (error) {
-      throw bridgeError(error);
-    }
-  },
-
-  closeHerdrBridge(clientKey: string, terminalId: string): void {
-    removeBridgeHandler(clientKey, terminalId);
-    closeHerdrTerminalBridge(clientKey, terminalId);
-  },
-
-  closeAllHerdrBridges(clientKey: string): void {
-    bridgeHandlers.delete(clientKey);
-    closeAllHerdrTerminalBridges(clientKey);
-  },
+const SSH_ERROR_TAG_CODES: Readonly<Record<string, string>> = {
+  AuthenticationFailed: 'AUTHENTICATION_FAILED',
+  HostKeyUnknown: 'HOST_KEY_UNKNOWN',
+  HostKeyChanged: 'HOST_KEY_CHANGED',
+  UnsupportedHostCertificate: 'UNSUPPORTED_HOST_CERTIFICATE',
+  ConnectionRefused: 'CONNECTION_REFUSED',
+  ConnectionTimeout: 'CONNECTION_TIMEOUT',
+  HostUnreachable: 'HOST_UNREACHABLE',
+  ChannelUnavailable: 'CHANNEL_UNAVAILABLE',
+  SessionClosed: 'SESSION_CLOSED',
+  InvalidPrivateKey: 'INVALID_PRIVATE_KEY',
+  SftpFailure: 'SFTP_FAILURE',
+  InvalidRequest: 'INVALID_REQUEST',
+  Unknown: 'UNKNOWN',
 };
 
-export default nativeClient;
+function sshError(error: unknown): Error {
+  const native = nativeErrorParts(error);
+  const details = native.tag === 'HostKeyUnknown' || native.tag === 'HostKeyChanged'
+    ? native.inner[0]
+    : undefined;
+  const message = native.tag === 'HostKeyUnknown'
+    ? 'unknown SSH host key'
+    : native.tag === 'HostKeyChanged'
+      ? 'SSH host key changed'
+      : native.tag === 'UnsupportedHostCertificate'
+        ? 'SSH host certificates are not supported'
+        : typeof native.inner[0] === 'string'
+          ? native.inner[0]
+          : error instanceof Error
+            ? error.message
+            : String(error);
+  const result = new Error(message);
+  result.name = 'SshError';
+  if (native.tag) Object.assign(result, { code: SSH_ERROR_TAG_CODES[native.tag] || 'UNKNOWN' });
+  if (details !== undefined) Object.assign(result, { details });
+  return result;
+}
+
+export function setKnownHosts(contents: string): void {
+  setKnownHostsRust(contents);
+}
+
+export function setTrustedHostKeys(entries: Array<{
+  host: string;
+  port: number;
+  keyType: string;
+  publicKey: string;
+}>): void {
+  setTrustedHostKeysRust(entries);
+}
+
+export function getKeyDetails(privateKey: string, passphrase?: string): KeyDetails {
+  try {
+    return getSshKeyDetailsRust(privateKey, passphrase);
+  } catch (error) {
+    throw sshError(error);
+  }
+}
+
+export function generateKeyPair(
+  type = 'ed25519',
+  passphrase = '',
+  keySize = 256,
+  comment = 'whip-ssh',
+): GeneratedKeyPair {
+  try {
+    return generateSshKeyPairRust(type, passphrase, keySize, comment);
+  } catch (error) {
+    throw sshError(error);
+  }
+}
+
+export function createHostRuntime(
+  config: RuntimeConfig,
+  handler?: (event: RuntimeLifecycleEvent) => void,
+): NativeHostRuntime {
+  const runtime = createHostRuntimeRust({
+    runtimeId: config.runtimeId,
+    ssh: runtimeSshConfig(config.ssh),
+    jumpHosts: config.jumpHosts.map(runtimeSshConfig),
+    sessionName: config.sessionName,
+    herdrCommand: config.herdrCommand,
+    socketPath: config.socketPath,
+    cachedSocketPath: config.cachedSocketPath,
+  });
+  return new NativeHostRuntime(runtime, handler);
+}
+
+export function pairHost(
+  code: string,
+  publicKey: string,
+  deviceName: string,
+): Promise<NativePairHostResult> {
+  return pairHostRust(code, publicKey, deviceName);
+}

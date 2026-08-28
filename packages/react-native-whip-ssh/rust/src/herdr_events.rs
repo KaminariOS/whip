@@ -102,7 +102,10 @@ herdr_event_kinds! {
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 // UniFFI data-carrying variants keep the JS boundary exhaustive. Boxing the
 // records would add allocations to every event without reducing FFI payloads.
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "boxing UniFFI event payloads would add allocations without reducing FFI payload size"
+)]
 pub enum HerdrEvent {
     WorkspaceCreated {
         workspace: HerdrWorkspaceInfo,

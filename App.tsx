@@ -10,7 +10,9 @@ import { useTranslation } from 'react-i18next';
 import { AppShell } from './src/components/AppShell';
 import { ReducedMotionProvider, WhipMark } from './src/components/app-ui';
 import { guiFontFamilies } from './src/lib/guiFonts';
+import { bundledAsset } from './src/lib/bundledAsset';
 import { terminalFontFamily } from './src/lib/terminalFonts';
+import { reportBackgroundFailure } from './src/services/backgroundOperations';
 import { useAgentNotifications } from './src/hooks/useAgentNotifications';
 import { useAppNavigation } from './src/hooks/useAppNavigation';
 import { useApplicationSecurity } from './src/hooks/useApplicationSecurity';
@@ -27,13 +29,13 @@ import { useTerminalHistory } from './src/hooks/useTerminalHistory';
 import { useTerminalSessions } from './src/hooks/useTerminalSessions';
 
 const guiFontAssets = {
-  [guiFontFamilies.regular]: require('./assets/gui-fonts/Inter-Regular.ttf'),
-  [guiFontFamilies.medium]: require('./assets/gui-fonts/Inter-Medium.ttf'),
-  [guiFontFamilies.semiBold]: require('./assets/gui-fonts/Inter-SemiBold.ttf'),
-  [guiFontFamilies.bold]: require('./assets/gui-fonts/Inter-Bold.ttf'),
-  [guiFontFamilies.extraBold]: require('./assets/gui-fonts/Inter-ExtraBold.ttf'),
-  [guiFontFamilies.black]: require('./assets/gui-fonts/Inter-Black.ttf'),
-  [terminalFontFamily]: require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf'),
+  [guiFontFamilies.regular]: bundledAsset(require('./assets/gui-fonts/Inter-Regular.ttf')),
+  [guiFontFamilies.medium]: bundledAsset(require('./assets/gui-fonts/Inter-Medium.ttf')),
+  [guiFontFamilies.semiBold]: bundledAsset(require('./assets/gui-fonts/Inter-SemiBold.ttf')),
+  [guiFontFamilies.bold]: bundledAsset(require('./assets/gui-fonts/Inter-Bold.ttf')),
+  [guiFontFamilies.extraBold]: bundledAsset(require('./assets/gui-fonts/Inter-ExtraBold.ttf')),
+  [guiFontFamilies.black]: bundledAsset(require('./assets/gui-fonts/Inter-Black.ttf')),
+  [terminalFontFamily]: bundledAsset(require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf')),
 };
 
 function App() {
@@ -78,8 +80,10 @@ function AppContent() {
     startupStorage,
     deferredHydrationReady,
     t,
-    onDeleteConnectedHost: hostId =>
-      sessionsRef.current?.closeHostById(hostId, false),
+    onDeleteConnectedHost: hostId => {
+      const operation = sessionsRef.current?.closeHostById(hostId, false);
+      if (operation) reportBackgroundFailure(operation, 'delete-connected-host');
+    },
   });
   const appReady = hosts.profilesLoaded && preferencesLoaded;
 

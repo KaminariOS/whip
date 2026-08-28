@@ -40,6 +40,7 @@ import {
   type TerminalResumeViewport,
 } from '../lib/terminalScroll';
 import { terminalSubmissionWrites } from '../lib/terminalSubmission';
+import { isUnknownRecord, stringArray } from '../lib/unknown';
 import {
   terminalRendererEvictionKeys,
   touchTerminalRendererEntry,
@@ -90,8 +91,11 @@ const FRAME_CHUNK_SIZE = 16_384;
 const TRANSCRIPT_CHUNK_SIZE = 16_384;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
+const runtimeProcess: unknown = process;
 const TERMINAL_RENDER_DROP_ENABLED = __DEV__
-  && process.env.EXPO_PUBLIC_WHIP_TERMINAL_RENDER_DROP === '1';
+  && isUnknownRecord(runtimeProcess)
+  && isUnknownRecord(runtimeProcess.env)
+  && runtimeProcess.env.EXPO_PUBLIC_WHIP_TERMINAL_RENDER_DROP === '1';
 const TERMINAL_SOURCE = Platform.select({
   android: { uri: 'file:///android_asset/herdr-terminal.html' },
   ios: { uri: IOS_TERMINAL_ASSETS?.indexURL || 'about:blank' },
@@ -101,6 +105,28 @@ const DEFAULT_TERMINAL_VISUAL_VIEWPORT: TerminalVisualViewport = {
   insets: { top: 0, bottom: 0 },
   geometryBottomInset: 0,
 };
+
+interface TerminalWebMessage extends Record<string, unknown> {
+  type: string;
+}
+
+function parseTerminalWebMessage(serialized: string): TerminalWebMessage | null {
+  try {
+    const value: unknown = JSON.parse(serialized);
+    if (!isUnknownRecord(value) || typeof value.type !== 'string') return null;
+    return { ...value, type: value.type };
+  } catch {
+    return null;
+  }
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value);
+}
 
 function terminalFrameByteLength(frame: TerminalFrame): number {
   if (typeof frame.bytes !== 'string') return frame.bytes.byteLength;
@@ -1062,9 +1088,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
               ? visualViewportRef.current
               : undefined;
             const scroll = activeViewport?.scroll || entry.target.scroll;
-            const alternateScreen = Boolean(
-              activeViewport?.alternateScreen || entry.alternateScreen,
-            );
+            const alternateScreen =
+              activeViewport?.alternateScreen === true || entry.alternateScreen;
             if (
               entry.target.session.kind !== 'ssh'
               && entry.target.session.status === 'connected'
@@ -1148,7 +1173,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject, relinquishController]);
 
   const handleMessage = async (event: WebViewMessageEvent) => {
-    const message = JSON.parse(event.nativeEvent.data);
+    const message = parseTerminalWebMessage(event.nativeEvent.data);
+    if (!message) return;
     if (message.type === 'ready') {
       const reloaded = hostReady.current;
       hostReady.current = true;
@@ -1192,24 +1218,24 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       return;
     }
     if (message.type === 'trace-write-received') {
-      if (Number.isInteger(message.inboundCookie)) {
+      if (isInteger(message.inboundCookie)) {
         terminalInboundWebViewReceived(message.inboundCookie);
       }
       return;
     }
     if (message.type === 'trace-xterm-written') {
-      if (Number.isInteger(message.inboundCookie)) {
+      if (isInteger(message.inboundCookie)) {
         terminalInboundXtermWritten(message.inboundCookie);
       }
       return;
     }
     if (message.type === 'trace-rendered') {
-      if (Number.isInteger(message.inputCookie)) terminalFrameRendered(message.inputCookie);
-      else if (Number.isInteger(message.cookie)) terminalFrameRendered(message.cookie);
-      if (Number.isInteger(message.resizeCookie)) {
+      if (isInteger(message.inputCookie)) terminalFrameRendered(message.inputCookie);
+      else if (isInteger(message.cookie)) terminalFrameRendered(message.cookie);
+      if (isInteger(message.resizeCookie)) {
         terminalResizeFrameRendered(message.resizeCookie);
       }
-      if (Number.isInteger(message.inboundCookie)) {
+      if (isInteger(message.inboundCookie)) {
         terminalInboundFrameVisible(message.inboundCookie);
       }
       return;
@@ -1245,13 +1271,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       return;
     }
     if (message.type === 'input') {
-      await enqueueInput(entry, () => reportQueuedInput(entry, message.data));
+      const data = message.data;
+      if (typeof data !== 'string') return;
+      await enqueueInput(entry, () => reportQueuedInput(entry, data));
     } else if (message.type === 'buffered-submit') {
       const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
       try {
-        const pastedParts = Array.isArray(message.parts)
-          ? message.parts.filter((part: unknown): part is string => typeof part === 'string')
-          : [];
+        const pastedParts = stringArray(message.parts);
         await enqueueInput(entry, async () => {
           for (const [index, data] of terminalSubmissionWrites(pastedParts).entries()) {
             if (index === 0) {
@@ -1278,6 +1304,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportError(entry.target, String(reason));
       }
     } else if (message.type === 'resize') {
+      if (
+        !isFiniteNumber(message.cols)
+        || !isFiniteNumber(message.rows)
+        || !isFiniteNumber(message.cellWidthPx)
+        || !isFiniteNumber(message.cellHeightPx)
+      ) return;
       const source = message.source === 'fit' ? 'fit' : 'xterm';
       const resume = source === 'fit'
         ? resumeScrolls.current.get(entry.target.key)
@@ -1287,10 +1319,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         source,
         message.cols,
         message.rows,
-        message.cellWidthPx || 0,
-        message.cellHeightPx || 0,
-        message.localFitMs,
-        Number.isFinite(message.requestedAtEpochMs)
+        message.cellWidthPx,
+        message.cellHeightPx,
+        isFiniteNumber(message.localFitMs) ? message.localFitMs : undefined,
+        isFiniteNumber(message.requestedAtEpochMs)
           ? Date.now() - message.requestedAtEpochMs
           : undefined,
       );
@@ -1334,6 +1366,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
     } else if (message.type === 'scroll') {
       if (
+        (message.direction !== 'up' && message.direction !== 'down')
+        || !isFiniteNumber(message.lines)
+      ) return;
+      if (
         entry.target.session.status !== 'connected'
         || entry.arbitration.state.yielded
       ) return;
@@ -1344,13 +1380,18 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           entry.target.session.terminalId,
           message.direction,
           message.lines,
-          message.column,
-          message.row,
+          isFiniteNumber(message.column) ? message.column : undefined,
+          isFiniteNumber(message.row) ? message.row : undefined,
         );
       } catch (reason) {
         reportError(entry.target, String(reason));
       }
     } else if (message.type === 'offline-scroll') {
+      if (
+        !isFiniteNumber(message.offsetFromBottom)
+        || !isFiniteNumber(message.maxOffsetFromBottom)
+        || !isFiniteNumber(message.viewportRows)
+      ) return;
       if (
         entry.target.session.kind === 'ssh'
         || !terminalScrollbackMode(entry.target.session).offlineScrollback
@@ -1361,11 +1402,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         viewport_rows: message.viewportRows,
       });
     } else if (message.type === 'terminal-click') {
+      if (!isFiniteNumber(message.column) || !isFiniteNumber(message.row)) return;
+      const column = message.column;
+      const row = message.row;
       try {
         await enqueueInput(entry, () => entry.target.client.clickTerminal(
           entry.target.session.terminalId,
-          message.column,
-          message.row,
+          column,
+          row,
         ));
       } catch (reason) {
         reportError(entry.target, String(reason));
@@ -1396,7 +1440,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         pendingDelta: message.pendingDelta,
       }));
     } else if (message.type === 'clipboard-write') {
-      Clipboard.setString(message.text || '');
+      Clipboard.setString(typeof message.text === 'string' ? message.text : '');
     } else if (message.type === 'clipboard-read') {
       if (
         entry.target.session.status !== 'connected'
@@ -1420,11 +1464,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     ) {
       reportSelectionState(entry.target, message.active === true);
     } else if (entry.target.key === activeKey.current && message.type === 'search-result') {
-      reportSearch(message.count, message.index, Boolean(message.invalid));
+      if (!isFiniteNumber(message.count) || !isFiniteNumber(message.index)) return;
+      reportSearch(message.count, message.index, message.invalid === true);
     } else if (entry.target.key === activeKey.current && message.type === 'link-scan-result') {
-      reportLinks(Array.isArray(message.links)
-        ? message.links.filter((link: unknown) => typeof link === 'string')
-        : []);
+      reportLinks(stringArray(message.links));
     } else if (
       entry.target.key === activeKey.current
       && message.type === 'open-link'
@@ -1437,7 +1480,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   return (
     <WebView
       ref={value => {
-        webView.current = value as WebViewHandle | null;
+        webView.current = value;
       }}
       source={TERMINAL_SOURCE}
       originWhitelist={['file://*', 'about:blank', 'data:*']}

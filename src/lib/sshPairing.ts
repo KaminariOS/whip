@@ -29,7 +29,7 @@ export interface PairHostResult {
 
 export function normalizeOpenSshPublicKey(value: string): string | null {
   const trimmed = value.trim();
-  const hasControlCharacter = [...trimmed].some(character => {
+  const hasControlCharacter = Array.from(trimmed).some(character => {
     const codePoint = character.codePointAt(0) || 0;
     return codePoint < 32 || codePoint === 127;
   });

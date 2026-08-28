@@ -5,6 +5,7 @@ import {
   storageErrorDetails,
   storageParseErrorDetails,
 } from './storageDiagnostics';
+import { isUnknownArray } from '../lib/unknown';
 
 export const REMOTE_GIT_PREFERENCES_KEY = 'whip.remote-git-mode.v1';
 export const REMOTE_GIT_TREE_PREFERENCES_KEY = 'whip.remote-git-tree.v1';
@@ -124,7 +125,7 @@ async function readEntries(storageKey: string, store: string): Promise<unknown[]
   if (value === null) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) {
+    if (!isUnknownArray(parsed)) {
       throw new TypeError('Stored remote Git preferences must be an array');
     }
     return parsed;

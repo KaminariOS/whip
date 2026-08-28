@@ -237,7 +237,7 @@ impl HostState {
         self.snapshot = Some(snapshot);
         self.sync_status = HostSyncStatus::Synced;
         self.last_synced_at_ms = Some(now_ms);
-        self.error = replay_error.clone();
+        self.error.clone_from(&replay_error);
         self.needs_resync = replay_error.is_some();
         self.resync_running = false;
         self.freshness = if replay_error.is_some() {
@@ -564,7 +564,7 @@ fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
             .get(tab.tab_id.as_str())
             .copied()
             .unwrap_or((0, HerdrAgentStatus::Unknown));
-        tab.pane_count = pane_count as f64;
+        tab.pane_count = count_as_f64(pane_count);
         tab.agent_status = agent_status;
     }
 
@@ -583,14 +583,24 @@ fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
             .get(workspace.workspace_id.as_str())
             .copied()
             .unwrap_or((0, HerdrAgentStatus::Unknown));
-        workspace.tab_count = tab_count as f64;
-        workspace.pane_count = panes_by_workspace
-            .get(workspace.workspace_id.as_str())
-            .copied()
-            .unwrap_or_default() as f64;
+        workspace.tab_count = count_as_f64(tab_count);
+        workspace.pane_count = count_as_f64(
+            panes_by_workspace
+                .get(workspace.workspace_id.as_str())
+                .copied()
+                .unwrap_or_default(),
+        );
         workspace.agent_status = agent_status;
     }
     repair_focus(snapshot);
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "pane and tab counts are bounded far below f64's exact integer range"
+)]
+fn count_as_f64(value: usize) -> f64 {
+    value as f64
 }
 
 fn repair_focus(snapshot: &mut HerdrSessionSnapshot) {
@@ -874,10 +884,10 @@ fn update_agent_status(
     snapshot: &mut HerdrSessionSnapshot,
     pane_id: &str,
     agent_status: HerdrAgentStatus,
-    agent: &Option<String>,
-    title: &Option<String>,
-    display_agent: &Option<String>,
-    state_labels: &Option<HashMap<String, String>>,
+    agent: Option<&String>,
+    title: Option<&String>,
+    display_agent: Option<&String>,
+    state_labels: Option<&HashMap<String, String>>,
 ) -> Result<(), String> {
     let pane = snapshot
         .panes
@@ -931,10 +941,10 @@ fn upsert_agent(snapshot: &mut HerdrSessionSnapshot, agent: HerdrAgentInfo) -> R
         snapshot,
         &agent.pane_id,
         agent.agent_status,
-        &agent.agent,
-        &agent.title,
-        &agent.display_agent,
-        &agent.state_labels,
+        agent.agent.as_ref(),
+        agent.title.as_ref(),
+        agent.display_agent.as_ref(),
+        agent.state_labels.as_ref(),
     )?;
     snapshot
         .panes
@@ -1003,7 +1013,9 @@ fn apply_event_to_snapshot(
     match event {
         HerdrEvent::WorkspaceCreated { workspace }
         | HerdrEvent::WorkspaceUpdated { workspace }
-        | HerdrEvent::WorkspaceMetadataUpdated { workspace } => {
+        | HerdrEvent::WorkspaceMetadataUpdated { workspace }
+        | HerdrEvent::WorktreeCreated { workspace, .. }
+        | HerdrEvent::WorktreeOpened { workspace, .. } => {
             upsert_workspace(snapshot, workspace.clone());
         }
         HerdrEvent::WorkspaceClosed { workspace_id, .. } => {
@@ -1049,10 +1061,6 @@ fn apply_event_to_snapshot(
             });
         }
         HerdrEvent::WorkspaceFocused { workspace_id } => focus_workspace(snapshot, workspace_id)?,
-        HerdrEvent::WorktreeCreated { workspace, .. }
-        | HerdrEvent::WorktreeOpened { workspace, .. } => {
-            upsert_workspace(snapshot, workspace.clone());
-        }
         HerdrEvent::WorktreeRemoved {
             workspace_id,
             workspace,
@@ -1177,10 +1185,10 @@ fn apply_event_to_snapshot(
             snapshot,
             pane_id,
             *agent_status,
-            agent,
-            title,
-            display_agent,
-            state_labels,
+            agent.as_ref(),
+            title.as_ref(),
+            display_agent.as_ref(),
+            state_labels.as_ref(),
         )?,
         HerdrEvent::LayoutUpdated { layout } => upsert_layout(snapshot, layout.clone())?,
         HerdrEvent::ProtocolUnknown { raw_event } => {
@@ -1810,8 +1818,8 @@ mod tests {
         assert!(value.panes.iter().all(|pane| pane.tab_id != "t2"));
         assert!(value.agents.iter().all(|agent| agent.tab_id != "t2"));
         assert!(value.layouts.iter().all(|layout| layout.tab_id != "t2"));
-        assert_eq!(value.workspaces[0].tab_count, 1.0);
-        assert_eq!(value.workspaces[0].pane_count, 1.0);
+        assert!((value.workspaces[0].tab_count - 1.0).abs() < f64::EPSILON);
+        assert!((value.workspaces[0].pane_count - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -2053,8 +2061,8 @@ mod tests {
             91,
         );
         let value = state.snapshot.as_ref().unwrap();
-        assert_eq!(value.workspaces[0].tab_count, 2.0);
-        assert_eq!(value.workspaces[0].pane_count, 2.0);
+        assert!((value.workspaces[0].tab_count - 2.0).abs() < f64::EPSILON);
+        assert!((value.workspaces[0].pane_count - 2.0).abs() < f64::EPSILON);
         assert_eq!(value.workspaces[0].agent_status, HerdrAgentStatus::Working);
         state.apply_event(
             1,
@@ -2064,9 +2072,8 @@ mod tests {
             },
             92,
         );
-        assert_eq!(
-            state.snapshot.as_ref().unwrap().workspaces[0].pane_count,
-            1.0
+        assert!(
+            (state.snapshot.as_ref().unwrap().workspaces[0].pane_count - 1.0).abs() < f64::EPSILON
         );
         state.apply_event(
             1,
@@ -2076,9 +2083,8 @@ mod tests {
             },
             93,
         );
-        assert_eq!(
-            state.snapshot.as_ref().unwrap().workspaces[0].tab_count,
-            1.0
+        assert!(
+            (state.snapshot.as_ref().unwrap().workspaces[0].tab_count - 1.0).abs() < f64::EPSILON
         );
     }
 

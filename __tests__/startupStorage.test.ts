@@ -6,11 +6,11 @@ jest.mock('../src/services/terminalBackground', () => ({}));
 jest.mock('../src/services/appBackground', () => ({}));
 jest.mock('react-native-whip-ssh', () => ({
   __esModule: true,
-  default: { setTrustedHostKeys: jest.fn() },
+  setTrustedHostKeys: jest.fn(),
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SSHClient from 'react-native-whip-ssh';
+import { setTrustedHostKeys } from 'react-native-whip-ssh';
 
 import { knownHostsFromStorage } from '../src/services/knownHosts';
 import {
@@ -60,7 +60,7 @@ test('startup snapshot known hosts are strictly parsed and installed natively', 
   const state = knownHostsFromStorage(snapshot.knownHosts);
 
   expect(state).toEqual({ status: 'loaded', hosts: [storedKnownHost] });
-  expect(SSHClient.setTrustedHostKeys).toHaveBeenCalledWith([{
+  expect(setTrustedHostKeys).toHaveBeenCalledWith([{
     host: 'startup.example',
     port: 2222,
     keyType: 'ssh-ed25519',

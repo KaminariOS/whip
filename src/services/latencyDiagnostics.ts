@@ -47,7 +47,7 @@ let snapshot: readonly LatencyDiagnosticEntry[] = [];
 let hydrated = false;
 let hydration: Promise<void> | null = null;
 let persistenceQueue: Promise<void> = Promise.resolve();
-let persistenceError: unknown = null;
+let persistenceError: Error | null = null;
 let persistenceTimer: ReturnType<typeof setTimeout> | null = null;
 let nextId = 1;
 let collectionEnabled = false;
@@ -61,6 +61,10 @@ function boundedString(value: unknown, maxCharacters: number): string | null {
   if (typeof value !== 'string') return null;
   const bounded = value.replace(/\s+/g, ' ').trim().slice(0, maxCharacters);
   return bounded || null;
+}
+
+function persistedError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function parseEntry(value: unknown): LatencyDiagnosticEntry | null {
@@ -275,7 +279,7 @@ function enqueuePersistence(
       await operation();
       persistenceError = null;
     } catch (error) {
-      persistenceError = error;
+      persistenceError = persistedError(error);
       recordStorageDiagnostic('error', event, {
         store: 'latency-diagnostics',
         storageKey: LATENCY_DIAGNOSTICS_STORAGE_KEY,

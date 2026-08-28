@@ -137,7 +137,9 @@ fn validate_target(file: &File) -> io::Result<()> {
             "authorized_keys is not a regular file",
         ));
     }
-    if metadata.uid() != unsafe { libc::geteuid() } {
+    // SAFETY: geteuid has no preconditions and does not dereference pointers.
+    let effective_user_id = unsafe { libc::geteuid() };
+    if metadata.uid() != effective_user_id {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "authorized_keys is not owned by the current user",

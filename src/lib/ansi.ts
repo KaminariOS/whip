@@ -21,7 +21,7 @@ const BASIC_COLORS = [
 ];
 
 // Terminal escape bytes are the subject of this parser.
-// eslint-disable-next-line no-control-regex
+// eslint-disable-next-line no-control-regex -- ANSI parsing must match literal terminal control bytes.
 const CONTROL_SEQUENCE = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g;
 
 export function parseAnsi(value: string): AnsiSegment[] {

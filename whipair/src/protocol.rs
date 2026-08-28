@@ -265,12 +265,13 @@ fn base45_decode(encoded: &str) -> Result<Vec<u8>, ProtocolError> {
             if value > u16::MAX.into() {
                 return Err(ProtocolError::BadEncoding);
             }
-            decoded.extend_from_slice(&(value as u16).to_be_bytes());
+            let value = u16::try_from(value).map_err(|_| ProtocolError::BadEncoding)?;
+            decoded.extend_from_slice(&value.to_be_bytes());
         } else {
             if value > u8::MAX.into() {
                 return Err(ProtocolError::BadEncoding);
             }
-            decoded.push(value as u8);
+            decoded.push(u8::try_from(value).map_err(|_| ProtocolError::BadEncoding)?);
         }
     }
     Ok(decoded)
@@ -302,15 +303,10 @@ pub fn fingerprint_public_key(key: &ValidatedPublicKey) -> String {
     key.public_key.fingerprint(HashAlg::Sha256).to_string()
 }
 
-pub fn verification_code_public_key(key: &ValidatedPublicKey) -> String {
-    // HashAlg::Sha256 structurally guarantees the SHA-256 digest variant.
-    #[allow(clippy::expect_used)]
-    let digest = key
-        .public_key
-        .fingerprint(HashAlg::Sha256)
-        .sha256()
-        .expect("a SHA-256 fingerprint must contain its 32-byte SHA-256 digest");
-    verification_code(&digest)
+pub fn verification_code_public_key(key: &ValidatedPublicKey) -> Result<String, ProtocolError> {
+    let fingerprint = key.public_key.fingerprint(HashAlg::Sha256);
+    let digest = fingerprint.sha256().ok_or(ProtocolError::MalformedKey)?;
+    Ok(verification_code(&digest))
 }
 
 fn verification_code(digest: &[u8; 32]) -> String {
@@ -425,7 +421,7 @@ mod tests {
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti phone",
         )
         .unwrap();
-        assert_eq!(verification_code_public_key(&key), "610-862");
+        assert_eq!(verification_code_public_key(&key).unwrap(), "610-862");
     }
 
     #[test]
@@ -450,7 +446,7 @@ mod tests {
     }
 
     fn append_ssh_field(encoded: &mut Vec<u8>, value: &[u8]) {
-        encoded.extend_from_slice(&(value.len() as u32).to_be_bytes());
+        encoded.extend_from_slice(&u32::try_from(value.len()).unwrap().to_be_bytes());
         encoded.extend_from_slice(value);
     }
 

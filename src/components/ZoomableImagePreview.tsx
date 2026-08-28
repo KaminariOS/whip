@@ -200,7 +200,7 @@ export function ZoomableImagePreview({ accessibilityLabel, uri }: Props) {
         onPanResponderTerminationRequest: () => false,
       }),
     // Gesture handlers intentionally read mutable refs so this responder remains stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Ref-backed gesture handlers must retain responder identity.
     [],
   );
 
@@ -208,13 +208,13 @@ export function ZoomableImagePreview({ accessibilityLabel, uri }: Props) {
     setSourceSize(null);
     reset(false);
     // Reset the viewer whenever a different cached image is opened.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URI identity, rather than the stable reset callback, controls this reset.
   }, [uri]);
 
   useEffect(() => {
     setTransform(liveTransformRef.current, false);
     // Re-clamp the current transform after image load or an orientation change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Geometry changes re-clamp the latest ref-backed transform.
   }, [
     renderedSize.height,
     renderedSize.width,

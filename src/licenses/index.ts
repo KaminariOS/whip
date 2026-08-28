@@ -1,4 +1,5 @@
 import { GENERATED_OPEN_SOURCE_LICENSES } from './generated';
+import { bundledAsset } from '../lib/bundledAsset';
 
 export interface OpenSourceLicenseNotice {
   id: string;
@@ -19,7 +20,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     sourceUrl: 'https://github.com/KaminariOS/whip',
     attribution: 'Whip is free software licensed under the GNU Affero General Public License.',
     licenseName: 'AGPL-3.0-or-later',
-    licenseAsset: require('../../assets/licenses/whip-AGPL-3.0.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/whip-AGPL-3.0.txt')),
   },
   {
     id: 'opencode-web',
@@ -29,7 +30,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     attributionKey: 'licenses.opencodeAttribution',
     licenseName: 'MIT License',
     copyright: 'Copyright (c) 2025 opencode',
-    licenseAsset: require('../../assets/licenses/opencode-MIT.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/opencode-MIT.txt')),
   },
   {
     id: 'inter',
@@ -38,7 +39,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     attribution: "Whip's interface uses the bundled Inter font family.",
     licenseName: 'SIL Open Font License 1.1',
     copyright: 'Copyright (c) 2016 The Inter Project Authors',
-    licenseAsset: require('../../assets/licenses/inter-OFL-1.1.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/inter-OFL-1.1.txt')),
   },
   {
     id: 'jetbrains-mono',
@@ -47,7 +48,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     attribution: "Whip's terminal uses the bundled JetBrains Mono font family.",
     licenseName: 'SIL Open Font License 1.1',
     copyright: 'Copyright 2020 The JetBrains Mono Project Authors',
-    licenseAsset: require('../../assets/licenses/jetbrains-mono-OFL-1.1.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/jetbrains-mono-OFL-1.1.txt')),
   },
   {
     id: 'ar-pl-ukai-hk',
@@ -56,7 +57,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     attribution: "Whip's terminal bundles AR PL UKai HK for CJK text coverage.",
     licenseName: 'Arphic Public License',
     copyright: 'Copyright (C) 1999 Arphic Technology Co., Ltd.',
-    licenseAsset: require('../../assets/licenses/arphic-public-license.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/arphic-public-license.txt')),
   },
   {
     id: 'symbols-nerd-font-mono',
@@ -65,7 +66,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     attribution: "Whip's terminal bundles Nerd Fonts symbols for terminal glyph coverage.",
     licenseName: 'MIT License',
     copyright: 'Copyright (c) 2014 Ryan L McIntyre',
-    licenseAsset: require('../../assets/licenses/nerd-fonts-MIT.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/nerd-fonts-MIT.txt')),
   },
   {
     id: 'mermaid',
@@ -74,7 +75,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     attribution: 'Whip uses Mermaid to render diagrams in remote file previews.',
     licenseName: 'MIT License',
     copyright: 'Copyright (c) 2014 - 2022 Knut Sveidqvist',
-    licenseAsset: require('../../assets/licenses/mermaid-MIT.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/mermaid-MIT.txt')),
   },
   {
     id: 'xterm-js',
@@ -83,7 +84,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     attribution: "Whip's terminal renderer uses xterm.js and its addons.",
     licenseName: 'MIT License',
     copyright: 'Copyright (c) 2017-2019, The xterm.js authors\nCopyright (c) 2014-2016, SourceLair Private Company\nCopyright (c) 2012-2013, Christopher Jeffrey',
-    licenseAsset: require('../../assets/licenses/xterm-MIT.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/xterm-MIT.txt')),
   },
   {
     id: 'lucide',
@@ -92,7 +93,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     attribution: 'Whip uses Lucide icons, including icons derived from the Feather project.',
     licenseName: 'ISC License and MIT License',
     copyright: 'Copyright (c) 2026 Lucide Icons and Contributors\nCopyright (c) 2013-present Cole Bemis',
-    licenseAsset: require('../../assets/licenses/lucide-ISC-and-Feather-MIT.txt'),
+    licenseAsset: bundledAsset(require('../../assets/licenses/lucide-ISC-and-Feather-MIT.txt')),
   },
   ...GENERATED_OPEN_SOURCE_LICENSES,
 ];

@@ -100,5 +100,8 @@ test('tests only read files from explicit artifact or architecture suites', () =
     )
     .map(path => relative(ROOT, path));
 
-  expect(fileReaders.sort()).toEqual([...FILE_READING_TESTS].sort());
+  fileReaders.sort();
+  const expectedFileReaders = [...FILE_READING_TESTS];
+  expectedFileReaders.sort();
+  expect(fileReaders).toEqual(expectedFileReaders);
 });

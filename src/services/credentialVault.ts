@@ -238,7 +238,7 @@ async function loadBackups(phase = 'load'): Promise<Record<string, string>> {
     if (entries.some(([hostId, ciphertext]) => !hostId || typeof ciphertext !== 'string' || !ciphertext)) {
       throw new TypeError('Stored credential backups contain an invalid entry');
     }
-    return Object.fromEntries(entries) as Record<string, string>;
+    return Object.fromEntries(entries);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-parse-failed', {
       store: 'credential-backups',

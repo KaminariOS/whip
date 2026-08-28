@@ -39,10 +39,12 @@ export function createManagedBackgroundImageStore(
     return name.startsWith(filePrefix) && !name.includes('/') ? name : null;
   };
 
-  const remove = async (uri: string | null): Promise<void> => {
-    if (!isBackedUpBackground(uri) && !isLegacyManagedBackground(uri)) return;
-    const file = new File(uri);
-    if (file.exists) file.delete();
+  const remove = (uri: string | null): Promise<void> => {
+    if (isBackedUpBackground(uri) || isLegacyManagedBackground(uri)) {
+      const file = new File(uri);
+      if (file.exists) file.delete();
+    }
+    return Promise.resolve();
   };
 
   return {

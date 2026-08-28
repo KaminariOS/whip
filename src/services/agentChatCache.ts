@@ -3,6 +3,7 @@ import {
   endAppPerformanceTrace,
 } from './performanceTrace';
 import { settledPromise } from '../lib/promises';
+import type { SQLiteDatabase as ExpoSQLiteDatabase } from 'expo-sqlite';
 
 export interface NativeAgentChatCheckpoint {
   namespace: string;
@@ -20,19 +21,16 @@ interface NativeCacheRow {
   cache_blob: Uint8Array | ArrayBuffer;
 }
 
-type SQLiteTransaction = {
-  runAsync: (source: string, params: readonly unknown[]) => Promise<unknown>;
-};
-
-type SQLiteDatabase = SQLiteTransaction & {
-  execAsync: (source: string) => Promise<void>;
-  getFirstAsync: <T>(source: string, params: readonly unknown[]) => Promise<T | null>;
-  withExclusiveTransactionAsync: (task: (transaction: SQLiteTransaction) => Promise<void>) => Promise<void>;
-};
+type SQLiteDatabase = ExpoSQLiteDatabase;
 
 type SQLiteDatabaseFactory = () => Promise<SQLiteDatabase>;
 
 const DATABASE_NAME = 'whip-agent-chat.db';
+
+const openDefaultDatabase: SQLiteDatabaseFactory = async () => {
+  const sqlite = await import('expo-sqlite');
+  return sqlite.openDatabaseAsync(DATABASE_NAME);
+};
 
 function trace<T>(name: string, operation: () => Promise<T>): Promise<T> {
   const active = beginAppPerformanceTrace(name);
@@ -45,10 +43,7 @@ export class SQLiteAgentChatCache implements AgentChatCache {
   private readonly writes = new Map<string, Promise<void>>();
 
   constructor(
-    private readonly openDatabase: SQLiteDatabaseFactory = async () => {
-      const sqlite = await import('expo-sqlite');
-      return sqlite.openDatabaseAsync(DATABASE_NAME) as unknown as Promise<SQLiteDatabase>;
-    },
+    private readonly openDatabase: SQLiteDatabaseFactory = openDefaultDatabase,
   ) {}
 
   private async db(): Promise<SQLiteDatabase> {
@@ -152,8 +147,8 @@ export class MemoryAgentChatCache implements AgentChatCache {
   private readonly entries = new Map<string, MemoryCheckpoint>();
   private readonly writes = new Map<string, Promise<void>>();
 
-  async loadNative(key: string): Promise<ArrayBuffer | null> {
-    return this.entries.get(key)?.blob.slice(0) || null;
+  loadNative(key: string): Promise<ArrayBuffer | null> {
+    return Promise.resolve(this.entries.get(key)?.blob.slice(0) || null);
   }
 
   saveNative(checkpoint: NativeAgentChatCheckpoint): Promise<void> {
@@ -170,10 +165,11 @@ export class MemoryAgentChatCache implements AgentChatCache {
     });
   }
 
-  async deleteHost(namespace: string): Promise<void> {
+  deleteHost(namespace: string): Promise<void> {
     for (const [key, entry] of this.entries) {
       if (entry.namespace === namespace) this.entries.delete(key);
     }
+    return Promise.resolve();
   }
 }
 

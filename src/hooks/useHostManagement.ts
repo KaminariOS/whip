@@ -302,10 +302,12 @@ export function useHostManagement({
   const loadProfileForConnection = useCallback(
     async (host: HostProfile): Promise<ConnectionProfile | null> => {
       let profile = await loadConnectionProfile(host);
-      if (!profile.secret && credentialRecovery.state === 'locked') {
-        if (await unlockCredentialRecovery()) {
-          profile = await loadConnectionProfile(host);
-        }
+      if (
+        !profile.secret
+        && credentialRecovery.state === 'locked'
+        && await unlockCredentialRecovery()
+      ) {
+        profile = await loadConnectionProfile(host);
       }
       if (profile.secret) return profile;
       setEditorProfile(profile);
@@ -411,15 +413,15 @@ export function useHostManagement({
 
   const trustChallenge = useCallback(
     async (challenge: UnknownHostKeyChallenge) => {
-      const hosts = await trustKnownHost(challenge);
-      replaceKnownHostsState({ status: 'loaded', hosts });
+      const trustedHosts = await trustKnownHost(challenge);
+      replaceKnownHostsState({ status: 'loaded', hosts: trustedHosts });
     },
     [replaceKnownHostsState],
   );
 
   const forgetKnownHost = useCallback(async (id: string) => {
-    const hosts = await deleteKnownHost(id);
-    replaceKnownHostsState({ status: 'loaded', hosts });
+    const remainingHosts = await deleteKnownHost(id);
+    replaceKnownHostsState({ status: 'loaded', hosts: remainingHosts });
   }, [replaceKnownHostsState]);
 
   const deleteConfirmed = useCallback(async () => {

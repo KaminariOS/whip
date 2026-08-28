@@ -1,4 +1,4 @@
-import SSHClient from 'react-native-whip-ssh';
+import { createHostRuntime } from 'react-native-whip-ssh';
 
 import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
@@ -6,6 +6,9 @@ import type { ConnectionProfile } from '../src/types';
 jest.mock('react-native-whip-ssh', () => (
   require('./mockWhipSsh').createMockWhipSshModule()
 ));
+
+const mockWhipSsh = require('./mockWhipSsh').getMockWhipSshControl();
+const connectWithPassword: jest.Mock = mockWhipSsh.connectWithPassword;
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
 const profile: ConnectionProfile = {
@@ -24,11 +27,11 @@ describe('HerdrClient native transcript boundary', () => {
       )),
       getRemoteHome: jest.fn(async () => '/home/me'),
       off: jest.fn(), disconnect: jest.fn(),
-    } as unknown as SSHClient;
-    jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
+    };
+    connectWithPassword.mockResolvedValueOnce(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    const runtime = jest.mocked(SSHClient.createHostRuntime).mock.results[0].value;
+    const runtime = jest.mocked(createHostRuntime).mock.results[0].value;
     const transcript = {
       sessionId, agent: 'codex', revision: 1, status: 'loading', messages: [], turns: [],
     } as const;

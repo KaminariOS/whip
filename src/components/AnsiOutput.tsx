@@ -32,7 +32,6 @@ export function AnsiOutput({ value }: Props) {
             <Text
               key={`${index}-${segment.text.length}`}
               // ANSI colors are runtime data, so these styles cannot live in StyleSheet.create.
-              // eslint-disable-next-line react-native/no-inline-styles
               style={{
                 color: style.foreground || colors.text,
                 backgroundColor: style.background || background,

@@ -1,9 +1,10 @@
-import SSHClient from 'react-native-whip-ssh';
-
 import { HerdrClient, isTerminalAttachmentUploadCancelled } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
+
+const mockWhipSsh = require('./mockWhipSsh').getMockWhipSshControl();
+const connectWithPassword: jest.Mock = mockWhipSsh.connectWithPassword;
 
 const profile: ConnectionProfile = {
   id: 'host-1', name: 'Test host', host: 'host.example.test', port: '22', username: 'whip',
@@ -19,21 +20,21 @@ function nativeClient(upload?: () => Promise<void>) {
     sftpCancelUpload: jest.fn(),
     off: jest.fn(),
     disconnect: jest.fn(),
-  } as unknown as SSHClient;
+  };
 }
 
-async function connectedClient(native: SSHClient): Promise<HerdrClient> {
-  jest.mocked(SSHClient.connectWithPassword).mockResolvedValueOnce(native);
+async function connectedClient(native: ReturnType<typeof nativeClient>): Promise<HerdrClient> {
+  connectWithPassword.mockResolvedValueOnce(native);
   const client = new HerdrClient();
   await client.connect(profile);
   return client;
 }
 
 describe('terminal attachment uploads', () => {
-  beforeEach(() => jest.mocked(SSHClient.connectWithPassword).mockReset());
+  beforeEach(() => connectWithPassword.mockReset());
 
   it('asks HostRuntime for a product-level transfer and returns its remote path', async () => {
-    const native = nativeClient() as SSHClient & { sftpCreateDirAll: jest.Mock; sftpUploadToPath: jest.Mock };
+    const native = nativeClient();
     const client = await connectedClient(native);
 
     const transfer = client.startTerminalAttachmentUpload('/tmp/Screen shot (final).PNG');
@@ -52,7 +53,7 @@ describe('terminal attachment uploads', () => {
   it('cancels by stable transfer ID', async () => {
     let reject!: (reason: unknown) => void;
     const pending = new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; });
-    const native = nativeClient(() => pending) as SSHClient & { sftpCancelUpload: jest.Mock };
+    const native = nativeClient(() => pending);
     const client = await connectedClient(native);
     const transfer = client.startTerminalAttachmentUpload('/tmp/image.png');
 

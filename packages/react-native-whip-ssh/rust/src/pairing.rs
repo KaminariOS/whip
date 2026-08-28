@@ -25,7 +25,7 @@ const MAX_MESSAGE_BYTES: usize = 16 * 1024;
 const ED25519_SEED_BYTES: usize = 32;
 const SHA256_BYTES: usize = 32;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
+const APPROVAL_TIMEOUT: Duration = Duration::from_mins(10);
 
 #[derive(Debug, thiserror::Error)]
 pub enum PairingError {
@@ -384,12 +384,13 @@ fn base45_decode(encoded: &str) -> Result<Vec<u8>, PairingError> {
             if value > u16::MAX.into() {
                 return Err(PairingError::BadEncoding);
             }
-            decoded.extend_from_slice(&(value as u16).to_be_bytes());
+            let value = u16::try_from(value).map_err(|_| PairingError::BadEncoding)?;
+            decoded.extend_from_slice(&value.to_be_bytes());
         } else {
             if value > u8::MAX.into() {
                 return Err(PairingError::BadEncoding);
             }
-            decoded.push(value as u8);
+            decoded.push(u8::try_from(value).map_err(|_| PairingError::BadEncoding)?);
         }
     }
     Ok(decoded)
@@ -426,7 +427,7 @@ mod tests {
     fn code(address: &[u8], username: &str) -> String {
         let mut bytes = address.to_vec();
         bytes.extend_from_slice(&22_u16.to_be_bytes());
-        bytes.push(username.len() as u8);
+        bytes.push(u8::try_from(username.len()).unwrap());
         bytes.extend_from_slice(username.as_bytes());
         bytes.extend_from_slice(&[7; 32]);
         bytes.extend_from_slice(&[9; 32]);

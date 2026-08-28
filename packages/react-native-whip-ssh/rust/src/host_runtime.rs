@@ -167,7 +167,10 @@ pub struct HostLatencyMeasurement {
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 // UniFFI data enums cannot box an associated record. Herdr events remain typed
 // instead of crossing the native boundary as serialized JSON.
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "UniFFI data enums cannot box associated records without changing the native API"
+)]
 pub enum HostRuntimeEvent {
     ConnectionStateChanged {
         runtime_id: String,
@@ -564,6 +567,7 @@ fn validate_generation(inner: &RuntimeInner, generation: u64) -> Result<(), Host
             "remote operation completed after its host connection was replaced".to_owned(),
         ));
     }
+    drop(state);
     Ok(())
 }
 
@@ -647,7 +651,9 @@ async fn finish_connection(
         if !state.install_connection(epoch) {
             None
         } else {
-            let old_ssh = inner.herdr.install(state.generation, ssh.clone());
+            let generation = state.generation;
+            let old_ssh = inner.herdr.install(generation, ssh.clone());
+            drop(state);
             let old_jumps = std::mem::replace(&mut *inner.jump_sessions.lock(), jumps.clone());
             Some((old_ssh, old_jumps))
         }
@@ -741,7 +747,10 @@ fn backoff_upper_bound(attempt: u32) -> u64 {
 
 fn reconnect_delay(attempt: u32, random_unit: f64) -> u64 {
     let random_unit = random_unit.clamp(0.0, 1.0);
-    (backoff_upper_bound(attempt) as f64 * (0.5 + random_unit * 0.5)).round() as u64
+    let delay = Duration::from_millis(backoff_upper_bound(attempt))
+        .mul_f64(0.5 + random_unit * 0.5)
+        .saturating_add(Duration::from_micros(500));
+    u64::try_from(delay.as_millis()).unwrap_or(MAX_RECONNECT_DELAY_MS)
 }
 
 fn runtime_jitter(inner: &RuntimeInner, attempt: u32) -> f64 {
@@ -749,7 +758,7 @@ fn runtime_jitter(inner: &RuntimeInner, attempt: u32) -> f64 {
         u64::from(attempt).wrapping_mul(0x9e37_79b9),
         |hash, byte| hash.rotate_left(5) ^ u64::from(byte),
     );
-    (value % 10_000) as f64 / 9_999.0
+    f64::from(u32::try_from(value % 10_000).unwrap_or_default()) / 9_999.0
 }
 
 fn begin_reconnect_for_generation(
@@ -1312,7 +1321,7 @@ fn herdr_protocol_label() -> String {
 
 fn herdr_readiness_timeout(last_error: impl Into<String>) -> HostRuntimeError {
     HostRuntimeError::HerdrReadinessTimeout {
-        timeout_ms: HERDR_READINESS_TIMEOUT.as_millis() as u64,
+        timeout_ms: u64::try_from(HERDR_READINESS_TIMEOUT.as_millis()).unwrap_or(u64::MAX),
         last_error: last_error.into(),
     }
 }
@@ -1645,6 +1654,7 @@ fn begin_host_state_sync(inner: &RuntimeInner) -> (u64, SnapshotToken) {
         let mut state = inner.state.lock();
         let generation = state.generation;
         let token = state.host_state.begin_sync(generation);
+        drop(state);
         (generation, token)
     };
     emit_host_state(inner, Vec::new());
@@ -1904,6 +1914,7 @@ fn claim_terminal_bridge(
         )));
     }
     terminal.bridge_id = Some(bridge_id);
+    drop(state);
     Ok(())
 }
 
@@ -1917,7 +1928,9 @@ fn live_terminal_bridge_id(inner: &RuntimeInner, terminal_id: &str) -> Option<He
         if terminal.state != HostTerminalState::Attached {
             return None;
         }
-        terminal.bridge_id?
+        let bridge_id = terminal.bridge_id?;
+        drop(state);
+        bridge_id
     };
     (active_herdr_terminal_bridge_id(&inner.id, terminal_id) == Some(bridge_id))
         .then_some(bridge_id)
@@ -2091,7 +2104,7 @@ async fn wait_for_terminal_open(
                     "terminal {terminal_id} open was superseded"
                 )));
             }
-            match terminal.state {
+            let should_wait = match terminal.state {
                 HostTerminalState::Attached => false,
                 HostTerminalState::Failed if terminal.retry_running => true,
                 HostTerminalState::Failed => {
@@ -2105,7 +2118,9 @@ async fn wait_for_terminal_open(
                     )));
                 }
                 HostTerminalState::Opening | HostTerminalState::Restoring => true,
-            }
+            };
+            drop(state);
+            should_wait
         };
         if !should_wait {
             return Ok(());
@@ -2255,7 +2270,9 @@ fn schedule_event_retry(inner: Arc<RuntimeInner>, reason: String) {
             return;
         }
         event.retry_running = true;
-        (epoch, event.operation_epoch)
+        let operation_epoch = event.operation_epoch;
+        drop(state);
+        (epoch, operation_epoch)
     };
     if let Ok(runtime) = crate::runtime() {
         runtime.spawn(async move {
@@ -2356,13 +2373,15 @@ fn schedule_terminal_retry(
             terminal.retry_running = true;
             terminal.reconnect_attempt = 0;
         }
-        (
+        let retry_state = (
             epoch,
             terminal.operation_epoch,
             start_worker,
             terminal.reconnect_attempt,
             bridge_to_close,
-        )
+        );
+        drop(state);
+        retry_state
     };
     if let Some(bridge_id) = bridge_to_close {
         close_owned_herdr_terminal_bridge(&inner.id, &terminal_id, bridge_id);
@@ -2495,7 +2514,9 @@ pub(crate) fn deliver_herdr_events(
         if state.connection != HostConnectionState::Connected || state.event.is_none() {
             return None;
         }
-        apply_herdr_event_batch(&mut state, events)
+        let result = apply_herdr_event_batch(&mut state, events);
+        drop(state);
+        result
     };
     if result.changed {
         emit_host_state(&runtime, result.changed_agent_pane_ids);
@@ -2924,7 +2945,10 @@ impl HostRuntime {
         close_herdr_event_subscription(self.inner.id.clone());
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the native terminal API keeps geometry fields explicit for UniFFI callers"
+    )]
     pub async fn open_terminal(
         &self,
         terminal_id: String,
@@ -2940,7 +2964,7 @@ impl HostRuntime {
             .spawn(async move {
                 let (operation_epoch, wait_for_existing) = {
                     let mut state = inner.state.lock();
-                    if let Some(terminal) = state.terminals.get_mut(&terminal_id) {
+                    let open_state = if let Some(terminal) = state.terminals.get_mut(&terminal_id) {
                         terminal.takeover = takeover;
                         terminal.columns = columns.max(20);
                         terminal.rows = rows.max(8);
@@ -2986,7 +3010,9 @@ impl HostRuntime {
                             },
                         );
                         (1, false)
-                    }
+                    };
+                    drop(state);
+                    open_state
                 };
                 if wait_for_existing {
                     return wait_for_terminal_open(&inner, &terminal_id, operation_epoch).await;
@@ -3050,19 +3076,16 @@ impl HostRuntime {
             terminal.rows = rows.max(8);
             terminal.cell_width_px = cell_width_px;
             terminal.cell_height_px = cell_height_px;
-            terminal.state == HostTerminalState::Attached
+            let attached = terminal.state == HostTerminalState::Attached;
+            drop(state);
+            attached
         };
         if !attached {
             return Ok(());
         }
         if live_terminal_bridge_id(&self.inner, &terminal_id).is_none() {
             let reason = format!("terminal {terminal_id} has no live bridge while resizing");
-            schedule_terminal_retry(
-                self.inner.clone(),
-                terminal_id.clone(),
-                None,
-                reason.clone(),
-            );
+            schedule_terminal_retry(self.inner.clone(), terminal_id, None, reason.clone());
             return Err(HostRuntimeError::TerminalUnavailable(reason));
         }
         herdr_terminal_resize(
@@ -3091,12 +3114,7 @@ impl HostRuntime {
     ) -> Result<(), HostRuntimeError> {
         if live_terminal_bridge_id(&self.inner, &terminal_id).is_none() {
             let reason = format!("terminal {terminal_id} has no live bridge while scrolling");
-            schedule_terminal_retry(
-                self.inner.clone(),
-                terminal_id.clone(),
-                None,
-                reason.clone(),
-            );
+            schedule_terminal_retry(self.inner.clone(), terminal_id, None, reason.clone());
             return Err(HostRuntimeError::TerminalUnavailable(reason));
         }
         herdr_terminal_scroll(
@@ -3684,7 +3702,9 @@ impl HostRuntime {
                                 Err(error) => Err(HostRuntimeError::TransferFailure(error)),
                             };
                         }
-                        slot.notify.clone()
+                        let notify = slot.notify.clone();
+                        drop(transfers);
+                        notify
                     };
                     pending.notified().await;
                 }
@@ -4631,6 +4651,7 @@ mod tests {
         let snapshot = state.snapshot.as_ref().unwrap();
         assert_eq!(snapshot.panes[0].agent_status, HerdrAgentStatus::Idle);
         assert_eq!(snapshot.panes[1].agent_status, HerdrAgentStatus::Working);
+        drop(events);
     }
 
     #[test]
@@ -4733,6 +4754,7 @@ mod tests {
                 ..
             } if terminal_id == "terminal-pane-1"
         )));
+        drop(events);
     }
 
     #[test]
@@ -4934,6 +4956,7 @@ mod tests {
                 terminal.state = HostTerminalState::Attached;
                 terminal.retry_running = false;
                 terminal.bridge_id = Some(1);
+                drop(state);
             }
             inner.terminal_settled.notify_waiters();
 
@@ -4976,6 +4999,7 @@ mod tests {
         assert!(terminal.retry_running);
         assert_eq!(terminal.operation_epoch, 7);
         assert_eq!(terminal.reconnect_attempt, 2);
+        drop(state);
     }
 
     #[test]
@@ -5011,6 +5035,7 @@ mod tests {
         assert_eq!(terminal.state, HostTerminalState::Attached);
         assert_eq!(terminal.bridge_id, Some(42));
         assert!(!terminal.retry_running);
+        drop(state);
     }
 
     #[test]

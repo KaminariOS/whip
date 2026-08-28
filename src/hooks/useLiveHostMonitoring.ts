@@ -1,7 +1,6 @@
 import { useEffect, useEffectEvent } from 'react';
 import { AppState } from 'react-native';
 
-import { HerdrClient } from '../services/HerdrClient';
 import { flushLatencyDiagnosticWrites } from '../services/latencyDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { recordNetworkDiagnostic } from '../services/networkDiagnostics';
@@ -12,7 +11,6 @@ import {
 
 const LIVE_HOST_HEALTHCHECK_MS = 15_000;
 const LIVE_HOST_RECONCILE_MS = 120_000;
-const NETWORK_CHANGE_DEBOUNCE_MS = 750;
 const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;
 
 export type ReconnectRecoveryTrigger = 'app-resume' | 'network-change';
@@ -29,7 +27,7 @@ interface LiveHostMonitoringOptions {
   onBackgroundMonitoringError: (error: unknown) => void;
 }
 
-/** Owns host heartbeat, foreground recovery, and network-change scheduling. */
+/** Owns host heartbeat and foreground recovery scheduling. */
 export function useLiveHostMonitoring({
   liveHostCount,
   alertsEnabled,
@@ -89,24 +87,6 @@ export function useLiveHostMonitoring({
       subscription.remove();
       clearInterval(heartbeat);
       clearInterval(reconciliation);
-    };
-  }, [liveHostCount]);
-
-  useEffect(() => {
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const subscription = HerdrClient.addNetworkChangeListener(() => {
-      recordNetworkDiagnostic('warn', 'native-network-change', {
-        liveHostCount,
-      });
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        restart('network-change');
-      }, NETWORK_CHANGE_DEBOUNCE_MS);
-    });
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      subscription.remove();
     };
   }, [liveHostCount]);
 

@@ -1,6 +1,7 @@
 /* global TextDecoder, TextEncoder */
 
 const LEGACY_TERMINAL_ATTACH_LAUNCH_MODE = 1;
+let latestMockControl;
 
 function unavailable(error) {
   const value = String(error?.message || error || '').toLowerCase();
@@ -19,6 +20,7 @@ function createMockWhipSshModule() {
     connectWithKeyViaJump: jest.fn(),
     createHostRuntime: jest.fn(),
   };
+  latestMockControl = api;
 
   const connectOne = async (config, jump) => {
     const args = [config.host, config.port, config.username, config.secret];
@@ -386,7 +388,12 @@ function createMockWhipSshModule() {
     return runtime;
   });
 
-  return { __esModule: true, default: api };
+  return { __esModule: true, createHostRuntime: api.createHostRuntime };
 }
 
-module.exports = { createMockWhipSshModule };
+function getMockWhipSshControl() {
+  if (!latestMockControl) throw new Error('react-native-whip-ssh mock has not been initialized');
+  return latestMockControl;
+}
+
+module.exports = { createMockWhipSshModule, getMockWhipSshControl };

@@ -51,10 +51,14 @@ export async function loadGlobalSshKeys(): Promise<GlobalSshKey[]> {
   if (value === null) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed) || parsed.some(entry => !isGlobalSshKey(entry))) {
+    if (!Array.isArray(parsed)) {
       throw new TypeError('Stored global SSH key metadata is malformed');
     }
-    return parsed.sort((left, right) => left.name.localeCompare(right.name));
+    const entries = parsed.filter(isGlobalSshKey);
+    if (entries.length !== parsed.length) {
+      throw new TypeError('Stored global SSH key metadata is malformed');
+    }
+    return entries.sort((left, right) => left.name.localeCompare(right.name));
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-parse-failed', {
       store: 'global-ssh-key-metadata',
@@ -206,10 +210,14 @@ function parseMaterials(value: string | null): StoredKeyMaterial[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed) || parsed.some(entry => !isStoredKeyMaterial(entry))) {
+    if (!Array.isArray(parsed)) {
       throw new TypeError('Stored global SSH key material is malformed');
     }
-    return parsed;
+    const entries = parsed.filter(isStoredKeyMaterial);
+    if (entries.length !== parsed.length) {
+      throw new TypeError('Stored global SSH key material is malformed');
+    }
+    return entries;
   } catch (error) {
     recordOperationalDiagnostic('error', 'GlobalSshKeychain', 'global-ssh-key-material-parse-failed', {
       stage: 'keychain-parse',

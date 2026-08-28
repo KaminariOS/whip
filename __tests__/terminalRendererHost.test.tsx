@@ -15,13 +15,12 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => {
-  const mockListeners = new Set<any>();
+  const mockListeners = new Set<(mockState: string) => void>();
   return {
     AppState: {
       currentState: 'active',
       listeners: mockListeners,
-      addEventListener: jest.fn((...args: any[]) => {
-        const listener = args[1];
+      addEventListener: jest.fn((_event: string, listener: (state: string) => void) => {
         mockListeners.add(listener);
         return { remove: () => mockListeners.delete(listener) };
       }),

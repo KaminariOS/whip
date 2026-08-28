@@ -1,5 +1,3 @@
-import SSHClient from 'react-native-whip-ssh';
-
 import { HerdrClient } from '../src/services/HerdrClient';
 import {
   terminalNativeWriteQueued,
@@ -23,7 +21,8 @@ jest.mock('../src/services/performanceTrace', () => ({
   terminalResizeSuperseded: jest.fn(),
 }));
 
-const connectWithPassword = jest.mocked(SSHClient.connectWithPassword);
+const mockWhipSsh = require('./mockWhipSsh').getMockWhipSshControl();
+const connectWithPassword: jest.Mock = mockWhipSsh.connectWithPassword;
 const nativeWriteQueued = jest.mocked(terminalNativeWriteQueued);
 const resizeDeduplicated = jest.mocked(terminalResizeDeduplicated);
 const resizeSuperseded = jest.mocked(terminalResizeSuperseded);
@@ -50,15 +49,28 @@ function bridgeClient(protocol = 17) {
   const native = {
     requestHerdrApi,
     getRemoteHome: jest.fn(async () => '/home/herdr'),
-    startHerdrBridge: jest.fn(async () => undefined),
-    herdrBridgeInput: jest.fn(async () => undefined),
-    herdrBridgeResize: jest.fn(async () => undefined),
-    herdrBridgeScroll: jest.fn(async () => undefined),
+    startHerdrBridge: jest.fn(async (
+      _socketPath: string,
+      _protocol: number,
+      _terminalId: string,
+      _takeover: boolean,
+      _columns: number,
+      _rows: number,
+      _cellWidthPx: number,
+      _cellHeightPx: number,
+      _handler: (event: Record<string, unknown>) => void,
+    ): Promise<void> => undefined),
+    herdrBridgeInput: jest.fn(async (
+      _terminalId: string,
+      _text: string,
+    ): Promise<void> => undefined),
+    herdrBridgeResize: jest.fn(async (): Promise<void> => undefined),
+    herdrBridgeScroll: jest.fn(async (): Promise<void> => undefined),
     closeHerdrBridge: jest.fn(),
     closeAllHerdrBridges: jest.fn(),
     off: jest.fn(),
     disconnect: jest.fn(),
-  } as unknown as SSHClient;
+  };
   return native;
 }
 

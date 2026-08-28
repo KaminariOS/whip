@@ -169,7 +169,10 @@ pub struct AgentToolState {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Enum)]
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "UniFFI transcript variants cannot box their typed payload records"
+)]
 pub enum AgentTranscriptPart {
     Text {
         id: String,
@@ -258,7 +261,10 @@ pub struct AgentTranscriptState {
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "UniFFI delta variants cannot box the reset snapshot without changing the native API"
+)]
 pub enum AgentTranscriptDelta {
     Reset {
         state: AgentTranscriptState,
@@ -501,7 +507,7 @@ impl CodexTranscriptAdapter {
         let handled = match &decoded {
             RolloutRecord::SessionMeta(payload) => {
                 if let Some(id) = payload.id.as_ref().filter(|id| !id.is_empty()) {
-                    self.session_id = id.clone();
+                    self.session_id.clone_from(id);
                 }
                 if let Some(cwd) = payload.cwd.as_ref().filter(|cwd| !cwd.is_empty()) {
                     self.directory = Some(cwd.clone());
@@ -516,7 +522,7 @@ impl CodexTranscriptAdapter {
             }
             RolloutRecord::Event(CodexEvent::ItemCompleted(completed)) => {
                 if !completed.thread_id.is_empty() {
-                    self.session_id = completed.thread_id.clone();
+                    self.session_id.clone_from(&completed.thread_id);
                 }
                 true
             }
@@ -564,7 +570,7 @@ impl CodexTranscriptAdapter {
                                 object(record.get("thread"))
                                     .and_then(|thread| nonempty(thread.get("id")))
                             }) {
-                                self.session_id = id.to_owned();
+                                id.clone_into(&mut self.session_id);
                             }
                             true
                         }
@@ -580,11 +586,9 @@ impl CodexTranscriptAdapter {
                     false
                 }
             }
-            RolloutRecord::KnownIrrelevant | RolloutRecord::Event(CodexEvent::KnownIrrelevant) => {
-                false
-            }
-            RolloutRecord::ResponseItem(CodexResponseItem::Unknown { .. })
-            | RolloutRecord::Event(CodexEvent::Unknown { .. })
+            RolloutRecord::KnownIrrelevant
+            | RolloutRecord::Event(CodexEvent::KnownIrrelevant | CodexEvent::Unknown { .. })
+            | RolloutRecord::ResponseItem(CodexResponseItem::Unknown { .. })
             | RolloutRecord::Unknown { .. } => false,
         };
         let mut deltas = Vec::new();
@@ -863,7 +867,10 @@ impl CodexTranscriptAdapter {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the reducer accepts the complete normalized tool event as distinct typed fields"
+    )]
     fn tool(
         &mut self,
         id: String,
@@ -1041,7 +1048,7 @@ impl CodexTranscriptAdapter {
                 let content = text_content(payload.get("content"));
                 match payload.get("role").and_then(Value::as_str) {
                     Some("assistant") => {
-                        self.assistant_text(content, item_id, at, false, has_item_id)
+                        self.assistant_text(content, item_id, at, false, has_item_id);
                     }
                     Some("user") => self.user_message(content, item_id, at, has_item_id),
                     _ => {}
@@ -1204,50 +1211,19 @@ impl CodexTranscriptAdapter {
             })
     }
 
-    fn accept_event(&mut self, payload: &Map<String, Value>, at: Option<u64>) {
-        let kind = nonempty(payload.get("type")).unwrap_or_default();
-        let call_id = nonempty(payload.get("call_id"))
-            .map(str::to_owned)
-            .unwrap_or_else(|| self.sequence.to_string());
+    fn accept_tool_event(
+        &mut self,
+        kind: &str,
+        call_id: &str,
+        payload: &Map<String, Value>,
+        at: Option<u64>,
+    ) -> bool {
         match kind {
-            "task_started" => self.begin_turn(),
-            "task_complete" => {
-                if let Some(id) = self.active_assistant_message_id.clone()
-                    && let Some(message) = self.message_mut(&id)
-                {
-                    message.completed_at_ms = at;
-                }
-                self.begin_turn();
-            }
-            "user_message" => self.user_message(
-                nonempty(payload.get("message"))
-                    .unwrap_or_default()
-                    .to_owned(),
-                format!("event:{call_id}"),
-                at,
-                false,
-            ),
-            "agent_message" => self.assistant_text(
-                nonempty(payload.get("message"))
-                    .unwrap_or_default()
-                    .to_owned(),
-                format!("event:{call_id}"),
-                at,
-                false,
-                false,
-            ),
-            "agent_reasoning" => self.assistant_text(
-                nonempty(payload.get("text")).unwrap_or_default().to_owned(),
-                format!("event:{call_id}"),
-                at,
-                true,
-                false,
-            ),
             "exec_command_begin" => self.tool(
-                call_id,
+                call_id.to_owned(),
                 "shell".to_owned(),
                 AgentToolStatus::Running,
-                fields_with_cwd(payload),
+                Some(fields_with_cwd(payload)),
                 None,
                 None,
                 None,
@@ -1271,7 +1247,7 @@ impl CodexTranscriptAdapter {
                         (!text.is_empty()).then_some(text)
                     });
                 self.tool(
-                    call_id,
+                    call_id.to_owned(),
                     "shell".to_owned(),
                     parse_tool_status(
                         payload.get("status"),
@@ -1281,7 +1257,7 @@ impl CodexTranscriptAdapter {
                             AgentToolStatus::Error
                         },
                     ),
-                    fields_with_cwd(payload),
+                    Some(fields_with_cwd(payload)),
                     output,
                     exit.filter(|code| *code != 0)
                         .map(|code| format!("Exited with code {code}")),
@@ -1291,7 +1267,7 @@ impl CodexTranscriptAdapter {
                 );
             }
             "patch_apply_begin" | "patch_apply_updated" => self.tool(
-                call_id,
+                call_id.to_owned(),
                 "patch".to_owned(),
                 AgentToolStatus::Running,
                 Some(Vec::new()),
@@ -1312,7 +1288,7 @@ impl CodexTranscriptAdapter {
                 .join("\n");
                 let failed = payload.get("success").and_then(Value::as_bool) == Some(false);
                 self.tool(
-                    call_id,
+                    call_id.to_owned(),
                     "patch".to_owned(),
                     if failed {
                         AgentToolStatus::Error
@@ -1331,15 +1307,6 @@ impl CodexTranscriptAdapter {
                     at,
                 );
             }
-            "turn_diff" => {
-                let files = unified_diff_files(nonempty(payload.get("unified_diff")));
-                if !files.is_empty() {
-                    let message_id = self.assistant_message_id(at);
-                    if let Some(message) = self.message_mut(&message_id) {
-                        message.diffs = files;
-                    }
-                }
-            }
             "mcp_tool_call_begin" | "mcp_tool_call_end" => {
                 let invocation = object(payload.get("invocation"));
                 let name = invocation
@@ -1356,7 +1323,7 @@ impl CodexTranscriptAdapter {
                 let failed =
                     object(payload.get("result")).is_some_and(|result| result.contains_key("Err"));
                 self.tool(
-                    call_id,
+                    call_id.to_owned(),
                     name,
                     if !ended {
                         AgentToolStatus::Running
@@ -1395,7 +1362,7 @@ impl CodexTranscriptAdapter {
                     );
                 }
                 self.tool(
-                    call_id,
+                    call_id.to_owned(),
                     "websearch".to_owned(),
                     if kind.ends_with("_end") {
                         AgentToolStatus::Completed
@@ -1409,6 +1376,62 @@ impl CodexTranscriptAdapter {
                     Vec::new(),
                     at,
                 );
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn accept_event(&mut self, payload: &Map<String, Value>, at: Option<u64>) {
+        let kind = nonempty(payload.get("type")).unwrap_or_default();
+        let call_id = nonempty(payload.get("call_id"))
+            .map(str::to_owned)
+            .unwrap_or_else(|| self.sequence.to_string());
+        if self.accept_tool_event(kind, &call_id, payload, at) {
+            return;
+        }
+        match kind {
+            "task_started" => self.begin_turn(),
+            "task_complete" => {
+                if let Some(id) = self.active_assistant_message_id.clone()
+                    && let Some(message) = self.message_mut(&id)
+                {
+                    message.completed_at_ms = at;
+                }
+                self.begin_turn();
+            }
+            "user_message" => self.user_message(
+                nonempty(payload.get("message"))
+                    .unwrap_or_default()
+                    .to_owned(),
+                format!("event:{call_id}"),
+                at,
+                false,
+            ),
+            "agent_message" => self.assistant_text(
+                nonempty(payload.get("message"))
+                    .unwrap_or_default()
+                    .to_owned(),
+                format!("event:{call_id}"),
+                at,
+                false,
+                false,
+            ),
+            "agent_reasoning" => self.assistant_text(
+                nonempty(payload.get("text")).unwrap_or_default().to_owned(),
+                format!("event:{call_id}"),
+                at,
+                true,
+                false,
+            ),
+            "turn_diff" => {
+                let files = unified_diff_files(nonempty(payload.get("unified_diff")));
+                if !files.is_empty() {
+                    let message_id = self.assistant_message_id(at);
+                    if let Some(message) = self.message_mut(&message_id) {
+                        message.diffs = files;
+                    }
+                }
             }
             "plan_update" => {
                 let text = format_plan(payload);
@@ -1684,7 +1707,7 @@ fn put_field(fields: &mut Vec<AgentField>, key: &str, value: AgentScalarValue) {
     }
 }
 
-fn fields_with_cwd(payload: &Map<String, Value>) -> Option<Vec<AgentField>> {
+fn fields_with_cwd(payload: &Map<String, Value>) -> Vec<AgentField> {
     let mut fields = fields([("command", command_title(payload.get("command")))]);
     if let Some(cwd) = nonempty(payload.get("cwd")) {
         put_field(
@@ -1695,7 +1718,7 @@ fn fields_with_cwd(payload: &Map<String, Value>) -> Option<Vec<AgentField>> {
             },
         );
     }
-    Some(fields)
+    fields
 }
 
 fn source_tool_name(source: &str) -> Option<&str> {
@@ -2838,7 +2861,7 @@ impl OpenCodeSessionCore {
 
     pub fn confirm_cache(&mut self, source_generation: u64, cursor: u64) -> bool {
         if source_generation != self.source_generation
-            || !self.cursor.is_some_and(|current| cursor <= current)
+            || self.cursor.is_none_or(|current| cursor > current)
             || self
                 .committed_cursor
                 .is_some_and(|committed| cursor < committed)
@@ -4383,7 +4406,7 @@ mod tests {
             source.clone(),
             CodexSourceIdentity {
                 requested_session_id: "b".into(),
-                ..source.clone()
+                ..source
             }
         );
     }
@@ -4578,7 +4601,7 @@ mod tests {
             requested_session_id: core.requested_session_id.clone(),
             source: core.source.clone(),
             committed_offset: cached.committed_offset,
-            lines: cached.lines.clone(),
+            lines: cached.lines,
             revision: None,
             transcript: Some(core.state()),
         })

@@ -8,7 +8,7 @@ export function isValidCodexSessionId(value: string): boolean {
 
 export function codexSessionIdForPane(pane: PaneInfo | undefined): string | null {
   const session = pane?.agent_session;
-  if (!session || session.agent.toLowerCase() !== 'codex' || session.kind !== 'id') return null;
+  if (session?.agent.toLowerCase() !== 'codex' || session.kind !== 'id') return null;
   const value = session.value.trim();
   return isValidCodexSessionId(value) ? value : null;
 }

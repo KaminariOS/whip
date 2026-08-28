@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SSHClient from 'react-native-whip-ssh';
+import { setTrustedHostKeys } from 'react-native-whip-ssh';
 import {
   KNOWN_HOSTS_STORAGE_KEY,
   KnownHostsUnavailableError,
@@ -30,9 +30,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 jest.mock('react-native-whip-ssh', () => ({
   __esModule: true,
-  default: {
-    setTrustedHostKeys: jest.fn(),
-  },
+  setTrustedHostKeys: jest.fn(),
 }));
 
 const knownHost: KnownHost = {
@@ -73,7 +71,7 @@ test('loads a missing store as authoritative empty and permits the first host', 
   const state = await loadKnownHosts();
 
   expect(loadedHosts(state)).toEqual([]);
-  expect(SSHClient.setTrustedHostKeys).toHaveBeenCalledWith([]);
+  expect(setTrustedHostKeys).toHaveBeenCalledWith([]);
 
   const next = await trustKnownHost(challenge('first.example', 'SHA256:first'));
   expect(next).toHaveLength(1);
@@ -89,7 +87,7 @@ test('loads a valid global list into the native strict host-key repository', asy
   const state = await loadKnownHosts();
 
   expect(loadedHosts(state)).toEqual([knownHost]);
-  expect(SSHClient.setTrustedHostKeys).toHaveBeenCalledWith([{
+  expect(setTrustedHostKeys).toHaveBeenCalledWith([{
     host: 'savior.tailnet.ts.net',
     port: 22,
     keyType: 'ssh-ed25519',
@@ -105,7 +103,7 @@ test('read failure is explicit and preserves the native trust repository', async
   const state = await loadKnownHosts();
 
   expect(state).toEqual({ status: 'failed', error });
-  expect(SSHClient.setTrustedHostKeys).not.toHaveBeenCalled();
+  expect(setTrustedHostKeys).not.toHaveBeenCalled();
   expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
     '"fallbackUsed":"preserved-native-known-hosts"',
   ));
@@ -118,7 +116,7 @@ test('malformed JSON fails without exposing key material or clearing native trus
   const state = knownHostsFromStorage('{AAAASensitiveKey');
 
   expect(state.status).toBe('failed');
-  expect(SSHClient.setTrustedHostKeys).not.toHaveBeenCalled();
+  expect(setTrustedHostKeys).not.toHaveBeenCalled();
   const diagnostic = String(consoleError.mock.calls[0]?.[0]);
   expect(diagnostic).toContain('[StorageDiagnostics] storage-parse-failed');
   expect(diagnostic).not.toContain('AAAASensitiveKey');
@@ -130,7 +128,7 @@ test('non-array persisted JSON fails closed', () => {
 
   expect(knownHostsFromStorage(JSON.stringify({ hosts: [knownHost] })).status)
     .toBe('failed');
-  expect(SSHClient.setTrustedHostKeys).not.toHaveBeenCalled();
+  expect(setTrustedHostKeys).not.toHaveBeenCalled();
   consoleError.mockRestore();
 });
 
@@ -141,7 +139,7 @@ test('one malformed element rejects the entire persisted list', () => {
   const state = knownHostsFromStorage(JSON.stringify([knownHost, malformed]));
 
   expect(state.status).toBe('failed');
-  expect(SSHClient.setTrustedHostKeys).not.toHaveBeenCalled();
+  expect(setTrustedHostKeys).not.toHaveBeenCalled();
   expect(() => parseKnownHosts(JSON.stringify([knownHost, malformed])))
     .toThrow('index 1');
   consoleError.mockRestore();
@@ -180,7 +178,7 @@ test('stores a confirmed host globally with structured nonstandard-port data', a
     keyType: 'ssh-ed25519',
   });
   expect(next[0].id).toMatch(/^known-host-/);
-  expect(SSHClient.setTrustedHostKeys).toHaveBeenLastCalledWith([{
+  expect(setTrustedHostKeys).toHaveBeenLastCalledWith([{
     host: 'Thinker.Example',
     port: 2222,
     keyType: 'ssh-ed25519',
@@ -217,11 +215,11 @@ test('deduplicates trusted challenges by host, port, type, and fingerprint', asy
 
   expect(next).toEqual([legacyHost]);
   expect(AsyncStorage.setItem).not.toHaveBeenCalled();
-  expect(SSHClient.setTrustedHostKeys).not.toHaveBeenCalled();
+  expect(setTrustedHostKeys).not.toHaveBeenCalled();
 });
 
 test('does not persist trusted host material rejected by Rust validation', async () => {
-  jest.mocked(SSHClient.setTrustedHostKeys).mockImplementationOnce(() => {
+  jest.mocked(setTrustedHostKeys).mockImplementationOnce(() => {
     throw new Error('trusted host key is malformed');
   });
 
@@ -244,7 +242,7 @@ test('write failure restores native and application-visible state', async () => 
   await expect(deleteKnownHost(knownHost.id)).rejects.toBe(error);
 
   expect(mockStoredKnownHosts).toBe(JSON.stringify([knownHost]));
-  expect(SSHClient.setTrustedHostKeys).toHaveBeenLastCalledWith([{
+  expect(setTrustedHostKeys).toHaveBeenLastCalledWith([{
     host: knownHost.host,
     port: knownHost.port,
     keyType: knownHost.keyType,
@@ -271,7 +269,7 @@ test('serializes overlapping trust and delete mutations without losing updates',
 
   const persisted = parseKnownHosts(mockStoredKnownHosts);
   expect(persisted.map(host => host.host)).toEqual(['b.example', 'c.example']);
-  expect(SSHClient.setTrustedHostKeys).toHaveBeenLastCalledWith([
+  expect(setTrustedHostKeys).toHaveBeenLastCalledWith([
     expect.objectContaining({ host: 'b.example' }),
     expect.objectContaining({ host: 'c.example' }),
   ]);

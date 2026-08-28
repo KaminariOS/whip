@@ -107,7 +107,7 @@ impl HerdrConnection {
         cached_socket_path: Option<String>,
     ) -> Arc<Self> {
         let socket_from_cache = socket_path.is_none() && cached_socket_path.is_some();
-        let resolved_socket = socket_path.clone().or(cached_socket_path);
+        let resolved_socket = socket_path.or(cached_socket_path);
         let (lifecycle, _) = watch::channel(0);
         Arc::new(Self {
             client_key,
@@ -290,6 +290,7 @@ impl HerdrConnection {
         }
         state.socket_path = Some(socket.clone());
         state.socket_from_cache = false;
+        drop(state);
         Ok(ResolvedSocket {
             path: socket,
             from_cache: false,

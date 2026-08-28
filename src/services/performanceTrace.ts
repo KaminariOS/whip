@@ -540,13 +540,12 @@ export function abandonTerminalResizeTrace(trace: TerminalResizeTrace | null): v
 /** Claims the first renderer-bound terminal frame after a native resize dispatch. */
 export function terminalResizeFrameReceived(targetKey: string): number | null {
   const queue = pendingResizeByTarget.get(targetKey);
-  let trace: TerminalResizeTrace | undefined;
-  while ((trace = queue?.shift())) {
-    if (!trace.ended) break;
-    trace = undefined;
+  let trace = queue?.shift();
+  while (trace?.ended) {
+    trace = queue?.shift();
   }
   if (!queue?.length) pendingResizeByTarget.delete(targetKey);
-  if (!trace || trace.visibleCookie === null) return null;
+  if (trace?.visibleCookie === null || trace?.visibleCookie === undefined) return null;
   trace.queuedForFrame = false;
   if (trace.firstFrameCookie !== null) {
     endAsyncEvent(RESIZE_TO_FIRST_FRAME, trace.firstFrameCookie);
@@ -724,7 +723,10 @@ export function terminalNativeResponseReceived(trace: TerminalInputTrace): boole
 
 /** Ends after HerdrClient synchronously hands the frame to the WebView renderer. */
 export function terminalNativeResponseDelivered(trace: TerminalInputTrace | null): void {
-  if (!trace || trace.nativeResponseToRendererCookie === null) return;
+  if (
+    trace?.nativeResponseToRendererCookie === null
+    || trace?.nativeResponseToRendererCookie === undefined
+  ) return;
   endAsyncEvent(NATIVE_RESPONSE_TO_RENDERER, trace.nativeResponseToRendererCookie);
   trace.nativeResponseToRendererCookie = null;
 }

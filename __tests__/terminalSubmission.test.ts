@@ -29,7 +29,7 @@ describe('terminal composer submission', () => {
       '/remote/one.png /remote/report final.pdf',
     ],
   ])('%s', (_label, text, paths, expectedEvents, expectedHistory) => {
-    expect(composeTerminalSubmission(text as string, paths as string[])).toEqual({
+    expect(composeTerminalSubmission(text, paths)).toEqual({
       historyEntry: expectedHistory,
       pasteEvents: expectedEvents,
     });

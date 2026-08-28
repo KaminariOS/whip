@@ -579,7 +579,7 @@ function TurnMeta({ turn }: { turn: TranscriptTurn }) {
   return (
     <View className="mt-2 min-h-7 flex-row items-center gap-2">
       {values.length > 0 && <Text className="text-[10px] text-muted-foreground">{values.join(' · ')}</Text>}
-      {copy && (
+      {copy.length > 0 && (
         <Button
           accessibilityLabel="Copy response"
           className="ml-auto size-7 rounded-full px-0"

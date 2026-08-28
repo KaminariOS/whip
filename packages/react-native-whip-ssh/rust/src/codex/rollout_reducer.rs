@@ -491,7 +491,10 @@ impl CodexRolloutReducer {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the reducer accepts the complete normalized Codex tool event as typed fields"
+    )]
     fn put_tool(
         &mut self,
         turn_id: &str,

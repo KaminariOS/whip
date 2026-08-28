@@ -319,7 +319,10 @@ pub struct HerdrPaneZoomResult {
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 // UniFFI data enums cannot box associated records. Keeping the result typed is
 // preferable to recreating the former string discriminator plus option bag.
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "UniFFI data enums cannot box associated records without changing the typed control API"
+)]
 pub enum HerdrControlResult {
     Pong {
         version: String,
@@ -880,9 +883,14 @@ fn control_sequences() -> &'static Mutex<HashMap<String, u64>> {
 }
 
 fn next_request_id(client_key: &str) -> String {
-    let mut sequences = control_sequences().lock();
-    let sequence = sequences.entry(client_key.to_owned()).or_default();
-    *sequence += 1;
+    let sequence = {
+        let mut sequences = control_sequences().lock();
+        let sequence = sequences.entry(client_key.to_owned()).or_default();
+        *sequence += 1;
+        let sequence = *sequence;
+        drop(sequences);
+        sequence
+    };
     format!("android_{sequence}")
 }
 
@@ -2150,7 +2158,7 @@ mod tests {
             HerdrControlResult::PaneRead { read }
                 if read.source == HerdrPaneReadSource::Detection
                     && read.format == HerdrPaneReadFormat::Text
-                    && read.revision == 9.0
+                    && (read.revision - 9.0).abs() < f64::EPSILON
         ));
     }
 }

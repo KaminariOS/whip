@@ -14,6 +14,8 @@ import { useTranslation } from 'react-i18next';
 import { LocalSvg } from 'react-native-svg/css';
 
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
+import { bundledAsset } from '@/src/lib/bundledAsset';
+import { isUnknownRecord } from '@/src/lib/unknown';
 import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { GlassBackdrop, GlassSurface } from './GlassSurface';
@@ -60,12 +62,16 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
   }));
 
   const whipVersion = Application.nativeApplicationVersion || Constants.expoConfig?.version || t('common.unavailable');
-  const embeddedCommit = Constants.expoConfig?.extra?.gitCommit;
-  const whipCommit = typeof embeddedCommit === 'string' && /^[0-9a-f]{7,64}$/i.test(embeddedCommit) ? embeddedCommit.slice(0, 12) : null;
+  const expoExtra: unknown = Constants.expoConfig?.extra;
+  const embeddedCommit = isUnknownRecord(expoExtra) ? expoExtra.gitCommit : undefined;
+  const fullWhipCommit = typeof embeddedCommit === 'string' && /^[0-9a-f]{7,64}$/i.test(embeddedCommit)
+    ? embeddedCommit
+    : null;
+  const whipCommit = fullWhipCommit?.slice(0, 12) ?? null;
   const openCommit = () => {
-    if (!whipCommit) return;
+    if (!fullWhipCommit) return;
 
-    Linking.openURL(`${WHIP_REPOSITORY_URL}/commit/${embeddedCommit}`).catch(error => {
+    Linking.openURL(`${WHIP_REPOSITORY_URL}/commit/${fullWhipCommit}`).catch(error => {
       Alert.alert(t('about.commitError'), String(error));
     });
   };
@@ -270,7 +276,7 @@ function GitHubMark({ size }: { size: number }) {
   return (
     <LocalSvg
       accessible={false}
-      asset={require('../../assets/brand/github.svg')}
+      asset={bundledAsset(require('../../assets/brand/github.svg'))}
       height={size}
       width={size}
     />
@@ -281,7 +287,7 @@ function XMark({ size }: { size: number }) {
   return (
     <LocalSvg
       accessible={false}
-      asset={require('../../assets/brand/x.svg')}
+      asset={bundledAsset(require('../../assets/brand/x.svg'))}
       height={size}
       width={size}
     />

@@ -1,5 +1,5 @@
 import { ArrowRight, Check, ChevronDown, ChevronLeft, ClipboardPaste, FileUp, KeyRound, Network, Sparkles, Trash2, X } from 'lucide-react-native';
-import SSHClient from 'react-native-whip-ssh';
+import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -79,7 +79,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     let active = true;
     setKeyInspection({ state: 'loading' });
     const timeout = setTimeout(() => {
-      SSHClient.getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined)
+      Promise.resolve()
+        .then(() => getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined))
         .then(details => {
           if (active) setKeyInspection({
             state: 'valid',
@@ -163,7 +164,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     setKeyActionsOpen(false);
     setGeneratingKey(true);
     try {
-      const generated = await SSHClient.generateKeyPair('ed25519', profile.passphrase || '', 256, profile.name.trim() || 'herdr');
+      const generated = generateKeyPair('ed25519', profile.passphrase || '', 256, profile.name.trim() || 'herdr');
       applyPrivateKey(generated.privateKey);
     } catch (generationError) {
       Alert.alert(t('connection.generateKeyError'), String(generationError));
@@ -208,7 +209,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     try {
       const publicKey = keyInspection.state === 'valid'
         ? keyInspection.publicKey
-        : (await SSHClient.getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined)).publicKey;
+        : getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined).publicKey;
       Clipboard.setString(publicKey);
       copied(t('connection.publicKey'));
     } catch (copyError) {
