@@ -64,6 +64,21 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     Disconnected: 0, Connecting: 1, Connected: 2, Reconnecting: 3, Disconnecting: 4, Failed: 5,
   },
   HostTerminalState: { Opening: 0, Attached: 1, Restoring: 2, Closed: 3, Failed: 4 },
+  SshErrorCode: {
+    AuthenticationFailed: 0,
+    HostKeyUnknown: 1,
+    HostKeyChanged: 2,
+    UnsupportedHostCertificate: 3,
+    ConnectionRefused: 4,
+    ConnectionTimeout: 5,
+    HostUnreachable: 6,
+    ChannelUnavailable: 7,
+    SessionClosed: 8,
+    InvalidPrivateKey: 9,
+    SftpFailure: 10,
+    InvalidRequest: 11,
+    Unknown: 12,
+  },
   HerdrSplitDirection: { Right: 0, Down: 1 },
   HerdrTabLaunch: {
     Shell: { new: jest.fn(() => ({ tag: 'Shell' })) },
@@ -411,6 +426,50 @@ describe('native Herdr bridge adapter', () => {
       tag: 'SshTransportFailure',
       message: 'SSH key exchange failed',
     });
+    consoleError.mockRestore();
+  });
+
+  it.each([
+    [
+      'AuthenticationFailure',
+      ['permission denied'],
+      'AUTHENTICATION_FAILED',
+      'permission denied',
+    ],
+    [
+      'SshConnectionFailure',
+      { code: mockGenerated.SshErrorCode.ConnectionRefused, message: 'connection refused' },
+      'CONNECTION_REFUSED',
+      'connection refused',
+    ],
+    [
+      'HerdrUnavailable',
+      ['Herdr socket unavailable'],
+      'HERDR_UNAVAILABLE',
+      'Herdr socket unavailable',
+    ],
+    [
+      'TransferCancelled',
+      ['transfer cancelled'],
+      'TRANSFER_CANCELLED',
+      'transfer cancelled',
+    ],
+  ] as const)('projects %s to a stable code', async (tag, inner, code, message) => {
+    const rustRuntime = {
+      runtimeId: jest.fn(() => `runtime-${tag}`),
+      connect: jest.fn().mockRejectedValue({ tag, inner }),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = nativeClient.createHostRuntime({
+      runtimeId: `runtime-${tag}`,
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret',
+      },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(runtime.connect()).rejects.toMatchObject({ code, message, nativeTag: tag });
     consoleError.mockRestore();
   });
 

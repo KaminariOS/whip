@@ -28,6 +28,11 @@ describe('Herdr protocol compatibility', () => {
     } catch (caught) {
       error = caught;
     }
+    expect(error).toMatchObject({
+      code: 'HERDR_PROTOCOL_MISMATCH',
+      expected: '17–20',
+      received: 16,
+    });
     expect(isHerdrProtocolMismatch(error)).toBe(true);
     expect(isHerdrProtocolMismatch(new Error('connection lost'))).toBe(false);
   });

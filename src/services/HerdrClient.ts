@@ -72,53 +72,6 @@ export type TerminalAttachmentId = {
   readonly [terminalAttachmentIdBrand]: true;
 };
 
-const DIRECT_AGENT_KINDS = new Set(['claude', 'codex', 'opencode']);
-
-/** Preserve shell syntax while using structured agent launches when it is safe. */
-export function tabLaunchIntentForCommand(command: string): TabLaunchIntent {
-  const trimmed = command.trim();
-  const commandLaunch = (): TabLaunchIntent => ({ type: 'command', command: trimmed });
-  if (!trimmed || /[\\\n\r$`]/.test(trimmed)) return commandLaunch();
-
-  const argv: string[] = [];
-  let token = '';
-  let quote: "'" | '"' | null = null;
-  let tokenStarted = false;
-  for (const character of trimmed) {
-    if (quote) {
-      if (character === quote) quote = null;
-      else token += character;
-      tokenStarted = true;
-      continue;
-    }
-    if (character === "'" || character === '"') {
-      quote = character;
-      tokenStarted = true;
-      continue;
-    }
-    if (/\s/.test(character)) {
-      if (tokenStarted) {
-        argv.push(token);
-        token = '';
-        tokenStarted = false;
-      }
-      continue;
-    }
-    if (/[|&;<>()[\]{}*?!#~]/.test(character)) return commandLaunch();
-    token += character;
-    tokenStarted = true;
-  }
-  if (quote) return commandLaunch();
-  if (tokenStarted) argv.push(token);
-  const kind = argv[0];
-  if (!DIRECT_AGENT_KINDS.has(kind)) return commandLaunch();
-  return {
-    type: 'agent',
-    kind: kind as Extract<TabLaunchIntent, { type: 'agent' }>['kind'],
-    args: argv.slice(1),
-  };
-}
-
 export class CommandLaunchPartialFailure extends Error {
   constructor(
     readonly created: TabCreationResult,
@@ -133,13 +86,6 @@ export class CommandLaunchPartialFailure extends Error {
 }
 
 export { clearHerdrSocketPathCache } from './herdrSocketPathCache';
-
-export function isUnavailableSshChannel(error: unknown): boolean {
-  const code = errorCode(error);
-  if (code === 'CHANNEL_UNAVAILABLE' || code === 'SESSION_CLOSED') return true;
-  const message = error instanceof Error ? error.message : String(error);
-  return /channel (?:is )?not open(?:ed)?|failed to open channel \(connectfailed\)|session is down|socket is not established/i.test(message);
-}
 
 interface TerminalConnection {
   attachmentId: TerminalAttachmentId;
@@ -190,8 +136,7 @@ export interface RemoteFilePreviewHandle {
 }
 
 export function isTerminalAttachmentUploadCancelled(error: unknown): boolean {
-  const value = error as { tag?: string; message?: string };
-  return value.tag === 'TransferCancelled' || /transfer cancelled/i.test(value.message || String(error));
+  return errorCode(error) === 'TRANSFER_CANCELLED';
 }
 
 export class HerdrClient {

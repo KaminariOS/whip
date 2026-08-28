@@ -3,7 +3,6 @@ import SSHClient from 'react-native-whip-ssh';
 import {
   clearHerdrSocketPathCache,
   HerdrClient,
-  tabLaunchIntentForCommand,
 } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
 
@@ -432,26 +431,6 @@ describe('direct Herdr API requests', () => {
       'space-1', ' Checks ', { type: 'command', command: 'echo codex is installed' },
     );
     expect(native.createTabWithLaunch).toHaveBeenCalledTimes(1);
-  });
-
-  test('classifies the restored command field without exposing launch-mode controls', () => {
-    expect(tabLaunchIntentForCommand(' opencode --model "current model" ')).toEqual({
-      type: 'agent',
-      kind: 'opencode',
-      args: ['--model', 'current model'],
-    });
-    expect(tabLaunchIntentForCommand('opencode --model "$MODEL"')).toEqual({
-      type: 'command',
-      command: 'opencode --model "$MODEL"',
-    });
-    expect(tabLaunchIntentForCommand('opencode && echo done')).toEqual({
-      type: 'command',
-      command: 'opencode && echo done',
-    });
-    expect(tabLaunchIntentForCommand('npm test')).toEqual({
-      type: 'command',
-      command: 'npm test',
-    });
   });
 
   test('launches Codex through one typed native operation', async () => {

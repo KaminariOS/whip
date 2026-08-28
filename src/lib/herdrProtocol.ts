@@ -7,6 +7,7 @@ export const HERDR_PROTOCOL_VERSIONS_LABEL = `${HERDR_PROTOCOL_VERSIONS[0]}–${
 export type HerdrProtocolVersion = typeof HERDR_PROTOCOL_VERSIONS[number];
 
 export class HerdrProtocolMismatchError extends Error {
+  readonly code = 'HERDR_PROTOCOL_MISMATCH';
   readonly expected: string;
   readonly received: number | undefined;
 

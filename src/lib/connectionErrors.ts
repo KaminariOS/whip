@@ -52,16 +52,7 @@ export function connectionErrorContext(error: unknown): Record<string, string> {
       };
     }
   }
-
-  const match = errorText(error).match(
-    /(?:Whip|Android bridge) supports (.+?), server reports ([^\r\n]+)/i,
-  );
-  return match
-    ? {
-      expectedProtocol: match[1],
-      receivedProtocol: match[2].trim(),
-    }
-    : {};
+  return {};
 }
 
 export function classifyConnectionError(error: unknown): ConnectionErrorKind {
@@ -76,6 +67,7 @@ export function classifyConnectionError(error: unknown): ConnectionErrorKind {
     case 'HERDR_PROTOCOL_MISMATCH':
       return 'incompatibleProtocol';
     case 'HERDR_READINESS_TIMEOUT':
+    case 'HERDR_UNAVAILABLE':
       return 'herdrUnavailable';
     case 'INVALID_PRIVATE_KEY':
       return 'invalidKey';
@@ -87,35 +79,7 @@ export function classifyConnectionError(error: unknown): ConnectionErrorKind {
     case 'CHANNEL_UNAVAILABLE':
     case 'SESSION_CLOSED':
       return 'unreachable';
+    default:
+      return 'unknown';
   }
-
-  // Preserve friendly handling for product-layer and older native errors that
-  // do not originate from the structured Rust transport boundary.
-  const message = errorText(error).toLowerCase();
-
-  if (/herdr protocol mismatch/.test(message)) return 'incompatibleProtocol';
-  if (
-    /private key|privatekey|key passphrase|e_key_|invalid key|invalidkey/.test(message)
-  ) {
-    return 'invalidKey';
-  }
-  if (
-    /auth fail|authentication fail|authentication rejected|userauth fail|permission denied/.test(message)
-  ) {
-    return 'authentication';
-  }
-  if (/connection refused|econnrefused/.test(message)) return 'connectionRefused';
-  if (/timed? ?out|etimedout/.test(message)) return 'timeout';
-  if (
-    /unknownhost|unknown host|unable to resolve|name or service not known|network is unreachable|no route to host|enetunreach|ehostunreach|connection reset|connection lost|broken pipe|session is down|socket is not established/.test(message)
-  ) {
-    return 'unreachable';
-  }
-  if (/herdr/.test(message)) return 'herdrUnavailable';
-  return 'unknown';
-}
-
-function errorText(error: unknown): string {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  return String(error);
 }

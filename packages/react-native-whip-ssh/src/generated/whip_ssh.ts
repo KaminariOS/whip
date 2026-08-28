@@ -6462,6 +6462,7 @@ export enum HerdrBridgeError_Tags {
   ServerRejectedWelcome = 'ServerRejectedWelcome',
   ClosedBeforeHandshake = 'ClosedBeforeHandshake',
   BridgeUnavailable = 'BridgeUnavailable',
+  TransportUnavailable = 'TransportUnavailable',
   BridgeClosed = 'BridgeClosed',
 }
 export const HerdrBridgeError = (() => {
@@ -6753,6 +6754,35 @@ export const HerdrBridgeError = (() => {
     }
   }
 
+  type TransportUnavailable__interface = {
+    tag: HerdrBridgeError_Tags.TransportUnavailable;
+  };
+  class TransportUnavailable_
+    extends UniffiError
+    implements TransportUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrBridgeError';
+    readonly tag = HerdrBridgeError_Tags.TransportUnavailable;
+    constructor() {
+      super('HerdrBridgeError', 'TransportUnavailable');
+    }
+
+    static new(): TransportUnavailable_ {
+      return new TransportUnavailable_();
+    }
+
+    static instanceOf(obj: any): obj is TransportUnavailable_ {
+      return obj.tag === HerdrBridgeError_Tags.TransportUnavailable;
+    }
+    static hasInner(obj: any): obj is TransportUnavailable_ {
+      return false;
+    }
+  }
+
   type BridgeClosed__interface = {
     tag: HerdrBridgeError_Tags.BridgeClosed;
     inner: Readonly<[string]>;
@@ -6800,6 +6830,7 @@ export const HerdrBridgeError = (() => {
     ServerRejectedWelcome: ServerRejectedWelcome_,
     ClosedBeforeHandshake: ClosedBeforeHandshake_,
     BridgeUnavailable: BridgeUnavailable_,
+    TransportUnavailable: TransportUnavailable_,
     BridgeClosed: BridgeClosed_,
   });
 })();
@@ -6813,6 +6844,7 @@ export type HerdrBridgeError = InstanceType<
     | 'ServerRejectedWelcome'
     | 'ClosedBeforeHandshake'
     | 'BridgeUnavailable'
+    | 'TransportUnavailable'
     | 'BridgeClosed']
 >;
 
@@ -6856,6 +6888,8 @@ const FfiConverterTypeHerdrBridgeError = (() => {
             FfiConverterString.read(from),
           );
         case 9:
+          return new HerdrBridgeError.TransportUnavailable();
+        case 10:
           return new HerdrBridgeError.BridgeClosed(
             FfiConverterString.read(from),
           );
@@ -6913,8 +6947,12 @@ const FfiConverterTypeHerdrBridgeError = (() => {
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HerdrBridgeError_Tags.BridgeClosed: {
+        case HerdrBridgeError_Tags.TransportUnavailable: {
           ordinalConverter.write(9, into);
+          return;
+        }
+        case HerdrBridgeError_Tags.BridgeClosed: {
+          ordinalConverter.write(10, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
@@ -6974,9 +7012,12 @@ const FfiConverterTypeHerdrBridgeError = (() => {
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
+        case HerdrBridgeError_Tags.TransportUnavailable: {
+          return ordinalConverter.allocationSize(9);
+        }
         case HerdrBridgeError_Tags.BridgeClosed: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(9);
+          let size = ordinalConverter.allocationSize(10);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
@@ -12234,6 +12275,95 @@ const FfiConverterTypeHerdrTerminalControlEvent = (() => {
   return new FFIConverter();
 })();
 
+export enum SshErrorCode {
+  AuthenticationFailed,
+  HostKeyUnknown,
+  HostKeyChanged,
+  UnsupportedHostCertificate,
+  ConnectionRefused,
+  ConnectionTimeout,
+  HostUnreachable,
+  ChannelUnavailable,
+  SessionClosed,
+  InvalidPrivateKey,
+  SftpFailure,
+  InvalidRequest,
+  Unknown,
+}
+
+const FfiConverterTypeSshErrorCode = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SshErrorCode;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return SshErrorCode.AuthenticationFailed;
+        case 2:
+          return SshErrorCode.HostKeyUnknown;
+        case 3:
+          return SshErrorCode.HostKeyChanged;
+        case 4:
+          return SshErrorCode.UnsupportedHostCertificate;
+        case 5:
+          return SshErrorCode.ConnectionRefused;
+        case 6:
+          return SshErrorCode.ConnectionTimeout;
+        case 7:
+          return SshErrorCode.HostUnreachable;
+        case 8:
+          return SshErrorCode.ChannelUnavailable;
+        case 9:
+          return SshErrorCode.SessionClosed;
+        case 10:
+          return SshErrorCode.InvalidPrivateKey;
+        case 11:
+          return SshErrorCode.SftpFailure;
+        case 12:
+          return SshErrorCode.InvalidRequest;
+        case 13:
+          return SshErrorCode.Unknown;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case SshErrorCode.AuthenticationFailed:
+          return ordinalConverter.write(1, into);
+        case SshErrorCode.HostKeyUnknown:
+          return ordinalConverter.write(2, into);
+        case SshErrorCode.HostKeyChanged:
+          return ordinalConverter.write(3, into);
+        case SshErrorCode.UnsupportedHostCertificate:
+          return ordinalConverter.write(4, into);
+        case SshErrorCode.ConnectionRefused:
+          return ordinalConverter.write(5, into);
+        case SshErrorCode.ConnectionTimeout:
+          return ordinalConverter.write(6, into);
+        case SshErrorCode.HostUnreachable:
+          return ordinalConverter.write(7, into);
+        case SshErrorCode.ChannelUnavailable:
+          return ordinalConverter.write(8, into);
+        case SshErrorCode.SessionClosed:
+          return ordinalConverter.write(9, into);
+        case SshErrorCode.InvalidPrivateKey:
+          return ordinalConverter.write(10, into);
+        case SshErrorCode.SftpFailure:
+          return ordinalConverter.write(11, into);
+        case SshErrorCode.InvalidRequest:
+          return ordinalConverter.write(12, into);
+        case SshErrorCode.Unknown:
+          return ordinalConverter.write(13, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: HostRuntimeError
 export enum HostRuntimeError_Tags {
   AuthenticationFailure = 'AuthenticationFailure',
@@ -12241,6 +12371,7 @@ export enum HostRuntimeError_Tags {
   HostKeyChanged = 'HostKeyChanged',
   UnsupportedHostCertificate = 'UnsupportedHostCertificate',
   SshTransportFailure = 'SshTransportFailure',
+  SshConnectionFailure = 'SshConnectionFailure',
   HerdrUnavailable = 'HerdrUnavailable',
   HerdrProtocolMismatch = 'HerdrProtocolMismatch',
   HerdrReadinessTimeout = 'HerdrReadinessTimeout',
@@ -12427,6 +12558,47 @@ export const HostRuntimeError = (() => {
     }
 
     static getInner(obj: SshTransportFailure_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type SshConnectionFailure__interface = {
+    tag: HostRuntimeError_Tags.SshConnectionFailure;
+    inner: Readonly<{ code: SshErrorCode; message: string }>;
+  };
+  class SshConnectionFailure_
+    extends UniffiError
+    implements SshConnectionFailure__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeError';
+    readonly tag = HostRuntimeError_Tags.SshConnectionFailure;
+    readonly inner: Readonly<{ code: SshErrorCode; message: string }>;
+    constructor(inner: { code: SshErrorCode; message: string }) {
+      super('HostRuntimeError', 'SshConnectionFailure');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      code: SshErrorCode;
+      message: string;
+    }): SshConnectionFailure_ {
+      return new SshConnectionFailure_(inner);
+    }
+
+    static instanceOf(obj: any): obj is SshConnectionFailure_ {
+      return obj.tag === HostRuntimeError_Tags.SshConnectionFailure;
+    }
+    static hasInner(obj: any): obj is SshConnectionFailure_ {
+      return SshConnectionFailure_.instanceOf(obj);
+    }
+
+    static getInner(
+      obj: SshConnectionFailure_,
+    ): Readonly<{ code: SshErrorCode; message: string }> {
       return obj.inner;
     }
   }
@@ -12994,6 +13166,7 @@ export const HostRuntimeError = (() => {
     HostKeyChanged: HostKeyChanged_,
     UnsupportedHostCertificate: UnsupportedHostCertificate_,
     SshTransportFailure: SshTransportFailure_,
+    SshConnectionFailure: SshConnectionFailure_,
     HerdrUnavailable: HerdrUnavailable_,
     HerdrProtocolMismatch: HerdrProtocolMismatch_,
     HerdrReadinessTimeout: HerdrReadinessTimeout_,
@@ -13018,6 +13191,7 @@ export type HostRuntimeError = InstanceType<
     | 'HostKeyChanged'
     | 'UnsupportedHostCertificate'
     | 'SshTransportFailure'
+    | 'SshConnectionFailure'
     | 'HerdrUnavailable'
     | 'HerdrProtocolMismatch'
     | 'HerdrReadinessTimeout'
@@ -13061,62 +13235,67 @@ const FfiConverterTypeHostRuntimeError = (() => {
             FfiConverterString.read(from),
           );
         case 6:
+          return new HostRuntimeError.SshConnectionFailure({
+            code: FfiConverterTypeSshErrorCode.read(from),
+            message: FfiConverterString.read(from),
+          });
+        case 7:
           return new HostRuntimeError.HerdrUnavailable(
             FfiConverterString.read(from),
           );
-        case 7:
+        case 8:
           return new HostRuntimeError.HerdrProtocolMismatch({
             expected: FfiConverterString.read(from),
             received: FfiConverterUInt32.read(from),
           });
-        case 8:
+        case 9:
           return new HostRuntimeError.HerdrReadinessTimeout({
             timeoutMs: FfiConverterUInt64.read(from),
             lastError: FfiConverterString.read(from),
           });
-        case 9:
+        case 10:
           return new HostRuntimeError.ControlConnectionFailure(
             FfiConverterString.read(from),
           );
-        case 10:
+        case 11:
           return new HostRuntimeError.ReconnectExhausted(
             FfiConverterString.read(from),
           );
-        case 11:
+        case 12:
           return new HostRuntimeError.RuntimeDisconnected(
             FfiConverterString.read(from),
           );
-        case 12:
+        case 13:
           return new HostRuntimeError.TerminalUnavailable(
             FfiConverterString.read(from),
           );
-        case 13:
+        case 14:
           return new HostRuntimeError.StaleOperation(
             FfiConverterString.read(from),
           );
-        case 14:
+        case 15:
           return new HostRuntimeError.InvalidConfiguration(
             FfiConverterString.read(from),
           );
-        case 15:
+        case 16:
           return new HostRuntimeError.RemoteFileFailure(
             FfiConverterString.read(from),
           );
-        case 16:
+        case 17:
           return new HostRuntimeError.TransferFailure(
             FfiConverterString.read(from),
           );
-        case 17:
+        case 18:
           return new HostRuntimeError.TransferCancelled(
             FfiConverterString.read(from),
           );
-        case 18:
-          return new HostRuntimeError.GitFailure(FfiConverterString.read(from));
         case 19:
+          return new HostRuntimeError.GitFailure(FfiConverterString.read(from));
+        case 20:
           return new HostRuntimeError.PreviewFailure(
             FfiConverterString.read(from),
           );
-        case 20:
+        case 21:
           return new HostRuntimeError.PaneSubmissionFailure({
             submittedParts: FfiConverterUInt32.read(from),
             message: FfiConverterString.read(from),
@@ -13155,94 +13334,101 @@ const FfiConverterTypeHostRuntimeError = (() => {
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.HerdrUnavailable: {
+        case HostRuntimeError_Tags.SshConnectionFailure: {
           ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterTypeSshErrorCode.write(inner.code, into);
+          FfiConverterString.write(inner.message, into);
+          return;
+        }
+        case HostRuntimeError_Tags.HerdrUnavailable: {
+          ordinalConverter.write(7, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
         case HostRuntimeError_Tags.HerdrProtocolMismatch: {
-          ordinalConverter.write(7, into);
+          ordinalConverter.write(8, into);
           const inner = value.inner;
           FfiConverterString.write(inner.expected, into);
           FfiConverterUInt32.write(inner.received, into);
           return;
         }
         case HostRuntimeError_Tags.HerdrReadinessTimeout: {
-          ordinalConverter.write(8, into);
+          ordinalConverter.write(9, into);
           const inner = value.inner;
           FfiConverterUInt64.write(inner.timeoutMs, into);
           FfiConverterString.write(inner.lastError, into);
           return;
         }
         case HostRuntimeError_Tags.ControlConnectionFailure: {
-          ordinalConverter.write(9, into);
-          const inner = value.inner;
-          FfiConverterString.write(inner[0], into);
-          return;
-        }
-        case HostRuntimeError_Tags.ReconnectExhausted: {
           ordinalConverter.write(10, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.RuntimeDisconnected: {
+        case HostRuntimeError_Tags.ReconnectExhausted: {
           ordinalConverter.write(11, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.TerminalUnavailable: {
+        case HostRuntimeError_Tags.RuntimeDisconnected: {
           ordinalConverter.write(12, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.StaleOperation: {
+        case HostRuntimeError_Tags.TerminalUnavailable: {
           ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.InvalidConfiguration: {
+        case HostRuntimeError_Tags.StaleOperation: {
           ordinalConverter.write(14, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.RemoteFileFailure: {
+        case HostRuntimeError_Tags.InvalidConfiguration: {
           ordinalConverter.write(15, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.TransferFailure: {
+        case HostRuntimeError_Tags.RemoteFileFailure: {
           ordinalConverter.write(16, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.TransferCancelled: {
+        case HostRuntimeError_Tags.TransferFailure: {
           ordinalConverter.write(17, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.GitFailure: {
+        case HostRuntimeError_Tags.TransferCancelled: {
           ordinalConverter.write(18, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.PreviewFailure: {
+        case HostRuntimeError_Tags.GitFailure: {
           ordinalConverter.write(19, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostRuntimeError_Tags.PaneSubmissionFailure: {
+        case HostRuntimeError_Tags.PreviewFailure: {
           ordinalConverter.write(20, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostRuntimeError_Tags.PaneSubmissionFailure: {
+          ordinalConverter.write(21, into);
           const inner = value.inner;
           FfiConverterUInt32.write(inner.submittedParts, into);
           FfiConverterString.write(inner.message, into);
@@ -13282,95 +13468,102 @@ const FfiConverterTypeHostRuntimeError = (() => {
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostRuntimeError_Tags.HerdrUnavailable: {
+        case HostRuntimeError_Tags.SshConnectionFailure: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterTypeSshErrorCode.allocationSize(inner.code);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
+        case HostRuntimeError_Tags.HerdrUnavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.HerdrProtocolMismatch: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(7);
+          let size = ordinalConverter.allocationSize(8);
           size += FfiConverterString.allocationSize(inner.expected);
           size += FfiConverterUInt32.allocationSize(inner.received);
           return size;
         }
         case HostRuntimeError_Tags.HerdrReadinessTimeout: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(8);
+          let size = ordinalConverter.allocationSize(9);
           size += FfiConverterUInt64.allocationSize(inner.timeoutMs);
           size += FfiConverterString.allocationSize(inner.lastError);
           return size;
         }
         case HostRuntimeError_Tags.ControlConnectionFailure: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(9);
+          let size = ordinalConverter.allocationSize(10);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.ReconnectExhausted: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(10);
+          let size = ordinalConverter.allocationSize(11);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.RuntimeDisconnected: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(11);
+          let size = ordinalConverter.allocationSize(12);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.TerminalUnavailable: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(12);
+          let size = ordinalConverter.allocationSize(13);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.StaleOperation: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(13);
+          let size = ordinalConverter.allocationSize(14);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.InvalidConfiguration: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(14);
+          let size = ordinalConverter.allocationSize(15);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.RemoteFileFailure: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(15);
+          let size = ordinalConverter.allocationSize(16);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.TransferFailure: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(16);
+          let size = ordinalConverter.allocationSize(17);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.TransferCancelled: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(17);
+          let size = ordinalConverter.allocationSize(18);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.GitFailure: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(18);
+          let size = ordinalConverter.allocationSize(19);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.PreviewFailure: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(19);
+          let size = ordinalConverter.allocationSize(20);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
         case HostRuntimeError_Tags.PaneSubmissionFailure: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(20);
+          let size = ordinalConverter.allocationSize(21);
           size += FfiConverterUInt32.allocationSize(inner.submittedParts);
           size += FfiConverterString.allocationSize(inner.message);
           return size;
@@ -19025,6 +19218,7 @@ export default Object.freeze({
     FfiConverterTypeRuntimeDiagnostic,
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,
+    FfiConverterTypeSshErrorCode,
     FfiConverterTypeTransferProgress,
     FfiConverterTypeTransferResult,
     FfiConverterTypeTransferState,

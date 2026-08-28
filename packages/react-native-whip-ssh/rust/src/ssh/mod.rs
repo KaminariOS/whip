@@ -221,9 +221,9 @@ enum TransportError {
     Sftp(#[from] russh_sftp::client::error::Error),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, uniffi::Enum)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub(crate) enum SshErrorCode {
+pub enum SshErrorCode {
     AuthenticationFailed,
     HostKeyUnknown,
     HostKeyChanged,
@@ -513,13 +513,13 @@ pub(crate) enum SshFailure {
     HostKeyUnknown(Box<HostKeyChallenge>),
     HostKeyChanged(Box<HostKeyChallenge>),
     UnsupportedHostCertificate,
-    Transport(String),
+    Transport { code: SshErrorCode, message: String },
 }
 
 impl std::fmt::Display for SshFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Authentication(message) | Self::Transport(message) => {
+            Self::Authentication(message) | Self::Transport { message, .. } => {
                 formatter.write_str(message)
             }
             Self::HostKeyUnknown(_) => formatter.write_str("unknown SSH host key"),
@@ -535,14 +535,18 @@ impl std::error::Error for SshFailure {}
 
 impl From<TransportError> for SshFailure {
     fn from(error: TransportError) -> Self {
+        let code = transport_error_code(&error);
         match error {
             TransportError::HostKeyUnknown(challenge) => Self::HostKeyUnknown(Box::new(challenge)),
             TransportError::HostKeyChanged(challenge) => Self::HostKeyChanged(Box::new(challenge)),
             TransportError::UnsupportedHostCertificate => Self::UnsupportedHostCertificate,
-            error if transport_error_code(&error) == SshErrorCode::AuthenticationFailed => {
+            error if code == SshErrorCode::AuthenticationFailed => {
                 Self::Authentication(error.to_string())
             }
-            error => Self::Transport(error.to_string()),
+            error => Self::Transport {
+                code,
+                message: error.to_string(),
+            },
         }
     }
 }

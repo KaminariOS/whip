@@ -58,7 +58,7 @@ describe('terminal attachment uploads', () => {
 
     expect(client.cancelTransfer(transfer.id)).toBe(true);
     expect(native.sftpCancelUpload).toHaveBeenCalledTimes(1);
-    reject(new Error('transfer cancelled'));
+    reject(Object.assign(new Error('transfer cancelled'), { code: 'TRANSFER_CANCELLED' }));
     expect(isTerminalAttachmentUploadCancelled(await transfer.result.catch(error => error))).toBe(true);
   });
 });

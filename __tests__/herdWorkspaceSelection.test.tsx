@@ -72,13 +72,6 @@ jest.mock('@/src/hooks/useKeyboardInset', () => ({
 jest.mock('@/src/lib/terminalFonts', () => ({ terminalFontFamily: 'monospace' }), {
   virtual: true,
 });
-jest.mock('@/src/services/HerdrClient', () => ({
-  tabLaunchIntentForCommand: (command: string) => ({
-    type: 'agent',
-    kind: command,
-    args: [],
-  }),
-}), { virtual: true });
 jest.mock('@/src/theme', () => ({
   appGlassControlStyle: () => undefined,
   statusColor: () => '#000',
@@ -305,7 +298,7 @@ describe('Herd workspace selection intent', () => {
       'host-1',
       'space-a',
       '',
-      { type: 'agent', kind: 'codex', args: [] },
+      { type: 'command', command: 'codex' },
     );
   });
 

@@ -39,7 +39,7 @@ use crate::remote_ops::{
     normalize_remote_path, parse_git_diff, parse_git_repository, parse_git_status, remote_filename,
     shell_quote,
 };
-use crate::ssh::{SshConnectionConfig, SshCredential, SshFailure, SshSession};
+use crate::ssh::{SshConnectionConfig, SshCredential, SshErrorCode, SshFailure, SshSession};
 use remote_files::*;
 
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
@@ -251,6 +251,8 @@ pub enum HostRuntimeError {
     UnsupportedHostCertificate,
     #[error("{0}")]
     SshTransportFailure(String),
+    #[error("{message}")]
+    SshConnectionFailure { code: SshErrorCode, message: String },
     #[error("{0}")]
     HerdrUnavailable(String),
     #[error("Herdr protocol mismatch: Whip supports {expected}, server reports {received}")]
@@ -293,7 +295,7 @@ impl From<SshFailure> for HostRuntimeError {
             SshFailure::HostKeyUnknown(challenge) => Self::HostKeyUnknown(*challenge),
             SshFailure::HostKeyChanged(challenge) => Self::HostKeyChanged(*challenge),
             SshFailure::UnsupportedHostCertificate => Self::UnsupportedHostCertificate,
-            SshFailure::Transport(message) => Self::SshTransportFailure(message),
+            SshFailure::Transport { code, message } => Self::SshConnectionFailure { code, message },
         }
     }
 }
@@ -1186,6 +1188,67 @@ fn managed_agent_name(label: &str, kind: HerdrAgentKind, tab_number: f64) -> Str
     normalized
 }
 
+fn has_shell_command_semantics(command: &str) -> bool {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Quote {
+        Single,
+        Double,
+    }
+
+    let mut quote = None;
+    for character in command.chars() {
+        match quote {
+            Some(Quote::Single) => {
+                if character == '\'' {
+                    quote = None;
+                }
+            }
+            Some(Quote::Double) => match character {
+                '"' => quote = None,
+                '$' | '`' | '\n' | '\r' => return true,
+                _ => {}
+            },
+            None => match character {
+                '\'' => quote = Some(Quote::Single),
+                '"' => quote = Some(Quote::Double),
+                '\\' | '\n' | '\r' | '$' | '`' | '|' | '&' | ';' | '<' | '>' | '(' | ')' | '['
+                | ']' | '{' | '}' | '*' | '?' | '!' | '#' | '~' => return true,
+                _ => {}
+            },
+        }
+    }
+    false
+}
+
+fn normalize_tab_launch(launch: HerdrTabLaunch) -> Result<HerdrTabLaunch, HerdrControlError> {
+    let HerdrTabLaunch::Command { command } = launch else {
+        return Ok(launch);
+    };
+    let command = command.trim().to_owned();
+    if command.is_empty() {
+        return Err(HerdrControlError::InvalidField(
+            "command must not be empty".to_owned(),
+        ));
+    }
+    if has_shell_command_semantics(&command) {
+        return Ok(HerdrTabLaunch::Command { command });
+    }
+    let Some(mut args) = shlex::split(&command) else {
+        return Ok(HerdrTabLaunch::Command { command });
+    };
+    let Some(executable) = args.first() else {
+        return Ok(HerdrTabLaunch::Command { command });
+    };
+    let kind = match executable.as_str() {
+        "claude" => HerdrAgentKind::Claude,
+        "codex" => HerdrAgentKind::Codex,
+        "opencode" => HerdrAgentKind::OpenCode,
+        _ => return Ok(HerdrTabLaunch::Command { command }),
+    };
+    args.remove(0);
+    Ok(HerdrTabLaunch::Agent { kind, args })
+}
+
 fn launch_request(
     tab: &crate::herdr_api::HerdrTabInfo,
     root_pane: &crate::herdr_api::HerdrPaneInfo,
@@ -1219,18 +1282,7 @@ async fn create_tab_with_launch_inner(
     label: String,
     launch: HerdrTabLaunch,
 ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
-    let launch = match launch {
-        HerdrTabLaunch::Command { command } => {
-            let command = command.trim().to_owned();
-            if command.is_empty() {
-                return Err(HerdrControlError::InvalidField(
-                    "command must not be empty".to_owned(),
-                ));
-            }
-            HerdrTabLaunch::Command { command }
-        }
-        launch => launch,
-    };
+    let launch = normalize_tab_launch(launch)?;
     let label = label.trim();
     let created = control_request_inner(
         inner.clone(),
@@ -4393,6 +4445,43 @@ mod tests {
     }
 
     #[test]
+    fn rust_interprets_direct_agent_commands_without_consuming_shell_syntax() {
+        assert_eq!(
+            normalize_tab_launch(HerdrTabLaunch::Command {
+                command: " opencode --model \"current model\" ".to_owned(),
+            }),
+            Ok(HerdrTabLaunch::Agent {
+                kind: HerdrAgentKind::OpenCode,
+                args: vec!["--model".to_owned(), "current model".to_owned()],
+            })
+        );
+        assert_eq!(
+            normalize_tab_launch(HerdrTabLaunch::Command {
+                command: "codex --profile work".to_owned(),
+            }),
+            Ok(HerdrTabLaunch::Agent {
+                kind: HerdrAgentKind::Codex,
+                args: vec!["--profile".to_owned(), "work".to_owned()],
+            })
+        );
+        for command in [
+            "opencode --model \"$MODEL\"",
+            "opencode && echo done",
+            "echo codex is installed",
+            "opencode --model \"unterminated",
+        ] {
+            assert_eq!(
+                normalize_tab_launch(HerdrTabLaunch::Command {
+                    command: command.to_owned(),
+                }),
+                Ok(HerdrTabLaunch::Command {
+                    command: command.to_owned(),
+                })
+            );
+        }
+    }
+
+    #[test]
     fn pane_submission_sequence_is_one_semantic_native_operation() {
         let requests = pane_submission_requests(
             "pane-1".to_owned(),
@@ -4524,10 +4613,16 @@ mod tests {
             HostRuntimeError::UnsupportedHostCertificate,
         );
 
-        let transport = HostRuntimeError::from(SshFailure::Transport("timed out".to_owned()));
+        let transport = HostRuntimeError::from(SshFailure::Transport {
+            code: SshErrorCode::ConnectionTimeout,
+            message: "timed out".to_owned(),
+        });
         assert!(matches!(
             transport,
-            HostRuntimeError::SshTransportFailure(message) if message == "timed out"
+            HostRuntimeError::SshConnectionFailure {
+                code: SshErrorCode::ConnectionTimeout,
+                message,
+            } if message == "timed out"
         ));
     }
 

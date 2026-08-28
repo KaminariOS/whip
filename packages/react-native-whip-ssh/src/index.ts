@@ -36,6 +36,7 @@ import {
   PreviewKind,
   PreviewState,
   RemoteFileKind,
+  SshErrorCode as NativeSshErrorCode,
   TransferState,
   HostRuntimeEvent_Tags,
   HostSyncStatus,
@@ -461,6 +462,22 @@ function eventError(error: unknown): Error {
   return result;
 }
 
+const SSH_ERROR_CODES = {
+  [NativeSshErrorCode.AuthenticationFailed]: 'AUTHENTICATION_FAILED',
+  [NativeSshErrorCode.HostKeyUnknown]: 'HOST_KEY_UNKNOWN',
+  [NativeSshErrorCode.HostKeyChanged]: 'HOST_KEY_CHANGED',
+  [NativeSshErrorCode.UnsupportedHostCertificate]: 'UNSUPPORTED_HOST_CERTIFICATE',
+  [NativeSshErrorCode.ConnectionRefused]: 'CONNECTION_REFUSED',
+  [NativeSshErrorCode.ConnectionTimeout]: 'CONNECTION_TIMEOUT',
+  [NativeSshErrorCode.HostUnreachable]: 'HOST_UNREACHABLE',
+  [NativeSshErrorCode.ChannelUnavailable]: 'CHANNEL_UNAVAILABLE',
+  [NativeSshErrorCode.SessionClosed]: 'SESSION_CLOSED',
+  [NativeSshErrorCode.InvalidPrivateKey]: 'INVALID_PRIVATE_KEY',
+  [NativeSshErrorCode.SftpFailure]: 'SFTP_FAILURE',
+  [NativeSshErrorCode.InvalidRequest]: 'INVALID_REQUEST',
+  [NativeSshErrorCode.Unknown]: 'UNKNOWN',
+} as const satisfies Record<NativeSshErrorCode, string>;
+
 function hostRuntimeError(error: unknown): Error & {
   nativeTag?: string;
   code?: string;
@@ -495,6 +512,14 @@ function hostRuntimeError(error: unknown): Error & {
     && typeof structuredInner?.lastError === 'string'
     ? structuredInner.lastError
     : undefined;
+  const sshFailureMessage = nativeError.tag === 'SshConnectionFailure'
+    && typeof structuredInner?.message === 'string'
+    ? structuredInner.message
+    : undefined;
+  const sshFailureCode = nativeError.tag === 'SshConnectionFailure'
+    && typeof structuredInner?.code === 'number'
+    ? SSH_ERROR_CODES[structuredInner.code as NativeSshErrorCode]
+    : undefined;
   const details = hostKeyCode === 'HOST_KEY_UNKNOWN' || hostKeyCode === 'HOST_KEY_CHANGED'
     ? (nativeError.inner as readonly unknown[] | undefined)?.[0]
     : undefined;
@@ -508,11 +533,13 @@ function hostRuntimeError(error: unknown): Error & {
           ? `Herdr protocol mismatch: Whip supports ${expected}, server reports ${received}`
           : lastReadinessError
             ? `Herdr did not become ready: ${lastReadinessError}`
-            : Array.isArray(nativeError.inner) && typeof nativeError.inner[0] === 'string'
-              ? nativeError.inner[0]
-              : error instanceof Error
-                ? error.message
-                : String(error);
+            : sshFailureMessage
+              ? sshFailureMessage
+              : Array.isArray(nativeError.inner) && typeof nativeError.inner[0] === 'string'
+                ? nativeError.inner[0]
+                : error instanceof Error
+                  ? error.message
+                  : String(error);
   const result = new Error(message) as Error & {
     nativeTag?: string;
     code?: string;
@@ -522,9 +549,17 @@ function hostRuntimeError(error: unknown): Error & {
   };
   result.name = 'HostRuntimeError';
   if (nativeError.tag) result.nativeTag = nativeError.tag;
-  if (hostKeyCode) {
+  if (sshFailureCode) {
+    result.code = sshFailureCode;
+  } else if (nativeError.tag === 'AuthenticationFailure') {
+    result.code = 'AUTHENTICATION_FAILED';
+  } else if (hostKeyCode) {
     result.code = hostKeyCode;
     if (details) result.details = details;
+  } else if (nativeError.tag === 'HerdrUnavailable') {
+    result.code = 'HERDR_UNAVAILABLE';
+  } else if (nativeError.tag === 'TransferCancelled') {
+    result.code = 'TRANSFER_CANCELLED';
   } else if (nativeError.tag === 'HerdrProtocolMismatch') {
     result.code = 'HERDR_PROTOCOL_MISMATCH';
     result.expected = expected;
@@ -1769,7 +1804,9 @@ export class NativeHostRuntime {
         transferId: result.transferId,
         localPath: result.localPath,
         remotePath: result.remotePath,
-      })),
+      })).catch(error => {
+        throw hostRuntimeError(error);
+      }),
     };
   }
 

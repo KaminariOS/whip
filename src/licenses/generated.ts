@@ -622,6 +622,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/a4e09b5475a9a255.txt"),
   },
   {
+    id: "cargo-shlex-2-0-1",
+    category: "cargo",
+    projectName: "shlex",
+    sourceUrl: "https://github.com/comex/rust-shlex",
+    attribution: "Direct Rust dependency · version 2.0.1 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
+  },
+  {
     id: "cargo-ssh-key-0-7-0-rc-11",
     category: "cargo",
     projectName: "ssh-key",

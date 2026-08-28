@@ -92,9 +92,10 @@ impl SshSession {
         let file = sftp.open(path).await.map_err(TransportError::from)?;
         let size = file.metadata().await.map_err(TransportError::from)?.size;
         if size.is_some_and(|size| size > max_bytes) {
-            return Err(SshFailure::Transport(format!(
-                "remote file exceeds the {max_bytes}-byte read limit"
-            )));
+            return Err(SshFailure::Transport {
+                code: super::SshErrorCode::InvalidRequest,
+                message: format!("remote file exceeds the {max_bytes}-byte read limit"),
+            });
         }
         let capacity = usize::try_from(size.unwrap_or_default().min(max_bytes)).unwrap_or_default();
         let mut bytes = Vec::with_capacity(capacity);
@@ -103,9 +104,10 @@ impl SshSession {
             .await
             .map_err(TransportError::from)?;
         if bytes.len() as u64 > max_bytes {
-            return Err(SshFailure::Transport(format!(
-                "remote file exceeds the {max_bytes}-byte read limit"
-            )));
+            return Err(SshFailure::Transport {
+                code: super::SshErrorCode::InvalidRequest,
+                message: format!("remote file exceeds the {max_bytes}-byte read limit"),
+            });
         }
         Ok(bytes)
     }

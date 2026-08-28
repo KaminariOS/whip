@@ -1,6 +1,6 @@
 import SSHClient from 'react-native-whip-ssh';
 
-import { HerdrClient, isUnavailableSshChannel } from '../src/services/HerdrClient';
+import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => (
@@ -40,22 +40,6 @@ function nativeClient(options: { output?: unknown; startError?: unknown } = {}) 
 describe('SSH control reconnects', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
-  });
-
-  test.each([
-    { code: 'CHANNEL_UNAVAILABLE', message: 'channel not open' },
-    { code: 'SESSION_CLOSED', message: 'session closed' },
-    'channel not open',
-    'channel is not opened.',
-    'Failed to open channel (ConnectFailed)',
-    new Error('session is down'),
-    new Error('socket is not established'),
-  ])('classifies unavailable transport errors: %s', error => {
-    expect(isUnavailableSshChannel(error)).toBe(true);
-  });
-
-  test('does not classify Herdr command errors as transport failures', () => {
-    expect(isUnavailableSshChannel(new Error('workspace not found'))).toBe(false);
   });
 
   test('reconnects once and retries an idempotent workspace focus', async () => {

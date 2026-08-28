@@ -60,10 +60,7 @@ import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
-import {
-  tabLaunchIntentForCommand,
-  type TabLaunchIntent,
-} from '@/src/services/HerdrClient';
+import type { TabLaunchIntent } from '@/src/services/HerdrClient';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
@@ -325,7 +322,7 @@ export function HerdScreen({
     const tabName = tabNameDraft.trim();
     const command = commandDraft.trim();
     if (!selectedQueue || !selectedWorkspace || !command) return;
-    const launch = tabLaunchIntentForCommand(command);
+    const launch: TabLaunchIntent = { type: 'command', command };
     const succeeded = await runWorkspaceAction(() => onLaunchTab(
       selectedQueue.id,
       selectedWorkspace.workspace_id,

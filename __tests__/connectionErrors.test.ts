@@ -17,15 +17,9 @@ describe('connection error presentation', () => {
     [{ code: 'UNSUPPORTED_HOST_CERTIFICATE' }, 'unsupportedHostCertificate'],
     [{ code: 'HERDR_PROTOCOL_MISMATCH' }, 'incompatibleProtocol'],
     [{ code: 'HERDR_READINESS_TIMEOUT' }, 'herdrUnavailable'],
+    [{ code: 'HERDR_UNAVAILABLE' }, 'herdrUnavailable'],
     [{ code: 'INVALID_PRIVATE_KEY' }, 'invalidKey'],
-    ['java.net.UnknownHostException: thinker', 'unreachable'],
-    ['connect failed: ENETUNREACH (Network is unreachable)', 'unreachable'],
-    ['java.net.SocketTimeoutException: connect timed out', 'timeout'],
-    ['java.net.ConnectException: Connection refused', 'connectionRefused'],
-    ['authentication rejected: Permission denied', 'authentication'],
-    ['E_KEY_INVALID: invalid private key', 'invalidKey'],
-    ['Herdr protocol mismatch: Whip supports 17–20, server reports 16', 'incompatibleProtocol'],
-    ['Herdr API socket is not available', 'herdrUnavailable'],
+    ['connection refused', 'unknown'],
     ['unexpected native failure', 'unknown'],
   ] as const)('maps %p to a friendly %s message', (error, kind) => {
     expect(classifyConnectionError(error)).toBe(kind);
@@ -43,17 +37,20 @@ describe('connection error presentation', () => {
 
   it('preserves expected and reported protocol versions for the user-facing error', () => {
     expect(connectionErrorContext(
-      'Herdr protocol mismatch: Whip supports 17–20, server reports 16',
+      { expected: '17–20', received: 16 },
     )).toEqual({
       expectedProtocol: '17–20',
       receivedProtocol: '16',
     });
     expect(connectionErrorContext(
-      new Error('Herdr protocol mismatch: Android bridge supports 17 through 20, server reports 21'),
+      { expected: '17 through 20', received: 21 },
     )).toEqual({
       expectedProtocol: '17 through 20',
       receivedProtocol: '21',
     });
+    expect(connectionErrorContext(
+      'Herdr protocol mismatch: Whip supports 17–20, server reports 16',
+    )).toEqual({});
   });
 
   it('reads native error codes without using any', () => {
