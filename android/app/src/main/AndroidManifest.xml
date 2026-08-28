@@ -40,6 +40,9 @@
           android:value="Maintains user-requested SSH connections to remote Herdr development sessions and monitors agent state for actionable notifications." />
       </service>
       <activity
+        android:name="com.google.mlkit.vision.codescanner.internal.GmsBarcodeScanningDelegateActivity"
+        tools:remove="android:screenOrientation" />
+      <activity
         android:name=".MainActivity"
         android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|assetsPaths"
         android:launchMode="singleTop"
