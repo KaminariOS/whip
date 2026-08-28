@@ -27,45 +27,11 @@ flowchart TB
     Module["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary terminal buffers"]
   end
 
-  subgraph Rust["Whip Rust core · one Tokio runtime"]
-    direction TB
-    subgraph Runtime["HostRuntime · authoritative per-host runtime"]
-      direction TB
-      Lifecycle["Runtime coordinator<br/>generation guards · reconnect/lifecycle · resource restoration<br/>Herdr readiness/startup"]
-
-      subgraph Services["HostRuntime-owned services"]
-        direction LR
-        Control["Herdr control + HostState<br/>typed tab/agent launch + integration orchestration<br/>API requests · subscriptions/events · reconciliation"]
-        Agents["AgentSessionManager<br/>Codex rollout · OpenCode export/events<br/>cache identity/version/checkpoints · retries · AgentTranscript"]
-        Operations["Remote operations<br/>filesystem/SFTP · transfers/attachments<br/>Git · previews/forwarding"]
-        Terminals["Terminal services<br/>Herdr registry/protocol · direct SSH shell PTYs<br/>binary codec · attach/lifecycle"]
-        Diagnostics["Runtime diagnostics<br/>transport-owned coarse timings<br/>typed outcomes"]
-      end
-
-      Connection["HerdrConnection<br/>sole transport owner · SSH generation<br/>socket discovery · guarded logical streams"]
-      Transport["HerdrConnection-owned SshSession<br/>russh · ProxyJump · known_hosts<br/>shell · exec · SFTP · forwarding · stream-local"]
-
-      Lifecycle --> Control
-      Lifecycle --> Agents
-      Lifecycle --> Operations
-      Lifecycle --> Terminals
-      Lifecycle --> Diagnostics
-      Lifecycle --> Connection
-      Control --> Connection
-      Agents --> Connection
-      Operations --> Connection
-      Terminals --> Connection
-      Diagnostics --> Connection
-      Connection --> Transport
-    end
-
-    Pairing["WP4 pairing<br/>separate QR-pinned bootstrap"]
-  end
+  Rust["Whip Rust Core · one Tokio runtime<br/>authoritative logic and state · SSH transport · pairing"]
 
   Client <-->|"semantic operations and typed projections"| Module
   Renderer <-->|"binary terminal/graphics buffers"| Module
-  Module <--> Lifecycle
-  Module --> Pairing
+  Module <--> Rust
   Module -->|"opaque key/blob"| CacheAdapter
   CacheAdapter -->|"durable checkpoint confirmation"| Module
 
@@ -74,4 +40,4 @@ flowchart TB
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
   class Navigation,Projections,SessionViews,Secondary,Client,CacheAdapter,SQLite,Renderer,Xterm react
   class Module native
-  class Lifecycle,Control,Agents,Operations,Terminals,Diagnostics,Connection,Transport,Pairing rust
+  class Rust rust

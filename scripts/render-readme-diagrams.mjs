@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const diagrams = [
-  ['docs/mobile-app-architecture.mmd', 'docs/mobile-app-architecture.svg'],
-  ['docs/whip-ssh-architecture.mmd', 'docs/whip-ssh-architecture.svg'],
+  ['docs/react-native-frontend-architecture.mmd', 'docs/react-native-frontend-architecture.svg'],
+  ['docs/whip-rust-core-architecture.mmd', 'docs/whip-rust-core-architecture.svg'],
 ];
 const localImages = new Map([
   [

@@ -46,13 +46,13 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   - [Android](#android)
   - [iOS](#ios)
 - [Connect your first host](#connect-your-first-host)
-  - [Pair with a QR code (experimental)](#pair-with-a-qr-code-experimental)
+  - [Pair with a QR code](#pair-with-a-qr-code)
   - [Enter a host manually](#enter-a-host-manually)
 - [How it works](#how-it-works)
 - [Performance](#performance)
 - [Architecture](#architecture)
-  - [Mobile app](#mobile-app)
-  - [SSH transport](#ssh-transport)
+  - [React Native Frontend](#react-native-frontend)
+  - [Whip Rust Core](#whip-rust-core)
 - [Development](#development)
   - [EAS builds](#eas-builds)
   - [Google Play publishing](#google-play-publishing)
@@ -183,11 +183,10 @@ You need an SSH server on a laptop or server reachable from the mobile device. I
 ssh user@laptop.tailnet.ts.net 'herdr status server --json'
 ```
 
-### Pair with a QR code (experimental)
+### Pair with a QR code
 
-QR pairing is disabled by default. In Whip, enable **More → QR host pairing ·
-Experimental**. On the Mac or Linux host, run the pairing helper with any one
-of these package managers:
+In Whip, open **Add host** and choose **Scan pairing QR**. On the Mac or Linux
+host, run the pairing helper with any one of these package managers:
 
 ```bash
 # Nix (GitHub flake)
@@ -296,17 +295,17 @@ Whip is split between the React Native presentation layer and one Whip-owned
 Rust/native core. The diagrams below show that boundary together with the
 terminal and remote-host paths.
 
-### Mobile app
+### React Native Frontend
 
-[![Mobile app architecture](docs/mobile-app-architecture.svg)](docs/mobile-app-architecture.svg)
+[![React Native frontend architecture](docs/react-native-frontend-architecture.svg)](docs/react-native-frontend-architecture.svg)
 
-[Edit the mobile app diagram](docs/mobile-app-architecture.mmd).
+[Edit the React Native frontend diagram](docs/react-native-frontend-architecture.mmd).
 
-### SSH transport
+### Whip Rust Core
 
-[![Whip SSH and Herdr core architecture](docs/whip-ssh-architecture.svg)](docs/whip-ssh-architecture.svg)
+[![Whip Rust Core architecture](docs/whip-rust-core-architecture.svg)](docs/whip-rust-core-architecture.svg)
 
-[Edit the SSH transport diagram](docs/whip-ssh-architecture.mmd).
+[Edit the Whip Rust Core diagram](docs/whip-rust-core-architecture.mmd).
 
 `react-native-whip-ssh` exposes one New Architecture module and links one Rust
 static library. One `HostRuntime` owns each connected host's stable

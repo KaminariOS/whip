@@ -1,6 +1,5 @@
 %%{init: {"theme":"base","flowchart":{"curve":"basis","htmlLabels":true,"nodeSpacing":28,"rankSpacing":44}}}%%
 flowchart TB
-  RN["React Native / TypeScript<br/>navigation · forms · rendering · trust confirmation UI<br/>semantic operations; no transport handles"]
   Cache["TS persistence adapter<br/>opaque Rust key + bytes"]
   SQLite["Platform SQLite"]
 
@@ -57,7 +56,6 @@ flowchart TB
     SSHD <--> Forwarded
   end
 
-  RN <-->|"semantic calls · typed/versioned projections<br/>raw terminal buffers"| JSI
   JSI <--> Host
   JSI -->|"opaque checkpoint"| Cache
   Cache --> SQLite
@@ -70,7 +68,7 @@ flowchart TB
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033
-  class RN,Cache,SQLite ui
+  class Cache,SQLite ui
   class JSI native
   class Host,Control,Agents,TerminalRuntime,RemoteOps,Diagnostics,Connection,SSH,Pairing rust
   class SSHD,API,Terminal,Shell,AgentSources,FilesGit,Forwarded remote
