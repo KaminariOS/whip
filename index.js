@@ -3,6 +3,7 @@ import { registerRootComponent } from 'expo';
 import { AppRegistry, DeviceEventEmitter } from 'react-native';
 import './src/i18n';
 import App from './App';
+import { reportBackgroundFailure } from './src/services/backgroundOperations';
 import { initializeRevenueCat } from './src/services/revenueCat';
 
 const BACKGROUND_MONITORING_TASK = 'HerdrBackgroundMonitoring';
@@ -14,7 +15,7 @@ DeviceEventEmitter.addListener(BACKGROUND_MONITORING_STOP_EVENT, () => {
   backgroundMonitoringStops.clear();
 });
 
-initializeRevenueCat().catch(() => undefined);
+reportBackgroundFailure(initializeRevenueCat(), 'revenuecat-initialization');
 
 AppRegistry.registerHeadlessTask(
   BACKGROUND_MONITORING_TASK,

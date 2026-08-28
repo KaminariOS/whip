@@ -2,6 +2,7 @@ import {
   beginAppPerformanceTrace,
   endAppPerformanceTrace,
 } from './performanceTrace';
+import { settledPromise } from '../lib/promises';
 
 export interface NativeAgentChatCheckpoint {
   namespace: string;
@@ -109,7 +110,7 @@ export class SQLiteAgentChatCache implements AgentChatCache {
 
   saveNative(checkpoint: NativeAgentChatCheckpoint): Promise<void> {
     const previous = this.writes.get(checkpoint.key) || Promise.resolve();
-    const operation = previous.catch(() => undefined).then(() => trace(
+    const operation = settledPromise(previous).then(() => trace(
       'Whip chat cache persist',
       async () => {
         const db = await this.db();
@@ -157,7 +158,7 @@ export class MemoryAgentChatCache implements AgentChatCache {
 
   saveNative(checkpoint: NativeAgentChatCheckpoint): Promise<void> {
     const previous = this.writes.get(checkpoint.key) || Promise.resolve();
-    const operation = previous.catch(() => undefined).then(() => {
+    const operation = settledPromise(previous).then(() => {
       this.entries.set(checkpoint.key, {
         namespace: checkpoint.namespace,
         blob: checkpoint.blob.slice(0),

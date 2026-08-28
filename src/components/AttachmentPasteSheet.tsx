@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ActivityIndicator, Alert, Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 import type { AttachmentSource } from '../services/attachmentPaste';
 import { hasClipboardAttachment, pickLocalAttachment } from '../services/attachmentPaste';
@@ -72,9 +73,12 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
     if (!visible) return;
     let active = true;
     setClipboardAvailable(false);
-    hasClipboardAttachment().then(value => {
-      if (active) setClipboardAvailable(value);
-    });
+    reportBackgroundFailure(
+      hasClipboardAttachment().then(value => {
+        if (active) setClipboardAvailable(value);
+      }),
+      'clipboard-attachment-inspection',
+    );
     return () => { active = false; };
   }, [visible]);
 

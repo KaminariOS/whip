@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   act,
   create,
@@ -8,6 +6,9 @@ import {
 } from 'react-test-renderer';
 
 import { HostSessionRecoveryScreen } from '../src/components/HostSessionRecoveryScreen';
+import { createLiveHostSession } from '../src/liveHostSessions';
+import { hostSessionRecoveryState } from '../src/lib/hostSessionRecovery';
+import type { HostProfile } from '../src/types';
 
 jest.mock('lucide-react-native', () => ({
   RefreshCw: 'RefreshCw',
@@ -41,7 +42,7 @@ describe('HostSessionRecoveryScreen', () => {
     act(() => renderer?.unmount());
   });
 
-  test('shows the failed host and exposes back and reconnect actions', () => {
+  test('shows the failed host and exposes back and reconnect actions', async () => {
     const onBack = jest.fn();
     const onReconnect = jest.fn();
     act(() => {
@@ -70,8 +71,8 @@ describe('HostSessionRecoveryScreen', () => {
       ]),
     );
 
-    act(() => buttons[0].props.onPress());
-    act(() => buttons[1].props.onPress());
+    await act(() => buttons[0].props.onPress());
+    await act(() => buttons[1].props.onPress());
     expect(onBack).toHaveBeenCalledTimes(1);
     expect(onReconnect).toHaveBeenCalledTimes(1);
   });
@@ -97,26 +98,77 @@ describe('HostSessionRecoveryScreen', () => {
   });
 });
 
-describe('missing host runtime recovery wiring', () => {
-  const runtimeManager = readFileSync(
-    join(__dirname, '..', 'src/hooks/useSessionRuntimeManager.ts'),
-    'utf8',
-  );
-  const appShell = readFileSync(
-    join(__dirname, '..', 'src/components/AppShell.tsx'),
-    'utf8',
-  );
+describe('missing host runtime recovery selection', () => {
+  test('terminal mode chooses recovery when its active session has no runtime', () => {
+    const session = {
+      ...createLiveHostSession(host()),
+      status: 'error' as const,
+      connectionError: 'connection refused',
+    };
 
-  test('rebuilds a missing runtime instead of trying to refresh it', () => {
-    expect(runtimeManager).toContain("action === 'select'");
-    expect(runtimeManager).toContain(
-      'reuseConnectingSession: Boolean(existing)',
-    );
+    expect(
+      hostSessionRecoveryState({
+        activeClient: undefined,
+        activeSession: session,
+        connectingHostIds: new Set(),
+        terminalVisible: true,
+      }),
+    ).toEqual({
+      busy: false,
+      error: 'connection refused',
+      session,
+    });
   });
 
-  test('renders recovery UI whenever terminal mode has a session without a runtime', () => {
-    expect(appShell).toContain('activeSession &&');
-    expect(appShell).toContain('!sessions.activeClient &&');
-    expect(appShell).toContain('<HostSessionRecoveryScreen');
+  test('connected and non-terminal views do not choose recovery', () => {
+    const session = createLiveHostSession(host());
+
+    expect(
+      hostSessionRecoveryState({
+        activeClient: {},
+        activeSession: session,
+        connectingHostIds: new Set(),
+        terminalVisible: true,
+      }),
+    ).toBeNull();
+    expect(
+      hostSessionRecoveryState({
+        activeClient: undefined,
+        activeSession: session,
+        connectingHostIds: new Set(),
+        terminalVisible: false,
+      }),
+    ).toBeNull();
+  });
+
+  test('a reconnect already in flight disables duplicate retry', () => {
+    const session = {
+      ...createLiveHostSession(host()),
+      status: 'error' as const,
+    };
+
+    expect(
+      hostSessionRecoveryState({
+        activeClient: undefined,
+        activeSession: session,
+        connectingHostIds: new Set([session.hostId]),
+        terminalVisible: true,
+      })?.busy,
+    ).toBe(true);
   });
 });
+
+function host(): HostProfile {
+  return {
+    id: 'host-1',
+    name: 'Host 1',
+    host: 'host-1.example.test',
+    port: '22',
+    username: 'herdr',
+    authMode: 'key',
+    herdrCommand: 'herdr',
+    sessionName: 'main',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+}

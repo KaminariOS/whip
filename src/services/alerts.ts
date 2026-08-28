@@ -258,7 +258,7 @@ async function speakBeforeAlert(title: string): Promise<void> {
     };
 
     timeout = setTimeout(() => {
-      stopSpeech('speech-timeout').finally(finish);
+      stopSpeech('speech-timeout').then(finish, finish);
     }, SPEECH_TIMEOUT_MS);
     try {
       Speech.speak(title, {

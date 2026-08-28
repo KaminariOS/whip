@@ -61,6 +61,7 @@ import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import type { TabLaunchIntent } from '@/src/services/HerdrClient';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
@@ -421,7 +422,9 @@ export function HerdScreen({
             onChangeText={setWorkspaceName}
             onSubmitEditing={workspaceEditorMode === 'create'
               ? () => workspaceCwdInputRef.current?.focus()
-              : () => { saveWorkspace(); }}
+              : () => {
+                  reportBackgroundFailure(saveWorkspace(), 'workspace-save');
+                }}
             placeholder={t('herd.labelOptional')}
             placeholderTextColor={colors.textTertiary}
           />
@@ -437,7 +440,9 @@ export function HerdScreen({
               returnKeyType="done"
               value={workspaceCwd}
               onChangeText={setWorkspaceCwd}
-              onSubmitEditing={() => { saveWorkspace(); }}
+              onSubmitEditing={() => {
+                reportBackgroundFailure(saveWorkspace(), 'workspace-save');
+              }}
               placeholder="~"
               placeholderTextColor={colors.textTertiary}
             />
@@ -597,7 +602,12 @@ export function HerdScreen({
         title={t('herd.closeWorkspaceTitle')}
         visible={closeWorkspaceTarget !== null}
         onCancel={() => setCloseWorkspaceTarget(null)}
-        onConfirm={() => { closeConfirmedWorkspace(); }}
+        onConfirm={() => {
+          reportBackgroundFailure(
+            closeConfirmedWorkspace(),
+            'workspace-close',
+          );
+        }}
       />
       <Modal
         animationType="fade"
@@ -669,7 +679,9 @@ export function HerdScreen({
                   returnKeyType="go"
                   value={commandDraft}
                   onChangeText={setCommandDraft}
-                  onSubmitEditing={() => { runCommand(); }}
+                  onSubmitEditing={() => {
+                    reportBackgroundFailure(runCommand(), 'workspace-command');
+                  }}
                 />
                 <Button
                   accessibilityLabel={t('herd.runCommand')}
@@ -798,7 +810,7 @@ const AgentRow = memo(
 
     const finishClose = (finished: boolean) => {
       if (finished) {
-        onCloseTab(item);
+        reportBackgroundFailure(onCloseTab(item), 'herd-tab-close');
         return;
       }
       committingRef.current = false;

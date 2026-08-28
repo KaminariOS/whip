@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 import { runIosSshE2E, type IosSshE2EResult } from '../services/iosSshE2E';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 export function IosSshE2EScreen() {
   const [activeStep, setActiveStep] = useState('Starting iOS SSH integration checks…');
   const [result, setResult] = useState<IosSshE2EResult | null>(null);
 
   useEffect(() => {
-    runIosSshE2E(setActiveStep).then(setResult);
+    reportBackgroundFailure(
+      runIosSshE2E(setActiveStep).then(setResult),
+      'ios-ssh-e2e-run',
+    );
   }, []);
 
   const passed = result?.status === 'passed';

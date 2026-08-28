@@ -16,6 +16,7 @@ import {
   PersistedTerminalsWriter,
   savePersistedTerminals,
 } from '../services/persistedTerminals';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 export interface HostTerminalSessions {
   hostId: string;
@@ -53,9 +54,14 @@ export function useTerminalSessions() {
   useEffect(() => {
     const retainedSessionIds = new Set(state.keys());
     for (const [sessionId, host] of state) {
-      writerRef.current
-        .saveIfChanged(sessionId, host.hostId, host.terminals)
-        .catch(() => undefined);
+      reportBackgroundFailure(
+        writerRef.current.saveIfChanged(
+          sessionId,
+          host.hostId,
+          host.terminals,
+        ),
+        'terminal-sessions-persist',
+      );
     }
     writerRef.current.retainSessions(retainedSessionIds);
   }, [state]);
@@ -100,10 +106,12 @@ export function useTerminalSessions() {
 
   const remove = useCallback((sessionId: string) => {
     const host = stateRef.current.get(sessionId);
-    if (host)
-      savePersistedTerminals(host.hostId, host.terminals).catch(
-        () => undefined,
+    if (host) {
+      reportBackgroundFailure(
+        savePersistedTerminals(host.hostId, host.terminals),
+        'terminal-session-remove-persist',
       );
+    }
     setState(current => {
       if (!current.has(sessionId)) return current;
       const next = new Map(current);

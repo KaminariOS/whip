@@ -11,9 +11,14 @@ import {
   shouldSaveMediaProgress,
   type RemoteContentIdentity,
 } from '@/src/services/remoteContentProgress';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { useTheme } from '@/src/theme';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
+
+const MEDIA_PROGRESS_LOAD_CONTEXT = 'remote-audio-progress-load';
+const MEDIA_PROGRESS_PERSIST_CONTEXT = 'remote-audio-progress-persist';
+const MEDIA_SEEK_CONTEXT = 'remote-audio-seek';
 
 interface Props {
   filename: string;
@@ -43,14 +48,20 @@ export function RemoteAudioPreview({ filename, progressIdentity, uri }: Props) {
     const identity = identityRef.current;
     lastSavedPositionRef.current = positionSeconds;
     if (!shouldSaveMediaProgress(positionSeconds, durationSeconds)) {
-      clearRemoteContentProgress(identity).catch(() => undefined);
+      reportBackgroundFailure(
+        clearRemoteContentProgress(identity),
+        MEDIA_PROGRESS_PERSIST_CONTEXT,
+      );
       return;
     }
-    saveRemoteContentProgress(identity, {
-      kind: 'media',
-      positionSeconds,
-      durationSeconds,
-    }).catch(() => undefined);
+    reportBackgroundFailure(
+      saveRemoteContentProgress(identity, {
+        kind: 'media',
+        positionSeconds,
+        durationSeconds,
+      }),
+      MEDIA_PROGRESS_PERSIST_CONTEXT,
+    );
   }, []);
 
   const restoreIfReady = useCallback(() => {
@@ -58,7 +69,7 @@ export function RemoteAudioPreview({ filename, progressIdentity, uri }: Props) {
     if (restoredRef.current || !player.isLoaded || position === null) return;
     restoredRef.current = true;
     pendingRestoreRef.current = null;
-    player.seekTo(position).catch(() => undefined);
+    reportBackgroundFailure(player.seekTo(position), MEDIA_SEEK_CONTEXT);
   }, [player]);
 
   useEffect(() => {
@@ -68,25 +79,34 @@ export function RemoteAudioPreview({ filename, progressIdentity, uri }: Props) {
     durationRef.current = 0;
     pendingRestoreRef.current = null;
     restoredRef.current = false;
-    loadRemoteContentProgress(effectIdentity).then(progress => {
-      if (!active || progress?.kind !== 'media' || progress.positionSeconds <= 0) return;
-      pendingRestoreRef.current = progress.positionSeconds;
-      positionRef.current = progress.positionSeconds;
-      durationRef.current = progress.durationSeconds;
-      restoreIfReady();
-    });
+    reportBackgroundFailure(
+      loadRemoteContentProgress(effectIdentity).then(progress => {
+        if (!active || progress?.kind !== 'media' || progress.positionSeconds <= 0) return;
+        pendingRestoreRef.current = progress.positionSeconds;
+        positionRef.current = progress.positionSeconds;
+        durationRef.current = progress.durationSeconds;
+        restoreIfReady();
+      }),
+      MEDIA_PROGRESS_LOAD_CONTEXT,
+    );
     return () => {
       active = false;
       const positionSeconds = positionRef.current;
       const durationSeconds = durationRef.current;
       if (shouldSaveMediaProgress(positionSeconds, durationSeconds)) {
-        saveRemoteContentProgress(effectIdentity, {
-          kind: 'media',
-          positionSeconds,
-          durationSeconds,
-        }).catch(() => undefined);
+        reportBackgroundFailure(
+          saveRemoteContentProgress(effectIdentity, {
+            kind: 'media',
+            positionSeconds,
+            durationSeconds,
+          }),
+          MEDIA_PROGRESS_PERSIST_CONTEXT,
+        );
       } else {
-        clearRemoteContentProgress(effectIdentity).catch(() => undefined);
+        reportBackgroundFailure(
+          clearRemoteContentProgress(effectIdentity),
+          MEDIA_PROGRESS_PERSIST_CONTEXT,
+        );
       }
     };
   }, [fileSize, hostId, modificationDate, remotePath, restoreIfReady]);
@@ -97,7 +117,10 @@ export function RemoteAudioPreview({ filename, progressIdentity, uri }: Props) {
     restoreIfReady();
     if (status.didJustFinish) {
       positionRef.current = 0;
-      clearRemoteContentProgress(identityRef.current).catch(() => undefined);
+      reportBackgroundFailure(
+        clearRemoteContentProgress(identityRef.current),
+        MEDIA_PROGRESS_PERSIST_CONTEXT,
+      );
     } else if (Math.abs(status.currentTime - lastSavedPositionRef.current) >= 5) {
       persist();
     } else if (previousPlayingRef.current && !status.playing) {
@@ -115,7 +138,12 @@ export function RemoteAudioPreview({ filename, progressIdentity, uri }: Props) {
 
   const seekTo = (seconds: number) => {
     const duration = durationRef.current;
-    player.seekTo(Math.max(0, duration > 0 ? Math.min(seconds, duration) : seconds)).catch(() => undefined);
+    reportBackgroundFailure(
+      player.seekTo(
+        Math.max(0, duration > 0 ? Math.min(seconds, duration) : seconds),
+      ),
+      MEDIA_SEEK_CONTEXT,
+    );
   };
   const duration = status.duration || durationRef.current;
   const position = Math.min(status.currentTime || positionRef.current, duration || Number.POSITIVE_INFINITY);

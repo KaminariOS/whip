@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
 import {
@@ -65,7 +66,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
         }
       }
     };
-    loadImages();
+    reportBackgroundFailure(loadImages(), 'markdown-remote-images-load');
     return () => {
       disposed = true;
       for (const cached of cachedFiles) cached.dispose();

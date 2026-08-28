@@ -1,3 +1,5 @@
+import { settledPromise } from './promises';
+
 export const TERMINAL_DISPLACEMENT_YIELD_THRESHOLD = 2;
 
 export interface TerminalDimensions {
@@ -115,7 +117,7 @@ export class TerminalArbitration {
     const pending = this.inputTail.then(operation, operation).finally(() => {
       this.pendingInputs -= 1;
     });
-    this.inputTail = pending.catch(() => undefined);
+    this.inputTail = settledPromise(pending);
     return pending;
   }
 }

@@ -1,46 +1,64 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import {
+  terminalControlBarInset,
+  terminalViewportLayout,
+} from '../src/lib/floatingChrome';
 
-const readSource = (path: string) =>
-  readFileSync(resolve(__dirname, '..', path), 'utf8');
+describe('terminal keyboard and composer geometry', () => {
+  const controlBarHeight = terminalControlBarInset(34);
 
-describe('terminal keyboard layout', () => {
-  test('shares the measured keyboard layout between terminal and chat viewports', () => {
-    const terminalScreen = readSource('src/components/TerminalScreen.tsx');
-    const sessionScreen = readSource('src/components/SessionScreen.tsx');
+  test('the direct keyboard reserves layout space without changing terminal chrome', () => {
+    const layout = terminalViewportLayout({
+      composerExpanded: false,
+      composerHeight: 112,
+      composerVisible: false,
+      controlBarHeight,
+      keyboardInset: 301,
+      topInset: 92,
+    });
 
-    expect(terminalScreen).not.toContain('useAnimatedKeyboard({');
-    expect(terminalScreen).toContain('paddingBottom: terminalLayoutKeyboardInset');
-    expect(terminalScreen).toContain('translateY: -keyboardInset');
-    expect(terminalScreen).toContain(
-      'const terminalLayoutKeyboardInset = composeOpen ? 0 : keyboardInset',
-    );
-    expect(terminalScreen).toContain('const floatingKeyboardInset = Math.max(0, keyboardInset - terminalLayoutKeyboardInset)');
-    expect(terminalScreen).toContain('const terminalBottomChrome = terminalBottomChromeInset({');
-    expect(terminalScreen).toContain('composerVisible: false,');
-    expect(terminalScreen).toContain('keyboardInset: 0,');
-    expect(terminalScreen).toContain('const viewportOverlayBottomChrome = terminalBottomChromeInset({');
-    expect(terminalScreen).toContain('keyboardInset: floatingKeyboardInset,');
-    expect(terminalScreen).toContain(
-      'bottom: controlBarHeight + keyboardInset',
-    );
-    expect(terminalScreen).toContain('{viewportOverlay}');
-    expect(terminalScreen.indexOf('{viewportOverlay}')).toBeLessThan(
-      terminalScreen.indexOf('ref={controlsRef}'),
-    );
-    expect(sessionScreen).toContain('renderViewportOverlay={activeChatView && activePane ? insets => (');
-    expect(sessionScreen).toContain('contentInsets={insets}');
+    expect(layout).toEqual({
+      floatingKeyboardInset: 0,
+      layoutKeyboardInset: 301,
+      overlayInsets: { top: 92, bottom: 84 },
+      terminalInsets: { top: 92, bottom: 84 },
+    });
   });
 
-  test('opening the floating composer preserves terminal geometry', () => {
-    const terminalScreen = readSource('src/components/TerminalScreen.tsx');
+  test('opening the floating composer preserves PTY geometry and moves overlay content', () => {
+    const closed = terminalViewportLayout({
+      composerExpanded: false,
+      composerHeight: 112,
+      composerVisible: false,
+      controlBarHeight,
+      keyboardInset: 301,
+      topInset: 92,
+    });
+    const open = terminalViewportLayout({
+      composerExpanded: false,
+      composerHeight: 112,
+      composerVisible: true,
+      controlBarHeight,
+      keyboardInset: 301,
+      topInset: 92,
+    });
 
-    expect(terminalScreen).toContain('if (enteredVisibility && !composeOpenRef.current)');
-    expect(terminalScreen).toContain('}, [getComposerDraft, ready, terminalId, visible]);');
-    expect(terminalScreen).not.toContain(
-      '}, [composeOpen, getComposerDraft, ready, terminalId, visible]);',
-    );
-    expect(terminalScreen).toContain('insets: terminalScrollingInsets');
-    expect(terminalScreen).toContain('renderViewportOverlay?.(viewportOverlayInsets)');
+    expect(open.terminalInsets).toEqual(closed.terminalInsets);
+    expect(open.layoutKeyboardInset).toBe(0);
+    expect(open.floatingKeyboardInset).toBe(301);
+    expect(open.overlayInsets).toEqual({ top: 92, bottom: 497 });
+  });
+
+  test('expanded composer content shares the keyboard inset but not floating composer height', () => {
+    const layout = terminalViewportLayout({
+      composerExpanded: true,
+      composerHeight: 240,
+      composerVisible: true,
+      controlBarHeight,
+      keyboardInset: 301,
+      topInset: 55,
+    });
+
+    expect(layout.terminalInsets).toEqual({ top: 55, bottom: 84 });
+    expect(layout.overlayInsets).toEqual({ top: 55, bottom: 385 });
   });
 });

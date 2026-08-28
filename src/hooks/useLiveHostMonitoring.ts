@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 
 import { HerdrClient } from '../services/HerdrClient';
 import { flushLatencyDiagnosticWrites } from '../services/latencyDiagnostics';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import {
   startBackgroundMonitoring,
@@ -69,7 +70,10 @@ export function useLiveHostMonitoring({
         measure(true);
         resume(true);
       } else {
-        flushLatencyDiagnosticWrites().catch(() => undefined);
+        reportBackgroundFailure(
+          flushLatencyDiagnosticWrites(),
+          'latency-diagnostics-flush',
+        );
       }
     });
     const heartbeat = setInterval(() => {

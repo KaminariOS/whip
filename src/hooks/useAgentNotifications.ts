@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
 import { dismissAgentAlerts, prepareAlerts } from '../services/alerts';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
@@ -15,7 +16,7 @@ export function useAgentNotifications() {
   const handledNotificationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    prepareAlerts().catch(() => undefined);
+    reportBackgroundFailure(prepareAlerts(), 'agent-alerts-prepare');
     let active = true;
     let receivedResponse = false;
     const subscription = Notifications.addNotificationResponseReceivedListener(
@@ -46,7 +47,9 @@ export function useAgentNotifications() {
       const returnedToForeground =
         previousState !== 'active' && state === 'active';
       previousState = state;
-      if (returnedToForeground) dismissAgentAlerts().catch(() => undefined);
+      if (returnedToForeground) {
+        reportBackgroundFailure(dismissAgentAlerts(), 'agent-alerts-dismiss');
+      }
     });
     return () => subscription.remove();
   }, []);

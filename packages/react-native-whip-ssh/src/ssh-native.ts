@@ -147,10 +147,12 @@ function fireSync(invoke: () => void): void {
   }
 }
 
-function fireAsync(promise: Promise<unknown>): void {
-  promise.catch(() => {
-    // Matches the legacy disconnect methods, which intentionally ignore errors.
-  });
+function bestEffortCleanup(
+  promise: Promise<unknown>,
+  _context: string,
+): void {
+  // eslint-disable-next-line no-restricted-syntax -- Legacy disconnect intentionally ignores cleanup failures.
+  promise.catch(() => undefined);
 }
 
 function credential(passwordOrKey: string | LegacyKey) {
@@ -310,7 +312,7 @@ const nativeClient = {
   },
 
   disconnect(key: string) {
-    fireAsync(disconnectSsh(key));
+    bestEffortCleanup(disconnectSsh(key), 'legacy-ssh-disconnect');
   },
 
   connectSFTP(key: string, callback: Callback) {
@@ -384,7 +386,7 @@ const nativeClient = {
   },
 
   disconnectSFTP(key: string) {
-    fireAsync(disconnectSshSftp(key));
+    bestEffortCleanup(disconnectSshSftp(key), 'legacy-sftp-disconnect');
   },
 
   openLocalForward(remoteHost: string, remotePort: number, key: string, callback: Callback) {

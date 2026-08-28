@@ -3,6 +3,13 @@ export interface VisualContentInsets {
   bottom: number;
 }
 
+export interface TerminalViewportLayout {
+  floatingKeyboardInset: number;
+  layoutKeyboardInset: number;
+  overlayInsets: VisualContentInsets;
+  terminalInsets: VisualContentInsets;
+}
+
 export const SESSION_TAB_BAR_HEIGHT = 55;
 export const SESSION_PANE_BAR_HEIGHT = 37;
 export const TERMINAL_CONTROL_BAR_BASE_HEIGHT = 50;
@@ -46,7 +53,50 @@ export function terminalBottomChromeInset({
   controlBarHeight: number;
   keyboardInset: number;
 }): number {
-  return Math.max(0, keyboardInset)
-    + Math.max(0, controlBarHeight)
-    + (composerVisible ? Math.max(0, composerHeight) : 0);
+  return (
+    Math.max(0, keyboardInset) +
+    Math.max(0, controlBarHeight) +
+    (composerVisible ? Math.max(0, composerHeight) : 0)
+  );
+}
+
+export function terminalViewportLayout({
+  composerExpanded,
+  composerHeight,
+  composerVisible,
+  controlBarHeight,
+  keyboardInset,
+  topInset,
+}: {
+  composerExpanded: boolean;
+  composerHeight: number;
+  composerVisible: boolean;
+  controlBarHeight: number;
+  keyboardInset: number;
+  topInset: number;
+}): TerminalViewportLayout {
+  const layoutKeyboardInset = composerVisible ? 0 : Math.max(0, keyboardInset);
+  const floatingKeyboardInset = Math.max(
+    0,
+    keyboardInset - layoutKeyboardInset,
+  );
+  const terminalBottom = terminalBottomChromeInset({
+    composerHeight,
+    composerVisible: false,
+    controlBarHeight,
+    keyboardInset: 0,
+  });
+  const overlayBottom = terminalBottomChromeInset({
+    composerHeight,
+    composerVisible: composerVisible && !composerExpanded,
+    controlBarHeight,
+    keyboardInset: floatingKeyboardInset,
+  });
+
+  return {
+    floatingKeyboardInset,
+    layoutKeyboardInset,
+    overlayInsets: visualContentInsets(topInset, overlayBottom),
+    terminalInsets: visualContentInsets(topInset, terminalBottom),
+  };
 }

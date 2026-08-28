@@ -1,3 +1,5 @@
+import { settledPromise } from './promises';
+
 export type ReconnectRecoveryTrigger = 'app-resume' | 'network-change';
 export type SavedHostConnectionAction = 'select' | 'wait' | 'connect';
 
@@ -43,8 +45,7 @@ export function destroyRuntime(
   runtime: ReleasableRuntime,
 ): Promise<void> {
   const previous = runtimeDestructions.get(runtimeId) ?? Promise.resolve();
-  const destruction = previous
-    .catch(() => undefined)
+  const destruction = settledPromise(previous)
     .then(async () => {
       try {
         await runtime.client.releaseAllTerminals();
@@ -53,11 +54,12 @@ export function destroyRuntime(
       }
     });
   runtimeDestructions.set(runtimeId, destruction);
-  destruction.finally(() => {
+  const removeDestruction = () => {
     if (runtimeDestructions.get(runtimeId) === destruction) {
       runtimeDestructions.delete(runtimeId);
     }
-  }).catch(() => undefined);
+  };
+  destruction.then(removeDestruction, removeDestruction);
   return destruction;
 }
 

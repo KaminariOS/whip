@@ -87,7 +87,7 @@ describe('SSH jump hosts', () => {
       inner,
     );
 
-    client.disconnect();
+    await client.disconnect();
 
     expect(target.disconnect).toHaveBeenCalledTimes(1);
     expect(inner.disconnect).toHaveBeenCalledTimes(1);

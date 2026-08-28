@@ -23,6 +23,7 @@ import {
   loadLatencyDiagnostics,
   subscribeToLatencyDiagnostics,
 } from '@/src/services/latencyDiagnostics';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { hapticPress, IconButton } from './app-ui';
 import { GlassBackdrop, GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -132,7 +133,12 @@ function AppLogsModal({
   }, [visible]);
 
   useEffect(() => {
-    if (visible) loadLatencyDiagnostics().catch(() => undefined);
+    if (visible) {
+      reportBackgroundFailure(
+        loadLatencyDiagnostics(),
+        'latency-diagnostics-load',
+      );
+    }
   }, [visible]);
 
   useEffect(

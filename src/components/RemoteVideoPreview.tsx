@@ -10,6 +10,10 @@ import {
   shouldSaveMediaProgress,
   type RemoteContentIdentity,
 } from '@/src/services/remoteContentProgress';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
+
+const MEDIA_PROGRESS_LOAD_CONTEXT = 'remote-video-progress-load';
+const MEDIA_PROGRESS_PERSIST_CONTEXT = 'remote-video-progress-persist';
 
 interface Props {
   filename: string;
@@ -32,14 +36,20 @@ export function RemoteVideoPreview({ filename, progressIdentity, uri }: Props) {
     const durationSeconds = durationRef.current;
     const identity = identityRef.current;
     if (!shouldSaveMediaProgress(positionSeconds, durationSeconds)) {
-      clearRemoteContentProgress(identity).catch(() => undefined);
+      reportBackgroundFailure(
+        clearRemoteContentProgress(identity),
+        MEDIA_PROGRESS_PERSIST_CONTEXT,
+      );
       return;
     }
-    saveRemoteContentProgress(identity, {
-      kind: 'media',
-      positionSeconds,
-      durationSeconds,
-    }).catch(() => undefined);
+    reportBackgroundFailure(
+      saveRemoteContentProgress(identity, {
+        kind: 'media',
+        positionSeconds,
+        durationSeconds,
+      }),
+      MEDIA_PROGRESS_PERSIST_CONTEXT,
+    );
   }, []);
 
   useEffect(() => {
@@ -47,24 +57,33 @@ export function RemoteVideoPreview({ filename, progressIdentity, uri }: Props) {
     const effectIdentity = { fileSize, hostId, modificationDate, remotePath };
     positionRef.current = 0;
     durationRef.current = 0;
-    loadRemoteContentProgress(effectIdentity).then(progress => {
-      if (!active || progress?.kind !== 'media' || progress.positionSeconds <= 0) return;
-      positionRef.current = progress.positionSeconds;
-      durationRef.current = progress.durationSeconds;
-      player.currentTime = progress.positionSeconds;
-    });
+    reportBackgroundFailure(
+      loadRemoteContentProgress(effectIdentity).then(progress => {
+        if (!active || progress?.kind !== 'media' || progress.positionSeconds <= 0) return;
+        positionRef.current = progress.positionSeconds;
+        durationRef.current = progress.durationSeconds;
+        player.currentTime = progress.positionSeconds;
+      }),
+      MEDIA_PROGRESS_LOAD_CONTEXT,
+    );
     return () => {
       active = false;
       const positionSeconds = positionRef.current;
       const durationSeconds = durationRef.current;
       if (shouldSaveMediaProgress(positionSeconds, durationSeconds)) {
-        saveRemoteContentProgress(effectIdentity, {
-          kind: 'media',
-          positionSeconds,
-          durationSeconds,
-        }).catch(() => undefined);
+        reportBackgroundFailure(
+          saveRemoteContentProgress(effectIdentity, {
+            kind: 'media',
+            positionSeconds,
+            durationSeconds,
+          }),
+          MEDIA_PROGRESS_PERSIST_CONTEXT,
+        );
       } else {
-        clearRemoteContentProgress(effectIdentity).catch(() => undefined);
+        reportBackgroundFailure(
+          clearRemoteContentProgress(effectIdentity),
+          MEDIA_PROGRESS_PERSIST_CONTEXT,
+        );
       }
     };
   }, [fileSize, hostId, modificationDate, player, remotePath]);
@@ -89,7 +108,10 @@ export function RemoteVideoPreview({ filename, progressIdentity, uri }: Props) {
   });
   useEventListener(player, 'playToEnd', () => {
     positionRef.current = 0;
-    clearRemoteContentProgress(identityRef.current).catch(() => undefined);
+    reportBackgroundFailure(
+      clearRemoteContentProgress(identityRef.current),
+      MEDIA_PROGRESS_PERSIST_CONTEXT,
+    );
   });
 
   return (

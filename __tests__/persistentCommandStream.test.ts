@@ -195,7 +195,7 @@ describe('direct Herdr API requests', () => {
     const firstDisconnect = client.disconnect();
     const secondDisconnect = client.disconnect();
     let disconnected = false;
-    firstDisconnect.then(() => {
+    const observedDisconnect = firstDisconnect.then(() => {
       disconnected = true;
     });
     await Promise.resolve();
@@ -206,7 +206,7 @@ describe('direct Herdr API requests', () => {
     expect(() => client.hostState()).toThrow('Host runtime is not active');
 
     finishDisconnect();
-    await firstDisconnect;
+    await observedDisconnect;
 
     expect(disconnected).toBe(true);
   });

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   act,
   create,
@@ -46,7 +44,7 @@ describe('AppAlertPopup', () => {
     act(() => renderer?.unmount());
   });
 
-  test('shows the original error in a centered glass popup and dismisses from its action', () => {
+  test('shows the original error in a centered glass popup and dismisses from its action', async () => {
     const onClose = jest.fn();
     act(() => {
       renderer = create(
@@ -74,37 +72,10 @@ describe('AppAlertPopup', () => {
     expect(text).toContain('Herdr command failed');
     expect(text).toContain('remote command exited with status 127');
 
-    act(() => findHost(renderer.root, 'Button').props.onPress());
+    await act(() => findHost(renderer.root, 'Button').props.onPress());
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    act(() => modal.props.onRequestClose());
+    await act(() => modal.props.onRequestClose());
     expect(onClose).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('Herdr alert migrations', () => {
-  const screenNames = ['PaneDetail.tsx', 'HerdScreen.tsx', 'SessionScreen.tsx'];
-  const screens = Object.fromEntries(
-    screenNames.map(name => [
-      name,
-      readFileSync(join(__dirname, '..', 'src', 'components', name), 'utf8'),
-    ]),
-  );
-
-  test.each(screenNames)(
-    '%s uses AppAlertPopup without native Alert.alert calls',
-    name => {
-      expect(screens[name]).toContain('<AppAlertPopup');
-      expect(screens[name]).not.toMatch(/\bAlert\.alert\s*\(/);
-    },
-  );
-
-  test('Codex integration failures use the same app-styled alert', () => {
-    expect(screens['SessionScreen.tsx']).toContain(
-      "showAppAlert('Could not install Codex integration', error)",
-    );
-    expect(screens['SessionScreen.tsx']).toContain(
-      "showAppAlert('Could not check Codex integration', error)",
-    );
   });
 });

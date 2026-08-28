@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AnsiOutput } from './AnsiOutput';
 import type { HerdrClient } from '@/src/services/HerdrClient';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { colors, useTheme } from '@/src/theme';
 import type { PaneInfo } from '@/src/types';
 import { hapticPress, IconButton, StatusBadge } from './app-ui';
@@ -29,7 +30,13 @@ export function PaneDetail({ pane, client, onClose, onOpenTerminal }: Props) {
   const [busy, setBusy] = useState(false);
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
-  const read = () => pane && loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) }));
+  const read = () => {
+    if (!pane) return;
+    reportBackgroundFailure(
+      loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) })),
+      'pane-output-read',
+    );
+  };
 
   useEffect(() => {
     if (!pane) {
@@ -45,11 +52,35 @@ export function PaneDetail({ pane, client, onClose, onOpenTerminal }: Props) {
       setAppAlert(null);
       setCloseConfirmationOpen(false);
     }
-    loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) }));
+    reportBackgroundFailure(
+      loadPane(client, pane, setOutput, error => t('pane.readError', { error: String(error) })),
+      'pane-output-read',
+    );
   }, [client, pane, t]);
   if (!pane) return null;
 
-  const run = async (action: () => Promise<void>, close = false) => { setBusy(true); try { await action(); if (close) onClose(); else await read(); } catch (error) { setAppAlert({ title: t('herd.commandFailed'), message: String(error) }); } finally { setBusy(false); } };
+  const run = (action: () => Promise<void>, close = false) => {
+    reportBackgroundFailure((async () => {
+      setBusy(true);
+      try {
+        await action();
+        if (close) onClose();
+        else await loadPane(
+          client,
+          pane,
+          setOutput,
+          error => t('pane.readError', { error: String(error) }),
+        );
+      } catch (error) {
+        setAppAlert({
+          title: t('herd.commandFailed'),
+          message: String(error),
+        });
+      } finally {
+        setBusy(false);
+      }
+    })(), 'pane-action');
+  };
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>

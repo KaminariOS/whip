@@ -1323,7 +1323,7 @@ const terminalSessionHtml = `<!doctype html>
       announceReady();
     };
     Promise.race([
-      fontReady.catch(() => undefined),
+      fontReady.then(() => undefined, () => undefined),
       new Promise(resolve => setTimeout(resolve, 1500)),
     ]).then(initializeTerminal);
   </script>

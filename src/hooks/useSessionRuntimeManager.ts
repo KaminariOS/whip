@@ -31,7 +31,6 @@ import {
   findLiveHostSession,
   getActiveLiveHostSession,
   openLiveHostSession,
-  preferredWorkspacePane,
   selectLiveHostSession,
   selectLiveHostWorkspaceView,
   updateLiveHostConnection,
@@ -71,10 +70,19 @@ import {
   waitForRuntimeDestruction,
 } from '../lib/sessionRuntimePolicy';
 import {
+  openWorkspaceFromProjection,
+  runSemanticHerdrMutation,
+  startNativeHerdrServer,
+} from '../lib/sessionRuntimeActions';
+import {
   terminalRendererKey,
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
 import { alertAgent, dismissAgentAlertsForPane } from '../services/alerts';
+import {
+  bestEffortCleanup,
+  reportBackgroundFailure,
+} from '../services/backgroundOperations';
 import { defaultDevicePreferences } from '../services/devicePreferences';
 import {
   HerdrClient,
@@ -250,7 +258,10 @@ function recordLatencyMeasurement(
     totalMs: measurement.totalMs,
     runtimeOverheadMs: measurement.runtimeOverheadMs,
   });
-  recordSlowHostLatency(sessionId, measurement).catch(() => undefined);
+  reportBackgroundFailure(
+    recordSlowHostLatency(sessionId, measurement),
+    'slow-host-latency-persist',
+  );
 }
 
 const HOST_LATENCY_PROBE_TRACE = 'Whip host latency probe end to end';
@@ -322,7 +333,7 @@ export function useSessionRuntimeManager({
     const retained = retainedBackgroundRuntimes;
     if (!retained) return;
     retainedBackgroundRuntimes = null;
-    disposeRuntimeMap(retained).catch(() => undefined);
+    bestEffortCleanup(disposeRuntimeMap(retained), 'retained-runtime-dispose');
   }, []);
 
   useEffect(
@@ -341,7 +352,10 @@ export function useSessionRuntimeManager({
         retainedBackgroundRuntimes = runtimesRef.current;
         return;
       }
-      disposeRuntimeMap(runtimesRef.current).catch(() => undefined);
+      bestEffortCleanup(
+        disposeRuntimeMap(runtimesRef.current),
+        'session-runtime-dispose',
+      );
     },
     [],
   );
@@ -367,21 +381,25 @@ export function useSessionRuntimeManager({
         setSafeToPersist(false);
       })
       .finally(() => setPersistedHostsLoaded(true));
-    withAppPerformanceTrace('Whip startup store: socket paths', () =>
-      snapshot
-        ? hydrateHerdrSocketPathCache(snapshot.herdrSocketPaths)
-        : loadHerdrSocketPathCache(),
-    )
-      .catch(() => undefined)
-      .finally(() => setSocketPathsLoaded(true));
+    const loadSocketPaths = withAppPerformanceTrace(
+      'Whip startup store: socket paths',
+      () =>
+        snapshot
+          ? hydrateHerdrSocketPathCache(snapshot.herdrSocketPaths)
+          : loadHerdrSocketPathCache(),
+    );
+    reportBackgroundFailure(loadSocketPaths, 'socket-path-cache-hydration');
+    const markSocketPathsLoaded = () => setSocketPathsLoaded(true);
+    loadSocketPaths.then(markSocketPathsLoaded, markSocketPathsLoaded);
   }, [deferredHydrationReady, startupStorage]);
 
   const persistedSelection = persistedLiveHostsFromSessions(state);
   const persistedIdentity = persistedLiveHostsIdentity(persistedSelection);
   const persistSelection = useEffectEvent(() => {
-    savePersistedLiveHosts(
-      persistedLiveHostsFromSessions(stateRef.current),
-    ).catch(() => undefined);
+    reportBackgroundFailure(
+      savePersistedLiveHosts(persistedLiveHostsFromSessions(stateRef.current)),
+      'live-host-selection-persist',
+    );
   });
   useEffect(() => {
     if (!restoreComplete || !safeToPersist) return;
@@ -505,7 +523,10 @@ export function useSessionRuntimeManager({
             runtime.previousStatuses?.get(paneId),
           );
           if (!isAgentAlertingStatus(status)) {
-            dismissAgentAlertsForPane(sessionId, paneId).catch(() => undefined);
+            reportBackgroundFailure(
+              dismissAgentAlertsForPane(sessionId, paneId),
+              'pane-alert-dismiss',
+            );
           }
           if (
             agent &&
@@ -515,14 +536,17 @@ export function useSessionRuntimeManager({
             const brief = foregroundUsesBriefAlerts(
               AppState.currentState === 'active',
             );
-            alertAgent(
-              agent,
-              ttsEnabledRef.current,
-              { hostId: sessionId, paneId },
-              tabNameForAgent(agent, snapshot.tabs),
-              brief ? 'brief' : 'persistent',
-              persistentAlertDurationSecondsRef.current * 1_000,
-            ).catch(() => undefined);
+            reportBackgroundFailure(
+              alertAgent(
+                agent,
+                ttsEnabledRef.current,
+                { hostId: sessionId, paneId },
+                tabNameForAgent(agent, snapshot.tabs),
+                brief ? 'brief' : 'persistent',
+                persistentAlertDurationSecondsRef.current * 1_000,
+              ),
+              'agent-alert-schedule',
+            );
           }
           recordNetworkDiagnostic('info', 'agent-status-state-change', {
             sessionId,
@@ -585,11 +609,14 @@ export function useSessionRuntimeManager({
           ) {
             if (!runtime.latencyDiagnosticFailureRecorded) {
               runtime.latencyDiagnosticFailureRecorded = true;
-              recordHostLatencyFailure(
-                sessionId,
-                diagnostic.durationMs,
-                diagnostic.error || 'Host latency probe failed',
-              ).catch(() => undefined);
+              reportBackgroundFailure(
+                recordHostLatencyFailure(
+                  sessionId,
+                  diagnostic.durationMs,
+                  diagnostic.error || 'Host latency probe failed',
+                ),
+                'host-latency-failure-persist',
+              );
             }
           }
           return;
@@ -765,7 +792,7 @@ export function useSessionRuntimeManager({
           runtimesRef.current.has(session.id) &&
           shouldRefreshLiveHost(session, reconcile)
         ) {
-          refresh(session.id).catch(() => undefined);
+          reportBackgroundFailure(refresh(session.id), 'live-host-refresh');
         }
       }
     },
@@ -800,9 +827,8 @@ export function useSessionRuntimeManager({
       )
         return;
       latencyPingsInFlightRef.current.set(sessionId, runtime);
-      withAppPerformanceTrace(
-        HOST_LATENCY_PROBE_TRACE,
-        () => runtime.client.measureLatency(),
+      withAppPerformanceTrace(HOST_LATENCY_PROBE_TRACE, () =>
+        runtime.client.measureLatency(),
       )
         .then(measurement => {
           if (runtimesRef.current.get(sessionId) !== runtime) return;
@@ -1376,10 +1402,10 @@ export function useSessionRuntimeManager({
 
   const closeTerminal = useCallback(
     (sessionId: string, terminalId: string) => {
-      runtimesRef.current
+      const closeBridge = runtimesRef.current
         .get(sessionId)
-        ?.client.closeTerminalBridge(terminalId)
-        .catch(() => undefined);
+        ?.client.closeTerminalBridge(terminalId);
+      if (closeBridge) bestEffortCleanup(closeBridge, 'terminal-bridge-close');
       terminals.close(sessionId, terminalId);
     },
     [terminals],
@@ -1417,24 +1443,17 @@ export function useSessionRuntimeManager({
         stateRef.current,
         sessionId,
       )?.snapshot;
-      const pane = snapshot
-        ? preferredWorkspacePane(snapshot, workspaceId)
-        : undefined;
-      selectWorkspace(sessionId, workspaceId);
-      if (pane) {
-        openPaneTerminal(sessionId, pane);
-        return;
-      }
-      select(sessionId, 'terminal');
-      await runtime.client.focusWorkspace(workspaceId);
-      // workspace.focus returns workspace metadata, not guaranteed post-focus
-      // pane topology. This caller needs a pane immediately to open a renderer.
-      const refreshed = await refreshSnapshot(sessionId);
-      const refreshedPane = refreshed
-        ? preferredWorkspacePane(refreshed, workspaceId)
-        : undefined;
-      if (!refreshedPane) throw new Error(t('session.emptyWorkspace'));
-      activatePaneTerminal(sessionId, refreshedPane);
+      await openWorkspaceFromProjection({
+        activatePaneTerminal: pane => activatePaneTerminal(sessionId, pane),
+        client: runtime.client,
+        emptyWorkspaceError: () => new Error(t('session.emptyWorkspace')),
+        openPaneTerminal: pane => openPaneTerminal(sessionId, pane),
+        refreshSnapshot: () => refreshSnapshot(sessionId),
+        selectTerminal: () => select(sessionId, 'terminal'),
+        selectWorkspace: () => selectWorkspace(sessionId, workspaceId),
+        snapshot,
+        workspaceId,
+      });
     },
     [
       activatePaneTerminal,
@@ -1456,21 +1475,31 @@ export function useSessionRuntimeManager({
 
   const renameWorkspace = useCallback(
     async (sessionId: string, workspaceId: string, name: string) => {
-      await requireRuntime(sessionId).client.renameWorkspace(workspaceId, name);
+      await runSemanticHerdrMutation(requireRuntime(sessionId).client, {
+        type: 'rename-workspace',
+        workspaceId,
+        name,
+      });
     },
     [requireRuntime],
   );
 
   const closeWorkspace = useCallback(
     async (sessionId: string, workspaceId: string) => {
-      await requireRuntime(sessionId).client.closeWorkspace(workspaceId);
+      await runSemanticHerdrMutation(requireRuntime(sessionId).client, {
+        type: 'close-workspace',
+        workspaceId,
+      });
     },
     [requireRuntime],
   );
 
   const closeTab = useCallback(
     async (sessionId: string, tabId: string) => {
-      await requireRuntime(sessionId).client.closeTab(tabId);
+      await runSemanticHerdrMutation(requireRuntime(sessionId).client, {
+        type: 'close-tab',
+        tabId,
+      });
     },
     [requireRuntime],
   );
@@ -1502,7 +1531,7 @@ export function useSessionRuntimeManager({
       const runtime = runtimesRef.current.get(sessionId);
       if (!runtime) return;
       try {
-        await runtime.client.startServer();
+        await startNativeHerdrServer(runtime.client);
       } catch (error) {
         scheduleReconnect(sessionId, error);
       }

@@ -39,6 +39,7 @@ import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
 } from '@/src/services/operationalDiagnostics';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { NativeAgentSpinner } from './NativeAgentSpinner';
 import { Badge } from './ui/badge';
@@ -141,8 +142,9 @@ export function HerdrMark({ size, accessibilityLabel }: { size: number; accessib
 
 export function hapticPress(handler?: () => void | Promise<void>) {
   return () => {
-    Haptics.selectionAsync().catch(() => undefined);
-    handler?.();
+    reportBackgroundFailure(Haptics.selectionAsync(), 'haptic-feedback');
+    const operation = handler?.();
+    if (operation) reportBackgroundFailure(operation, 'haptic-press-handler');
   };
 }
 

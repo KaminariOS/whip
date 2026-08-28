@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import type { TFunction } from 'i18next';
 
 import { deleteAgentChatCachesForHost } from '../services/agentChatCache';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   credentialRecoveryStatus,
   restoreCredentialBackups,
@@ -176,9 +177,10 @@ export function useHostManagement({
   }, []);
 
   useEffect(() => {
-    loadGlobalSshKeys()
-      .then(setGlobalSshKeys)
-      .catch(() => undefined);
+    reportBackgroundFailure(
+      loadGlobalSshKeys().then(setGlobalSshKeys),
+      'global-ssh-keys-load',
+    );
   }, []);
 
   useEffect(() => {
@@ -211,14 +213,20 @@ export function useHostManagement({
       startupStorage.status === 'loaded'
         ? knownHostsFromStorage(startupStorage.value.knownHosts)
         : loadKnownHosts();
-    withAppPerformanceTrace('Whip startup store: known hosts', () => load)
-      .then(replaceKnownHostsState);
-    withAppPerformanceTrace(
-      'Whip startup store: credential status',
-      credentialRecoveryStatus,
-    )
-      .then(setCredentialRecovery)
-      .catch(() => undefined);
+    reportBackgroundFailure(
+      withAppPerformanceTrace(
+        'Whip startup store: known hosts',
+        () => load,
+      ).then(replaceKnownHostsState),
+      'known-hosts-load',
+    );
+    reportBackgroundFailure(
+      withAppPerformanceTrace(
+        'Whip startup store: credential status',
+        credentialRecoveryStatus,
+      ).then(setCredentialRecovery),
+      'credential-recovery-status-load',
+    );
   }, [deferredHydrationReady, replaceKnownHostsState, startupStorage]);
 
   const retryKnownHosts = useCallback(async () => {
@@ -233,9 +241,12 @@ export function useHostManagement({
     if (!deferredHydrationReady || credentialMigrationStartedRef.current)
       return;
     credentialMigrationStartedRef.current = true;
-    withAppPerformanceTrace('Whip startup store: credential backups', () =>
-      migrateCredentialBackupsIfNeeded(hostsRef.current),
-    ).catch(() => undefined);
+    reportBackgroundFailure(
+      withAppPerformanceTrace('Whip startup store: credential backups', () =>
+        migrateCredentialBackupsIfNeeded(hostsRef.current),
+      ),
+      'credential-backup-migration',
+    );
   }, [deferredHydrationReady]);
 
   const persistProfile = useCallback(
@@ -249,9 +260,10 @@ export function useHostManagement({
 
   const markDisconnected = useCallback(
     (hostId: string) => {
-      markHostDisconnected(hostsRef.current, hostId)
-        .then(replaceHosts)
-        .catch(() => undefined);
+      reportBackgroundFailure(
+        markHostDisconnected(hostsRef.current, hostId).then(replaceHosts),
+        'host-disconnected-persist',
+      );
     },
     [replaceHosts],
   );

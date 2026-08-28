@@ -13,6 +13,7 @@ import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
 import type { HerdrClient, RemoteFilePreviewHandle, RemoteHtmlPreviewHandle } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
+import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
 import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPreferences';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
 import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
@@ -32,6 +33,8 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
+
+const REMOTE_PREVIEW_CLOSE_CONTEXT = 'remote-preview-close';
 
 interface Props {
   visible: boolean;
@@ -116,10 +119,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       const previous = previewRef.current;
       if (previous?.cached && previous.cached !== next?.cached) previous.cached.dispose();
       if (previous?.htmlPreview && previous.htmlPreview !== next?.htmlPreview) {
-        client.closeRemoteHtmlPreview(previous.htmlPreview).catch(() => undefined);
+        bestEffortCleanup(client.closeRemoteHtmlPreview(previous.htmlPreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
       }
       if (previous?.filePreview && previous.filePreview !== next?.filePreview) {
-        client.closeRemoteFilePreview(previous.filePreview).catch(() => undefined);
+        bestEffortCleanup(client.closeRemoteFilePreview(previous.filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
       }
       previewRef.current = next;
       setPreview(next);
@@ -175,7 +178,9 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   );
 
   useEffect(() => {
-    if (visible && !initialFilePath) loadDirectory(initialPath);
+    if (visible && !initialFilePath) {
+      reportBackgroundFailure(loadDirectory(initialPath), 'remote-directory-load');
+    }
     else {
       requestRef.current += 1;
       gitRequestRef.current += 1;
@@ -187,8 +192,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     () => () => {
       const current = previewRef.current;
       current?.cached?.dispose();
-      if (current?.htmlPreview) client.closeRemoteHtmlPreview(current.htmlPreview).catch(() => undefined);
-      if (current?.filePreview) client.closeRemoteFilePreview(current.filePreview).catch(() => undefined);
+      if (current?.htmlPreview) bestEffortCleanup(client.closeRemoteHtmlPreview(current.htmlPreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+      if (current?.filePreview) bestEffortCleanup(client.closeRemoteFilePreview(current.filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
       previewRef.current = null;
     },
     [client],
@@ -279,7 +284,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       const next = new Set(current);
       if (next.has(directoryPath)) next.delete(directoryPath);
       else next.add(directoryPath);
-      saveRemoteGitCollapsedPaths(hostId, repository.root, [...next]).catch(() => undefined);
+      reportBackgroundFailure(
+        saveRemoteGitCollapsedPaths(hostId, repository.root, [...next]),
+        'remote-git-collapse-persist',
+      );
       return next;
     });
   };
@@ -361,14 +369,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       }
       if (request !== requestRef.current) {
         cached?.dispose();
-        if (filePreview) await client.closeRemoteFilePreview(filePreview).catch(() => undefined);
+        if (filePreview) bestEffortCleanup(client.closeRemoteFilePreview(filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
         return;
       }
       if (kind === 'html') htmlPreview = await client.openRemoteHtmlPreview(entryPath);
       if (request !== requestRef.current) {
         cached?.dispose();
-        if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
-        if (filePreview) await client.closeRemoteFilePreview(filePreview).catch(() => undefined);
+        if (htmlPreview) bestEffortCleanup(client.closeRemoteHtmlPreview(htmlPreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+        if (filePreview) bestEffortCleanup(client.closeRemoteFilePreview(filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
         return;
       }
       replacePreview({
@@ -382,8 +390,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (kind === 'pdf' && filePreview) await openPdfBrowser(filePreview.url, request);
     } catch (reason) {
       cached?.dispose();
-      if (htmlPreview) await client.closeRemoteHtmlPreview(htmlPreview).catch(() => undefined);
-      if (filePreview) await client.closeRemoteFilePreview(filePreview).catch(() => undefined);
+      if (htmlPreview) bestEffortCleanup(client.closeRemoteHtmlPreview(htmlPreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+      if (filePreview) bestEffortCleanup(client.closeRemoteFilePreview(filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
       if (request === requestRef.current) {
         replacePreview({ ...loadingPreview, error: String(reason) });
       }
@@ -824,7 +832,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                           variant="ghost"
                           onPress={hapticPress(() => {
                             if (actionsOpen) closeActions();
-                            else openEntry(entry);
+                            else reportBackgroundFailure(openEntry(entry), 'remote-entry-open');
                           })}
                         >
                           <View className="size-9 items-center justify-center rounded-lg bg-muted">
@@ -949,7 +957,12 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         onConfirm={() => {
           const target = deleteTarget;
           setDeleteTarget(null);
-          if (target) deleteEntry(target.entry, target.directoryPath);
+          if (target) {
+            reportBackgroundFailure(
+              deleteEntry(target.entry, target.directoryPath),
+              'remote-entry-delete',
+            );
+          }
         }}
       />
     </Modal>

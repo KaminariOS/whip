@@ -18,7 +18,12 @@ import { aggregateAgentStatus } from '../lib/agentStatusAggregate';
 import { shouldEnableAppGlass } from '../lib/appGlass';
 import { hostDisplayName } from '../lib/hostProfiles';
 import { hostRuntimeSummary } from '../lib/hostRuntimeSummary';
+import { hostSessionRecoveryState } from '../lib/hostSessionRecovery';
 import { dismissAgentAlertsForTab, alertAgent } from '../services/alerts';
+import {
+  ignoreExpectedCancellation,
+  reportBackgroundFailure,
+} from '../services/backgroundOperations';
 import { useTheme } from '../theme';
 import type { LiveSessionRailItem } from './LiveSessionRail';
 import { AgentStatusAnimationProvider } from './app-ui';
@@ -92,6 +97,12 @@ export function AppShell({
     : null;
   const terminalVisible =
     navigation.state.tab === 'terminal' && !hosts.editorProfile;
+  const terminalRecovery = hostSessionRecoveryState({
+    activeClient: sessions.activeClient,
+    activeSession,
+    connectingHostIds: sessions.connectingHostIds,
+    terminalVisible,
+  });
   const immersiveTerminal = terminalVisible && Boolean(activeSession);
   const activeTerminalVisible = Boolean(
     immersiveTerminal &&
@@ -370,9 +381,11 @@ export function AppShell({
                       biometricForKeys={biometricForKeys}
                       biometricOnResume={biometricOnResume}
                       globalKeyCount={hosts.globalSshKeys.length}
-                      knownHostCount={hosts.knownHostsState.status === 'loaded'
-                        ? hosts.knownHosts.length
-                        : null}
+                      knownHostCount={
+                        hosts.knownHostsState.status === 'loaded'
+                          ? hosts.knownHosts.length
+                          : null
+                      }
                       appearance={appearance}
                       fullscreenApp={fullscreenApp}
                       appBackgroundImageUri={appBackgroundImageUri}
@@ -420,17 +433,17 @@ export function AppShell({
                         preferences.setPreference('ttsEnabled', value)
                       }
                       onBiometricForKeysChange={value => {
-                        security
-                          .updateBiometricForKeys(value)
-                          .catch(() => undefined);
+                        ignoreExpectedCancellation(
+                          security.updateBiometricForKeys(value),
+                        );
                       }}
                       onBiometricOnResumeChange={value => {
-                        security
-                          .updateBiometricOnResume(value)
-                          .catch(() => undefined);
+                        ignoreExpectedCancellation(
+                          security.updateBiometricOnResume(value),
+                        );
                       }}
                       onManageGlobalKeychain={() => {
-                        hosts.openGlobalKeychain().catch(() => undefined);
+                        ignoreExpectedCancellation(hosts.openGlobalKeychain());
                       }}
                       onManageKnownHosts={hosts.openKnownHosts}
                       onOpenLicenses={navigation.openLicenses}
@@ -530,8 +543,9 @@ export function AppShell({
                         )
                       }
                       onInteraction={(sessionId, tabId) => {
-                        dismissAgentAlertsForTab(sessionId, tabId).catch(
-                          () => undefined,
+                        reportBackgroundFailure(
+                          dismissAgentAlertsForTab(sessionId, tabId),
+                          'tab-alert-dismiss',
                         );
                       }}
                       onExit={() =>
@@ -549,25 +563,21 @@ export function AppShell({
                     />
                   </AgentStatusAnimationProvider>
                 )}
-              {navigation.mountedTabs.has('terminal') &&
-                activeSession &&
-                !sessions.activeClient &&
-                terminalVisible && (
-                  <HostSessionRecoveryScreen
-                    busy={
-                      activeSession.status === 'connecting' ||
-                      sessions.connectingHostIds.has(activeSession.hostId)
-                    }
-                    error={activeSession.connectionError}
-                    host={hostDisplayName(activeSession.host)}
-                    onBack={() => sessions.exitTerminalToHerd(activeSession.id)}
-                    onReconnect={() => {
-                      sessions
-                        .connectSavedHost(activeSession.host)
-                        .catch(error => hosts.setError(String(error)));
-                    }}
-                  />
-                )}
+              {navigation.mountedTabs.has('terminal') && terminalRecovery && (
+                <HostSessionRecoveryScreen
+                  busy={terminalRecovery.busy}
+                  error={terminalRecovery.error}
+                  host={hostDisplayName(terminalRecovery.session.host)}
+                  onBack={() =>
+                    sessions.exitTerminalToHerd(terminalRecovery.session.id)
+                  }
+                  onReconnect={() => {
+                    sessions
+                      .connectSavedHost(terminalRecovery.session.host)
+                      .catch(error => hosts.setError(String(error)));
+                  }}
+                />
+              )}
             </NavigationBlurTarget>
 
             {!immersiveTerminal && !overlaysVisible && (

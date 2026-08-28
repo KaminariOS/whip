@@ -14,6 +14,7 @@ import {
   upsertHost,
 } from '../lib/hostProfiles';
 import type { ConnectionProfile, HostProfile } from '../types';
+import { reportBackgroundFailure } from './backgroundOperations';
 import {
   backupCredential,
   ensureCredentialBackup,
@@ -95,11 +96,13 @@ export async function loadHostProfilesFromStorage(
 /** Runs the one-time backup migration without delaying host metadata rendering. */
 export function scheduleCredentialBackupMigration(hosts: readonly HostProfile[]): void {
   if (credentialBackupMigration) return;
-  const operation = migrateCredentialBackupsIfNeeded(hosts).catch(() => undefined);
+  const operation = migrateCredentialBackupsIfNeeded(hosts);
   credentialBackupMigration = operation;
-  operation.finally(() => {
+  reportBackgroundFailure(operation, 'credential-backup-migration');
+  const clearMigration = () => {
     if (credentialBackupMigration === operation) credentialBackupMigration = null;
-  }).catch(() => undefined);
+  };
+  operation.then(clearMigration, clearMigration);
 }
 
 export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfile[]): Promise<void> {

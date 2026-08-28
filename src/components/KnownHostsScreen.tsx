@@ -9,6 +9,7 @@ import {
 import { useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 import type { KnownHostsLoadState } from '@/src/services/knownHosts';
 import type { KnownHost } from '@/src/types';
@@ -145,7 +146,9 @@ export function KnownHostsScreen({ state, onClose, onDelete, onRetry }: Props) {
         title={t('knownHosts.deleteTitle', { host: deleteTarget ? displayHost(deleteTarget) : '' })}
         visible={deleteTarget !== null}
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => { deleteConfirmedHost(); }}
+        onConfirm={() => {
+          reportBackgroundFailure(deleteConfirmedHost(), 'known-host-delete');
+        }}
       />
     </View>
   );

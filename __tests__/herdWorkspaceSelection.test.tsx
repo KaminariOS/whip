@@ -196,7 +196,7 @@ describe('Herd workspace selection intent', () => {
       })} />);
     });
 
-    act(() => findHost(renderer.root, 'WorkspaceRail').props.onSelect('space-b'));
+    await act(() => findHost(renderer.root, 'WorkspaceRail').props.onSelect('space-b'));
 
     expect(calls).toEqual(['filter', 'select', 'focus']);
     expect(onWorkspaceFilterChange).toHaveBeenCalledWith('host-1', 'space-b');
@@ -275,7 +275,7 @@ describe('Herd workspace selection intent', () => {
       && node.props.accessibilityLabel === 'herd.runCommand'
       && node.props.className.includes('px-4'),
     );
-    act(() => runButton.props.onPress());
+    await act(() => runButton.props.onPress());
 
     const commandInput = renderer.root.find(node =>
       String(node.type) === 'Input'

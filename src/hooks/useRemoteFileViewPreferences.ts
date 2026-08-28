@@ -9,6 +9,7 @@ import {
   loadRemoteFilePreferences,
   saveRemoteFilePreferences,
 } from '../services/remoteFilePreferences';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 /** Owns hydration and persistence for the remote browser's view preferences. */
 export function useRemoteFileViewPreferences() {
@@ -18,13 +19,14 @@ export function useRemoteFileViewPreferences() {
 
   useEffect(() => {
     let active = true;
-    loadRemoteFilePreferences()
-      .then(value => {
+    reportBackgroundFailure(
+      loadRemoteFilePreferences().then(value => {
         if (!active) return;
         preferencesRef.current = value;
         setPreferences(value);
-      })
-      .catch(() => undefined);
+      }),
+      'remote-file-preferences-load',
+    );
     return () => {
       active = false;
     };
@@ -34,7 +36,10 @@ export function useRemoteFileViewPreferences() {
     const next = { ...preferencesRef.current, showHiddenFiles };
     preferencesRef.current = next;
     setPreferences(next);
-    saveRemoteFilePreferences(next).catch(() => undefined);
+    reportBackgroundFailure(
+      saveRemoteFilePreferences(next),
+      'remote-file-preferences-persist',
+    );
   }, []);
 
   const selectSortField = useCallback((field: RemoteFileSortField) => {
@@ -51,7 +56,10 @@ export function useRemoteFileViewPreferences() {
     };
     preferencesRef.current = next;
     setPreferences(next);
-    saveRemoteFilePreferences(next).catch(() => undefined);
+    reportBackgroundFailure(
+      saveRemoteFilePreferences(next),
+      'remote-file-preferences-persist',
+    );
   }, []);
 
   return {

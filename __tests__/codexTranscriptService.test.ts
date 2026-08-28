@@ -4,6 +4,7 @@ import type {
 } from 'react-native-whip-ssh';
 
 import { MemoryAgentChatCache } from '../src/services/agentChatCache';
+import { settledPromise } from '../src/lib/promises';
 import {
   CodexTranscriptService,
   type CodexTranscriptTransport,
@@ -198,7 +199,7 @@ describe('Codex native transcript facade', () => {
           if (new Uint8Array(checkpoint.blob)[0] === 2) await olderGate;
           await super.saveNative(checkpoint);
         });
-        this.chain = operation.catch(() => undefined);
+        this.chain = settledPromise(operation);
         return operation;
       }
     }

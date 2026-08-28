@@ -71,7 +71,7 @@ describe('plain SSH shell fallback', () => {
     );
 
     await client.writeToTerminal(SSH_SHELL_TERMINAL_ID, 'herdr --version\r');
-    client.resizeTerminal(SSH_SHELL_TERMINAL_ID, 120, 40);
+    await client.resizeTerminal(SSH_SHELL_TERMINAL_ID, 120, 40);
 
     expect(control.client.writeToShell).toHaveBeenCalledWith('herdr --version\r');
     expect(control.client.resizeShell).toHaveBeenLastCalledWith(120, 40);

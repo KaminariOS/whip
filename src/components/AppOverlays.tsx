@@ -6,6 +6,10 @@ import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { RemoteFilesController } from '../hooks/useRemoteFilesController';
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
 import type { useApplicationSecurity } from '../hooks/useApplicationSecurity';
+import {
+  ignoreExpectedCancellation,
+  reportBackgroundFailure,
+} from '../services/backgroundOperations';
 import { AppAccessLock } from './AppAccessLock';
 import { AppBackground } from './AppBackground';
 import { ConnectionScreen } from './ConnectionScreen';
@@ -170,7 +174,7 @@ export function AppOverlays({
         host={hosts.deleteHostTarget}
         onCancel={hosts.cancelDelete}
         onDelete={() => {
-          hosts.deleteConfirmed().catch(() => undefined);
+          reportBackgroundFailure(hosts.deleteConfirmed(), 'host-delete');
         }}
       />
       <PairingSuccessPopup
@@ -181,7 +185,7 @@ export function AppOverlays({
         authenticating={security.authenticating}
         visible={security.locked}
         onRetry={() => {
-          security.authenticateLockedApp().catch(() => undefined);
+          ignoreExpectedCancellation(security.authenticateLockedApp());
         }}
       />
     </>

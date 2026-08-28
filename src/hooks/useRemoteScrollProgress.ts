@@ -13,6 +13,7 @@ import {
   type RemoteContentIdentity,
   type RemoteTextProgress,
 } from '@/src/services/remoteContentProgress';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 const SAVE_INTERVAL_MS = 2_000;
 
@@ -35,7 +36,10 @@ export function useRemoteScrollProgress(
     const progress = latestRef.current;
     if (!progress) return;
     lastSavedAtRef.current = Date.now();
-    saveRemoteContentProgress(identityRef.current, progress).catch(() => undefined);
+    reportBackgroundFailure(
+      saveRemoteContentProgress(identityRef.current, progress),
+      'remote-scroll-progress-persist',
+    );
   }, []);
 
   const restore = useCallback(() => {
@@ -76,16 +80,24 @@ export function useRemoteScrollProgress(
       };
       restore();
     } else {
-      loadRemoteContentProgress(effectIdentity).then(progress => {
-        if (!active || progress?.kind !== 'text') return;
-        pendingRestoreRef.current = progress;
-        restore();
-      });
+      reportBackgroundFailure(
+        loadRemoteContentProgress(effectIdentity).then(progress => {
+          if (!active || progress?.kind !== 'text') return;
+          pendingRestoreRef.current = progress;
+          restore();
+        }),
+        'remote-scroll-progress-load',
+      );
     }
     return () => {
       active = false;
       const progress = latestRef.current;
-      if (progress) saveRemoteContentProgress(effectIdentity, progress).catch(() => undefined);
+      if (progress) {
+        reportBackgroundFailure(
+          saveRemoteContentProgress(effectIdentity, progress),
+          'remote-scroll-progress-unmount-persist',
+        );
+      }
     };
   }, [fileSize, hostId, initialOffsetX, initialOffsetY, modificationDate, persist, remotePath, restore]);
 

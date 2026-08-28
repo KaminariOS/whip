@@ -38,7 +38,7 @@ describe('AppAccessLock', () => {
     act(() => renderer?.unmount());
   });
 
-  test('blocks the app and wires both retry entry points to authentication', () => {
+  test('blocks the app and wires both retry entry points to authentication', async () => {
     const onRetry = jest.fn();
     act(() => {
       renderer = create(<AppAccessLock authenticating={false} visible onRetry={onRetry} />);
@@ -48,8 +48,8 @@ describe('AppAccessLock', () => {
     expect(modal.props.visible).toBe(true);
     expect(findHost(renderer.root, 'WhipMark').props.accessibilityLabel).toBe('Whip is locked');
 
-    act(() => findHost(renderer.root, 'Button').props.onPress());
-    act(() => modal.props.onRequestClose());
+    await act(() => findHost(renderer.root, 'Button').props.onPress());
+    await act(() => modal.props.onRequestClose());
     expect(onRetry).toHaveBeenCalledTimes(2);
   });
 

@@ -7,6 +7,7 @@ import {
   isAppAuthenticationCancellation,
   recordAppAuthenticationFailure,
 } from '../services/appAuthentication';
+import { ignoreExpectedCancellation } from '../services/backgroundOperations';
 
 interface ApplicationSecurityOptions {
   preferencesLoaded: boolean;
@@ -116,7 +117,7 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
         setLocked(true);
       } else if (action === 'authenticate') {
         setLocked(true);
-        authenticateLockedApp();
+        ignoreExpectedCancellation(authenticateLockedApp());
       }
     });
     return () => subscription.remove();

@@ -3,6 +3,7 @@ import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Plus, ShieldCheck, Spark
 import { useEffect, useState } from 'react';
 import { Alert, Clipboard, NativeModules, Platform, Pressable, ScrollView, ToastAndroid, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 import { privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
 import { normalizePrivateKey } from '@/src/lib/privateKey';
@@ -260,7 +261,9 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
         title={t('keychain.deleteTitle', { name: deleteTarget?.name || '' })}
         visible={deleteTarget !== null}
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => { deleteConfirmedKey(); }}
+        onConfirm={() => {
+          reportBackgroundFailure(deleteConfirmedKey(), 'global-key-delete');
+        }}
       />
     </View>
   );

@@ -11,6 +11,7 @@ import { shouldPersistTerminalHistory } from '../src/lib/terminalHistory';
 describe('session runtime lifecycle policy', () => {
   test('retries a failed restored placeholder through a full connection', () => {
     expect(savedHostConnectionAction('error', false)).toBe('connect');
+    expect(savedHostConnectionAction('ready', false)).toBe('connect');
     expect(savedHostConnectionAction('connecting', false)).toBe('wait');
     expect(savedHostConnectionAction('ready', true)).toBe('select');
   });
@@ -50,14 +51,12 @@ describe('session runtime lifecycle policy', () => {
     const disconnectStarted = new Promise<void>(resolve => {
       markDisconnectStarted = resolve;
     });
-    const disconnect = jest.fn(
-      () => {
-        markDisconnectStarted();
-        return new Promise<void>(resolve => {
-          finishDisconnect = resolve;
-        });
-      },
-    );
+    const disconnect = jest.fn(() => {
+      markDisconnectStarted();
+      return new Promise<void>(resolve => {
+        finishDisconnect = resolve;
+      });
+    });
     const runtime = {
       client: {
         releaseAllTerminals: jest.fn(() => Promise.resolve()),
@@ -91,14 +90,12 @@ describe('session runtime lifecycle policy', () => {
     const first = {
       client: {
         releaseAllTerminals: jest.fn(() => Promise.resolve()),
-        disconnect: jest.fn(
-          () => {
-            markFirstDisconnectStarted();
-            return new Promise<void>(resolve => {
-              finishFirstDisconnect = resolve;
-            });
-          },
-        ),
+        disconnect: jest.fn(() => {
+          markFirstDisconnectStarted();
+          return new Promise<void>(resolve => {
+            finishFirstDisconnect = resolve;
+          });
+        }),
       },
     };
     const second = {

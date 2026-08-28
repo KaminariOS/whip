@@ -64,4 +64,25 @@ describe('useAppNavigation', () => {
     expect(navigation?.mountedTabs.has('herd')).toBe(true);
     expect(onFirstTabMounted).toHaveBeenCalledTimes(1);
   });
+
+  test('owns Android back handling for terminal navigation', () => {
+    act(() => {
+      renderer = create(<NavigationHarness onFirstTabMounted={jest.fn()} />);
+    });
+    act(() => navigation?.selectTab('terminal'));
+
+    const backHandler = jest.requireMock('react-native').BackHandler as {
+      addEventListener: jest.Mock;
+    };
+    const listener = backHandler.addEventListener.mock.calls.at(-1)?.[1] as
+      | (() => boolean)
+      | undefined;
+    let handled = false;
+    act(() => {
+      handled = listener?.() ?? false;
+    });
+
+    expect(handled).toBe(true);
+    expect(navigation?.state.tab).toBe('herd');
+  });
 });

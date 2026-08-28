@@ -11,6 +11,7 @@ import {
   terminalHistoryFromStorage,
 } from '../services/terminalHistory';
 import type { StartupStorageSnapshot } from '../services/startupStorage';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import type { LoadState } from './useStartupStorage';
 
 interface TerminalHistoryOptions {
@@ -50,7 +51,10 @@ export function useTerminalHistory({
 
   useEffect(() => {
     if (!shouldPersistTerminalHistory(loaded, safeToPersist)) return;
-    saveTerminalHistory(entries).catch(() => undefined);
+    reportBackgroundFailure(
+      saveTerminalHistory(entries),
+      'terminal-history-persist',
+    );
   }, [entries, loaded, safeToPersist]);
 
   const record = useCallback((entry: string) => {

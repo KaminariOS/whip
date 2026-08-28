@@ -3,6 +3,7 @@ import type { HostLatencyMeasurement } from './latencyDiagnostics';
 import type { ResponseResult } from '../generated/herdrApi';
 
 import { normalizePrivateKey } from '../lib/privateKey';
+import { settledPromise } from '../lib/promises';
 import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import { DEFAULT_HERDR_COMMAND } from '../lib/hostProfiles';
 import { errorCode } from '../lib/connectionErrors';
@@ -651,7 +652,7 @@ export class HerdrClient {
   ): Promise<void> {
     if (isSshShellTerminalId(terminalId)) {
       const opening = this.terminalOpenings.get(terminalId);
-      if (opening) await opening.catch(() => undefined);
+      if (opening) await settledPromise(opening);
       this.closeSshShell(terminalId, attachmentId);
       return;
     }

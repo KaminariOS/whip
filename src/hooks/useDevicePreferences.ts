@@ -18,6 +18,7 @@ import {
 } from '../services/devicePreferences';
 import { setAppLogCaptureEnabled } from '../services/appLogs';
 import { setLatencyDiagnosticsEnabled } from '../services/latencyDiagnostics';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
@@ -105,7 +106,10 @@ export function useDevicePreferences(
   useEffect(() => {
     if (!shouldPersistDevicePreferences(state.hydration, state.revision))
       return;
-    saveDevicePreferences(state.value).catch(() => undefined);
+    reportBackgroundFailure(
+      saveDevicePreferences(state.value),
+      'device-preferences-persist',
+    );
   }, [state]);
 
   useEffect(() => {
@@ -128,8 +132,9 @@ export function useDevicePreferences(
   useEffect(() => {
     if (state.hydration.status !== 'loaded') return;
     setAppLogCaptureEnabled(state.value.developerOptionsEnabled);
-    setLatencyDiagnosticsEnabled(state.value.developerOptionsEnabled).catch(
-      () => undefined,
+    reportBackgroundFailure(
+      setLatencyDiagnosticsEnabled(state.value.developerOptionsEnabled),
+      'latency-diagnostics-setting-persist',
     );
   }, [state.hydration.status, state.value.developerOptionsEnabled]);
 

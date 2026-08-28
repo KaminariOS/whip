@@ -35,7 +35,10 @@ export function terminalVisualOffset({
   if (alternateScreen) return 0;
 
   const top = Math.max(0, insets.top);
-  const bottomAllowance = Math.max(0, insets.bottom - Math.max(0, geometryBottomInset));
+  const bottomAllowance = Math.max(
+    0,
+    insets.bottom - Math.max(0, geometryBottomInset),
+  );
   if (!scroll || scroll.max_offset_from_bottom <= 0) {
     return boundaryPreference === 'top' ? top : -bottomAllowance;
   }
@@ -45,33 +48,62 @@ export function terminalVisualOffset({
   if (offset >= maximum) return top;
   if (offset <= 0) return -bottomAllowance;
 
-  const cellHeight = Math.max(1, (viewportHeight ?? scroll.viewport_rows) / scroll.viewport_rows);
+  const cellHeight = Math.max(
+    1,
+    (viewportHeight ?? scroll.viewport_rows) / scroll.viewport_rows,
+  );
   if (boundaryPreference === 'top') {
-    return Math.max(0, top - ((maximum - offset) * cellHeight));
+    return Math.max(0, top - (maximum - offset) * cellHeight);
   }
-  const bottomReveal = Math.max(0, bottomAllowance - (offset * cellHeight));
+  const bottomReveal = Math.max(0, bottomAllowance - offset * cellHeight);
   return bottomReveal > 0 ? -bottomReveal : 0;
 }
 
 export interface TerminalRenderTarget {
   key: string;
   hostSessionId: string;
-  client: HerdrClient;
+  client: TerminalRuntimeClient;
   session: TerminalSession;
   scroll?: PaneScrollInfo;
 }
 
-export function terminalRendererKey(hostSessionId: string, terminalId: string): string {
+export type TerminalRuntimeClient = Pick<
+  HerdrClient,
+  | 'clickTerminal'
+  | 'closeTerminal'
+  | 'closeTerminalBridge'
+  | 'detachTerminal'
+  | 'isTerminalBridgeRetained'
+  | 'openTerminal'
+  | 'pasteIntoPane'
+  | 'releaseTerminal'
+  | 'resizeTerminal'
+  | 'scrollTerminal'
+  | 'snapshot'
+  | 'submitPastesToPane'
+  | 'writeToTerminal'
+>;
+
+export function terminalRendererKey(
+  hostSessionId: string,
+  terminalId: string,
+): string {
   return `${hostSessionId.length}:${hostSessionId}${terminalId}`;
 }
 
 const OFFLINE_NAVIGATION_INPUTS = new Set([
-  '\u001b[A', '\u001bOA',
-  '\u001b[B', '\u001bOB',
-  '\u001b[5~', '\u001b[1;5A',
-  '\u001b[6~', '\u001b[1;5B',
-  '\u001b[H', '\u001bOH',
-  '\u001b[F', '\u001bOF',
+  '\u001b[A',
+  '\u001bOA',
+  '\u001b[B',
+  '\u001bOB',
+  '\u001b[5~',
+  '\u001b[1;5A',
+  '\u001b[6~',
+  '\u001b[1;5B',
+  '\u001b[H',
+  '\u001bOH',
+  '\u001b[F',
+  '\u001bOF',
 ]);
 
 export function isOfflineTerminalNavigationInput(data: string): boolean {
@@ -102,8 +134,15 @@ export class TerminalRendererContentState {
   hasLiveState = false;
   snapshotVisible = false;
 
-  restoreAction(kind: TerminalSession['kind'], transcript: string): TerminalOfflineRestoreAction {
-    return terminalOfflineRestoreAction(kind, this.hasRenderedState, transcript);
+  restoreAction(
+    kind: TerminalSession['kind'],
+    transcript: string,
+  ): TerminalOfflineRestoreAction {
+    return terminalOfflineRestoreAction(
+      kind,
+      this.hasRenderedState,
+      transcript,
+    );
   }
 
   restoredFromCache(): void {
@@ -136,6 +175,8 @@ export function directTerminalKeyboardEnabled(
 }
 
 /** Fit also requests a repaint after presenting an existing terminal. */
-export function terminalResizeForcesNativeDispatch(source: 'fit' | 'xterm'): boolean {
+export function terminalResizeForcesNativeDispatch(
+  source: 'fit' | 'xterm',
+): boolean {
   return source === 'fit';
 }

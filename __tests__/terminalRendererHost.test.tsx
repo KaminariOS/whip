@@ -6,6 +6,7 @@ import {
 } from 'react-test-renderer';
 
 import { TerminalRendererHost } from '../src/components/TerminalRendererHost';
+import type { TerminalFrame } from '../src/lib/terminalBridge';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
 
@@ -36,7 +37,8 @@ jest.mock('react-native-reanimated', () => ({
   useAnimatedReaction: jest.fn(),
 }));
 jest.mock('react-native-worklets', () => ({
-  scheduleOnRN: (callback: (...args: unknown[]) => void, ...args: unknown[]) => callback(...args),
+  scheduleOnRN: (callback: (...args: unknown[]) => void, ...args: unknown[]) =>
+    callback(...args),
 }));
 jest.mock('react-native-webview', () => ({
   __esModule: true,
@@ -46,11 +48,22 @@ jest.mock('../src/services/networkDiagnostics', () => ({
   networkErrorMessage: (reason: unknown) => String(reason),
   recordNetworkDiagnostic: jest.fn(),
 }));
-jest.mock('../src/services/performanceTrace', () => new Proxy(
-  { __esModule: true },
-  { get: (target, property) => property in target ? target[property as keyof typeof target] : jest.fn(() => null) },
-));
-jest.mock('../src/services/terminalAssets', () => ({ IOS_TERMINAL_ASSETS: null }));
+jest.mock(
+  '../src/services/performanceTrace',
+  () =>
+    new Proxy(
+      { __esModule: true },
+      {
+        get: (target, property) =>
+          property in target
+            ? target[property as keyof typeof target]
+            : jest.fn(() => null),
+      },
+    ),
+);
+jest.mock('../src/services/terminalAssets', () => ({
+  IOS_TERMINAL_ASSETS: null,
+}));
 
 const mockAppState = jest.requireMock('react-native').AppState as {
   currentState: string;
@@ -106,28 +119,42 @@ describe('TerminalRendererHost lifecycle', () => {
     onError: jest.fn(),
   });
 
-  const createClient = (paneScrolls: Record<string, {
-    offset_from_bottom: number;
-    max_offset_from_bottom: number;
-    viewport_rows: number;
-  }>) => {
+  const createClient = (
+    paneScrolls: Record<
+      string,
+      {
+        offset_from_bottom: number;
+        max_offset_from_bottom: number;
+        viewport_rows: number;
+      }
+    >,
+  ) => {
     let retained = false;
     let nextAttachmentId = 0;
+    let frameHandler: ((frame: TerminalFrame) => void) | null = null;
     return {
       closeTerminalBridge: jest.fn(async () => undefined),
-      detachTerminal: jest.fn(async (
-        _terminalId: string,
-        _attachmentId: unknown,
-      ): Promise<void> => undefined),
+      detachTerminal: jest.fn(
+        async (_terminalId: string, _attachmentId: unknown): Promise<void> =>
+          undefined,
+      ),
       isTerminalBridgeRetained: jest.fn(() => retained),
-      openTerminal: jest.fn(async () => {
-        retained = true;
-        return { testAttachmentId: ++nextAttachmentId };
-      }),
-      releaseTerminal: jest.fn(async (
-        _terminalId: string,
-        _attachmentId: unknown,
-      ): Promise<void> => { retained = false; }),
+      emitFrame: (frame: TerminalFrame) => frameHandler?.(frame),
+      openTerminal: jest.fn(
+        async (
+          _terminalId: string,
+          onFrame: (frame: TerminalFrame) => void,
+        ) => {
+          retained = true;
+          frameHandler = onFrame;
+          return { testAttachmentId: ++nextAttachmentId };
+        },
+      ),
+      releaseTerminal: jest.fn(
+        async (_terminalId: string, _attachmentId: unknown): Promise<void> => {
+          retained = false;
+        },
+      ),
       resizeTerminal: jest.fn(async () => undefined),
       scrollTerminal: jest.fn(async () => ''),
       snapshot: jest.fn(async () => ({
@@ -142,21 +169,26 @@ describe('TerminalRendererHost lifecycle', () => {
   const createTarget = (
     terminalId: string,
     client: ReturnType<typeof createClient>,
-    scroll: { offset_from_bottom: number; max_offset_from_bottom: number; viewport_rows: number },
-  ) => ({
-    key: `host-1:${terminalId}`,
-    hostSessionId: 'host-1',
-    client,
-    session: {
-      terminalId,
-      paneId: `pane-${terminalId}`,
-      title: 'shell',
-      kind: 'herdr',
-      status: 'connected',
-      reconnectAttempt: 0,
+    scroll: {
+      offset_from_bottom: number;
+      max_offset_from_bottom: number;
+      viewport_rows: number;
     },
-    scroll,
-  }) as unknown as TerminalRenderTarget;
+  ) =>
+    ({
+      key: `host-1:${terminalId}`,
+      hostSessionId: 'host-1',
+      client,
+      session: {
+        terminalId,
+        paneId: `pane-${terminalId}`,
+        title: 'shell',
+        kind: 'herdr',
+        status: 'connected',
+        reconnectAttempt: 0,
+      },
+      scroll,
+    } as unknown as TerminalRenderTarget);
 
   const emitAppState = async (state: string) => {
     await act(async () => {
@@ -196,18 +228,26 @@ describe('TerminalRendererHost lifecycle', () => {
           visible
         />,
         {
-          createNodeMock: element => element.type === 'WebView' ? {
-            injectJavaScript: (script: string) => injected.push(script),
-            requestFocus: jest.fn(),
-          } : null,
+          createNodeMock: element =>
+            element.type === 'WebView'
+              ? {
+                  injectJavaScript: (script: string) => injected.push(script),
+                  requestFocus: jest.fn(),
+                }
+              : null,
         },
       );
     });
-    const webView = renderer.root.find(node => typeof node.props.onMessage === 'function');
+    const webView = renderer.root.find(
+      node => typeof node.props.onMessage === 'function',
+    );
     await sendRendererMessage(webView, { type: 'ready' });
     for (const target of targets) {
       if (target !== activeTarget && target !== previewTarget) continue;
-      await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+      await sendRendererMessage(webView, {
+        type: 'terminal-ready',
+        key: target.key,
+      });
       await sendRendererMessage(webView, {
         type: 'resize',
         source: 'fit',
@@ -327,7 +367,11 @@ describe('TerminalRendererHost lifecycle', () => {
     const visualViewport = {
       insets: { top: 55, bottom: 84 },
       geometryBottomInset: 84,
-      scroll: { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 },
+      scroll: {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 100,
+        viewport_rows: 24,
+      },
     };
 
     act(() => {
@@ -341,16 +385,23 @@ describe('TerminalRendererHost lifecycle', () => {
           visualViewport={visualViewport}
         />,
         {
-          createNodeMock: element => element.type === 'WebView' ? {
-            injectJavaScript: (script: string) => injected.push(script),
-            requestFocus: jest.fn(),
-          } : null,
+          createNodeMock: element =>
+            element.type === 'WebView'
+              ? {
+                  injectJavaScript: (script: string) => injected.push(script),
+                  requestFocus: jest.fn(),
+                }
+              : null,
         },
       );
     });
-    const webView = renderer.root.find(node => typeof node.props.onMessage === 'function');
+    const webView = renderer.root.find(
+      node => typeof node.props.onMessage === 'function',
+    );
     await act(async () => {
-      await webView.props.onMessage({ nativeEvent: { data: JSON.stringify({ type: 'ready' }) } });
+      await webView.props.onMessage({
+        nativeEvent: { data: JSON.stringify({ type: 'ready' }) },
+      });
     });
     injected.length = 0;
 
@@ -395,72 +446,154 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(injected.join('\n')).not.toContain('window.herdrFit');
   });
 
+  test('live frames make lifecycle transitions persist the renderer cache', async () => {
+    const client = createClient({
+      'term-1': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 0,
+        viewport_rows: 24,
+      },
+    });
+    const target = createTarget('term-1', client, {
+      offset_from_bottom: 0,
+      max_offset_from_bottom: 0,
+      viewport_rows: 24,
+    });
+    const { injected } = await mountReadyHost(target);
+    injected.length = 0;
+
+    act(() => {
+      client.emitFrame({
+        type: 'terminal.frame',
+        seq: 1,
+        encoding: 'utf8',
+        width: 80,
+        height: 24,
+        full: true,
+        bytes: 'live output',
+      });
+    });
+    expect(injected.join('\n')).toContain('window.herdrWrite');
+
+    injected.length = 0;
+    await emitAppState('background');
+    expect(injected.join('\n')).toContain('window.herdrSnapshot');
+    expect(injected.join('\n')).toContain('background');
+    expect(client.snapshot).not.toHaveBeenCalled();
+  });
+
   test.each([
     {
       name: 'restores the prior offset without new output',
-      checkpoint: { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 },
-      current: { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      checkpoint: {
+        offset_from_bottom: 200,
+        max_offset_from_bottom: 1_000,
+        viewport_rows: 24,
+      },
+      current: {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 1_000,
+        viewport_rows: 24,
+      },
       expected: ['up', 200] as const,
     },
     {
       name: 'adds background scrollback growth to the prior offset',
-      checkpoint: { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 },
-      current: { offset_from_bottom: 0, max_offset_from_bottom: 1_050, viewport_rows: 24 },
+      checkpoint: {
+        offset_from_bottom: 200,
+        max_offset_from_bottom: 1_000,
+        viewport_rows: 24,
+      },
+      current: {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 1_050,
+        viewport_rows: 24,
+      },
       expected: ['up', 250] as const,
     },
     {
       name: 'keeps following latest output',
-      checkpoint: { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
-      current: { offset_from_bottom: 0, max_offset_from_bottom: 1_100, viewport_rows: 24 },
+      checkpoint: {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 1_000,
+        viewport_rows: 24,
+      },
+      current: {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 1_100,
+        viewport_rows: 24,
+      },
       expected: null,
     },
     {
       name: 'clamps the prior offset when scrollback shrinks',
-      checkpoint: { offset_from_bottom: 500, max_offset_from_bottom: 1_000, viewport_rows: 24 },
-      current: { offset_from_bottom: 0, max_offset_from_bottom: 300, viewport_rows: 24 },
+      checkpoint: {
+        offset_from_bottom: 500,
+        max_offset_from_bottom: 1_000,
+        viewport_rows: 24,
+      },
+      current: {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 300,
+        viewport_rows: 24,
+      },
       expected: ['up', 300] as const,
     },
-  ])('$name after reconnect and final fit', async ({ checkpoint, current, expected }) => {
-    const client = createClient({ 'term-1': current });
-    const target = createTarget('term-1', client, checkpoint);
-    const { webView } = await mountReadyHost(target);
+  ])(
+    '$name after reconnect and final fit',
+    async ({ checkpoint, current, expected }) => {
+      const client = createClient({ 'term-1': current });
+      const target = createTarget('term-1', client, checkpoint);
+      const { webView } = await mountReadyHost(target);
 
-    await emitAppState('background');
-    await emitAppState('active');
-    expect(client.snapshot).not.toHaveBeenCalled();
-    expect(client.scrollTerminal).not.toHaveBeenCalled();
-    await sendRendererMessage(webView, {
-      type: 'resize',
-      source: 'fit',
-      key: target.key,
-      cols: 80,
-      rows: 24,
-      cellWidthPx: 8,
-      cellHeightPx: 16,
-    });
-
-    expect(client.releaseTerminal).toHaveBeenCalledWith(
-      'term-1',
-      expect.objectContaining({ testAttachmentId: 1 }),
-    );
-    expect(client.snapshot).toHaveBeenCalledTimes(1);
-    expect(client.releaseTerminal.mock.invocationCallOrder[0]).toBeLessThan(
-      client.openTerminal.mock.invocationCallOrder.at(-1)!,
-    );
-    if (expected) {
-      expect(client.scrollTerminal).toHaveBeenCalledWith('term-1', ...expected);
-      expect(client.resizeTerminal.mock.invocationCallOrder.at(-1)).toBeLessThan(
-        client.scrollTerminal.mock.invocationCallOrder[0],
-      );
-    } else {
+      await emitAppState('background');
+      await emitAppState('active');
+      expect(client.snapshot).not.toHaveBeenCalled();
       expect(client.scrollTerminal).not.toHaveBeenCalled();
-    }
-  });
+      await sendRendererMessage(webView, {
+        type: 'resize',
+        source: 'fit',
+        key: target.key,
+        cols: 80,
+        rows: 24,
+        cellWidthPx: 8,
+        cellHeightPx: 16,
+      });
+
+      expect(client.releaseTerminal).toHaveBeenCalledWith(
+        'term-1',
+        expect.objectContaining({ testAttachmentId: 1 }),
+      );
+      expect(client.snapshot).toHaveBeenCalledTimes(1);
+      expect(client.releaseTerminal.mock.invocationCallOrder[0]).toBeLessThan(
+        client.openTerminal.mock.invocationCallOrder.at(-1)!,
+      );
+      if (expected) {
+        expect(client.scrollTerminal).toHaveBeenCalledWith(
+          'term-1',
+          ...expected,
+        );
+        expect(
+          client.resizeTerminal.mock.invocationCallOrder.at(-1),
+        ).toBeLessThan(client.scrollTerminal.mock.invocationCallOrder[0]);
+      } else {
+        expect(client.scrollTerminal).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   test('in-app visibility changes do not enter the resume restore path', async () => {
-    const checkpoint = { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 };
+    const checkpoint = {
+      offset_from_bottom: 200,
+      max_offset_from_bottom: 1_000,
+      viewport_rows: 24,
+    };
     const client = createClient({
-      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      'term-1': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 1_000,
+        viewport_rows: 24,
+      },
     });
     const target = createTarget('term-1', client, checkpoint);
     const eventCallbacks = createCallbacks();
@@ -496,21 +629,27 @@ describe('TerminalRendererHost lifecycle', () => {
 
   test('an old renderer unmount cannot detach a replacement renderer controller', async () => {
     const client = createClient({
-      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 },
+      'term-1': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 0,
+        viewport_rows: 24,
+      },
     });
     let owner: object | null = null;
     client.openTerminal.mockImplementation(async () => {
       owner = {};
       return owner as { testAttachmentId: number };
     });
-    client.detachTerminal.mockImplementation(async (_terminalId, attachmentId) => {
-      if (owner === attachmentId) owner = null;
-    });
-    const target = createTarget(
-      'term-1',
-      client,
-      { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 },
+    client.detachTerminal.mockImplementation(
+      async (_terminalId, attachmentId) => {
+        if (owner === attachmentId) owner = null;
+      },
     );
+    const target = createTarget('term-1', client, {
+      offset_from_bottom: 0,
+      max_offset_from_bottom: 0,
+      viewport_rows: 24,
+    });
     const mount = async (): Promise<ReactTestRenderer> => {
       let host!: ReactTestRenderer;
       act(() => {
@@ -523,16 +662,24 @@ describe('TerminalRendererHost lifecycle', () => {
             visible
           />,
           {
-            createNodeMock: element => element.type === 'WebView' ? {
-              injectJavaScript: jest.fn(),
-              requestFocus: jest.fn(),
-            } : null,
+            createNodeMock: element =>
+              element.type === 'WebView'
+                ? {
+                    injectJavaScript: jest.fn(),
+                    requestFocus: jest.fn(),
+                  }
+                : null,
           },
         );
       });
-      const webView = host.root.find(node => typeof node.props.onMessage === 'function');
+      const webView = host.root.find(
+        node => typeof node.props.onMessage === 'function',
+      );
       await sendRendererMessage(webView, { type: 'ready' });
-      await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+      await sendRendererMessage(webView, {
+        type: 'terminal-ready',
+        key: target.key,
+      });
       await sendRendererMessage(webView, {
         type: 'resize',
         source: 'fit',
@@ -561,9 +708,17 @@ describe('TerminalRendererHost lifecycle', () => {
   });
 
   test('explicit user scrolling cancels a pending resume restore', async () => {
-    const checkpoint = { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 };
+    const checkpoint = {
+      offset_from_bottom: 200,
+      max_offset_from_bottom: 1_000,
+      viewport_rows: 24,
+    };
     const client = createClient({
-      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      'term-1': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 1_000,
+        viewport_rows: 24,
+      },
     });
     const target = createTarget('term-1', client, checkpoint);
     const { webView } = await mountReadyHost(target);
@@ -588,13 +743,27 @@ describe('TerminalRendererHost lifecycle', () => {
 
     expect(client.snapshot).not.toHaveBeenCalled();
     expect(client.scrollTerminal).toHaveBeenCalledTimes(1);
-    expect(client.scrollTerminal).toHaveBeenCalledWith('term-1', 'up', 3, undefined, undefined);
+    expect(client.scrollTerminal).toHaveBeenCalledWith(
+      'term-1',
+      'up',
+      3,
+      undefined,
+      undefined,
+    );
   });
 
   test('alternate-screen activation cancels normal-buffer resume restoration', async () => {
-    const checkpoint = { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 };
+    const checkpoint = {
+      offset_from_bottom: 200,
+      max_offset_from_bottom: 1_000,
+      viewport_rows: 24,
+    };
     const client = createClient({
-      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      'term-1': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 1_000,
+        viewport_rows: 24,
+      },
     });
     const target = createTarget('term-1', client, checkpoint);
     const { webView } = await mountReadyHost(target);
@@ -621,11 +790,27 @@ describe('TerminalRendererHost lifecycle', () => {
   });
 
   test('restores checkpoints only onto their matching terminal keys', async () => {
-    const firstScroll = { offset_from_bottom: 100, max_offset_from_bottom: 1_000, viewport_rows: 24 };
-    const secondScroll = { offset_from_bottom: 300, max_offset_from_bottom: 2_000, viewport_rows: 24 };
+    const firstScroll = {
+      offset_from_bottom: 100,
+      max_offset_from_bottom: 1_000,
+      viewport_rows: 24,
+    };
+    const secondScroll = {
+      offset_from_bottom: 300,
+      max_offset_from_bottom: 2_000,
+      viewport_rows: 24,
+    };
     const client = createClient({
-      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 1_020, viewport_rows: 24 },
-      'term-2': { offset_from_bottom: 0, max_offset_from_bottom: 2_040, viewport_rows: 24 },
+      'term-1': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 1_020,
+        viewport_rows: 24,
+      },
+      'term-2': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 2_040,
+        viewport_rows: 24,
+      },
     });
     const first = createTarget('term-1', client, firstScroll);
     const second = createTarget('term-2', client, secondScroll);

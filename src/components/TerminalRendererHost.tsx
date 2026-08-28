@@ -45,6 +45,7 @@ import {
   touchTerminalRendererEntry,
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
+import { bestEffortCleanup } from '../services/backgroundOperations';
 import type { TerminalAttachmentId } from '../services/HerdrClient';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import {
@@ -292,11 +293,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     entry.connecting = false;
     if (!attachment) return;
     const { client, session } = entry.target;
-    attachment.then(attachmentId => (
-      releaseBridge
-        ? client.releaseTerminal(session.terminalId, attachmentId)
-        : client.detachTerminal(session.terminalId, attachmentId)
-    )).catch(() => undefined);
+    bestEffortCleanup(
+      attachment.then(attachmentId => (
+        releaseBridge
+          ? client.releaseTerminal(session.terminalId, attachmentId)
+          : client.detachTerminal(session.terminalId, attachmentId)
+      )),
+      'terminal-controller-release',
+    );
   }, []);
 
   const disposeEntry = useCallback((
@@ -316,7 +320,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.controllerAttachment = null;
       entry.controllerAttached = false;
       entry.connecting = false;
-      entry.target.client.closeTerminalBridge(terminalId).catch(() => undefined);
+      bestEffortCleanup(
+        entry.target.client.closeTerminalBridge(terminalId),
+        'terminal-bridge-close',
+      );
     } else {
       relinquishController(entry, false);
     }
@@ -906,7 +913,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (valid.has(key)) continue;
       const entry = entries.current.get(key);
       if (entry) disposeEntry(key, entry, true);
-      else target.client.closeTerminalBridge(target.session.terminalId).catch(() => undefined);
+      else {
+        bestEffortCleanup(
+          target.client.closeTerminalBridge(target.session.terminalId),
+          'terminal-bridge-close',
+        );
+      }
     }
     knownTargets.current = valid;
     for (const [key, entry] of entries.current) {

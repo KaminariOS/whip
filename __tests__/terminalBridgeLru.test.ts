@@ -310,7 +310,7 @@ describe('terminal bridge channels', () => {
       await Promise.resolve();
       expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
     } finally {
-      client.disconnect();
+      await client.disconnect();
       jest.useRealTimers();
     }
   });
