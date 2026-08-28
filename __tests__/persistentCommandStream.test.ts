@@ -140,6 +140,46 @@ describe('direct Herdr API requests', () => {
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
   });
 
+  test('waits for native teardown before rejecting a non-trust connection failure', async () => {
+    const connectionFailure = new Error('authentication failed');
+    let rejectConnection!: (error: Error) => void;
+    connectWithPassword.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectConnection = reject;
+      }),
+    );
+    const client = new HerdrClient();
+    const connection = client.connect(profile);
+    await Promise.resolve();
+    const runtime = jest.mocked(SSHClient.createHostRuntime).mock.results[0].value;
+    let finishDisconnect!: () => void;
+    let markDisconnectStarted!: () => void;
+    const disconnectStarted = new Promise<void>(resolve => {
+      markDisconnectStarted = resolve;
+    });
+    runtime.disconnect = jest.fn(() => {
+      markDisconnectStarted();
+      return new Promise<void>(resolve => {
+        finishDisconnect = resolve;
+      });
+    });
+    let rejected = false;
+    connection.catch(() => {
+      rejected = true;
+    });
+
+    rejectConnection(connectionFailure);
+    await disconnectStarted;
+
+    expect(rejected).toBe(false);
+    expect(runtime.disconnect).toHaveBeenCalledTimes(1);
+
+    finishDisconnect();
+    await expect(connection).rejects.toBe(connectionFailure);
+
+    expect(rejected).toBe(true);
+  });
+
   test('keeps disconnect pending until native runtime destruction finishes', async () => {
     const native = apiClient(() => ({ type: 'ok' }));
     connectWithPassword.mockResolvedValue(native);

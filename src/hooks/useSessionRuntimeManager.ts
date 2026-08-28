@@ -1038,7 +1038,7 @@ export function useSessionRuntimeManager({
         if (runtime) {
           if (liveSessionOpened)
             scheduleReconnect(nextProfile.id, connectError);
-          else runtime.client.disconnect();
+          else await destroyRuntime(nextProfile.id, runtime);
         }
         if (navigate) navigation.selectTab('hosts');
         return false;

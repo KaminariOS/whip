@@ -278,7 +278,7 @@ export class HerdrClient {
     } catch (error) {
       this.runtimeAwaitingHostKeyTrust = isHostKeyChallenge(error);
       if (this.runtime === runtime && !this.runtimeAwaitingHostKeyTrust) {
-        this.runtime = null;
+        await this.disconnect();
       }
       throw error;
     }
