@@ -1,2 +1,5 @@
 src/generated/** linguist-generated=true
 packages/react-native-whip-ssh/src/generated/** linguist-generated=true
+packages/react-native-whip-ssh/cpp/generated/** linguist-generated=true
+packages/react-native-whip-ssh/ios/generated/** linguist-generated=true
+packages/react-native-whip-ssh/android/generated/** linguist-generated=true
