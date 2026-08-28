@@ -10,7 +10,7 @@ flowchart TB
 
   subgraph Native["Whip Rust core · one Tokio runtime"]
     direction TB
-    Host["HostRuntime<br/>authenticated per-host owner<br/>generation guards · reconnect/lifecycle · restoration<br/>Herdr readiness/startup"]
+    Host["HostRuntime<br/>authoritative per-host runtime<br/>generation guards · reconnect/lifecycle · restoration<br/>Herdr readiness/startup"]
 
     subgraph Services["HostRuntime-owned application services"]
       direction LR
@@ -21,7 +21,8 @@ flowchart TB
       Diagnostics["Runtime diagnostics<br/>transport-owned coarse timings<br/>typed outcomes"]
     end
 
-    SSH["HostRuntime-owned SshSession · shared transport<br/>russh · ProxyJump · known_hosts<br/>shell · exec · SFTP · forwarding · stream-local"]
+    Connection["HerdrConnection<br/>sole SSH-session owner · transport generation<br/>socket discovery · guarded logical streams"]
+    SSH["HerdrConnection-owned SshSession · shared transport<br/>russh · ProxyJump · known_hosts<br/>shell · exec · SFTP · forwarding · stream-local"]
     Pairing["WP4 pairing<br/>separate QR-pinned bootstrap"]
 
     Host --> Control
@@ -29,11 +30,13 @@ flowchart TB
     Host --> TerminalRuntime
     Host --> RemoteOps
     Host --> Diagnostics
-    Control --> SSH
-    Agents --> SSH
-    TerminalRuntime --> SSH
-    RemoteOps --> SSH
-    Diagnostics --> SSH
+    Host --> Connection
+    Control --> Connection
+    Agents --> Connection
+    TerminalRuntime --> Connection
+    RemoteOps --> Connection
+    Diagnostics --> Connection
+    Connection --> SSH
   end
 
   subgraph Remote["Remote host"]
@@ -69,5 +72,5 @@ flowchart TB
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033
   class RN,Cache,SQLite ui
   class JSI native
-  class Host,Control,Agents,TerminalRuntime,RemoteOps,Diagnostics,SSH,Pairing rust
+  class Host,Control,Agents,TerminalRuntime,RemoteOps,Diagnostics,Connection,SSH,Pairing rust
   class SSHD,API,Terminal,Shell,AgentSources,FilesGit,Forwarded remote

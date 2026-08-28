@@ -42,18 +42,21 @@ flowchart TB
         Diagnostics["Runtime diagnostics<br/>transport-owned coarse timings<br/>typed outcomes"]
       end
 
-      Transport["HostRuntime-owned SshSession<br/>russh · ProxyJump · known_hosts<br/>shell · exec · SFTP · forwarding · stream-local"]
+      Connection["HerdrConnection<br/>sole transport owner · SSH generation<br/>socket discovery · guarded logical streams"]
+      Transport["HerdrConnection-owned SshSession<br/>russh · ProxyJump · known_hosts<br/>shell · exec · SFTP · forwarding · stream-local"]
 
       Lifecycle --> Control
       Lifecycle --> Agents
       Lifecycle --> Operations
       Lifecycle --> Terminals
       Lifecycle --> Diagnostics
-      Control --> Transport
-      Agents --> Transport
-      Operations --> Transport
-      Terminals --> Transport
-      Diagnostics --> Transport
+      Lifecycle --> Connection
+      Control --> Connection
+      Agents --> Connection
+      Operations --> Connection
+      Terminals --> Connection
+      Diagnostics --> Connection
+      Connection --> Transport
     end
 
     Pairing["WP4 pairing<br/>separate QR-pinned bootstrap"]
@@ -71,4 +74,4 @@ flowchart TB
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
   class Navigation,Projections,SessionViews,Secondary,Client,CacheAdapter,SQLite,Renderer,Xterm react
   class Module native
-  class Lifecycle,Control,Agents,Operations,Terminals,Diagnostics,Transport,Pairing rust
+  class Lifecycle,Control,Agents,Operations,Terminals,Diagnostics,Connection,Transport,Pairing rust

@@ -173,7 +173,7 @@ Whip supports Android 7.0 and newer (`minSdk 24`). The current direct APK distri
 
 ### iOS
 
-Whip supports iOS 16.4 and newer on ARM64 devices. CI and tagged GitHub releases publish `whip-ios.app.zip`, an **unsigned** device build for developers who can sign it with their own Apple identity. It is not an App Store or TestFlight package and cannot be installed as downloaded. Do not treat the unsigned archive as equivalent to the signed Android release.
+Whip supports iOS 16.4 and newer on ARM64 devices. CI compiles a thin unsigned device app and uploads `whip-ios-unsigned-compile-only.app.zip` as a short-lived GitHub Actions artifact. It is compile validation only: it is not attached to tagged GitHub releases, distributed through the App Store or TestFlight, signed, or directly installable. For a locally signed device build, follow the development instructions below.
 
 ## Connect your first host
 
@@ -308,13 +308,14 @@ terminal and remote-host paths.
 
 [Edit the SSH transport diagram](docs/whip-ssh-architecture.mmd).
 
-`react-native-whip-ssh` exposes the single New Architecture module and links a
-single Rust static library. Its `HostRuntime` owns the authenticated SSH session,
-Herdr control/state reconciliation, terminal protocol and lifecycle, agent
-transcript acquisition and normalization, remote-operation lifecycles, and
-reconnect restoration. QR-pinned WP4 pairing and generic JavaScript utilities
-used by key management and native diagnostics share that same module; the Whip
-host path calls typed `HostRuntime` operations directly.
+`react-native-whip-ssh` exposes one New Architecture module and links one Rust
+static library. One `HostRuntime` owns each connected host's stable
+`HerdrConnection`, authoritative `HostState`, reconnect lifecycle, terminal
+registry, agent sessions, and remote operations. `HerdrConnection` is the sole
+owner of the authenticated `SshSession` and its generation; Rust services request
+guarded logical streams instead of retaining transport handles. QR-pinned WP4
+pairing and key-management/native-diagnostic utilities share the same module, while
+the host path invokes typed `HostRuntime` operations directly.
 
 After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 
@@ -359,7 +360,7 @@ cd ios
 bundle exec pod install
 ```
 
-Open `ios/HerdR.xcworkspace` in Xcode for a signed device build. CI documents the reproducible unsigned ARM64 `xcodebuild` invocation in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Open `ios/HerdR.xcworkspace` in Xcode for a signed device build. `scripts/install-ios-device.sh` provides a guided local build and in-place install, while CI invokes `scripts/build-ios-app.sh --unsigned` for reproducible thin-ARM64 compile validation.
 
 ### EAS builds
 
@@ -375,7 +376,7 @@ The `development` profile creates an Expo development client, `preview` creates 
 
 ### Google Play publishing
 
-The manually triggered `Publish Android app bundle` GitHub Actions workflow builds a signed ARM64 `.aab` and uploads it through EAS Submit. Its default `internal-draft` profile leaves an internal-track release in Google Play Console for review; `production-draft` creates a production draft, and `internal` publishes to internal testers.
+The manually triggered `Publish Android app bundle` GitHub Actions workflow builds a signed ARM64 `.aab` and uploads it through EAS Submit. Its default `internal-draft` profile leaves an internal-track release in Google Play Console for review; `production-draft` creates a production draft, `internal` publishes to internal testers, and `closed` creates a completed alpha/closed-testing release.
 
 Before the first run, create a Google Play service account with Play Console access and an Expo access token, then configure these GitHub repository or `google-play` environment secrets:
 
@@ -405,13 +406,23 @@ gh workflow run publish-play.yml -f submit_profile=production-draft
 
 ### Validation
 
+Run the primary JavaScript and Rust validation sets before opening a pull request:
+
 ```bash
-npx expo-doctor
-npx tsc --noEmit
-npm run lint
-npm test -- --runInBand
-npx expo export --platform android
+nix develop -c npm run doctor
+nix develop -c npx tsc --noEmit
+nix develop -c npm run worker:check
+nix develop -c npm run lint
+nix develop -c npm test -- --runInBand
+nix develop -c npm run bundle:ios
+nix develop -c npm run check:license-notices
+
+nix develop -c cargo fmt --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml --check
+nix develop -c cargo clippy --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml --locked --all-targets -- -D warnings
+nix develop -c cargo test --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml --locked
 ```
+
+CI additionally runs the live OpenSSH integration test, RustSec audit, ARM64 Android lint/build, unsigned thin-ARM64 iOS compile, and XCFramework validation. To reproduce the native compile checks locally, use `nix develop -c android/gradlew -p android app:lintRelease app:assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon` on Android or `nix develop -c scripts/build-ios-app.sh --unsigned` on macOS after installing pods.
 
 The native core is maintained in
 [`packages/react-native-whip-ssh`](packages/react-native-whip-ssh). Both mobile
