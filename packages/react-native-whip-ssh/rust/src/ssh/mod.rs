@@ -108,8 +108,11 @@ impl AndroidTraceSlice {
     fn begin(name: &CStr) -> Self {
         // Checking first avoids CString work and kernel trace writes when the
         // app is not part of an active Perfetto/atrace capture.
+        // SAFETY: This Android-only FFI call has no parameters or preconditions.
         let enabled = unsafe { ATrace_isEnabled() };
         if enabled {
+            // SAFETY: `name` is a live, NUL-terminated C string for the duration
+            // of the synchronous NDK trace call.
             unsafe { ATrace_beginSection(name.as_ptr()) };
         }
         Self(enabled)
@@ -120,6 +123,8 @@ impl AndroidTraceSlice {
 impl Drop for AndroidTraceSlice {
     fn drop(&mut self) {
         if self.0 {
+            // SAFETY: `self.0` records a successful begin on this thread, so this
+            // call balances that NDK trace section.
             unsafe { ATrace_endSection() };
         }
     }

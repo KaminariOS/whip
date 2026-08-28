@@ -45,7 +45,9 @@ function createMockWhipSshModule() {
     let resolvedSocket;
     let socketFromCache = Boolean(config.cachedSocketPath && !config.socketPath);
     const bridges = new Map();
+    const bridgeGeometries = new Map();
     const sshShells = new Map();
+    const sshShellGeometries = new Map();
     const transfers = new Map();
     let transferSequence = 0;
     let previewSequence = 0;
@@ -112,7 +114,9 @@ function createMockWhipSshModule() {
       },
       async disconnect() {
         bridges.clear();
+        bridgeGeometries.clear();
         sshShells.clear();
+        sshShellGeometries.clear();
         for (const client of clients.reverse()) client.disconnect?.();
         clients = [];
         runtime.controlClient = undefined;
@@ -216,7 +220,27 @@ function createMockWhipSshModule() {
         }
       },
       async startHerdrBridge(terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx, handler) {
-        const bridge = { takeover, columns, rows, cellWidthPx, cellHeightPx, handler, state: 'opening' };
+        const geometry = { columns, rows, cellWidthPx, cellHeightPx };
+        bridgeGeometries.set(terminalId, geometry);
+        const existing = bridges.get(terminalId);
+        if (existing?.state === 'attached') {
+          Object.assign(existing, { takeover, handler });
+          return;
+        }
+        const bridge = {
+          takeover,
+          ...geometry,
+          handler,
+          kittyKeyboardReportAll: false,
+          dispatchedGeometry: geometry,
+          state: 'opening',
+        };
+        const forward = event => {
+          if (event.type === 'kitty_keyboard_report_all') {
+            bridge.kittyKeyboardReportAll = event.flag === true;
+          }
+          bridge.handler?.(event);
+        };
         bridges.set(terminalId, bridge);
         if (!protocol) {
           const result = await runtime.controlClient.requestHerdrApi(
@@ -226,17 +250,37 @@ function createMockWhipSshModule() {
         }
         await runtime.controlClient.startHerdrBridge(
           await socketPath(), protocol || 20, terminalId, takeover, columns, rows,
-          cellWidthPx, cellHeightPx, handler, LEGACY_TERMINAL_ATTACH_LAUNCH_MODE,
+          cellWidthPx, cellHeightPx, forward, LEGACY_TERMINAL_ATTACH_LAUNCH_MODE,
         );
         bridge.state = 'attached';
       },
       herdrBridgeInput(terminalId, text) {
         return runtime.controlClient.herdrBridgeInput(terminalId, text);
       },
-      herdrBridgeResize(terminalId, columns, rows, cellWidthPx, cellHeightPx) {
+      async herdrBridgeResize(terminalId, columns, rows, cellWidthPx, cellHeightPx, forceDispatch = false) {
         const bridge = bridges.get(terminalId);
-        if (bridge) Object.assign(bridge, { columns, rows, cellWidthPx, cellHeightPx });
-        return runtime.controlClient.herdrBridgeResize(terminalId, columns, rows, cellWidthPx, cellHeightPx);
+        const geometry = { columns, rows, cellWidthPx, cellHeightPx };
+        bridgeGeometries.set(terminalId, geometry);
+        if (!bridge || bridge.state !== 'attached') return 'deferred';
+        if (!forceDispatch && bridge.dispatchedGeometry
+          && Object.keys(geometry).every(
+            key => bridge.dispatchedGeometry[key] === geometry[key],
+          )) {
+          return 'deduplicated';
+        }
+        await runtime.controlClient.herdrBridgeResize(
+          terminalId, columns, rows, cellWidthPx, cellHeightPx,
+        );
+        Object.assign(bridge, geometry, { dispatchedGeometry: geometry });
+        return 'dispatched';
+      },
+      herdrBridgeGeometry(terminalId) { return bridgeGeometries.get(terminalId); },
+      herdrBridgeProtocolState(terminalId) {
+        return { kittyKeyboardReportAll: bridges.get(terminalId)?.kittyKeyboardReportAll === true };
+      },
+      detachHerdrBridge(terminalId) {
+        const bridge = bridges.get(terminalId);
+        if (bridge) bridge.handler = undefined;
       },
       herdrBridgeScroll(terminalId, up, lines, column, row, modifiers = 0) {
         const args = [terminalId, up ? 'up' : 'down', lines, column, row];
@@ -245,21 +289,37 @@ function createMockWhipSshModule() {
       },
       closeHerdrBridge(terminalId) {
         bridges.delete(terminalId);
+        bridgeGeometries.delete(terminalId);
         runtime.controlClient?.closeHerdrBridge?.(terminalId);
       },
       closeAllHerdrBridges() {
         bridges.clear();
+        bridgeGeometries.clear();
         runtime.controlClient?.closeAllHerdrBridges?.();
       },
       hasHerdrBridge(terminalId) { return bridges.get(terminalId)?.state === 'attached'; },
       isHerdrBridgeOpening(terminalId) { return bridges.get(terminalId)?.state === 'opening'; },
-      async openSshShell(terminalId, columns, rows, handler) {
+      async openSshShell(terminalId, columns, rows, cellWidthPx, cellHeightPx, handler) {
+        const geometry = { columns, rows, cellWidthPx, cellHeightPx };
+        sshShellGeometries.set(terminalId, geometry);
+        const existing = sshShells.get(terminalId);
+        if (existing) {
+          existing.handler = handler;
+          return;
+        }
         const client = runtime.controlClient;
         const onData = data => {
           const bytes = new TextEncoder().encode(data);
-          handler.data(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+          sshShells.get(terminalId)?.handler.data(
+            bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+          );
         };
-        sshShells.set(terminalId, { client, handler, onData });
+        sshShells.set(terminalId, {
+          client,
+          handler,
+          onData,
+          dispatchedGeometry: geometry,
+        });
         client.on('Shell', onData);
         await client.startShell('xterm-256color');
         client.resizeShell(columns, rows);
@@ -269,13 +329,25 @@ function createMockWhipSshModule() {
         if (!shell) throw new Error(`SSH shell ${terminalId} is not connected`);
         return shell.client.writeToShell(new TextDecoder().decode(bytes));
       },
-      resizeSshShell(terminalId, columns, rows) {
+      resizeSshShell(terminalId, columns, rows, cellWidthPx, cellHeightPx, forceDispatch = false) {
+        const geometry = { columns, rows, cellWidthPx, cellHeightPx };
+        sshShellGeometries.set(terminalId, geometry);
         const shell = sshShells.get(terminalId);
-        if (!shell) throw new Error(`SSH shell ${terminalId} is not connected`);
+        if (!shell) return 'deferred';
+        if (!forceDispatch && shell.dispatchedGeometry
+          && Object.keys(geometry).every(
+            key => shell.dispatchedGeometry[key] === geometry[key],
+          )) {
+          return 'deduplicated';
+        }
         shell.client.resizeShell(columns, rows);
+        shell.dispatchedGeometry = geometry;
+        return 'dispatched';
       },
+      sshShellGeometry(terminalId) { return sshShellGeometries.get(terminalId); },
       closeSshShell(terminalId) {
         const shell = sshShells.get(terminalId);
+        sshShellGeometries.delete(terminalId);
         if (!shell) return;
         sshShells.delete(terminalId);
         shell.client.off('Shell');

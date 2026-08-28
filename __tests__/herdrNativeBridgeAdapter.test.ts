@@ -126,7 +126,6 @@ import { createHostRuntime } from '../packages/react-native-whip-ssh/src';
 const mockGenerated = jest.requireMock(
   '../packages/react-native-whip-ssh/src/generated-entry',
 );
-const mockEventSink = mockGenerated.setHerdrTerminalEventSink.mock.calls[0][0];
 const mockRuntimeEventSink = mockGenerated.setHostRuntimeEventSink.mock.calls[0][0];
 const mockAgentEventSink = mockGenerated.setAgentTranscriptEventSink.mock.calls[0][0];
 

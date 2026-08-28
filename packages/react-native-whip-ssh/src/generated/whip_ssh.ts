@@ -6462,6 +6462,60 @@ const FfiConverterTypeHostStateSnapshot = (() => {
   return new FFIConverter();
 })();
 
+export type HostTerminalGeometry = {
+  columns: number;
+  rows: number;
+  cellWidthPx: number;
+  cellHeightPx: number;
+};
+
+/**
+ * Generated factory for {@link HostTerminalGeometry} record objects.
+ */
+export const HostTerminalGeometry = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HostTerminalGeometry,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostTerminalGeometry>,
+  });
+})();
+
+const FfiConverterTypeHostTerminalGeometry = (() => {
+  type TypeName = HostTerminalGeometry;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        columns: FfiConverterUInt32.read(from),
+        rows: FfiConverterUInt32.read(from),
+        cellWidthPx: FfiConverterUInt32.read(from),
+        cellHeightPx: FfiConverterUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt32.write(value.columns, into);
+      FfiConverterUInt32.write(value.rows, into);
+      FfiConverterUInt32.write(value.cellWidthPx, into);
+      FfiConverterUInt32.write(value.cellHeightPx, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt32.allocationSize(value.columns) +
+        FfiConverterUInt32.allocationSize(value.rows) +
+        FfiConverterUInt32.allocationSize(value.cellWidthPx) +
+        FfiConverterUInt32.allocationSize(value.cellHeightPx)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type LegacySftpEntry = {
   filename: string;
   isDirectory: boolean;
@@ -15980,6 +16034,45 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
   return new FFIConverter();
 })();
 
+export enum HostTerminalResizeOutcome {
+  Deferred,
+  Deduplicated,
+  Dispatched,
+}
+
+const FfiConverterTypeHostTerminalResizeOutcome = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostTerminalResizeOutcome;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostTerminalResizeOutcome.Deferred;
+        case 2:
+          return HostTerminalResizeOutcome.Deduplicated;
+        case 3:
+          return HostTerminalResizeOutcome.Dispatched;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostTerminalResizeOutcome.Deferred:
+          return ordinalConverter.write(1, into);
+        case HostTerminalResizeOutcome.Deduplicated:
+          return ordinalConverter.write(2, into);
+        case HostTerminalResizeOutcome.Dispatched:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: KnownHostStoreError
 export enum KnownHostStoreError_Tags {
   EmptyHost = 'EmptyHost',
@@ -18521,6 +18614,8 @@ export interface HostRuntimeLike {
     terminalId: string,
     columns: number,
     rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<void>;
   openTerminal(
@@ -18560,14 +18655,18 @@ export interface HostRuntimeLike {
     terminalId: string,
     columns: number,
     rows: number,
-  ): /*throws*/ void;
+    cellWidthPx: number,
+    cellHeightPx: number,
+    forceDispatch: boolean,
+  ): /*throws*/ HostTerminalResizeOutcome;
   resizeTerminal(
     terminalId: string,
     columns: number,
     rows: number,
     cellWidthPx: number,
     cellHeightPx: number,
-  ): /*throws*/ void;
+    forceDispatch: boolean,
+  ): /*throws*/ HostTerminalResizeOutcome;
   resolveControlSocket(asyncOpts_?: {
     signal: AbortSignal;
   }): /*throws*/ Promise<string>;
@@ -18581,6 +18680,7 @@ export interface HostRuntimeLike {
     row: number | undefined,
     modifiers: number,
   ): /*throws*/ void;
+  sshShellGeometry(terminalId: string): HostTerminalGeometry | undefined;
   sshShellInput(terminalId: string, bytes: ArrayBuffer): /*throws*/ void;
   startAgentSession(
     terminalId: string,
@@ -18623,7 +18723,9 @@ export interface HostRuntimeLike {
     paneIds: Array<string>,
     asyncOpts_?: { signal: AbortSignal },
   ): /*throws*/ Promise<void>;
+  terminalGeometry(terminalId: string): HostTerminalGeometry | undefined;
   terminalInput(terminalId: string, text: string): /*throws*/ void;
+  terminalKittyKeyboardReportAll(terminalId: string): boolean;
   transferProgress(transferId: string): TransferProgress | undefined;
   unsubscribeEvents(): void;
 }
@@ -19557,6 +19659,8 @@ export class HostRuntime
     terminalId: string,
     columns: number,
     rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
     asyncOpts_?: { signal: AbortSignal },
   ): Promise<void> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
@@ -19572,6 +19676,14 @@ export class HostRuntime
             ),
             FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
             FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(
+              cellWidthPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(
+              cellHeightPx,
+              nativeModule().rustbuffer_alloc,
+            ),
           );
         },
         /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
@@ -19893,21 +20005,47 @@ export class HostRuntime
     terminalId: string,
     columns: number,
     rows: number,
-  ): void /*throws*/ {
-    uniffiCaller.rustCallWithError(
-      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-        FfiConverterTypeHostRuntimeError,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    forceDispatch: boolean,
+  ): HostTerminalResizeOutcome /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostTerminalResizeOutcome.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_ssh_shell(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(
+              cellWidthPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(
+              cellHeightPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(
+              forceDispatch,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_ssh_shell(
-          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     );
   }
 
@@ -19917,29 +20055,45 @@ export class HostRuntime
     rows: number,
     cellWidthPx: number,
     cellHeightPx: number,
-  ): void /*throws*/ {
-    uniffiCaller.rustCallWithError(
-      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-        FfiConverterTypeHostRuntimeError,
+    forceDispatch: boolean,
+  ): HostTerminalResizeOutcome /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostTerminalResizeOutcome.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_terminal(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(
+              cellWidthPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(
+              cellHeightPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(
+              forceDispatch,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_terminal(
-          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(columns, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(rows, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt32.lower(
-            cellWidthPx,
-            nativeModule().rustbuffer_alloc,
-          ),
-          FfiConverterUInt32.lower(
-            cellHeightPx,
-            nativeModule().rustbuffer_alloc,
-          ),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     );
   }
 
@@ -20054,6 +20208,30 @@ export class HostRuntime
         );
       },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  sshShellGeometry(terminalId: string): HostTerminalGeometry | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeHostTerminalGeometry.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_ssh_shell_geometry(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -20553,6 +20731,30 @@ export class HostRuntime
     }
   }
 
+  terminalGeometry(terminalId: string): HostTerminalGeometry | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeHostTerminalGeometry.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_terminal_geometry(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   terminalInput(terminalId: string, text: string): void /*throws*/ {
     uniffiCaller.rustCallWithError(
       /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -20567,6 +20769,24 @@ export class HostRuntime
         );
       },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  terminalKittyKeyboardReportAll(terminalId: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_terminal_kitty_keyboard_report_all(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -21289,6 +21509,11 @@ const FfiConverterSequenceTypeGitStatusEntry = new FfiConverterArray(
 // FfiConverter for ArrayBuffer | undefined
 const FfiConverterOptionalBytes = new FfiConverterOptional(
   FfiConverterArrayBuffer,
+);
+
+// FfiConverter for HostTerminalGeometry | undefined
+const FfiConverterOptionalTypeHostTerminalGeometry = new FfiConverterOptional(
+  FfiConverterTypeHostTerminalGeometry,
 );
 
 // FfiConverter for TransferProgress | undefined
@@ -22104,7 +22329,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell() !==
-    64073
+    3901
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell',
@@ -22168,7 +22393,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_ssh_shell() !==
-    46877
+    1647
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_resize_ssh_shell',
@@ -22176,7 +22401,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal() !==
-    15050
+    58441
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal',
@@ -22212,6 +22437,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_geometry() !==
+    39068
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_geometry',
     );
   }
   if (
@@ -22327,11 +22560,27 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_geometry() !==
+    495
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_terminal_geometry',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_input() !==
     28669
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_terminal_input',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_kitty_keyboard_report_all() !==
+    33755
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_terminal_kitty_keyboard_report_all',
     );
   }
   if (
@@ -22478,6 +22727,8 @@ export default Object.freeze({
     FfiConverterTypeHostSshCredential,
     FfiConverterTypeHostStateSnapshot,
     FfiConverterTypeHostSyncStatus,
+    FfiConverterTypeHostTerminalGeometry,
+    FfiConverterTypeHostTerminalResizeOutcome,
     FfiConverterTypeHostTerminalState,
     FfiConverterTypeKnownHostStoreError,
     FfiConverterTypeLegacySftpEntry,

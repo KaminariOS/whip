@@ -708,6 +708,8 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     columns: number,
     rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_terminal(
     uniffiSelf: bigint,
@@ -749,8 +751,11 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     columns: number,
     rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    forceDispatch: number,
     uniffi_out_err: UniffiRustCallStatus,
-  ): void;
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_terminal(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -758,8 +763,9 @@ interface NativeModuleInterface {
     rows: number,
     cellWidthPx: number,
     cellHeightPx: number,
+    forceDispatch: number,
     uniffi_out_err: UniffiRustCallStatus,
-  ): void;
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_resolve_control_socket(
     uniffiSelf: bigint,
   ): bigint;
@@ -781,6 +787,11 @@ interface NativeModuleInterface {
     modifiers: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_ssh_shell_geometry(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_ssh_shell_input(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -847,12 +858,22 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     paneIds: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_terminal_geometry(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_terminal_input(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
     text: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_terminal_kitty_keyboard_report_all(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_transfer_progress(
     uniffiSelf: bigint,
     transferId: Uint8Array,
@@ -999,6 +1020,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_id(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_geometry(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_upload(): number;
@@ -1013,7 +1035,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stop_preview(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_submit_pastes(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_subscribe_events(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_geometry(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_input(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_kitty_keyboard_report_all(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_transfer_progress(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_unsubscribe_events(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event(): number;

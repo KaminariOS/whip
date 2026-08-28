@@ -84,7 +84,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
       Alert.alert(t('connection.readKeyError'), String(error));
     }
   };
-  const generatePrivateKey = async () => {
+  const generatePrivateKey = () => {
     setBusy(true);
     try {
       const generated = generateKeyPair('ed25519', passphrase, 256, name.trim() || 'herdr');
@@ -133,7 +133,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
     copied(t('connection.privateKey'));
   };
 
-  const copyPublicKey = async () => {
+  const copyPublicKey = () => {
     if (!copyTarget) return;
     try {
       const details = getKeyDetails(

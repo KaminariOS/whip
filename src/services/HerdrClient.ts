@@ -1,15 +1,11 @@
-import { createHostRuntime, type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, type RuntimeGitDiff, type RuntimeGitRepository, type RuntimeGitStatusEntry, type RuntimeRemoteDirectoryListing, type RuntimeTabLaunch, type RuntimeTransfer } from 'react-native-whip-ssh';
+import { createHostRuntime, type HerdrBridgeEvent, type HostRuntimeConnection, type HostRuntimeLifecycleEvent, type HostRuntimeState, type NativeAgentTranscriptState, type NativeAgentTranscriptUpdate, type RuntimeGitDiff, type RuntimeGitRepository, type RuntimeGitStatusEntry, type RuntimeHerdrRequest, type RuntimeHerdrResult, type RuntimeRemoteDirectoryListing, type RuntimeTabLaunch, type RuntimeTerminalGeometry, type RuntimeTerminalResizeOutcome, type RuntimeTransfer } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
-import type { ResponseResult } from '../generated/herdrApi';
 
 import { normalizePrivateKey } from '../lib/privateKey';
-import { settledPromise } from '../lib/promises';
-import { assertHerdrProtocolCompatible } from '../lib/herdrProtocol';
 import { DEFAULT_HERDR_COMMAND } from '../lib/hostProfiles';
 import { errorCode } from '../lib/connectionErrors';
-import { type HerdrApiRequest, type SessionSnapshotResult } from '../lib/herdrApiBridge';
 import type { CodexIntegrationStatus } from '../lib/codexSession';
-import { type TerminalControlEvent, type TerminalFrame, type TerminalProtocolState } from '../lib/terminalBridge';
+import { type TerminalControlEvent, type TerminalFrame } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
@@ -44,11 +40,13 @@ import {
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
 type TerminalControlHandler = (event: TerminalControlEvent) => void;
-type HerdrApiMethod = HerdrApiRequest['method'];
-type HerdrApiParams<Method extends HerdrApiMethod> = Extract<
-  HerdrApiRequest,
-  { method: Method }
->['params'];
+type HerdrApiMethod = RuntimeHerdrRequest['method'];
+type HerdrApiParams<Method extends HerdrApiMethod> =
+  RuntimeHerdrRequest extends infer Request
+    ? Request extends { method: infer SupportedMethod; params: infer Params }
+      ? Method extends SupportedMethod ? Params : never
+      : never
+    : never;
 
 const HOST_KEY_CHALLENGE_CODES = new Set([
   'HOST_KEY_UNKNOWN',
@@ -60,9 +58,9 @@ function isHostKeyChallenge(error: unknown): boolean {
   return code !== null && HOST_KEY_CHALLENGE_CODES.has(code);
 }
 
-export type WorkspaceCreationResult = Extract<ResponseResult, { type: 'workspace_created' }>;
-export type TabCreationResult = Extract<ResponseResult, { type: 'tab_created' }>;
-export type IntegrationInstall = Extract<ResponseResult, { type: 'integration_install' }>;
+export type WorkspaceCreationResult = Extract<RuntimeHerdrResult, { type: 'workspace_created' }>;
+export type TabCreationResult = Extract<RuntimeHerdrResult, { type: 'tab_created' }>;
+export type IntegrationInstall = Extract<RuntimeHerdrResult, { type: 'integration_install' }>;
 
 export type TabLaunchIntent = RuntimeTabLaunch;
 
@@ -88,25 +86,15 @@ export class CommandLaunchPartialFailure extends Error {
 
 export { clearHerdrSocketPathCache } from './herdrSocketPathCache';
 
-interface TerminalConnection {
+interface TerminalAttachment {
   attachmentId: TerminalAttachmentId;
   onFrame: TerminalFrameHandler;
   onClosed?: TerminalClosedHandler;
   onControl?: TerminalControlHandler;
-}
-
-interface SshShellConnection extends TerminalConnection {
   sequence: number;
 }
 
-interface TerminalSize {
-  columns: number;
-  rows: number;
-  cellWidthPx: number;
-  cellHeightPx: number;
-}
-
-const DEFAULT_TERMINAL_SIZE: TerminalSize = {
+const DEFAULT_TERMINAL_SIZE: RuntimeTerminalGeometry = {
   columns: 80,
   rows: 24,
   cellWidthPx: 0,
@@ -114,15 +102,6 @@ const DEFAULT_TERMINAL_SIZE: TerminalSize = {
 };
 
 const TERMINAL_STATE_REFRESH_DEBOUNCE_MS = 120;
-
-function terminalSizesEqual(left: TerminalSize | undefined, right: TerminalSize): boolean {
-  return (
-    left?.columns === right.columns
-    && left.rows === right.rows
-    && left.cellWidthPx === right.cellWidthPx
-    && left.cellHeightPx === right.cellHeightPx
-  );
-}
 
 export interface RemoteHtmlPreviewHandle {
   id: string;
@@ -145,12 +124,7 @@ export class HerdrClient {
   private runtimeAwaitingHostKeyTrust = false;
   private runtimeEventHandler: ((event: HostRuntimeLifecycleEvent) => void) | null = null;
   private profile: ConnectionProfile | null = null;
-  private terminalConnections = new Map<string, TerminalConnection>();
-  private sshShellConnections = new Map<string, SshShellConnection>();
-  private terminalOpenings = new Map<string, Promise<void>>();
-  private terminalSizes = new Map<string, TerminalSize>();
-  private terminalDispatchedSizes = new Map<string, TerminalSize>();
-  private terminalProtocolStates = new Map<string, TerminalProtocolState>();
+  private terminalAttachments = new Map<string, TerminalAttachment>();
   private terminalInputTraces = new Map<string, TerminalInputTrace[]>();
   private pendingTerminalResizeTraces = new Map<string, TerminalResizeTrace>();
   private terminalStateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -256,16 +230,14 @@ export class HerdrClient {
       clearTimeout(this.terminalStateRefreshTimer);
       this.terminalStateRefreshTimer = null;
     }
-    for (const terminalId of this.sshShellConnections.keys()) {
-      this.closeSshShell(terminalId);
+    for (const terminalId of this.terminalAttachments.keys()) {
+      if (isSshShellTerminalId(terminalId)) this.runtime.closeSshShell(terminalId);
     }
     const runtime = this.runtime;
     this.runtime = null;
     this.runtimeAwaitingHostKeyTrust = false;
     this.profile = null;
-    this.terminalOpenings.clear();
-    this.terminalConnections.clear();
-    this.terminalSizes.clear();
+    this.terminalAttachments.clear();
     this.clearAllTerminalBridgeState();
 
     const disconnecting = runtime.disconnect()
@@ -425,45 +397,25 @@ export class HerdrClient {
     onControl?: TerminalControlHandler,
   ): Promise<TerminalAttachmentId> {
     const attachmentId = this.createTerminalAttachmentId();
-    if (isSshShellTerminalId(terminalId)) {
-      const connection = this.sshShellConnections.get(terminalId);
-      if (connection) {
-        connection.attachmentId = attachmentId;
-        connection.onFrame = onFrame;
-        connection.onClosed = onClosed;
-        connection.onControl = onControl;
-        return attachmentId;
-      }
-      const opening = this.terminalOpenings.get(terminalId);
-      if (opening) {
-        await opening;
-        const opened = this.sshShellConnections.get(terminalId);
-        if (opened) {
-          opened.attachmentId = attachmentId;
-          opened.onFrame = onFrame;
-          opened.onClosed = onClosed;
-          opened.onControl = onControl;
-        }
-        return attachmentId;
-      }
-      const task = this.createSshShell(terminalId, attachmentId, onFrame, onClosed);
-      this.terminalOpenings.set(terminalId, task);
-      try {
-        await task;
-      } finally {
-        this.terminalOpenings.delete(terminalId);
-      }
-      return attachmentId;
-    }
-
-    this.terminalConnections.set(terminalId, {
+    const previousAttachment = this.terminalAttachments.get(terminalId);
+    this.terminalAttachments.set(terminalId, {
       attachmentId,
       onFrame,
       onClosed,
       onControl,
+      sequence: previousAttachment?.sequence ?? 0,
     });
-    const protocolState = this.terminalProtocolStates.get(terminalId);
-    if (protocolState) onControl?.({ type: 'protocol-state', state: protocolState });
+    if (isSshShellTerminalId(terminalId)) {
+      try {
+        await this.attachSshShell(terminalId);
+      } catch (error) {
+        if (this.terminalAttachments.get(terminalId)?.attachmentId === attachmentId) {
+          this.terminalAttachments.delete(terminalId);
+        }
+        throw error;
+      }
+      return attachmentId;
+    }
 
     const coldAttach = !this.requireRuntime().hasHerdrBridge(terminalId);
     const bridgeAttachTrace = coldAttach
@@ -471,6 +423,15 @@ export class HerdrClient {
       : null;
     try {
       await this.attachTerminal(terminalId, coldAttach);
+      this.terminalAttachments.get(terminalId)?.onControl?.({
+        type: 'protocol-state',
+        state: this.requireRuntime().herdrBridgeProtocolState(terminalId),
+      });
+    } catch (error) {
+      if (this.terminalAttachments.get(terminalId)?.attachmentId === attachmentId) {
+        this.terminalAttachments.delete(terminalId);
+      }
+      throw error;
     } finally {
       endAppPerformanceTrace(bridgeAttachTrace);
     }
@@ -484,12 +445,12 @@ export class HerdrClient {
   ): Promise<string> {
     terminalNativePreflightStarted(inputTrace);
     if (isSshShellTerminalId(terminalId)) {
-      const opening = this.terminalOpenings.get(terminalId);
-      if (opening) await opening;
       this.queueTerminalInputTrace(terminalId, inputTrace);
       terminalNativeWriteStarted(inputTrace);
       try {
-        this.requireSshShell(terminalId);
+        if (!this.requireRuntime().hasSshShell(terminalId)) {
+          throw new Error(`SSH shell ${terminalId} is not connected`);
+        }
         const bytes = new TextEncoder().encode(data);
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
         this.requireRuntime().sshShellInput(terminalId, buffer);
@@ -543,60 +504,52 @@ export class HerdrClient {
       cellWidthPx: Math.max(0, Math.round(cellWidthPx)),
       cellHeightPx: Math.max(0, Math.round(cellHeightPx)),
     };
-    this.terminalSizes.set(terminalId, size);
     terminalResizeWaitStarted(performanceTrace);
-    const sshShell = this.sshShellConnections.get(terminalId);
-    if (sshShell) {
-      const previousSize = this.terminalDispatchedSizes.get(terminalId);
-      if (!forceDispatch && terminalSizesEqual(previousSize, size)) {
-        terminalResizeDeduplicated(performanceTrace);
-        return;
-      }
-      this.terminalDispatchedSizes.set(terminalId, size);
+    const runtime = this.requireRuntime();
+    const sshShell = isSshShellTerminalId(terminalId);
+    const expectedDispatch = sshShell
+      ? runtime.hasSshShell(terminalId)
+      : runtime.hasHerdrBridge(terminalId);
+    if (expectedDispatch) {
       terminalResizeNativeDispatchStarted(performanceTrace);
-      try {
-        this.requireRuntime().resizeSshShell(terminalId, size.columns, size.rows);
-        terminalResizeNativeDispatchEnded(performanceTrace, true);
-      } catch (error) {
-        if (this.terminalDispatchedSizes.get(terminalId) === size) {
-          if (previousSize) this.terminalDispatchedSizes.set(terminalId, previousSize);
-          else this.terminalDispatchedSizes.delete(terminalId);
-        }
-        terminalResizeNativeDispatchEnded(performanceTrace, false);
-        throw error;
-      }
-      return;
     }
-    if (this.requireRuntime().hasHerdrBridge(terminalId)) {
-      const previousSize = this.terminalDispatchedSizes.get(terminalId);
-      if (!forceDispatch && terminalSizesEqual(previousSize, size)) {
-        terminalResizeDeduplicated(performanceTrace);
-        return;
-      }
-      this.terminalDispatchedSizes.set(terminalId, size);
-      terminalResizeNativeDispatchStarted(performanceTrace);
-      try {
-        await this.requireRuntime().herdrBridgeResize(
+    let outcome: RuntimeTerminalResizeOutcome;
+    try {
+      outcome = sshShell
+        ? runtime.resizeSshShell(
           terminalId,
           size.columns,
           size.rows,
           size.cellWidthPx,
           size.cellHeightPx,
+          forceDispatch,
+        )
+        : await runtime.herdrBridgeResize(
+          terminalId,
+          size.columns,
+          size.rows,
+          size.cellWidthPx,
+          size.cellHeightPx,
+          forceDispatch,
         );
+    } catch (error) {
+      terminalResizeNativeDispatchEnded(performanceTrace, false);
+      throw error;
+    }
+    if (outcome === 'dispatched') {
+      if (!expectedDispatch) terminalResizeNativeDispatchStarted(performanceTrace);
+      if (!sshShell) {
         this.scheduleTerminalStateRefresh();
-        terminalResizeNativeDispatchEnded(performanceTrace, true);
-      } catch (error) {
-        if (this.terminalDispatchedSizes.get(terminalId) === size) {
-          if (previousSize) this.terminalDispatchedSizes.set(terminalId, previousSize);
-          else this.terminalDispatchedSizes.delete(terminalId);
-        }
-        terminalResizeNativeDispatchEnded(performanceTrace, false);
-        throw error;
       }
+      terminalResizeNativeDispatchEnded(performanceTrace, true);
+      return;
+    }
+    if (outcome === 'deduplicated') {
+      terminalResizeDeduplicated(performanceTrace);
       return;
     }
     if (performanceTrace) {
-      if (this.requireRuntime().isHerdrBridgeOpening(terminalId)) {
+      if (!sshShell && runtime.isHerdrBridgeOpening(terminalId)) {
         terminalResizeSuperseded(performanceTrace);
         return;
       }
@@ -626,72 +579,58 @@ export class HerdrClient {
   }
 
   closeTerminal(terminalId: string): void {
+    this.terminalAttachments.delete(terminalId);
+    this.clearTerminalBridgeState(terminalId);
     if (isSshShellTerminalId(terminalId)) {
-      this.closeSshShell(terminalId);
+      this.runtime?.closeSshShell(terminalId);
       return;
     }
-    this.terminalConnections.delete(terminalId);
-    this.clearTerminalBridgeState(terminalId);
     this.runtime?.closeHerdrBridge(terminalId);
   }
 
   isTerminalBridgeRetained(terminalId: string): boolean {
-    return Boolean(this.runtime?.hasHerdrBridge(terminalId)) || this.sshShellConnections.has(terminalId) || this.terminalOpenings.has(terminalId);
+    return isSshShellTerminalId(terminalId)
+      ? Boolean(this.runtime?.hasSshShell(terminalId))
+      : Boolean(this.runtime?.hasHerdrBridge(terminalId));
   }
 
-  async releaseTerminal(
+  releaseTerminal(
     terminalId: string,
     attachmentId: TerminalAttachmentId,
   ): Promise<void> {
-    if (isSshShellTerminalId(terminalId)) {
-      const opening = this.terminalOpenings.get(terminalId);
-      if (opening) await settledPromise(opening);
-      this.closeSshShell(terminalId, attachmentId);
-      return;
-    }
-    const connection = this.terminalConnections.get(terminalId);
-    if (connection?.attachmentId !== attachmentId) return;
+    const attachment = this.terminalAttachments.get(terminalId);
+    if (attachment?.attachmentId !== attachmentId) return Promise.resolve();
 
-    this.terminalConnections.delete(terminalId);
+    this.terminalAttachments.delete(terminalId);
     this.clearTerminalBridgeState(terminalId);
-    this.runtime?.closeHerdrBridge(terminalId);
+    if (isSshShellTerminalId(terminalId)) this.runtime?.closeSshShell(terminalId);
+    else this.runtime?.closeHerdrBridge(terminalId);
+    return Promise.resolve();
   }
 
   detachTerminal(
     terminalId: string,
     attachmentId: TerminalAttachmentId,
   ): Promise<void> {
-    if (isSshShellTerminalId(terminalId)) {
-      this.closeSshShell(terminalId, attachmentId);
-      return Promise.resolve();
-    }
-    const connection = this.terminalConnections.get(terminalId);
-    if (connection?.attachmentId !== attachmentId) return Promise.resolve();
-    this.terminalConnections.delete(terminalId);
+    const attachment = this.terminalAttachments.get(terminalId);
+    if (attachment?.attachmentId !== attachmentId) return Promise.resolve();
+    this.terminalAttachments.delete(terminalId);
+    if (isSshShellTerminalId(terminalId)) this.runtime?.closeSshShell(terminalId);
+    else this.runtime?.detachHerdrBridge(terminalId);
     return Promise.resolve();
   }
 
   closeTerminalBridge(terminalId: string): Promise<void> {
-    if (isSshShellTerminalId(terminalId)) {
-      this.closeSshShell(terminalId);
-      this.terminalOpenings.delete(terminalId);
-      this.terminalSizes.delete(terminalId);
-      return Promise.resolve();
-    }
-    this.terminalConnections.delete(terminalId);
-    this.terminalSizes.delete(terminalId);
-    this.clearTerminalBridgeState(terminalId);
-    this.runtime?.closeHerdrBridge(terminalId);
+    this.closeTerminal(terminalId);
     return Promise.resolve();
   }
 
   releaseAllTerminals(): Promise<void> {
-    for (const terminalId of this.sshShellConnections.keys()) {
-      this.closeSshShell(terminalId);
+    for (const terminalId of this.terminalAttachments.keys()) {
+      if (isSshShellTerminalId(terminalId)) this.runtime?.closeSshShell(terminalId);
     }
     this.runtime?.closeAllHerdrBridges();
-    this.terminalConnections.clear();
-    this.terminalOpenings.clear();
+    this.terminalAttachments.clear();
     this.clearAllTerminalBridgeState();
     return Promise.resolve();
   }
@@ -726,12 +665,11 @@ export class HerdrClient {
 
   /** Mechanical typed-FFI projection; Rust remains authoritative. */
   snapshotFromHostState(state: HostRuntimeState): HerdrSnapshot {
-    const raw = state.snapshot as SessionSnapshotResult['snapshot'] | undefined;
+    const raw = state.snapshot;
     const socket = this.runtime?.resolvedSocketPath();
     if (!raw) {
       return this.offlineSnapshot({ running: false, socket });
     }
-    assertHerdrProtocolCompatible(raw.protocol);
     if (socket && !this.requireProfile().herdrSocketPath?.trim()) {
       persistHerdrSocketPathHint(this.requireProfile().id, socket);
     }
@@ -817,7 +755,7 @@ export class HerdrClient {
         workspaceId,
         name,
         launch,
-      ) as TabCreationResult;
+      );
     } catch (error) {
       const native = error as {
         code?: string;
@@ -947,7 +885,7 @@ export class HerdrClient {
     params: HerdrApiParams<Method>,
     performanceTracePrefix?: string,
   ): Promise<T> {
-    const request = { method, params } as HerdrApiRequest;
+    const request = { method, params } as RuntimeHerdrRequest;
     const requestApi = async () => await this.requireRuntime().requestHerdrApi(request) as T;
     return performanceTracePrefix
       ? await withAppPerformanceTrace(`${performanceTracePrefix}: API round trip`, requestApi)
@@ -972,23 +910,14 @@ export class HerdrClient {
     }
   }
 
-  private async createSshShell(
-    terminalId: string,
-    attachmentId: TerminalAttachmentId,
-    onFrame: TerminalFrameHandler,
-    onClosed?: TerminalClosedHandler,
-  ): Promise<void> {
-    const connection: SshShellConnection = {
-      attachmentId,
-      onFrame,
-      onClosed,
-      sequence: 0,
-    };
-    const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
+  private async attachSshShell(terminalId: string): Promise<void> {
+    const runtime = this.requireRuntime();
+    const size = runtime.sshShellGeometry(terminalId) || DEFAULT_TERMINAL_SIZE;
+    const resizeTrace = this.pendingTerminalResizeTraces.get(terminalId) || null;
     const onData = (data: ArrayBuffer) => {
-      const active = this.sshShellConnections.get(terminalId);
-      if (active !== connection) return;
-      const activeSize = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
+      const active = this.terminalAttachments.get(terminalId);
+      if (!active) return;
+      const activeSize = this.runtime?.sshShellGeometry(terminalId) || size;
       this.deliverTracedTerminalFrame(terminalId, () => {
         active.onFrame({
           type: 'terminal.frame',
@@ -1001,78 +930,46 @@ export class HerdrClient {
         });
       });
     };
-    this.sshShellConnections.set(terminalId, connection);
+    terminalResizeNativeDispatchStarted(resizeTrace);
     try {
-      await this.requireRuntime().openSshShell(terminalId, size.columns, size.rows, {
-        data: onData,
-        closed: reason => {
-          const active = this.sshShellConnections.get(terminalId);
-          if (active !== connection) return;
-          this.sshShellConnections.delete(terminalId);
-          this.terminalDispatchedSizes.delete(terminalId);
-          active.onClosed?.(reason);
+      await runtime.openSshShell(
+        terminalId,
+        size.columns,
+        size.rows,
+        size.cellWidthPx,
+        size.cellHeightPx,
+        {
+          data: onData,
+          closed: reason => {
+            this.terminalAttachments.get(terminalId)?.onClosed?.(reason);
+          },
         },
-      });
-      this.terminalDispatchedSizes.set(terminalId, size);
+      );
+      this.pendingTerminalResizeTraces.delete(terminalId);
+      terminalResizeNativeDispatchEnded(resizeTrace, true);
     } catch (error) {
-      this.closeSshShell(terminalId);
+      this.pendingTerminalResizeTraces.delete(terminalId);
+      terminalResizeNativeDispatchEnded(resizeTrace, false);
       throw error;
     }
-  }
-
-  private closeSshShell(
-    terminalId: string,
-    attachmentId?: TerminalAttachmentId,
-  ): void {
-    const connection = this.sshShellConnections.get(terminalId);
-    if (!connection) return;
-    if (attachmentId && connection.attachmentId !== attachmentId) return;
-    this.sshShellConnections.delete(terminalId);
-    this.terminalDispatchedSizes.delete(terminalId);
-    this.runtime?.closeSshShell(terminalId);
-  }
-
-  private requireSshShell(terminalId: string): SshShellConnection {
-    const connection = this.sshShellConnections.get(terminalId);
-    if (!connection) throw new Error(`SSH shell ${terminalId} is not connected`);
-    return connection;
   }
 
   private async attachTerminal(terminalId: string, coldAttach: boolean): Promise<void> {
-    const size = this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
     const resizeTrace = this.pendingTerminalResizeTraces.get(terminalId) || null;
-    try {
-      await this.ensureTerminalBridge(terminalId, size);
-    } catch (error) {
-      this.pendingTerminalResizeTraces.delete(terminalId);
-      abandonTerminalResizeTrace(resizeTrace);
-      throw error;
-    }
-    this.pendingTerminalResizeTraces.delete(terminalId);
     const initialResizeTrace = coldAttach
       ? beginAppPerformanceTrace('Whip Herdr terminal initial resize')
       : null;
     const uncorrelatedNativeDispatchTrace = resizeTrace
       ? null
       : beginAppPerformanceTrace('Whip terminal resize native dispatch');
-    const previousSize = this.terminalDispatchedSizes.get(terminalId);
-    this.terminalDispatchedSizes.set(terminalId, size);
     terminalResizeNativeDispatchStarted(resizeTrace);
     try {
-      await this.requireRuntime().herdrBridgeResize(
-        terminalId,
-        size.columns,
-        size.rows,
-        size.cellWidthPx,
-        size.cellHeightPx,
-      );
+      await this.ensureTerminalBridge(terminalId);
+      this.pendingTerminalResizeTraces.delete(terminalId);
       this.scheduleTerminalStateRefresh();
       terminalResizeNativeDispatchEnded(resizeTrace, true);
     } catch (error) {
-      if (this.terminalDispatchedSizes.get(terminalId) === size) {
-        if (previousSize) this.terminalDispatchedSizes.set(terminalId, previousSize);
-        else this.terminalDispatchedSizes.delete(terminalId);
-      }
+      this.pendingTerminalResizeTraces.delete(terminalId);
       terminalResizeNativeDispatchEnded(resizeTrace, false);
       throw error;
     } finally {
@@ -1081,13 +978,10 @@ export class HerdrClient {
     }
   }
 
-  private async ensureTerminalBridge(terminalId: string, requestedSize?: TerminalSize): Promise<void> {
-    if (this.requireRuntime().hasHerdrBridge(terminalId)) return;
-    const size = requestedSize || this.terminalSizes.get(terminalId) || DEFAULT_TERMINAL_SIZE;
-    this.updateTerminalProtocolState(terminalId, {
-      kittyKeyboardReportAll: false,
-    });
-    await this.requireRuntime().startHerdrBridge(
+  private async ensureTerminalBridge(terminalId: string): Promise<void> {
+    const runtime = this.requireRuntime();
+    const size = runtime.herdrBridgeGeometry(terminalId) || DEFAULT_TERMINAL_SIZE;
+    await runtime.startHerdrBridge(
       terminalId,
       true,
       size.columns,
@@ -1114,7 +1008,7 @@ export class HerdrClient {
     if (event.type === 'terminal') {
       if (typeof event.seq === 'number' && typeof event.width === 'number' && typeof event.height === 'number' && (typeof event.bytes === 'string' || event.bytes instanceof ArrayBuffer || ArrayBuffer.isView(event.bytes))) {
         this.deliverTracedTerminalFrame(terminalId, () => {
-          this.terminalConnections.get(terminalId)?.onFrame({
+          this.terminalAttachments.get(terminalId)?.onFrame({
             type: 'terminal.frame',
             seq: event.seq as number,
             encoding: 'ansi',
@@ -1132,7 +1026,7 @@ export class HerdrClient {
     if (event.type === 'terminal_bell') {
       const count = Math.max(0, Math.min(0xffff, Math.trunc(event.count || 0)));
       if (count > 0) {
-        this.terminalConnections.get(terminalId)?.onFrame({
+        this.terminalAttachments.get(terminalId)?.onFrame({
           type: 'terminal.frame',
           seq: 0,
           encoding: 'utf8',
@@ -1151,18 +1045,21 @@ export class HerdrClient {
       return;
     }
     if (event.type === 'kitty_keyboard_report_all') {
-      this.updateTerminalProtocolState(terminalId, { kittyKeyboardReportAll: event.flag === true });
+      this.terminalAttachments.get(terminalId)?.onControl?.({
+        type: 'protocol-state',
+        state: { kittyKeyboardReportAll: event.flag === true },
+      });
       return;
     }
     if (event.type === 'clipboard') {
-      this.terminalConnections.get(terminalId)?.onControl?.({
+      this.terminalAttachments.get(terminalId)?.onControl?.({
         type: 'clipboard-write',
         text: event.text || '',
       });
       return;
     }
     if (event.type === 'title') {
-      this.terminalConnections.get(terminalId)?.onControl?.({
+      this.terminalAttachments.get(terminalId)?.onControl?.({
         type: 'title',
         title: event.text || '',
       });
@@ -1170,27 +1067,13 @@ export class HerdrClient {
     }
     if (event.type === 'closed') {
       this.clearTerminalBridgeState(terminalId);
-      this.terminalConnections.get(terminalId)?.onClosed?.(event.text || 'Herdr remote-client-bridge closed');
+      this.terminalAttachments.get(terminalId)?.onClosed?.(event.text || 'Herdr remote-client-bridge closed');
     }
-  }
-
-  private updateTerminalProtocolState(
-    terminalId: string,
-    update: Partial<TerminalProtocolState>,
-  ): void {
-    const current = this.terminalProtocolStates.get(terminalId) || {
-      kittyKeyboardReportAll: false,
-    };
-    const state = { ...current, ...update };
-    this.terminalProtocolStates.set(terminalId, state);
-    this.terminalConnections.get(terminalId)?.onControl?.({ type: 'protocol-state', state });
   }
 
   private clearTerminalBridgeState(terminalId: string): void {
     abandonTerminalResizeTrace(this.pendingTerminalResizeTraces.get(terminalId) || null);
     this.pendingTerminalResizeTraces.delete(terminalId);
-    this.terminalDispatchedSizes.delete(terminalId);
-    this.terminalProtocolStates.delete(terminalId);
   }
 
   private clearAllTerminalBridgeState(): void {
@@ -1198,8 +1081,6 @@ export class HerdrClient {
       abandonTerminalResizeTrace(trace);
     }
     this.pendingTerminalResizeTraces.clear();
-    this.terminalDispatchedSizes.clear();
-    this.terminalProtocolStates.clear();
   }
 
   private queueTerminalInputTrace(

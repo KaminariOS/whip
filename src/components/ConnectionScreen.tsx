@@ -160,7 +160,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
       Alert.alert(t('connection.readKeyError'), String(fileError));
     }
   };
-  const generatePrivateKey = async () => {
+  const generatePrivateKey = () => {
     setKeyActionsOpen(false);
     setGeneratingKey(true);
     try {
@@ -205,7 +205,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     Clipboard.setString(profile.secret);
     copied(t('connection.privateKey'));
   };
-  const copyPublicKey = async () => {
+  const copyPublicKey = () => {
     try {
       const publicKey = keyInspection.state === 'valid'
         ? keyInspection.publicKey

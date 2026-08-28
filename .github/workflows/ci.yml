@@ -100,9 +100,6 @@ jobs:
       - name: Check feedback Worker
         run: npm run worker:check
 
-      - name: Check generated Herdr API types
-        run: npm run check:herdr-api
-
       - name: Lint
         run: npm run lint
 

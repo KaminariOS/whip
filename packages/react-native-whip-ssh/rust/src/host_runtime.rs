@@ -122,6 +122,32 @@ pub enum HostTerminalState {
     Failed,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum HostTerminalResizeOutcome {
+    Deferred,
+    Deduplicated,
+    Dispatched,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct HostTerminalGeometry {
+    pub columns: u32,
+    pub rows: u32,
+    pub cell_width_px: u32,
+    pub cell_height_px: u32,
+}
+
+impl HostTerminalGeometry {
+    fn normalized(columns: u32, rows: u32, cell_width_px: u32, cell_height_px: u32) -> Self {
+        Self {
+            columns: columns.max(20),
+            rows: rows.max(8),
+            cell_width_px,
+            cell_height_px,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct HostRuntimeStatus {
     pub state: HostConnectionState,
@@ -319,6 +345,14 @@ struct TerminalRuntime {
 }
 
 #[derive(Clone, Debug)]
+struct SshShellRuntime {
+    state: HostTerminalState,
+    geometry: HostTerminalGeometry,
+    dispatched_geometry: Option<HostTerminalGeometry>,
+    operation_epoch: u64,
+}
+
+#[derive(Clone, Debug)]
 struct EventSubscriptionRuntime {
     pane_ids: Vec<String>,
     operation_epoch: u64,
@@ -337,6 +371,9 @@ struct RuntimeState {
     protocol: Option<u32>,
     event: Option<EventSubscriptionRuntime>,
     terminals: HashMap<String, TerminalRuntime>,
+    terminal_dispatched_geometries: HashMap<String, HostTerminalGeometry>,
+    terminal_kitty_keyboard_report_all: HashMap<String, bool>,
+    ssh_shells: HashMap<String, SshShellRuntime>,
     host_state: HostState,
 }
 
@@ -353,6 +390,9 @@ impl RuntimeState {
             protocol: None,
             event: None,
             terminals: HashMap::new(),
+            terminal_dispatched_geometries: HashMap::new(),
+            terminal_kitty_keyboard_report_all: HashMap::new(),
+            ssh_shells: HashMap::new(),
             host_state: HostState::default(),
         }
     }
@@ -415,6 +455,11 @@ impl RuntimeState {
         self.reconnect_attempt = 0;
         self.last_error = Some(reason.to_owned());
         self.host_state.mark_reconnecting(reason.to_owned());
+        self.terminal_dispatched_geometries.clear();
+        for terminal_id in self.terminals.keys() {
+            self.terminal_kitty_keyboard_report_all
+                .insert(terminal_id.clone(), false);
+        }
         Some((self.epoch, self.generation))
     }
 
@@ -431,6 +476,13 @@ impl RuntimeState {
             terminal.reconnect_attempt = 0;
             terminal.retry_running = false;
             terminal.bridge_id = None;
+        }
+        self.terminal_dispatched_geometries.clear();
+        self.terminal_kitty_keyboard_report_all.clear();
+        for shell in self.ssh_shells.values_mut() {
+            shell.operation_epoch = shell.operation_epoch.wrapping_add(1);
+            shell.state = HostTerminalState::Closed;
+            shell.dispatched_geometry = None;
         }
         self.host_state.mark_disconnected();
         self.epoch
@@ -1864,12 +1916,17 @@ async fn start_or_update_state_events(inner: Arc<RuntimeInner>) -> Result<(), He
 
 fn close_terminal_intent(inner: &Arc<RuntimeInner>, terminal_id: String) {
     inner.agents.close_terminal(&terminal_id);
-    let bridge_id = inner
-        .state
-        .lock()
-        .terminals
-        .remove(&terminal_id)
-        .and_then(|terminal| terminal.bridge_id);
+    let bridge_id = {
+        let mut state = inner.state.lock();
+        state.terminal_dispatched_geometries.remove(&terminal_id);
+        state
+            .terminal_kitty_keyboard_report_all
+            .remove(&terminal_id);
+        state
+            .terminals
+            .remove(&terminal_id)
+            .and_then(|terminal| terminal.bridge_id)
+    };
     if let Some(bridge_id) = bridge_id {
         close_owned_herdr_terminal_bridge(&inner.id, &terminal_id, bridge_id);
     } else {
@@ -2029,6 +2086,21 @@ async fn open_terminal_inner(
             debug_assert_eq!(current.bridge_id, Some(bridge_id));
             current.state = HostTerminalState::Attached;
             current.reconnect_attempt = 0;
+            let geometry = HostTerminalGeometry::normalized(
+                terminal.columns,
+                terminal.rows,
+                terminal.cell_width_px,
+                terminal.cell_height_px,
+            );
+            let latest_geometry = HostTerminalGeometry::normalized(
+                current.columns,
+                current.rows,
+                current.cell_width_px,
+                current.cell_height_px,
+            );
+            state
+                .terminal_dispatched_geometries
+                .insert(terminal_id.clone(), geometry);
             drop(state);
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: inner.id.clone(),
@@ -2038,6 +2110,32 @@ async fn open_terminal_inner(
                 retrying: false,
                 error: None,
             });
+            if latest_geometry != geometry {
+                match herdr_terminal_resize(
+                    inner.id.clone(),
+                    terminal_id.clone(),
+                    latest_geometry.columns,
+                    latest_geometry.rows,
+                    latest_geometry.cell_width_px,
+                    latest_geometry.cell_height_px,
+                ) {
+                    Ok(()) => {
+                        inner
+                            .state
+                            .lock()
+                            .terminal_dispatched_geometries
+                            .insert(terminal_id.clone(), latest_geometry);
+                    }
+                    Err(error) => {
+                        schedule_terminal_retry(
+                            inner.clone(),
+                            terminal_id.clone(),
+                            Some(bridge_id),
+                            error.to_string(),
+                        );
+                    }
+                }
+            }
             emit_diagnostic(
                 &inner,
                 operation,
@@ -2054,6 +2152,7 @@ async fn open_terminal_inner(
             current.state = HostTerminalState::Failed;
             let reconnect_attempt = current.reconnect_attempt;
             let retrying = current.retry_running;
+            state.terminal_dispatched_geometries.remove(&terminal_id);
             drop(state);
             let message = if restoring {
                 format!("Terminal reattach failed: {error}")
@@ -2121,6 +2220,50 @@ async fn wait_for_terminal_open(
             };
             drop(state);
             should_wait
+        };
+        if !should_wait {
+            return Ok(());
+        }
+        notified.await;
+    }
+}
+
+async fn wait_for_ssh_shell_open(
+    inner: &RuntimeInner,
+    terminal_id: &str,
+    operation_epoch: u64,
+) -> Result<(), HostRuntimeError> {
+    loop {
+        let notified = inner.terminal_settled.notified();
+        let (shell_epoch, shell_state) = {
+            let state = inner.state.lock();
+            let shell = state.ssh_shells.get(terminal_id).ok_or_else(|| {
+                HostRuntimeError::StaleOperation(format!(
+                    "SSH shell {terminal_id} was closed while opening"
+                ))
+            })?;
+            let result = (shell.operation_epoch, shell.state);
+            drop(state);
+            result
+        };
+        if shell_epoch != operation_epoch {
+            return Err(HostRuntimeError::StaleOperation(format!(
+                "SSH shell {terminal_id} open was superseded"
+            )));
+        }
+        let should_wait = match shell_state {
+            HostTerminalState::Attached => false,
+            HostTerminalState::Opening | HostTerminalState::Restoring => true,
+            HostTerminalState::Failed => {
+                return Err(HostRuntimeError::TerminalUnavailable(format!(
+                    "SSH shell {terminal_id} failed to open"
+                )));
+            }
+            HostTerminalState::Closed => {
+                return Err(HostRuntimeError::StaleOperation(format!(
+                    "SSH shell {terminal_id} was closed while opening"
+                )));
+            }
         };
         if !should_wait {
             return Ok(());
@@ -2563,6 +2706,26 @@ pub(crate) fn terminal_bridge_closed(
     true
 }
 
+pub(crate) fn terminal_kitty_keyboard_report_all_changed(
+    client_key: &str,
+    terminal_id: &str,
+    bridge_id: HerdrBridgeId,
+    enabled: bool,
+) {
+    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let Some(runtime) = runtime else { return };
+    let mut state = runtime.state.lock();
+    let current_bridge_id = state
+        .terminals
+        .get(terminal_id)
+        .and_then(|terminal| terminal.bridge_id);
+    if current_bridge_id == Some(bridge_id) {
+        state
+            .terminal_kitty_keyboard_report_all
+            .insert(terminal_id.to_owned(), enabled);
+    }
+}
+
 #[uniffi::export]
 pub fn set_host_runtime_event_sink(sink: Arc<dyn HostRuntimeEventSink>) {
     *event_sink().write() = Some(sink);
@@ -2984,14 +3147,14 @@ impl HostRuntime {
                             terminal.state,
                             HostTerminalState::Opening | HostTerminalState::Restoring
                         ) {
-                            (terminal.operation_epoch, true)
+                            (terminal.operation_epoch, true, false)
                         } else {
                             terminal.operation_epoch = terminal.operation_epoch.wrapping_add(1);
                             terminal.state = HostTerminalState::Opening;
                             terminal.reconnect_attempt = 0;
                             terminal.retry_running = true;
                             terminal.bridge_id = None;
-                            (terminal.operation_epoch, false)
+                            (terminal.operation_epoch, false, true)
                         }
                     } else {
                         state.terminals.insert(
@@ -3009,10 +3172,16 @@ impl HostRuntime {
                                 bridge_id: None,
                             },
                         );
-                        (1, false)
+                        (1, false, true)
                     };
+                    if open_state.2 {
+                        state.terminal_dispatched_geometries.remove(&terminal_id);
+                        state
+                            .terminal_kitty_keyboard_report_all
+                            .insert(terminal_id.clone(), false);
+                    }
                     drop(state);
-                    open_state
+                    (open_state.0, open_state.1)
                 };
                 if wait_for_existing {
                     return wait_for_terminal_open(&inner, &terminal_id, operation_epoch).await;
@@ -3052,7 +3221,12 @@ impl HostRuntime {
         }
         herdr_terminal_input(self.inner.id.clone(), terminal_id.clone(), text).map_err(|error| {
             let reason = error.to_string();
-            schedule_terminal_retry(self.inner.clone(), terminal_id, None, reason.clone());
+            schedule_terminal_retry(
+                self.inner.clone(),
+                terminal_id.clone(),
+                None,
+                reason.clone(),
+            );
             HostRuntimeError::TerminalUnavailable(reason)
         })
     }
@@ -3064,24 +3238,43 @@ impl HostRuntime {
         rows: u32,
         cell_width_px: u32,
         cell_height_px: u32,
-    ) -> Result<(), HostRuntimeError> {
-        let attached = {
+        force_dispatch: bool,
+    ) -> Result<HostTerminalResizeOutcome, HostRuntimeError> {
+        let geometry =
+            HostTerminalGeometry::normalized(columns, rows, cell_width_px, cell_height_px);
+        let (attached, operation_epoch, deduplicated) = {
             let mut state = self.inner.state.lock();
-            let terminal = state.terminals.get_mut(&terminal_id).ok_or_else(|| {
-                HostRuntimeError::TerminalUnavailable(format!(
-                    "terminal {terminal_id} is not registered"
-                ))
-            })?;
-            terminal.columns = columns.max(20);
-            terminal.rows = rows.max(8);
-            terminal.cell_width_px = cell_width_px;
-            terminal.cell_height_px = cell_height_px;
+            let terminal = state
+                .terminals
+                .entry(terminal_id.clone())
+                .or_insert_with(|| TerminalRuntime {
+                    state: HostTerminalState::Closed,
+                    takeover: true,
+                    columns: geometry.columns,
+                    rows: geometry.rows,
+                    cell_width_px: geometry.cell_width_px,
+                    cell_height_px: geometry.cell_height_px,
+                    operation_epoch: 0,
+                    reconnect_attempt: 0,
+                    retry_running: false,
+                    bridge_id: None,
+                });
+            terminal.columns = geometry.columns;
+            terminal.rows = geometry.rows;
+            terminal.cell_width_px = geometry.cell_width_px;
+            terminal.cell_height_px = geometry.cell_height_px;
             let attached = terminal.state == HostTerminalState::Attached;
+            let operation_epoch = terminal.operation_epoch;
+            let deduplicated = !force_dispatch
+                && state.terminal_dispatched_geometries.get(&terminal_id) == Some(&geometry);
             drop(state);
-            attached
+            (attached, operation_epoch, deduplicated)
         };
         if !attached {
-            return Ok(());
+            return Ok(HostTerminalResizeOutcome::Deferred);
+        }
+        if deduplicated {
+            return Ok(HostTerminalResizeOutcome::Deduplicated);
         }
         if live_terminal_bridge_id(&self.inner, &terminal_id).is_none() {
             let reason = format!("terminal {terminal_id} has no live bridge while resizing");
@@ -3091,16 +3284,58 @@ impl HostRuntime {
         herdr_terminal_resize(
             self.inner.id.clone(),
             terminal_id.clone(),
-            columns.max(20),
-            rows.max(8),
-            cell_width_px,
-            cell_height_px,
+            geometry.columns,
+            geometry.rows,
+            geometry.cell_width_px,
+            geometry.cell_height_px,
         )
         .map_err(|error| {
             let reason = error.to_string();
-            schedule_terminal_retry(self.inner.clone(), terminal_id, None, reason.clone());
+            schedule_terminal_retry(
+                self.inner.clone(),
+                terminal_id.clone(),
+                None,
+                reason.clone(),
+            );
             HostRuntimeError::TerminalUnavailable(reason)
-        })
+        })?;
+        let mut state = self.inner.state.lock();
+        if state.terminals.get(&terminal_id).is_some_and(|terminal| {
+            terminal.operation_epoch == operation_epoch
+                && terminal.state == HostTerminalState::Attached
+        }) {
+            state
+                .terminal_dispatched_geometries
+                .insert(terminal_id, geometry);
+        }
+        drop(state);
+        Ok(HostTerminalResizeOutcome::Dispatched)
+    }
+
+    pub fn terminal_geometry(&self, terminal_id: String) -> Option<HostTerminalGeometry> {
+        self.inner
+            .state
+            .lock()
+            .terminals
+            .get(&terminal_id)
+            .map(|terminal| {
+                HostTerminalGeometry::normalized(
+                    terminal.columns,
+                    terminal.rows,
+                    terminal.cell_width_px,
+                    terminal.cell_height_px,
+                )
+            })
+    }
+
+    pub fn terminal_kitty_keyboard_report_all(&self, terminal_id: String) -> bool {
+        self.inner
+            .state
+            .lock()
+            .terminal_kitty_keyboard_report_all
+            .get(&terminal_id)
+            .copied()
+            .unwrap_or(false)
     }
 
     pub fn scroll_terminal(
@@ -3138,14 +3373,16 @@ impl HostRuntime {
     }
 
     pub fn close_all_terminals(&self) {
-        let terminal_ids = self
-            .inner
-            .state
-            .lock()
-            .terminals
-            .drain()
-            .map(|(terminal_id, _)| terminal_id)
-            .collect::<Vec<_>>();
+        let terminal_ids = {
+            let mut state = self.inner.state.lock();
+            state.terminal_dispatched_geometries.clear();
+            state.terminal_kitty_keyboard_report_all.clear();
+            state
+                .terminals
+                .drain()
+                .map(|(terminal_id, _)| terminal_id)
+                .collect::<Vec<_>>()
+        };
         close_all_herdr_terminal_bridges(self.inner.id.clone());
         for terminal_id in terminal_ids {
             self.inner.agents.close_terminal(&terminal_id);
@@ -3184,20 +3421,55 @@ impl HostRuntime {
         terminal_id: String,
         columns: u32,
         rows: u32,
+        cell_width_px: u32,
+        cell_height_px: u32,
     ) -> Result<(), HostRuntimeError> {
         let inner = self.inner.clone();
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
-                let epoch = {
-                    let state = inner.state.lock();
+                let requested_geometry =
+                    HostTerminalGeometry::normalized(columns, rows, cell_width_px, cell_height_px);
+                let (epoch, operation_epoch, geometry, wait_for_existing) = {
+                    let mut state = inner.state.lock();
                     if state.connection != HostConnectionState::Connected {
                         return Err(HostRuntimeError::RuntimeDisconnected(
                             "host runtime is not connected".to_owned(),
                         ));
                     }
-                    state.epoch
+                    let epoch = state.epoch;
+                    let shell_is_live = state
+                        .ssh_shells
+                        .get(&terminal_id)
+                        .is_some_and(|shell| shell.state == HostTerminalState::Attached)
+                        && current_ssh(&inner).is_ok_and(|ssh| ssh.has_shell(&terminal_id));
+                    if shell_is_live {
+                        return Ok(());
+                    }
+                    let shell = state
+                        .ssh_shells
+                        .entry(terminal_id.clone())
+                        .or_insert_with(|| SshShellRuntime {
+                            state: HostTerminalState::Closed,
+                            geometry: requested_geometry,
+                            dispatched_geometry: None,
+                            operation_epoch: 0,
+                        });
+                    shell.geometry = requested_geometry;
+                    let result = if shell.state == HostTerminalState::Opening {
+                        (epoch, shell.operation_epoch, shell.geometry, true)
+                    } else {
+                        shell.operation_epoch = shell.operation_epoch.wrapping_add(1);
+                        shell.state = HostTerminalState::Opening;
+                        shell.dispatched_geometry = None;
+                        (epoch, shell.operation_epoch, shell.geometry, false)
+                    };
+                    drop(state);
+                    result
                 };
+                if wait_for_existing {
+                    return wait_for_ssh_shell_open(&inner, &terminal_id, operation_epoch).await;
+                }
                 let ssh = current_ssh(&inner)?;
                 let runtime_id = inner.id.clone();
                 let data_terminal_id = terminal_id.clone();
@@ -3210,33 +3482,96 @@ impl HostRuntime {
                 });
                 let runtime_id = inner.id.clone();
                 let closed_terminal_id = terminal_id.clone();
+                let closed_inner = Arc::downgrade(&inner);
                 let closed = Arc::new(move |reason| {
+                    let Some(inner) = closed_inner.upgrade() else {
+                        return;
+                    };
+                    {
+                        let mut state = inner.state.lock();
+                        let Some(shell) = state.ssh_shells.get_mut(&closed_terminal_id) else {
+                            return;
+                        };
+                        if shell.operation_epoch != operation_epoch {
+                            return;
+                        }
+                        shell.state = HostTerminalState::Closed;
+                        shell.dispatched_geometry = None;
+                        drop(state);
+                    }
+                    inner.terminal_settled.notify_waiters();
                     emit(HostRuntimeEvent::SshShellClosed {
                         runtime_id: runtime_id.clone(),
                         terminal_id: closed_terminal_id.clone(),
                         reason,
                     });
                 });
-                ssh.open_shell(
-                    &terminal_id,
-                    "xterm-256color",
-                    columns.max(20),
-                    rows.max(8),
-                    data,
-                    closed,
-                )
-                .await?;
-                let stale = {
-                    let state = inner.state.lock();
-                    state.epoch != epoch || state.connection != HostConnectionState::Connected
-                };
-                if stale {
-                    let _ = ssh.close_shell(&terminal_id);
-                    return Err(HostRuntimeError::StaleOperation(format!(
-                        "SSH shell {terminal_id} opened after its connection was replaced"
-                    )));
+                let result = ssh
+                    .open_shell(
+                        &terminal_id,
+                        "xterm-256color",
+                        geometry.columns,
+                        geometry.rows,
+                        data,
+                        closed,
+                    )
+                    .await;
+                match result {
+                    Ok(()) => {
+                        let latest_geometry = {
+                            let mut state = inner.state.lock();
+                            let stale = state.epoch != epoch
+                                || state.connection != HostConnectionState::Connected
+                                || state.ssh_shells.get(&terminal_id).is_none_or(|shell| {
+                                    shell.operation_epoch != operation_epoch
+                                        || shell.state != HostTerminalState::Opening
+                                });
+                            let result = if stale {
+                                None
+                            } else if let Some(shell) = state.ssh_shells.get_mut(&terminal_id) {
+                                shell.state = HostTerminalState::Attached;
+                                shell.dispatched_geometry = Some(geometry);
+                                Some(shell.geometry)
+                            } else {
+                                None
+                            };
+                            drop(state);
+                            result
+                        };
+                        let Some(latest_geometry) = latest_geometry else {
+                            let _ = ssh.close_shell(&terminal_id);
+                            inner.terminal_settled.notify_waiters();
+                            return Err(HostRuntimeError::StaleOperation(format!(
+                                "SSH shell {terminal_id} opened after its connection was replaced"
+                            )));
+                        };
+                        if latest_geometry != geometry {
+                            ssh.resize_shell(
+                                &terminal_id,
+                                latest_geometry.columns,
+                                latest_geometry.rows,
+                            )?;
+                            if let Some(shell) = inner.state.lock().ssh_shells.get_mut(&terminal_id)
+                                && shell.operation_epoch == operation_epoch
+                                && shell.state == HostTerminalState::Attached
+                            {
+                                shell.dispatched_geometry = Some(latest_geometry);
+                            }
+                        }
+                        inner.terminal_settled.notify_waiters();
+                        Ok(())
+                    }
+                    Err(error) => {
+                        if let Some(shell) = inner.state.lock().ssh_shells.get_mut(&terminal_id)
+                            && shell.operation_epoch == operation_epoch
+                        {
+                            shell.state = HostTerminalState::Failed;
+                            shell.dispatched_geometry = None;
+                        }
+                        inner.terminal_settled.notify_waiters();
+                        Err(error.into())
+                    }
                 }
-                Ok(())
             })
             .await
             .map_err(|error| {
@@ -3260,19 +3595,73 @@ impl HostRuntime {
         terminal_id: String,
         columns: u32,
         rows: u32,
-    ) -> Result<(), HostRuntimeError> {
-        current_ssh(&self.inner)?.resize_shell(&terminal_id, columns.max(20), rows.max(8))?;
-        Ok(())
+        cell_width_px: u32,
+        cell_height_px: u32,
+        force_dispatch: bool,
+    ) -> Result<HostTerminalResizeOutcome, HostRuntimeError> {
+        let geometry =
+            HostTerminalGeometry::normalized(columns, rows, cell_width_px, cell_height_px);
+        let (attached, operation_epoch, deduplicated) = {
+            let mut state = self.inner.state.lock();
+            let shell = state
+                .ssh_shells
+                .entry(terminal_id.clone())
+                .or_insert_with(|| SshShellRuntime {
+                    state: HostTerminalState::Closed,
+                    geometry,
+                    dispatched_geometry: None,
+                    operation_epoch: 0,
+                });
+            shell.geometry = geometry;
+            let result = (
+                shell.state == HostTerminalState::Attached,
+                shell.operation_epoch,
+                !force_dispatch && shell.dispatched_geometry == Some(geometry),
+            );
+            drop(state);
+            result
+        };
+        if !attached {
+            return Ok(HostTerminalResizeOutcome::Deferred);
+        }
+        if deduplicated {
+            return Ok(HostTerminalResizeOutcome::Deduplicated);
+        }
+        current_ssh(&self.inner)?.resize_shell(&terminal_id, geometry.columns, geometry.rows)?;
+        if let Some(shell) = self.inner.state.lock().ssh_shells.get_mut(&terminal_id)
+            && shell.operation_epoch == operation_epoch
+            && shell.state == HostTerminalState::Attached
+        {
+            shell.dispatched_geometry = Some(geometry);
+        }
+        Ok(HostTerminalResizeOutcome::Dispatched)
     }
 
     pub fn close_ssh_shell(&self, terminal_id: String) {
+        self.inner.state.lock().ssh_shells.remove(&terminal_id);
         if let Ok(ssh) = current_ssh(&self.inner) {
             let _ = ssh.close_shell(&terminal_id);
         }
+        self.inner.terminal_settled.notify_waiters();
     }
 
     pub fn has_ssh_shell(&self, terminal_id: String) -> bool {
-        current_ssh(&self.inner).is_ok_and(|ssh| ssh.has_shell(&terminal_id))
+        self.inner
+            .state
+            .lock()
+            .ssh_shells
+            .get(&terminal_id)
+            .is_some_and(|shell| shell.state == HostTerminalState::Attached)
+            && current_ssh(&self.inner).is_ok_and(|ssh| ssh.has_shell(&terminal_id))
+    }
+
+    pub fn ssh_shell_geometry(&self, terminal_id: String) -> Option<HostTerminalGeometry> {
+        self.inner
+            .state
+            .lock()
+            .ssh_shells
+            .get(&terminal_id)
+            .map(|shell| shell.geometry)
     }
 
     pub async fn execute(&self, command: String) -> Result<String, HostRuntimeError> {
@@ -4965,6 +5354,41 @@ mod tests {
     }
 
     #[test]
+    fn ssh_shell_notify_wakes_concurrent_open_waiter() {
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("ssh-shell-open-wait-test");
+            inner.state.lock().ssh_shells.insert(
+                "ssh-shell-1".to_owned(),
+                SshShellRuntime {
+                    state: HostTerminalState::Opening,
+                    geometry: HostTerminalGeometry::normalized(100, 30, 8, 16),
+                    dispatched_geometry: None,
+                    operation_epoch: 1,
+                },
+            );
+            let waiter_inner = inner.clone();
+            let waiter = tokio::spawn(async move {
+                wait_for_ssh_shell_open(&waiter_inner, "ssh-shell-1", 1).await
+            });
+            tokio::task::yield_now().await;
+
+            {
+                let mut state = inner.state.lock();
+                let shell = state
+                    .ssh_shells
+                    .get_mut("ssh-shell-1")
+                    .expect("SSH shell remains registered");
+                shell.state = HostTerminalState::Attached;
+                shell.dispatched_geometry = Some(shell.geometry);
+                drop(state);
+            }
+            inner.terminal_settled.notify_waiters();
+
+            assert!(matches!(waiter.await, Ok(Ok(()))));
+        });
+    }
+
+    #[test]
     fn bridge_close_during_open_invalidates_owned_attempt_without_second_worker() {
         let _guard = EVENT_SINK_TEST_LOCK.lock();
         clear_host_runtime_event_sink();
@@ -5185,13 +5609,36 @@ mod tests {
                 bridge_id: None,
             },
         );
+        let geometry = HostTerminalGeometry::normalized(91, 33, 8, 16);
+        state
+            .terminal_dispatched_geometries
+            .insert("t1".to_owned(), geometry);
+        state
+            .terminal_kitty_keyboard_report_all
+            .insert("t1".to_owned(), true);
+        state.ssh_shells.insert(
+            "ssh-shell-1".to_owned(),
+            SshShellRuntime {
+                state: HostTerminalState::Attached,
+                geometry,
+                dispatched_geometry: Some(geometry),
+                operation_epoch: 4,
+            },
+        );
         state.disconnect();
         assert!(state.event.is_none());
+        assert!(state.terminal_dispatched_geometries.is_empty());
+        assert!(state.terminal_kitty_keyboard_report_all.is_empty());
         let terminal = &state.terminals["t1"];
         assert_eq!(terminal.state, HostTerminalState::Closed);
         assert!(!terminal.retry_running);
         assert_eq!(terminal.reconnect_attempt, 0);
         assert_eq!(terminal.operation_epoch, 3);
+        let shell = &state.ssh_shells["ssh-shell-1"];
+        assert_eq!(shell.state, HostTerminalState::Closed);
+        assert_eq!(shell.geometry, geometry);
+        assert_eq!(shell.dispatched_geometry, None);
+        assert_eq!(shell.operation_epoch, 5);
     }
 
     #[test]

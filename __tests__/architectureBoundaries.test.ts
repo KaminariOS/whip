@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, type Dirent } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 
@@ -40,6 +40,10 @@ function moduleName(declaration: ts.ImportDeclaration): string {
 }
 
 describe('module boundaries', () => {
+  test('React has no generated Herdr wire-schema subtree', () => {
+    expect(existsSync(join(ROOT, 'src/generated/herdrApi.ts'))).toBe(false);
+  });
+
   test('the composition root cannot depend on native transport or Herdr wire APIs', () => {
     const forbidden = imports(join(ROOT, 'App.tsx'))
       .map(moduleName)

@@ -150,7 +150,7 @@ export async function runIosSshE2E(
     await step('open interactive PTY shell', async () => {
       const terminalId = 'ios-ssh-e2e-shell';
       const shell = shellTokenWaiter('whip-shell-ready');
-      await keyRuntime.openSshShell(terminalId, 80, 24, shell.handler);
+      await keyRuntime.openSshShell(terminalId, 80, 24, 0, 0, shell.handler);
       keyRuntime.sshShellInput(terminalId, utf8Buffer("printf 'whip-shell-ready\\n'\n"));
       await shell.result;
       keyRuntime.closeSshShell(terminalId);
@@ -256,7 +256,9 @@ export async function runIosSshE2E(
         });
       });
     }
-    for (const runtime of runtimes.reverse()) {
+    const runtimesInCleanupOrder = [...runtimes];
+    runtimesInCleanupOrder.reverse();
+    for (const runtime of runtimesInCleanupOrder) {
       await runtime.disconnect().catch(error => {
         recordOperationalDiagnostic('warn', 'Application', 'ios-ssh-e2e-cleanup-failed', {
           stage: 'runtime-disconnect',

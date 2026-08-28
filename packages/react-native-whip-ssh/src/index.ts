@@ -22,6 +22,7 @@ import {
   HerdrTerminalControlEvent_Tags,
   HostConnectionState,
   HostFreshness,
+  HostTerminalResizeOutcome,
   HostTerminalState,
   GitDiffKind,
   GitDiffRowKind,
@@ -57,9 +58,9 @@ import {
   type HerdrTerminalEventSink,
   type HerdrWorkspaceInfo,
   type HerdrWorkspaceWorktreeInfo,
-  type HerdrWorktreeInfo,
   type HostRuntimeEvent,
   type HostRuntimeLike,
+  type HostTerminalGeometry,
   type SshGeneratedKeyPair,
   type SshKeyDetails,
   type HostStateSnapshot,
@@ -110,8 +111,6 @@ export interface HerdrBridgeEvent {
 
 type BridgeEvent = HerdrBridgeEvent & { terminalId: string };
 type BridgeHandler = (event: BridgeEvent) => void;
-type ApiRequest = { method: string; params: object };
-type ApiResult = Record<string, unknown> & { type: string };
 type WhipTerminalInboundTrace = {
   jsReceived: () => number | null;
   decodeComplete: (cookie: number | null) => void;
@@ -143,6 +142,25 @@ function runtimeTerminalState(state: HostTerminalState): RuntimeTerminalState {
     case HostTerminalState.Failed: return 'failed';
   }
   throw new Error(`Unknown native terminal state: ${state}`);
+}
+
+function runtimeTerminalGeometry(value: HostTerminalGeometry): RuntimeTerminalGeometry {
+  return {
+    columns: value.columns,
+    rows: value.rows,
+    cellWidthPx: value.cellWidthPx,
+    cellHeightPx: value.cellHeightPx,
+  };
+}
+
+function runtimeTerminalResizeOutcome(
+  value: HostTerminalResizeOutcome,
+): RuntimeTerminalResizeOutcome {
+  switch (value) {
+    case HostTerminalResizeOutcome.Deferred: return 'deferred';
+    case HostTerminalResizeOutcome.Deduplicated: return 'deduplicated';
+    case HostTerminalResizeOutcome.Dispatched: return 'dispatched';
+  }
 }
 
 export type NativeAgentFileDiff = {
@@ -277,7 +295,7 @@ export type RuntimeAgentIntegrationStatus =
 
 export type RuntimeTabLaunchFailure = Error & {
   code: 'TAB_CREATION_FAILED' | 'TAB_LAUNCH_FAILED' | 'INVALID_TAB_LAUNCH';
-  created?: ApiResult;
+  created?: RuntimeTabCreationResult;
   launchType?: 'agent' | 'command';
   nativeFailure?: unknown;
 };
@@ -391,6 +409,200 @@ export type RuntimeSshShellHandler = {
   closed?: (reason: string) => void;
 };
 
+export type RuntimeTerminalGeometry = {
+  columns: number;
+  rows: number;
+  cellWidthPx: number;
+  cellHeightPx: number;
+};
+
+export type RuntimeTerminalResizeOutcome = 'deferred' | 'deduplicated' | 'dispatched';
+
+/** Stable app-facing DTOs projected from Rust's normalized Herdr domain model. */
+export type WhipAgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
+
+export type WhipAgentSessionInfo = {
+  source: string;
+  agent: string;
+  kind: 'id' | 'path';
+  value: string;
+};
+
+export type WhipPaneScrollInfo = {
+  offset_from_bottom: number;
+  max_offset_from_bottom: number;
+  viewport_rows: number;
+};
+
+export type WhipWorkspaceWorktreeInfo = {
+  repo_key: string;
+  repo_name: string;
+  repo_root: string;
+  checkout_path: string;
+  is_linked_worktree: boolean;
+};
+
+export type WhipWorkspaceInfo = {
+  workspace_id: string;
+  number: number;
+  label: string;
+  focused: boolean;
+  pane_count: number;
+  tab_count: number;
+  active_tab_id: string;
+  agent_status: WhipAgentStatus;
+  tokens?: Record<string, string>;
+  worktree?: WhipWorkspaceWorktreeInfo;
+};
+
+export type WhipTabInfo = {
+  tab_id: string;
+  workspace_id: string;
+  number: number;
+  label: string;
+  focused: boolean;
+  pane_count: number;
+  agent_status: WhipAgentStatus;
+};
+
+export type WhipPaneInfo = {
+  pane_id: string;
+  terminal_id: string;
+  workspace_id: string;
+  tab_id: string;
+  focused: boolean;
+  cwd?: string;
+  foreground_cwd?: string;
+  label?: string;
+  agent?: string;
+  title?: string;
+  terminal_title?: string;
+  terminal_title_stripped?: string;
+  display_agent?: string;
+  agent_status: WhipAgentStatus;
+  state_labels?: Record<string, string>;
+  tokens?: Record<string, string>;
+  agent_session?: WhipAgentSessionInfo;
+  scroll?: WhipPaneScrollInfo;
+  revision: number;
+};
+
+export type WhipAgentInfo = {
+  pane_id: string;
+  terminal_id: string;
+  workspace_id: string;
+  tab_id: string;
+  focused: boolean;
+  agent_status: WhipAgentStatus;
+  revision: number;
+  cwd?: string;
+  foreground_cwd?: string;
+  agent?: string;
+  name?: string;
+  title?: string;
+  terminal_title?: string;
+  terminal_title_stripped?: string;
+  display_agent?: string;
+  interactive_ready?: boolean;
+  launch_pending?: boolean;
+  screen_detection_skipped?: boolean;
+  state_change_seq?: number;
+  state_labels?: Record<string, string>;
+  tokens?: Record<string, string>;
+  agent_session?: WhipAgentSessionInfo;
+};
+
+export type WhipPaneLayoutRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type WhipPaneLayoutPane = {
+  pane_id: string;
+  focused: boolean;
+  rect: WhipPaneLayoutRect;
+};
+
+export type WhipPaneLayoutSplit = {
+  id: string;
+  direction: 'right' | 'down';
+  ratio: number;
+  rect: WhipPaneLayoutRect;
+};
+
+export type WhipPaneLayoutSnapshot = {
+  workspace_id: string;
+  tab_id: string;
+  zoomed: boolean;
+  area: WhipPaneLayoutRect;
+  focused_pane_id: string;
+  panes: WhipPaneLayoutPane[];
+  splits: WhipPaneLayoutSplit[];
+};
+
+export type WhipHostSnapshot = {
+  version: string;
+  protocol: number;
+  focused_workspace_id?: string;
+  focused_tab_id?: string;
+  focused_pane_id?: string;
+  agents: WhipAgentInfo[];
+  workspaces: WhipWorkspaceInfo[];
+  tabs: WhipTabInfo[];
+  panes: WhipPaneInfo[];
+  layouts: WhipPaneLayoutSnapshot[];
+};
+
+export type RuntimeHerdrRequest =
+  | { method: 'ping' | 'session.snapshot'; params: Record<string, never> }
+  | { method: 'workspace.create'; params: { label: string | null; cwd: string | null; focus?: boolean } }
+  | { method: 'workspace.focus' | 'workspace.close'; params: { workspace_id: string } }
+  | { method: 'workspace.rename'; params: { workspace_id: string; label: string } }
+  | { method: 'tab.create'; params: { workspace_id: string; label: string | null; focus?: boolean } }
+  | { method: 'tab.focus' | 'tab.close'; params: { tab_id: string } }
+  | { method: 'tab.rename'; params: { tab_id: string; label: string } }
+  | { method: 'pane.read'; params: { pane_id: string; lines: number; source?: string; format?: string; strip_ansi?: boolean } }
+  | { method: 'pane.focus' | 'pane.close'; params: { pane_id: string } }
+  | { method: 'pane.rename'; params: { pane_id: string; label: string | null } }
+  | { method: 'pane.split'; params: { target_pane_id: string; direction: 'right' | 'down'; focus?: boolean } }
+  | { method: 'pane.zoom'; params: { pane_id: string; mode?: 'toggle' } }
+  | { method: 'pane.send_input'; params: { pane_id: string; text: string; keys: string[] } }
+  | { method: 'pane.send_text'; params: { pane_id: string; text: string } }
+  | { method: 'pane.send_keys'; params: { pane_id: string; keys: string[] } }
+  | { method: 'agent.focus'; params: { target: string } }
+  | { method: 'agent.prompt'; params: { target: string; text: string } };
+
+export type RuntimeWorkspaceCreationResult = {
+  type: 'workspace_created';
+  workspace: WhipWorkspaceInfo;
+  tab: WhipTabInfo;
+  root_pane: WhipPaneInfo;
+};
+
+export type RuntimeTabCreationResult = {
+  type: 'tab_created';
+  tab: WhipTabInfo;
+  root_pane: WhipPaneInfo;
+};
+
+export type RuntimeHerdrResult =
+  | { type: 'pong'; version: string; protocol: number }
+  | { type: 'session_snapshot'; snapshot: WhipHostSnapshot }
+  | RuntimeWorkspaceCreationResult
+  | { type: 'workspace_info'; workspace: WhipWorkspaceInfo }
+  | RuntimeTabCreationResult
+  | { type: 'tab_info'; tab: WhipTabInfo }
+  | { type: 'pane_info'; pane: WhipPaneInfo }
+  | { type: 'pane_read'; read: { text: string } }
+  | { type: 'agent_started'; agent: WhipAgentInfo; argv: string[] }
+  | { type: 'agent_info'; agent: WhipAgentInfo }
+  | { type: 'agent_prompted'; agent: WhipAgentInfo }
+  | { type: 'integration_install'; target: RuntimeAgentKind; details: { messages: string[] } }
+  | { type: 'pane_zoom' }
+  | { type: 'ok' };
+
 export type RuntimeHostState = {
   revision: number;
   connectionGeneration: number;
@@ -402,7 +614,7 @@ export type RuntimeHostState = {
   lastEventAtMs?: number;
   needsResync: boolean;
   focus: { workspaceId?: string; tabId?: string; paneId?: string };
-  snapshot?: Record<string, unknown>;
+  snapshot?: WhipHostSnapshot;
 };
 
 function runtimeSshConfig(value: RuntimeSshConfig) {
@@ -436,8 +648,13 @@ function setBridgeHandler(clientKey: string, terminalId: string, handler: Bridge
   handlers.set(terminalId, handler);
 }
 
-function removeBridgeHandler(clientKey: string, terminalId: string): void {
+function removeBridgeHandler(
+  clientKey: string,
+  terminalId: string,
+  expected?: BridgeHandler,
+): void {
   const handlers = bridgeHandlers.get(clientKey);
+  if (expected && handlers?.get(terminalId) !== expected) return;
   handlers?.delete(terminalId);
   if (handlers?.size === 0) bridgeHandlers.delete(clientKey);
 }
@@ -827,7 +1044,7 @@ function terminalNotificationKind(value: HerdrTerminalNotificationKind): 0 | 1 |
   }
 }
 
-function controlRequest(request: ApiRequest): HerdrControlRequest {
+function controlRequest(request: RuntimeHerdrRequest): HerdrControlRequest {
   const params: Record<string, unknown> = { ...request.params };
   const text = (key: string): string => {
     const value = params[key];
@@ -860,7 +1077,7 @@ function controlRequest(request: ApiRequest): HerdrControlRequest {
     case 'pane.send_keys': return HerdrControlRequest.PaneSendKeys.new({ paneId: text('pane_id'), keys: stringArray(params.keys) });
     case 'agent.focus': return HerdrControlRequest.AgentFocus.new({ target: text('target') });
     case 'agent.prompt': return HerdrControlRequest.AgentPrompt.new({ target: text('target'), text: text('text') });
-    default: throw new Error(`Unsupported Herdr API method ${request.method}`);
+    default: throw new Error('Unsupported Herdr API method');
   }
 }
 
@@ -868,15 +1085,11 @@ function stringRecord(value: Map<string, string> | undefined): Record<string, st
   return value ? Object.fromEntries(value) : undefined;
 }
 
-function assignOptional(target: Record<string, unknown>, key: string, value: unknown): void {
-  if (value !== undefined) target[key] = value;
-}
-
-function agentSession(value: HerdrAgentSessionInfo | undefined): Record<string, unknown> | undefined {
+function agentSession(value: HerdrAgentSessionInfo | undefined): WhipAgentSessionInfo | undefined {
   return value && { source: value.source, agent: value.agent, kind: agentSessionKind(value.kind), value: value.value };
 }
 
-function paneScroll(value: HerdrPaneScrollInfo | undefined): Record<string, unknown> | undefined {
+function paneScroll(value: HerdrPaneScrollInfo | undefined): WhipPaneScrollInfo | undefined {
   return value && {
     offset_from_bottom: value.offsetFromBottom,
     max_offset_from_bottom: value.maxOffsetFromBottom,
@@ -884,7 +1097,7 @@ function paneScroll(value: HerdrPaneScrollInfo | undefined): Record<string, unkn
   };
 }
 
-function workspaceWorktree(value: HerdrWorkspaceWorktreeInfo | undefined): Record<string, unknown> | undefined {
+function workspaceWorktree(value: HerdrWorkspaceWorktreeInfo | undefined): WhipWorkspaceWorktreeInfo | undefined {
   return value && {
     repo_key: value.repoKey,
     repo_name: value.repoName,
@@ -894,8 +1107,8 @@ function workspaceWorktree(value: HerdrWorkspaceWorktreeInfo | undefined): Recor
   };
 }
 
-function workspace(value: HerdrWorkspaceInfo): Record<string, unknown> {
-  const result: Record<string, unknown> = {
+function workspace(value: HerdrWorkspaceInfo): WhipWorkspaceInfo {
+  return {
     workspace_id: value.workspaceId,
     number: value.number,
     label: value.label,
@@ -904,27 +1117,12 @@ function workspace(value: HerdrWorkspaceInfo): Record<string, unknown> {
     tab_count: value.tabCount,
     active_tab_id: value.activeTabId,
     agent_status: agentStatus(value.agentStatus),
+    tokens: stringRecord(value.tokens),
+    worktree: workspaceWorktree(value.worktree),
   };
-  assignOptional(result, 'tokens', stringRecord(value.tokens));
-  assignOptional(result, 'worktree', workspaceWorktree(value.worktree));
-  return result;
 }
 
-function worktree(value: HerdrWorktreeInfo): Record<string, unknown> {
-  const result: Record<string, unknown> = {
-    is_bare: value.isBare,
-    is_detached: value.isDetached,
-    is_linked_worktree: value.isLinkedWorktree,
-    is_prunable: value.isPrunable,
-    label: value.label,
-    path: value.path,
-  };
-  assignOptional(result, 'branch', value.branch);
-  assignOptional(result, 'open_workspace_id', value.openWorkspaceId);
-  return result;
-}
-
-function tab(value: HerdrTabInfo): Record<string, unknown> {
+function tab(value: HerdrTabInfo): WhipTabInfo {
   return {
     tab_id: value.tabId,
     workspace_id: value.workspaceId,
@@ -936,8 +1134,8 @@ function tab(value: HerdrTabInfo): Record<string, unknown> {
   };
 }
 
-function pane(value: HerdrPaneInfo): Record<string, unknown> {
-  const result: Record<string, unknown> = {
+function pane(value: HerdrPaneInfo): WhipPaneInfo {
+  return {
     pane_id: value.paneId,
     terminal_id: value.terminalId,
     workspace_id: value.workspaceId,
@@ -945,26 +1143,23 @@ function pane(value: HerdrPaneInfo): Record<string, unknown> {
     focused: value.focused,
     agent_status: agentStatus(value.agentStatus),
     revision: value.revision,
+    cwd: value.cwd,
+    foreground_cwd: value.foregroundCwd,
+    label: value.label,
+    agent: value.agent,
+    title: value.title,
+    terminal_title: value.terminalTitle,
+    terminal_title_stripped: value.terminalTitleStripped,
+    display_agent: value.displayAgent,
+    state_labels: stringRecord(value.stateLabels),
+    tokens: stringRecord(value.tokens),
+    agent_session: agentSession(value.agentSession),
+    scroll: paneScroll(value.scroll),
   };
-  for (const [key, field] of [
-    ['cwd', value.cwd],
-    ['foreground_cwd', value.foregroundCwd],
-    ['label', value.label],
-    ['agent', value.agent],
-    ['title', value.title],
-    ['terminal_title', value.terminalTitle],
-    ['terminal_title_stripped', value.terminalTitleStripped],
-    ['display_agent', value.displayAgent],
-  ] as const) assignOptional(result, key, field);
-  assignOptional(result, 'state_labels', stringRecord(value.stateLabels));
-  assignOptional(result, 'tokens', stringRecord(value.tokens));
-  assignOptional(result, 'agent_session', agentSession(value.agentSession));
-  assignOptional(result, 'scroll', paneScroll(value.scroll));
-  return result;
 }
 
-function agent(value: HerdrAgentInfo): Record<string, unknown> {
-  const result: Record<string, unknown> = {
+function agent(value: HerdrAgentInfo): WhipAgentInfo {
+  return {
     pane_id: value.paneId,
     terminal_id: value.terminalId,
     workspace_id: value.workspaceId,
@@ -972,25 +1167,29 @@ function agent(value: HerdrAgentInfo): Record<string, unknown> {
     focused: value.focused,
     agent_status: agentStatus(value.agentStatus),
     revision: value.revision,
+    cwd: value.cwd,
+    foreground_cwd: value.foregroundCwd,
+    agent: value.agent,
+    name: value.name,
+    title: value.title,
+    terminal_title: value.terminalTitle,
+    terminal_title_stripped: value.terminalTitleStripped,
+    display_agent: value.displayAgent,
+    interactive_ready: value.interactiveReady,
+    launch_pending: value.launchPending,
+    screen_detection_skipped: value.screenDetectionSkipped,
+    state_change_seq: value.stateChangeSeq,
+    state_labels: stringRecord(value.stateLabels),
+    tokens: stringRecord(value.tokens),
+    agent_session: agentSession(value.agentSession),
   };
-  for (const [key, field] of [
-    ['cwd', value.cwd], ['foreground_cwd', value.foregroundCwd], ['agent', value.agent],
-    ['name', value.name], ['title', value.title], ['terminal_title', value.terminalTitle],
-    ['terminal_title_stripped', value.terminalTitleStripped], ['display_agent', value.displayAgent],
-    ['interactive_ready', value.interactiveReady], ['launch_pending', value.launchPending],
-    ['screen_detection_skipped', value.screenDetectionSkipped], ['state_change_seq', value.stateChangeSeq],
-  ] as const) assignOptional(result, key, field);
-  assignOptional(result, 'state_labels', stringRecord(value.stateLabels));
-  assignOptional(result, 'tokens', stringRecord(value.tokens));
-  assignOptional(result, 'agent_session', agentSession(value.agentSession));
-  return result;
 }
 
-function rect(value: HerdrPaneLayoutRect): Record<string, unknown> {
+function rect(value: HerdrPaneLayoutRect): WhipPaneLayoutRect {
   return { x: value.x, y: value.y, width: value.width, height: value.height };
 }
 
-function layout(value: HerdrPaneLayoutSnapshot): Record<string, unknown> {
+function layout(value: HerdrPaneLayoutSnapshot): WhipPaneLayoutSnapshot {
   return {
     workspace_id: value.workspaceId,
     tab_id: value.tabId,
@@ -1002,7 +1201,7 @@ function layout(value: HerdrPaneLayoutSnapshot): Record<string, unknown> {
   };
 }
 
-function snapshot(value: HerdrSessionSnapshot): Record<string, unknown> {
+function snapshot(value: HerdrSessionSnapshot): WhipHostSnapshot {
   return {
     version: value.version,
     protocol: value.protocol,
@@ -1204,7 +1403,7 @@ function runtimeHostState(value: HostStateSnapshot): RuntimeHostState {
   };
 }
 
-function apiResult(value: HerdrControlResult): ApiResult {
+function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
   switch (value.tag) {
     case HerdrControlResult_Tags.Pong:
       return { type: 'pong', version: value.inner.version, protocol: value.inner.protocol };
@@ -1436,14 +1635,14 @@ export class NativeHostRuntime {
     workspaceId: string,
     label: string,
     launch: RuntimeTabLaunch,
-  ): Promise<ApiResult> {
+  ): Promise<RuntimeTabCreationResult> {
     const nativeLaunch = launch.type === 'shell'
       ? HerdrTabLaunch.Shell.new()
       : launch.type === 'agent'
         ? HerdrTabLaunch.Agent.new({ kind: runtimeAgentKind(launch.kind), args: launch.args || [] })
         : HerdrTabLaunch.Command.new({ command: launch.command });
     const outcome = await this.runtime.createTabWithLaunch(workspaceId, label, nativeLaunch);
-    const projected: ApiResult = {
+    const projected: RuntimeTabCreationResult = {
       type: 'tab_created',
       tab: tab(outcome.inner.tab),
       root_pane: pane(outcome.inner.rootPane),
@@ -1590,7 +1789,7 @@ export class NativeHostRuntime {
 
   resolveHerdrSocketPath(): Promise<string> { return this.runtime.resolveControlSocket(); }
 
-  async requestHerdrApi(request: ApiRequest): Promise<ApiResult> {
+  async requestHerdrApi(request: RuntimeHerdrRequest): Promise<RuntimeHerdrResult> {
     try {
       return apiResult(await this.runtime.controlRequest(controlRequest(request)));
     } catch (error) {
@@ -1611,9 +1810,13 @@ export class NativeHostRuntime {
     try {
       await this.runtime.openTerminal(terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx);
     } catch (error) {
-      removeBridgeHandler(this.runtimeId, terminalId);
+      removeBridgeHandler(this.runtimeId, terminalId, handler);
       throw bridgeError(error);
     }
+  }
+
+  detachHerdrBridge(terminalId: string): void {
+    removeBridgeHandler(this.runtimeId, terminalId);
   }
 
   herdrBridgeInput(terminalId: string, text: string): Promise<void> {
@@ -1621,9 +1824,29 @@ export class NativeHostRuntime {
     catch (error) { return Promise.reject(bridgeError(error)); }
   }
 
-  herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number): Promise<void> {
-    try { this.runtime.resizeTerminal(terminalId, columns, rows, cellWidthPx, cellHeightPx); return Promise.resolve(); }
+  herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, forceDispatch = false): Promise<RuntimeTerminalResizeOutcome> {
+    try {
+      return Promise.resolve(runtimeTerminalResizeOutcome(this.runtime.resizeTerminal(
+        terminalId,
+        columns,
+        rows,
+        cellWidthPx,
+        cellHeightPx,
+        forceDispatch,
+      )));
+    }
     catch (error) { return Promise.reject(bridgeError(error)); }
+  }
+
+  herdrBridgeGeometry(terminalId: string): RuntimeTerminalGeometry | undefined {
+    const geometry = this.runtime.terminalGeometry(terminalId);
+    return geometry ? runtimeTerminalGeometry(geometry) : undefined;
+  }
+
+  herdrBridgeProtocolState(terminalId: string): { kittyKeyboardReportAll: boolean } {
+    return {
+      kittyKeyboardReportAll: this.runtime.terminalKittyKeyboardReportAll(terminalId),
+    };
   }
 
   herdrBridgeScroll(terminalId: string, up: boolean, lines: number, column?: number, row?: number, modifiers = 0): Promise<void> {
@@ -1649,6 +1872,8 @@ export class NativeHostRuntime {
     terminalId: string,
     columns: number,
     rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
     handler: RuntimeSshShellHandler,
   ): Promise<void> {
     let handlers = runtimeSshShellHandlers.get(this.runtimeId);
@@ -1658,9 +1883,15 @@ export class NativeHostRuntime {
     }
     handlers.set(terminalId, handler);
     try {
-      await this.runtime.openSshShell(terminalId, columns, rows);
+      await this.runtime.openSshShell(
+        terminalId,
+        columns,
+        rows,
+        cellWidthPx,
+        cellHeightPx,
+      );
     } catch (error) {
-      handlers.delete(terminalId);
+      if (handlers.get(terminalId) === handler) handlers.delete(terminalId);
       if (handlers.size === 0) runtimeSshShellHandlers.delete(this.runtimeId);
       throw error;
     }
@@ -1670,8 +1901,15 @@ export class NativeHostRuntime {
     this.runtime.sshShellInput(terminalId, bytes);
   }
 
-  resizeSshShell(terminalId: string, columns: number, rows: number): void {
-    this.runtime.resizeSshShell(terminalId, columns, rows);
+  resizeSshShell(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, forceDispatch = false): RuntimeTerminalResizeOutcome {
+    return runtimeTerminalResizeOutcome(this.runtime.resizeSshShell(
+      terminalId,
+      columns,
+      rows,
+      cellWidthPx,
+      cellHeightPx,
+      forceDispatch,
+    ));
   }
 
   closeSshShell(terminalId: string): void {
@@ -1680,6 +1918,11 @@ export class NativeHostRuntime {
   }
 
   hasSshShell(terminalId: string): boolean { return this.runtime.hasSshShell(terminalId); }
+
+  sshShellGeometry(terminalId: string): RuntimeTerminalGeometry | undefined {
+    const geometry = this.runtime.sshShellGeometry(terminalId);
+    return geometry ? runtimeTerminalGeometry(geometry) : undefined;
+  }
 
   execute(command: string): Promise<string> { return this.runtime.execute(command); }
 
@@ -1777,8 +2020,10 @@ export class NativeHostRuntime {
 }
 
 export type HostRuntimeConnection = NativeHostRuntime;
-export type HostRuntimeLifecycleEvent = RuntimeLifecycleEvent;
-export type HostRuntimeState = RuntimeHostState;
+export type {
+  RuntimeLifecycleEvent as HostRuntimeLifecycleEvent,
+  RuntimeHostState as HostRuntimeState,
+};
 export type GeneratedKeyPair = SshGeneratedKeyPair;
 export type KeyDetails = SshKeyDetails;
 

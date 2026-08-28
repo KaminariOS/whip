@@ -1,20 +1,20 @@
 import type {
-  AgentInfo as ApiAgentInfo,
-  AgentSessionInfo as ApiAgentSessionInfo,
-  AgentStatus as ApiAgentStatus,
-  PaneInfo as ApiPaneInfo,
-  PaneLayoutPane as ApiPaneLayoutPane,
-  PaneLayoutRect as ApiPaneLayoutRect,
-  PaneLayoutSnapshot as ApiPaneLayoutSnapshot,
-  PaneLayoutSplit as ApiPaneLayoutSplit,
-  PaneScrollInfo as ApiPaneScrollInfo,
-  SessionSnapshot as ApiSessionSnapshot,
-  TabInfo as ApiTabInfo,
-  WorkspaceInfo as ApiWorkspaceInfo,
-} from './generated/herdrApi';
+  WhipAgentInfo,
+  WhipAgentSessionInfo,
+  WhipAgentStatus,
+  WhipHostSnapshot,
+  WhipPaneInfo,
+  WhipPaneLayoutPane,
+  WhipPaneLayoutRect,
+  WhipPaneLayoutSnapshot,
+  WhipPaneLayoutSplit,
+  WhipPaneScrollInfo,
+  WhipTabInfo,
+  WhipWorkspaceInfo,
+} from 'react-native-whip-ssh';
 
 export type AuthMode = 'password' | 'key';
-export type AgentStatus = ApiAgentStatus;
+export type AgentStatus = WhipAgentStatus;
 
 export interface HostProfile {
   id: string;
@@ -62,16 +62,16 @@ export interface KnownHost {
   createdAt: string;
 }
 
-export type AgentInfo = ApiAgentInfo;
-export type WorkspaceInfo = ApiWorkspaceInfo;
-export type TabInfo = ApiTabInfo;
-export type PaneInfo = ApiPaneInfo;
-export type AgentSessionInfo = ApiAgentSessionInfo;
-export type PaneScrollInfo = ApiPaneScrollInfo;
-export type PaneLayoutRect = ApiPaneLayoutRect;
-export type PaneLayoutPane = ApiPaneLayoutPane;
-export type PaneLayoutSplit = ApiPaneLayoutSplit;
-export type PaneLayoutSnapshot = ApiPaneLayoutSnapshot;
+export type AgentInfo = WhipAgentInfo;
+export type WorkspaceInfo = WhipWorkspaceInfo;
+export type TabInfo = WhipTabInfo;
+export type PaneInfo = WhipPaneInfo;
+export type AgentSessionInfo = WhipAgentSessionInfo;
+export type PaneScrollInfo = WhipPaneScrollInfo;
+export type PaneLayoutRect = WhipPaneLayoutRect;
+export type PaneLayoutPane = WhipPaneLayoutPane;
+export type PaneLayoutSplit = WhipPaneLayoutSplit;
+export type PaneLayoutSnapshot = WhipPaneLayoutSnapshot;
 
 export interface ServerInfo {
   running: boolean;
@@ -83,7 +83,7 @@ export interface ServerInfo {
 
 export interface HerdrSnapshot
   extends Pick<
-    ApiSessionSnapshot,
+    WhipHostSnapshot,
     'agents' | 'workspaces' | 'tabs' | 'panes' | 'layouts'
   > {
   server: ServerInfo;

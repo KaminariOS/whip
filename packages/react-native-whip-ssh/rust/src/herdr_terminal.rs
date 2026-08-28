@@ -303,6 +303,14 @@ impl Bridge {
     }
 
     fn dispatch(&self, terminal_id: &str, message: ServerMessage) {
+        if let ServerMessage::KittyKeyboardReportAll { enabled } = &message {
+            crate::host_runtime::terminal_kitty_keyboard_report_all_changed(
+                &self.client_key,
+                terminal_id,
+                self.id,
+                *enabled,
+            );
+        }
         let sink = event_sink().read().clone();
         let Some(sink) = sink else {
             if matches!(message, ServerMessage::Closed { .. }) {
