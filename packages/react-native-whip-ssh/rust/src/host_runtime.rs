@@ -4335,6 +4335,10 @@ mod tests {
             "opencode && echo done",
             "echo codex is installed",
             "opencode --model \"unterminated",
+            "/usr/bin/codex foo",
+            "env FOO=bar codex foo",
+            "command codex foo",
+            "FOO=x codex foo",
         ] {
             assert_eq!(
                 normalize_tab_launch(HerdrTabLaunch::Command {
