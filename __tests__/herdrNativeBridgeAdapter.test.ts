@@ -12,6 +12,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   AgentTranscriptStatus: { Loading: 0, Live: 1, Stale: 2, Unavailable: 3, Error: 4, Closed: 5 },
   AgentMessageRole: { User: 0, Assistant: 1 },
   AgentToolStatus: { Pending: 0, Running: 1, Completed: 2, Error: 3 },
+  AgentDiagnosticSeverity: { Error: 0, Warning: 1, Info: 2, Hint: 3 },
   AgentNoticeLevel: { Info: 0, Warning: 1, Error: 2 },
   AgentTurnStatus: { Idle: 0, Working: 1, Interrupted: 2, Error: 3 },
   AgentScalarValue_Tags: { String: 'String', Number: 'Number', Boolean: 'Boolean' },
@@ -606,7 +607,26 @@ describe('native Herdr bridge adapter', () => {
       sessionId: 'session-1', agent: 0, revision: 4n, status: 1,
       messages: [{
         id: 'assistant:1', role: 1,
-        parts: [{ tag: 'Text', inner: { id: 'text:1', text: 'hello', timestampMs: 12n } }],
+        parts: [
+          { tag: 'Text', inner: { id: 'text:1', text: 'hello', timestampMs: 12n } },
+          {
+            tag: 'Tool',
+            inner: {
+              id: 'tool:1', callId: 'call:1', tool: 'patch', timestampMs: 13n,
+              state: {
+                status: 2,
+                input: [{ key: 'path', value: { tag: 'String', inner: { value: 'src/main.rs' } } }],
+                files: [{ file: 'src/main.rs', additions: 1, deletions: 1 }],
+                diagnostics: [{
+                  file: 'src/main.rs', line: 5, column: 9,
+                  message: 'expected `;`', severity: 0,
+                }],
+                loaded: ['AGENTS.md'],
+                exitCode: 0n,
+              },
+            },
+          },
+        ],
         diffs: [],
       }],
       turns: [{
@@ -640,7 +660,21 @@ describe('native Herdr bridge adapter', () => {
       sessionId: 'session-1', revision: 4, status: 'live',
       messages: [expect.objectContaining({
         id: 'assistant:1', role: 'assistant',
-        parts: [{ type: 'text', id: 'text:1', text: 'hello', timestamp: 12 }],
+        parts: [
+          { type: 'text', id: 'text:1', text: 'hello', timestamp: 12 },
+          expect.objectContaining({
+            type: 'tool', tool: 'patch',
+            state: expect.objectContaining({
+              input: { path: 'src/main.rs' },
+              diagnostics: [{
+                file: 'src/main.rs', line: 5, column: 9,
+                message: 'expected `;`', severity: 'error',
+              }],
+              loaded: ['AGENTS.md'],
+              exitCode: 0,
+            }),
+          }),
+        ],
       })],
     }));
     expect(started).toEqual(expect.objectContaining({ revision: 4, status: 'live' }));

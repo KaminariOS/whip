@@ -917,22 +917,24 @@ impl CodexTranscriptAdapter {
             at,
         ));
         let terminal = matches!(status, AgentToolStatus::Completed | AgentToolStatus::Error);
+        let name = if name.is_empty() {
+            if old_name.is_empty() {
+                "tool".to_owned()
+            } else {
+                old_name
+            }
+        } else {
+            name
+        };
+        let input = canonical_tool_input(&name, input.unwrap_or(old_state.input));
         let part = AgentTranscriptPart::Tool {
             id: key.clone(),
             call_id: id,
-            tool: if name.is_empty() {
-                if old_name.is_empty() {
-                    "tool".to_owned()
-                } else {
-                    old_name
-                }
-            } else {
-                name
-            },
+            tool: name,
             timestamp_ms: old_at,
             state: AgentToolState {
                 status,
-                input: canonical_tool_input(&name, input.unwrap_or(old_state.input)),
+                input,
                 output: output.or(old_state.output),
                 error: error.or(old_state.error),
                 title: old_state.title,
@@ -1615,11 +1617,7 @@ fn scalar_fields(value: Option<&Value>) -> Vec<AgentField> {
 
 fn canonical_tool_input(tool: &str, mut fields: Vec<AgentField>) -> Vec<AgentField> {
     canonicalize_field(&mut fields, "command", &["command", "cmd"]);
-    canonicalize_field(
-        &mut fields,
-        "path",
-        &["path", "filePath", "file_path"],
-    );
+    canonicalize_field(&mut fields, "path", &["path", "filePath", "file_path"]);
     canonicalize_field(&mut fields, "query", &["query", "pattern"]);
     canonicalize_field(&mut fields, "description", &["description", "name"]);
     canonicalize_field(&mut fields, "agent", &["agent", "subagent_type"]);
@@ -1630,6 +1628,26 @@ fn canonical_tool_input(tool: &str, mut fields: Vec<AgentField>) -> Vec<AgentFie
         canonicalize_field(&mut fields, "cwd", &["cwd", "workdir"]);
     }
     fields
+}
+
+fn tool_input(tool: &str, raw: Option<&Value>) -> Vec<AgentField> {
+    let mut fields = scalar_fields(raw);
+    if tool == "shell"
+        && !fields
+            .iter()
+            .any(|field| field.key == "command" || field.key == "cmd")
+        && let Some(command) =
+            object(raw).and_then(|value| value.get("command").or_else(|| value.get("cmd")))
+    {
+        put_field(
+            &mut fields,
+            "command",
+            AgentScalarValue::String {
+                value: command_title(Some(command)),
+            },
+        );
+    }
+    canonical_tool_input(tool, fields)
 }
 
 fn canonicalize_field(fields: &mut Vec<AgentField>, canonical: &str, aliases: &[&str]) {
@@ -1731,22 +1749,9 @@ fn translate_tool(
 ) {
     if name != "exec" || !matches!(raw, Some(Value::String(_))) {
         let tool = canonical_tool_name(name);
-        let mut fields = scalar_fields(raw);
-        if tool == "shell"
-            && !fields.iter().any(|field| field.key == "command")
-            && let Some(command) = object(raw)
-                .and_then(|value| value.get("cmd"))
-                .map(|value| command_title(Some(value)))
-        {
-            put_field(
-                &mut fields,
-                "command",
-                AgentScalarValue::String { value: command },
-            );
-        }
         return (
             tool.clone(),
-            canonical_tool_input(&tool, fields),
+            tool_input(&tool, raw),
             None,
             false,
             Vec::new(),
@@ -1892,26 +1897,31 @@ fn legacy_change_files(value: Option<&Value>) -> Vec<AgentFileDiff> {
             changes
                 .iter()
                 .map(|(file, value)| {
-                    let value = value.as_object();
-                    let patch = value
+                    let object = value.as_object();
+                    let patch = object
                         .and_then(|value| {
                             nonempty(value.get("diff")).or_else(|| nonempty(value.get("patch")))
                         })
-                        .map(str::to_owned);
+                        .map(str::to_owned)
+                        .or_else(|| match value {
+                            Value::Null | Value::Object(_) => None,
+                            Value::String(value) if !value.is_empty() => Some(value.clone()),
+                            value => detail(Some(value)),
+                        });
                     AgentFileDiff::normalized(
                         file.clone(),
                         patch,
-                        value
+                        object
                             .and_then(|value| nonempty(value.get("before")))
                             .map(str::to_owned),
-                        value
+                        object
                             .and_then(|value| nonempty(value.get("after")))
                             .map(str::to_owned),
-                        value
+                        object
                             .and_then(|value| value.get("additions"))
                             .and_then(Value::as_u64)
                             .and_then(|value| value.try_into().ok()),
-                        value
+                        object
                             .and_then(|value| value.get("deletions"))
                             .and_then(Value::as_u64)
                             .and_then(|value| value.try_into().ok()),
@@ -3429,6 +3439,8 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
                 state.and_then(|state| state.get("status")),
                 AgentToolStatus::Pending,
             );
+            let metadata = state.and_then(|state| object(state.get("metadata")));
+            let input = tool_input(&tool, state.and_then(|state| state.get("input")));
             Some(AgentTranscriptPart::Tool {
                 call_id: nonempty(part.get("callID")).unwrap_or(&id).to_owned(),
                 tool,
@@ -3437,7 +3449,7 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
                     .or(at),
                 state: AgentToolState {
                     status,
-                    input: scalar_fields(state.and_then(|state| state.get("input"))),
+                    input,
                     output: state.and_then(|state| detail(state.get("output"))),
                     error: state.and_then(|state| detail(state.get("error"))),
                     title: state
@@ -3445,11 +3457,23 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
                         .map(str::to_owned),
                     started_at_ms: state_time.and_then(|time| timestamp_ms(time.get("start"))),
                     completed_at_ms: state_time.and_then(|time| timestamp_ms(time.get("end"))),
-                    exit_code: state
-                        .and_then(|state| object(state.get("metadata")))
-                        .and_then(|metadata| metadata.get("exitCode"))
+                    exit_code: metadata
+                        .and_then(|metadata| {
+                            metadata
+                                .get("exitCode")
+                                .or_else(|| metadata.get("exit_code"))
+                        })
                         .and_then(Value::as_i64),
-                    files: Vec::new(),
+                    files: open_code_tool_files(state),
+                    diagnostics: open_code_tool_diagnostics(state),
+                    loaded: metadata
+                        .and_then(|metadata| metadata.get("loaded"))
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect(),
                 },
                 id,
             })
@@ -3504,8 +3528,14 @@ fn open_code_diffs(value: &Value) -> Vec<AgentFileDiff> {
         .filter_map(Value::as_object)
         .filter_map(|diff| {
             Some(AgentFileDiff::normalized(
-                nonempty(diff.get("file"))?.to_owned(),
-                nonempty(diff.get("patch")).map(str::to_owned),
+                ["file", "relativePath", "filePath", "path"]
+                    .into_iter()
+                    .find_map(|key| nonempty(diff.get(key)))?
+                    .to_owned(),
+                ["patch", "diff", "unifiedDiff"]
+                    .into_iter()
+                    .find_map(|key| nonempty(diff.get(key)))
+                    .map(str::to_owned),
                 nonempty(diff.get("before")).map(str::to_owned),
                 nonempty(diff.get("after")).map(str::to_owned),
                 diff.get("additions")
@@ -3517,6 +3547,100 @@ fn open_code_diffs(value: &Value) -> Vec<AgentFileDiff> {
             ))
         })
         .collect()
+}
+
+fn open_code_tool_files(state: Option<&Map<String, Value>>) -> Vec<AgentFileDiff> {
+    let Some(state) = state else {
+        return Vec::new();
+    };
+    let metadata = object(state.get("metadata"));
+    if let Some(files) = metadata.and_then(|metadata| metadata.get("files")) {
+        let files = open_code_diffs(files);
+        if !files.is_empty() {
+            return files;
+        }
+    }
+    if let Some(diff) = metadata.and_then(|metadata| {
+        nonempty(metadata.get("unifiedDiff")).or_else(|| nonempty(metadata.get("unified_diff")))
+    }) {
+        return unified_diff_files(Some(diff));
+    }
+    if let Some(diff) = metadata.and_then(|metadata| {
+        object(metadata.get("filediff")).or_else(|| object(metadata.get("fileDiff")))
+    }) {
+        let mut diff = diff.clone();
+        if ["file", "relativePath", "filePath", "path"]
+            .into_iter()
+            .all(|key| nonempty(diff.get(key)).is_none())
+        {
+            diff.insert("file".to_owned(), Value::String("Changes".to_owned()));
+        }
+        let files = open_code_diffs(&Value::Array(vec![Value::Object(diff)]));
+        if !files.is_empty() {
+            return files;
+        }
+    }
+    state
+        .get("input")
+        .and_then(Value::as_object)
+        .map(|input| legacy_change_files(input.get("changes")))
+        .unwrap_or_default()
+}
+
+fn open_code_tool_diagnostics(state: Option<&Map<String, Value>>) -> Vec<AgentToolDiagnostic> {
+    let diagnostics = state
+        .and_then(|state| {
+            object(state.get("metadata"))
+                .and_then(|metadata| metadata.get("diagnostics"))
+                .or_else(|| state.get("diagnostics"))
+        })
+        .and_then(Value::as_object);
+    let Some(diagnostics) = diagnostics else {
+        return Vec::new();
+    };
+    diagnostics
+        .iter()
+        .flat_map(|(file, entries)| {
+            entries
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| open_code_diagnostic(file, entry))
+        })
+        .collect()
+}
+
+fn open_code_diagnostic(file: &str, value: &Value) -> Option<AgentToolDiagnostic> {
+    let value = value.as_object()?;
+    let start = object(value.get("range")).and_then(|range| object(range.get("start")));
+    let one_based = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .map(|value| value.saturating_add(1))
+    };
+    let severity = match value.get("severity") {
+        Some(Value::Number(value)) if value.as_u64() == Some(2) => AgentDiagnosticSeverity::Warning,
+        Some(Value::Number(value)) if value.as_u64() == Some(3) => AgentDiagnosticSeverity::Info,
+        Some(Value::Number(value)) if value.as_u64() == Some(4) => AgentDiagnosticSeverity::Hint,
+        Some(Value::String(value)) if value.eq_ignore_ascii_case("warning") => {
+            AgentDiagnosticSeverity::Warning
+        }
+        Some(Value::String(value)) if value.eq_ignore_ascii_case("info") => {
+            AgentDiagnosticSeverity::Info
+        }
+        Some(Value::String(value)) if value.eq_ignore_ascii_case("hint") => {
+            AgentDiagnosticSeverity::Hint
+        }
+        _ => AgentDiagnosticSeverity::Error,
+    };
+    Some(AgentToolDiagnostic {
+        file: file.to_owned(),
+        line: one_based(start.and_then(|start| start.get("line"))),
+        column: one_based(start.and_then(|start| start.get("character"))),
+        message: nonempty(value.get("message"))?.to_owned(),
+        severity,
+    })
 }
 
 fn decoded_open_code_object(value: Option<&Value>) -> Option<Map<String, Value>> {
@@ -3954,6 +4078,109 @@ mod tests {
         .unwrap();
 
         assert_eq!((diff.additions, diff.deletions), (9, 1));
+    }
+
+    #[test]
+    fn open_code_tools_normalize_input_files_diagnostics_and_loaded_paths() {
+        let value = serde_json::json!({
+            "id": "tool-1",
+            "type": "tool",
+            "tool": "apply_patch",
+            "state": {
+                "status": "completed",
+                "input": { "filePath": "src/main.rs" },
+                "metadata": {
+                    "files": [{
+                        "relativePath": "src/main.rs",
+                        "diff": "@@ -1 +1 @@\n-old\n+new\n"
+                    }],
+                    "diagnostics": {
+                        "src/main.rs": [{
+                            "severity": 1,
+                            "message": "expected `;`",
+                            "range": { "start": { "line": 4, "character": 8 } }
+                        }]
+                    },
+                    "loaded": ["AGENTS.md"]
+                }
+            }
+        });
+        let AgentTranscriptPart::Tool { tool, state, .. } =
+            open_code_part(value.as_object().unwrap()).unwrap()
+        else {
+            panic!("expected a tool part");
+        };
+
+        assert_eq!(tool, "patch");
+        assert_eq!(state.input, fields([("path", "src/main.rs".to_owned())]));
+        assert_eq!(state.files.len(), 1);
+        assert_eq!(state.files[0].file, "src/main.rs");
+        assert_eq!((state.files[0].additions, state.files[0].deletions), (1, 1));
+        assert_eq!(
+            state.diagnostics,
+            [AgentToolDiagnostic {
+                file: "src/main.rs".to_owned(),
+                line: Some(5),
+                column: Some(9),
+                message: "expected `;`".to_owned(),
+                severity: AgentDiagnosticSeverity::Error,
+            }]
+        );
+        assert_eq!(state.loaded, ["AGENTS.md"]);
+    }
+
+    #[test]
+    fn canonical_tool_input_collapses_wire_aliases() {
+        let input = scalar_fields(Some(&serde_json::json!({
+            "cmd": "cargo test",
+            "workdir": "/repo",
+            "file_path": "src/lib.rs",
+            "pattern": "AgentToolState",
+            "subagent_type": "reviewer"
+        })));
+
+        assert_eq!(
+            canonical_tool_input("shell", input),
+            [
+                AgentField {
+                    key: "command".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "cargo test".to_owned()
+                    },
+                },
+                AgentField {
+                    key: "path".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "src/lib.rs".to_owned()
+                    },
+                },
+                AgentField {
+                    key: "query".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "AgentToolState".to_owned()
+                    },
+                },
+                AgentField {
+                    key: "agent".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "reviewer".to_owned()
+                    },
+                },
+                AgentField {
+                    key: "cwd".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "/repo".to_owned()
+                    },
+                },
+            ]
+        );
+        assert_eq!(
+            tool_input(
+                "shell",
+                Some(&serde_json::json!({ "cmd": ["cargo", "test"] })),
+            ),
+            fields([("command", "cargo test".to_owned())])
+        );
     }
 
     #[test]

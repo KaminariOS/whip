@@ -1,7 +1,4 @@
 import type {
-  NativeAgentTranscriptInfo,
-  NativeAgentTranscriptMessage,
-  NativeAgentTranscriptPart,
   NativeAgentTranscriptState,
   NativeAgentTranscriptTurn,
   NativeAgentTranscriptUpdate,
@@ -10,65 +7,11 @@ import type {
 import type {
   AgentChatState,
   AgentTranscript,
-  JsonObject,
   TranscriptMessage,
-  TranscriptPart,
   TranscriptTurn,
 } from '../agentChat';
 
 const nativeMessageIndexes = new WeakMap<AgentChatState, Map<string, TranscriptMessage>>();
-
-function part(value: NativeAgentTranscriptPart): TranscriptPart {
-  if (value.type === 'text' || value.type === 'reasoning' || value.type === 'plan') {
-    return { id: value.id, type: value.type, text: value.text, timestamp: value.timestamp };
-  }
-  if (value.type === 'notice') {
-    return { id: value.id, type: 'notice', level: value.level, text: value.text, timestamp: value.timestamp };
-  }
-  const metadata: JsonObject | undefined = value.state.exitCode === undefined
-    ? undefined
-    : { exitCode: value.state.exitCode };
-  return {
-    id: value.id,
-    type: 'tool',
-    callId: value.callId,
-    tool: value.tool,
-    timestamp: value.timestamp,
-    state: {
-      status: value.state.status,
-      input: { ...value.state.input },
-      files: value.state.files,
-      output: value.state.output,
-      error: value.state.error,
-      title: value.state.title,
-      metadata,
-      time: { start: value.state.startedAt, end: value.state.completedAt },
-    },
-  };
-}
-
-function info(value: NativeAgentTranscriptInfo | undefined): AgentTranscript['info'] {
-  return value ? {
-    id: value.id,
-    title: value.title,
-    directory: value.directory,
-    createdAt: value.createdAt,
-    updatedAt: value.updatedAt,
-  } : undefined;
-}
-
-function nativeMessage(value: NativeAgentTranscriptMessage): TranscriptMessage {
-  return {
-    id: value.id,
-    role: value.role,
-    parentId: value.parentId,
-    createdAt: value.createdAt,
-    completedAt: value.completedAt,
-    error: value.error ? { message: value.error } : undefined,
-    summary: value.diffs.length ? { diffs: value.diffs } : undefined,
-    parts: value.parts.map(part),
-  };
-}
 
 function turn(value: NativeAgentTranscriptTurn, byId: ReadonlyMap<string, TranscriptMessage>): TranscriptTurn {
   return {
@@ -87,12 +30,12 @@ function turn(value: NativeAgentTranscriptTurn, byId: ReadonlyMap<string, Transc
 
 /** Mechanical typed-FFI projection into the existing presentation model. */
 export function agentChatStateFromNative(value: NativeAgentTranscriptState): AgentChatState {
-  const messages = value.messages.map(nativeMessage);
+  const messages = value.messages;
   const byId = new Map(messages.map(current => [current.id, current]));
   const turns = value.turns.map(nativeTurn => turn(nativeTurn, byId));
   const transcript: AgentTranscript = {
     sessionId: value.sessionId,
-    info: info(value.info),
+    info: value.info,
     messages,
     turns,
   };
@@ -156,13 +99,13 @@ export function applyNativeAgentTranscriptUpdate(
     switch (delta.type) {
       case 'reset': break;
       case 'info-changed':
-        transcriptInfo = info(delta.info);
+        transcriptInfo = delta.info;
         break;
       case 'message-upserted': {
         const values = mutableMessages();
         if (delta.index > values.length) return null;
         if (delta.index < values.length && values[delta.index].id !== delta.message.id) return null;
-        const next = nativeMessage(delta.message);
+        const next = delta.message;
         if (delta.index === values.length) values.push(next);
         else values[delta.index] = next;
         byId.set(next.id, next);

@@ -1366,6 +1366,107 @@ const FfiConverterTypeAgentToolStatus = (() => {
   return new FFIConverter();
 })();
 
+export enum AgentDiagnosticSeverity {
+  Error,
+  Warning,
+  Info,
+  Hint,
+}
+
+const FfiConverterTypeAgentDiagnosticSeverity = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentDiagnosticSeverity;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentDiagnosticSeverity.Error;
+        case 2:
+          return AgentDiagnosticSeverity.Warning;
+        case 3:
+          return AgentDiagnosticSeverity.Info;
+        case 4:
+          return AgentDiagnosticSeverity.Hint;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentDiagnosticSeverity.Error:
+          return ordinalConverter.write(1, into);
+        case AgentDiagnosticSeverity.Warning:
+          return ordinalConverter.write(2, into);
+        case AgentDiagnosticSeverity.Info:
+          return ordinalConverter.write(3, into);
+        case AgentDiagnosticSeverity.Hint:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentToolDiagnostic = {
+  file: string;
+  line?: number;
+  column?: number;
+  message: string;
+  severity: AgentDiagnosticSeverity;
+};
+
+/**
+ * Generated factory for {@link AgentToolDiagnostic} record objects.
+ */
+export const AgentToolDiagnostic = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentToolDiagnostic, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentToolDiagnostic>,
+  });
+})();
+
+const FfiConverterTypeAgentToolDiagnostic = (() => {
+  type TypeName = AgentToolDiagnostic;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        file: FfiConverterString.read(from),
+        line: FfiConverterOptionalUInt32.read(from),
+        column: FfiConverterOptionalUInt32.read(from),
+        message: FfiConverterString.read(from),
+        severity: FfiConverterTypeAgentDiagnosticSeverity.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.file, into);
+      FfiConverterOptionalUInt32.write(value.line, into);
+      FfiConverterOptionalUInt32.write(value.column, into);
+      FfiConverterString.write(value.message, into);
+      FfiConverterTypeAgentDiagnosticSeverity.write(value.severity, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.file) +
+        FfiConverterOptionalUInt32.allocationSize(value.line) +
+        FfiConverterOptionalUInt32.allocationSize(value.column) +
+        FfiConverterString.allocationSize(value.message) +
+        FfiConverterTypeAgentDiagnosticSeverity.allocationSize(value.severity)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type AgentToolState = {
   status: AgentToolStatus;
   input: Array<AgentField>;
@@ -1376,6 +1477,8 @@ export type AgentToolState = {
   completedAtMs?: bigint;
   exitCode?: bigint;
   files: Array<AgentFileDiff>;
+  diagnostics: Array<AgentToolDiagnostic>;
+  loaded: Array<string>;
 };
 
 /**
@@ -1409,6 +1512,8 @@ const FfiConverterTypeAgentToolState = (() => {
         completedAtMs: FfiConverterOptionalUInt64.read(from),
         exitCode: FfiConverterOptionalInt64.read(from),
         files: FfiConverterSequenceTypeAgentFileDiff.read(from),
+        diagnostics: FfiConverterSequenceTypeAgentToolDiagnostic.read(from),
+        loaded: FfiConverterSequenceString.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -1421,6 +1526,11 @@ const FfiConverterTypeAgentToolState = (() => {
       FfiConverterOptionalUInt64.write(value.completedAtMs, into);
       FfiConverterOptionalInt64.write(value.exitCode, into);
       FfiConverterSequenceTypeAgentFileDiff.write(value.files, into);
+      FfiConverterSequenceTypeAgentToolDiagnostic.write(
+        value.diagnostics,
+        into,
+      );
+      FfiConverterSequenceString.write(value.loaded, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -1432,7 +1542,11 @@ const FfiConverterTypeAgentToolState = (() => {
         FfiConverterOptionalUInt64.allocationSize(value.startedAtMs) +
         FfiConverterOptionalUInt64.allocationSize(value.completedAtMs) +
         FfiConverterOptionalInt64.allocationSize(value.exitCode) +
-        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.files)
+        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.files) +
+        FfiConverterSequenceTypeAgentToolDiagnostic.allocationSize(
+          value.diagnostics,
+        ) +
+        FfiConverterSequenceString.allocationSize(value.loaded)
       );
     }
   }
@@ -18139,6 +18253,17 @@ const FfiConverterSequenceTypeAgentFileDiff = new FfiConverterArray(
   FfiConverterTypeAgentFileDiff,
 );
 
+// FfiConverter for number | undefined
+const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
+
+// FfiConverter for Array<AgentToolDiagnostic>
+const FfiConverterSequenceTypeAgentToolDiagnostic = new FfiConverterArray(
+  FfiConverterTypeAgentToolDiagnostic,
+);
+
+// FfiConverter for Array<string>
+const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
+
 // FfiConverter for Array<AgentTranscriptPart>
 const FfiConverterSequenceTypeAgentTranscriptPart = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptPart,
@@ -18148,9 +18273,6 @@ const FfiConverterSequenceTypeAgentTranscriptPart = new FfiConverterArray(
 const FfiConverterSequenceTypeAgentTranscriptMessage = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptMessage,
 );
-
-// FfiConverter for Array<string>
-const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
 
 // FfiConverter for Array<AgentTranscriptTurn>
 const FfiConverterSequenceTypeAgentTranscriptTurn = new FfiConverterArray(
@@ -18165,9 +18287,6 @@ const FfiConverterSequenceTypeAgentTranscriptDelta = new FfiConverterArray(
 // FfiConverter for AgentTranscriptCacheWrite | undefined
 const FfiConverterOptionalTypeAgentTranscriptCacheWrite =
   new FfiConverterOptional(FfiConverterTypeAgentTranscriptCacheWrite);
-
-// FfiConverter for number | undefined
-const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
 
 // FfiConverter for Array<GitDiffRow>
 const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
@@ -19124,6 +19243,7 @@ function uniffiEnsureInitialized() {
 export default Object.freeze({
   initialize: uniffiEnsureInitialized,
   converters: {
+    FfiConverterTypeAgentDiagnosticSeverity,
     FfiConverterTypeAgentField,
     FfiConverterTypeAgentFileDiff,
     FfiConverterTypeAgentIntegrationStatus,
@@ -19132,6 +19252,7 @@ export default Object.freeze({
     FfiConverterTypeAgentScalarValue,
     FfiConverterTypeAgentSessionError,
     FfiConverterTypeAgentSessionOpenResult,
+    FfiConverterTypeAgentToolDiagnostic,
     FfiConverterTypeAgentToolState,
     FfiConverterTypeAgentToolStatus,
     FfiConverterTypeAgentTranscriptCacheWrite,

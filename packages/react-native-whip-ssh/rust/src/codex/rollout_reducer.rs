@@ -524,6 +524,8 @@ impl CodexRolloutReducer {
                     completed_at_ms: terminal.then_some(completed_at).flatten(),
                     exit_code,
                     files: files.clone(),
+                    diagnostics: Vec::new(),
+                    loaded: Vec::new(),
                 },
             },
             started_at.or(completed_at),

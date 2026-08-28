@@ -105,18 +105,40 @@ export interface HostRuntimeState {
   snapshot?: Record<string, unknown>;
 }
 
+export type NativeAgentFileDiff = {
+  file: string;
+  patch?: string;
+  before?: string;
+  after?: string;
+  additions: number;
+  deletions: number;
+};
+export type NativeAgentToolDiagnostic = {
+  file: string;
+  line?: number;
+  column?: number;
+  message: string;
+  severity: 'error' | 'warning' | 'info' | 'hint';
+};
+export type NativeAgentToolState = {
+  status: 'pending' | 'running' | 'completed' | 'error';
+  input: Record<string, string | number | boolean>;
+  output?: string;
+  error?: string;
+  title?: string;
+  startedAt?: number;
+  completedAt?: number;
+  exitCode?: number;
+  files: NativeAgentFileDiff[];
+  diagnostics: NativeAgentToolDiagnostic[];
+  loaded: string[];
+};
 export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
   | { type: 'reasoning'; id: string; text: string; timestamp?: number }
   | { type: 'plan'; id: string; text: string; timestamp?: number }
   | { type: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string; timestamp?: number }
-  | { type: 'tool'; id: string; callId: string; tool: string; timestamp?: number; state: {
-      status: 'pending' | 'running' | 'completed' | 'error';
-      input: Record<string, string | number | boolean>;
-      output?: string; error?: string; title?: string;
-      startedAt?: number; completedAt?: number; exitCode?: number;
-      files: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }>;
-    } };
+  | { type: 'tool'; id: string; callId: string; tool: string; timestamp?: number; state: NativeAgentToolState };
 
 export interface NativeAgentTranscriptState {
   sessionId: string;
@@ -124,8 +146,8 @@ export interface NativeAgentTranscriptState {
   revision: number;
   status: 'loading' | 'live' | 'stale' | 'unavailable' | 'error' | 'closed';
   info?: { id: string; title?: string; directory?: string; createdAt?: number; updatedAt?: number };
-  messages: Array<{ id: string; role: 'user' | 'assistant'; parentId?: string; createdAt?: number; completedAt?: number; error?: string; parts: NativeAgentTranscriptPart[]; diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }> }>;
-  turns: Array<{ id: string; userMessageId?: string; assistantMessageIds: string[]; status: 'idle' | 'working' | 'interrupted' | 'error'; startedAt?: number; completedAt?: number; diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }> }>;
+  messages: Array<{ id: string; role: 'user' | 'assistant'; parentId?: string; createdAt?: number; completedAt?: number; error?: string; parts: NativeAgentTranscriptPart[]; diffs: NativeAgentFileDiff[] }>;
+  turns: Array<{ id: string; userMessageId?: string; assistantMessageIds: string[]; status: 'idle' | 'working' | 'interrupted' | 'error'; startedAt?: number; completedAt?: number; diffs: NativeAgentFileDiff[] }>;
   error?: string;
 }
 

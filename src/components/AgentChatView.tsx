@@ -7,15 +7,12 @@ import {
   Copy,
   ExternalLink,
   File,
-  X,
 } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Clipboard,
   FlatList,
-  Image,
   Linking,
-  Modal,
   Pressable,
   ScrollView,
   View,
@@ -34,9 +31,7 @@ import Animated, {
 
 import type {
   AgentChatState,
-  JsonObject,
   TranscriptFileDiff,
-  TranscriptFilePart,
   TranscriptMessage,
   TranscriptPart,
   TranscriptToolPart,
@@ -132,25 +127,8 @@ interface ToolPresentation {
   kind: ToolKind;
 }
 
-function stringValue(value: unknown): string | undefined {
-  if (typeof value === 'string' && value.trim()) return value.trim();
-  if (Array.isArray(value)) {
-    const joined = value.filter(part => typeof part === 'string').join(' ');
-    return joined || undefined;
-  }
-  return undefined;
-}
-
 function textValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function inputValue(input: JsonObject | undefined, keys: readonly string[]): string | undefined {
-  for (const key of keys) {
-    const value = stringValue(input?.[key]);
-    if (value) return value;
-  }
-  return undefined;
 }
 
 function filename(path: string | undefined): string | undefined {
@@ -158,8 +136,10 @@ function filename(path: string | undefined): string | undefined {
   return path.replace(/\/+$/, '').split('/').pop() || path;
 }
 
-function primitiveArgs(input: JsonObject | undefined, omitted: readonly string[]): string[] {
-  if (!input) return [];
+function primitiveArgs(
+  input: TranscriptToolPart['state']['input'],
+  omitted: readonly string[],
+): string[] {
   const skip = new Set(omitted);
   return Object.entries(input).flatMap(([key, value]) => {
     if (skip.has(key)) return [];
@@ -172,29 +152,22 @@ function primitiveArgs(input: JsonObject | undefined, omitted: readonly string[]
 }
 
 function toolKind(name: string): ToolKind {
-  if (/^(?:apply[_-]?patch|patch|edit|write|file|read)$/i.test(name)) return 'file';
-  if (/^(?:exec|exec_command|bash|shell|command|terminal)$/i.test(name)) return 'command';
+  if (/^(?:patch|edit|write|file|read)$/i.test(name)) return 'file';
+  if (/^(?:shell|command|terminal)$/i.test(name)) return 'command';
   if (/web|search|fetch|open_page/i.test(name)) return 'web';
   if (/mcp| · /.test(name)) return 'mcp';
   return 'other';
 }
 
-function normalizedToolName(value: string): string {
-  const name = value.toLowerCase();
-  if (/^(?:exec|exec_command|bash)$/.test(name)) return 'shell';
-  if (name === 'apply_patch') return 'patch';
-  return name;
-}
-
 function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   const input = item.state.input;
-  const name = normalizedToolName(item.tool);
+  const name = item.tool.toLowerCase();
   const kind = toolKind(name);
-  const command = inputValue(input, ['command', 'cmd']);
-  const path = inputValue(input, ['filePath', 'file_path', 'path']);
-  const query = inputValue(input, ['query', 'pattern']);
-  const url = inputValue(input, ['url']);
-  const description = inputValue(input, ['description', 'name']);
+  const command = textValue(input.command)?.trim();
+  const path = textValue(input.path)?.trim();
+  const query = textValue(input.query)?.trim();
+  const url = textValue(input.url)?.trim();
+  const description = textValue(input.description)?.trim();
   if (kind === 'command') {
     return { title: 'Shell', subtitle: command || item.state.title, args: [], command, kind };
   }
@@ -210,7 +183,7 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
     return {
       title,
       subtitle: filename(path) || item.state.title,
-      args: primitiveArgs(input, ['filePath', 'file_path', 'path', 'oldString', 'old_string', 'newString', 'new_string', 'content', 'changes']),
+      args: primitiveArgs(input, ['path', 'old_string', 'new_string', 'content']),
       kind,
     };
   }
@@ -218,13 +191,13 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
     return {
       title: url ? 'Fetch' : 'Web search',
       subtitle: url || query || item.state.title,
-      args: primitiveArgs(input, ['url', 'query', 'queries', 'pattern']),
+      args: primitiveArgs(input, ['url', 'query', 'queries']),
       href: url,
       kind,
     };
   }
   if (name === 'task') {
-    const agent = inputValue(input, ['subagent_type', 'agent']) || 'Agent';
+    const agent = textValue(input.agent)?.trim() || 'Agent';
     const background = input.background === true ? ['background'] : [];
     return {
       title: agent.charAt(0).toUpperCase() + agent.slice(1),
@@ -236,49 +209,9 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   return {
     title: `Called ${name === 'tool' ? (kind === 'mcp' ? 'MCP' : 'tool') : name}`,
     subtitle: description || query || url || item.state.title,
-    args: primitiveArgs(input, ['description', 'query', 'url', 'filePath', 'file_path', 'path', 'pattern', 'name']),
+    args: primitiveArgs(input, ['description', 'query', 'url', 'path']),
     kind,
   };
-}
-
-function stringify(value: unknown): string | undefined {
-  if (typeof value === 'string') return value;
-  if (value === undefined || value === null) return undefined;
-  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
-}
-
-function toolFileDiffs(item: TranscriptToolPart): TranscriptFileDiff[] {
-  return item.state.files || [];
-}
-
-interface ToolDiagnostic {
-  file: string;
-  line?: number;
-  character?: number;
-  message: string;
-}
-
-function toolDiagnostics(item: TranscriptToolPart): ToolDiagnostic[] {
-  const value = item.state.metadata?.diagnostics;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-  return Object.entries(value as JsonObject).flatMap(([file, entries]) => {
-    if (!Array.isArray(entries)) return [];
-    return entries.flatMap(entryValue => {
-      if (!entryValue || typeof entryValue !== 'object' || Array.isArray(entryValue)) return [];
-      const entry = entryValue as JsonObject;
-      if (entry.severity !== undefined && entry.severity !== 1) return [];
-      const range = entry.range && typeof entry.range === 'object' && !Array.isArray(entry.range) ? entry.range as JsonObject : undefined;
-      const start = range?.start && typeof range.start === 'object' && !Array.isArray(range.start) ? range.start as JsonObject : undefined;
-      const message = stringValue(entry.message);
-      if (!message) return [];
-      return [{
-        file,
-        line: typeof start?.line === 'number' ? start.line + 1 : undefined,
-        character: typeof start?.character === 'number' ? start.character + 1 : undefined,
-        message,
-      }];
-    });
-  }).slice(0, 3);
 }
 
 function isRunning(item: TranscriptToolPart): boolean {
@@ -290,8 +223,8 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
   const failed = item.state.status === 'error';
   const [expanded, setExpanded] = useState(failed);
   const presentation = toolPresentation(item);
-  const name = normalizedToolName(item.tool);
-  const files = toolFileDiffs(item);
+  const name = item.tool.toLowerCase();
+  const files = item.state.files;
   const changes = files.length
     ? {
       additions: files.reduce((total, file) => total + file.additions, 0),
@@ -304,12 +237,10 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
   const markdownOutput = /^(?:list|glob|grep|websearch)$/.test(name) ? item.state.output : undefined;
   const writtenContent = name === 'write' ? textValue(item.state.input.content) : undefined;
   const error = item.state.error;
-  const loaded = Array.isArray(item.state.metadata?.loaded)
-    ? item.state.metadata.loaded.filter((value): value is string => typeof value === 'string')
-    : [];
-  const attachments = item.state.attachments || [];
-  const diagnostics = toolDiagnostics(item);
-  const hasDetail = Boolean(shell || files.length || markdownOutput || writtenContent || error || loaded.length || attachments.length || diagnostics.length);
+  const diagnostics = item.state.diagnostics
+    .filter(diagnostic => diagnostic.severity === 'error')
+    .slice(0, 3);
+  const hasDetail = Boolean(shell || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length);
   const subtitle = presentation.subtitle
     || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
   return (
@@ -378,44 +309,16 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
             <View className="gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2">
               {diagnostics.map(diagnostic => (
                 <View key={`${diagnostic.file}:${diagnostic.line}:${diagnostic.message}`} className="flex-row gap-2">
-                  <Text className="shrink-0 font-mono text-[9px] text-destructive">{filename(diagnostic.file)}{diagnostic.line ? `:${diagnostic.line}${diagnostic.character ? `:${diagnostic.character}` : ''}` : ''}</Text>
+                  <Text className="shrink-0 font-mono text-[9px] text-destructive">{filename(diagnostic.file)}{diagnostic.line ? `:${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : ''}</Text>
                   <Text selectable className="min-w-0 flex-1 text-[10px] leading-4 text-destructive">{diagnostic.message}</Text>
                 </View>
               ))}
             </View>
           )}
-          {loaded.map(path => <Text key={path} numberOfLines={1} className="px-1 font-mono text-[10px] text-muted-foreground">Loaded {path}</Text>)}
-          {attachments.length > 0 && <ToolAttachments files={attachments} />}
+          {item.state.loaded.map(path => <Text key={path} numberOfLines={1} className="px-1 font-mono text-[10px] text-muted-foreground">Loaded {path}</Text>)}
         </View>
       )}
     </Pressable>
-  );
-}
-
-function ToolAttachments({ files }: { files: readonly TranscriptFilePart[] }) {
-  const { colors } = useTheme();
-  const [preview, setPreview] = useState<TranscriptFilePart | null>(null);
-  return (
-    <>
-      <View className="flex-row flex-wrap gap-2 px-1">
-        {files.map(file => file.mime?.startsWith('image/') && file.url ? (
-          <Pressable key={file.id} accessibilityLabel={`Preview ${file.filename || 'tool image'}`} className="overflow-hidden rounded-md bg-muted" onPress={() => setPreview(file)}>
-            <Image className="h-20 w-28" resizeMode="cover" source={{ uri: file.url }} />
-          </Pressable>
-        ) : (
-          <View key={file.id} className="flex-row items-center gap-1.5 rounded-md bg-muted px-2 py-1.5">
-            <File size={12} color={colors.textSecondary} />
-            <Text numberOfLines={1} className="max-w-[220px] font-mono text-[9px] text-muted-foreground">{file.filename || file.mime || 'Tool attachment'}</Text>
-          </View>
-        ))}
-      </View>
-      <Modal animationType="fade" onRequestClose={() => setPreview(null)} statusBarTranslucent transparent visible={Boolean(preview)}>
-        <View className="flex-1 bg-black/95">
-          <Pressable accessibilityLabel="Close image preview" className="absolute right-4 top-12 z-10 size-11 items-center justify-center rounded-full bg-white/15" onPress={() => setPreview(null)}><X size={21} color="white" /></Pressable>
-          {preview?.url && <Image className="flex-1" resizeMode="contain" source={{ uri: preview.url }} />}
-        </View>
-      </Modal>
-    </>
   );
 }
 
@@ -571,13 +474,13 @@ function groupParts(parts: readonly TranscriptPart[]): PartGroup[] {
 }
 
 function renderablePart(part: TranscriptPart): boolean {
-  if (part.type === 'text' || part.type === 'reasoning') return Boolean(part.text.trim()) && !('synthetic' in part && (part.synthetic || part.ignored));
+  if (part.type === 'text' || part.type === 'reasoning') return Boolean(part.text.trim());
   if (part.type === 'tool') {
     if (part.tool === 'todowrite') return false;
     if (part.tool === 'question' && isRunning(part)) return false;
     return true;
   }
-  return part.type === 'compaction' || part.type === 'plan' || part.type === 'notice' || part.type === 'subtask';
+  return part.type === 'plan' || part.type === 'notice';
 }
 
 function AssistantPart({
@@ -591,7 +494,7 @@ function AssistantPart({
 }) {
   const { colors } = useTheme();
   if (part.type === 'text') {
-    if (!part.text.trim() || part.synthetic || part.ignored) return null;
+    if (!part.text.trim()) return null;
     return <View className="min-w-0 w-full"><MarkdownText content={part.text} streaming={streaming} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'reasoning') {
@@ -604,15 +507,6 @@ function AssistantPart({
     );
   }
   if (part.type === 'tool') return <ToolCard item={part} />;
-  if (part.type === 'compaction') {
-    return (
-      <View className="my-2 flex-row items-center gap-2">
-        <View className="h-px flex-1 bg-border" />
-        <Text className="text-[10px] text-muted-foreground">Compacted conversation</Text>
-        <View className="h-px flex-1 bg-border" />
-      </View>
-    );
-  }
   if (part.type === 'plan') {
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
@@ -624,64 +518,15 @@ function AssistantPart({
       </View>
     );
   }
-  if (part.type === 'subtask') {
-    return <View className="w-full border-l border-border py-1 pl-3"><Text className="text-[13px] font-medium text-foreground">Task · {part.agent || 'agent'}</Text>{part.description && <Text className="mt-0.5 text-[12px] text-muted-foreground">{part.description}</Text>}</View>;
-  }
   return null;
 }
 
 function visibleUserText(message: TranscriptMessage | undefined): string {
   return message?.parts
-    .filter(part => part.type === 'text' && !part.synthetic && !part.ignored)
+    .filter(part => part.type === 'text')
     .map(part => part.type === 'text' ? part.text : '')
     .filter(Boolean)
     .join('\n') || '';
-}
-
-function userFiles(message: TranscriptMessage | undefined): TranscriptFilePart[] {
-  return message?.parts.filter((part): part is TranscriptFilePart => part.type === 'file') || [];
-}
-
-function sourceRange(part: TranscriptPart): { start: number; end: number } | null {
-  if (part.type !== 'file' && part.type !== 'agent') return null;
-  const source = part.source;
-  if (!source) return null;
-  const range = part.type === 'file' && source.text && typeof source.text === 'object' && !Array.isArray(source.text)
-    ? source.text as JsonObject
-    : source;
-  const start = range.start;
-  const end = range.end;
-  return typeof start === 'number' && typeof end === 'number' && start >= 0 && end > start ? { start, end } : null;
-}
-
-function isInlineFile(part: TranscriptFilePart): boolean {
-  return sourceRange(part) !== null && !part.url?.startsWith('data:');
-}
-
-function PromptText({ message, text }: { message: TranscriptMessage; text: string }) {
-  const refs = message.parts.flatMap(part => {
-    const range = sourceRange(part);
-    return range && range.start < text.length
-      ? [{ ...range, end: Math.min(range.end, text.length), type: part.type }]
-      : [];
-  }).sort((left, right) => left.start - right.start);
-  if (!refs.length) return <Text selectable className="text-[14px] leading-[20px] text-foreground">{text}</Text>;
-  const segments: Array<{ text: string; highlighted?: boolean }> = [];
-  let cursor = 0;
-  for (const ref of refs) {
-    if (ref.start < cursor) continue;
-    if (ref.start > cursor) segments.push({ text: text.slice(cursor, ref.start) });
-    segments.push({ text: text.slice(ref.start, ref.end), highlighted: true });
-    cursor = ref.end;
-  }
-  if (cursor < text.length) segments.push({ text: text.slice(cursor) });
-  return (
-    <Text selectable className="text-[14px] leading-[20px] text-foreground">
-      {segments.map((segment, index) => (
-        <Text key={`${index}:${segment.text}`} className={segment.highlighted ? 'font-semibold text-primary' : ''}>{segment.text}</Text>
-      ))}
-    </Text>
-  );
 }
 
 function formatTime(value: number | undefined): string | undefined {
@@ -698,52 +543,25 @@ function formatDuration(start: number | undefined, end: number | undefined): str
 function UserPrompt({ message }: { message: TranscriptMessage }) {
   const { colors } = useTheme();
   const [copied, setCopied] = useState(false);
-  const [preview, setPreview] = useState<TranscriptFilePart | null>(null);
   const text = visibleUserText(message);
-  const files = userFiles(message).filter(file => !isInlineFile(file));
-  const agents = message.parts.filter(part => part.type === 'agent');
-  if (!text && !files.length && !agents.length) return null;
-  const meta = [message.agent, message.modelId, formatTime(message.createdAt)].filter(Boolean).join(' · ');
+  if (!text) return null;
+  const meta = formatTime(message.createdAt);
   return (
     <View className="ml-9 items-end">
-      {files.length > 0 && (
-        <View className="mb-1.5 flex-row flex-wrap justify-end gap-1.5">
-          {files.map(file => file.mime?.startsWith('image/') && file.url ? (
-            <Pressable key={file.id} accessibilityLabel={`Preview ${file.filename || 'image'}`} className="overflow-hidden rounded-lg bg-muted" onPress={() => setPreview(file)}>
-              <Image className="h-24 w-32" resizeMode="cover" source={{ uri: file.url }} />
-            </Pressable>
-          ) : (
-            <View key={file.id} className="flex-row items-center gap-1.5 rounded-md bg-muted px-2 py-1.5">
-              <File size={12} color={colors.textSecondary} />
-              <View className="min-w-0"><Text numberOfLines={1} className="max-w-[220px] font-mono text-[9px] text-muted-foreground">{file.filename || file.mime || 'Attachment'}</Text>{file.mime && <Text className="mt-0.5 text-[8px] uppercase text-muted-foreground">{file.mime}</Text>}</View>
-            </View>
-          ))}
-        </View>
-      )}
-      {text && (
-        <Pressable accessibilityLabel="Copy prompt" className="max-w-[86%] rounded-xl bg-muted px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
-          <PromptText message={message} text={text} />
-        </Pressable>
-      )}
-      {(meta || text) && (
-        <View className="mt-1 flex-row items-center gap-1 px-1">
-          {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
-          {text && <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={() => { Clipboard.setString(text); setCopied(true); setTimeout(() => setCopied(false), COPY_FEEDBACK_MS); }}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>}
-        </View>
-      )}
-      <Modal animationType="fade" onRequestClose={() => setPreview(null)} statusBarTranslucent transparent visible={Boolean(preview)}>
-        <View className="flex-1 bg-black/95">
-          <Pressable accessibilityLabel="Close image preview" className="absolute right-4 top-12 z-10 size-11 items-center justify-center rounded-full bg-white/15" onPress={() => setPreview(null)}><X size={21} color="white" /></Pressable>
-          {preview?.url && <Image className="flex-1" resizeMode="contain" source={{ uri: preview.url }} />}
-        </View>
-      </Modal>
+      <Pressable accessibilityLabel="Copy prompt" className="max-w-[86%] rounded-xl bg-muted px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
+        <Text selectable className="text-[14px] leading-[20px] text-foreground">{text}</Text>
+      </Pressable>
+      <View className="mt-1 flex-row items-center gap-1 px-1">
+        {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
+        <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={() => { Clipboard.setString(text); setCopied(true); setTimeout(() => setCopied(false), COPY_FEEDBACK_MS); }}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
+      </View>
     </View>
   );
 }
 
 function assistantCopyText(turn: TranscriptTurn): string {
   return turn.assistants.flatMap(message => message.parts).flatMap(part => {
-    if (part.type === 'text' && !part.synthetic && !part.ignored) return [part.text];
+    if (part.type === 'text') return [part.text];
     return [];
   }).join('\n\n');
 }
@@ -752,11 +570,8 @@ function TurnMeta({ turn }: { turn: TranscriptTurn }) {
   const { colors } = useTheme();
   const [copied, setCopied] = useState(false);
   const duration = formatDuration(turn.startedAt, turn.completedAt);
-  const total = turn.tokens?.total;
   const values = [
     duration,
-    total !== undefined ? `${total.toLocaleString()} tokens` : undefined,
-    turn.cost !== undefined ? `$${turn.cost.toFixed(turn.cost < 0.01 ? 4 : 2)}` : undefined,
     turn.status === 'interrupted' ? 'Interrupted' : undefined,
   ].filter(Boolean);
   const copy = assistantCopyText(turn);
@@ -835,7 +650,7 @@ const TranscriptTurnView = memo(function TranscriptTurnRow({
             />)}
         {showThinking && <ThinkingIndicator />}
         {turn.assistants.flatMap(message => message.error ? [message.error] : []).map((error, index) => (
-          <View key={`error:${index}`} className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{stringify(error) || 'Agent error'}</Text></View>
+          <View key={`error:${index}`} className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{error}</Text></View>
         ))}
       </View>
       <ChangedFiles turn={turn} />

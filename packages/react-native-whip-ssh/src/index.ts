@@ -1,4 +1,5 @@
 import {
+  AgentDiagnosticSeverity,
   AgentMessageRole,
   AgentNoticeLevel,
   AgentIntegrationStatus,
@@ -139,6 +140,37 @@ function runtimeTerminalState(state: HostTerminalState): RuntimeTerminalState {
   throw new Error(`Unknown native terminal state: ${state}`);
 }
 
+export type NativeAgentFileDiff = {
+  file: string;
+  patch?: string;
+  before?: string;
+  after?: string;
+  additions: number;
+  deletions: number;
+};
+
+export type NativeAgentToolDiagnostic = {
+  file: string;
+  line?: number;
+  column?: number;
+  message: string;
+  severity: 'error' | 'warning' | 'info' | 'hint';
+};
+
+export type NativeAgentToolState = {
+  status: 'pending' | 'running' | 'completed' | 'error';
+  input: Record<string, string | number | boolean>;
+  output?: string;
+  error?: string;
+  title?: string;
+  startedAt?: number;
+  completedAt?: number;
+  exitCode?: number;
+  files: NativeAgentFileDiff[];
+  diagnostics: NativeAgentToolDiagnostic[];
+  loaded: string[];
+};
+
 export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
   | { type: 'reasoning'; id: string; text: string; timestamp?: number }
@@ -146,13 +178,7 @@ export type NativeAgentTranscriptPart =
   | { type: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string; timestamp?: number }
   | {
       type: 'tool'; id: string; callId: string; tool: string; timestamp?: number;
-      state: {
-        status: 'pending' | 'running' | 'completed' | 'error';
-        input: Record<string, string | number | boolean>;
-        output?: string; error?: string; title?: string;
-        startedAt?: number; completedAt?: number; exitCode?: number;
-        files: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }>;
-      };
+      state: NativeAgentToolState;
     };
 
 export type NativeAgentTranscriptState = {
@@ -165,13 +191,13 @@ export type NativeAgentTranscriptState = {
     id: string; role: 'user' | 'assistant'; parentId?: string;
     createdAt?: number; completedAt?: number; error?: string;
     parts: NativeAgentTranscriptPart[];
-    diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }>;
+    diffs: NativeAgentFileDiff[];
   }>;
   turns: Array<{
     id: string; userMessageId?: string; assistantMessageIds: string[];
     status: 'idle' | 'working' | 'interrupted' | 'error';
     startedAt?: number; completedAt?: number;
-    diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }>;
+    diffs: NativeAgentFileDiff[];
   }>;
   error?: string;
 };
@@ -610,6 +636,17 @@ function nativeToolStatus(value: AgentToolStatus): 'pending' | 'running' | 'comp
   }
 }
 
+function nativeDiagnosticSeverity(
+  value: AgentDiagnosticSeverity,
+): NativeAgentToolDiagnostic['severity'] {
+  switch (value) {
+    case AgentDiagnosticSeverity.Warning: return 'warning';
+    case AgentDiagnosticSeverity.Info: return 'info';
+    case AgentDiagnosticSeverity.Hint: return 'hint';
+    default: return 'error';
+  }
+}
+
 function nativeAgentPart(part: AgentTranscriptState['messages'][number]['parts'][number]): NativeAgentTranscriptPart {
   switch (part.tag) {
     case AgentTranscriptPart_Tags.Text: {
@@ -650,6 +687,14 @@ function nativeAgentPart(part: AgentTranscriptState['messages'][number]['parts']
           startedAt: nativeNumber(inner.state.startedAtMs), completedAt: nativeNumber(inner.state.completedAtMs),
           exitCode: inner.state.exitCode === undefined ? undefined : Number(inner.state.exitCode),
           files: inner.state.files.map(file => ({ ...file })),
+          diagnostics: inner.state.diagnostics.map(diagnostic => ({
+            file: diagnostic.file,
+            line: diagnostic.line,
+            column: diagnostic.column,
+            message: diagnostic.message,
+            severity: nativeDiagnosticSeverity(diagnostic.severity),
+          })),
+          loaded: [...inner.state.loaded],
         },
       };
     }
