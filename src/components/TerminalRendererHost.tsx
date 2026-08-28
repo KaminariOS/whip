@@ -35,6 +35,10 @@ import {
   type TerminalVisualViewport,
 } from '../lib/terminalRenderer';
 import { prepareTerminalPaste } from '../lib/terminalPaste';
+import {
+  resumedTerminalScrollOffset,
+  type TerminalResumeViewport,
+} from '../lib/terminalScroll';
 import { terminalSubmissionWrites } from '../lib/terminalSubmission';
 import {
   terminalRendererEvictionKeys,
@@ -126,6 +130,7 @@ interface RendererEntry {
   fontPreference: number;
   fontSize: number;
   protocolState: TerminalProtocolState;
+  alternateScreen: boolean;
   arbitration: TerminalArbitration;
   writableWaiters: Array<{
     resolve: () => void;
@@ -134,8 +139,16 @@ interface RendererEntry {
   readinessTrace: TerminalRendererReadinessTrace | null;
 }
 
+interface TerminalResumeScrollState {
+  checkpoint: TerminalResumeViewport;
+  connectionSettled: boolean;
+  finalResizeSettled: boolean;
+  restoring: boolean;
+}
+
 export interface TerminalRendererHandle {
   blur: () => void;
+  cancelPendingResumeScroll: () => void;
   changeFontSize: (delta: -1 | 1) => void;
   clearSearch: () => void;
   fit: () => void;
@@ -222,6 +235,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const webView = useRef<WebViewHandle | null>(null);
   const hostReady = useRef(false);
   const entries = useRef(new Map<string, RendererEntry>());
+  const resumeScrolls = useRef(new Map<string, TerminalResumeScrollState>());
   const knownTargets = useRef(new Map<string, TerminalRenderTarget>());
   const activeKey = useRef<string | null>(null);
   const appState = useRef(AppState.currentState);
@@ -271,6 +285,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     entry: RendererEntry,
     closeBridge: boolean,
   ) => {
+    resumeScrolls.current.delete(key);
     abandonTerminalRendererReadinessTrace(entry.readinessTrace);
     entry.readinessTrace = null;
     entry.controllerAttached = false;
@@ -382,6 +397,89 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportError(entry.target, String(reason));
     }).finally(() => endAppPerformanceTrace(trace));
   }, []);
+
+  const cancelResumeScroll = useCallback((entry: RendererEntry) => {
+    resumeScrolls.current.delete(entry.target.key);
+  }, []);
+
+  const maybeRestoreResumeScroll = useCallback((
+    entry: RendererEntry,
+    state: TerminalResumeScrollState,
+  ) => {
+    if (
+      state.restoring
+      || !state.connectionSettled
+      || !state.finalResizeSettled
+      || resumeScrolls.current.get(entry.target.key) !== state
+    ) return;
+    if (
+      appState.current !== 'active'
+      || entry.target.session.kind === 'ssh'
+      || entry.target.session.status !== 'connected'
+      || entry.alternateScreen
+    ) {
+      resumeScrolls.current.delete(entry.target.key);
+      return;
+    }
+
+    state.restoring = true;
+    const { client, session } = entry.target;
+    client.snapshot().then(async snapshot => {
+      if (
+        resumeScrolls.current.get(entry.target.key) !== state
+        || entries.current.get(entry.target.key) !== entry
+        || appState.current !== 'active'
+        || entry.alternateScreen
+      ) return;
+      const current = snapshot.panes.find(
+        pane => pane.terminal_id === session.terminalId,
+      )?.scroll;
+      if (!current) {
+        resumeScrolls.current.delete(entry.target.key);
+        return;
+      }
+      const desiredOffset = resumedTerminalScrollOffset(
+        state.checkpoint,
+        current.max_offset_from_bottom,
+      );
+      const delta = desiredOffset - current.offset_from_bottom;
+      if (delta !== 0) {
+        await client.scrollTerminal(
+          session.terminalId,
+          delta > 0 ? 'up' : 'down',
+          Math.abs(delta),
+        );
+      }
+      if (resumeScrolls.current.get(entry.target.key) === state) {
+        resumeScrolls.current.delete(entry.target.key);
+      }
+    }).catch(reason => {
+      if (resumeScrolls.current.get(entry.target.key) === state) {
+        resumeScrolls.current.delete(entry.target.key);
+      }
+      recordNetworkDiagnostic('warn', 'terminal-resume-scroll-restore-failed', {
+        sessionId: entry.target.hostSessionId,
+        terminalId: session.terminalId,
+        reason: networkErrorMessage(reason),
+      });
+    });
+  }, []);
+
+  const settleResumeConnection = useCallback((entry: RendererEntry) => {
+    const state = resumeScrolls.current.get(entry.target.key);
+    if (!state) return;
+    state.connectionSettled = true;
+    maybeRestoreResumeScroll(entry, state);
+  }, [maybeRestoreResumeScroll]);
+
+  const settleResumeResize = useCallback((
+    entry: RendererEntry,
+    state: TerminalResumeScrollState | undefined,
+  ) => {
+    if (!state || resumeScrolls.current.get(entry.target.key) !== state) return;
+    state.finalResizeSettled = true;
+    maybeRestoreResumeScroll(entry, state);
+  }, [maybeRestoreResumeScroll]);
 
   const injectFrame = useCallback((
     entry: RendererEntry,
@@ -536,6 +634,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (entries.current.get(entry.target.key) !== entry) return;
       if (!entry.controllerAttached) return;
       entry.connecting = false;
+      settleResumeConnection(entry);
       reportStatus(entry.target, 'connected', undefined, 0);
       for (const waiter of entry.writableWaiters.splice(0)) waiter.resolve();
       if (
@@ -554,7 +653,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportError(entry.target, message);
       scheduleReconnect(message, false);
     });
-  }, [injectFrame, preferences.pauseResizeInBackground, requestFullFrame]);
+  }, [injectFrame, preferences.pauseResizeInBackground, requestFullFrame, settleResumeConnection]);
 
   const ensureEntry = useCallback((target: TerminalRenderTarget | null | undefined): RendererEntry | null => {
     if (!target) return null;
@@ -577,6 +676,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         protocolState: {
           kittyKeyboardReportAll: false,
         },
+        alternateScreen: false,
         arbitration: new TerminalArbitration(),
         writableWaiters: [],
         readinessTrace,
@@ -619,6 +719,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     operation: () => void | Promise<void>,
     newUserInput = true,
   ) => {
+    if (newUserInput) cancelResumeScroll(entry);
     const terminalId = entry.target.session.terminalId;
     const writable = entry.controllerAttached
       && !entry.connecting
@@ -651,7 +752,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       },
       send: operation,
     }).finally(() => endAppPerformanceTrace(coldWaitTrace));
-  }, [connectEntry, waitForWritable]);
+  }, [cancelResumeScroll, connectEntry, waitForWritable]);
 
   const reportQueuedInput = useCallback((entry: RendererEntry, data: string) => {
     const target = entry.target.session.status === 'connected'
@@ -665,6 +766,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   useImperativeHandle(forwardedRef, () => ({
     blur: () => activeCall('herdrBlur'),
+    cancelPendingResumeScroll: () => {
+      const key = activeKey.current;
+      const entry = key ? entries.current.get(key) : null;
+      if (entry) cancelResumeScroll(entry);
+    },
     changeFontSize: delta => activeCall('herdrChangeFontSize', [delta]),
     clearSearch: () => activeCall('herdrClearSearch'),
     fit: () => activeCall('herdrFit'),
@@ -759,7 +865,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         throw reason;
       });
     },
-  }), [activeCall, connectEntry, enqueueInput, ensureEntry, inject, reportQueuedInput]);
+  }), [activeCall, cancelResumeScroll, connectEntry, enqueueInput, ensureEntry, inject, reportQueuedInput]);
 
   useEffect(() => {
     const valid = new Map(targets.map(target => [target.key, target]));
@@ -776,6 +882,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         const previousScrollbackMode = terminalScrollbackMode(entry.target.session);
         const nextScrollbackMode = terminalScrollbackMode(target.session);
         entry.target = target;
+        if (target.session.status !== 'connected') {
+          resumeScrolls.current.delete(key);
+        }
         if (
           hostReady.current
           && previousScrollbackMode.offlineScrollback !== nextScrollbackMode.offlineScrollback
@@ -902,7 +1011,31 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           }
         }
         if (wasActive && preferences.pauseResizeInBackground) {
+          resumeScrolls.current.clear();
           for (const entry of entries.current.values()) {
+            const activeViewport = entry.target.key === activeKey.current
+              ? visualViewportRef.current
+              : undefined;
+            const scroll = activeViewport?.scroll || entry.target.scroll;
+            const alternateScreen = Boolean(
+              activeViewport?.alternateScreen || entry.alternateScreen,
+            );
+            if (
+              entry.target.session.kind !== 'ssh'
+              && entry.target.session.status === 'connected'
+              && scroll
+              && !alternateScreen
+            ) {
+              resumeScrolls.current.set(entry.target.key, {
+                checkpoint: {
+                  offsetFromBottom: scroll.offset_from_bottom,
+                  maxOffsetFromBottom: scroll.max_offset_from_bottom,
+                },
+                connectionSettled: false,
+                finalResizeSettled: false,
+                restoring: false,
+              });
+            }
             entry.controllerAttached = false;
             entry.connecting = false;
             entry.target.client.releaseTerminal(entry.target.session.terminalId).catch(() => undefined);
@@ -911,6 +1044,25 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         return;
       }
       if (wasActive) return;
+      for (const [key, resume] of resumeScrolls.current) {
+        const entry = entries.current.get(key);
+        if (
+          !entry
+          || entry.target.session.kind === 'ssh'
+          || entry.target.session.status !== 'connected'
+          || entry.alternateScreen
+        ) {
+          resumeScrolls.current.delete(key);
+          continue;
+        }
+        resume.connectionSettled = false;
+        resume.finalResizeSettled = !(
+          hostReady.current
+          && visible
+          && key === activeKey.current
+        );
+        resume.restoring = false;
+      }
       for (const entry of entries.current.values()) {
         if (
           preferences.pauseResizeInBackground
@@ -929,6 +1081,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [connectEntry, inject, preferences.pauseResizeInBackground, visible]);
 
   useEffect(() => () => {
+    resumeScrolls.current.clear();
     for (const entry of entries.current.values()) {
       if (
         hostReady.current
@@ -1078,6 +1231,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
     } else if (message.type === 'resize') {
       const source = message.source === 'fit' ? 'fit' : 'xterm';
+      const resume = source === 'fit'
+        ? resumeScrolls.current.get(entry.target.key)
+        : undefined;
       const resizeTrace = beginTerminalResizeTrace(
         entry.target.key,
         source,
@@ -1122,6 +1278,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           // even when its geometry tuple matches the last native resize.
           terminalResizeForcesNativeDispatch(source),
         );
+        settleResumeResize(entry, resume);
         connectEntry(entry);
       } finally {
         terminalResizeRequestReady(resizeTrace);
@@ -1132,6 +1289,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         entry.target.session.status !== 'connected'
         || entry.arbitration.state.yielded
       ) return;
+      cancelResumeScroll(entry);
       reportScroll(entry.target, message.direction, message.lines);
       try {
         await entry.target.client.scrollTerminal(
@@ -1171,7 +1329,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportFontSize(entry.target, entry.fontSize);
       }
     } else if (message.type === 'buffer-mode') {
-      reportBufferMode(entry.target, message.alternate === true);
+      entry.alternateScreen = message.alternate === true;
+      if (entry.alternateScreen) cancelResumeScroll(entry);
+      reportBufferMode(entry.target, entry.alternateScreen);
     } else if (message.type === 'visual-insets-debug') {
       console.info('[WHIP_TERMINAL_VISUAL]', JSON.stringify({
         key: entry.target.key,
@@ -1242,6 +1402,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       onMessage={handleMessage}
       onTouchStart={() => {
         if (!visible || !activeKey.current) return;
+        const entry = entries.current.get(activeKey.current);
+        if (entry) cancelResumeScroll(entry);
         webView.current?.requestFocus();
         activeCall('herdrFocus');
       }}

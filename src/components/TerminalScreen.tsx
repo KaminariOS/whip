@@ -515,7 +515,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(function T
   ) => {
     const lineDifference = desiredOffset - previousOffset;
     const active = activeTargetRef.current;
-    if (lineDifference === 0 || target.key !== active?.key) return;
+    if (target.key !== active?.key) return;
+    renderer.current?.cancelPendingResumeScroll();
+    if (lineDifference === 0) return;
 
     const current = scrollPositionRef.current;
     if (!current) return;

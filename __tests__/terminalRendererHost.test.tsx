@@ -1,4 +1,9 @@
-import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import {
+  act,
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from 'react-test-renderer';
 
 import { TerminalRendererHost } from '../src/components/TerminalRendererHost';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
@@ -8,17 +13,25 @@ jest.mock('expo/virtual/env', () => ({ env: {} }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
-jest.mock('react-native', () => ({
-  AppState: {
-    currentState: 'active',
-    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-  },
-  Clipboard: { setString: jest.fn() },
-  Platform: {
-    OS: 'android',
-    select: (options: Record<string, unknown>) => options.android,
-  },
-}));
+jest.mock('react-native', () => {
+  const mockListeners = new Set<any>();
+  return {
+    AppState: {
+      currentState: 'active',
+      listeners: mockListeners,
+      addEventListener: jest.fn((...args: any[]) => {
+        const listener = args[1];
+        mockListeners.add(listener);
+        return { remove: () => mockListeners.delete(listener) };
+      }),
+    },
+    Clipboard: { setString: jest.fn() },
+    Platform: {
+      OS: 'android',
+      select: (options: Record<string, unknown>) => options.android,
+    },
+  };
+});
 jest.mock('react-native-reanimated', () => ({
   useAnimatedReaction: jest.fn(),
 }));
@@ -38,6 +51,12 @@ jest.mock('../src/services/performanceTrace', () => new Proxy(
   { get: (target, property) => property in target ? target[property as keyof typeof target] : jest.fn(() => null) },
 ));
 jest.mock('../src/services/terminalAssets', () => ({ IOS_TERMINAL_ASSETS: null }));
+
+const mockAppState = jest.requireMock('react-native').AppState as {
+  currentState: string;
+  listeners: Set<(state: string) => void>;
+  addEventListener: jest.Mock;
+};
 
 const preferences: TerminalPreferences = {
   fullscreen: true,
@@ -59,9 +78,138 @@ const preferences: TerminalPreferences = {
 describe('TerminalRendererHost lifecycle', () => {
   let renderer: ReactTestRenderer;
 
+  beforeEach(() => {
+    mockAppState.currentState = 'active';
+    mockAppState.listeners.clear();
+    mockAppState.addEventListener.mockClear();
+  });
+
   afterEach(() => {
     act(() => renderer?.unmount());
   });
+
+  const createCallbacks = () => ({
+    onInput: jest.fn(),
+    onScroll: jest.fn(),
+    onOfflineScroll: jest.fn(),
+    onOfflineSnapshot: jest.fn(),
+    onSearchResult: jest.fn(),
+    onLinksScanned: jest.fn(),
+    onOpenLink: jest.fn(),
+    onPaste: jest.fn(),
+    onBufferModeChange: jest.fn(),
+    onProtocolStateChange: jest.fn(),
+    onTitleChange: jest.fn(),
+    onFontSizeChange: jest.fn(),
+    onSelectionStateChange: jest.fn(),
+    onStatus: jest.fn(),
+    onError: jest.fn(),
+  });
+
+  const createClient = (paneScrolls: Record<string, {
+    offset_from_bottom: number;
+    max_offset_from_bottom: number;
+    viewport_rows: number;
+  }>) => {
+    let retained = false;
+    return {
+      closeTerminalBridge: jest.fn(async () => undefined),
+      detachTerminal: jest.fn(async () => undefined),
+      isTerminalBridgeRetained: jest.fn(() => retained),
+      openTerminal: jest.fn(async () => { retained = true; }),
+      releaseTerminal: jest.fn(async () => { retained = false; }),
+      resizeTerminal: jest.fn(async () => undefined),
+      scrollTerminal: jest.fn(async () => ''),
+      snapshot: jest.fn(async () => ({
+        panes: Object.entries(paneScrolls).map(([terminalId, scroll]) => ({
+          terminal_id: terminalId,
+          scroll,
+        })),
+      })),
+    };
+  };
+
+  const createTarget = (
+    terminalId: string,
+    client: ReturnType<typeof createClient>,
+    scroll: { offset_from_bottom: number; max_offset_from_bottom: number; viewport_rows: number },
+  ) => ({
+    key: `host-1:${terminalId}`,
+    hostSessionId: 'host-1',
+    client,
+    session: {
+      terminalId,
+      paneId: `pane-${terminalId}`,
+      title: 'shell',
+      kind: 'herdr',
+      status: 'connected',
+      reconnectAttempt: 0,
+    },
+    scroll,
+  }) as unknown as TerminalRenderTarget;
+
+  const emitAppState = async (state: string) => {
+    await act(async () => {
+      mockAppState.currentState = state;
+      for (const listener of mockAppState.listeners) listener(state);
+      await Promise.resolve();
+    });
+  };
+
+  const sendRendererMessage = async (
+    webView: ReactTestInstance,
+    message: Record<string, unknown>,
+  ) => {
+    await act(async () => {
+      await webView.props.onMessage({
+        nativeEvent: { data: JSON.stringify(message) },
+      });
+      await Promise.resolve();
+    });
+  };
+
+  const mountReadyHost = async (
+    activeTarget: TerminalRenderTarget,
+    targets: TerminalRenderTarget[] = [activeTarget],
+    previewTarget?: TerminalRenderTarget,
+  ) => {
+    const eventCallbacks = createCallbacks();
+    const injected: string[] = [];
+    await act(async () => {
+      renderer = create(
+        <TerminalRendererHost
+          {...eventCallbacks}
+          activeTarget={activeTarget}
+          previewTarget={previewTarget}
+          preferences={{ ...preferences, pauseResizeInBackground: true }}
+          targets={targets}
+          visible
+        />,
+        {
+          createNodeMock: element => element.type === 'WebView' ? {
+            injectJavaScript: (script: string) => injected.push(script),
+            requestFocus: jest.fn(),
+          } : null,
+        },
+      );
+    });
+    const webView = renderer.root.find(node => typeof node.props.onMessage === 'function');
+    await sendRendererMessage(webView, { type: 'ready' });
+    for (const target of targets) {
+      if (target !== activeTarget && target !== previewTarget) continue;
+      await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+      await sendRendererMessage(webView, {
+        type: 'resize',
+        source: 'fit',
+        key: target.key,
+        cols: 80,
+        rows: 24,
+        cellWidthPx: 8,
+        cellHeightPx: 16,
+      });
+    }
+    return { eventCallbacks, injected, webView };
+  };
 
   test('closes the native bridge when a terminal target is removed', () => {
     const client = {
@@ -235,5 +383,188 @@ describe('TerminalRendererHost lifecycle', () => {
 
     expect(injected.join('\n')).toContain('"debug":true');
     expect(injected.join('\n')).not.toContain('window.herdrFit');
+  });
+
+  test.each([
+    {
+      name: 'restores the prior offset without new output',
+      checkpoint: { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      current: { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      expected: ['up', 200] as const,
+    },
+    {
+      name: 'adds background scrollback growth to the prior offset',
+      checkpoint: { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      current: { offset_from_bottom: 0, max_offset_from_bottom: 1_050, viewport_rows: 24 },
+      expected: ['up', 250] as const,
+    },
+    {
+      name: 'keeps following latest output',
+      checkpoint: { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      current: { offset_from_bottom: 0, max_offset_from_bottom: 1_100, viewport_rows: 24 },
+      expected: null,
+    },
+    {
+      name: 'clamps the prior offset when scrollback shrinks',
+      checkpoint: { offset_from_bottom: 500, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+      current: { offset_from_bottom: 0, max_offset_from_bottom: 300, viewport_rows: 24 },
+      expected: ['up', 300] as const,
+    },
+  ])('$name after reconnect and final fit', async ({ checkpoint, current, expected }) => {
+    const client = createClient({ 'term-1': current });
+    const target = createTarget('term-1', client, checkpoint);
+    const { webView } = await mountReadyHost(target);
+
+    await emitAppState('background');
+    await emitAppState('active');
+    expect(client.snapshot).not.toHaveBeenCalled();
+    expect(client.scrollTerminal).not.toHaveBeenCalled();
+    await sendRendererMessage(webView, {
+      type: 'resize',
+      source: 'fit',
+      key: target.key,
+      cols: 80,
+      rows: 24,
+      cellWidthPx: 8,
+      cellHeightPx: 16,
+    });
+
+    expect(client.releaseTerminal).toHaveBeenCalledWith('term-1');
+    expect(client.snapshot).toHaveBeenCalledTimes(1);
+    expect(client.releaseTerminal.mock.invocationCallOrder[0]).toBeLessThan(
+      client.openTerminal.mock.invocationCallOrder.at(-1)!,
+    );
+    if (expected) {
+      expect(client.scrollTerminal).toHaveBeenCalledWith('term-1', ...expected);
+      expect(client.resizeTerminal.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        client.scrollTerminal.mock.invocationCallOrder[0],
+      );
+    } else {
+      expect(client.scrollTerminal).not.toHaveBeenCalled();
+    }
+  });
+
+  test('in-app visibility changes do not enter the resume restore path', async () => {
+    const checkpoint = { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 };
+    const client = createClient({
+      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+    });
+    const target = createTarget('term-1', client, checkpoint);
+    const eventCallbacks = createCallbacks();
+    await mountReadyHost(target);
+
+    act(() => {
+      renderer.update(
+        <TerminalRendererHost
+          {...eventCallbacks}
+          activeTarget={target}
+          preferences={{ ...preferences, pauseResizeInBackground: true }}
+          targets={[target]}
+          visible={false}
+        />,
+      );
+    });
+    act(() => {
+      renderer.update(
+        <TerminalRendererHost
+          {...eventCallbacks}
+          activeTarget={target}
+          preferences={{ ...preferences, pauseResizeInBackground: true }}
+          targets={[target]}
+          visible
+        />,
+      );
+    });
+
+    expect(client.releaseTerminal).not.toHaveBeenCalled();
+    expect(client.snapshot).not.toHaveBeenCalled();
+    expect(client.scrollTerminal).not.toHaveBeenCalled();
+  });
+
+  test('explicit user scrolling cancels a pending resume restore', async () => {
+    const checkpoint = { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 };
+    const client = createClient({
+      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+    });
+    const target = createTarget('term-1', client, checkpoint);
+    const { webView } = await mountReadyHost(target);
+
+    await emitAppState('background');
+    await emitAppState('active');
+    await sendRendererMessage(webView, {
+      type: 'scroll',
+      key: target.key,
+      direction: 'up',
+      lines: 3,
+    });
+    await sendRendererMessage(webView, {
+      type: 'resize',
+      source: 'fit',
+      key: target.key,
+      cols: 80,
+      rows: 24,
+      cellWidthPx: 8,
+      cellHeightPx: 16,
+    });
+
+    expect(client.snapshot).not.toHaveBeenCalled();
+    expect(client.scrollTerminal).toHaveBeenCalledTimes(1);
+    expect(client.scrollTerminal).toHaveBeenCalledWith('term-1', 'up', 3, undefined, undefined);
+  });
+
+  test('alternate-screen activation cancels normal-buffer resume restoration', async () => {
+    const checkpoint = { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 };
+    const client = createClient({
+      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 1_000, viewport_rows: 24 },
+    });
+    const target = createTarget('term-1', client, checkpoint);
+    const { webView } = await mountReadyHost(target);
+
+    await emitAppState('background');
+    await emitAppState('active');
+    await sendRendererMessage(webView, {
+      type: 'buffer-mode',
+      key: target.key,
+      alternate: true,
+    });
+    await sendRendererMessage(webView, {
+      type: 'resize',
+      source: 'fit',
+      key: target.key,
+      cols: 80,
+      rows: 24,
+      cellWidthPx: 8,
+      cellHeightPx: 16,
+    });
+
+    expect(client.snapshot).not.toHaveBeenCalled();
+    expect(client.scrollTerminal).not.toHaveBeenCalled();
+  });
+
+  test('restores checkpoints only onto their matching terminal keys', async () => {
+    const firstScroll = { offset_from_bottom: 100, max_offset_from_bottom: 1_000, viewport_rows: 24 };
+    const secondScroll = { offset_from_bottom: 300, max_offset_from_bottom: 2_000, viewport_rows: 24 };
+    const client = createClient({
+      'term-1': { offset_from_bottom: 0, max_offset_from_bottom: 1_020, viewport_rows: 24 },
+      'term-2': { offset_from_bottom: 0, max_offset_from_bottom: 2_040, viewport_rows: 24 },
+    });
+    const first = createTarget('term-1', client, firstScroll);
+    const second = createTarget('term-2', client, secondScroll);
+    const { webView } = await mountReadyHost(first, [first, second], second);
+
+    await emitAppState('background');
+    await emitAppState('active');
+    await sendRendererMessage(webView, {
+      type: 'resize',
+      source: 'fit',
+      key: first.key,
+      cols: 80,
+      rows: 24,
+      cellWidthPx: 8,
+      cellHeightPx: 16,
+    });
+
+    expect(client.scrollTerminal).toHaveBeenCalledWith('term-1', 'up', 120);
+    expect(client.scrollTerminal).toHaveBeenCalledWith('term-2', 'up', 340);
   });
 });

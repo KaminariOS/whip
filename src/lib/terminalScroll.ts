@@ -17,6 +17,11 @@ export interface ScrollDragGeometry {
   step?: number;
 }
 
+export interface TerminalResumeViewport {
+  offsetFromBottom: number;
+  maxOffsetFromBottom: number;
+}
+
 const MIN_THUMB_PERCENT = 2;
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -92,4 +97,24 @@ export function moveTerminalScroll(
     ...scroll,
     offset_from_bottom: Math.max(0, Math.min(scroll.max_offset_from_bottom, nextOffset)),
   };
+}
+
+/**
+ * Approximate the pre-background viewport after terminal output or reflow has
+ * changed the scrollback extent. An offset of zero deliberately keeps following
+ * the latest output.
+ */
+export function resumedTerminalScrollOffset(
+  checkpoint: TerminalResumeViewport,
+  currentMaxOffsetFromBottom: number,
+): number {
+  const maximum = Math.max(0, currentMaxOffsetFromBottom);
+  if (checkpoint.offsetFromBottom <= 0) return 0;
+
+  return clamp(
+    checkpoint.offsetFromBottom
+      + Math.max(0, maximum - checkpoint.maxOffsetFromBottom),
+    0,
+    maximum,
+  );
 }

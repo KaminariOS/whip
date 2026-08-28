@@ -1,5 +1,6 @@
 import {
   moveTerminalScroll,
+  resumedTerminalScrollOffset,
   scrollOffsetFromDrag,
   scrollThumbGeometry,
   terminalScrollThumb,
@@ -117,4 +118,34 @@ test('rounds row offsets consistently without adjacent drag oscillation', () => 
   expect(scrollOffsetFromDrag({ ...geometry, dragDistance: 0.1 })).toBe(50);
   expect(scrollOffsetFromDrag({ ...geometry, dragDistance: 0.3 })).toBe(50);
   expect(scrollOffsetFromDrag({ ...geometry, dragDistance: 0.9 })).toBe(51);
+});
+
+describe('resumedTerminalScrollOffset', () => {
+  test('restores the previous offset when scrollback does not grow', () => {
+    expect(resumedTerminalScrollOffset({
+      offsetFromBottom: 200,
+      maxOffsetFromBottom: 1_000,
+    }, 1_000)).toBe(200);
+  });
+
+  test('accounts for output added while the app is backgrounded', () => {
+    expect(resumedTerminalScrollOffset({
+      offsetFromBottom: 200,
+      maxOffsetFromBottom: 1_000,
+    }, 1_050)).toBe(250);
+  });
+
+  test('keeps following latest output from an offset of zero', () => {
+    expect(resumedTerminalScrollOffset({
+      offsetFromBottom: 0,
+      maxOffsetFromBottom: 1_000,
+    }, 1_100)).toBe(0);
+  });
+
+  test('clamps restoration when scrollback shrinks', () => {
+    expect(resumedTerminalScrollOffset({
+      offsetFromBottom: 500,
+      maxOffsetFromBottom: 1_000,
+    }, 300)).toBe(300);
+  });
 });
