@@ -117,6 +117,7 @@
         androidSdk
         linuxCargoAbout
         androidPkgs.jdk17_headless
+        androidPkgs.libwebp
         androidPkgs.nodejs_22
         androidRustToolchain
       ];
@@ -141,6 +142,7 @@
         bundler
         cocoapods
         fastlane
+        libwebp
         darwinRustToolchain
       ];
 

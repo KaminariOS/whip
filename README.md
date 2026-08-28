@@ -65,34 +65,36 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 
 <table>
   <tr>
-    <td align="center"><img src="assets/screenshots/hosts.png" alt="Whip Hosts screen showing connected hosts first with agent status, protocol, latency, and a jump-host route" width="320"></td>
-    <td align="center"><img src="assets/screenshots/herd.png" alt="Whip Herd screen showing merged host scopes, agent totals, and the attention queue" width="320"></td>
+    <td align="center"><img src="assets/screenshots/hosts.webp" alt="Whip Hosts screen showing connected hosts first with agent status, protocol, latency, and a jump-host route" width="320"></td>
+    <td align="center"><img src="assets/screenshots/herd.webp" alt="Whip Herd screen showing merged host scopes, agent totals, and the attention queue" width="320"></td>
   </tr>
   <tr>
     <td align="center"><strong>Manage every host</strong><br>See live connection state, latency, and saved authentication at a glance.</td>
     <td align="center"><strong>Watch the whole herd</strong><br>Merge open hosts into one attention queue, then scope it to a host or space.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/terminal.png" alt="Whip terminal showing open tabs, the web-link browser action, and mobile keys" width="320"></td>
-    <td align="center"><img src="assets/screenshots/chat-composer.png" alt="Whip native chat composer open over a live remote agent terminal" width="320"></td>
+    <td align="center"><img src="assets/screenshots/terminal.webp" alt="Whip terminal showing open tabs, the web-link browser action, and mobile keys" width="320"></td>
+    <td align="center"><img src="assets/screenshots/chat-view.webp" alt="Whip Chat View showing a native Codex transcript with rich text, links, code, and tool activity" width="320"></td>
   </tr>
   <tr>
     <td align="center"><strong>Work from anywhere</strong><br>Keep remote terminal tabs warm, use mobile controls, and open discovered web links or remote files in one tap.</td>
+    <td align="center"><strong>Read the conversation</strong><br>Follow native Codex and OpenCode transcripts with rich text, links, code, and tool activity.</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/chat-composer.webp" alt="Whip native chat composer open over a live remote agent terminal" width="320"></td>
+    <td align="center"><img src="assets/screenshots/remote-files.webp" alt="Whip Remote files screen browsing and sorting the current terminal directory over SFTP" width="320"></td>
+  </tr>
+  <tr>
     <td align="center"><strong>Chat naturally</strong><br>Prompt a remote agent from the native multiline composer with Android keyboard, suggestion, and voice-input support.</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="assets/screenshots/remote-files.png" alt="Whip Remote files screen browsing and sorting the current terminal directory over SFTP" width="320"></td>
-    <td align="center"><img src="assets/screenshots/jump-host-agent-forwarding.png" alt="Whip saved host editor showing an active jump-host route and SSH agent forwarding" width="320"></td>
-  </tr>
-  <tr>
     <td align="center"><strong>Bring the filesystem with you</strong><br>Browse, sort, upload, download, edit, delete, or preview the terminal's remote files over SFTP.</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/jump-host-agent-forwarding.webp" alt="Whip saved host editor showing an active jump-host route and SSH agent forwarding" width="320"></td>
+    <td align="center"><img src="assets/screenshots/settings.webp" alt="Whip More screen using translucent glass surfaces over a custom background image" width="320"></td>
+  </tr>
+  <tr>
     <td align="center"><strong>Reach private hosts safely</strong><br>Build nested jump-host routes and opt into SSH agent forwarding without placing the private key on the server.</td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><img src="assets/screenshots/settings.png" alt="Whip More screen using translucent glass surfaces over a custom background image" width="320"></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><strong>Make Whip yours</strong><br>Place translucent app surfaces over a custom background, then tune alerts, speech, security, navigation, and terminal behavior.</td>
+    <td align="center"><strong>Make Whip yours</strong><br>Place translucent app surfaces over a custom background, then tune alerts, speech, security, navigation, and terminal behavior.</td>
   </tr>
 </table>
 
