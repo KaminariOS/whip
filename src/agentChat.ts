@@ -7,8 +7,8 @@ export interface TranscriptFileDiff {
   patch?: string;
   before?: string;
   after?: string;
-  additions?: number;
-  deletions?: number;
+  additions: number;
+  deletions: number;
 }
 
 export interface TranscriptTokens {
@@ -56,6 +56,7 @@ export interface TranscriptAgentPart extends TranscriptPartBase {
 export interface TranscriptToolState {
   status: TranscriptToolStatus;
   input: JsonObject;
+  files?: TranscriptFileDiff[];
   output?: string;
   error?: string;
   title?: string;

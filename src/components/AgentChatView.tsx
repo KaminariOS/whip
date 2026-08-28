@@ -248,64 +248,7 @@ function stringify(value: unknown): string | undefined {
 }
 
 function toolFileDiffs(item: TranscriptToolPart): TranscriptFileDiff[] {
-  const files = item.state.metadata?.files;
-  if (Array.isArray(files)) {
-    const parsed = files.flatMap(value => {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-      const entry = value as JsonObject;
-      const file = stringValue(entry.relativePath) || stringValue(entry.filePath) || stringValue(entry.file);
-      if (!file) return [];
-      return [{
-        file,
-        patch: textValue(entry.patch) || textValue(entry.diff),
-        before: textValue(entry.before),
-        after: textValue(entry.after),
-        additions: typeof entry.additions === 'number' ? entry.additions : undefined,
-        deletions: typeof entry.deletions === 'number' ? entry.deletions : undefined,
-      }];
-    });
-    if (parsed.length) return parsed;
-  }
-  const unified = textValue(item.state.metadata?.unifiedDiff);
-  if (unified) return [{ file: 'Changes', patch: unified }];
-  const fileDiff = item.state.metadata?.filediff;
-  const fileDiffObject = fileDiff && typeof fileDiff === 'object' && !Array.isArray(fileDiff)
-    ? fileDiff as JsonObject
-    : undefined;
-  const patch = textValue(fileDiffObject?.patch);
-  if (fileDiffObject) {
-    const file = stringValue(fileDiffObject.file) || stringValue(fileDiffObject.path) || 'Changes';
-    return [{
-      file,
-      patch,
-      before: textValue(fileDiffObject.before),
-      after: textValue(fileDiffObject.after),
-      additions: typeof fileDiffObject.additions === 'number' ? fileDiffObject.additions : undefined,
-      deletions: typeof fileDiffObject.deletions === 'number' ? fileDiffObject.deletions : undefined,
-    }];
-  }
-  const changes = item.state.input.changes;
-  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return [];
-  return Object.entries(changes as JsonObject).map(([path, value]) => {
-    const entry = value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : undefined;
-    return {
-      file: path,
-      patch: textValue(entry?.diff) || textValue(entry?.patch) || stringify(value),
-      before: textValue(entry?.before),
-      after: textValue(entry?.after),
-    };
-  });
-}
-
-function diffChanges(diff: string | undefined): { additions: number; deletions: number } | null {
-  if (!diff) return null;
-  let additions = 0;
-  let deletions = 0;
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
-    if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
-  }
-  return additions || deletions ? { additions, deletions } : null;
+  return item.state.files || [];
 }
 
 interface ToolDiagnostic {
@@ -349,12 +292,10 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
   const presentation = toolPresentation(item);
   const name = normalizedToolName(item.tool);
   const files = toolFileDiffs(item);
-  const diff = files.map(file => file.patch).filter(Boolean).join('\n');
-  const calculated = diffChanges(diff);
   const changes = files.length
     ? {
-      additions: files.reduce((total, file) => total + (file.additions || 0), 0) || calculated?.additions || 0,
-      deletions: files.reduce((total, file) => total + (file.deletions || 0), 0) || calculated?.deletions || 0,
+      additions: files.reduce((total, file) => total + file.additions, 0),
+      deletions: files.reduce((total, file) => total + file.deletions, 0),
     }
     : null;
   const shell = presentation.kind === 'command'
@@ -561,16 +502,13 @@ function fileDiffText(file: TranscriptFileDiff): string | undefined {
 function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
   const { colors } = useTheme();
   const diff = fileDiffText(file);
-  const calculated = diffChanges(diff);
-  const additions = file.additions ?? calculated?.additions ?? 0;
-  const deletions = file.deletions ?? calculated?.deletions ?? 0;
   return (
     <View className="overflow-hidden rounded-md border border-border">
       <View className="min-h-8 flex-row items-center gap-2 border-b border-border px-2.5 py-1.5">
         <File size={13} color={colors.textTertiary} />
         <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground">{file.file}</Text>
-        {additions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.done }}>+{additions}</Text>}
-        {deletions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.error }}>−{deletions}</Text>}
+        {file.additions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.done }}>+{file.additions}</Text>}
+        {file.deletions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.error }}>−{file.deletions}</Text>}
       </View>
       {diff && <View className="py-2"><ToolDiffBlock diff={diff} /></View>}
     </View>
@@ -848,8 +786,8 @@ function ChangedFiles({ turn }: { turn: TranscriptTurn }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   if (!turn.diffs.length) return null;
-  const additions = turn.diffs.reduce((total, diff) => total + (diff.additions || 0), 0);
-  const deletions = turn.diffs.reduce((total, diff) => total + (diff.deletions || 0), 0);
+  const additions = turn.diffs.reduce((total, diff) => total + diff.additions, 0);
+  const deletions = turn.diffs.reduce((total, diff) => total + diff.deletions, 0);
   return (
     <View className="mt-2 border-t border-border pt-2">
       <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-8 flex-row items-center" onPress={() => setExpanded(value => !value)}>

@@ -1087,8 +1087,8 @@ export type AgentFileDiff = {
   patch?: string;
   before?: string;
   after?: string;
-  additions?: number;
-  deletions?: number;
+  additions: number;
+  deletions: number;
 };
 
 /**
@@ -1117,8 +1117,8 @@ const FfiConverterTypeAgentFileDiff = (() => {
         patch: FfiConverterOptionalString.read(from),
         before: FfiConverterOptionalString.read(from),
         after: FfiConverterOptionalString.read(from),
-        additions: FfiConverterOptionalUInt32.read(from),
-        deletions: FfiConverterOptionalUInt32.read(from),
+        additions: FfiConverterUInt32.read(from),
+        deletions: FfiConverterUInt32.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -1126,8 +1126,8 @@ const FfiConverterTypeAgentFileDiff = (() => {
       FfiConverterOptionalString.write(value.patch, into);
       FfiConverterOptionalString.write(value.before, into);
       FfiConverterOptionalString.write(value.after, into);
-      FfiConverterOptionalUInt32.write(value.additions, into);
-      FfiConverterOptionalUInt32.write(value.deletions, into);
+      FfiConverterUInt32.write(value.additions, into);
+      FfiConverterUInt32.write(value.deletions, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -1135,8 +1135,8 @@ const FfiConverterTypeAgentFileDiff = (() => {
         FfiConverterOptionalString.allocationSize(value.patch) +
         FfiConverterOptionalString.allocationSize(value.before) +
         FfiConverterOptionalString.allocationSize(value.after) +
-        FfiConverterOptionalUInt32.allocationSize(value.additions) +
-        FfiConverterOptionalUInt32.allocationSize(value.deletions)
+        FfiConverterUInt32.allocationSize(value.additions) +
+        FfiConverterUInt32.allocationSize(value.deletions)
       );
     }
   }
@@ -18118,9 +18118,6 @@ const uniffiCallbackInterfaceWhipSshEventSink: {
 // FfiConverter for string | undefined
 const FfiConverterOptionalString = new FfiConverterOptional(FfiConverterString);
 
-// FfiConverter for number | undefined
-const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
-
 // FfiConverter for bigint | undefined
 const FfiConverterOptionalUInt64 = new FfiConverterOptional(FfiConverterUInt64);
 
@@ -18168,6 +18165,9 @@ const FfiConverterSequenceTypeAgentTranscriptDelta = new FfiConverterArray(
 // FfiConverter for AgentTranscriptCacheWrite | undefined
 const FfiConverterOptionalTypeAgentTranscriptCacheWrite =
   new FfiConverterOptional(FfiConverterTypeAgentTranscriptCacheWrite);
+
+// FfiConverter for number | undefined
+const FfiConverterOptionalUInt32 = new FfiConverterOptional(FfiConverterUInt32);
 
 // FfiConverter for Array<GitDiffRow>
 const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(

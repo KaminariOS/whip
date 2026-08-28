@@ -25,9 +25,9 @@ function part(value: NativeAgentTranscriptPart): TranscriptPart {
   if (value.type === 'notice') {
     return { id: value.id, type: 'notice', level: value.level, text: value.text, timestamp: value.timestamp };
   }
-  const metadata: JsonObject | undefined = value.state.files.length
-    ? { files: value.state.files.map(file => ({ ...file, filePath: file.file, relativePath: file.file })) }
-    : value.state.exitCode === undefined ? undefined : { exitCode: value.state.exitCode };
+  const metadata: JsonObject | undefined = value.state.exitCode === undefined
+    ? undefined
+    : { exitCode: value.state.exitCode };
   return {
     id: value.id,
     type: 'tool',
@@ -37,6 +37,7 @@ function part(value: NativeAgentTranscriptPart): TranscriptPart {
     state: {
       status: value.state.status,
       input: { ...value.state.input },
+      files: value.state.files,
       output: value.state.output,
       error: value.state.error,
       title: value.state.title,

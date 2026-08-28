@@ -9,7 +9,7 @@ use crate::codex::rollout_wire::{Event as CodexEvent, ResponseItem as CodexRespo
 use crate::codex::{CodexRolloutReducer, RolloutRecord, decode_rollout_record};
 
 pub const MAX_TRANSCRIPT_LINE_BYTES: usize = 4 * 1024 * 1024;
-const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 2;
+const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 pub enum AgentTranscriptKind {
@@ -42,6 +42,14 @@ pub enum AgentToolStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+pub enum AgentDiagnosticSeverity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 pub enum AgentNoticeLevel {
     Info,
     Warning,
@@ -69,14 +77,77 @@ pub struct AgentField {
     pub value: AgentScalarValue,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct AgentFileDiff {
     pub file: String,
     pub patch: Option<String>,
     pub before: Option<String>,
     pub after: Option<String>,
-    pub additions: Option<u32>,
-    pub deletions: Option<u32>,
+    pub additions: u32,
+    pub deletions: u32,
+}
+
+#[derive(Deserialize)]
+struct UnnormalizedAgentFileDiff {
+    file: String,
+    patch: Option<String>,
+    before: Option<String>,
+    after: Option<String>,
+    additions: Option<u32>,
+    deletions: Option<u32>,
+}
+
+impl AgentFileDiff {
+    pub(crate) fn normalized(
+        file: String,
+        patch: Option<String>,
+        before: Option<String>,
+        after: Option<String>,
+        additions: Option<u32>,
+        deletions: Option<u32>,
+    ) -> Self {
+        let (calculated_additions, calculated_deletions) = match patch.as_deref() {
+            Some(patch) => diff_counts(patch),
+            None => (
+                after.as_deref().map(content_line_count).unwrap_or(0),
+                before.as_deref().map(content_line_count).unwrap_or(0),
+            ),
+        };
+        Self {
+            file,
+            patch,
+            before,
+            after,
+            additions: additions.unwrap_or(calculated_additions),
+            deletions: deletions.unwrap_or(calculated_deletions),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentFileDiff {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = UnnormalizedAgentFileDiff::deserialize(deserializer)?;
+        Ok(Self::normalized(
+            value.file,
+            value.patch,
+            value.before,
+            value.after,
+            value.additions,
+            value.deletions,
+        ))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct AgentToolDiagnostic {
+    pub file: String,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    pub message: String,
+    pub severity: AgentDiagnosticSeverity,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
@@ -89,7 +160,12 @@ pub struct AgentToolState {
     pub started_at_ms: Option<u64>,
     pub completed_at_ms: Option<u64>,
     pub exit_code: Option<i64>,
+    #[serde(default)]
     pub files: Vec<AgentFileDiff>,
+    #[serde(default)]
+    pub diagnostics: Vec<AgentToolDiagnostic>,
+    #[serde(default)]
+    pub loaded: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Enum)]
@@ -834,6 +910,8 @@ impl CodexTranscriptAdapter {
                 completed_at_ms: None,
                 exit_code: None,
                 files: Vec::new(),
+                diagnostics: Vec::new(),
+                loaded: Vec::new(),
             },
             String::new(),
             at,
@@ -854,7 +932,7 @@ impl CodexTranscriptAdapter {
             timestamp_ms: old_at,
             state: AgentToolState {
                 status,
-                input: input.unwrap_or(old_state.input),
+                input: canonical_tool_input(&name, input.unwrap_or(old_state.input)),
                 output: output.or(old_state.output),
                 error: error.or(old_state.error),
                 title: old_state.title,
@@ -870,6 +948,8 @@ impl CodexTranscriptAdapter {
                 } else {
                     files
                 },
+                diagnostics: old_state.diagnostics,
+                loaded: old_state.loaded,
             },
         };
         if let Some(message) = self.message_mut(&message_id) {
@@ -1533,6 +1613,38 @@ fn scalar_fields(value: Option<&Value>) -> Vec<AgentField> {
         .unwrap_or_default()
 }
 
+fn canonical_tool_input(tool: &str, mut fields: Vec<AgentField>) -> Vec<AgentField> {
+    canonicalize_field(&mut fields, "command", &["command", "cmd"]);
+    canonicalize_field(
+        &mut fields,
+        "path",
+        &["path", "filePath", "file_path"],
+    );
+    canonicalize_field(&mut fields, "query", &["query", "pattern"]);
+    canonicalize_field(&mut fields, "description", &["description", "name"]);
+    canonicalize_field(&mut fields, "agent", &["agent", "subagent_type"]);
+    canonicalize_field(&mut fields, "old_string", &["old_string", "oldString"]);
+    canonicalize_field(&mut fields, "new_string", &["new_string", "newString"]);
+
+    if tool == "shell" {
+        canonicalize_field(&mut fields, "cwd", &["cwd", "workdir"]);
+    }
+    fields
+}
+
+fn canonicalize_field(fields: &mut Vec<AgentField>, canonical: &str, aliases: &[&str]) {
+    let value = aliases.iter().find_map(|key| {
+        fields
+            .iter()
+            .find(|field| field.key == *key)
+            .map(|field| field.value.clone())
+    });
+    fields.retain(|field| !aliases.contains(&field.key.as_str()));
+    if let Some(value) = value {
+        put_field(fields, canonical, value);
+    }
+}
+
 fn fields<const N: usize>(values: [(&str, String); N]) -> Vec<AgentField> {
     values
         .into_iter()
@@ -1632,7 +1744,13 @@ fn translate_tool(
                 AgentScalarValue::String { value: command },
             );
         }
-        return (tool, fields, None, false, Vec::new());
+        return (
+            tool.clone(),
+            canonical_tool_input(&tool, fields),
+            None,
+            false,
+            Vec::new(),
+        );
     }
     let source = raw.and_then(Value::as_str).unwrap_or_default();
     match source_tool_name(source).unwrap_or(name) {
@@ -1764,6 +1882,10 @@ fn diff_counts(patch: &str) -> (u32, u32) {
     })
 }
 
+fn content_line_count(content: &str) -> u32 {
+    u32::try_from(content.lines().count()).unwrap_or(u32::MAX)
+}
+
 fn legacy_change_files(value: Option<&Value>) -> Vec<AgentFileDiff> {
     object(value)
         .map(|changes| {
@@ -1776,19 +1898,24 @@ fn legacy_change_files(value: Option<&Value>) -> Vec<AgentFileDiff> {
                             nonempty(value.get("diff")).or_else(|| nonempty(value.get("patch")))
                         })
                         .map(str::to_owned);
-                    let (additions, deletions) = diff_counts(patch.as_deref().unwrap_or_default());
-                    AgentFileDiff {
-                        file: file.clone(),
+                    AgentFileDiff::normalized(
+                        file.clone(),
                         patch,
-                        before: value
+                        value
                             .and_then(|value| nonempty(value.get("before")))
                             .map(str::to_owned),
-                        after: value
+                        value
                             .and_then(|value| nonempty(value.get("after")))
                             .map(str::to_owned),
-                        additions: Some(additions),
-                        deletions: Some(deletions),
-                    }
+                        value
+                            .and_then(|value| value.get("additions"))
+                            .and_then(Value::as_u64)
+                            .and_then(|value| value.try_into().ok()),
+                        value
+                            .and_then(|value| value.get("deletions"))
+                            .and_then(Value::as_u64)
+                            .and_then(|value| value.try_into().ok()),
+                    )
                 })
                 .collect()
         })
@@ -1808,15 +1935,14 @@ fn unified_diff_files(value: Option<&str>) -> Vec<AgentFileDiff> {
                     .or_else(|| line.strip_prefix("--- a/"))
             })
             .unwrap_or("Changes");
-        let (additions, deletions) = diff_counts(value);
-        return vec![AgentFileDiff {
-            file: file.to_owned(),
-            patch: Some(value.to_owned()),
-            before: None,
-            after: None,
-            additions: Some(additions),
-            deletions: Some(deletions),
-        }];
+        return vec![AgentFileDiff::normalized(
+            file.to_owned(),
+            Some(value.to_owned()),
+            None,
+            None,
+            None,
+            None,
+        )];
     }
     starts.push((value.len(), ""));
     starts
@@ -1827,15 +1953,14 @@ fn unified_diff_files(value: Option<&str>) -> Vec<AgentFileDiff> {
             let patch = value[start..end].trim_end().to_owned();
             let first = patch.lines().next()?;
             let file = first.split_once(" b/")?.1.to_owned();
-            let (additions, deletions) = diff_counts(&patch);
-            Some(AgentFileDiff {
+            Some(AgentFileDiff::normalized(
                 file,
-                patch: Some(patch),
-                before: None,
-                after: None,
-                additions: Some(additions),
-                deletions: Some(deletions),
-            })
+                Some(patch),
+                None,
+                None,
+                None,
+                None,
+            ))
         })
         .collect()
 }
@@ -1854,15 +1979,14 @@ fn apply_patch_files(source: &str) -> Vec<AgentFileDiff> {
             .or_else(|| line.strip_prefix("*** Delete File: "))
         {
             if let Some((file, patch)) = current.take() {
-                let (additions, deletions) = diff_counts(&patch);
-                result.push(AgentFileDiff {
+                result.push(AgentFileDiff::normalized(
                     file,
-                    patch: Some(patch.trim_end().to_owned()),
-                    before: None,
-                    after: None,
-                    additions: Some(additions),
-                    deletions: Some(deletions),
-                });
+                    Some(patch.trim_end().to_owned()),
+                    None,
+                    None,
+                    None,
+                    None,
+                ));
             }
             current = Some((file.trim().to_owned(), String::new()));
         } else if let Some((_, patch)) = current.as_mut() {
@@ -1871,15 +1995,14 @@ fn apply_patch_files(source: &str) -> Vec<AgentFileDiff> {
         }
     }
     if let Some((file, patch)) = current {
-        let (additions, deletions) = diff_counts(&patch);
-        result.push(AgentFileDiff {
+        result.push(AgentFileDiff::normalized(
             file,
-            patch: Some(patch.trim_end().to_owned()),
-            before: None,
-            after: None,
-            additions: Some(additions),
-            deletions: Some(deletions),
-        });
+            Some(patch.trim_end().to_owned()),
+            None,
+            None,
+            None,
+            None,
+        ));
     }
     result
 }
@@ -3380,20 +3503,18 @@ fn open_code_diffs(value: &Value) -> Vec<AgentFileDiff> {
         .flatten()
         .filter_map(Value::as_object)
         .filter_map(|diff| {
-            Some(AgentFileDiff {
-                file: nonempty(diff.get("file"))?.to_owned(),
-                patch: nonempty(diff.get("patch")).map(str::to_owned),
-                before: nonempty(diff.get("before")).map(str::to_owned),
-                after: nonempty(diff.get("after")).map(str::to_owned),
-                additions: diff
-                    .get("additions")
+            Some(AgentFileDiff::normalized(
+                nonempty(diff.get("file"))?.to_owned(),
+                nonempty(diff.get("patch")).map(str::to_owned),
+                nonempty(diff.get("before")).map(str::to_owned),
+                nonempty(diff.get("after")).map(str::to_owned),
+                diff.get("additions")
                     .and_then(Value::as_u64)
                     .and_then(|value| value.try_into().ok()),
-                deletions: diff
-                    .get("deletions")
+                diff.get("deletions")
                     .and_then(Value::as_u64)
                     .and_then(|value| value.try_into().ok()),
-            })
+            ))
         })
         .collect()
 }
@@ -3793,7 +3914,46 @@ mod tests {
             .find(|(id, _, _)| *id == "file-change-1")
             .unwrap();
         assert_eq!(patch.2.files.len(), 3);
+        let updated = patch
+            .2
+            .files
+            .iter()
+            .find(|diff| diff.file == "src/lib.rs")
+            .unwrap();
+        assert_eq!((updated.additions, updated.deletions), (1, 1));
         assert_eq!(state.turns[0].diffs.len(), 3);
+    }
+
+    #[test]
+    fn file_diff_normalization_fills_counts_per_file() {
+        let diffs = open_code_diffs(&serde_json::json!([
+            {
+                "file": "explicit.rs",
+                "patch": "@@ -1 +1 @@\n-old\n+new\n",
+                "additions": 2
+            },
+            {
+                "file": "patch.rs",
+                "patch": "@@ -0,0 +1,5 @@\n+one\n+two\n+three\n+four\n+five\n"
+            }
+        ]));
+
+        assert_eq!(diffs.len(), 2);
+        assert_eq!((diffs[0].additions, diffs[0].deletions), (2, 1));
+        assert_eq!((diffs[1].additions, diffs[1].deletions), (5, 0));
+        assert_eq!(diffs.iter().map(|diff| diff.additions).sum::<u32>(), 7);
+    }
+
+    #[test]
+    fn deserialized_file_diffs_normalize_legacy_missing_counts() {
+        let diff: AgentFileDiff = serde_json::from_value(serde_json::json!({
+            "file": "cached.rs",
+            "patch": "@@ -1 +1,2 @@\n-old\n+new\n+more\n",
+            "additions": 9
+        }))
+        .unwrap();
+
+        assert_eq!((diff.additions, diff.deletions), (9, 1));
     }
 
     #[test]

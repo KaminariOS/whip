@@ -151,7 +151,7 @@ export type NativeAgentTranscriptPart =
         input: Record<string, string | number | boolean>;
         output?: string; error?: string; title?: string;
         startedAt?: number; completedAt?: number; exitCode?: number;
-        files: Array<{ file: string; patch?: string; before?: string; after?: string; additions?: number; deletions?: number }>;
+        files: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }>;
       };
     };
 
@@ -165,13 +165,13 @@ export type NativeAgentTranscriptState = {
     id: string; role: 'user' | 'assistant'; parentId?: string;
     createdAt?: number; completedAt?: number; error?: string;
     parts: NativeAgentTranscriptPart[];
-    diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions?: number; deletions?: number }>;
+    diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }>;
   }>;
   turns: Array<{
     id: string; userMessageId?: string; assistantMessageIds: string[];
     status: 'idle' | 'working' | 'interrupted' | 'error';
     startedAt?: number; completedAt?: number;
-    diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions?: number; deletions?: number }>;
+    diffs: Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number }>;
   }>;
   error?: string;
 };

@@ -398,33 +398,23 @@ impl CodexRolloutReducer {
             .changes
             .into_iter()
             .map(|(file, change)| match change {
-                FileChange::Add { content } => AgentFileDiff {
-                    file,
-                    patch: None,
-                    before: None,
-                    additions: line_count(&content),
-                    deletions: Some(0),
-                    after: Some(content),
-                },
-                FileChange::Delete { content } => AgentFileDiff {
-                    file,
-                    patch: None,
-                    additions: Some(0),
-                    deletions: line_count(&content),
-                    before: Some(content),
-                    after: None,
-                },
+                FileChange::Add { content } => {
+                    AgentFileDiff::normalized(file, None, None, Some(content), None, None)
+                }
+                FileChange::Delete { content } => {
+                    AgentFileDiff::normalized(file, None, Some(content), None, None, None)
+                }
                 FileChange::Update {
                     unified_diff,
                     move_path,
-                } => AgentFileDiff {
-                    file: move_path.unwrap_or(file),
-                    patch: Some(unified_diff),
-                    before: None,
-                    after: None,
-                    additions: None,
-                    deletions: None,
-                },
+                } => AgentFileDiff::normalized(
+                    move_path.unwrap_or(file),
+                    Some(unified_diff),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
             })
             .collect::<Vec<_>>();
         let status_text = item.status.as_deref().unwrap_or("completed");
@@ -810,10 +800,6 @@ fn tool_status(value: &str) -> AgentToolStatus {
         "failed" | "declined" | "error" | "incomplete" => AgentToolStatus::Error,
         _ => AgentToolStatus::Pending,
     }
-}
-
-fn line_count(value: &str) -> Option<u32> {
-    u32::try_from(value.lines().count()).ok()
 }
 
 fn part_id(part: &AgentTranscriptPart) -> &str {
