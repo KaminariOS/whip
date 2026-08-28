@@ -160,7 +160,7 @@ export function RemoteAudioPreview({ filename, progressIdentity, uri }: Props) {
       <Pressable
         accessibilityLabel={t('files.audioSeek')}
         accessibilityRole="adjustable"
-        className="mt-8 h-10 w-full max-w-[420px] justify-center"
+        className="mt-8 h-11 w-full max-w-[420px] justify-center"
         onLayout={({ nativeEvent }) => setTrackWidth(nativeEvent.layout.width)}
         onPress={({ nativeEvent }) => {
           if (duration > 0 && trackWidth > 0) seekTo((nativeEvent.locationX / trackWidth) * duration);

@@ -175,7 +175,7 @@ export function LicensesScreen({ onClose }: Props) {
                     ) : null}
                     <Button
                       accessibilityRole="link"
-                      className="mt-2 h-auto min-h-9 justify-start gap-1.5 px-0"
+                      className="mt-2 h-auto min-h-11 justify-start gap-1.5 px-0"
                       size="content"
                       variant="link"
                       onPress={hapticPress(() =>

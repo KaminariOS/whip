@@ -220,7 +220,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               <Button
                 accessibilityLabel={t('about.openCommit', { hash: whipCommit })}
                 accessibilityRole="link"
-                className="mt-0.5 min-h-8 gap-1 px-2"
+                className="mt-0.5 min-h-11 gap-1 px-2"
                 size="content"
                 variant="link"
                 onPress={hapticPress(openCommit)}>

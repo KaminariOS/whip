@@ -74,6 +74,8 @@ import { cn } from '@/src/lib/utils';
 import { retryDelay } from '../lib/retryDelay';
 import {
   orderTerminalControls,
+  TERMINAL_ICON_CONTROL_CLASS,
+  TERMINAL_TEXT_CONTROL_CLASS,
   type TerminalControlId,
   type TerminalControlUsage,
 } from '../lib/terminalControls';
@@ -256,10 +258,6 @@ const ICONIC_TERMINAL_KEYS: Partial<
 
 const WEBVIEW_STYLE = { flex: 1, backgroundColor: 'transparent' } as const;
 const BACKGROUND_SCREEN_STYLE = { mixBlendMode: 'screen' } as const;
-const TERMINAL_ICON_CONTROL_CLASS =
-  'h-9 w-11 items-center justify-center rounded-sm border border-border bg-card/70 p-0 active:bg-card/80';
-const TERMINAL_TEXT_CONTROL_CLASS =
-  'h-9 min-w-11 items-center justify-center rounded-sm border border-border bg-card/70 px-2.5 py-0 active:bg-card/80';
 const TERMINAL_ICON_BOX_CLASS = 'size-5 items-center justify-center';
 const TERMINAL_ICON_SIZE = 18;
 const TERMINAL_CONTROL_LABEL_STYLE = {
@@ -2233,8 +2231,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             keyboardShouldPersistTaps="always"
             showsHorizontalScrollIndicator={false}
             className="flex-grow-0"
-            contentContainerClassName="items-center gap-[5px] px-1.5 pt-[7px]"
-            contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}
+            contentContainerClassName="items-center gap-[5px] px-1.5 pt-[3px]"
+            contentContainerStyle={{ paddingBottom: 3 + bottomSafeAreaInset }}
           >
             {controlOrder.map(renderTerminalControl)}
           </ScrollView>
@@ -2559,10 +2557,12 @@ function ComposeAttachmentsStrip({
           )}
           <Button
             accessibilityLabel={removeLabel}
-            className="absolute right-0.5 top-0.5 size-6 rounded-full bg-black/75 px-0"
+            className="absolute right-0 top-0 size-11 items-end justify-start rounded-none bg-transparent p-0 active:bg-transparent"
             onPress={() => onRemove(attachment.id)}
           >
-            <X size={13} color="#fff" />
+            <View className="size-6 items-center justify-center rounded-full bg-black/75">
+              <X size={13} color="#fff" />
+            </View>
           </Button>
         </View>
       ))}

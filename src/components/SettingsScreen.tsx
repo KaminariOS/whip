@@ -976,7 +976,7 @@ function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold
   const { t } = useTranslation();
   return (
     <View className="min-w-0">
-      <View className="flex-row items-center">
+      <View className="min-h-11 flex-row items-center">
         <Text className={`min-w-0 flex-shrink ${titleClassName}`}>{title}</Text>
         <Pressable
           ref={buttonRef}

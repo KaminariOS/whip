@@ -11,7 +11,7 @@ export interface TerminalViewportLayout {
 }
 
 export const SESSION_TAB_BAR_HEIGHT = 55;
-export const SESSION_PANE_BAR_HEIGHT = 37;
+export const SESSION_PANE_BAR_HEIGHT = 44;
 export const TERMINAL_CONTROL_BAR_BASE_HEIGHT = 50;
 
 export function sessionTopChromeInset(paneCount: number): number {

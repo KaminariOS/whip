@@ -1447,8 +1447,8 @@ export function SessionScreen({
                     <View
                       key={item.tab_id}
                       className={cn(
-                        'h-[39px] max-w-[170px] flex-row items-center overflow-hidden rounded-full border',
-                        isIpad && 'h-[45px] max-w-[230px]',
+                        'h-11 max-w-[170px] flex-row items-center overflow-hidden rounded-full border',
+                        isIpad && 'max-w-[230px]',
                       )}
                       style={sessionTabGlassStyle(active, colors)}
                     >
@@ -1457,8 +1457,8 @@ export function SessionScreen({
                           tab: label,
                         })}
                         className={cn(
-                          'h-[39px] min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1 active:bg-transparent active:opacity-70 dark:active:bg-transparent',
-                          isIpad && 'h-[45px] px-3',
+                          'h-11 min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1 active:bg-transparent active:opacity-70 dark:active:bg-transparent',
+                          isIpad && 'px-3',
                         )}
                         variant="ghost"
                         onPress={hapticPress(() => chooseTab(item))}
@@ -1499,10 +1499,7 @@ export function SessionScreen({
                         accessibilityLabel={t('session.closeTab', {
                           tab: label,
                         })}
-                        className={cn(
-                          'h-[39px] w-7 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent',
-                          isIpad && 'h-[45px] w-8',
-                        )}
+                        className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent"
                         variant="ghost"
                         onPress={hapticPress(() => closeTab(item))}
                       >
@@ -1594,7 +1591,7 @@ export function SessionScreen({
         </ResourceEditorSheet>
 
         {selectedTab && panes.length > 1 && (
-          <View className="h-[37px] flex-row border-b border-border bg-transparent">
+          <View className="h-11 flex-row border-b border-border bg-transparent">
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1607,14 +1604,14 @@ export function SessionScreen({
                 return (
                   <View
                     key={pane.pane_id}
-                    className="h-7 max-w-[174px] flex-row items-center overflow-hidden rounded-full border"
+                    className="h-11 max-w-[174px] flex-row items-center overflow-hidden rounded-full border"
                     style={sessionTabGlassStyle(active, colors)}
                   >
                     <Button
                       accessibilityLabel={t('session.openPane', {
                         pane: label,
                       })}
-                      className="h-7 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2 py-0"
+                      className="h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2 py-0"
                       variant="ghost"
                       onPress={hapticPress(() => choosePane(pane))}
                       onLongPress={hapticPress(() => openRenamePane(pane))}
@@ -1642,7 +1639,7 @@ export function SessionScreen({
                       accessibilityLabel={t('session.closePane', {
                         pane: label,
                       })}
-                      className="h-7 w-7 rounded-none px-0"
+                      className="size-11 rounded-none px-0"
                       disabled={busy}
                       variant="ghost"
                       onPress={hapticPress(() => closePane(pane))}

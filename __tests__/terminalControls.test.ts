@@ -3,7 +3,19 @@ import {
   incrementTerminalControlUsage,
   orderTerminalControls,
   parseTerminalControlUsage,
+  TERMINAL_ICON_CONTROL_CLASS,
+  TERMINAL_TEXT_CONTROL_CLASS,
 } from '../src/lib/terminalControls';
+
+test('terminal controls expose 44pt native touch dimensions', () => {
+  const iconClasses = TERMINAL_ICON_CONTROL_CLASS.split(/\s+/);
+  const textClasses = TERMINAL_TEXT_CONTROL_CLASS.split(/\s+/);
+
+  expect(iconClasses).toEqual(expect.arrayContaining(['h-11', 'w-11']));
+  expect(textClasses).toEqual(expect.arrayContaining(['h-11', 'min-w-11']));
+  expect(iconClasses).not.toContain('h-9');
+  expect(textClasses).not.toContain('h-9');
+});
 
 test('starts with common controls and keeps secondary navigation at the right end', () => {
   expect(defaultTerminalControlOrder.slice(0, 15)).toEqual([

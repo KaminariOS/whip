@@ -2,6 +2,11 @@ import { cn } from '@/src/lib/utils';
 import * as SwitchPrimitives from '@rn-primitives/switch';
 import { Platform } from 'react-native';
 
+const NATIVE_SWITCH_HIT_SLOP = Platform.select({
+  web: undefined,
+  default: { top: 10, bottom: 10 },
+});
+
 function Switch({ className, ...props }: React.ComponentProps<typeof SwitchPrimitives.Root>) {
   return (
     <SwitchPrimitives.Root
@@ -12,6 +17,7 @@ function Switch({ className, ...props }: React.ComponentProps<typeof SwitchPrimi
         props.disabled && 'opacity-50',
         className
       )}
+      hitSlop={NATIVE_SWITCH_HIT_SLOP}
       {...props}>
       <SwitchPrimitives.Thumb
         className={cn(

@@ -70,14 +70,14 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
   return (
     <View
       className={cn(
-        'h-[42px] max-w-[190px] flex-row items-center rounded-full',
+        'h-11 max-w-[190px] flex-row items-center rounded-full',
         appGlassEnabled && 'border',
         !appGlassEnabled && 'bg-muted',
         !appGlassEnabled && !active && 'border border-border',
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
-      <Button accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: accessibilityStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-[42px] min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onSelect)}>
+      <Button accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: accessibilityStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onSelect)}>
         {indicator === 'progress' ? (
           <AnimatedStatusIndicator status={session.status} color={indicatorColor} size={12} />
         ) : indicator === 'offline' ? (
@@ -92,7 +92,7 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
         )}
         {session.terminalCount > 0 ? <Text className={cn('text-[10px] leading-[18px] text-muted-foreground', activeTextClass)}>{session.terminalCount}</Text> : null}
       </Button>
-      {onClose ? <Button accessibilityLabel={t('rail.disconnectHost', { host: session.label })} className="h-[42px] w-7 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
+      {onClose ? <Button accessibilityLabel={t('rail.disconnectHost', { host: session.label })} className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
     </View>
   );
 }

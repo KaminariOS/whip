@@ -1,7 +1,7 @@
 export type TerminalTabSwipeDirection = -1 | 1;
 
-const SWIPE_CAPTURE_DISTANCE = 10;
-const SWIPE_AXIS_BIAS = 1.2;
+const SWIPE_CAPTURE_DISTANCE = 16;
+const SWIPE_AXIS_BIAS = 1.5;
 const SWIPE_COMMIT_FRACTION = 0.25;
 const SWIPE_COMMIT_VELOCITY = 0.45;
 

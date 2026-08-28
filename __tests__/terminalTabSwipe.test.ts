@@ -9,7 +9,9 @@ describe('terminal tab swiping', () => {
   it('captures only deliberate, single-finger horizontal movement', () => {
     expect(terminalTabSwipeDirection(-24, 3, 1)).toBe(1);
     expect(terminalTabSwipeDirection(24, 3, 1)).toBe(-1);
-    expect(terminalTabSwipeDirection(8, 0, 1)).toBeNull();
+    expect(terminalTabSwipeDirection(15, 0, 1)).toBeNull();
+    expect(terminalTabSwipeDirection(18, 12, 1)).toBeNull();
+    expect(terminalTabSwipeDirection(19, 12, 1)).toBe(-1);
     expect(terminalTabSwipeDirection(24, 24, 1)).toBeNull();
     expect(terminalTabSwipeDirection(24, 3, 2)).toBeNull();
   });

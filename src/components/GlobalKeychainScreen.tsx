@@ -228,7 +228,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
                   <Pressable
                     accessibilityLabel={t('connection.keyA11y', { fingerprint: key.fingerprint, keyType: key.keyType })}
                     accessibilityRole="button"
-                    className="min-w-0 flex-1 flex-row items-center"
+                    className="min-h-11 min-w-0 flex-1 flex-row items-center"
                     disabled={busy}
                     onPress={hapticPress(() => setCopyTarget(key))}>
                     <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={KeyRound} className="text-primary" size={18} /></View>

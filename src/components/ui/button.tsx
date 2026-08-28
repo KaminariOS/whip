@@ -4,9 +4,13 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { Platform, Pressable } from 'react-native';
 
 const buttonVariants = cva(
-  cn('group shrink-0 flex-row items-center justify-center gap-2 rounded-md shadow-none', Platform.select({
-    web: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
-  })),
+  cn(
+    'group shrink-0 flex-row items-center justify-center gap-2 rounded-md shadow-none',
+    Platform.select({
+      web: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+      default: 'min-h-11 min-w-11',
+    }),
+  ),
   {
     variants: {
       variant: {
@@ -18,10 +22,31 @@ const buttonVariants = cva(
         link: '',
       },
       size: {
-        default: cn('h-10 px-4 py-0 sm:h-9', Platform.select({ web: 'has-[>svg]:px-3' })),
-        sm: cn('h-9 gap-1.5 rounded-md px-3 sm:h-8', Platform.select({ web: 'has-[>svg]:px-2.5' })),
-        lg: cn('h-11 rounded-md px-6 sm:h-10', Platform.select({ web: 'has-[>svg]:px-4' })),
-        icon: 'h-10 w-10 sm:h-9 sm:w-9',
+        default: cn(
+          Platform.select({
+            web: 'h-10 px-4 py-0 sm:h-9',
+            default: 'h-11 px-4 py-0',
+          }),
+          Platform.select({ web: 'has-[>svg]:px-3' }),
+        ),
+        sm: cn(
+          Platform.select({
+            web: 'h-9 gap-1.5 rounded-md px-3 sm:h-8',
+            default: 'h-11 gap-1.5 rounded-md px-3',
+          }),
+          Platform.select({ web: 'has-[>svg]:px-2.5' }),
+        ),
+        lg: cn(
+          Platform.select({
+            web: 'h-11 rounded-md px-6 sm:h-10',
+            default: 'h-12 rounded-md px-6',
+          }),
+          Platform.select({ web: 'has-[>svg]:px-4' }),
+        ),
+        icon: Platform.select({
+          web: 'h-10 w-10 sm:h-9 sm:w-9',
+          default: 'h-11 w-11',
+        }),
         content: '',
       },
     },

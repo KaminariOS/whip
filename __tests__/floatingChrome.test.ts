@@ -10,7 +10,7 @@ describe('floating chrome geometry', () => {
   test('uses one tab-bar height and adds the pane bar only for multiple panes', () => {
     expect(sessionTopChromeInset(0)).toBe(55);
     expect(sessionTopChromeInset(1)).toBe(55);
-    expect(sessionTopChromeInset(2)).toBe(92);
+    expect(sessionTopChromeInset(2)).toBe(99);
   });
 
   test('includes safe area, keyboard, and a dynamically measured composer', () => {

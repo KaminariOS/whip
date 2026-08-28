@@ -67,6 +67,7 @@ interface Props {
 const COPY_FEEDBACK_MS = 1_500;
 const CHAT_CONTENT_TOP_GAP = 16;
 const CHAT_CONTENT_BOTTOM_GAP = 24;
+const SMALL_ICON_HIT_SLOP = 8;
 
 interface ChatScrollGeometry {
   contentHeight: number;
@@ -248,7 +249,7 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
       accessibilityRole="button"
       accessibilityState={{ expanded }}
       disabled={!hasDetail && !presentation.href}
-      className={cn('w-full overflow-hidden', failed && 'rounded-md bg-destructive/10 px-2')}
+      className={cn('min-h-11 w-full overflow-hidden', failed && 'rounded-md bg-destructive/10 px-2')}
       onPress={() => {
         if (hasDetail) setExpanded(value => !value);
         else if (presentation.href) openExternalUrl(presentation.href);
@@ -290,7 +291,7 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
           </View>
         )}
         {presentation.href && !isRunning(item) && (
-          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" onPress={event => { event.stopPropagation(); openExternalUrl(presentation.href!); }}>
+          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" hitSlop={SMALL_ICON_HIT_SLOP} onPress={event => { event.stopPropagation(); openExternalUrl(presentation.href!); }}>
             <ExternalLink size={14} color={colors.textTertiary} />
           </Pressable>
         )}
@@ -337,14 +338,16 @@ function ToolCodeBlock({
 }) {
   const { colors } = useTheme();
   return (
-    <View className={cn('relative overflow-hidden', bordered && 'rounded-md border border-border')}>
+    <View className={cn('relative overflow-hidden', bordered && 'rounded-md border border-border', copyable && 'min-h-11')}>
       {copyable && (
         <Pressable
           accessibilityLabel="Copy tool output"
-          className="absolute right-1 top-1 z-10 size-7 items-center justify-center rounded-md bg-background/90"
+          className="absolute right-1 top-1 z-10 size-11 items-end justify-start"
           onPress={() => Clipboard.setString(text)}
         >
-          <Copy size={13} color={colors.textTertiary} />
+          <View className="size-7 items-center justify-center rounded-md bg-background/90">
+            <Copy size={13} color={colors.textTertiary} />
+          </View>
         </Pressable>
       )}
       <ScrollView
@@ -439,7 +442,7 @@ function ContextToolGroup({ tools }: { tools: TranscriptToolPart[] }) {
   const failed = tools.some(tool => tool.state.status === 'error');
   return (
     <View className="w-full">
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-8 flex-row items-center py-1" onPress={() => setExpanded(value => !value)}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center py-1" onPress={() => setExpanded(value => !value)}>
         {running && <ActivityIndicator className="mr-2" size={13} color={colors.textTertiary} />}
         {failed && !running && <CircleAlert className="mr-2" size={14} color={colors.error} />}
         <Text className="text-[13px] font-medium text-foreground">{running ? 'Gathering context' : 'Gathered context'}</Text>
@@ -548,7 +551,7 @@ function UserPrompt({ message }: { message: TranscriptMessage }) {
   const meta = formatTime(message.createdAt);
   return (
     <View className="ml-9 items-end">
-      <Pressable accessibilityLabel="Copy prompt" className="max-w-[86%] rounded-xl bg-muted px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
+      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] rounded-xl bg-muted px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
         <Text selectable className="text-[14px] leading-[20px] text-foreground">{text}</Text>
       </Pressable>
       <View className="mt-1 flex-row items-center gap-1 px-1">
@@ -605,7 +608,7 @@ function ChangedFiles({ turn }: { turn: TranscriptTurn }) {
   const deletions = turn.diffs.reduce((total, diff) => total + diff.deletions, 0);
   return (
     <View className="mt-2 border-t border-border pt-2">
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-8 flex-row items-center" onPress={() => setExpanded(value => !value)}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center" onPress={() => setExpanded(value => !value)}>
         <Text className="text-[11px] font-medium text-foreground">Changed {turn.diffs.length} file{turn.diffs.length === 1 ? '' : 's'}</Text>
         <Text className="ml-2 font-mono text-[10px]" style={{ color: colors.done }}>+{additions}</Text>
         <Text className="ml-1 font-mono text-[10px]" style={{ color: colors.error }}>−{deletions}</Text>

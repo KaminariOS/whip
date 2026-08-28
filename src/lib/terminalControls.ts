@@ -30,6 +30,11 @@ export const defaultTerminalControlOrder = [
 export type TerminalControlId = typeof defaultTerminalControlOrder[number];
 export type TerminalControlUsage = Partial<Record<TerminalControlId, number>>;
 
+export const TERMINAL_ICON_CONTROL_CLASS =
+  'h-11 w-11 items-center justify-center rounded-sm border border-border bg-card/70 p-0 active:bg-card/80';
+export const TERMINAL_TEXT_CONTROL_CLASS =
+  'h-11 min-w-11 items-center justify-center rounded-sm border border-border bg-card/70 px-2.5 py-0 active:bg-card/80';
+
 const terminalControlIds = new Set<string>(defaultTerminalControlOrder);
 const MAX_USAGE_COUNT = 1_000_000;
 

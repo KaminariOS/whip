@@ -13,14 +13,14 @@ describe('terminal keyboard and composer geometry', () => {
       composerVisible: false,
       controlBarHeight,
       keyboardInset: 301,
-      topInset: 92,
+      topInset: 99,
     });
 
     expect(layout).toEqual({
       floatingKeyboardInset: 0,
       layoutKeyboardInset: 301,
-      overlayInsets: { top: 92, bottom: 84 },
-      terminalInsets: { top: 92, bottom: 84 },
+      overlayInsets: { top: 99, bottom: 84 },
+      terminalInsets: { top: 99, bottom: 84 },
     });
   });
 
@@ -31,7 +31,7 @@ describe('terminal keyboard and composer geometry', () => {
       composerVisible: false,
       controlBarHeight,
       keyboardInset: 301,
-      topInset: 92,
+      topInset: 99,
     });
     const open = terminalViewportLayout({
       composerExpanded: false,
@@ -39,13 +39,13 @@ describe('terminal keyboard and composer geometry', () => {
       composerVisible: true,
       controlBarHeight,
       keyboardInset: 301,
-      topInset: 92,
+      topInset: 99,
     });
 
     expect(open.terminalInsets).toEqual(closed.terminalInsets);
     expect(open.layoutKeyboardInset).toBe(0);
     expect(open.floatingKeyboardInset).toBe(301);
-    expect(open.overlayInsets).toEqual({ top: 92, bottom: 497 });
+    expect(open.overlayInsets).toEqual({ top: 99, bottom: 497 });
   });
 
   test('expanded composer content shares the keyboard inset but not floating composer height', () => {
