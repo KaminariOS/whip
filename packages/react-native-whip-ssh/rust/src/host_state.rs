@@ -87,6 +87,7 @@ pub(crate) struct HostState {
     resync_running: bool,
     snapshot: Option<HerdrSessionSnapshot>,
     active_sync: Option<ActiveSync>,
+    locally_closed_pane_ids: HashSet<String>,
 }
 
 impl Default for HostState {
@@ -104,6 +105,7 @@ impl Default for HostState {
             resync_running: false,
             snapshot: None,
             active_sync: None,
+            locally_closed_pane_ids: HashSet::new(),
         }
     }
 }
@@ -135,6 +137,15 @@ impl HostState {
             focus,
             snapshot: self.snapshot.clone(),
         }
+    }
+
+    pub(crate) fn terminal_id_for_pane(&self, pane_id: &str) -> Option<String> {
+        self.snapshot
+            .as_ref()?
+            .panes
+            .iter()
+            .find(|pane| pane.pane_id == pane_id)
+            .map(|pane| pane.terminal_id.clone())
     }
 
     pub(crate) fn connection_installed(&mut self, generation: u64) {
@@ -213,10 +224,16 @@ impl HostState {
         normalize_snapshot(&mut snapshot);
         let mut replay_error = None;
         for event in active.buffered_events {
+            if let HerdrEvent::PaneClosed { pane_id, .. } = &event {
+                self.locally_closed_pane_ids.remove(pane_id);
+            } else if event_references_closed_pane(&event, &self.locally_closed_pane_ids) {
+                continue;
+            }
             if let Err(reason) = apply_event_transactional(&mut snapshot, &event) {
                 replay_error.get_or_insert(reason);
             }
         }
+        self.locally_closed_pane_ids.clear();
         self.snapshot = Some(snapshot);
         self.sync_status = HostSyncStatus::Synced;
         self.last_synced_at_ms = Some(now_ms);
@@ -266,6 +283,11 @@ impl HostState {
         now_ms: u64,
     ) -> ApplyResult {
         if connection_generation != self.connection_generation {
+            return ApplyResult::IgnoredStale;
+        }
+        if let HerdrEvent::PaneClosed { pane_id, .. } = &event {
+            self.locally_closed_pane_ids.remove(pane_id);
+        } else if event_references_closed_pane(&event, &self.locally_closed_pane_ids) {
             return ApplyResult::IgnoredStale;
         }
         if let HerdrEvent::PaneOutputChanged { pane_id, .. } = &event {
@@ -336,6 +358,14 @@ impl HostState {
         let Some(snapshot) = self.snapshot.as_mut() else {
             return ApplyResult::NeedsResync("control result arrived before host state".to_owned());
         };
+        let locally_closed_pane_id = match (request, result) {
+            (HerdrControlRequest::PaneClose { pane_id }, HerdrControlResult::Ok)
+                if snapshot.panes.iter().any(|pane| pane.pane_id == *pane_id) =>
+            {
+                Some(pane_id.clone())
+            }
+            _ => None,
+        };
         let mut candidate = snapshot.clone();
         let applied =
             apply_control_to_snapshot(&mut candidate, request, result).and_then(|projection| {
@@ -348,6 +378,9 @@ impl HostState {
             Ok(ControlProjection::Applied) => {
                 normalize_snapshot(&mut candidate);
                 *snapshot = candidate;
+                if let Some(pane_id) = locally_closed_pane_id {
+                    self.locally_closed_pane_ids.insert(pane_id);
+                }
                 self.bump_revision();
                 ApplyResult::Applied
             }
@@ -414,6 +447,11 @@ impl HostState {
             .unwrap_or_default();
         ids.sort();
         ids
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resync_running(&self) -> bool {
+        self.resync_running
     }
 
     fn bump_revision(&mut self) {
@@ -917,6 +955,47 @@ fn upsert_agent(snapshot: &mut HerdrSessionSnapshot, agent: HerdrAgentInfo) -> R
     Ok(())
 }
 
+fn event_references_closed_pane(event: &HerdrEvent, closed_pane_ids: &HashSet<String>) -> bool {
+    let is_closed = |pane_id: &str| closed_pane_ids.contains(pane_id);
+    match event {
+        HerdrEvent::PaneCreated { pane } | HerdrEvent::PaneUpdated { pane } => {
+            is_closed(&pane.pane_id)
+        }
+        HerdrEvent::PaneFocused { pane_id, .. }
+        | HerdrEvent::PaneExited { pane_id, .. }
+        | HerdrEvent::PaneOutputChanged { pane_id, .. }
+        | HerdrEvent::PaneAgentDetected { pane_id, .. }
+        | HerdrEvent::PaneAgentStatusChanged { pane_id, .. } => is_closed(pane_id),
+        HerdrEvent::PaneMoved {
+            previous_pane_id,
+            pane,
+            ..
+        } => is_closed(previous_pane_id) || is_closed(&pane.pane_id),
+        HerdrEvent::LayoutUpdated { layout } => {
+            layout.panes.iter().any(|pane| is_closed(&pane.pane_id))
+        }
+        HerdrEvent::WorkspaceCreated { .. }
+        | HerdrEvent::WorkspaceUpdated { .. }
+        | HerdrEvent::WorkspaceMetadataUpdated { .. }
+        | HerdrEvent::WorkspaceRenamed { .. }
+        | HerdrEvent::WorkspaceMoved { .. }
+        | HerdrEvent::WorkspaceReordered { .. }
+        | HerdrEvent::WorkspaceClosed { .. }
+        | HerdrEvent::WorkspaceFocused { .. }
+        | HerdrEvent::WorktreeCreated { .. }
+        | HerdrEvent::WorktreeOpened { .. }
+        | HerdrEvent::WorktreeRemoved { .. }
+        | HerdrEvent::TabCreated { .. }
+        | HerdrEvent::TabClosed { .. }
+        | HerdrEvent::TabFocused { .. }
+        | HerdrEvent::TabRenamed { .. }
+        | HerdrEvent::TabMoved { .. }
+        | HerdrEvent::PaneClosed { .. }
+        | HerdrEvent::ProtocolUnknown { .. }
+        | HerdrEvent::ProtocolInvalid { .. } => false,
+    }
+}
+
 fn apply_event_to_snapshot(
     snapshot: &mut HerdrSessionSnapshot,
     event: &HerdrEvent,
@@ -1220,9 +1299,7 @@ fn apply_control_to_snapshot(
             }
             HerdrControlRequest::PaneClose { pane_id } => {
                 remove_pane(snapshot, pane_id);
-                Ok(ControlProjection::AppliedNeedsResync(
-                    "pane close result omits the updated tab layout".to_owned(),
-                ))
+                Ok(ControlProjection::Applied)
             }
             _ => Ok(ControlProjection::Unchanged),
         },
@@ -1735,6 +1812,90 @@ mod tests {
         assert!(value.layouts.iter().all(|layout| layout.tab_id != "t2"));
         assert_eq!(value.workspaces[0].tab_count, 1.0);
         assert_eq!(value.workspaces[0].pane_count, 1.0);
+    }
+
+    #[test]
+    fn confirmed_pane_close_is_complete_without_a_snapshot() {
+        let mut state = synced_state();
+        state
+            .snapshot
+            .as_mut()
+            .unwrap()
+            .panes
+            .push(pane("p2", "w1", "t1", HerdrAgentStatus::Idle));
+        normalize_snapshot(state.snapshot.as_mut().unwrap());
+
+        assert_eq!(state.terminal_id_for_pane("p1").as_deref(), Some("term-p1"));
+        assert_eq!(
+            state.apply_control_result(
+                1,
+                &HerdrControlRequest::PaneClose {
+                    pane_id: "p1".to_owned(),
+                },
+                &HerdrControlResult::Ok,
+            ),
+            ApplyResult::Applied
+        );
+
+        let projection = state.projection();
+        assert!(!projection.needs_resync);
+        assert_eq!(projection.freshness, HostFreshness::Fresh);
+        let value = projection.snapshot.unwrap();
+        assert!(value.panes.iter().all(|pane| pane.pane_id != "p1"));
+        assert_eq!(value.focused_pane_id.as_deref(), Some("p2"));
+    }
+
+    #[test]
+    fn queued_events_for_a_locally_closed_pane_are_ignored_until_confirmation() {
+        let mut state = synced_state();
+        state
+            .snapshot
+            .as_mut()
+            .unwrap()
+            .panes
+            .push(pane("p2", "w1", "t1", HerdrAgentStatus::Idle));
+        normalize_snapshot(state.snapshot.as_mut().unwrap());
+        assert_eq!(
+            state.apply_control_result(
+                1,
+                &HerdrControlRequest::PaneClose {
+                    pane_id: "p1".to_owned(),
+                },
+                &HerdrControlResult::Ok,
+            ),
+            ApplyResult::Applied
+        );
+
+        assert_eq!(
+            state.apply_event(
+                1,
+                HerdrEvent::PaneAgentStatusChanged {
+                    workspace_id: "w1".to_owned(),
+                    pane_id: "p1".to_owned(),
+                    agent_status: HerdrAgentStatus::Working,
+                    agent: Some("codex".to_owned()),
+                    title: None,
+                    display_agent: None,
+                    state_labels: None,
+                },
+                11,
+            ),
+            ApplyResult::IgnoredStale
+        );
+        assert!(!state.projection().needs_resync);
+
+        assert_eq!(
+            state.apply_event(
+                1,
+                HerdrEvent::PaneClosed {
+                    workspace_id: "w1".to_owned(),
+                    pane_id: "p1".to_owned(),
+                },
+                12,
+            ),
+            ApplyResult::Applied
+        );
+        assert!(!state.locally_closed_pane_ids.contains("p1"));
     }
 
     #[test]

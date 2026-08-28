@@ -1049,6 +1049,12 @@ async fn control_request_inner(
     request: HerdrControlRequest,
 ) -> Result<HerdrControlResult, HerdrControlError> {
     let request_for_state = request.clone();
+    let pane_close_terminal_id = match &request {
+        HerdrControlRequest::PaneClose { pane_id } => {
+            inner.state.lock().host_state.terminal_id_for_pane(pane_id)
+        }
+        _ => None,
+    };
     let state = inner.state.lock().connection;
     if state != HostConnectionState::Connected {
         return Err(HerdrControlError::TransportDisconnected(format!(
@@ -1090,7 +1096,12 @@ async fn control_request_inner(
     match result {
         Ok(result) => {
             update_server_from_result(&inner, socket, &result);
-            reconcile_control_result(&inner, &request_for_state, &result);
+            reconcile_control_result(
+                &inner,
+                &request_for_state,
+                &result,
+                pane_close_terminal_id.as_deref(),
+            );
             Ok(result)
         }
         Err(error) if is_transport_control_error(&error) => {
@@ -1119,7 +1130,12 @@ async fn control_request_inner(
                 )
                 .await?;
                 update_server_from_result(&inner, socket, &result);
-                reconcile_control_result(&inner, &request_for_state, &result);
+                reconcile_control_result(
+                    &inner,
+                    &request_for_state,
+                    &result,
+                    pane_close_terminal_id.as_deref(),
+                );
                 Ok(result)
             } else {
                 begin_reconnect(inner.clone(), reason, false);
@@ -1655,6 +1671,7 @@ fn reconcile_control_result(
     inner: &Arc<RuntimeInner>,
     request: &HerdrControlRequest,
     result: &HerdrControlResult,
+    pane_close_terminal_id: Option<&str>,
 ) {
     if matches!(result, HerdrControlResult::SessionSnapshot { .. }) {
         return;
@@ -1669,6 +1686,13 @@ fn reconcile_control_result(
     if !matches!(outcome, ApplyResult::IgnoredStale) {
         emit_host_state(inner, Vec::new());
     }
+    if matches!(request, HerdrControlRequest::PaneClose { .. })
+        && matches!(result, HerdrControlResult::Ok)
+        && !matches!(outcome, ApplyResult::IgnoredStale)
+        && let Some(terminal_id) = pane_close_terminal_id
+    {
+        close_terminal_intent(inner, terminal_id.to_owned());
+    }
     match outcome {
         ApplyResult::NeedsResync(reason) => schedule_state_resync(inner.clone(), reason),
         ApplyResult::Applied
@@ -1679,7 +1703,6 @@ fn reconcile_control_result(
                     | HerdrControlRequest::TabCreate { .. }
                     | HerdrControlRequest::TabClose { .. }
                     | HerdrControlRequest::PaneSplit { .. }
-                    | HerdrControlRequest::PaneClose { .. }
             ) =>
         {
             schedule_state_resync(
@@ -1906,6 +1929,21 @@ async fn start_or_update_state_events(inner: Arc<RuntimeInner>) -> Result<(), He
     }
     close_herdr_event_subscription(inner.id.clone());
     start_desired_events(inner, epoch).await
+}
+
+fn close_terminal_intent(inner: &Arc<RuntimeInner>, terminal_id: String) {
+    inner.agents.close_terminal(&terminal_id);
+    inner.state.lock().terminals.remove(&terminal_id);
+    close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
+    emit(HostRuntimeEvent::TerminalStateChanged {
+        runtime_id: inner.id.clone(),
+        terminal_id,
+        state: HostTerminalState::Closed,
+        reconnect_attempt: 0,
+        retrying: false,
+        error: None,
+    });
+    inner.settled.notify_waiters();
 }
 
 async fn open_terminal_inner(
@@ -2443,11 +2481,10 @@ pub(crate) fn event_subscription_closed(client_key: &str, reason: String) -> boo
         return true;
     }
     drop(state);
-    runtime
-        .state
-        .lock()
-        .host_state
-        .mark_needs_resync(format!("event subscription closed: {reason}"));
+    schedule_state_resync(
+        runtime.clone(),
+        format!("event subscription closed: {reason}"),
+    );
     emit_host_state(&runtime, Vec::new());
     emit(HostRuntimeEvent::EventSubscriptionClosed {
         runtime_id: runtime.id.clone(),
@@ -2985,18 +3022,7 @@ impl HostRuntime {
     }
 
     pub fn close_terminal(&self, terminal_id: String) {
-        self.inner.agents.close_terminal(&terminal_id);
-        self.inner.state.lock().terminals.remove(&terminal_id);
-        close_herdr_terminal_bridge(self.inner.id.clone(), terminal_id.clone());
-        emit(HostRuntimeEvent::TerminalStateChanged {
-            runtime_id: self.inner.id.clone(),
-            terminal_id,
-            state: HostTerminalState::Closed,
-            reconnect_attempt: 0,
-            retrying: false,
-            error: None,
-        });
-        self.inner.settled.notify_waiters();
+        close_terminal_intent(&self.inner, terminal_id);
     }
 
     pub fn close_all_terminals(&self) {
@@ -4500,6 +4526,107 @@ mod tests {
         assert!(result.changed);
         assert!(result.resync_reason.is_some());
         assert!(state.host_state.projection().needs_resync);
+    }
+
+    #[test]
+    fn confirmed_pane_close_cancels_terminal_retry_without_restarting_events() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        let inner = connected_runtime_inner("pane-close-local-test");
+        {
+            let mut state = inner.state.lock();
+            let token = state.host_state.begin_sync(1);
+            assert_eq!(
+                state
+                    .host_state
+                    .complete_sync(token, batch_test_snapshot(), 1),
+                ApplyResult::Applied
+            );
+            state.event = Some(EventSubscriptionRuntime {
+                pane_ids: vec!["pane-1".to_owned(), "pane-2".to_owned()],
+                operation_epoch: 1,
+                retry_running: false,
+            });
+            for terminal_id in ["terminal-pane-1", "terminal-pane-2"] {
+                state.terminals.insert(
+                    terminal_id.to_owned(),
+                    TerminalRuntime {
+                        state: HostTerminalState::Attached,
+                        takeover: true,
+                        columns: 80,
+                        rows: 24,
+                        cell_width_px: 0,
+                        cell_height_px: 0,
+                        operation_epoch: 1,
+                        reconnect_attempt: 0,
+                        retry_running: false,
+                    },
+                );
+            }
+        }
+        let sink = Arc::new(RecordingRuntimeSink::default());
+        set_host_runtime_event_sink(sink.clone());
+
+        reconcile_control_result(
+            &inner,
+            &HerdrControlRequest::PaneClose {
+                pane_id: "pane-1".to_owned(),
+            },
+            &HerdrControlResult::Ok,
+            Some("terminal-pane-1"),
+        );
+
+        clear_host_runtime_event_sink();
+        let state = inner.state.lock();
+        assert!(!state.terminals.contains_key("terminal-pane-1"));
+        assert!(state.terminals.contains_key("terminal-pane-2"));
+        assert_eq!(state.event.as_ref().unwrap().pane_ids, ["pane-1", "pane-2"]);
+        assert!(!state.host_state.projection().needs_resync);
+        assert!(!state.host_state.resync_running());
+        assert!(
+            state
+                .host_state
+                .projection()
+                .snapshot
+                .unwrap()
+                .panes
+                .iter()
+                .all(|pane| pane.pane_id != "pane-1")
+        );
+        drop(state);
+
+        let events = sink.events.lock();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            HostRuntimeEvent::TerminalStateChanged {
+                terminal_id,
+                state: HostTerminalState::Closed,
+                retrying: false,
+                ..
+            } if terminal_id == "terminal-pane-1"
+        )));
+    }
+
+    #[test]
+    fn event_subscription_closure_schedules_snapshot_resync() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        let inner = connected_runtime_inner("event-subscription-resync-test");
+        runtimes()
+            .write()
+            .insert(inner.id.clone(), Arc::downgrade(&inner));
+
+        assert!(event_subscription_closed(
+            &inner.id,
+            "unexpected EOF".to_owned(),
+        ));
+
+        {
+            let mut state = inner.state.lock();
+            assert!(state.host_state.projection().needs_resync);
+            assert!(state.host_state.resync_running());
+            assert!(state.event.as_ref().unwrap().retry_running);
+            state.explicit_disconnect = true;
+        }
+        runtimes().write().remove(&inner.id);
     }
 
     #[test]
