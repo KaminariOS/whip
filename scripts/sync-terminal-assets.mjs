@@ -5,9 +5,19 @@ import { fileURLToPath } from 'node:url';
 import androidImeBridge from './android-ime-bridge.cjs';
 import terminalOfflineCache from './terminal-offline-cache.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
+import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
 
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const { createTerminalOfflineCache } = terminalOfflineCache;
+// This pure model is the authoritative implementation. The same functions are
+// imported by TypeScript callers/tests and stringified into both WebView assets.
+const {
+  reconcileTerminalBoundaryScroll,
+  terminalBoundaryClamp,
+  terminalBoundaryFiniteNumber,
+  terminalBoundaryScroll,
+  terminalBoundaryVisualOffset,
+} = terminalBoundaryScrollModel;
 const {
   extractTerminalLinks,
   mergeTerminalLinks,
@@ -194,7 +204,7 @@ const terminalSessionHtml = `<!doctype html>
     #terminal-background-layer { position: fixed; inset: 0; z-index: 2; display: none; mix-blend-mode: screen; pointer-events: none; }
     #terminal-background-image { width: 100%; height: 100%; object-fit: cover; }
     #terminal-background-glass { position: absolute; inset: 0; }
-    #terminal-geometry { position: relative; z-index: 1; box-sizing: border-box; height: calc(100% - var(--terminal-geometry-bottom, 0px)); overflow: visible; transform: translateY(var(--terminal-visual-offset, 0px)); transition: transform 120ms cubic-bezier(0.2, 0, 0, 1); will-change: transform; }
+    #terminal-geometry { position: relative; z-index: 1; box-sizing: border-box; height: calc(100% - var(--terminal-geometry-bottom, 0px)); overflow: visible; transform: translateY(var(--terminal-visual-offset, 0px)); will-change: transform; }
     #terminal { position: relative; box-sizing: border-box; }
     #terminal-visual-debug { position: fixed; z-index: 30; top: 104px; right: 8px; display: none; max-width: calc(100% - 16px); padding: 5px 7px; border: 1px solid #7aa2f7aa; border-radius: 7px; background: #16161ed9; color: #c0caf5; font: 700 9px/1.35 monospace; white-space: pre-wrap; pointer-events: none; }
     .xterm { height: 100%; }
@@ -230,6 +240,11 @@ const terminalSessionHtml = `<!doctype html>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
     ${createTerminalOfflineCache.toString()}
+    ${terminalBoundaryFiniteNumber.toString()}
+    ${terminalBoundaryClamp.toString()}
+    ${terminalBoundaryVisualOffset.toString()}
+    ${reconcileTerminalBoundaryScroll.toString()}
+    ${terminalBoundaryScroll.toString()}
     const terminalFontFamily = '${androidTerminalFontFamily}';
     const fontReady = document.fonts?.load
       ? Promise.all([
@@ -296,13 +311,20 @@ const terminalSessionHtml = `<!doctype html>
       scrollOffsetFromBottom: undefined,
       maxScrollOffsetFromBottom: undefined,
     };
-    let terminalVisualBoundaryPreference = 'top';
     let lastTerminalVisualState = '';
     let remoteVisualScrollOffset;
     let remoteVisualScrollMaximum;
     let remoteVisualInputOffset;
     let remoteVisualInputMaximum;
     let remoteVisualPendingDelta = 0;
+    let terminalBoundaryScrollState = {
+      offsetFromBottom: 0,
+      maxOffsetFromBottom: 0,
+      boundary: null,
+      boundaryRevealPx: 0,
+      boundaryAllowancePx: 0,
+      rowRemainderPx: 0,
+    };
     const offlineCache = createTerminalOfflineCache({
       serialize: options => serializer.serialize(options),
       send,
@@ -331,7 +353,7 @@ const terminalSessionHtml = `<!doctype html>
             + '  scroll ' + state.offset + '/' + state.maximum
             + '  visual ' + state.visualOffset
             + '\\nT ' + state.top + '  B ' + state.bottom + '  G ' + state.geometryBottom
-            + '  pref ' + state.boundaryPreference
+            + '  boundary ' + (state.boundary || '-') + '/' + state.boundaryRevealPx
             + (state.remoteScroll ? '\\nin ' + state.inputOffset + '  pending ' + state.pendingDelta : '')
             + (Number.isFinite(state.surfaceTop) ? '\\nS ' + state.surfaceTop + '..' + state.surfaceBottom + '/' + state.viewportHeight : '')
           : '';
@@ -346,22 +368,6 @@ const terminalSessionHtml = `<!doctype html>
       if (!terminalElement || !geometryElement) return;
       const geometryBottom = finiteInset(terminalVisualInsets.geometryBottomInset);
       geometryElement.style.setProperty('--terminal-geometry-bottom', geometryBottom + 'px');
-      if (terminalVisualInsets.alternateScreen || terminal.buffer.active.type === 'alternate') {
-        geometryElement.style.transition = 'none';
-        geometryElement.style.setProperty('--terminal-visual-offset', '0px');
-        reportTerminalVisualState({
-          alternateScreen: true,
-          top: finiteInset(terminalVisualInsets.top),
-          bottom: finiteInset(terminalVisualInsets.bottom),
-          geometryBottom,
-          offset: 0,
-          maximum: 0,
-          visualOffset: 0,
-          boundaryPreference: terminalVisualBoundaryPreference,
-        });
-        return;
-      }
-      geometryElement.style.transition = '';
       const local = offlineScrollInfo();
       const hasRemoteScroll = Number.isFinite(remoteVisualScrollOffset)
         && Number.isFinite(remoteVisualScrollMaximum);
@@ -373,36 +379,33 @@ const terminalSessionHtml = `<!doctype html>
         : local.maxOffsetFromBottom;
       const top = finiteInset(terminalVisualInsets.top);
       const bottomAllowance = Math.max(0, finiteInset(terminalVisualInsets.bottom) - geometryBottom);
-      // The terminal surface stays full-screen while moving through scrollback.
-      // The outer visual pad is progressively revealed only as the active drag
-      // reaches the corresponding scroll boundary.
-      let visualOffset = 0;
-      if (maximum <= 0) {
-        visualOffset = terminalVisualBoundaryPreference === 'top' ? top : -bottomAllowance;
-      } else if (offset >= maximum) {
-        visualOffset = top;
-      } else if (offset <= 0) {
-        visualOffset = -bottomAllowance;
-      } else {
-        const cellHeight = Math.max(1, window.innerHeight / Math.max(1, terminal.rows));
-        if (terminalVisualBoundaryPreference === 'top') {
-          visualOffset = Math.max(0, top - ((maximum - offset) * cellHeight));
-        } else {
-          const bottomReveal = Math.max(0, bottomAllowance - (offset * cellHeight));
-          visualOffset = bottomReveal > 0 ? -bottomReveal : 0;
-        }
-      }
+      const alternateScreen = terminalVisualInsets.alternateScreen
+        || terminal.buffer.active.type === 'alternate';
+      terminalBoundaryScrollState = reconcileTerminalBoundaryScroll({
+        state: terminalBoundaryScrollState,
+        offsetFromBottom: offset,
+        maxOffsetFromBottom: maximum,
+        topAllowancePx: top,
+        bottomAllowancePx: bottomAllowance,
+        alternateScreen,
+      });
+      const visualOffset = terminalBoundaryVisualOffset({
+        alternateScreen,
+        boundary: terminalBoundaryScrollState.boundary,
+        boundaryRevealPx: terminalBoundaryScrollState.boundaryRevealPx,
+      });
       geometryElement.style.setProperty('--terminal-visual-offset', visualOffset + 'px');
       const surfaceRect = geometryElement.getBoundingClientRect();
       reportTerminalVisualState({
-        alternateScreen: false,
+        alternateScreen,
         top,
         bottom: finiteInset(terminalVisualInsets.bottom),
         geometryBottom,
         offset,
         maximum,
         visualOffset,
-        boundaryPreference: terminalVisualBoundaryPreference,
+        boundary: terminalBoundaryScrollState.boundary,
+        boundaryRevealPx: terminalBoundaryScrollState.boundaryRevealPx,
         remoteScroll: hasRemoteScroll,
         inputOffset: remoteVisualInputOffset,
         pendingDelta: remoteVisualPendingDelta,
@@ -768,37 +771,67 @@ const terminalSessionHtml = `<!doctype html>
       }
       return true;
     };
+    const terminalCellHeight = () => {
+      const screen = terminal.element?.querySelector('.xterm-screen');
+      return Math.max(1, screen
+        ? screen.getBoundingClientRect().height / Math.max(1, terminal.rows)
+        : window.innerHeight / Math.max(1, terminal.rows));
+    };
+    const scrollTerminalPixels = (gestureDeltaPx, point) => {
+      const local = offlineScrollInfo();
+      const hasRemoteScroll = Number.isFinite(remoteVisualScrollOffset)
+        && Number.isFinite(remoteVisualScrollMaximum);
+      terminalBoundaryScrollState = reconcileTerminalBoundaryScroll({
+        state: terminalBoundaryScrollState,
+        offsetFromBottom: hasRemoteScroll ? remoteVisualScrollOffset : local.offsetFromBottom,
+        maxOffsetFromBottom: hasRemoteScroll ? remoteVisualScrollMaximum : local.maxOffsetFromBottom,
+        topAllowancePx: finiteInset(terminalVisualInsets.top),
+        bottomAllowancePx: Math.max(
+          0,
+          finiteInset(terminalVisualInsets.bottom)
+            - finiteInset(terminalVisualInsets.geometryBottomInset),
+        ),
+        alternateScreen: false,
+      });
+      const result = terminalBoundaryScroll({
+        state: terminalBoundaryScrollState,
+        gestureDeltaPx,
+        cellHeightPx: terminalCellHeight(),
+        topAllowancePx: finiteInset(terminalVisualInsets.top),
+        bottomAllowancePx: Math.max(
+          0,
+          finiteInset(terminalVisualInsets.bottom)
+            - finiteInset(terminalVisualInsets.geometryBottomInset),
+        ),
+        alternateScreen: false,
+      });
+      terminalBoundaryScrollState = result;
+      const rowDelta = result.rowScrollDelta;
+      if (rowDelta !== 0) {
+        if (offlineScrollback || localScrollback) {
+          terminal.scrollLines(-rowDelta);
+        } else {
+          remoteVisualScrollOffset = result.offsetFromBottom;
+          remoteVisualPendingDelta += rowDelta;
+          const cell = terminalMouseCell(point);
+          send({
+            type: 'scroll',
+            direction: rowDelta > 0 ? 'up' : 'down',
+            lines: Math.abs(rowDelta),
+            column: cell?.col,
+            row: cell?.row,
+          });
+        }
+      }
+      applyTerminalVisualInsets();
+    };
     const scrollTerminal = (direction, lines, point) => {
       const count = Math.max(1, Math.round(Number(lines) || 1));
-      terminalVisualBoundaryPreference = direction === 'up' ? 'top' : 'bottom';
-      applyTerminalVisualInsets();
-      if (offlineScrollback) {
-        terminal.scrollLines(direction === 'up' ? -count : count);
-        return;
-      }
       if (dispatchTerminalWheel(direction, count, point)) return;
-      if (localScrollback) terminal.scrollLines(direction === 'up' ? -count : count);
-      else {
-        const visualDelta = direction === 'up' ? count : -count;
-        if (Number.isFinite(remoteVisualScrollOffset) && Number.isFinite(remoteVisualScrollMaximum)) {
-          const previousVisualOffset = remoteVisualScrollOffset;
-          const nextVisualOffset = Math.max(0, Math.min(
-            remoteVisualScrollMaximum,
-            previousVisualOffset + visualDelta,
-          ));
-          remoteVisualScrollOffset = nextVisualOffset;
-          if (remoteVisualScrollMaximum <= 0) {
-            remoteVisualPendingDelta = visualDelta > 0
-              ? Math.min(Math.max(1, terminal.rows), remoteVisualPendingDelta + visualDelta)
-              : 0;
-          } else {
-            remoteVisualPendingDelta += nextVisualOffset - previousVisualOffset;
-          }
-          applyTerminalVisualInsets();
-        }
-        const cell = terminalMouseCell(point);
-        send({ type: 'scroll', direction, lines: count, column: cell?.col, row: cell?.row });
-      }
+      scrollTerminalPixels(
+        (direction === 'up' ? 1 : -1) * count * terminalCellHeight(),
+        point,
+      );
     };
     window.herdrScroll = (direction, lines) => scrollTerminal(direction, lines);
     window.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
@@ -1134,6 +1167,10 @@ const terminalSessionHtml = `<!doctype html>
       if (event.touches.length !== 1) { touch = null; pinch = null; lastTap = null; return; }
       const point = event.touches[0];
       clearInteractiveSelection(true);
+      terminalBoundaryScrollState = {
+        ...terminalBoundaryScrollState,
+        rowRemainderPx: 0,
+      };
       touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false, selection: null };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
@@ -1204,14 +1241,21 @@ const terminalSessionHtml = `<!doctype html>
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
       event.preventDefault();
       event.stopPropagation();
-      const screen = terminal.element?.querySelector('.xterm-screen');
-      const cellHeight = screen ? screen.getBoundingClientRect().height / terminal.rows : 16;
-      const total = touch.carry + (point.clientY - touch.lastY) / cellHeight;
-      const lines = Math.trunc(total);
-      touch.carry = total - lines;
+      const deltaPx = point.clientY - touch.lastY;
       touch.lastY = point.clientY;
-      if (lines !== 0) {
-        scrollTerminal(lines > 0 ? 'up' : 'down', Math.abs(lines), point);
+      if (
+        terminal.buffer.active.type === 'alternate'
+        || terminal.modes.mouseTrackingMode !== 'none'
+      ) {
+        const total = touch.carry + deltaPx / terminalCellHeight();
+        const lines = Math.trunc(total);
+        touch.carry = total - lines;
+        if (lines !== 0) {
+          scrollTerminal(lines > 0 ? 'up' : 'down', Math.abs(lines), point);
+        }
+      } else {
+        touch.carry = 0;
+        scrollTerminalPixels(deltaPx, point);
       }
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchend', event => {

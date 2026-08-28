@@ -124,75 +124,42 @@ describe('terminal visual boundary insets', () => {
   const viewport = {
     insets: { top: 92, bottom: 210 },
     geometryBottomInset: 0,
-    viewportHeight: 960,
   };
 
-  it('settles normal scrollback below the top chrome at the top boundary', () => {
+  it('does not derive a visual offset from terminal row position', () => {
     expect(terminalVisualOffset({
       ...viewport,
       alternateScreen: false,
       scroll: { offset_from_bottom: 100, max_offset_from_bottom: 100, viewport_rows: 24 },
-    })).toBe(92);
-  });
-
-  it('settles the final normal-buffer row above all bottom chrome', () => {
+    })).toBe(0);
     expect(terminalVisualOffset({
       ...viewport,
       alternateScreen: false,
       scroll: { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 },
-    })).toBe(-210);
-  });
-
-  it('keeps the stable grid full-screen between visual boundaries', () => {
-    expect(terminalVisualOffset({
-      ...viewport,
-      alternateScreen: false,
-      scroll: { offset_from_bottom: 50, max_offset_from_bottom: 100, viewport_rows: 24 },
-    })).toBe(0);
-    expect(terminalVisualOffset({
-      ...viewport,
-      alternateScreen: false,
-      boundaryPreference: 'bottom',
-      scroll: { offset_from_bottom: 50, max_offset_from_bottom: 100, viewport_rows: 24 },
     })).toBe(0);
   });
 
-  it('progressively reveals only the outer pad reached near each boundary', () => {
+  it('uses only explicit pixel boundary reveal state', () => {
     expect(terminalVisualOffset({
       ...viewport,
       alternateScreen: false,
-      boundaryPreference: 'top',
-      scroll: { offset_from_bottom: 98, max_offset_from_bottom: 100, viewport_rows: 24 },
-    })).toBe(12);
+      boundary: 'top',
+      boundaryRevealPx: 40,
+    })).toBe(40);
     expect(terminalVisualOffset({
       ...viewport,
       alternateScreen: false,
-      boundaryPreference: 'bottom',
-      scroll: { offset_from_bottom: 2, max_offset_from_bottom: 100, viewport_rows: 24 },
-    })).toBe(-130);
+      boundary: 'bottom',
+      boundaryRevealPx: 139,
+    })).toBe(-139);
   });
 
   it('never applies fake coordinates to the alternate screen', () => {
     expect(terminalVisualOffset({
       ...viewport,
       alternateScreen: true,
-      scroll: { offset_from_bottom: 100, max_offset_from_bottom: 100, viewport_rows: 24 },
+      boundary: 'bottom',
+      boundaryRevealPx: 210,
     })).toBe(0);
-  });
-
-  it('lets a zero-scrollback normal buffer settle at either visual boundary', () => {
-    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
-    expect(terminalVisualOffset({
-      ...viewport,
-      alternateScreen: false,
-      boundaryPreference: 'top',
-      scroll,
-    })).toBe(92);
-    expect(terminalVisualOffset({
-      ...viewport,
-      alternateScreen: false,
-      boundaryPreference: 'bottom',
-      scroll,
-    })).toBe(-210);
   });
 });
