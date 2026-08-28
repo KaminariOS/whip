@@ -1,4 +1,5 @@
 import {
+  APP_GLASS_FLOATING_CONTROL_CLASS,
   appGlassBackgroundClassName,
   appGlassModalPresentation,
   shouldEnableAppGlass,
@@ -15,6 +16,13 @@ describe('app glass', () => {
   test('keeps screens opaque when glass is disabled', () => {
     expect(appGlassBackgroundClassName(false)).toBe('bg-background');
     expect(appGlassBackgroundClassName(true)).toBe('bg-transparent');
+  });
+
+  test('uses a restrained shared opacity for floating controls', () => {
+    expect(APP_GLASS_FLOATING_CONTROL_CLASS.split(/\s+/)).toEqual([
+      'bg-card/60',
+      'active:bg-card/70',
+    ]);
   });
 
   test('uses an overlay presentation for glass modals on iOS', () => {

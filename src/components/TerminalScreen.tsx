@@ -2192,6 +2192,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 }}
               >
                 <MessageComposer
+                  glass={appGlassEnabled}
                   initialValue={composeText}
                   inputRef={composeInputRef}
                   autoFocus={keyboardEnabled}
@@ -2203,7 +2204,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   placeholder={t('terminal.composePlaceholder')}
                   placeholderTextColor={colors.muted}
                   inputClassName="h-[76px] px-4 py-3 font-mono text-[12px] leading-[17px] text-terminal-text"
-                  surfaceClassName="rounded-[38px] border-terminal-divider bg-terminal-canvas"
+                  surfaceClassName={cn(
+                    'rounded-[38px]',
+                    !appGlassEnabled &&
+                      'border-terminal-divider bg-terminal-canvas',
+                  )}
                   actions={{
                     actionClassName: 'bg-terminal-surface',
                     actionColor: colors.text,

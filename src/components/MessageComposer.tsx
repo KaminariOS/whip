@@ -7,6 +7,7 @@ import {
   type TextInput as TextInputHandle,
 } from 'react-native';
 
+import { APP_GLASS_FLOATING_CONTROL_CLASS } from '../lib/appGlass';
 import { cn } from '../lib/utils';
 import { appGlassControlStyle, useTheme } from '../theme';
 import { GlassSurface } from './GlassSurface';
@@ -64,7 +65,14 @@ export function MessageComposer({
   ...inputProps
 }: MessageComposerProps) {
   const { colors } = useTheme();
-  const actionStyle = glass ? appGlassControlStyle(false, colors) : undefined;
+  const actionStyle = glass
+    ? { borderColor: appGlassControlStyle(false, colors).borderColor }
+    : undefined;
+  const sendStyle = glass
+    ? { borderColor: appGlassControlStyle(true, colors).borderColor }
+    : undefined;
+  const actionColor = glass ? colors.text : actions.actionColor;
+  const sendColor = glass ? colors.primary : actions.sendColor;
   const surfaceContent = (
     <>
       {beforeInput}
@@ -80,21 +88,31 @@ export function MessageComposer({
       <View className="gap-1.5">
         <Button
           accessibilityLabel={actions.attachLabel}
-          className={cn('size-10 rounded-full px-0', glass && 'border', actions.actionClassName)}
+          className={cn(
+            'size-10 rounded-full px-0',
+            glass
+              ? cn('border', APP_GLASS_FLOATING_CONTROL_CLASS)
+              : actions.actionClassName,
+          )}
           style={actionStyle}
           variant={glass ? 'ghost' : 'secondary'}
           onPress={actions.onAttach}
         >
-          <Paperclip size={18} color={actions.actionColor} />
+          <Paperclip size={18} color={actionColor} />
         </Button>
         <Button
           accessibilityLabel={actions.expandLabel}
-          className={cn('size-10 rounded-full px-0', glass && 'border', actions.actionClassName)}
+          className={cn(
+            'size-10 rounded-full px-0',
+            glass
+              ? cn('border', APP_GLASS_FLOATING_CONTROL_CLASS)
+              : actions.actionClassName,
+          )}
           style={actionStyle}
           variant={glass ? 'ghost' : 'secondary'}
           onPress={actions.onExpand}
         >
-          <Maximize2 size={17} color={actions.actionColor} />
+          <Maximize2 size={17} color={actionColor} />
         </Button>
       </View>
       {glass ? (
@@ -120,24 +138,36 @@ export function MessageComposer({
       <View className="gap-1.5">
         <Button
           accessibilityLabel={actions.sendLabel}
-          className={cn('size-10 rounded-full px-0', actions.sendClassName)}
+          className={cn(
+            'size-10 rounded-full px-0',
+            glass
+              ? cn('border', APP_GLASS_FLOATING_CONTROL_CLASS)
+              : actions.sendClassName,
+          )}
           disabled={actions.sendDisabled}
+          style={sendStyle}
+          variant={glass ? 'ghost' : 'default'}
           onPress={actions.onSend}
         >
           {actions.sending ? (
-            <ActivityIndicator size="small" color={actions.sendColor} />
+            <ActivityIndicator size="small" color={sendColor} />
           ) : (
-            <Send size={17} color={actions.sendColor} />
+            <Send size={17} color={sendColor} />
           )}
         </Button>
         <Button
           accessibilityLabel={actions.closeLabel}
-          className={cn('size-10 rounded-full px-0', glass && 'border', actions.actionClassName)}
+          className={cn(
+            'size-10 rounded-full px-0',
+            glass
+              ? cn('border', APP_GLASS_FLOATING_CONTROL_CLASS)
+              : actions.actionClassName,
+          )}
           style={actionStyle}
           variant={glass ? 'ghost' : 'secondary'}
           onPress={actions.onClose}
         >
-          <X size={17} color={actions.actionColor} />
+          <X size={17} color={actionColor} />
         </Button>
       </View>
     </View>

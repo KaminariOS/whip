@@ -18,6 +18,12 @@ test('terminal controls use compact faces with 44pt native touch height', () => 
   expect(textClasses).toEqual(
     expect.arrayContaining(['h-9', 'min-h-0', 'min-w-11']),
   );
+  expect(iconClasses).toEqual(
+    expect.arrayContaining(['bg-card/60', 'active:bg-card/70']),
+  );
+  expect(textClasses).toEqual(
+    expect.arrayContaining(['bg-card/60', 'active:bg-card/70']),
+  );
   expect(TERMINAL_CONTROL_HIT_SLOP).toEqual({ top: 4, bottom: 4 });
 });
 

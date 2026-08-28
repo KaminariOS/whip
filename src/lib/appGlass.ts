@@ -1,3 +1,6 @@
+export const APP_GLASS_FLOATING_CONTROL_CLASS =
+  'bg-card/60 active:bg-card/70';
+
 export function shouldEnableAppGlass(
   preferenceEnabled: boolean,
   backgroundImageUri: string | null,
