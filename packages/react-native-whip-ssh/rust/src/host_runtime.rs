@@ -445,7 +445,8 @@ struct RuntimeInner {
     operations: RemoteOperationManager,
     herdr_startup: AsyncMutex<()>,
     cancellation: watch::Sender<u64>,
-    settled: Notify,
+    status_tx: watch::Sender<HostRuntimeStatus>,
+    terminal_settled: Notify,
 }
 
 #[derive(uniffi::Object)]
@@ -462,8 +463,9 @@ fn emit(event: HostRuntimeEvent) {
     }
 }
 
-fn emit_status(inner: &RuntimeInner) {
+fn publish_lifecycle_status(inner: &RuntimeInner) {
     let status = inner.state.lock().status();
+    inner.status_tx.send_replace(status.clone());
     emit(HostRuntimeEvent::ConnectionStateChanged {
         runtime_id: inner.id.clone(),
         status,
@@ -674,7 +676,7 @@ async fn finish_connection(
         observe_transport_lifecycle(&inner, generation, jump);
     }
     inner.agents.connected(generation);
-    emit_status(&inner);
+    publish_lifecycle_status(&inner);
     emit_host_state(&inner, Vec::new());
     let restored = if restoring {
         restore_resources(inner.clone(), epoch).await
@@ -690,7 +692,6 @@ async fn finish_connection(
             ));
         }
     }
-    inner.settled.notify_waiters();
     Ok(restored)
 }
 
@@ -700,7 +701,7 @@ async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), HostRuntimeErro
     }
     let epoch = inner.state.lock().begin_connect()?;
     let _ = inner.cancellation.send(epoch);
-    emit_status(&inner);
+    publish_lifecycle_status(&inner);
     let started_at = Instant::now();
     match connect_chain(&inner).await {
         Ok((ssh, jumps)) => {
@@ -724,9 +725,8 @@ async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), HostRuntimeErro
                 state.host_state.mark_reconnecting(error.to_string());
             }
             drop(state);
-            emit_status(&inner);
+            publish_lifecycle_status(&inner);
             emit_host_state(&inner, Vec::new());
-            inner.settled.notify_waiters();
             emit_diagnostic(
                 &inner,
                 RuntimeDiagnosticOperation::SshConnect,
@@ -776,7 +776,7 @@ fn begin_reconnect_for_generation(
     invalidate_remote_operations(&inner, generation, &reason);
     let _ = inner.cancellation.send(epoch);
     inner.agents.disconnected(false, &reason);
-    emit_status(&inner);
+    publish_lifecycle_status(&inner);
     emit_host_state(&inner, Vec::new());
     crate::runtime()
         .ok()
@@ -819,7 +819,9 @@ async fn reconnect_loop(
                 return;
             }
             state.reconnect_attempt = attempt;
+            state.last_error = Some(last_error.clone());
         }
+        publish_lifecycle_status(&inner);
         emit(HostRuntimeEvent::ReconnectScheduled {
             runtime_id: inner.id.clone(),
             attempt,
@@ -868,7 +870,7 @@ async fn reconnect_loop(
         state.last_error = Some(last_error.clone());
         state.host_state.mark_reconnecting(last_error.clone());
     }
-    emit_status(&inner);
+    publish_lifecycle_status(&inner);
     emit_host_state(&inner, Vec::new());
     emit(HostRuntimeEvent::FatalError {
         runtime_id: inner.id.clone(),
@@ -884,17 +886,16 @@ async fn reconnect_loop(
         None,
         Some(last_error),
     );
-    inner.settled.notify_waiters();
 }
 
-async fn wait_for_reconnect(inner: &RuntimeInner) -> Result<(), HostRuntimeError> {
+async fn wait_for_reconnect(
+    mut status_rx: watch::Receiver<HostRuntimeStatus>,
+) -> Result<(), HostRuntimeError> {
     loop {
-        let status = inner.state.lock().status();
+        let status = status_rx.borrow_and_update().clone();
         match status.state {
             HostConnectionState::Connected => return Ok(()),
-            HostConnectionState::Reconnecting | HostConnectionState::Connecting => {
-                inner.settled.notified().await;
-            }
+            HostConnectionState::Reconnecting | HostConnectionState::Connecting => {}
             HostConnectionState::Failed => {
                 return Err(HostRuntimeError::ReconnectExhausted(
                     status
@@ -908,6 +909,11 @@ async fn wait_for_reconnect(inner: &RuntimeInner) -> Result<(), HostRuntimeError
                 ));
             }
         }
+        status_rx.changed().await.map_err(|_| {
+            HostRuntimeError::RuntimeDisconnected(
+                "host runtime lifecycle ended while waiting for reconnect".to_owned(),
+            )
+        })?;
     }
 }
 
@@ -1113,8 +1119,9 @@ async fn control_request_inner(
             }
             let reason = error.to_string();
             if idempotent_replay(&request) {
+                let status_rx = inner.status_tx.subscribe();
                 begin_reconnect(inner.clone(), reason, true);
-                wait_for_reconnect(&inner)
+                wait_for_reconnect(status_rx)
                     .await
                     .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
                 let socket = resolve_socket_path(&inner)
@@ -1943,7 +1950,7 @@ fn close_terminal_intent(inner: &Arc<RuntimeInner>, terminal_id: String) {
         retrying: false,
         error: None,
     });
-    inner.settled.notify_waiters();
+    inner.terminal_settled.notify_waiters();
 }
 
 async fn open_terminal_inner(
@@ -1999,7 +2006,7 @@ async fn open_terminal_inner(
     let Some(current) = state.terminals.get_mut(&terminal_id) else {
         drop(state);
         close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
-        inner.settled.notify_waiters();
+        inner.terminal_settled.notify_waiters();
         return Err(HostRuntimeError::StaleOperation(format!(
             "terminal {terminal_id} was closed while opening"
         )));
@@ -2007,7 +2014,7 @@ async fn open_terminal_inner(
     if current.operation_epoch != operation_epoch || current.state == HostTerminalState::Closed {
         drop(state);
         close_herdr_terminal_bridge(inner.id.clone(), terminal_id.clone());
-        inner.settled.notify_waiters();
+        inner.terminal_settled.notify_waiters();
         return Err(HostRuntimeError::StaleOperation(format!(
             "stale open completed for terminal {terminal_id}"
         )));
@@ -2033,7 +2040,7 @@ async fn open_terminal_inner(
                 Some(terminal_id.clone()),
                 None,
             );
-            inner.settled.notify_waiters();
+            inner.terminal_settled.notify_waiters();
             Ok(())
         }
         Err(error) => {
@@ -2062,7 +2069,7 @@ async fn open_terminal_inner(
                 Some(terminal_id.clone()),
                 Some(message.clone()),
             );
-            inner.settled.notify_waiters();
+            inner.terminal_settled.notify_waiters();
             Err(HostRuntimeError::TerminalUnavailable(message))
         }
     }
@@ -2074,7 +2081,7 @@ async fn wait_for_terminal_open(
     operation_epoch: u64,
 ) -> Result<(), HostRuntimeError> {
     loop {
-        let notified = inner.settled.notified();
+        let notified = inner.terminal_settled.notified();
         let should_wait = {
             let state = inner.state.lock();
             let terminal = state.terminals.get(terminal_id).ok_or_else(|| {
@@ -2165,7 +2172,7 @@ async fn open_terminal_with_retry(
     if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
         terminal.retry_running = false;
     }
-    inner.settled.notify_waiters();
+    inner.terminal_settled.notify_waiters();
     let error = last_error.unwrap_or_else(|| {
         HostRuntimeError::TerminalUnavailable(format!("terminal {terminal_id} failed to open"))
     });
@@ -2395,7 +2402,7 @@ fn schedule_terminal_retry(inner: Arc<RuntimeInner>, terminal_id: String, reason
             if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
                 terminal.retry_running = false;
             }
-            inner.settled.notify_waiters();
+            inner.terminal_settled.notify_waiters();
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: inner.id.clone(),
                 terminal_id,
@@ -2532,11 +2539,13 @@ pub fn create_host_runtime(
             "host runtime {id} already exists"
         )));
     }
+    let state = RuntimeState::new(&config);
     let (cancellation, _) = watch::channel(0);
+    let (status_tx, _) = watch::channel(state.status());
     let ssh = Arc::new(RwLock::new(None));
     let inner = Arc::new(RuntimeInner {
         id: id.clone(),
-        state: Mutex::new(RuntimeState::new(&config)),
+        state: Mutex::new(state),
         agents: AgentSessionManager::new(id.clone(), ssh.clone()),
         operations: RemoteOperationManager::default(),
         ssh,
@@ -2544,7 +2553,8 @@ pub fn create_host_runtime(
         herdr_startup: AsyncMutex::new(()),
         config,
         cancellation,
-        settled: Notify::new(),
+        status_tx,
+        terminal_settled: Notify::new(),
     });
     runtimes().write().insert(id, Arc::downgrade(&inner));
     Ok(Arc::new(HostRuntime { inner }))
@@ -2557,7 +2567,7 @@ impl HostRuntime {
     }
 
     pub fn status(&self) -> HostRuntimeStatus {
-        self.inner.state.lock().status()
+        self.inner.status_tx.borrow().clone()
     }
 
     pub fn host_state(&self) -> HostStateSnapshot {
@@ -2698,8 +2708,9 @@ impl HostRuntime {
                     state.generation
                 };
                 invalidate_remote_operations(&inner, generation, "Host runtime disconnected");
-                emit_status(&inner);
+                publish_lifecycle_status(&inner);
                 emit_host_state(&inner, Vec::new());
+                inner.terminal_settled.notify_waiters();
                 inner.agents.disconnected(true, "Host runtime disconnected");
                 close_herdr_event_subscription(inner.id.clone());
                 close_all_herdr_terminal_bridges(inner.id.clone());
@@ -2714,9 +2725,8 @@ impl HostRuntime {
                     state.connection = HostConnectionState::Disconnected;
                     state.last_error = None;
                 }
-                emit_status(&inner);
+                publish_lifecycle_status(&inner);
                 emit_host_state(&inner, Vec::new());
-                inner.settled.notify_waiters();
                 runtimes().write().remove(&inner.id);
                 Ok(())
             })
@@ -2733,8 +2743,9 @@ impl HostRuntime {
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
+                let status_rx = inner.status_tx.subscribe();
                 begin_reconnect(inner.clone(), reason, immediate);
-                wait_for_reconnect(&inner).await
+                wait_for_reconnect(status_rx).await
             })
             .await
             .map_err(|error| {
@@ -3046,7 +3057,7 @@ impl HostRuntime {
                 error: None,
             });
         }
-        self.inner.settled.notify_waiters();
+        self.inner.terminal_settled.notify_waiters();
     }
 
     pub fn has_terminal(&self, terminal_id: String) -> bool {
@@ -3884,19 +3895,14 @@ mod tests {
         }
     }
 
-    fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
-        let runtime_config = config();
+    fn runtime_inner_with_state(
+        id: &str,
+        runtime_config: HostRuntimeConfig,
+        state: RuntimeState,
+    ) -> Arc<RuntimeInner> {
         let (cancellation, _) = watch::channel(0);
+        let (status_tx, _) = watch::channel(state.status());
         let ssh = Arc::new(RwLock::new(None));
-        let mut state = RuntimeState::new(&runtime_config);
-        state.connection = HostConnectionState::Connected;
-        state.generation = 1;
-        state.host_state.connection_installed(1);
-        state.event = Some(EventSubscriptionRuntime {
-            pane_ids: Vec::new(),
-            operation_epoch: 1,
-            retry_running: false,
-        });
         Arc::new(RuntimeInner {
             id: id.to_owned(),
             config: runtime_config,
@@ -3907,8 +3913,23 @@ mod tests {
             jump_sessions: Mutex::new(Vec::new()),
             herdr_startup: AsyncMutex::new(()),
             cancellation,
-            settled: Notify::new(),
+            status_tx,
+            terminal_settled: Notify::new(),
         })
+    }
+
+    fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
+        let runtime_config = config();
+        let mut state = RuntimeState::new(&runtime_config);
+        state.connection = HostConnectionState::Connected;
+        state.generation = 1;
+        state.host_state.connection_installed(1);
+        state.event = Some(EventSubscriptionRuntime {
+            pane_ids: Vec::new(),
+            operation_epoch: 1,
+            retry_running: false,
+        });
+        runtime_inner_with_state(id, runtime_config, state)
     }
 
     fn empty_ready_snapshot() -> ReadyHerdrSnapshot {
@@ -4351,20 +4372,12 @@ mod tests {
     #[test]
     fn runtime_callbacks_are_reentrant_and_diagnostics_are_isolated() {
         let _guard = EVENT_SINK_TEST_LOCK.lock();
-        let (cancellation, _) = watch::channel(0);
-        let ssh = Arc::new(RwLock::new(None));
-        let inner = Arc::new(RuntimeInner {
-            id: "reentrant-test".to_owned(),
-            config: config(),
-            state: Mutex::new(RuntimeState::new(&config())),
-            agents: AgentSessionManager::new("reentrant-test".to_owned(), ssh.clone()),
-            operations: RemoteOperationManager::default(),
-            ssh,
-            jump_sessions: Mutex::new(Vec::new()),
-            herdr_startup: AsyncMutex::new(()),
-            cancellation,
-            settled: Notify::new(),
-        });
+        let runtime_config = config();
+        let inner = runtime_inner_with_state(
+            "reentrant-test",
+            runtime_config.clone(),
+            RuntimeState::new(&runtime_config),
+        );
         let sink = Arc::new(ReentrantRuntimeSink {
             inner: inner.clone(),
             called: AtomicBool::new(false),
@@ -4428,9 +4441,8 @@ mod tests {
     #[test]
     fn herdr_event_burst_is_fully_applied_before_one_projection() {
         let _guard = EVENT_SINK_TEST_LOCK.lock();
-        let (cancellation, _) = watch::channel(0);
-        let ssh = Arc::new(RwLock::new(None));
-        let mut state = RuntimeState::new(&config());
+        let runtime_config = config();
+        let mut state = RuntimeState::new(&runtime_config);
         state.connection = HostConnectionState::Connected;
         state.generation = 1;
         state.event = Some(EventSubscriptionRuntime {
@@ -4443,18 +4455,7 @@ mod tests {
         state
             .host_state
             .complete_sync(token, batch_test_snapshot(), 1);
-        let inner = Arc::new(RuntimeInner {
-            id: "batch-delivery-test".to_owned(),
-            config: config(),
-            state: Mutex::new(state),
-            agents: AgentSessionManager::new("batch-delivery-test".to_owned(), ssh.clone()),
-            operations: RemoteOperationManager::default(),
-            ssh,
-            jump_sessions: Mutex::new(Vec::new()),
-            herdr_startup: AsyncMutex::new(()),
-            cancellation,
-            settled: Notify::new(),
-        });
+        let inner = runtime_inner_with_state("batch-delivery-test", runtime_config, state);
         runtimes()
             .write()
             .insert(inner.id.clone(), Arc::downgrade(&inner));
@@ -4640,6 +4641,174 @@ mod tests {
         state.disconnect();
         assert_eq!(state.connection, HostConnectionState::Disconnecting);
         assert!(state.explicit_disconnect);
+    }
+
+    #[test]
+    fn reconnect_waiter_cannot_miss_fast_connected_transition() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("fast-reconnect-wait-test");
+            let epoch = inner
+                .state
+                .lock()
+                .begin_reconnect(None, "transport closed")
+                .expect("connected runtime starts reconnect")
+                .0;
+            publish_lifecycle_status(&inner);
+            let status_rx = inner.status_tx.subscribe();
+
+            assert!(inner.state.lock().install_connection(epoch));
+            publish_lifecycle_status(&inner);
+
+            assert_eq!(wait_for_reconnect(status_rx).await, Ok(()));
+        });
+    }
+
+    #[test]
+    fn reconnect_receiver_created_while_connected_returns_immediately() {
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("already-connected-wait-test");
+            assert_eq!(
+                wait_for_reconnect(inner.status_tx.subscribe()).await,
+                Ok(())
+            );
+        });
+    }
+
+    #[test]
+    fn reconnect_exhaustion_preserves_latest_error() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("reconnect-exhaustion-wait-test");
+            inner
+                .state
+                .lock()
+                .begin_reconnect(None, "transport closed")
+                .expect("connected runtime starts reconnect");
+            publish_lifecycle_status(&inner);
+            let status_rx = inner.status_tx.subscribe();
+            {
+                let mut state = inner.state.lock();
+                state.connection = HostConnectionState::Failed;
+                state.reconnect_running = false;
+                state.last_error = Some("authentication was rejected".to_owned());
+            }
+            publish_lifecycle_status(&inner);
+
+            assert_eq!(
+                wait_for_reconnect(status_rx).await,
+                Err(HostRuntimeError::ReconnectExhausted(
+                    "authentication was rejected".to_owned()
+                ))
+            );
+        });
+    }
+
+    #[test]
+    fn explicit_disconnect_wakes_reconnect_waiter() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("disconnect-reconnect-wait-test");
+            inner
+                .state
+                .lock()
+                .begin_reconnect(None, "transport closed")
+                .expect("connected runtime starts reconnect");
+            publish_lifecycle_status(&inner);
+            let status_rx = inner.status_tx.subscribe();
+            let waiter = tokio::spawn(wait_for_reconnect(status_rx));
+
+            inner.state.lock().disconnect();
+            publish_lifecycle_status(&inner);
+
+            assert!(matches!(
+                waiter.await,
+                Ok(Err(HostRuntimeError::RuntimeDisconnected(_)))
+            ));
+        });
+    }
+
+    #[test]
+    fn simultaneous_recovery_waiters_observe_one_reconnect_lifecycle() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("simultaneous-recovery-wait-test");
+            let epoch = inner
+                .state
+                .lock()
+                .begin_reconnect(None, "transport closed")
+                .expect("connected runtime starts reconnect")
+                .0;
+            publish_lifecycle_status(&inner);
+            let waiter_one = tokio::spawn(wait_for_reconnect(inner.status_tx.subscribe()));
+            let waiter_two = tokio::spawn(wait_for_reconnect(inner.status_tx.subscribe()));
+            let waiter_three = tokio::spawn(wait_for_reconnect(inner.status_tx.subscribe()));
+
+            assert!(inner.state.lock().install_connection(epoch));
+            publish_lifecycle_status(&inner);
+
+            let (one, two, three) = tokio::join!(waiter_one, waiter_two, waiter_three);
+            assert!(matches!(one, Ok(Ok(()))));
+            assert!(matches!(two, Ok(Ok(()))));
+            assert!(matches!(three, Ok(Ok(()))));
+        });
+    }
+
+    #[test]
+    fn closed_lifecycle_sender_fails_reconnect_waiter() {
+        crate::runtime().unwrap().block_on(async {
+            let (status_tx, status_rx) = watch::channel(HostRuntimeStatus {
+                state: HostConnectionState::Reconnecting,
+                generation: 1,
+                reconnect_attempt: 1,
+                error: Some("transport closed".to_owned()),
+            });
+            drop(status_tx);
+
+            assert!(matches!(
+                wait_for_reconnect(status_rx).await,
+                Err(HostRuntimeError::RuntimeDisconnected(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn terminal_notify_still_wakes_existing_open_waiter() {
+        crate::runtime().unwrap().block_on(async {
+            let inner = connected_runtime_inner("terminal-open-wait-test");
+            inner.state.lock().terminals.insert(
+                "terminal-1".to_owned(),
+                TerminalRuntime {
+                    state: HostTerminalState::Opening,
+                    takeover: true,
+                    columns: 80,
+                    rows: 24,
+                    cell_width_px: 8,
+                    cell_height_px: 16,
+                    operation_epoch: 1,
+                    reconnect_attempt: 0,
+                    retry_running: true,
+                },
+            );
+            let waiter_inner = inner.clone();
+            let waiter = tokio::spawn(async move {
+                wait_for_terminal_open(&waiter_inner, "terminal-1", 1).await
+            });
+            tokio::task::yield_now().await;
+
+            {
+                let mut state = inner.state.lock();
+                let terminal = state
+                    .terminals
+                    .get_mut("terminal-1")
+                    .expect("terminal remains registered");
+                terminal.state = HostTerminalState::Attached;
+                terminal.retry_running = false;
+            }
+            inner.terminal_settled.notify_waiters();
+
+            assert!(matches!(waiter.await, Ok(Ok(()))));
+        });
     }
 
     #[test]
