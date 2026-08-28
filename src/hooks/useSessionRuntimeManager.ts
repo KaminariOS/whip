@@ -63,10 +63,12 @@ import {
 } from '../lib/notificationNavigation';
 import { allSettledWithConcurrency } from '../lib/promisePool';
 import {
+  destroyRuntime,
   disposeRuntimeMap,
   savedHostConnectionAction,
   shouldRestartLiveSession,
   shouldRetainBackgroundRuntimes,
+  waitForRuntimeDestruction,
 } from '../lib/sessionRuntimePolicy';
 import {
   terminalRendererKey,
@@ -186,8 +188,8 @@ export interface SessionRuntimeController {
     options?: ConnectOptions,
   ) => Promise<boolean>;
   connectSavedHost: (host: HostProfile) => Promise<void>;
-  close: (sessionId: string, recordDisconnect?: boolean) => void;
-  closeHostById: (hostId: string, recordDisconnect?: boolean) => void;
+  close: (sessionId: string, recordDisconnect?: boolean) => Promise<void>;
+  closeHostById: (hostId: string, recordDisconnect?: boolean) => Promise<void>;
   refresh: (sessionId: string) => Promise<void>;
   refreshSnapshot: (sessionId: string) => Promise<HerdrSnapshot | null>;
   exitTerminalToHerd: (sessionId: string) => void;
@@ -320,7 +322,7 @@ export function useSessionRuntimeManager({
     const retained = retainedBackgroundRuntimes;
     if (!retained) return;
     retainedBackgroundRuntimes = null;
-    disposeRuntimeMap(retained);
+    disposeRuntimeMap(retained).catch(() => undefined);
   }, []);
 
   useEffect(
@@ -339,7 +341,7 @@ export function useSessionRuntimeManager({
         retainedBackgroundRuntimes = runtimesRef.current;
         return;
       }
-      disposeRuntimeMap(runtimesRef.current);
+      disposeRuntimeMap(runtimesRef.current).catch(() => undefined);
     },
     [],
   );
@@ -690,16 +692,15 @@ export function useSessionRuntimeManager({
   );
 
   const close = useCallback(
-    (sessionId: string, recordDisconnect = true) => {
+    async (sessionId: string, recordDisconnect = true): Promise<void> => {
       const session = findLiveHostSession(stateRef.current, sessionId);
       if (session && recordDisconnect) hosts.markDisconnected(session.hostId);
       terminals.remove(sessionId);
       const runtime = runtimesRef.current.get(sessionId);
+      let destruction = waitForRuntimeDestruction(sessionId);
       if (runtime) {
-        runtime.client
-          .releaseAllTerminals()
-          .finally(() => runtime.client.disconnect());
         runtimesRef.current.delete(sessionId);
+        destruction = destroyRuntime(sessionId, runtime);
       }
       clearLatency(sessionId);
       navigation.clearSessionView(sessionId);
@@ -708,16 +709,18 @@ export function useSessionRuntimeManager({
         if (next.sessions.length === 0) navigation.selectTab('hosts');
         return next;
       });
+      await destruction;
     },
     [clearLatency, hosts, navigation, terminals],
   );
 
   const closeHostById = useCallback(
-    (hostId: string, recordDisconnect = true) => {
+    async (hostId: string, recordDisconnect = true): Promise<void> => {
       const session = stateRef.current.sessions.find(
         item => item.hostId === hostId,
       );
-      if (session) close(session.id, recordDisconnect);
+      if (session) await close(session.id, recordDisconnect);
+      else await waitForRuntimeDestruction(hostId);
     },
     [close],
   );
@@ -893,7 +896,8 @@ export function useSessionRuntimeManager({
           existing &&
           !runtimesRef.current.has(existing.id),
       );
-      if (existing && !reusingConnectingSession) close(existing.id);
+      if (existing && !reusingConnectingSession) await close(existing.id);
+      else await waitForRuntimeDestruction(nextProfile.id);
       let runtime: LiveRuntime | null = null;
       let liveSessionOpened = false;
       let connectionStage = 'prepare';

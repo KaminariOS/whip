@@ -140,6 +140,38 @@ describe('direct Herdr API requests', () => {
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
   });
 
+  test('keeps disconnect pending until native runtime destruction finishes', async () => {
+    const native = apiClient(() => ({ type: 'ok' }));
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    const runtime = jest.mocked(SSHClient.createHostRuntime).mock.results[0].value;
+    let finishDisconnect!: () => void;
+    runtime.disconnect = jest.fn(
+      () => new Promise<void>(resolve => {
+        finishDisconnect = resolve;
+      }),
+    );
+
+    const firstDisconnect = client.disconnect();
+    const secondDisconnect = client.disconnect();
+    let disconnected = false;
+    firstDisconnect.then(() => {
+      disconnected = true;
+    });
+    await Promise.resolve();
+
+    expect(runtime.disconnect).toHaveBeenCalledTimes(1);
+    expect(firstDisconnect).toBe(secondDisconnect);
+    expect(disconnected).toBe(false);
+    expect(() => client.hostState()).toThrow('Host runtime is not active');
+
+    finishDisconnect();
+    await firstDisconnect;
+
+    expect(disconnected).toBe(true);
+  });
+
   test('startServer delegates once without a JavaScript snapshot readiness probe', async () => {
     const native = apiClient(() => ({ type: 'ok' }));
     connectWithPassword.mockResolvedValue(native);

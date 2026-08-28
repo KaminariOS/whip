@@ -202,6 +202,7 @@ export class HerdrClient {
   }
 
   private runtime: HostRuntimeConnection | null = null;
+  private disconnecting: Promise<void> | null = null;
   private runtimeAwaitingHostKeyTrust = false;
   private runtimeEventHandler: ((event: HostRuntimeLifecycleEvent) => void) | null = null;
   private profile: ConnectionProfile | null = null;
@@ -220,6 +221,7 @@ export class HerdrClient {
   }
 
   async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
+    await this.disconnecting;
     const port = Number(profile.port);
     this.validateSshPort(port);
     jumpProfiles.forEach(jumpProfile => this.validateSshPort(Number(jumpProfile.port)));
@@ -308,7 +310,9 @@ export class HerdrClient {
     await this.requireRuntime().recover(true, 'control connection unavailable');
   }
 
-  disconnect(): void {
+  disconnect(): Promise<void> {
+    if (!this.runtime) return this.disconnecting ?? Promise.resolve();
+
     if (this.terminalStateRefreshTimer !== null) {
       clearTimeout(this.terminalStateRefreshTimer);
       this.terminalStateRefreshTimer = null;
@@ -316,9 +320,7 @@ export class HerdrClient {
     for (const terminalId of this.sshShellConnections.keys()) {
       this.closeSshShell(terminalId);
     }
-    this.runtime?.disconnect().catch(error => {
-      recordRuntimeCleanupFailure('host-runtime-disconnect-failed', error);
-    });
+    const runtime = this.runtime;
     this.runtime = null;
     this.runtimeAwaitingHostKeyTrust = false;
     this.profile = null;
@@ -326,6 +328,16 @@ export class HerdrClient {
     this.terminalConnections.clear();
     this.terminalSizes.clear();
     this.clearAllTerminalBridgeState();
+
+    const disconnecting = runtime.disconnect()
+      .catch(error => {
+        recordRuntimeCleanupFailure('host-runtime-disconnect-failed', error);
+      })
+      .finally(() => {
+        if (this.disconnecting === disconnecting) this.disconnecting = null;
+      });
+    this.disconnecting = disconnecting;
+    return disconnecting;
   }
 
   async openWebTunnel(value: string): Promise<{ url: string; previewId: string } | null> {
