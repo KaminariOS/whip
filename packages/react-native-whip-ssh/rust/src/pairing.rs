@@ -107,13 +107,11 @@ struct AcceptedHostKey {
     public_key: String,
 }
 
-impl client::Handler for PinnedSshHostKey {
-    type Error = PairingError;
-
-    async fn check_server_key(
-        &mut self,
+impl PinnedSshHostKey {
+    fn verify_server_key(
+        &self,
         server_public_key: &PublicKeyOrCertificate,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<bool, PairingError> {
         let PublicKeyOrCertificate::PublicKey {
             key: server_public_key,
             ..
@@ -133,6 +131,17 @@ impl client::Handler for PinnedSshHostKey {
             });
         }
         Ok(true)
+    }
+}
+
+impl client::Handler for PinnedSshHostKey {
+    type Error = PairingError;
+
+    fn check_server_key(
+        &mut self,
+        server_public_key: &PublicKeyOrCertificate,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
+        std::future::ready(self.verify_server_key(server_public_key))
     }
 }
 

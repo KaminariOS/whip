@@ -532,13 +532,8 @@ struct PinnedSshHostKey {
     accepted_public_key: Arc<Mutex<Option<String>>>,
 }
 
-impl client::Handler for PinnedSshHostKey {
-    type Error = Error;
-
-    async fn check_server_key(
-        &mut self,
-        server_public_key: &PublicKey,
-    ) -> Result<bool, Self::Error> {
+impl PinnedSshHostKey {
+    fn verify_server_key(&self, server_public_key: &PublicKey) -> Result<bool, Error> {
         let encoded = server_public_key.to_bytes()?;
         let actual: [u8; 32] = Sha256::digest(&encoded).into();
         if actual != self.expected_sha256 {
@@ -550,6 +545,17 @@ impl client::Handler for PinnedSshHostKey {
             *accepted = Some(server_public_key.to_openssh()?);
         }
         Ok(true)
+    }
+}
+
+impl client::Handler for PinnedSshHostKey {
+    type Error = Error;
+
+    fn check_server_key(
+        &mut self,
+        server_public_key: &PublicKey,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
+        std::future::ready(self.verify_server_key(server_public_key))
     }
 }
 

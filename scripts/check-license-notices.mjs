@@ -198,7 +198,9 @@ async function validateNoticeRegistry() {
   const registry = await readFile(registryPath, 'utf8');
   const registeredIds = [...registry.matchAll(/\bid:\s*['"]([^'"]+)['"]/g)].map(match => match[1]);
   const registeredAssets = [
-    ...registry.matchAll(/licenseAsset:\s*require\(['"]\.\.\/\.\.\/(assets\/licenses\/[^'"]+)['"]\)/g),
+    ...registry.matchAll(
+      /licenseAsset:\s*bundledAsset\(\s*require\(['"]\.\.\/\.\.\/(assets\/licenses\/[^'"]+)['"]\)\s*\)/g,
+    ),
   ].map(match => match[1]);
   const expectedIds = noticeSources.map(notice => notice.id);
   const expectedAssets = noticeSources.map(notice => notice.asset);

@@ -599,15 +599,18 @@ struct RestrictedAgent {
 }
 
 impl russh::keys::agent::server::Agent for RestrictedAgent {
-    async fn confirm_request(&self, message: russh::keys::agent::server::MessageType) -> bool {
-        match message {
+    fn confirm_request(
+        &self,
+        message: russh::keys::agent::server::MessageType,
+    ) -> impl Future<Output = bool> + Send {
+        std::future::ready(match message {
             russh::keys::agent::server::MessageType::RequestKeys
             | russh::keys::agent::server::MessageType::Sign => true,
             russh::keys::agent::server::MessageType::AddKeys => {
                 self.allow_initial_add.swap(false, Ordering::Relaxed)
             }
             _ => false,
-        }
+        })
     }
 }
 
@@ -679,13 +682,11 @@ struct RusshHandler {
     lifecycle: Arc<ConnectionLifecycle>,
 }
 
-impl client::Handler for RusshHandler {
-    type Error = TransportError;
-
-    async fn check_server_key(
-        &mut self,
+impl RusshHandler {
+    fn verify_server_key(
+        &self,
         server_public_key: &PublicKeyOrCertificate,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<bool, TransportError> {
         let PublicKeyOrCertificate::PublicKey {
             key: server_public_key,
             ..
@@ -701,6 +702,17 @@ impl client::Handler for RusshHandler {
             HostKeyDecision::Unknown(challenge) => Err(TransportError::HostKeyUnknown(challenge)),
             HostKeyDecision::Changed(challenge) => Err(TransportError::HostKeyChanged(challenge)),
         }
+    }
+}
+
+impl client::Handler for RusshHandler {
+    type Error = TransportError;
+
+    fn check_server_key(
+        &mut self,
+        server_public_key: &PublicKeyOrCertificate,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        std::future::ready(self.verify_server_key(server_public_key))
     }
 
     fn disconnected(

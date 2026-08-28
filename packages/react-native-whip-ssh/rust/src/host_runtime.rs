@@ -4579,6 +4579,8 @@ mod tests {
 
     #[test]
     fn stale_startup_snapshot_cannot_install_into_a_replacement_generation() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        clear_host_runtime_event_sink();
         crate::runtime().unwrap().block_on(async {
             let inner = connected_runtime_inner("stale-startup-test");
             let (_, token) = begin_host_state_sync(&inner);

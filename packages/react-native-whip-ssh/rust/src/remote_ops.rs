@@ -606,7 +606,7 @@ fn attachment_filename_with_suffix(source: &str, suffix: &str) -> Result<String,
     let (stem, extension) = source
         .rsplit_once('.')
         .filter(|(stem, _)| !stem.is_empty())
-        .map_or((source, ""), |value| value);
+        .unwrap_or((source, ""));
     let clean = stem
         .chars()
         .map(|character| {

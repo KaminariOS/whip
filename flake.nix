@@ -13,6 +13,7 @@
   outputs = {nixpkgs, rust-overlay, ...}: let
     androidSystem = "x86_64-linux";
     darwinSystem = "aarch64-darwin";
+    rustVersion = "1.98.0";
     androidPkgs = import nixpkgs {
       system = androidSystem;
       overlays = [ (import rust-overlay) ];
@@ -34,10 +35,10 @@
     };
     androidSdk = androidComposition.androidsdk;
     androidNdkTools = "${androidSdk}/libexec/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin";
-    androidRustToolchain = androidPkgs.rust-bin.stable."1.97.1".default.override {
+    androidRustToolchain = androidPkgs.rust-bin.stable.${rustVersion}.default.override {
       targets = ["aarch64-linux-android"];
     };
-    darwinRustToolchain = darwinPkgs.rust-bin.stable."1.97.1".default.override {
+    darwinRustToolchain = darwinPkgs.rust-bin.stable.${rustVersion}.default.override {
       targets = ["aarch64-apple-ios"];
     };
     mkCargoAbout = pkgs: target: hash:
