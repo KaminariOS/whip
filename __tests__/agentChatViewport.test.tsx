@@ -13,6 +13,11 @@ jest.mock(
   'lucide-react-native',
   () => new Proxy({}, { get: (_target, name) => String(name) }),
 );
+jest.mock('react-native-code-highlighter', () => 'CodeHighlighter');
+jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () => ({
+  atomOneDarkReasonable: {},
+  atomOneLight: {},
+}));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
@@ -23,6 +28,7 @@ jest.mock('react-native', () => ({
   Linking: { openURL: jest.fn(async () => undefined) },
   Pressable: 'Pressable',
   ScrollView: 'ScrollView',
+  StyleSheet: { create: (styles: unknown) => styles },
   View: 'View',
 }));
 jest.mock('react-native-reanimated', () => ({
@@ -57,6 +63,7 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
 jest.mock('../src/theme', () => ({
   appGlassControlStyle: () => undefined,
   useTheme: () => ({
+    isDark: false,
     colors: {
       error: '#f00',
       primary: '#00f',
@@ -204,7 +211,7 @@ describe('AgentChatView tool output', () => {
     act(() => turnRenderer?.unmount());
   });
 
-  test('keeps expanded shell output outside the toggle and horizontally scrollable', () => {
+  test('highlights the shell command and keeps its output horizontally scrollable', () => {
     act(() => {
       renderer = create(chatView(chatState([SHELL_TURN])));
     });
@@ -219,7 +226,9 @@ describe('AgentChatView tool output', () => {
       String(node.type) === 'Pressable'
       && node.props.accessibilityState?.expanded === false
     ));
-    act(() => toggle.props.onPress());
+    act(() => {
+      void toggle.props.onPress();
+    });
 
     const expandedToggle = turnRenderer.root.find(node => (
       String(node.type) === 'Pressable'
@@ -228,7 +237,13 @@ describe('AgentChatView tool output', () => {
     const horizontalScroller = turnRenderer.root.find(node => (
       String(node.type) === 'ScrollView' && node.props.horizontal === true
     ));
+    const commandHighlighter = turnRenderer.root.find(node => (
+      String(node.type) === 'CodeHighlighter'
+    ));
     expect(expandedToggle.findAll(node => String(node.type) === 'ScrollView')).toHaveLength(0);
+    expect(commandHighlighter.props.children).toBe('$ printf a-very-long-command-that-exceeds-the-chat-width');
+    expect(commandHighlighter.props.language).toBe('bash');
+    expect(commandHighlighter.props.scrollViewProps.nestedScrollEnabled).toBe(true);
     expect(horizontalScroller.props.className).toBe('w-full');
     expect(horizontalScroller.props.nestedScrollEnabled).toBe(true);
   });
