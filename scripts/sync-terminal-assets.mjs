@@ -3,12 +3,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import androidImeBridge from './android-ime-bridge.cjs';
+import terminalClipboardPaste from './terminal-clipboard-paste.cjs';
 import terminalOfflineCache from './terminal-offline-cache.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
 import terminalTouchBehavior from './terminal-touch-behavior.cjs';
 import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
 
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
+const { createTerminalPasteBridge } = terminalClipboardPaste;
 const { createTerminalOfflineCache } = terminalOfflineCache;
 const {
   handleKeyboardClosedStationaryTap,
@@ -248,6 +250,7 @@ const terminalSessionHtml = `<!doctype html>
   <script>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
+    ${createTerminalPasteBridge.toString()}
     ${createTerminalOfflineCache.toString()}
     ${handleKeyboardClosedStationaryTap.toString()}
     ${setTerminalKeyboardInputEnabled.toString()}
@@ -463,7 +466,6 @@ const terminalSessionHtml = `<!doctype html>
       terminalVisualInsets = { ...terminalVisualInsets, ...(options || {}) };
       applyTerminalVisualInsets();
     };
-    installAndroidImeBridge(terminal, send, navigator.userAgent);
     const handleOfflineInput = data => {
       if (!offlineScrollback || typeof data !== 'string') return false;
       const page = Math.max(1, terminal.rows - 1);
@@ -506,13 +508,28 @@ const terminalSessionHtml = `<!doctype html>
     });
     let bufferedInput = null;
     let fitResizeInProgress = false;
+    let resetAndroidImeAfterPaste = () => {};
+    const pasteBridge = createTerminalPasteBridge(
+      terminal,
+      (data, kind) => {
+        if (bufferedInput !== null) bufferedInput += data;
+        else send({ type: 'input', data, kind });
+      },
+      window,
+      () => resetAndroidImeAfterPaste(),
+    );
+    const disposeAndroidImeBridge = installAndroidImeBridge(
+      terminal,
+      send,
+      navigator.userAgent,
+    );
+    resetAndroidImeAfterPaste = disposeAndroidImeBridge.reset;
     terminal.onData(data => {
       if (offlineScrollback) {
         handleOfflineInput(data);
         return;
       }
-      if (bufferedInput !== null) bufferedInput += data;
-      else send({ type: 'input', data });
+      pasteBridge.handleData(data);
     });
     terminal.onResize(({ cols, rows }) => {
       if (!fitResizeInProgress) {
@@ -868,13 +885,13 @@ const terminalSessionHtml = `<!doctype html>
       );
     };
     window.herdrScroll = (direction, lines) => scrollTerminal(direction, lines);
-    window.herdrPaste = data => { terminal.paste(data); hideToolbar(); };
+    window.herdrPaste = data => { pasteBridge.paste(data); hideToolbar(); };
     window.herdrSubmitPastes = parts => {
       const values = [];
       for (const part of Array.isArray(parts) ? parts : []) {
         if (typeof part !== 'string' || !part) continue;
         bufferedInput = '';
-        terminal.paste(part);
+        pasteBridge.paste(part);
         values.push(bufferedInput);
       }
       bufferedInput = null;
@@ -1421,6 +1438,8 @@ const terminalSessionScript = terminalSessionHtml
     api.herdrDispose = () => {
       disposed = true;
       offlineCache.dispose();
+      pasteBridge.dispose();
+      disposeAndroidImeBridge();
       window.removeEventListener('resize', resizePresentedTerminal);
       if (!usesNativeWindowImeResize) {
         window.visualViewport?.removeEventListener('resize', resizePresentedTerminal);
@@ -1507,6 +1526,14 @@ const terminalHtml = `<!doctype html>
         return;
       }
       if (value.type === 'input' && typeof value.data === 'string') {
+        if (value.kind === 'paste') {
+          if (entry.inputTimer !== null) {
+            clearTimeout(entry.inputTimer);
+            flushInput(entry);
+          }
+          send({ type: 'input', data: value.data, kind: 'paste', key: entry.key });
+          return;
+        }
         entry.pendingInput += value.data;
         if (entry.inputTimer === null) {
           entry.inputTimer = setTimeout(() => flushInput(entry), 4);

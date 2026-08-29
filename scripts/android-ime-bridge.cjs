@@ -12,7 +12,11 @@ function terminalInputDelta(previous, next) {
 // mutation into terminal input before xterm can commit it a second time.
 function installAndroidImeBridge(terminal, send, userAgent, eventTarget = window) {
   const input = terminal.textarea;
-  if (!input || !/Android/i.test(userAgent)) return () => {};
+  if (!input || !/Android/i.test(userAgent)) {
+    const cleanup = () => {};
+    cleanup.reset = () => {};
+    return cleanup;
+  }
 
   input.setAttribute('autocomplete', 'off');
   input.setAttribute('autocorrect', 'off');
@@ -162,10 +166,12 @@ function installAndroidImeBridge(terminal, send, userAgent, eventTarget = window
   ];
   for (const [type, listener] of listeners) eventTarget.addEventListener(type, listener, true);
 
-  return () => {
+  const cleanup = () => {
     cancelReconcile();
     for (const [type, listener] of listeners) eventTarget.removeEventListener(type, listener, true);
   };
+  cleanup.reset = resetInput;
+  return cleanup;
 }
 
 module.exports = { installAndroidImeBridge, terminalInputDelta };
