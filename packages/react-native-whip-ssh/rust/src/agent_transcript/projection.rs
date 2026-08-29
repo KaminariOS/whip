@@ -1,0 +1,738 @@
+//! Shared wire-value normalization and transcript turn projection.
+
+use std::collections::HashMap;
+
+use serde::Serialize;
+use serde_json::{Map, Value};
+
+use super::model::*;
+
+#[derive(Clone, Debug)]
+pub(super) struct ParsedToolResult {
+    pub(super) output: Option<String>,
+    pub(super) error: Option<String>,
+    pub(super) exit_code: Option<i64>,
+    pub(super) process_id: Option<i64>,
+    pub(super) running: bool,
+}
+
+pub(super) fn object(value: Option<&Value>) -> Option<&Map<String, Value>> {
+    value?.as_object()
+}
+pub(super) fn nonempty(value: Option<&Value>) -> Option<&str> {
+    value?.as_str().filter(|value| !value.is_empty())
+}
+
+pub(super) fn text_content(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(value)) => value.clone(),
+        Some(Value::Array(values)) => values
+            .iter()
+            .filter_map(|value| {
+                let value = value.as_object()?;
+                nonempty(value.get("text"))
+                    .or_else(|| nonempty(value.get("content")))
+                    .map(str::to_owned)
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Some(Value::Object(value)) => {
+            if let Some(content) = nonempty(value.get("content")) {
+                return content.to_owned();
+            }
+            if let Some(items) = value.get("content_items") {
+                return text_content(Some(items));
+            }
+            if let Some(items) = value.get("content") {
+                return text_content(Some(items));
+            }
+            Value::Object(value.clone()).to_string()
+        }
+        Some(value) => value.to_string(),
+        None => String::new(),
+    }
+}
+
+pub(super) fn detail(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::Null => None,
+        Value::String(value) => Some(value.clone()),
+        value => serde_json::to_string_pretty(value).ok(),
+    }
+}
+
+pub(super) fn timestamp_ms(value: Option<&Value>) -> Option<u64> {
+    if let Some(number) = value.and_then(Value::as_u64) {
+        return Some(number);
+    }
+    let text = value?.as_str()?;
+    chrono::DateTime::parse_from_rfc3339(text)
+        .ok()?
+        .timestamp_millis()
+        .try_into()
+        .ok()
+}
+
+pub(crate) fn injected_user_context(value: &str) -> bool {
+    let value = value.trim_start();
+    (value.starts_with("# AGENTS.md instructions for ") && value.contains("\n\n<INSTRUCTIONS>"))
+        || (value.starts_with("<environment_context>") && value.ends_with("</environment_context>"))
+}
+
+pub(super) fn canonical_tool_name(value: &str) -> String {
+    match value.to_ascii_lowercase().as_str() {
+        "exec" | "exec_command" | "command_execution" | "local_shell_call" | "bash" => {
+            "shell".to_owned()
+        }
+        "apply_patch" | "turn_diff" => "patch".to_owned(),
+        "web_search" | "web_search_call" => "websearch".to_owned(),
+        "update_plan" => "todowrite".to_owned(),
+        "" => "tool".to_owned(),
+        value => value.to_owned(),
+    }
+}
+
+pub(super) fn command_title(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" "),
+        Some(Value::String(value)) if !value.is_empty() => value.clone(),
+        _ => "Command".to_owned(),
+    }
+}
+
+pub(super) fn parse_tool_status(
+    value: Option<&Value>,
+    fallback: AgentToolStatus,
+) -> AgentToolStatus {
+    let value = value
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if ["fail", "error", "declin", "incomplete"]
+        .iter()
+        .any(|needle| value.contains(needle))
+    {
+        AgentToolStatus::Error
+    } else if ["complete", "done", "success"]
+        .iter()
+        .any(|needle| value.contains(needle))
+    {
+        AgentToolStatus::Completed
+    } else if ["running", "progress"]
+        .iter()
+        .any(|needle| value.contains(needle))
+    {
+        AgentToolStatus::Running
+    } else if ["pending", "queued"]
+        .iter()
+        .any(|needle| value.contains(needle))
+    {
+        AgentToolStatus::Pending
+    } else {
+        fallback
+    }
+}
+
+pub(super) fn scalar_fields(value: Option<&Value>) -> Vec<AgentField> {
+    object(value)
+        .map(|object| {
+            object
+                .iter()
+                .filter_map(|(key, value)| {
+                    let value = match value {
+                        Value::String(value) => AgentScalarValue::String {
+                            value: value.clone(),
+                        },
+                        Value::Number(value) => AgentScalarValue::Number {
+                            value: value.as_f64()?,
+                        },
+                        Value::Bool(value) => AgentScalarValue::Boolean { value: *value },
+                        _ => return None,
+                    };
+                    Some(AgentField {
+                        key: key.clone(),
+                        value,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(super) fn canonical_tool_input(tool: &str, mut fields: Vec<AgentField>) -> Vec<AgentField> {
+    canonicalize_field(&mut fields, "command", &["command", "cmd"]);
+    canonicalize_field(&mut fields, "path", &["path", "filePath", "file_path"]);
+    canonicalize_field(&mut fields, "query", &["query", "pattern"]);
+    canonicalize_field(&mut fields, "description", &["description", "name"]);
+    canonicalize_field(&mut fields, "agent", &["agent", "subagent_type"]);
+    canonicalize_field(&mut fields, "old_string", &["old_string", "oldString"]);
+    canonicalize_field(&mut fields, "new_string", &["new_string", "newString"]);
+
+    if tool == "shell" {
+        canonicalize_field(&mut fields, "cwd", &["cwd", "workdir"]);
+    }
+    fields
+}
+
+pub(super) fn tool_input(tool: &str, raw: Option<&Value>) -> Vec<AgentField> {
+    let mut fields = scalar_fields(raw);
+    if tool == "shell"
+        && !fields
+            .iter()
+            .any(|field| field.key == "command" || field.key == "cmd")
+        && let Some(command) =
+            object(raw).and_then(|value| value.get("command").or_else(|| value.get("cmd")))
+    {
+        put_field(
+            &mut fields,
+            "command",
+            AgentScalarValue::String {
+                value: command_title(Some(command)),
+            },
+        );
+    }
+    canonical_tool_input(tool, fields)
+}
+
+fn canonicalize_field(fields: &mut Vec<AgentField>, canonical: &str, aliases: &[&str]) {
+    let value = aliases.iter().find_map(|key| {
+        fields
+            .iter()
+            .find(|field| field.key == *key)
+            .map(|field| field.value.clone())
+    });
+    fields.retain(|field| !aliases.contains(&field.key.as_str()));
+    if let Some(value) = value {
+        put_field(fields, canonical, value);
+    }
+}
+
+pub(super) fn fields<const N: usize>(values: [(&str, String); N]) -> Vec<AgentField> {
+    values
+        .into_iter()
+        .map(|(key, value)| AgentField {
+            key: key.to_owned(),
+            value: AgentScalarValue::String { value },
+        })
+        .collect()
+}
+
+pub(super) fn put_field(fields: &mut Vec<AgentField>, key: &str, value: AgentScalarValue) {
+    if let Some(field) = fields.iter_mut().find(|field| field.key == key) {
+        field.value = value;
+    } else {
+        fields.push(AgentField {
+            key: key.to_owned(),
+            value,
+        });
+    }
+}
+
+pub(super) fn fields_with_cwd(payload: &Map<String, Value>) -> Vec<AgentField> {
+    let mut fields = fields([("command", command_title(payload.get("command")))]);
+    if let Some(cwd) = nonempty(payload.get("cwd")) {
+        put_field(
+            &mut fields,
+            "cwd",
+            AgentScalarValue::String {
+                value: cwd.to_owned(),
+            },
+        );
+    }
+    fields
+}
+
+fn source_tool_name(source: &str) -> Option<&str> {
+    let marker = "tools.";
+    let start = source.find(marker)? + marker.len();
+    let rest = &source[start..];
+    let end =
+        rest.find(|character: char| !character.is_ascii_alphanumeric() && character != '_')?;
+    Some(&rest[..end])
+}
+
+fn quoted_field(source: &str, key: &str) -> Option<String> {
+    for prefix in [format!("\"{key}\":"), format!("{key}:")] {
+        let mut rest = source.split_once(&prefix)?.1.trim_start();
+        if !rest.starts_with('"') {
+            continue;
+        }
+        rest = &rest[1..];
+        let mut escaped = false;
+        for (index, character) in rest.char_indices() {
+            if character == '"' && !escaped {
+                return serde_json::from_str::<String>(&format!("\"{}\"", &rest[..index])).ok();
+            }
+            escaped = character == '\\' && !escaped;
+            if character != '\\' {
+                escaped = false;
+            }
+        }
+    }
+    None
+}
+
+fn numeric_field(source: &str, key: &str) -> Option<i64> {
+    let (_, rest) = source.split_once(&format!("{key}:"))?;
+    rest.trim_start()
+        .split(|character: char| !character.is_ascii_digit() && character != '-')
+        .next()?
+        .parse()
+        .ok()
+}
+
+pub(super) fn translate_tool(
+    name: &str,
+    raw: Option<&Value>,
+) -> (
+    String,
+    Vec<AgentField>,
+    Option<i64>,
+    bool,
+    Vec<AgentFileDiff>,
+) {
+    if name != "exec" || !matches!(raw, Some(Value::String(_))) {
+        let tool = canonical_tool_name(name);
+        return (
+            tool.clone(),
+            tool_input(&tool, raw),
+            None,
+            false,
+            Vec::new(),
+        );
+    }
+    let source = raw.and_then(Value::as_str).unwrap_or_default();
+    match source_tool_name(source).unwrap_or(name) {
+        "exec_command" => {
+            let mut input = Vec::new();
+            if let Some(command) = quoted_field(source, "cmd") {
+                put_field(
+                    &mut input,
+                    "command",
+                    AgentScalarValue::String { value: command },
+                );
+            }
+            if let Some(cwd) = quoted_field(source, "workdir") {
+                put_field(&mut input, "cwd", AgentScalarValue::String { value: cwd });
+            }
+            ("shell".to_owned(), input, None, false, Vec::new())
+        }
+        "write_stdin" => (
+            "shell".to_owned(),
+            Vec::new(),
+            numeric_field(source, "session_id"),
+            true,
+            Vec::new(),
+        ),
+        "apply_patch" => (
+            "patch".to_owned(),
+            Vec::new(),
+            None,
+            false,
+            apply_patch_files(source),
+        ),
+        "update_plan" => ("todowrite".to_owned(), Vec::new(), None, false, Vec::new()),
+        "web__run" => {
+            let query = quoted_field(source, "q").unwrap_or_else(|| "Web search".to_owned());
+            (
+                "websearch".to_owned(),
+                fields([("query", query)]),
+                None,
+                false,
+                Vec::new(),
+            )
+        }
+        nested => (
+            canonical_tool_name(nested),
+            scalar_fields(raw),
+            None,
+            false,
+            Vec::new(),
+        ),
+    }
+}
+
+pub(super) fn tool_result(value: Option<&Value>) -> ParsedToolResult {
+    let texts = match value {
+        Some(Value::Array(values)) => values
+            .iter()
+            .filter_map(|value| {
+                object(Some(value))
+                    .and_then(|value| nonempty(value.get("text")))
+                    .map(str::to_owned)
+            })
+            .collect(),
+        _ => vec![text_content(value)],
+    };
+    for text in &texts {
+        if let Ok(Value::Object(result)) = serde_json::from_str::<Value>(text) {
+            let exit_code = result.get("exit_code").and_then(Value::as_i64);
+            let process_id = result.get("session_id").and_then(Value::as_i64);
+            return ParsedToolResult {
+                output: nonempty(result.get("output")).map(str::to_owned),
+                error: exit_code
+                    .filter(|code| *code != 0)
+                    .map(|code| format!("Exited with code {code}")),
+                exit_code,
+                process_id,
+                running: process_id.is_some() && exit_code.is_none(),
+            };
+        }
+    }
+    let joined = texts.join("");
+    let failed = joined.contains("Script failed") || joined.contains("Script error:");
+    let output = joined
+        .split_once("Output:\n")
+        .map(|(_, output)| output)
+        .unwrap_or(&joined)
+        .trim()
+        .to_owned();
+    ParsedToolResult {
+        output: (!output.is_empty() && output != "{}").then_some(output.clone()),
+        error: failed.then_some(if output.is_empty() {
+            "Tool failed".to_owned()
+        } else {
+            output
+        }),
+        exit_code: None,
+        process_id: None,
+        running: false,
+    }
+}
+
+pub(super) fn format_plan(payload: &Map<String, Value>) -> String {
+    let mut parts = nonempty(payload.get("explanation"))
+        .map(str::to_owned)
+        .into_iter()
+        .collect::<Vec<_>>();
+    if let Some(plan) = payload.get("plan").and_then(Value::as_array) {
+        parts.extend(plan.iter().filter_map(|value| {
+            let value = value.as_object()?;
+            let step = nonempty(value.get("step"))?;
+            Some(format!(
+                "- [{}] {step}",
+                if value.get("status").and_then(Value::as_str) == Some("completed") {
+                    "x"
+                } else {
+                    " "
+                }
+            ))
+        }));
+    }
+    parts.join("\n\n")
+}
+
+pub(super) fn legacy_change_files(value: Option<&Value>) -> Vec<AgentFileDiff> {
+    object(value)
+        .map(|changes| {
+            changes
+                .iter()
+                .map(|(file, value)| {
+                    let object = value.as_object();
+                    let patch = object
+                        .and_then(|value| {
+                            nonempty(value.get("diff")).or_else(|| nonempty(value.get("patch")))
+                        })
+                        .map(str::to_owned)
+                        .or_else(|| match value {
+                            Value::Null | Value::Object(_) => None,
+                            Value::String(value) if !value.is_empty() => Some(value.clone()),
+                            value => detail(Some(value)),
+                        });
+                    AgentFileDiff::normalized(
+                        file.clone(),
+                        patch,
+                        object
+                            .and_then(|value| nonempty(value.get("before")))
+                            .map(str::to_owned),
+                        object
+                            .and_then(|value| nonempty(value.get("after")))
+                            .map(str::to_owned),
+                        object
+                            .and_then(|value| value.get("additions"))
+                            .and_then(Value::as_u64)
+                            .and_then(|value| value.try_into().ok()),
+                        object
+                            .and_then(|value| value.get("deletions"))
+                            .and_then(Value::as_u64)
+                            .and_then(|value| value.try_into().ok()),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(super) fn unified_diff_files(value: Option<&str>) -> Vec<AgentFileDiff> {
+    let Some(value) = value else {
+        return Vec::new();
+    };
+    let mut starts = value.match_indices("diff --git a/").collect::<Vec<_>>();
+    if starts.is_empty() {
+        let file = value
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("+++ b/")
+                    .or_else(|| line.strip_prefix("--- a/"))
+            })
+            .unwrap_or("Changes");
+        return vec![AgentFileDiff::normalized(
+            file.to_owned(),
+            Some(value.to_owned()),
+            None,
+            None,
+            None,
+            None,
+        )];
+    }
+    starts.push((value.len(), ""));
+    starts
+        .windows(2)
+        .filter_map(|window| {
+            let start = window[0].0;
+            let end = window[1].0;
+            let patch = value[start..end].trim_end().to_owned();
+            let first = patch.lines().next()?;
+            let file = first.split_once(" b/")?.1.to_owned();
+            Some(AgentFileDiff::normalized(
+                file,
+                Some(patch),
+                None,
+                None,
+                None,
+                None,
+            ))
+        })
+        .collect()
+}
+
+fn apply_patch_files(source: &str) -> Vec<AgentFileDiff> {
+    let Some(begin) = source.find("*** Begin Patch") else {
+        return Vec::new();
+    };
+    let decoded = source[begin..].replace("\\n", "\n").replace("\\\"", "\"");
+    let mut result = Vec::new();
+    let mut current: Option<(String, String)> = None;
+    for line in decoded.lines() {
+        if let Some(file) = line
+            .strip_prefix("*** Update File: ")
+            .or_else(|| line.strip_prefix("*** Add File: "))
+            .or_else(|| line.strip_prefix("*** Delete File: "))
+        {
+            if let Some((file, patch)) = current.take() {
+                result.push(AgentFileDiff::normalized(
+                    file,
+                    Some(patch.trim_end().to_owned()),
+                    None,
+                    None,
+                    None,
+                    None,
+                ));
+            }
+            current = Some((file.trim().to_owned(), String::new()));
+        } else if let Some((_, patch)) = current.as_mut() {
+            patch.push_str(line);
+            patch.push('\n');
+        }
+    }
+    if let Some((file, patch)) = current {
+        result.push(AgentFileDiff::normalized(
+            file,
+            Some(patch.trim_end().to_owned()),
+            None,
+            None,
+            None,
+            None,
+        ));
+    }
+    result
+}
+
+#[derive(Serialize)]
+struct AgentTranscriptTurnRef<'a> {
+    id: &'a str,
+    user_message_id: Option<&'a str>,
+    assistant_message_ids: Vec<&'a str>,
+    status: AgentTurnStatus,
+    started_at_ms: Option<u64>,
+    completed_at_ms: Option<u64>,
+    diffs: Vec<&'a AgentFileDiff>,
+}
+
+impl From<AgentTranscriptTurnRef<'_>> for AgentTranscriptTurn {
+    fn from(turn: AgentTranscriptTurnRef<'_>) -> Self {
+        Self {
+            id: turn.id.to_owned(),
+            user_message_id: turn.user_message_id.map(str::to_owned),
+            assistant_message_ids: turn
+                .assistant_message_ids
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            status: turn.status,
+            started_at_ms: turn.started_at_ms,
+            completed_at_ms: turn.completed_at_ms,
+            diffs: turn.diffs.into_iter().cloned().collect(),
+        }
+    }
+}
+
+fn project_turn_refs(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurnRef<'_>> {
+    let mut turns = Vec::<AgentTranscriptTurnRef<'_>>::new();
+    let mut by_user = HashMap::<&str, usize>::new();
+    let mut latest = None;
+    for message in messages {
+        if message.role == AgentMessageRole::User {
+            let index = turns.len();
+            turns.push(AgentTranscriptTurnRef {
+                id: &message.id,
+                user_message_id: Some(&message.id),
+                assistant_message_ids: Vec::new(),
+                status: AgentTurnStatus::Idle,
+                started_at_ms: message.created_at_ms,
+                completed_at_ms: message.completed_at_ms,
+                diffs: message.diffs.iter().collect(),
+            });
+            by_user.insert(&message.id, index);
+            latest = Some(index);
+            continue;
+        }
+        let index = message
+            .parent_id
+            .as_ref()
+            .and_then(|parent| by_user.get(parent.as_str()).copied())
+            .or(latest)
+            .unwrap_or_else(|| {
+                let index = turns.len();
+                turns.push(AgentTranscriptTurnRef {
+                    id: message.parent_id.as_deref().unwrap_or(&message.id),
+                    user_message_id: None,
+                    assistant_message_ids: Vec::new(),
+                    status: AgentTurnStatus::Idle,
+                    started_at_ms: message.created_at_ms,
+                    completed_at_ms: None,
+                    diffs: Vec::new(),
+                });
+                index
+            });
+        latest = Some(index);
+        let turn = &mut turns[index];
+        turn.assistant_message_ids.push(&message.id);
+        turn.started_at_ms = turn.started_at_ms.or(message.created_at_ms);
+        if let Some(completed) = message.completed_at_ms {
+            turn.completed_at_ms = Some(turn.completed_at_ms.unwrap_or(0).max(completed));
+        }
+        for diff in &message.diffs {
+            if let Some(current) = turn
+                .diffs
+                .iter_mut()
+                .find(|current| current.file == diff.file)
+            {
+                *current = diff;
+            } else {
+                turn.diffs.push(diff);
+            }
+        }
+    }
+    for turn in &mut turns {
+        let mut running = false;
+        let mut failed = false;
+        for id in &turn.assistant_message_ids {
+            let Some(message) = messages.iter().find(|message| &message.id == id) else {
+                continue;
+            };
+            failed |= message.error.is_some();
+            for part in &message.parts {
+                if let AgentTranscriptPart::Tool { state, .. } = part {
+                    running |= matches!(
+                        state.status,
+                        AgentToolStatus::Pending | AgentToolStatus::Running
+                    );
+                    failed |= state.status == AgentToolStatus::Error;
+                    if let Some(completed) = state.completed_at_ms {
+                        turn.completed_at_ms =
+                            Some(turn.completed_at_ms.unwrap_or(0).max(completed));
+                    }
+                }
+            }
+        }
+        turn.status = if failed {
+            AgentTurnStatus::Error
+        } else if running {
+            AgentTurnStatus::Working
+        } else {
+            AgentTurnStatus::Idle
+        };
+    }
+    turns
+}
+
+pub(super) fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurn> {
+    project_turn_refs(messages)
+        .into_iter()
+        .map(AgentTranscriptTurn::from)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_tool_input_collapses_wire_aliases() {
+        let input = scalar_fields(Some(&serde_json::json!({
+            "cmd": "cargo test",
+            "workdir": "/repo",
+            "file_path": "src/lib.rs",
+            "pattern": "AgentToolState",
+            "subagent_type": "reviewer"
+        })));
+
+        assert_eq!(
+            canonical_tool_input("shell", input),
+            [
+                AgentField {
+                    key: "command".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "cargo test".to_owned()
+                    },
+                },
+                AgentField {
+                    key: "path".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "src/lib.rs".to_owned()
+                    },
+                },
+                AgentField {
+                    key: "query".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "AgentToolState".to_owned()
+                    },
+                },
+                AgentField {
+                    key: "agent".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "reviewer".to_owned()
+                    },
+                },
+                AgentField {
+                    key: "cwd".to_owned(),
+                    value: AgentScalarValue::String {
+                        value: "/repo".to_owned()
+                    },
+                },
+            ]
+        );
+        assert_eq!(
+            tool_input(
+                "shell",
+                Some(&serde_json::json!({ "cmd": ["cargo", "test"] })),
+            ),
+            fields([("command", "cargo test".to_owned())])
+        );
+    }
+}
