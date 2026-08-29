@@ -16,19 +16,10 @@ import {
   ActivityIndicator,
   Linking,
   Modal,
-  PanResponder,
   Platform,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
-import Animated, {
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview';
@@ -37,7 +28,6 @@ import {
   orderByAgentStatusPriority,
   tabAgentStateChangeSequence,
 } from '@/src/herdQueue';
-import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import {
   terminalControlBarInset,
   terminalSessionChromeHeight,
@@ -57,13 +47,6 @@ import {
   resolveTranscriptFilePath,
   type TranscriptFileLinkTarget,
 } from '@/src/lib/transcriptLinks';
-import {
-  neighborTabIndex,
-  shouldCommitTerminalTabSwipe,
-  terminalTabSwipeDirection,
-  terminalTabSwipeOffset,
-  type TerminalTabSwipeDirection,
-} from '@/src/lib/terminalTabSwipe';
 import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
 import {
   resolveTerminalVolumeKeyAction,
@@ -175,15 +158,6 @@ type PendingFocus = {
   previousId: string | null;
 };
 
-type TerminalTabSwipe = {
-  direction: TerminalTabSwipeDirection;
-  originTabId: string;
-  originTerminalId: string | null;
-  targetTabId: string;
-  targetTerminalId: string | null;
-  targetLabel: string;
-};
-
 interface BrowserWebViewHandle {
   goBack: () => void;
 }
@@ -252,8 +226,6 @@ export function SessionScreen({
   const [terminalSessionChromeVisible, setTerminalSessionChromeVisible] =
     useState(true);
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
-  const [terminalWidth, setTerminalWidth] = useState(0);
-  const [tabSwipe, setTabSwipe] = useState<TerminalTabSwipe | null>(null);
   const [linkScanRequest, setLinkScanRequest] = useState(0);
   const [linksOpen, setLinksOpen] = useState(false);
   const [terminalLinks, setTerminalLinks] = useState<string[]>([]);
@@ -296,12 +268,9 @@ export function SessionScreen({
     previewUri: string | null;
     dispose: () => void;
   } | null>(null);
-  const terminalWidthRef = useRef(0);
   const browserWebView = useRef<BrowserWebViewHandle | null>(null);
   const tunnelPreviewRef = useRef<string | null>(null);
   const browserRequestRef = useRef(0);
-  const tabSwipeTranslateX = useSharedValue(0);
-  const tabSwipeRef = useRef<TerminalTabSwipe | null>(null);
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
@@ -319,11 +288,6 @@ export function SessionScreen({
       showAppAlert(t('herd.commandFailed'), error);
     },
     [showAppAlert, t],
-  );
-
-  useEffect(
-    () => () => cancelAnimation(tabSwipeTranslateX),
-    [tabSwipeTranslateX],
   );
 
   const workspace =
@@ -436,38 +400,6 @@ export function SessionScreen({
         target.hostSessionId === hostSessionId &&
         target.session.terminalId === activeTerminalSession?.terminalId,
     ) || null;
-  const previewTarget =
-    terminalTargets.find(
-      target =>
-        target.hostSessionId === hostSessionId &&
-        target.session.terminalId === tabSwipe?.targetTerminalId,
-    ) || null;
-  const activeSwipeNeedsPlaceholder = Boolean(tabSwipe && !previewTarget);
-  const activeTerminalSwipeStyle = useAnimatedStyle(
-    () => ({
-      transform: [
-        {
-          translateX: activeSwipeNeedsPlaceholder
-            ? tabSwipeTranslateX.value
-            : 0,
-        },
-      ],
-    }),
-    [activeSwipeNeedsPlaceholder],
-  );
-  const previewPlaceholderStyle = useAnimatedStyle(
-    () => ({
-      transform: [
-        {
-          translateX:
-            tabSwipeTranslateX.value +
-            (tabSwipe ? tabSwipe.direction * terminalWidth : 0),
-        },
-      ],
-    }),
-    [tabSwipe, terminalWidth],
-  );
-
   const registerInteraction = (
     target: TerminalRenderTarget | null = activeTarget,
   ) => {
@@ -951,17 +883,13 @@ export function SessionScreen({
     );
   };
 
-  const swipeContextRef = useRef({
+  const tabNavigationContextRef = useRef({
     tabs,
     selectedTab,
-    activeTerminalSession,
-    panes: selectableResources.panes,
   });
-  swipeContextRef.current = {
+  tabNavigationContextRef.current = {
     tabs,
     selectedTab,
-    activeTerminalSession,
-    panes: selectableResources.panes,
   };
   const chooseTabRef = useRef(chooseTab);
   chooseTabRef.current = chooseTab;
@@ -974,160 +902,18 @@ export function SessionScreen({
         : terminalPreferences.volumeDownAction;
     const action = resolveTerminalVolumeKeyAction(configured, key);
     if (action?.type !== 'terminal-tab') return;
-    const context = swipeContextRef.current;
+    const context = tabNavigationContextRef.current;
     const currentIndex = context.tabs.findIndex(
       item => item.tab_id === context.selectedTab?.tab_id,
     );
-    const targetIndex = neighborTabIndex(
-      currentIndex,
-      context.tabs.length,
-      action.direction,
-    );
-    if (targetIndex !== null) chooseTabRef.current(context.tabs[targetIndex]);
+    const targetTab = context.tabs[currentIndex + action.direction];
+    if (targetTab) chooseTabRef.current(targetTab);
   });
 
   useEffect(() => {
     const subscription = addTerminalVolumeKeyListener(handleVolumeKey);
     return () => subscription.remove();
   }, []);
-
-  const beginTabSwipe = (
-    direction: TerminalTabSwipeDirection,
-  ): TerminalTabSwipe | null => {
-    const context = swipeContextRef.current;
-    const currentIndex = context.tabs.findIndex(
-      item => item.tab_id === context.selectedTab?.tab_id,
-    );
-    const targetIndex = neighborTabIndex(
-      currentIndex,
-      context.tabs.length,
-      direction,
-    );
-    if (targetIndex === null || !context.selectedTab) return null;
-    const target = context.tabs[targetIndex];
-    const targetPanes = context.panes.filter(
-      pane => pane.tab_id === target.tab_id,
-    );
-    const targetPane = targetPanes.find(pane => pane.focused) || targetPanes[0];
-    const nextSwipe: TerminalTabSwipe = {
-      direction,
-      originTabId: context.selectedTab.tab_id,
-      originTerminalId: context.activeTerminalSession?.terminalId || null,
-      targetTabId: target.tab_id,
-      targetTerminalId: targetPane?.terminal_id || null,
-      targetLabel: target.label || target.tab_id,
-    };
-    tabSwipeRef.current = nextSwipe;
-    setTabSwipe(nextSwipe);
-    return nextSwipe;
-  };
-
-  const finishTabSwipe = (
-    originTabId: string,
-    targetTabId: string,
-    commit: boolean,
-  ) => {
-    const swipe = tabSwipeRef.current;
-    if (
-      swipe?.originTabId !== originTabId ||
-      swipe.targetTabId !== targetTabId
-    )
-      return;
-    if (commit) {
-      const target = swipeContextRef.current.tabs.find(
-        item => item.tab_id === targetTabId,
-      );
-      if (target) chooseTabRef.current(target);
-    }
-    tabSwipeRef.current = null;
-    setTabSwipe(null);
-    tabSwipeTranslateX.value = 0;
-  };
-
-  const settleTabSwipe = (commit: boolean) => {
-    const swipe = tabSwipeRef.current;
-    if (!swipe) return;
-    const destination = commit
-      ? -swipe.direction * terminalWidthRef.current
-      : 0;
-    tabSwipeTranslateX.value = withSpring(
-      destination,
-      {
-        ...DEFAULT_SPRING_CONFIG,
-        stiffness: 240,
-      },
-      finished => {
-        if (finished) {
-          scheduleOnRN(
-            finishTabSwipe,
-            swipe.originTabId,
-            swipe.targetTabId,
-            commit,
-          );
-        }
-      },
-    );
-  };
-
-  const terminalTabPanResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_event, gesture) => {
-        const direction = terminalTabSwipeDirection(
-          gesture.dx,
-          gesture.dy,
-          gesture.numberActiveTouches,
-        );
-        if (!direction || terminalWidthRef.current <= 0) return false;
-        const context = swipeContextRef.current;
-        const currentIndex = context.tabs.findIndex(
-          item => item.tab_id === context.selectedTab?.tab_id,
-        );
-        return (
-          neighborTabIndex(currentIndex, context.tabs.length, direction) !==
-          null
-        );
-      },
-      onPanResponderMove: (_event, gesture) => {
-        const direction =
-          tabSwipeRef.current?.direction ||
-          terminalTabSwipeDirection(
-            gesture.dx,
-            gesture.dy,
-            gesture.numberActiveTouches,
-          );
-        if (!direction) return;
-        const swipe = tabSwipeRef.current || beginTabSwipe(direction);
-        if (!swipe) return;
-        tabSwipeTranslateX.value = terminalTabSwipeOffset(
-          gesture.dx,
-          terminalWidthRef.current,
-          swipe.direction,
-        );
-      },
-      onPanResponderRelease: (_event, gesture) => {
-        const swipe = tabSwipeRef.current;
-        if (!swipe) return;
-        settleTabSwipe(
-          shouldCommitTerminalTabSwipe(
-            gesture.dx,
-            gesture.vx,
-            terminalWidthRef.current,
-            swipe.direction,
-          ),
-        );
-      },
-      onPanResponderTerminate: () => settleTabSwipe(false),
-      onPanResponderTerminationRequest: () => false,
-    }),
-  ).current;
-
-  useEffect(() => {
-    if (visible) return;
-    tabSwipeRef.current = null;
-    setTabSwipe(null);
-    cancelAnimation(tabSwipeTranslateX);
-    tabSwipeTranslateX.value = 0;
-  }, [tabSwipeTranslateX, visible]);
 
   const choosePane = (pane: PaneInfo) => {
     terminalTabSelectionStarted(pane.terminal_id);
@@ -1709,18 +1495,13 @@ export function SessionScreen({
       <View
         className="relative flex-1 overflow-hidden bg-transparent"
         onTouchStart={() => registerInteraction()}
-        onLayout={event => {
-          terminalWidthRef.current = event.nativeEvent.layout.width;
-          setTerminalWidth(event.nativeEvent.layout.width);
-        }}
       >
-        <Animated.View
+        <View
           pointerEvents="box-none"
-          style={[StyleSheet.absoluteFill, activeTerminalSwipeStyle]}
+          className="absolute inset-0"
         >
           <TerminalScreen
             activeTarget={activeTarget}
-            previewTarget={previewTarget}
             targets={terminalTargets}
             compact
             sessionChromeInset={sessionChromeInset}
@@ -1728,12 +1509,6 @@ export function SessionScreen({
             latencyMs={latencyMs}
             latencyWarningActive={latencyWarningActive}
             visible={visible && Boolean(activeTarget)}
-            swipe={
-              tabSwipe && previewTarget
-                ? { direction: tabSwipe.direction, offset: tabSwipeTranslateX }
-                : null
-            }
-            terminalPanHandlers={terminalTabPanResponder.panHandlers}
             preferences={terminalPreferences}
             controlUsage={terminalControlUsage}
             historyEntries={terminalHistory}
@@ -1835,22 +1610,7 @@ export function SessionScreen({
               );
             }}
           />
-        </Animated.View>
-        {tabSwipe &&
-          (!tabSwipe.targetTerminalId ||
-            !terminalState.sessions.some(
-              session => session.terminalId === tabSwipe.targetTerminalId,
-            )) && (
-            <Animated.View
-              pointerEvents="none"
-              style={[StyleSheet.absoluteFill, previewPlaceholderStyle]}
-              className="items-center justify-center bg-terminal-canvas p-[30px]"
-            >
-              <Text className="text-[10px] font-black text-terminal-text">
-                {tabSwipe.targetLabel}
-              </Text>
-            </Animated.View>
-          )}
+        </View>
         {!activeTarget && !snapshot.server.running && (
           <View className="flex-1 items-center justify-center p-[30px]">
             <Text className="font-black text-terminal-text">

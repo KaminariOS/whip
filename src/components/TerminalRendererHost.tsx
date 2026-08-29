@@ -13,8 +13,6 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
@@ -199,17 +197,12 @@ export interface TerminalRendererHandle {
 
 interface Props {
   activeTarget: TerminalRenderTarget | null;
-  previewTarget?: TerminalRenderTarget | null;
   targets: readonly TerminalRenderTarget[];
   visible: boolean;
   preferences: TerminalPreferences;
   visualViewport?: TerminalVisualViewport;
   offlineTranscript?: string;
   offlineScroll?: PaneScrollInfo;
-  swipe?: {
-    direction: -1 | 1;
-    offset: SharedValue<number>;
-  } | null;
   style?: StyleProp<ViewStyle>;
   onReady?: () => void;
   onInput: (target: TerminalRenderTarget, data: string) => void | Promise<void>;
@@ -224,7 +217,6 @@ interface Props {
   onProtocolStateChange: (target: TerminalRenderTarget, state: TerminalProtocolState) => void;
   onTitleChange: (target: TerminalRenderTarget, title: string) => void;
   onFontSizeChange: (target: TerminalRenderTarget, fontSize: number) => void;
-  onSelectionStateChange: (target: TerminalRenderTarget, active: boolean) => void;
   onStatus: (
     target: TerminalRenderTarget,
     status: TerminalSessionStatus,
@@ -236,14 +228,12 @@ interface Props {
 
 export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(function TerminalRendererHostComponent({
   activeTarget,
-  previewTarget,
   targets,
   visible,
   preferences,
   visualViewport = DEFAULT_TERMINAL_VISUAL_VIEWPORT,
   offlineTranscript = '',
   offlineScroll,
-  swipe,
   style,
   onReady,
   onInput,
@@ -258,7 +248,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onProtocolStateChange,
   onTitleChange,
   onFontSizeChange,
-  onSelectionStateChange,
   onStatus,
   onError,
 }, forwardedRef) {
@@ -291,7 +280,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportProtocolState = useEffectEvent(onProtocolStateChange);
   const reportTitle = useEffectEvent(onTitleChange);
   const reportFontSize = useEffectEvent(onFontSizeChange);
-  const reportSelectionState = useEffectEvent(onSelectionStateChange);
   // Herdr terminal transport state is projected exclusively from HostRuntime
   // events in App. The plain SSH fallback has no Herdr terminal runtime.
   const reportStatus = useEffectEvent((
@@ -972,12 +960,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       disposeEntry(key, entry, true);
     }
     ensureEntry(activeTarget);
-    ensureEntry(previewTarget);
-    pruneEntries(new Set([
-      activeTarget?.key,
-      previewTarget?.key,
-    ].filter((key): key is string => Boolean(key))));
-  }, [activeTarget, configureEntry, disposeEntry, ensureEntry, previewTarget, pruneEntries, targets]);
+    pruneEntries(new Set(activeTarget?.key ? [activeTarget.key] : []));
+  }, [activeTarget, configureEntry, disposeEntry, ensureEntry, pruneEntries, targets]);
 
   const activeTranscriptKey = activeTarget?.key || '';
   useEffect(() => {
@@ -1035,21 +1019,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     preferences.visualHints,
   ]);
 
-  const updateSwipeOffset = useCallback((value: number) => {
-    if (!activeTarget || !previewTarget || !swipe) return;
-    inject(`window.herdrSwipe(${JSON.stringify(activeTarget.key)}, ${JSON.stringify(previewTarget.key)}, ${swipe.direction}, ${value});`);
-  }, [activeTarget, inject, previewTarget, swipe]);
-
-  useAnimatedReaction(
-    () => swipe?.offset.value ?? null,
-    (value, previousValue) => {
-      if (value !== null && value !== previousValue) {
-        scheduleOnRN(updateSwipeOffset, value);
-      }
-    },
-    [swipe?.offset, updateSwipeOffset],
-  );
-
   useEffect(() => {
     if (!hostReady.current) return;
     if (!activeTarget) return;
@@ -1059,15 +1028,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       inject(`window.herdrActivate(${JSON.stringify(activeTarget.key)}); window.herdrBlur(${JSON.stringify(activeTarget.key)});`);
       return;
     }
-    if (!swipe || !previewTarget) {
-      inject(`window.herdrActivate(${JSON.stringify(activeTarget.key)});`);
-      return;
-    }
-    updateSwipeOffset(swipe.offset.get());
-    return () => {
-      inject(`window.herdrActivate(${JSON.stringify(activeKey.current)});`);
-    };
-  }, [activeTarget, inject, previewTarget, swipe, updateSwipeOffset, visible]);
+    inject(`window.herdrActivate(${JSON.stringify(activeTarget.key)});`);
+  }, [activeTarget, inject, visible]);
 
   useEffect(() => {
     let previous = AppState.currentState;
@@ -1457,11 +1419,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         }
         reportPaste(entry.target, value);
       }
-    } else if (
-      entry.target.key === activeKey.current
-      && message.type === 'selection-state'
-    ) {
-      reportSelectionState(entry.target, message.active === true);
     } else if (entry.target.key === activeKey.current && message.type === 'search-result') {
       if (!isFiniteNumber(message.count) || !isFiniteNumber(message.index)) return;
       reportSearch(message.count, message.index, message.invalid === true);

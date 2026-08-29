@@ -113,7 +113,6 @@ describe('TerminalRendererHost lifecycle', () => {
     onProtocolStateChange: jest.fn(),
     onTitleChange: jest.fn(),
     onFontSizeChange: jest.fn(),
-    onSelectionStateChange: jest.fn(),
     onStatus: jest.fn(),
     onError: jest.fn(),
   });
@@ -231,20 +230,21 @@ describe('TerminalRendererHost lifecycle', () => {
   const mountReadyHost = async (
     activeTarget: TerminalRenderTarget,
     targets: TerminalRenderTarget[] = [activeTarget],
-    previewTarget?: TerminalRenderTarget,
   ) => {
     const eventCallbacks = createCallbacks();
     const injected: string[] = [];
+    const renderHost = (target: TerminalRenderTarget) => (
+      <TerminalRendererHost
+        {...eventCallbacks}
+        activeTarget={target}
+        preferences={{ ...preferences, pauseResizeInBackground: true }}
+        targets={targets}
+        visible
+      />
+    );
     await act(async () => {
       renderer = create(
-        <TerminalRendererHost
-          {...eventCallbacks}
-          activeTarget={activeTarget}
-          previewTarget={previewTarget}
-          preferences={{ ...preferences, pauseResizeInBackground: true }}
-          targets={targets}
-          visible
-        />,
+        renderHost(activeTarget),
         {
           createNodeMock: element =>
             element.type === 'WebView'
@@ -260,23 +260,26 @@ describe('TerminalRendererHost lifecycle', () => {
       node => typeof node.props.onMessage === 'function',
     );
     await sendRendererMessage(webView, { type: 'ready' });
-    for (const target of targets) {
-      if (target !== activeTarget && target !== previewTarget) continue;
-      await sendRendererMessage(webView, {
-        type: 'terminal-ready',
-        key: target.key,
+    await sendRendererMessage(webView, {
+      type: 'terminal-ready',
+      key: activeTarget.key,
+    });
+    await sendRendererMessage(webView, {
+      type: 'resize',
+      source: 'fit',
+      key: activeTarget.key,
+      cols: 80,
+      rows: 24,
+      cellWidthPx: 8,
+      cellHeightPx: 16,
+    });
+    const activateTarget = async (target: TerminalRenderTarget) => {
+      await act(async () => {
+        renderer.update(renderHost(target));
+        await Promise.resolve();
       });
-      await sendRendererMessage(webView, {
-        type: 'resize',
-        source: 'fit',
-        key: target.key,
-        cols: 80,
-        rows: 24,
-        cellWidthPx: 8,
-        cellHeightPx: 16,
-      });
-    }
-    return { eventCallbacks, injected, webView };
+    };
+    return { activateTarget, eventCallbacks, injected, webView };
   };
 
   test('closes the native bridge when a terminal target is removed', () => {
@@ -319,7 +322,6 @@ describe('TerminalRendererHost lifecycle', () => {
       onProtocolStateChange: jest.fn(),
       onTitleChange: jest.fn(),
       onFontSizeChange: jest.fn(),
-      onSelectionStateChange: jest.fn(),
       onStatus: jest.fn(),
       onError: jest.fn(),
     };
@@ -394,7 +396,6 @@ describe('TerminalRendererHost lifecycle', () => {
       onProtocolStateChange: jest.fn(),
       onTitleChange: jest.fn(),
       onFontSizeChange: jest.fn(),
-      onSelectionStateChange: jest.fn(),
       onStatus: jest.fn(),
       onError: jest.fn(),
     };
@@ -848,7 +849,23 @@ describe('TerminalRendererHost lifecycle', () => {
     });
     const first = createTarget('term-1', client, firstScroll);
     const second = createTarget('term-2', client, secondScroll);
-    const { webView } = await mountReadyHost(first, [first, second], second);
+    const { activateTarget, webView } = await mountReadyHost(first, [first, second]);
+
+    await activateTarget(second);
+    await sendRendererMessage(webView, {
+      type: 'terminal-ready',
+      key: second.key,
+    });
+    await sendRendererMessage(webView, {
+      type: 'resize',
+      source: 'fit',
+      key: second.key,
+      cols: 80,
+      rows: 24,
+      cellWidthPx: 8,
+      cellHeightPx: 16,
+    });
+    await activateTarget(first);
 
     await emitAppState('background');
     await emitAppState('active');

@@ -1727,26 +1727,21 @@
       positionSelectionHandle(endHandle, end, 'end');
     };
     const setInteractiveSelection = (anchor, focus, drag) => {
-      const wasActive = Boolean(activeSelection);
       activeSelection = { anchor, focus };
-      if (!wasActive) send({ type: 'selection-state', active: true });
       const { start, end } = normalizedSelection(activeSelection);
       terminal.select(start.col, start.row, Math.max(1, cellIndex(end) - cellIndex(start) + 1));
       renderSelectionHandles(drag);
     };
     const clearInteractiveSelection = clearTerminalSelection => {
-      const wasActive = Boolean(activeSelection);
       activeSelection = null;
       selectionHandleDrag = null;
       hideSelectionHandles();
       hideToolbar();
       if (clearTerminalSelection) terminal.clearSelection();
-      if (wasActive) send({ type: 'selection-state', active: false });
     };
     root.querySelector('#select-all-selection').addEventListener('click', event => {
       event.stopPropagation();
       terminal.selectAll();
-      const wasActive = Boolean(activeSelection);
       activeSelection = {
         anchor: { col: 0, row: 0 },
         focus: {
@@ -1754,7 +1749,6 @@
           row: Math.max(0, terminal.buffer.active.length - 1),
         },
       };
-      if (!wasActive) send({ type: 'selection-state', active: true });
       renderSelectionHandles();
       const rect = toolbar.getBoundingClientRect();
       showToolbar(rect.left + rect.width / 2, rect.bottom + 8);
@@ -2179,16 +2173,6 @@
         entry.root.style.transform = 'translateX(0)';
         call(key, 'herdrFit');
       }
-    };
-    window.herdrSwipe = (originKey, targetKey, direction, offset) => {
-      create(originKey);
-      create(targetKey);
-      present([originKey, targetKey]);
-      const width = window.innerWidth;
-      const origin = terminals.get(originKey);
-      const target = terminals.get(targetKey);
-      if (origin) origin.root.style.transform = 'translateX(' + offset + 'px)';
-      if (target) target.root.style.transform = 'translateX(' + (offset + direction * width) + 'px)';
     };
     window.herdrWriteBase64Chunk = (key, sequence, data, final, inputCookie, resizeCookie, inboundCookie) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final, inputCookie, resizeCookie, inboundCookie]);
     window.herdrWrite = (key, data, inputCookie, resizeCookie, inboundCookie) => call(key, 'herdrWrite', [data, inputCookie, resizeCookie, inboundCookie]);

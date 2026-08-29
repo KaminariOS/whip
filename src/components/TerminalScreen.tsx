@@ -51,7 +51,6 @@ import {
   ScrollView,
   StyleSheet,
   View,
-  type GestureResponderHandlers,
   type TextInput as TextInputHandle,
 } from 'react-native';
 import Animated, {
@@ -59,7 +58,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -142,7 +140,6 @@ const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
 
 interface Props {
   activeTarget: TerminalRenderTarget | null;
-  previewTarget?: TerminalRenderTarget | null;
   targets: readonly TerminalRenderTarget[];
   visible: boolean;
   preferences: TerminalPreferences;
@@ -153,11 +150,6 @@ interface Props {
   onSessionChromeVisibilityChange?: (visible: boolean) => void;
   latencyMs?: number | null;
   latencyWarningActive?: boolean;
-  swipe?: {
-    direction: -1 | 1;
-    offset: SharedValue<number>;
-  } | null;
-  terminalPanHandlers?: GestureResponderHandlers;
   onControlUse: (control: TerminalControlId) => void;
   onHistoryEntry: (entry: string) => void;
   getComposerDraft: (terminalId: string) => string;
@@ -397,7 +389,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
   function TerminalScreenComponent(
     {
       activeTarget,
-      previewTarget,
       targets,
       visible,
       preferences,
@@ -408,8 +399,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onSessionChromeVisibilityChange,
       latencyMs = null,
       latencyWarningActive = false,
-      swipe,
-      terminalPanHandlers,
       onControlUse,
       onHistoryEntry,
       getComposerDraft,
@@ -510,8 +499,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       enabled: keyboardEnabled,
       onVisibilityChange: setKeyboardVisible,
     });
-    const [terminalSelectionActive, setTerminalSelectionActive] =
-      useState(false);
     const [alternateScreen, setAlternateScreen] = useState(false);
     const [reportedTitle, setReportedTitle] = useState('');
     const [protocolState, setProtocolState] = useState<TerminalProtocolState>({
@@ -650,7 +637,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setComposeOpen(false);
       restoreKeyboardAfterCompose();
       setComposeExpanded(false);
-      setTerminalSelectionActive(false);
       setAlternateScreen(false);
       setReportedTitle('');
       setProtocolState({ kittyKeyboardReportAll: false });
@@ -2051,19 +2037,16 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               ? { paddingBottom: terminalLayoutKeyboardInset }
               : undefined
           }
-          {...(!terminalSelectionActive ? terminalPanHandlers : undefined)}
         >
           <TerminalRendererHost
             ref={renderer}
             activeTarget={activeTarget}
-            previewTarget={previewTarget}
             targets={targets}
             visible={visible}
             preferences={preferences}
             visualViewport={terminalVisualViewport}
             offlineTranscript={offlineSnapshot.transcript}
             offlineScroll={offlineSnapshot.scroll}
-            swipe={swipe}
             onReady={() => {
               setReady(true);
               setForcedMouseInput(false);
@@ -2113,7 +2096,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               terminalScrollbarDragRef.current = null;
               pendingTerminalScrollRef.current = null;
               setAlternateScreen(alternate);
-              setTerminalSelectionActive(false);
               setSearchResult({ count: 0, index: -1, invalid: false });
             }}
             onProtocolStateChange={(target, state) => {
@@ -2123,10 +2105,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               if (target.key === activeTarget?.key) setReportedTitle(nextTitle);
             }}
             onFontSizeChange={onFontSizeChange}
-            onSelectionStateChange={(target, active) => {
-              if (target.key === activeTarget?.key)
-                setTerminalSelectionActive(active);
-            }}
             onStatus={(target, nextStatus, nextError, reconnectAttempt) => {
               if (
                 nextStatus === 'connected' &&

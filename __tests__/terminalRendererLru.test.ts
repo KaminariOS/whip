@@ -12,14 +12,6 @@ describe('terminal renderer LRU', () => {
     )).toEqual(['oldest', 'older']);
   });
 
-  test('protects both terminals involved in a swipe from eviction', () => {
-    expect(terminalRendererEvictionKeys(
-      ['oldest', 'older', 'recent', 'origin', 'preview'],
-      4,
-      new Set(['origin', 'preview']),
-    )).toEqual(['oldest']);
-  });
-
   test('touching an entry moves it to the most-recent position', () => {
     const entries = new Map([
       ['first', 1],
