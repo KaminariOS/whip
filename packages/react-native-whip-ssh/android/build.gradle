@@ -35,6 +35,11 @@ if (isNewArchitectureEnabled()) {
 def rustDirectory = file("../rust")
 def rustBuildScript = file("${rustDirectory}/build-android.sh")
 def rustArchive = file("src/main/jniLibs/arm64-v8a/libwhip_ssh.a")
+def generatedRustBindings = files(
+  file("../src/generated/whip_ssh.ts"),
+  file("../cpp/generated/whip_ssh.cpp"),
+  file("../cpp/generated/whip_ssh.hpp"),
+)
 
 def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
   description = "Builds the arm64 Rust static library"
@@ -50,13 +55,24 @@ def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
     file("${rustDirectory}/Cargo.toml"),
     file("${rustDirectory}/Cargo.lock"),
     file("${rustDirectory}/rust-toolchain.toml"),
+    file("../../../package-lock.json"),
     rustBuildScript,
   )
-  outputs.file(rustArchive)
+  outputs.files(rustArchive, generatedRustBindings)
 }
 
 tasks.named("preBuild").configure {
   dependsOn buildRustArm64
+}
+
+tasks.named("generateCodegenSchemaFromJavaScript").configure {
+  dependsOn buildRustArm64
+}
+
+rootProject.project(":app").tasks.configureEach { task ->
+  if (task.name.startsWith("createBundle") && task.name.endsWith("JsAndAssets")) {
+    task.dependsOn buildRustArm64
+  }
 }
 
 def getExtOrDefault(name) {
