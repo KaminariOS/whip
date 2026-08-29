@@ -68,6 +68,8 @@ interface Props {
 const COPY_FEEDBACK_MS = 1_500;
 const CHAT_CONTENT_TOP_GAP = 16;
 const CHAT_CONTENT_BOTTOM_GAP = 24;
+const CHAT_FOLLOW_END_THRESHOLD = 72;
+const CHAT_SCROLL_OFFSET_EPSILON = 1;
 const SMALL_ICON_HIT_SLOP = 8;
 
 interface ChatScrollGeometry {
@@ -80,6 +82,18 @@ interface ChatScrollbarDragSnapshot {
   lastOffset: number;
   maxOffset: number;
   startOffset: number;
+}
+
+enum ChatScrollInteractionKind {
+  AwaitingMomentum = 'awaiting-momentum',
+  Dragging = 'dragging',
+  Idle = 'idle',
+  UserMomentum = 'user-momentum',
+}
+
+interface ChatScrollInteraction {
+  kind: ChatScrollInteractionKind;
+  lastOffset: number;
 }
 
 /** A real list item keeps Android's scroll range honest at floating-chrome boundaries. */
@@ -673,7 +687,7 @@ export function AgentChatView({
 }: Props) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
-  const [atBottom, setAtBottom] = useState(true);
+  const [followEnd, setFollowEndState] = useState(true);
   const [scrollGeometry, setScrollGeometry] = useState<ChatScrollGeometry>({
     contentHeight: 0,
     offset: 0,
@@ -681,9 +695,13 @@ export function AgentChatView({
   });
   const turns = state.transcript.turns;
   const list = useRef<FlatList<TranscriptTurn>>(null);
+  const followEndRef = useRef(true);
   const scrollGeometryRef = useRef(scrollGeometry);
+  const scrollInteractionRef = useRef<ChatScrollInteraction>({
+    kind: ChatScrollInteractionKind.Idle,
+    lastOffset: 0,
+  });
   const scrollbarDragRef = useRef<ChatScrollbarDragSnapshot | null>(null);
-  const previousCount = useRef(0);
   const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
   const agentWorking = agentStatus === 'working';
   const contentPadding = insetContentPadding(contentInsets, {
@@ -708,14 +726,57 @@ export function AgentChatView({
     ));
   };
 
-  useEffect(() => {
-    if (turns.length > previousCount.current && atBottom) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
-    previousCount.current = turns.length;
-  }, [atBottom, turns.length]);
+  const setFollowEnd = (enabled: boolean) => {
+    if (followEndRef.current === enabled) return;
+    followEndRef.current = enabled;
+    setFollowEndState(enabled);
+  };
 
-  useEffect(() => {
-    if (agentWorking && atBottom) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
-  }, [agentWorking, atBottom]);
+  const nearEnd = (offset: number, maximumOffset: number) => (
+    maximumOffset - offset < CHAT_FOLLOW_END_THRESHOLD
+  );
+
+  const updateFollowFromUserScroll = (
+    previousOffset: number,
+    nextOffset: number,
+    maximumOffset: number,
+  ) => {
+    if (nextOffset < previousOffset - CHAT_SCROLL_OFFSET_EPSILON) {
+      setFollowEnd(false);
+      return;
+    }
+    if (
+      nextOffset > previousOffset + CHAT_SCROLL_OFFSET_EPSILON
+      && nearEnd(nextOffset, maximumOffset)
+    ) setFollowEnd(true);
+  };
+
+  const scrollToEnd = (animated: boolean) => {
+    scrollInteractionRef.current = {
+      kind: ChatScrollInteractionKind.Idle,
+      lastOffset: scrollGeometryRef.current.offset,
+    };
+    list.current?.scrollToEnd({ animated });
+  };
+
+  const updateScrollExtent = ({
+    contentHeight,
+    viewportHeight,
+  }: Pick<ChatScrollGeometry, 'contentHeight' | 'viewportHeight'>) => {
+    const current = scrollGeometryRef.current;
+    const nextMaxOffset = Math.max(0, contentHeight - viewportHeight);
+    const boundedOffset = Math.min(current.offset, nextMaxOffset);
+    const shouldPinToEnd = viewportHeight > 0
+      && followEndRef.current
+      && nextMaxOffset - boundedOffset > CHAT_SCROLL_OFFSET_EPSILON;
+    const nextOffset = shouldPinToEnd ? nextMaxOffset : boundedOffset;
+    updateScrollGeometry({ contentHeight, offset: nextOffset, viewportHeight });
+    const interaction = scrollInteractionRef.current;
+    if (interaction.kind !== ChatScrollInteractionKind.Idle) {
+      scrollInteractionRef.current = { ...interaction, lastOffset: nextOffset };
+    }
+    if (shouldPinToEnd) list.current?.scrollToEnd({ animated: false });
+  };
 
   const trackScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -726,7 +787,42 @@ export function AgentChatView({
       offset,
       viewportHeight: layoutMeasurement.height,
     });
-    setAtBottom(nextMaxOffset - offset < 72);
+    const interaction = scrollInteractionRef.current;
+    if (
+      interaction.kind !== ChatScrollInteractionKind.Dragging
+      && interaction.kind !== ChatScrollInteractionKind.UserMomentum
+    ) return;
+    updateFollowFromUserScroll(interaction.lastOffset, offset, nextMaxOffset);
+    scrollInteractionRef.current = { ...interaction, lastOffset: offset };
+  };
+  const beginUserScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    trackScroll(event);
+    const maximumOffset = Math.max(
+      0,
+      event.nativeEvent.contentSize.height - event.nativeEvent.layoutMeasurement.height,
+    );
+    const offset = Math.max(0, Math.min(maximumOffset, event.nativeEvent.contentOffset.y));
+    scrollInteractionRef.current = { kind: ChatScrollInteractionKind.Dragging, lastOffset: offset };
+    if (maximumOffset > CHAT_SCROLL_OFFSET_EPSILON) setFollowEnd(false);
+  };
+  const endUserScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    trackScroll(event);
+    scrollInteractionRef.current = {
+      kind: ChatScrollInteractionKind.AwaitingMomentum,
+      lastOffset: scrollGeometryRef.current.offset,
+    };
+  };
+  const beginMomentumScroll = () => {
+    const interaction = scrollInteractionRef.current;
+    if (interaction.kind !== ChatScrollInteractionKind.AwaitingMomentum) return;
+    scrollInteractionRef.current = { ...interaction, kind: ChatScrollInteractionKind.UserMomentum };
+  };
+  const endMomentumScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    trackScroll(event);
+    scrollInteractionRef.current = {
+      kind: ChatScrollInteractionKind.Idle,
+      lastOffset: scrollGeometryRef.current.offset,
+    };
   };
   const beginScrollbarDrag = ({
     trackHeight,
@@ -738,6 +834,11 @@ export function AgentChatView({
       scrollbarDragRef.current = null;
       return;
     }
+    scrollInteractionRef.current = {
+      kind: ChatScrollInteractionKind.Idle,
+      lastOffset: current.offset,
+    };
+    setFollowEnd(false);
     scrollbarDragRef.current = {
       lastOffset: current.offset,
       maxOffset: currentMaxOffset,
@@ -759,10 +860,12 @@ export function AgentChatView({
       thumbHeight,
     });
     if (desiredOffset === drag.lastOffset) return;
+    const previousOffset = drag.lastOffset;
     drag.lastOffset = desiredOffset;
     const current = scrollGeometryRef.current;
     updateScrollGeometry({ ...current, offset: desiredOffset });
-    setAtBottom(drag.maxOffset - desiredOffset < 72);
+    const currentMaxOffset = Math.max(0, current.contentHeight - current.viewportHeight);
+    updateFollowFromUserScroll(previousOffset, desiredOffset, currentMaxOffset);
     list.current?.scrollToOffset({ offset: desiredOffset, animated: false });
   };
   const adjustScrollbar = (direction: 'up' | 'down') => {
@@ -774,7 +877,11 @@ export function AgentChatView({
     ));
     if (desiredOffset === current.offset) return;
     updateScrollGeometry({ ...current, offset: desiredOffset });
-    setAtBottom(currentMaxOffset - desiredOffset < 72);
+    updateFollowFromUserScroll(current.offset, desiredOffset, currentMaxOffset);
+    scrollInteractionRef.current = {
+      kind: ChatScrollInteractionKind.Idle,
+      lastOffset: desiredOffset,
+    };
     list.current?.scrollToOffset({ offset: desiredOffset, animated: false });
   };
   const openTranscriptLink = useCallback((url: string) => {
@@ -831,27 +938,23 @@ export function AgentChatView({
           ) : null}
           onContentSizeChange={(_width, height) => {
             const current = scrollGeometryRef.current;
-            const nextMaxOffset = Math.max(0, height - current.viewportHeight);
-            updateScrollGeometry({
-              ...current,
-              contentHeight: height,
-              offset: Math.min(current.offset, nextMaxOffset),
-            });
+            updateScrollExtent({ contentHeight: height, viewportHeight: current.viewportHeight });
           }}
           onLayout={event => {
             const current = scrollGeometryRef.current;
-            const viewportHeight = event.nativeEvent.layout.height;
-            const nextMaxOffset = Math.max(0, current.contentHeight - viewportHeight);
-            updateScrollGeometry({
-              ...current,
-              offset: Math.min(current.offset, nextMaxOffset),
-              viewportHeight,
+            updateScrollExtent({
+              contentHeight: current.contentHeight,
+              viewportHeight: event.nativeEvent.layout.height,
             });
           }}
           onScroll={trackScroll}
+          onScrollBeginDrag={beginUserScroll}
+          onScrollEndDrag={endUserScroll}
+          onMomentumScrollBegin={beginMomentumScroll}
+          onMomentumScrollEnd={endMomentumScroll}
           scrollEventThrottle={16}
         />
-        {!atBottom && (
+        {!followEnd && (
           <Button
             accessibilityLabel="Jump to latest"
             className={cn('absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg', appGlassEnabled && 'border')}
@@ -860,7 +963,10 @@ export function AgentChatView({
               appGlassEnabled ? appGlassControlStyle(false, colors) : undefined,
             ]}
             variant={appGlassEnabled ? 'ghost' : 'secondary'}
-            onPress={() => list.current?.scrollToEnd({ animated: true })}>
+            onPress={() => {
+              setFollowEnd(true);
+              scrollToEnd(true);
+            }}>
             <ChevronDown size={15} color={colors.text} /><Text className="text-[10px] font-semibold">Latest</Text>
           </Button>
         )}

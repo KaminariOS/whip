@@ -1,7 +1,12 @@
 import { Fragment, type ReactElement } from 'react';
-import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import {
+  act,
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from 'react-test-renderer';
 
-import { emptyTranscript } from '../src/agentChat';
+import { emptyTranscript, type AgentChatState, type TranscriptTurn } from '../src/agentChat';
 import { AgentChatView } from '../src/components/AgentChatView';
 
 jest.mock(
@@ -61,6 +66,50 @@ jest.mock('../src/theme', () => ({
   }),
 }));
 
+const CONTENT_INSETS = { top: 0, bottom: 186 };
+
+function chatState(turns: TranscriptTurn[]): AgentChatState {
+  return {
+    sessionId: 'session-1',
+    transcript: { ...emptyTranscript('session-1'), turns },
+    status: 'live',
+  };
+}
+
+function chatView(state: AgentChatState) {
+  return (
+    <AgentChatView
+      agent="codex"
+      agentStatus="working"
+      contentInsets={CONTENT_INSETS}
+      latestButtonBottom={297}
+      onOpenFile={jest.fn()}
+      state={state}
+    />
+  );
+}
+
+function flatList(renderer: ReactTestRenderer): ReactTestInstance {
+  return renderer.root.find(node => String(node.type) === 'FlatList');
+}
+
+function scrollEvent(offset: number, contentHeight: number, viewportHeight = 400) {
+  return {
+    nativeEvent: {
+      contentOffset: { y: offset },
+      contentSize: { height: contentHeight },
+      layoutMeasurement: { height: viewportHeight },
+    },
+  };
+}
+
+const TURN: TranscriptTurn = {
+  assistants: [],
+  diffs: [],
+  id: 'turn-1',
+  status: 'working',
+};
+
 describe('AgentChatView viewport insets', () => {
   let renderer: ReactTestRenderer;
   let boundaries: ReactTestRenderer;
@@ -71,13 +120,12 @@ describe('AgentChatView viewport insets', () => {
   });
 
   test('keeps the viewport edge-to-edge while insetting content and indicators', () => {
-    const contentInsets = { top: 0, bottom: 186 };
     act(() => {
       renderer = create(
         <AgentChatView
           agent="codex"
           agentStatus="idle"
-          contentInsets={contentInsets}
+          contentInsets={CONTENT_INSETS}
           latestButtonBottom={297}
           onOpenFile={jest.fn()}
           state={{
@@ -90,7 +138,7 @@ describe('AgentChatView viewport insets', () => {
     });
 
     const list = renderer.root.find(node => String(node.type) === 'FlatList');
-    expect(list.props.scrollIndicatorInsets).toEqual(contentInsets);
+    expect(list.props.scrollIndicatorInsets).toEqual(CONTENT_INSETS);
     expect(list.props.contentContainerClassName).toBe('flex-grow px-4');
 
     act(() => {
@@ -111,17 +159,133 @@ describe('AgentChatView viewport insets', () => {
     expect(spacerHeights).toEqual([16, 210]);
 
     act(() => {
-      list.props.onScroll({
-        nativeEvent: {
-          contentOffset: { y: 0 },
-          contentSize: { height: 1_000 },
-          layoutMeasurement: { height: 400 },
-        },
-      });
+      list.props.onScroll(scrollEvent(600, 1_000));
+      list.props.onScrollBeginDrag(scrollEvent(600, 1_000));
+      list.props.onScroll(scrollEvent(0, 1_000));
     });
     const latestButton = renderer.root.find(
       node => node.props.accessibilityLabel === 'Jump to latest',
     );
     expect(latestButton.props.style[0]).toEqual({ bottom: 297 });
+  });
+});
+
+describe('AgentChatView auto-follow', () => {
+  let renderer: ReactTestRenderer;
+  let scrollToEnd: jest.Mock;
+  let scrollToOffset: jest.Mock;
+
+  beforeEach(() => {
+    scrollToEnd = jest.fn();
+    scrollToOffset = jest.fn();
+    act(() => {
+      renderer = create(chatView(chatState([TURN])), {
+        createNodeMock: element => element.type === 'FlatList'
+          ? { scrollToEnd, scrollToOffset }
+          : null,
+      });
+    });
+  });
+
+  afterEach(() => {
+    act(() => renderer.unmount());
+  });
+
+  const establishScrollableContent = (testRenderer: ReactTestRenderer) => {
+    act(() => {
+      flatList(testRenderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+      flatList(testRenderer).props.onContentSizeChange(0, 1_000);
+      flatList(testRenderer).props.onScroll(scrollEvent(600, 1_000));
+    });
+  };
+
+  test('starts enabled and follows content-height growth without a new turn', () => {
+    establishScrollableContent(renderer);
+    expect(scrollToEnd).toHaveBeenLastCalledWith({ animated: false });
+    scrollToEnd.mockClear();
+
+    act(() => {
+      renderer.update(chatView(chatState([{ ...TURN, startedAt: 1 }])));
+      flatList(renderer).props.onContentSizeChange(0, 1_100);
+    });
+
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+  });
+
+  test('stops following user scroll-up and resumes after the user returns near the end', () => {
+    establishScrollableContent(renderer);
+    scrollToEnd.mockClear();
+
+    act(() => {
+      flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
+      flatList(renderer).props.onScroll(scrollEvent(500, 1_000));
+    });
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(1);
+
+    act(() => {
+      flatList(renderer).props.onContentSizeChange(0, 1_100);
+    });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+
+    act(() => {
+      flatList(renderer).props.onScroll(scrollEvent(650, 1_100));
+    });
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(0);
+
+    act(() => {
+      flatList(renderer).props.onContentSizeChange(0, 1_200);
+    });
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+
+    scrollToEnd.mockClear();
+    act(() => {
+      flatList(renderer).props.onScroll(scrollEvent(800, 1_200));
+      flatList(renderer).props.onScroll(scrollEvent(750, 1_200));
+      flatList(renderer).props.onContentSizeChange(0, 1_300);
+    });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(1);
+  });
+
+  test('Latest re-enables follow without treating programmatic momentum as user intent', () => {
+    establishScrollableContent(renderer);
+    act(() => {
+      flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
+      flatList(renderer).props.onScroll(scrollEvent(400, 1_000));
+    });
+    scrollToEnd.mockClear();
+
+    const latestButton = renderer.root.find(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    );
+    act(() => {
+      latestButton.props.onPress();
+    });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: true });
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(0);
+
+    scrollToEnd.mockClear();
+    act(() => {
+      flatList(renderer).props.onMomentumScrollBegin();
+      flatList(renderer).props.onScroll(scrollEvent(450, 1_000));
+      flatList(renderer).props.onMomentumScrollEnd(scrollEvent(450, 1_000));
+      flatList(renderer).props.onContentSizeChange(0, 1_100);
+    });
+
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(0);
   });
 });
