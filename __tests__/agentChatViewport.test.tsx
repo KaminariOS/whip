@@ -110,6 +110,31 @@ const TURN: TranscriptTurn = {
   status: 'working',
 };
 
+const SHELL_TURN: TranscriptTurn = {
+  assistants: [{
+    diffs: [],
+    id: 'assistant-1',
+    parts: [{
+      callId: 'call-1',
+      id: 'tool-1',
+      state: {
+        diagnostics: [],
+        files: [],
+        input: { command: 'printf a-very-long-command-that-exceeds-the-chat-width' },
+        loaded: [],
+        output: 'a-very-long-output-row-that-also-exceeds-the-chat-width',
+        status: 'completed',
+      },
+      tool: 'shell',
+      type: 'tool',
+    }],
+    role: 'assistant',
+  }],
+  diffs: [],
+  id: 'turn-shell',
+  status: 'idle',
+};
+
 describe('AgentChatView viewport insets', () => {
   let renderer: ReactTestRenderer;
   let boundaries: ReactTestRenderer;
@@ -167,6 +192,45 @@ describe('AgentChatView viewport insets', () => {
       node => node.props.accessibilityLabel === 'Jump to latest',
     );
     expect(latestButton.props.style[0]).toEqual({ bottom: 297 });
+  });
+});
+
+describe('AgentChatView tool output', () => {
+  let renderer: ReactTestRenderer;
+  let turnRenderer: ReactTestRenderer;
+
+  afterEach(() => {
+    act(() => renderer?.unmount());
+    act(() => turnRenderer?.unmount());
+  });
+
+  test('keeps expanded shell output outside the toggle and horizontally scrollable', () => {
+    act(() => {
+      renderer = create(chatView(chatState([SHELL_TURN])));
+    });
+    act(() => {
+      turnRenderer = create(flatList(renderer).props.renderItem({
+        index: 0,
+        item: SHELL_TURN,
+      }));
+    });
+
+    const toggle = turnRenderer.root.find(node => (
+      String(node.type) === 'Pressable'
+      && node.props.accessibilityState?.expanded === false
+    ));
+    act(() => toggle.props.onPress());
+
+    const expandedToggle = turnRenderer.root.find(node => (
+      String(node.type) === 'Pressable'
+      && node.props.accessibilityState?.expanded === true
+    ));
+    const horizontalScroller = turnRenderer.root.find(node => (
+      String(node.type) === 'ScrollView' && node.props.horizontal === true
+    ));
+    expect(expandedToggle.findAll(node => String(node.type) === 'ScrollView')).toHaveLength(0);
+    expect(horizontalScroller.props.className).toBe('w-full');
+    expect(horizontalScroller.props.nestedScrollEnabled).toBe(true);
   });
 });
 

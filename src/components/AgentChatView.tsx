@@ -260,17 +260,19 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
   const subtitle = presentation.subtitle
     || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ expanded }}
-      disabled={!hasDetail && !presentation.href}
+    <View
       className={cn('min-h-11 w-full overflow-hidden', failed && 'rounded-md bg-destructive/10 px-2')}
-      onPress={() => {
-        if (hasDetail) setExpanded(value => !value);
-        else if (presentation.href) openExternalUrl(presentation.href);
-      }}
     >
-      <View className="min-h-7 flex-row items-center py-1">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        disabled={!hasDetail && !presentation.href}
+        className="min-h-11 flex-row items-center py-1"
+        onPress={() => {
+          if (hasDetail) setExpanded(value => !value);
+          else if (presentation.href) openExternalUrl(presentation.href);
+        }}
+      >
         {isRunning(item) && (
           <View className="mr-1.5 size-4 items-center justify-center">
             <ActivityIndicator size={13} color={colors.textTertiary} />
@@ -313,7 +315,7 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
         {hasDetail && (expanded
           ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} />
           : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />)}
-      </View>
+      </Pressable>
       {expanded && hasDetail && (
         <View className="mb-3 mt-1 gap-2">
           {shell && <ToolCodeBlock text={shell} bordered copyable />}
@@ -334,7 +336,7 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
           {item.state.loaded.map(path => <Text key={path} numberOfLines={1} className="px-1 font-mono text-[10px] text-muted-foreground">Loaded {path}</Text>)}
         </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 
@@ -366,7 +368,9 @@ function ToolCodeBlock({
         </Pressable>
       )}
       <ScrollView
+        className="w-full"
         horizontal
+        nestedScrollEnabled
         showsHorizontalScrollIndicator={false}
         contentContainerClassName={bordered ? 'min-w-full px-3 py-2.5 pr-10' : 'min-w-full px-1 py-1'}
       >
@@ -390,7 +394,7 @@ function ToolDiffBlock({ diff }: { diff: string }) {
   const lines = diff.split('\n');
   return (
     <View className="overflow-hidden">
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="min-w-full px-1">
+      <ScrollView className="w-full" horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerClassName="min-w-full px-1">
         <Text selectable className="font-mono text-[11px] leading-[17px] text-foreground">
           {lines.map((line, index) => (
             <Text
