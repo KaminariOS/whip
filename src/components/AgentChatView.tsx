@@ -821,12 +821,14 @@ export function AgentChatView({
     ) setFollowEnd(true);
   };
 
-  const scrollToEnd = (animated: boolean) => {
+  const scrollToLatest = (animated: boolean) => {
+    const current = scrollGeometryRef.current;
+    const offset = Math.max(0, current.contentHeight - current.viewportHeight);
     scrollInteractionRef.current = {
       kind: ChatScrollInteractionKind.Idle,
-      lastOffset: scrollGeometryRef.current.offset,
+      lastOffset: current.offset,
     };
-    list.current?.scrollToEnd({ animated });
+    list.current?.scrollToOffset({ animated, offset });
   };
 
   const updateScrollExtent = ({
@@ -845,7 +847,9 @@ export function AgentChatView({
     if (interaction.kind !== ChatScrollInteractionKind.Idle) {
       scrollInteractionRef.current = { ...interaction, lastOffset: nextOffset };
     }
-    if (shouldPinToEnd) list.current?.scrollToEnd({ animated: false });
+    if (shouldPinToEnd) {
+      list.current?.scrollToOffset({ animated: false, offset: nextMaxOffset });
+    }
   };
 
   const trackScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -873,7 +877,6 @@ export function AgentChatView({
     );
     const offset = Math.max(0, Math.min(maximumOffset, event.nativeEvent.contentOffset.y));
     scrollInteractionRef.current = { kind: ChatScrollInteractionKind.Dragging, lastOffset: offset };
-    if (maximumOffset > CHAT_SCROLL_OFFSET_EPSILON) setFollowEnd(false);
   };
   const endUserScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     trackScroll(event);
@@ -1035,7 +1038,7 @@ export function AgentChatView({
             variant={appGlassEnabled ? 'ghost' : 'secondary'}
             onPress={() => {
               setFollowEnd(true);
-              scrollToEnd(true);
+              scrollToLatest(true);
             }}>
             <ChevronDown size={15} color={colors.text} /><Text className="text-[10px] font-semibold">Latest</Text>
           </Button>

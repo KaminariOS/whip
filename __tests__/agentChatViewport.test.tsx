@@ -251,16 +251,14 @@ describe('AgentChatView tool output', () => {
 
 describe('AgentChatView auto-follow', () => {
   let renderer: ReactTestRenderer;
-  let scrollToEnd: jest.Mock;
   let scrollToOffset: jest.Mock;
 
   beforeEach(() => {
-    scrollToEnd = jest.fn();
     scrollToOffset = jest.fn();
     act(() => {
       renderer = create(chatView(chatState([TURN])), {
         createNodeMock: element => element.type === 'FlatList'
-          ? { scrollToEnd, scrollToOffset }
+          ? { scrollToOffset }
           : null,
       });
     });
@@ -280,21 +278,40 @@ describe('AgentChatView auto-follow', () => {
 
   test('starts enabled and follows content-height growth without a new turn', () => {
     establishScrollableContent(renderer);
-    expect(scrollToEnd).toHaveBeenLastCalledWith({ animated: false });
-    scrollToEnd.mockClear();
+    expect(scrollToOffset).toHaveBeenLastCalledWith({ animated: false, offset: 600 });
+    scrollToOffset.mockClear();
 
     act(() => {
       renderer.update(chatView(chatState([{ ...TURN, startedAt: 1 }])));
       flatList(renderer).props.onContentSizeChange(0, 1_100);
     });
 
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 700 });
+  });
+
+  test('keeps following when the user drags against the current end', () => {
+    establishScrollableContent(renderer);
+    scrollToOffset.mockClear();
+
+    act(() => {
+      flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
+      flatList(renderer).props.onScroll(scrollEvent(600, 1_000));
+    });
+
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(0);
+
+    act(() => {
+      flatList(renderer).props.onContentSizeChange(0, 1_100);
+    });
+    expect(scrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 700 });
   });
 
   test('stops following user scroll-up and resumes after the user returns near the end', () => {
     establishScrollableContent(renderer);
-    scrollToEnd.mockClear();
+    scrollToOffset.mockClear();
 
     act(() => {
       flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
@@ -307,7 +324,7 @@ describe('AgentChatView auto-follow', () => {
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_100);
     });
-    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollToOffset).not.toHaveBeenCalled();
 
     act(() => {
       flatList(renderer).props.onScroll(scrollEvent(650, 1_100));
@@ -319,16 +336,16 @@ describe('AgentChatView auto-follow', () => {
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_200);
     });
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 800 });
 
-    scrollToEnd.mockClear();
+    scrollToOffset.mockClear();
     act(() => {
       flatList(renderer).props.onScroll(scrollEvent(800, 1_200));
       flatList(renderer).props.onScroll(scrollEvent(750, 1_200));
       flatList(renderer).props.onContentSizeChange(0, 1_300);
     });
-    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollToOffset).not.toHaveBeenCalled();
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
     )).toHaveLength(1);
@@ -340,7 +357,7 @@ describe('AgentChatView auto-follow', () => {
       flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
       flatList(renderer).props.onScroll(scrollEvent(400, 1_000));
     });
-    scrollToEnd.mockClear();
+    scrollToOffset.mockClear();
 
     const latestButton = renderer.root.find(
       node => node.props.accessibilityLabel === 'Jump to latest',
@@ -348,12 +365,12 @@ describe('AgentChatView auto-follow', () => {
     act(() => {
       latestButton.props.onPress();
     });
-    expect(scrollToEnd).toHaveBeenCalledWith({ animated: true });
+    expect(scrollToOffset).toHaveBeenCalledWith({ animated: true, offset: 600 });
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
     )).toHaveLength(0);
 
-    scrollToEnd.mockClear();
+    scrollToOffset.mockClear();
     act(() => {
       flatList(renderer).props.onMomentumScrollBegin();
       flatList(renderer).props.onScroll(scrollEvent(450, 1_000));
@@ -361,8 +378,8 @@ describe('AgentChatView auto-follow', () => {
       flatList(renderer).props.onContentSizeChange(0, 1_100);
     });
 
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 700 });
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
     )).toHaveLength(0);

@@ -64,8 +64,8 @@ import { useTranslation } from 'react-i18next';
 
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import {
+  contentInsetsWithSessionChrome,
   shouldShowTerminalSessionChrome,
-  terminalBottomChromeClearance,
   terminalControlBarInset,
   terminalLatestButtonBottom,
   terminalViewportLayout,
@@ -553,17 +553,23 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     );
     const terminalLayoutKeyboardInset = viewportLayout.layoutKeyboardInset;
     const terminalScrollingInsets = useMemo(
-      () => ({
-        ...viewportLayout.terminalInsets,
-        bottom: terminalBottomChromeClearance({
-          sessionChromeInset,
-          sessionChromeVisible,
-          terminalBottomInset: viewportLayout.terminalInsets.bottom,
-        }),
+      () => contentInsetsWithSessionChrome({
+        insets: viewportLayout.terminalInsets,
+        sessionChromeInset,
+        sessionChromeVisible,
       }),
       [sessionChromeInset, sessionChromeVisible, viewportLayout.terminalInsets],
     );
-    const viewportOverlayInsets = viewportLayout.overlayInsets;
+    // The overlay remains edge-to-edge. Chat View uses this clearance for its
+    // end spacer, so manually scrolled rows can still pass beneath the chrome.
+    const viewportOverlayInsets = useMemo(
+      () => contentInsetsWithSessionChrome({
+        insets: viewportLayout.overlayInsets,
+        sessionChromeInset,
+        sessionChromeVisible,
+      }),
+      [sessionChromeInset, sessionChromeVisible, viewportLayout.overlayInsets],
+    );
     const terminalVisualViewport = useMemo(
       () => ({
         insets: terminalScrollingInsets,
@@ -583,7 +589,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const viewportLatestButtonBottom = terminalLatestButtonBottom({
       sessionChromeInset,
       sessionChromeVisible,
-      terminalBottomInset: viewportOverlayInsets.bottom,
+      terminalBottomInset: viewportLayout.overlayInsets.bottom,
     });
     const viewportOverlay = renderViewportOverlay?.(
       viewportOverlayInsets,

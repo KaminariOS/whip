@@ -1,4 +1,5 @@
 import {
+  contentInsetsWithSessionChrome,
   insetContentPadding,
   terminalBottomChromeClearance,
   terminalBottomChromeInset,
@@ -81,11 +82,16 @@ describe('floating chrome geometry', () => {
     ).toBe(84);
   });
 
-  test('content padding places first and last items outside occluded regions', () => {
-    const insets = visualContentInsets(0, 186);
+  test('end-of-list padding clears the terminal controls and visible session rail', () => {
+    const insets = contentInsetsWithSessionChrome({
+      insets: visualContentInsets(0, 84),
+      sessionChromeInset: terminalSessionChromeHeight(2),
+      sessionChromeVisible: true,
+    });
+    expect(insets).toEqual({ top: 0, bottom: 183 });
     expect(insetContentPadding(insets, { top: 16, bottom: 24 })).toEqual({
       top: 16,
-      bottom: 210,
+      bottom: 207,
     });
   });
 });

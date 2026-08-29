@@ -83,6 +83,25 @@ export function insetContentPadding(
   };
 }
 
+export function contentInsetsWithSessionChrome({
+  insets,
+  sessionChromeInset,
+  sessionChromeVisible,
+}: {
+  insets: VisualContentInsets;
+  sessionChromeInset: number;
+  sessionChromeVisible: boolean;
+}): VisualContentInsets {
+  return {
+    ...insets,
+    bottom: terminalBottomChromeClearance({
+      sessionChromeInset,
+      sessionChromeVisible,
+      terminalBottomInset: insets.bottom,
+    }),
+  };
+}
+
 export function terminalControlBarInset(bottomSafeAreaInset: number): number {
   return TERMINAL_CONTROL_BAR_BASE_HEIGHT + Math.max(0, bottomSafeAreaInset);
 }
