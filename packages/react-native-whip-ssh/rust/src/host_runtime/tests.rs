@@ -17,6 +17,19 @@ use crate::host_state::ApplyResult;
 
 static EVENT_SINK_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[test]
+fn terminal_geometry_normalization_enforces_runtime_minimums() {
+    assert_eq!(
+        HostTerminalGeometry::normalized(12, 4, 8, 16),
+        HostTerminalGeometry {
+            columns: MIN_TERMINAL_COLUMNS,
+            rows: MIN_TERMINAL_ROWS,
+            cell_width_px: 8,
+            cell_height_px: 16,
+        }
+    );
+}
+
 struct ReentrantRuntimeSink {
     inner: Arc<RuntimeInner>,
     called: AtomicBool,

@@ -251,6 +251,21 @@ describe('terminal bridge channels', () => {
     expect(resizeDeduplicated).toHaveBeenCalledWith(duplicateTrace);
   });
 
+  test('leaves minimum terminal dimensions for the native runtime to enforce', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    await client.terminal.openTerminal('term-1', jest.fn());
+    jest.mocked(native.herdrBridgeResize).mockClear();
+
+    await client.terminal.resizeTerminal('term-1', 12, 4, -1, 15.6);
+
+    expect(native.herdrBridgeResize).toHaveBeenCalledWith(
+      'term-1', 12, 4, 0, 16,
+    );
+  });
+
   test('force-dispatches an exact duplicate when reclaiming terminal ownership', async () => {
     const native = bridgeClient();
     connectWithPassword.mockResolvedValue(native);

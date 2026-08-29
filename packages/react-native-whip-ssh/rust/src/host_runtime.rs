@@ -44,6 +44,8 @@ const HERDR_READINESS_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
 const HERDR_READINESS_INITIAL_BACKOFF: Duration = Duration::from_millis(75);
 const HERDR_READINESS_MAX_BACKOFF: Duration = Duration::from_millis(600);
 const SLOW_RUNTIME_DIAGNOSTIC_MS: f64 = 200.0;
+const MIN_TERMINAL_COLUMNS: u32 = 20;
+const MIN_TERMINAL_ROWS: u32 = 8;
 static NEXT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 static RUNTIMES: OnceLock<RwLock<HashMap<String, Weak<RuntimeInner>>>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn HostRuntimeEventSink>>>> = OnceLock::new();
@@ -133,8 +135,8 @@ pub struct HostTerminalGeometry {
 impl HostTerminalGeometry {
     fn normalized(columns: u32, rows: u32, cell_width_px: u32, cell_height_px: u32) -> Self {
         Self {
-            columns: columns.max(20),
-            rows: rows.max(8),
+            columns: columns.max(MIN_TERMINAL_COLUMNS),
+            rows: rows.max(MIN_TERMINAL_ROWS),
             cell_width_px,
             cell_height_px,
         }

@@ -637,14 +637,16 @@ impl HostRuntime {
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
+                let requested_geometry =
+                    HostTerminalGeometry::normalized(columns, rows, cell_width_px, cell_height_px);
                 let (operation_epoch, wait_for_existing) = {
                     let mut state = inner.state.lock();
                     let open_state = if let Some(terminal) = state.terminals.get_mut(&terminal_id) {
                         terminal.takeover = takeover;
-                        terminal.columns = columns.max(20);
-                        terminal.rows = rows.max(8);
-                        terminal.cell_width_px = cell_width_px;
-                        terminal.cell_height_px = cell_height_px;
+                        terminal.columns = requested_geometry.columns;
+                        terminal.rows = requested_geometry.rows;
+                        terminal.cell_width_px = requested_geometry.cell_width_px;
+                        terminal.cell_height_px = requested_geometry.cell_height_px;
                         if terminal.state == HostTerminalState::Attached {
                             let bridge_is_live = terminal.bridge_id.is_some_and(|bridge_id| {
                                 active_herdr_terminal_bridge_id(&inner.id, &terminal_id)
@@ -674,10 +676,10 @@ impl HostRuntime {
                             TerminalRuntime {
                                 state: HostTerminalState::Opening,
                                 takeover,
-                                columns: columns.max(20),
-                                rows: rows.max(8),
-                                cell_width_px,
-                                cell_height_px,
+                                columns: requested_geometry.columns,
+                                rows: requested_geometry.rows,
+                                cell_width_px: requested_geometry.cell_width_px,
+                                cell_height_px: requested_geometry.cell_height_px,
                                 operation_epoch: 1,
                                 reconnect_attempt: 0,
                                 retry_running: true,

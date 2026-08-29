@@ -170,8 +170,8 @@ export class TerminalBridgeController {
     forceDispatch = false,
   ): Promise<void> {
     const size = {
-      columns: Math.max(20, columns),
-      rows: Math.max(8, rows),
+      columns,
+      rows,
       cellWidthPx: Math.max(0, Math.round(cellWidthPx)),
       cellHeightPx: Math.max(0, Math.round(cellHeightPx)),
     };
