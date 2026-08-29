@@ -1215,7 +1215,7 @@ const terminalSessionHtml = `<!doctype html>
         ...terminalBoundaryScrollState,
         rowRemainderPx: 0,
       };
-      touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, carry: 0, moved: false, longPressed: false, selection: null };
+      touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, moved: false, longPressed: false, selection: null };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
         if (terminalMouseCaptured() && keyboardEnabled) {
@@ -1287,20 +1287,7 @@ const terminalSessionHtml = `<!doctype html>
       event.stopPropagation();
       const deltaPx = point.clientY - touch.lastY;
       touch.lastY = point.clientY;
-      if (
-        terminal.buffer.active.type === 'alternate'
-        || terminalMouseInputEnabled()
-      ) {
-        const total = touch.carry + deltaPx / terminalCellHeight();
-        const lines = Math.trunc(total);
-        touch.carry = total - lines;
-        if (lines !== 0) {
-          scrollTerminal(lines > 0 ? 'up' : 'down', Math.abs(lines), point);
-        }
-      } else {
-        touch.carry = 0;
-        scrollTerminalPixels(deltaPx, point);
-      }
+      scrollTerminalPixels(deltaPx, point);
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchend', event => {
       if (pinch) {
