@@ -1,8 +1,10 @@
 import {
+  claimTerminalMouseWarning,
   defaultTerminalControlOrder,
   incrementTerminalControlUsage,
   orderTerminalControls,
   parseTerminalControlUsage,
+  terminalControlIsVisible,
   TERMINAL_CONTROL_HIT_SLOP,
   TERMINAL_ICON_CONTROL_CLASS,
   TERMINAL_TEXT_CONTROL_CLASS,
@@ -28,9 +30,9 @@ test('terminal controls use compact faces with 44pt native touch height', () => 
 });
 
 test('starts with common controls and keeps secondary navigation at the right end', () => {
-  expect(defaultTerminalControlOrder.slice(0, 15)).toEqual([
-    'keyboard', 'ctrl', 'shift', 'esc', 'tab', 'paste', 'history', 'compose',
-    'chat', 'attach', 'files', 'links', 'up', 'left', 'right',
+  expect(defaultTerminalControlOrder.slice(0, 16)).toEqual([
+    'keyboard', 'mouse', 'ctrl', 'shift', 'esc', 'tab', 'paste', 'history',
+    'compose', 'chat', 'attach', 'files', 'links', 'up', 'left', 'right',
   ]);
   expect(defaultTerminalControlOrder.slice(-4)).toEqual(['page-down', 'alt', 'find', 'home']);
   expect(defaultTerminalControlOrder).not.toContain('ctrl-c');
@@ -41,8 +43,26 @@ test('starts with common controls and keeps secondary navigation at the right en
 test('orders frequently used terminal controls first and keeps stable ties', () => {
   const order = orderTerminalControls({ paste: 8, home: 3, ctrl: 8 });
 
-  expect(order.slice(0, 3)).toEqual(['ctrl', 'paste', 'home']);
+  expect(order.filter(control => control !== 'mouse').slice(0, 3))
+    .toEqual(['ctrl', 'paste', 'home']);
   expect(order.indexOf('esc')).toBeLessThan(order.indexOf('tab'));
+});
+
+test('pins mouse immediately after keyboard regardless of usage', () => {
+  const order = orderTerminalControls({ mouse: 100, paste: 50, keyboard: 1 });
+
+  expect(order.indexOf('mouse')).toBe(order.indexOf('keyboard') + 1);
+});
+
+test('shows forced mouse input only while the software keyboard is disabled', () => {
+  expect(terminalControlIsVisible('mouse', false)).toBe(true);
+  expect(terminalControlIsVisible('mouse', true)).toBe(false);
+  expect(terminalControlIsVisible('paste', true)).toBe(true);
+});
+
+test('shows the TUI tapping warning only once per app module lifecycle', () => {
+  expect(claimTerminalMouseWarning()).toBe(true);
+  expect(claimTerminalMouseWarning()).toBe(false);
 });
 
 test('increments one persisted control without losing other usage', () => {

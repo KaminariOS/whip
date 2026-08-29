@@ -2,6 +2,7 @@ import { APP_GLASS_FLOATING_CONTROL_CLASS } from './appGlass';
 
 export const defaultTerminalControlOrder = [
   'keyboard',
+  'mouse',
   'ctrl',
   'shift',
   'esc',
@@ -40,12 +41,30 @@ export const TERMINAL_TEXT_CONTROL_CLASS =
 
 const terminalControlIds = new Set<string>(defaultTerminalControlOrder);
 const MAX_USAGE_COUNT = 1_000_000;
+let terminalMouseWarningShown = false;
 
 export function orderTerminalControls(usage: TerminalControlUsage): TerminalControlId[] {
-  return [...defaultTerminalControlOrder].sort((left, right) => (
+  const ordered = [...defaultTerminalControlOrder].sort((left, right) => (
     (usage[right] || 0) - (usage[left] || 0)
       || defaultTerminalControlOrder.indexOf(left) - defaultTerminalControlOrder.indexOf(right)
   ));
+  const mouseIndex = ordered.indexOf('mouse');
+  ordered.splice(mouseIndex, 1);
+  ordered.splice(ordered.indexOf('keyboard') + 1, 0, 'mouse');
+  return ordered;
+}
+
+export function terminalControlIsVisible(
+  control: TerminalControlId,
+  keyboardEnabled: boolean,
+): boolean {
+  return control !== 'mouse' || !keyboardEnabled;
+}
+
+export function claimTerminalMouseWarning(): boolean {
+  if (terminalMouseWarningShown) return false;
+  terminalMouseWarningShown = true;
+  return true;
 }
 
 export function incrementTerminalControlUsage(

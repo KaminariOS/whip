@@ -5,10 +5,16 @@ import { fileURLToPath } from 'node:url';
 import androidImeBridge from './android-ime-bridge.cjs';
 import terminalOfflineCache from './terminal-offline-cache.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
+import terminalTouchBehavior from './terminal-touch-behavior.cjs';
 import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
 
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const { createTerminalOfflineCache } = terminalOfflineCache;
+const {
+  forcedTerminalMouseInputSequence,
+  handleKeyboardClosedStationaryTap,
+  setTerminalKeyboardInputEnabled,
+} = terminalTouchBehavior;
 // This pure model is the authoritative implementation. The same functions are
 // imported by TypeScript callers/tests and stringified into both WebView assets.
 const {
@@ -240,6 +246,9 @@ const terminalSessionHtml = `<!doctype html>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
     ${createTerminalOfflineCache.toString()}
+    ${handleKeyboardClosedStationaryTap.toString()}
+    ${forcedTerminalMouseInputSequence.toString()}
+    ${setTerminalKeyboardInputEnabled.toString()}
     ${terminalBoundaryFiniteNumber.toString()}
     ${terminalBoundaryClamp.toString()}
     ${terminalBoundaryVisualOffset.toString()}
@@ -297,6 +306,7 @@ const terminalSessionHtml = `<!doctype html>
     let lastTap = null;
     let doubleTapAction = 'tab';
     let keyboardEnabled = false;
+    let forcedMouseInput = false;
     let localScrollback = false;
     let offlineScrollback = false;
     let offlineTranscriptChunks = [];
@@ -325,6 +335,7 @@ const terminalSessionHtml = `<!doctype html>
       boundaryAllowancePx: 0,
       rowRemainderPx: 0,
     };
+    setTerminalKeyboardInputEnabled(terminal, keyboardEnabled);
     const offlineCache = createTerminalOfflineCache({
       serialize: options => serializer.serialize(options),
       send,
@@ -595,6 +606,7 @@ const terminalSessionHtml = `<!doctype html>
       }
       prepareLiveWrite();
       terminal.write(data, () => {
+        restoreForcedTerminalMouseInput();
         offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
         reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
@@ -612,6 +624,7 @@ const terminalSessionHtml = `<!doctype html>
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       terminal.write(bytes, () => {
+        restoreForcedTerminalMouseInput();
         offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
         reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
@@ -651,6 +664,7 @@ const terminalSessionHtml = `<!doctype html>
       lastReportedOfflineScroll = '';
       clearOsc8Links();
       terminal.reset();
+      restoreForcedTerminalMouseInput();
       clearInteractiveSelection(false);
     };
     window.herdrBeginOfflineTranscript = () => {
@@ -669,6 +683,7 @@ const terminalSessionHtml = `<!doctype html>
       clearOsc8Links();
       clearInteractiveSelection(false);
       terminal.write('\u001bc' + transcript, () => {
+        restoreForcedTerminalMouseInput();
         const offset = Math.max(0, Math.round(Number(offsetFromBottom) || 0));
         terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - offset));
         reportOfflineScroll();
@@ -681,7 +696,7 @@ const terminalSessionHtml = `<!doctype html>
       lastReportedOfflineScroll = '';
       clearOsc8Links();
       clearInteractiveSelection(false);
-      terminal.write('\u001bc');
+      terminal.write('\u001bc', restoreForcedTerminalMouseInput);
     };
     window.herdrOfflineInput = data => handleOfflineInput(data);
     window.herdrConfigure = options => {
@@ -717,22 +732,14 @@ const terminalSessionHtml = `<!doctype html>
       send({ type: 'font-size-change', fontSize });
     };
     const terminalMouseCaptured = () => terminal.modes.mouseTrackingMode !== 'none';
-    const terminalMouseCell = point => {
-      const screen = terminal.element?.querySelector('.xterm-screen');
-      if (!screen || !point) return null;
-      const bounds = screen.getBoundingClientRect();
-      if (bounds.width <= 0 || bounds.height <= 0) return null;
-      return {
-        col: Math.max(0, Math.min(terminal.cols - 1, Math.floor((point.clientX - bounds.left) / bounds.width * terminal.cols))),
-        row: Math.max(0, Math.min(terminal.rows - 1, Math.floor((point.clientY - bounds.top) / bounds.height * terminal.rows))),
-      };
+    const restoreForcedTerminalMouseInput = () => {
+      if (forcedMouseInput && !terminalMouseCaptured()) {
+        terminal.write(forcedTerminalMouseInputSequence(true));
+      }
     };
-    const sendRemoteClick = point => {
-      if (localScrollback || offlineScrollback || keyboardEnabled) return false;
-      const cell = terminalMouseCell(point);
-      if (!cell) return false;
-      send({ type: 'terminal-click', column: cell.col, row: cell.row });
-      return true;
+    window.herdrSetForcedMouseInput = enabled => {
+      forcedMouseInput = enabled === true;
+      terminal.write(forcedTerminalMouseInputSequence(forcedMouseInput));
     };
     const dispatchTerminalMouse = (action, point) => {
       if (offlineScrollback || !terminalMouseCaptured() || !terminal.element) return false;
@@ -750,6 +757,7 @@ const terminalSessionHtml = `<!doctype html>
     const dispatchTerminalClick = point => {
       if (!dispatchTerminalMouse('down', point)) return false;
       dispatchTerminalMouse('up', point);
+      if (!keyboardEnabled) terminal.blur();
       return true;
     };
     const dispatchTerminalWheel = (direction, count, point) => {
@@ -946,8 +954,7 @@ const terminalSessionHtml = `<!doctype html>
     };
     window.herdrBlur = () => terminal.blur();
     window.herdrSetKeyboardEnabled = enabled => {
-      keyboardEnabled = enabled !== false;
-      if (!keyboardEnabled) terminal.blur();
+      keyboardEnabled = setTerminalKeyboardInputEnabled(terminal, enabled);
       clearInteractiveSelection(true);
     };
     window.herdrFit = resize;
@@ -1289,32 +1296,19 @@ const terminalSessionHtml = `<!doctype html>
       if (!touch.moved && !touch.longPressed && point && !keyboardEnabled) {
         event.preventDefault();
         event.stopPropagation();
-        const link = urlAtPoint(point.clientX, point.clientY);
-        if (link) send({ type: 'open-link', link });
-        else if (sendRemoteClick(point)) lastTap = null;
-        else if (!keyboardEnabled && terminalMouseCaptured()) dispatchTerminalClick(point);
-        else {
-          clearInteractiveSelection(true);
-        }
+        handleKeyboardClosedStationaryTap({
+          point,
+          urlAtPoint,
+          terminalMouseCaptured,
+          dispatchTerminalClick,
+          send,
+          clearInteractiveSelection,
+        });
+        lastTap = null;
         touch = null;
         return;
       }
       if (!touch.moved && !touch.longPressed && point) {
-        if (sendRemoteClick(point)) {
-          event.preventDefault();
-          event.stopPropagation();
-          lastTap = null;
-          touch = null;
-          return;
-        }
-        if (!keyboardEnabled && terminalMouseCaptured()) {
-          event.preventDefault();
-          event.stopPropagation();
-          dispatchTerminalClick(point);
-          lastTap = null;
-          touch = null;
-          return;
-        }
         terminal.focus();
         const now = { time: Date.now(), x: point.clientX, y: point.clientY };
         if (doubleTapAction !== 'none' && lastTap && now.time - lastTap.time <= doubleTapTimeoutMs && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) <= doubleTapDistancePx) {
@@ -1582,6 +1576,7 @@ const terminalHtml = `<!doctype html>
     window.herdrFocus = key => call(key, 'herdrFocus');
     window.herdrBlur = key => call(key, 'herdrBlur');
     window.herdrSetKeyboardEnabled = (key, enabled) => call(key, 'herdrSetKeyboardEnabled', [enabled]);
+    window.herdrSetForcedMouseInput = (key, enabled) => call(key, 'herdrSetForcedMouseInput', [enabled]);
     window.herdrSetRenderDrop = (key, enabled) => call(key, 'herdrSetRenderDrop', [enabled]);
     window.herdrSnapshot = (key, reason) => call(key, 'herdrSnapshot', [reason]);
     window.herdrFit = key => call(key, 'herdrFit');

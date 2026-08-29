@@ -2,8 +2,22 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Script } from 'node:vm';
 
+const {
+  forcedTerminalMouseInputSequence,
+  handleKeyboardClosedStationaryTap,
+  setTerminalKeyboardInputEnabled,
+} = require('../scripts/terminal-touch-behavior.cjs') as {
+  forcedTerminalMouseInputSequence: (...args: unknown[]) => string;
+  handleKeyboardClosedStationaryTap: (...args: unknown[]) => void;
+  setTerminalKeyboardInputEnabled: (...args: unknown[]) => boolean;
+};
+
 const ANDROID_ASSET = 'android/app/src/main/assets/herdr-terminal.html';
 const IOS_ASSET = 'modules/whip-terminal-assets/ios/TerminalAssets/index.html';
+const GENERATOR = 'scripts/sync-terminal-assets.mjs';
+const RENDERER_HOST = 'src/components/TerminalRendererHost.tsx';
+const HERDR_CLIENT = 'src/services/HerdrClient.ts';
+const TERMINAL_RENDERER = 'src/lib/terminalRenderer.ts';
 
 function artifact(path: string): string {
   return readFileSync(resolve(__dirname, '..', path), 'utf8');
@@ -30,6 +44,33 @@ describe('generated terminal artifacts', () => {
 
   test('Android and iOS ship the same generated terminal runtime', () => {
     expect(platformNeutralAsset(android)).toBe(platformNeutralAsset(ios));
+  });
+
+  test.each([
+    ['Android', android],
+    ['iOS', ios],
+  ])('%s artifact embeds the generated stationary tap behavior', (_platform, html) => {
+    expect(html).toContain(handleKeyboardClosedStationaryTap.toString());
+    expect(html).toContain(forcedTerminalMouseInputSequence.toString());
+    expect(html).toContain(setTerminalKeyboardInputEnabled.toString());
+    expect(html).toContain('herdrSetForcedMouseInput');
+  });
+
+  test('obsolete out-of-band terminal click protocol is absent', () => {
+    const obsoleteMessageType = ['terminal', 'click'].join('-');
+    const obsoleteClientMethod = ['click', 'Terminal'].join('');
+    for (const path of [
+      GENERATOR,
+      ANDROID_ASSET,
+      IOS_ASSET,
+      RENDERER_HOST,
+      HERDR_CLIENT,
+      TERMINAL_RENDERER,
+    ]) {
+      const source = artifact(path);
+      expect(source).not.toContain(obsoleteMessageType);
+      expect(source).not.toContain(obsoleteClientMethod);
+    }
   });
 
   test.each([

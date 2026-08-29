@@ -47,7 +47,6 @@ export interface TerminalRenderTarget {
 
 export type TerminalRuntimeClient = Pick<
   HerdrClient,
-  | 'clickTerminal'
   | 'closeTerminal'
   | 'closeTerminalBridge'
   | 'detachTerminal'

@@ -327,21 +327,6 @@ describe('terminal bridge channels', () => {
     }
   });
 
-  test('encodes a stationary terminal tap as an SGR mouse click', async () => {
-    const native = bridgeClient();
-    connectWithPassword.mockResolvedValue(native);
-    const client = new HerdrClient();
-    await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn());
-
-    await client.clickTerminal('term-1', 12, 7);
-
-    expect(native.herdrBridgeInput).toHaveBeenCalledWith(
-      'term-1',
-      '\u001b[<0;13;8M\u001b[<0;13;8m',
-    );
-  });
-
   test('forwards protocol 20 terminal bells into the terminal renderer', async () => {
     const native = bridgeClient(20);
     connectWithPassword.mockResolvedValue(native);

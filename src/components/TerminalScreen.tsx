@@ -28,6 +28,7 @@ import {
   Keyboard as KeyboardIcon,
   MessageCircle,
   Minimize2,
+  MousePointer2,
   Option,
   Paperclip,
   Search,
@@ -76,7 +77,9 @@ import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
 import { cn } from '@/src/lib/utils';
 import { retryDelay } from '../lib/retryDelay';
 import {
+  claimTerminalMouseWarning,
   orderTerminalControls,
+  terminalControlIsVisible,
   TERMINAL_CONTROL_HIT_SLOP,
   TERMINAL_ICON_CONTROL_CLASS,
   TERMINAL_TEXT_CONTROL_CLASS,
@@ -128,6 +131,7 @@ import {
   type OverlayScrollbarDragEvent,
 } from './OverlayScrollbar';
 import { useReducedMotion } from './app-ui';
+import { AppAlertPopup } from './AppAlertPopup';
 import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -494,6 +498,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [, setOfflineBackendRevision] = useState(0);
     const [historyOpen, setHistoryOpen] = useState(false);
     const [keyboardEnabled, setKeyboardEnabled] = useState(false);
+    const [forcedMouseInput, setForcedMouseInput] = useState(false);
+    const [forcedMouseInputWarningOpen, setForcedMouseInputWarningOpen] =
+      useState(false);
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const { inset: keyboardInset } = useKeyboardInset(controlsRef, {
       enabled: keyboardEnabled,
@@ -654,6 +661,17 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setShift,
       terminalId,
     ]);
+
+    useEffect(() => {
+      setForcedMouseInput(false);
+      renderer.current?.setForcedMouseInput(false);
+    }, [activeTarget?.key, status]);
+
+    useEffect(() => {
+      if (!keyboardEnabled || !forcedMouseInput) return;
+      renderer.current?.setForcedMouseInput(false);
+      setForcedMouseInput(false);
+    }, [forcedMouseInput, keyboardEnabled]);
 
     const cacheTargetKey = activeTarget?.key || '';
     const offlineSnapshot = offlineBackendRef.current.snapshot(cacheTargetKey);
@@ -1568,6 +1586,51 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           </TerminalControlButton>
         );
       }
+      if (control === 'mouse') {
+        const disabled = status !== 'connected' || session?.kind === 'ssh';
+        const setEnabled = (enabled: boolean) => {
+          renderer.current?.setForcedMouseInput(enabled);
+          setForcedMouseInput(enabled);
+        };
+        return (
+          <TerminalControlButton
+            key={control}
+            accessibilityLabel={t(
+              forcedMouseInput
+                ? 'terminal.disableForcedMouseInput'
+                : 'terminal.enableForcedMouseInput',
+            )}
+            accessibilityState={{
+              disabled,
+              selected: forcedMouseInput,
+            }}
+            className={cn(
+              TERMINAL_ICON_CONTROL_CLASS,
+              forcedMouseInput && 'border-primary bg-primary/15',
+            )}
+            disabled={disabled}
+            variant="secondary"
+            onPress={() => {
+              onControlUse(control);
+              if (forcedMouseInput) {
+                setEnabled(false);
+                return;
+              }
+              setEnabled(true);
+              if (claimTerminalMouseWarning()) {
+                setForcedMouseInputWarningOpen(true);
+              }
+            }}
+          >
+            <View className={TERMINAL_ICON_BOX_CLASS}>
+              <MousePointer2
+                size={TERMINAL_ICON_SIZE}
+                color={forcedMouseInput ? appColors.primary : appColors.text}
+              />
+            </View>
+          </TerminalControlButton>
+        );
+      }
       if (control === 'paste') {
         return (
           <TerminalControlButton
@@ -1986,7 +2049,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             offlineTranscript={offlineSnapshot.transcript}
             offlineScroll={offlineSnapshot.scroll}
             swipe={swipe}
-            onReady={() => setReady(true)}
+            onReady={() => {
+              setReady(true);
+              setForcedMouseInput(false);
+            }}
             onInput={async (target, data) => {
               await sendInput(data, target, true);
             }}
@@ -2273,7 +2339,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             contentContainerClassName="items-center gap-[5px] px-1.5 pt-[7px]"
             contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}
           >
-            {controlOrder.map(renderTerminalControl)}
+            {controlOrder
+              .filter(control => terminalControlIsVisible(control, keyboardEnabled))
+              .map(renderTerminalControl)}
           </ScrollView>
         </View>
         {composeOpen && composeExpanded && (
@@ -2450,6 +2518,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </View>
           </View>
         </Modal>
+        <AppAlertPopup
+          actionLabel={t('common.close')}
+          message={t('terminal.forceMouseInputWarning')}
+          title={t('terminal.forceMouseInputTitle')}
+          visible={forcedMouseInputWarningOpen}
+          onClose={() => setForcedMouseInputWarningOpen(false)}
+        />
       </View>
     );
   },

@@ -188,6 +188,7 @@ export interface TerminalRendererHandle {
   scanLinks: () => void;
   scroll: (direction: 'up' | 'down', lines: number) => void;
   search: (query: string, caseSensitive: boolean, regex: boolean, direction: number) => void;
+  setForcedMouseInput: (enabled: boolean) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
   submitPastes: (
     target: TerminalRenderTarget,
@@ -900,6 +901,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       'herdrSearch',
       [query, caseSensitive, regex, direction],
     ),
+    setForcedMouseInput: enabled => activeCall(
+      'herdrSetForcedMouseInput',
+      [enabled],
+    ),
     setKeyboardEnabled: enabled => {
       if (enabled) webView.current?.requestFocus();
       activeCall('herdrSetKeyboardEnabled', [enabled]);
@@ -1401,19 +1406,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         max_offset_from_bottom: message.maxOffsetFromBottom,
         viewport_rows: message.viewportRows,
       });
-    } else if (message.type === 'terminal-click') {
-      if (!isFiniteNumber(message.column) || !isFiniteNumber(message.row)) return;
-      const column = message.column;
-      const row = message.row;
-      try {
-        await enqueueInput(entry, () => entry.target.client.clickTerminal(
-          entry.target.session.terminalId,
-          column,
-          row,
-        ));
-      } catch (reason) {
-        reportError(entry.target, String(reason));
-      }
     } else if (message.type === 'font-size-change') {
       const fontSize = Number(message.fontSize);
       if (Number.isFinite(fontSize)) {
