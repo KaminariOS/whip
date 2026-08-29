@@ -215,13 +215,6 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
           )}
         </View>
       </ScrollView>
-
-      <GlassSurface className="min-h-11 flex-row items-center gap-2 border-t border-white/30 px-[18px] dark:border-white/10">
-        <Icon as={LockKeyhole} className="text-muted-foreground" size={14} />
-        <Text className="flex-1 text-[11px] leading-[15px] text-muted-foreground">
-          {t(Platform.OS === 'ios' ? 'hosts.securityCopyIos' : 'hosts.securityCopy')}
-        </Text>
-      </GlassSurface>
     </View>
   );
 }

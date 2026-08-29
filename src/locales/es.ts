@@ -165,8 +165,6 @@ export const es = {
   'hosts.jumpHostUnavailable': 'No disponible',
   'hosts.sshKey': 'Tecla SSH',
   'hosts.password': 'Contraseña',
-  'hosts.securityCopy': 'Las credenciales utilizan el almacén de claves Android con recuperación cifrada de Block Store.',
-  'hosts.securityCopyIos': 'Las credenciales permanecen en el llavero de iOS de este dispositivo.',
   'hosts.usedBefore': 'Usado antes',
   'hosts.lastConnected': 'Último conectado {{value}}',
   'hosts.justNow': 'Justo ahora',

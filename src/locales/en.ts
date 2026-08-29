@@ -172,8 +172,6 @@ export const en = {
   'hosts.jumpHostUnavailable': 'Unavailable',
   'hosts.sshKey': 'SSH key',
   'hosts.password': 'Password',
-  'hosts.securityCopy': 'Credentials use Android Keystore with encrypted Block Store recovery.',
-  'hosts.securityCopyIos': 'Credentials stay in this device’s iOS Keychain.',
   'hosts.usedBefore': 'Used before',
   'hosts.lastConnected': 'Last connected {{value}}',
   'hosts.justNow': 'Just now',

@@ -165,8 +165,6 @@ export const ja = {
   'hosts.jumpHostUnavailable': '利用できません',
   'hosts.sshKey': 'SSH キー',
   'hosts.password': 'パスワード',
-  'hosts.securityCopy': '認証情報は、暗号化されたブロック ストア リカバリを備えた Android キーストアを使用します。',
-  'hosts.securityCopyIos': '認証情報はこのデバイスの iOS キーチェーンに保存されます。',
   'hosts.usedBefore': '以前に使用されました',
   'hosts.lastConnected': '最後に接続した {{value}}',
   'hosts.justNow': 'たった今',

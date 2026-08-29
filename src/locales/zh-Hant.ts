@@ -165,8 +165,6 @@ export const zhHant: Record<string, string> = {
   'hosts.jumpHostUnavailable': '無法使用',
   'hosts.sshKey': 'SSH 金鑰',
   'hosts.password': '密碼',
-  'hosts.securityCopy': '認證資料由 Android Keystore 保護，並透過加密的 Block Store 復原。',
-  'hosts.securityCopyIos': '認證資料會保存在此裝置的 iOS 鑰匙圈中。',
   'hosts.usedBefore': '先前使用過',
   'hosts.lastConnected': '上次連線於 {{value}}',
   'hosts.justNow': '剛剛',

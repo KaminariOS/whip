@@ -165,8 +165,6 @@ export const zhHans = {
   'hosts.jumpHostUnavailable': '不可用',
   'hosts.sshKey': 'SSH 键',
   'hosts.password': '密码',
-  'hosts.securityCopy': '凭证使用 Android 密钥库和加密块存储恢复。',
-  'hosts.securityCopyIos': '凭据保存在此设备的 iOS 钥匙串中。',
   'hosts.usedBefore': '之前使用过',
   'hosts.lastConnected': '最后连接 {{value}}',
   'hosts.justNow': '刚才',
