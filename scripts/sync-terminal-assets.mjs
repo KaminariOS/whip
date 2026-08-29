@@ -65,6 +65,7 @@ const nerdSymbolsLicense = resolve(
   terminalFonts,
   fontManifest.symbols.licenseFile,
 );
+const terminalFontFormat = 'woff2';
 const terminalFontFamily = fallback => [
   fontManifest.text.cssFamily,
   fontManifest.emoji.cssFamily,
@@ -181,28 +182,28 @@ const terminalSessionHtml = `<!doctype html>
   <style>
     @font-face {
       font-family: '${fontManifest.text.cssFamily}';
-      src: url('${fontManifest.text.bundledRegularFile}') format('truetype');
+      src: url('${fontManifest.text.bundledRegularFile}') format('${terminalFontFormat}');
       font-style: normal;
       font-weight: 400;
       font-display: block;
     }
     @font-face {
       font-family: '${fontManifest.text.cssFamily}';
-      src: url('${fontManifest.text.bundledBoldFile}') format('truetype');
+      src: url('${fontManifest.text.bundledBoldFile}') format('${terminalFontFormat}');
       font-style: normal;
       font-weight: 700;
       font-display: block;
     }
     @font-face {
       font-family: '${fontManifest.symbols.cssFamily}';
-      src: url('${fontManifest.symbols.bundledRegularFile}') format('truetype');
+      src: url('${fontManifest.symbols.bundledRegularFile}') format('${terminalFontFormat}');
       font-style: normal;
       font-weight: 400;
       font-display: block;
     }
     @font-face {
       font-family: '${fontManifest.cjk.cssFamily}';
-      src: url('${fontManifest.cjk.bundledRegularFile}') format('truetype');
+      src: url('${fontManifest.cjk.bundledRegularFile}') format('${terminalFontFormat}');
       font-style: normal;
       font-weight: 400;
       font-display: block;

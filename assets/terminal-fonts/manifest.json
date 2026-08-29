@@ -2,26 +2,26 @@
   "text": {
     "displayName": "JetBrains Mono",
     "cssFamily": "Herdr Terminal Mono",
-    "regularFile": "JetBrainsMono-Regular.ttf",
-    "boldFile": "JetBrainsMono-Bold.ttf",
-    "bundledRegularFile": "jetbrains-mono-regular.ttf",
-    "bundledBoldFile": "jetbrains-mono-bold.ttf",
+    "regularFile": "JetBrainsMono-Regular.woff2",
+    "boldFile": "JetBrainsMono-Bold.woff2",
+    "bundledRegularFile": "jetbrains-mono-regular.woff2",
+    "bundledBoldFile": "jetbrains-mono-bold.woff2",
     "licenseFile": "OFL.txt",
     "bundledLicenseFile": "jetbrains-mono-OFL.txt"
   },
   "cjk": {
     "displayName": "AR PL UKai HK",
     "cssFamily": "Herdr Terminal CJK",
-    "regularFile": "ArphicUKaiHK.ttf",
-    "bundledRegularFile": "arphic-ukai-hk.ttf",
+    "regularFile": "ArphicUKaiHK.woff2",
+    "bundledRegularFile": "arphic-ukai-hk.woff2",
     "licenseFile": "ARPHICPL.txt",
     "bundledLicenseFile": "arphic-ukai-LICENSE.txt"
   },
   "symbols": {
     "displayName": "Symbols Nerd Font Mono",
     "cssFamily": "Herdr Terminal Symbols",
-    "regularFile": "SymbolsNerdFontMono-Regular.ttf",
-    "bundledRegularFile": "symbols-nerd-font-mono-regular.ttf",
+    "regularFile": "SymbolsNerdFontMono-Regular.woff2",
+    "bundledRegularFile": "symbols-nerd-font-mono-regular.woff2",
     "licenseFile": "NerdFonts-LICENSE.txt",
     "bundledLicenseFile": "symbols-nerd-font-LICENSE.txt"
   },
