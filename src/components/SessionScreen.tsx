@@ -1744,6 +1744,7 @@ export function SessionScreen({
                   }
                 : undefined
             }
+            chatViewEnabled={chatVisible}
             renderViewportOverlay={
               activeChatView && activePane
                 ? (insets, latestButtonBottom) => (

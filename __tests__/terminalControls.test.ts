@@ -54,10 +54,11 @@ test('pins mouse immediately after keyboard regardless of usage', () => {
   expect(order.indexOf('mouse')).toBe(order.indexOf('keyboard') + 1);
 });
 
-test('shows forced mouse input only while the software keyboard is disabled', () => {
-  expect(terminalControlIsVisible('mouse', false)).toBe(true);
-  expect(terminalControlIsVisible('mouse', true)).toBe(false);
-  expect(terminalControlIsVisible('paste', true)).toBe(true);
+test('shows forced mouse input only in terminal view with the software keyboard disabled', () => {
+  expect(terminalControlIsVisible('mouse', false, false)).toBe(true);
+  expect(terminalControlIsVisible('mouse', true, false)).toBe(false);
+  expect(terminalControlIsVisible('mouse', false, true)).toBe(false);
+  expect(terminalControlIsVisible('paste', true, true)).toBe(true);
 });
 
 test('shows the TUI tapping warning only once per app module lifecycle', () => {

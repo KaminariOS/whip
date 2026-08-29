@@ -182,6 +182,7 @@ interface Props {
     loading: boolean;
     onPress: () => void;
   };
+  chatViewEnabled: boolean;
   renderViewportOverlay?: (
     insets: VisualContentInsets,
     latestButtonBottom: number,
@@ -418,6 +419,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onRequestFiles,
       onRequestLinks,
       chatControl,
+      chatViewEnabled,
       renderViewportOverlay,
       viewportOverlayBackground,
       onOpenLink,
@@ -2340,7 +2342,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}
           >
             {controlOrder
-              .filter(control => terminalControlIsVisible(control, keyboardEnabled))
+              .filter(control =>
+                terminalControlIsVisible(
+                  control,
+                  keyboardEnabled,
+                  chatViewEnabled,
+                ),
+              )
               .map(renderTerminalControl)}
           </ScrollView>
         </View>

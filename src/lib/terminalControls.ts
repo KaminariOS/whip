@@ -57,8 +57,9 @@ export function orderTerminalControls(usage: TerminalControlUsage): TerminalCont
 export function terminalControlIsVisible(
   control: TerminalControlId,
   keyboardEnabled: boolean,
+  chatViewEnabled: boolean,
 ): boolean {
-  return control !== 'mouse' || !keyboardEnabled;
+  return control !== 'mouse' || (!keyboardEnabled && !chatViewEnabled);
 }
 
 export function claimTerminalMouseWarning(): boolean {
