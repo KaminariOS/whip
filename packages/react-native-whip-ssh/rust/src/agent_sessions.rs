@@ -18,7 +18,6 @@ use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
 const RETRY_DELAY: Duration = Duration::from_millis(1_500);
 const OPENCODE_POLL_DELAY: Duration = Duration::from_millis(1_200);
 const CODEX_CHECKPOINT_BYTES: u64 = 256 * 1024;
-const CODEX_LOOKUP_DIAGNOSTIC_CHARACTERS: usize = 2_000;
 const OPENCODE_CHECKPOINT_EVENTS: u64 = 64;
 static NEXT_STREAM_CONTEXT: AtomicU64 = AtomicU64::new(1);
 static STREAMS: OnceLock<RwLock<HashMap<u64, StreamContext>>> = OnceLock::new();
@@ -565,10 +564,9 @@ impl AgentSessionManager {
                 })?;
             let path = resolve_rollout_path(&output, &session_id)?;
             let Some(path) = path else {
-                let diagnostic = codex_rollout_lookup_diagnostic(&connection, &session_id).await;
-                return Err(AgentSessionError::SourceUnavailable(format!(
-                    "Codex has not created this rollout yet. Lookup diagnostic: {diagnostic}"
-                )));
+                return Err(AgentSessionError::SourceUnavailable(
+                    "Codex has not created this rollout yet.".to_owned(),
+                ));
             };
             let metadata = execute(
                 &connection,
@@ -1226,44 +1224,6 @@ fn codex_rollout_find_command(session_id: &str) -> String {
     )
 }
 
-fn codex_rollout_diagnostic_command(session_id: &str) -> String {
-    let ordinary = shell_quote(&format!("rollout-*-{session_id}.jsonl"));
-    let reverted = shell_quote(&format!("rollout-*-{session_id}_*.jsonl"));
-    format!(
-        concat!(
-            "printf 'home=%s\\n' \"$HOME\"; ",
-            "ls -ld \"$HOME/.codex/sessions\" 2>&1; ",
-            "find \"$HOME/.codex/sessions\" -type f \\( ",
-            "-name {ordinary} -o -name {reverted} \\) -print 2>&1"
-        ),
-        ordinary = ordinary,
-        reverted = reverted
-    )
-}
-
-async fn codex_rollout_lookup_diagnostic(connection: &HerdrConnection, session_id: &str) -> String {
-    match execute(connection, codex_rollout_diagnostic_command(session_id)).await {
-        Ok(output) => bounded_lookup_diagnostic(&output),
-        Err(error) => bounded_lookup_diagnostic(&format!("diagnostic command failed: {error}")),
-    }
-}
-
-fn bounded_lookup_diagnostic(output: &str) -> String {
-    let compact = output.split_whitespace().collect::<Vec<_>>().join(" ");
-    if compact.is_empty() {
-        return "diagnostic command returned no output".to_owned();
-    }
-    if compact.chars().count() <= CODEX_LOOKUP_DIAGNOSTIC_CHARACTERS {
-        return compact;
-    }
-    let mut bounded = compact
-        .chars()
-        .take(CODEX_LOOKUP_DIAGNOSTIC_CHARACTERS)
-        .collect::<String>();
-    bounded.push('…');
-    bounded
-}
-
 /// Stream raw rollout bytes immediately after the committed byte cursor.
 ///
 /// Keep this as one direct exec rather than a remote shell supervisor. Besides
@@ -1491,36 +1451,6 @@ mod tests {
         let command = codex_rollout_find_command(SESSION);
         assert!(command.contains(&format!("'rollout-*-{SESSION}.jsonl'")));
         assert!(command.contains(&format!("'rollout-*-{SESSION}_*.jsonl'")));
-    }
-
-    #[test]
-    fn missing_rollout_diagnostic_reports_visibility_without_reading_files() {
-        let command = codex_rollout_diagnostic_command(SESSION);
-        assert!(command.contains("printf 'home=%s\\n' \"$HOME\""));
-        assert!(command.contains("ls -ld \"$HOME/.codex/sessions\""));
-        assert!(command.contains(&format!("'rollout-*-{SESSION}.jsonl'")));
-        assert!(command.contains(&format!("'rollout-*-{SESSION}_*.jsonl'")));
-        assert!(!command.contains("cat "));
-        assert!(!command.contains("tail "));
-    }
-
-    #[test]
-    fn rollout_diagnostic_is_compact_and_bounded() {
-        assert_eq!(
-            bounded_lookup_diagnostic("home=/home/me\n  sessions=present\n"),
-            "home=/home/me sessions=present"
-        );
-        assert_eq!(
-            bounded_lookup_diagnostic(" \n\t"),
-            "diagnostic command returned no output"
-        );
-        let oversized = "x".repeat(CODEX_LOOKUP_DIAGNOSTIC_CHARACTERS + 1);
-        let bounded = bounded_lookup_diagnostic(&oversized);
-        assert_eq!(
-            bounded.chars().count(),
-            CODEX_LOOKUP_DIAGNOSTIC_CHARACTERS + 1
-        );
-        assert!(bounded.ends_with('…'));
     }
 
     #[test]
