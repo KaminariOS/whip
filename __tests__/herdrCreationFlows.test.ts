@@ -1,12 +1,10 @@
 import {
+  CommandLaunchPartialFailure,
   createWorkspaceAndSelect,
   launchTabAndOpenCreatedTab,
+  type TabCreationResult,
 } from '../src/lib/herdrCreationFlows';
 import { runWithInFlightGuard } from '../src/lib/inFlightSubmission';
-import {
-  CommandLaunchPartialFailure,
-  type TabCreationResult,
-} from '../src/services/HerdrClient';
 import type { WorkspaceInfo } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => ({
@@ -77,8 +75,12 @@ test('semantic tab launch opens the returned pane without requesting a snapshot'
 });
 
 test('partial launch failure still opens the created pane and remains an error', async () => {
-  const partial = new CommandLaunchPartialFailure(created, 'command', new Error('input failed'));
-  const client = { createTabWithLaunch: jest.fn(async () => { throw partial; }) };
+  const failure = Object.assign(new Error('input failed'), {
+    code: 'TAB_LAUNCH_FAILED' as const,
+    created,
+    launchType: 'command' as const,
+  });
+  const client = { createTabWithLaunch: jest.fn(async () => { throw failure; }) };
   const open = jest.fn();
 
   await expect(launchTabAndOpenCreatedTab(
@@ -87,7 +89,7 @@ test('partial launch failure still opens the created pane and remains an error',
     'Checks',
     { type: 'command', command: 'npm test' },
     open,
-  )).rejects.toBe(partial);
+  )).rejects.toBeInstanceOf(CommandLaunchPartialFailure);
 
   expect(open).toHaveBeenCalledWith(created);
 });

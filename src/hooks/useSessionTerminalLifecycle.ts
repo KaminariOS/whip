@@ -8,21 +8,20 @@ import {
   findLiveHostSession,
   selectLiveHostWorkspaceView,
 } from '../liveHostSessions';
-import { launchTabAndOpenCreatedTab } from '../lib/herdrCreationFlows';
+import {
+  launchTabAndOpenCreatedTab,
+  type TabCreationResult,
+  type TabLaunchIntent,
+} from '../lib/herdrCreationFlows';
 import {
   openWorkspaceFromProjection,
   runSemanticHerdrMutation,
-  startNativeHerdrServer,
 } from '../lib/sessionRuntimeActions';
 import {
   terminalRendererKey,
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
 import { bestEffortCleanup } from '../services/backgroundOperations';
-import type {
-  TabCreationResult,
-  TabLaunchIntent,
-} from '../services/HerdrClient';
 import type { AgentInfo, HerdrSnapshot, PaneInfo } from '../types';
 
 export function useSessionTerminalLifecycle({
@@ -80,8 +79,14 @@ export function useSessionTerminalLifecycle({
       select(sessionId, 'terminal');
       const runtime = runtimesRef.current.get(sessionId);
       const focus = focusAgent
-        ? runtime?.client.focusAgent(pane.pane_id)
-        : runtime?.client.focusPane(pane.pane_id);
+        ? runtime?.client.native.requestHerdrApi({
+          method: 'agent.focus',
+          params: { target: pane.pane_id },
+        })
+        : runtime?.client.native.requestHerdrApi({
+          method: 'pane.focus',
+          params: { pane_id: pane.pane_id },
+        });
       focus?.catch(error => scheduleReconnect(sessionId, error));
     },
     [navigation, runtimesRef, scheduleReconnect, select, terminals],
@@ -111,7 +116,7 @@ export function useSessionTerminalLifecycle({
     (sessionId: string, terminalId: string) => {
       const closeBridge = runtimesRef.current
         .get(sessionId)
-        ?.client.closeTerminalBridge(terminalId);
+        ?.client.terminal.closeTerminalBridge(terminalId);
       if (closeBridge) bestEffortCleanup(closeBridge, 'terminal-bridge-close');
       terminals.close(sessionId, terminalId);
     },
@@ -129,7 +134,10 @@ export function useSessionTerminalLifecycle({
 
   const focusWorkspace = useCallback(
     async (sessionId: string, workspaceId: string) => {
-      await requireRuntime(sessionId).client.focusWorkspace(workspaceId);
+      await requireRuntime(sessionId).client.native.requestHerdrApi({
+        method: 'workspace.focus',
+        params: { workspace_id: workspaceId },
+      });
     },
     [requireRuntime],
   );
@@ -143,7 +151,7 @@ export function useSessionTerminalLifecycle({
       )?.snapshot;
       await openWorkspaceFromProjection({
         activatePaneTerminal: pane => activatePaneTerminal(sessionId, pane),
-        client: runtime.client,
+        runtime: runtime.client.native,
         emptyWorkspaceError: () => new Error(t('session.emptyWorkspace')),
         openPaneTerminal: pane => openPaneTerminal(sessionId, pane),
         refreshSnapshot: () => refreshSnapshot(sessionId),
@@ -166,15 +174,26 @@ export function useSessionTerminalLifecycle({
   );
 
   const createWorkspace = useCallback(
-    async (sessionId: string, name: string, cwd: string) =>
-      (await requireRuntime(sessionId).client.createWorkspace(name, cwd))
-        .workspace,
+    async (sessionId: string, name: string, cwd: string) => {
+      const created = await requireRuntime(sessionId).client.native.requestHerdrApi({
+        method: 'workspace.create',
+        params: {
+          label: name.trim() || null,
+          cwd: cwd.trim() || null,
+          focus: true,
+        },
+      });
+      if (created.type !== 'workspace_created') {
+        throw new Error(`Unexpected workspace.create result: ${created.type}`);
+      }
+      return created.workspace;
+    },
     [requireRuntime],
   );
 
   const renameWorkspace = useCallback(
     async (sessionId: string, workspaceId: string, name: string) => {
-      await runSemanticHerdrMutation(requireRuntime(sessionId).client, {
+      await runSemanticHerdrMutation(requireRuntime(sessionId).client.native, {
         type: 'rename-workspace',
         workspaceId,
         name,
@@ -185,7 +204,7 @@ export function useSessionTerminalLifecycle({
 
   const closeWorkspace = useCallback(
     async (sessionId: string, workspaceId: string) => {
-      await runSemanticHerdrMutation(requireRuntime(sessionId).client, {
+      await runSemanticHerdrMutation(requireRuntime(sessionId).client.native, {
         type: 'close-workspace',
         workspaceId,
       });
@@ -195,7 +214,7 @@ export function useSessionTerminalLifecycle({
 
   const closeTab = useCallback(
     async (sessionId: string, tabId: string) => {
-      await runSemanticHerdrMutation(requireRuntime(sessionId).client, {
+      await runSemanticHerdrMutation(requireRuntime(sessionId).client.native, {
         type: 'close-tab',
         tabId,
       });
@@ -211,7 +230,7 @@ export function useSessionTerminalLifecycle({
       launch: TabLaunchIntent,
     ) => {
       await launchTabAndOpenCreatedTab(
-        requireRuntime(sessionId).client,
+        requireRuntime(sessionId).client.native,
         workspaceId,
         tabName,
         launch,
@@ -230,7 +249,7 @@ export function useSessionTerminalLifecycle({
       const runtime = runtimesRef.current.get(sessionId);
       if (!runtime) return;
       try {
-        await startNativeHerdrServer(runtime.client);
+        await runtime.client.native.startHerdrServer();
       } catch (error) {
         scheduleReconnect(sessionId, error);
       }

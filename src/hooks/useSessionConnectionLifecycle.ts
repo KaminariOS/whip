@@ -604,7 +604,7 @@ export function useSessionConnectionLifecycle({
           }
         }
         connectionStage = 'initial-host-state';
-        const initialState = runtime.client.hostState();
+        const initialState = runtime.client.native.hostState();
         const initial = runtime.client.snapshotFromHostState(initialState);
         connectionStage = 'terminal-restore';
         const restoredTerminals = await withOptionalAppPerformanceTrace(

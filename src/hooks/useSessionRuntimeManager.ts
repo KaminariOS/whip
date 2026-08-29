@@ -28,7 +28,8 @@ import {
   type LiveHostSessionsState,
 } from '../liveHostSessions';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
-import type { HerdrClient, TabLaunchIntent } from '../services/HerdrClient';
+import type { TabLaunchIntent } from '../lib/herdrCreationFlows';
+import type { HerdrClient } from '../services/HerdrClient';
 import type { StartupStorageSnapshot } from '../services/startupStorage';
 import type {
   AgentInfo,

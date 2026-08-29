@@ -737,7 +737,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       const direction = lineDifference > 0 ? 'up' : 'down';
       const lines = Math.abs(lineDifference);
       if (active.session.status === 'connected') {
-        active.client
+        active.client.terminal
           .scrollTerminal(active.session.terminalId, direction, lines)
           .catch(reason => {
             if (active.key === activeTargetRef.current?.key)
@@ -844,12 +844,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       try {
         await withTerminalWriteTrace(inputTrace, () =>
           inputTrace
-            ? target.client.writeToTerminal(
+            ? target.client.terminal.writeToTerminal(
                 target.session.terminalId,
                 data,
                 inputTrace,
               )
-            : target.client.writeToTerminal(target.session.terminalId, data),
+            : target.client.terminal.writeToTerminal(target.session.terminalId, data),
         );
         if (target.key === activeTargetRef.current?.key) setError(null);
         if (

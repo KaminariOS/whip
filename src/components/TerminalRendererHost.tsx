@@ -47,7 +47,7 @@ import {
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { bestEffortCleanup } from '../services/backgroundOperations';
-import type { TerminalAttachmentId } from '../services/HerdrClient';
+import type { TerminalAttachmentId } from '../services/TerminalBridgeController';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import {
   abandonTerminalInboundTrace,
@@ -323,8 +323,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     bestEffortCleanup(
       attachment.then(attachmentId => (
         releaseBridge
-          ? client.releaseTerminal(session.terminalId, attachmentId)
-          : client.detachTerminal(session.terminalId, attachmentId)
+          ? client.terminal.releaseTerminal(session.terminalId, attachmentId)
+          : client.terminal.detachTerminal(session.terminalId, attachmentId)
       )),
       'terminal-controller-release',
     );
@@ -348,7 +348,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.controllerAttached = false;
       entry.connecting = false;
       bestEffortCleanup(
-        entry.target.client.closeTerminalBridge(terminalId),
+        entry.target.client.terminal.closeTerminalBridge(terminalId),
         'terminal-bridge-close',
       );
     } else {
@@ -436,7 +436,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       sessionId: entry.target.hostSessionId,
       terminalId: entry.target.session.terminalId,
     });
-    entry.target.client.resizeTerminal(
+    entry.target.client.terminal.resizeTerminal(
       entry.target.session.terminalId,
       dimensions.columns,
       dimensions.rows,
@@ -498,7 +498,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       );
       const delta = desiredOffset - current.offset_from_bottom;
       if (delta !== 0) {
-        await client.scrollTerminal(
+        await client.terminal.scrollTerminal(
           session.terminalId,
           delta > 0 ? 'up' : 'down',
           Math.abs(delta),
@@ -628,7 +628,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     entry.controllerAttached = true;
     const { client, session } = entry.target;
     const terminalId = session.terminalId;
-    const retained = client.isTerminalBridgeRetained(terminalId);
+    const retained = client.terminal.isTerminalBridgeRetained(terminalId);
     if (!retained) {
       entry.resetOnNextFrame = true;
       entry.pendingFrames = [];
@@ -670,7 +670,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       reportStatus(entry.target, 'error', reason, 0);
       for (const waiter of entry.writableWaiters.splice(0)) waiter.reject(new Error(reason));
     };
-    const attachment = client.openTerminal(
+    const attachment = client.terminal.openTerminal(
       terminalId,
       frame => injectFrame(entry, frame),
       reason => scheduleReconnect(reason || 'Remote terminal closed', true),
@@ -771,7 +771,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (
       entry.controllerAttached
       && !entry.connecting
-      && entry.target.client.isTerminalBridgeRetained(terminalId)
+      && entry.target.client.terminal.isTerminalBridgeRetained(terminalId)
     ) return Promise.resolve();
     const pending = new Promise<void>((resolve, reject) => {
       entry.writableWaiters.push({ resolve, reject });
@@ -789,7 +789,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     const terminalId = entry.target.session.terminalId;
     const writable = entry.controllerAttached
       && !entry.connecting
-      && entry.target.client.isTerminalBridgeRetained(terminalId);
+      && entry.target.client.terminal.isTerminalBridgeRetained(terminalId);
     const coldWaitTrace: AppPerformanceTrace | null = writable
       ? null
       : beginTerminalColdInputWait();
@@ -805,7 +805,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           endAppPerformanceTrace(coldWaitTrace);
         }
         if (!activity.reclaimRequired || !dimensions) return;
-        await entry.target.client.resizeTerminal(
+        await entry.target.client.terminal.resizeTerminal(
           entry.target.session.terminalId,
           dimensions.columns,
           dimensions.rows,
@@ -874,10 +874,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         activeCall('herdrPaste', [data]);
         return;
       }
-      enqueueInput(entry, () => entry.target.client.pasteIntoPane(
-        entry.target.session.paneId,
-        prepareTerminalPaste(data),
-      )).catch(reason => reportError(entry.target, String(reason)));
+      enqueueInput(entry, () => entry.target.client.native.requestHerdrApi({
+        method: 'pane.send_input',
+        params: {
+          pane_id: entry.target.session.paneId,
+          text: prepareTerminalPaste(data),
+          keys: [],
+        },
+      }).then(() => undefined)).catch(
+        reason => reportError(entry.target, String(reason)),
+      );
     },
     retry: () => {
       const key = activeKey.current;
@@ -887,7 +893,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.controllerAttachment = null;
       entry.connecting = false;
       entry.arbitration.resumeManually();
-      entry.target.client.closeTerminal(entry.target.session.terminalId);
+      entry.target.client.terminal.closeTerminal(entry.target.session.terminalId);
       recordNetworkDiagnostic('info', 'terminal-manual-retry', {
         sessionId: entry.target.hostSessionId,
         terminalId: entry.target.session.terminalId,
@@ -926,9 +932,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
       return enqueueInput(entry, () => withTerminalWriteTrace(
         inputTrace,
-        () => entry.target.client.submitPastesToPane(
+        () => entry.target.client.native.submitPastes(
           entry.target.session.paneId,
-          prepared,
+          [...prepared],
         ),
       ), newUserInput).catch(reason => {
         endTerminalWriteTrace(inputTrace, false);
@@ -946,7 +952,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       if (entry) disposeEntry(key, entry, true);
       else {
         bestEffortCleanup(
-          target.client.closeTerminalBridge(target.session.terminalId),
+          target.client.terminal.closeTerminalBridge(target.session.terminalId),
           'terminal-bridge-close',
         );
       }
@@ -1139,7 +1145,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       for (const entry of entries.current.values()) {
         if (
           preferences.pauseResizeInBackground
-          || !entry.target.client.isTerminalBridgeRetained(entry.target.session.terminalId)
+          || !entry.target.client.terminal.isTerminalBridgeRetained(entry.target.session.terminalId)
         ) {
           relinquishController(entry, false);
           connectEntry(entry, !preferences.pauseResizeInBackground);
@@ -1289,15 +1295,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
               await withTerminalWriteTrace(
                 inputTrace,
                 () => inputTrace
-                  ? entry.target.client.writeToTerminal(
+                  ? entry.target.client.terminal.writeToTerminal(
                     entry.target.session.terminalId,
                     data,
                     inputTrace,
                   )
-                  : entry.target.client.writeToTerminal(entry.target.session.terminalId, data),
+                  : entry.target.client.terminal.writeToTerminal(entry.target.session.terminalId, data),
               );
             } else {
-              await entry.target.client.writeToTerminal(
+              await entry.target.client.terminal.writeToTerminal(
                 entry.target.session.terminalId,
                 data,
               );
@@ -1352,7 +1358,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           return;
         }
         terminalResizeRequestReady(resizeTrace);
-        await entry.target.client.resizeTerminal(
+        await entry.target.client.terminal.resizeTerminal(
           entry.target.session.terminalId,
           dimensions.columns,
           dimensions.rows,
@@ -1381,7 +1387,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       cancelResumeScroll(entry);
       reportScroll(entry.target, message.direction, message.lines);
       try {
-        await entry.target.client.scrollTerminal(
+        await entry.target.client.terminal.scrollTerminal(
           entry.target.session.terminalId,
           message.direction,
           message.lines,
@@ -1444,10 +1450,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         if (entry.target.session.kind === 'ssh') {
           inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(value)});`);
         } else {
-          enqueueInput(entry, () => entry.target.client.pasteIntoPane(
-            entry.target.session.paneId,
-            prepareTerminalPaste(value),
-          )).catch(reason => reportError(entry.target, String(reason)));
+          enqueueInput(entry, () => entry.target.client.native.requestHerdrApi({
+            method: 'pane.send_input',
+            params: {
+              pane_id: entry.target.session.paneId,
+              text: prepareTerminalPaste(value),
+              keys: [],
+            },
+          }).then(() => undefined)).catch(
+            reason => reportError(entry.target, String(reason)),
+          );
         }
         reportPaste(entry.target, value);
       }

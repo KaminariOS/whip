@@ -34,8 +34,8 @@ describe('session runtime lifecycle policy', () => {
     const disconnect = jest.fn(() => Promise.resolve());
     const releaseAllTerminals = jest.fn(() => Promise.resolve());
     const runtimes = new Map([
-      ['one', { client: { releaseAllTerminals, disconnect } }],
-      ['two', { client: { releaseAllTerminals, disconnect } }],
+      ['one', { client: { terminal: { releaseAllTerminals }, disconnect } }],
+      ['two', { client: { terminal: { releaseAllTerminals }, disconnect } }],
     ]);
 
     await disposeRuntimeMap(runtimes);
@@ -59,7 +59,7 @@ describe('session runtime lifecycle policy', () => {
     });
     const runtime = {
       client: {
-        releaseAllTerminals: jest.fn(() => Promise.resolve()),
+        terminal: { releaseAllTerminals: jest.fn(() => Promise.resolve()) },
         disconnect,
       },
     };
@@ -89,7 +89,7 @@ describe('session runtime lifecycle policy', () => {
     });
     const first = {
       client: {
-        releaseAllTerminals: jest.fn(() => Promise.resolve()),
+        terminal: { releaseAllTerminals: jest.fn(() => Promise.resolve()) },
         disconnect: jest.fn(() => {
           markFirstDisconnectStarted();
           return new Promise<void>(resolve => {
@@ -100,7 +100,7 @@ describe('session runtime lifecycle policy', () => {
     };
     const second = {
       client: {
-        releaseAllTerminals: jest.fn(() => Promise.resolve()),
+        terminal: { releaseAllTerminals: jest.fn(() => Promise.resolve()) },
         disconnect: jest.fn(() => Promise.resolve()),
       },
     };
@@ -109,13 +109,13 @@ describe('session runtime lifecycle policy', () => {
     const secondDestruction = destroyRuntime('host-1', second);
     await firstDisconnectStarted;
 
-    expect(second.client.releaseAllTerminals).not.toHaveBeenCalled();
+    expect(second.client.terminal.releaseAllTerminals).not.toHaveBeenCalled();
 
     finishFirstDisconnect();
     await firstDestruction;
     await secondDestruction;
 
-    expect(second.client.releaseAllTerminals).toHaveBeenCalledTimes(1);
+    expect(second.client.terminal.releaseAllTerminals).toHaveBeenCalledTimes(1);
     expect(second.client.disconnect).toHaveBeenCalledTimes(1);
   });
 });

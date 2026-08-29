@@ -1,4 +1,4 @@
-import type { RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
+import type { RuntimePreviewInfo, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -11,7 +11,7 @@ import { formatRemoteFileSize, isRemoteHiddenPath, parentRemotePath, remoteEntry
 import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '@/src/lib/remoteFileSwipeActions';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
-import type { HerdrClient, RemoteFilePreviewHandle, RemoteHtmlPreviewHandle } from '@/src/services/HerdrClient';
+import type { HerdrClient } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
 import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPreferences';
@@ -56,8 +56,8 @@ interface FilePreview {
   draft: string;
   editing: boolean;
   error: string | null;
-  htmlPreview: RemoteHtmlPreviewHandle | null;
-  filePreview: RemoteFilePreviewHandle | null;
+  htmlPreview: RuntimePreviewInfo | null;
+  filePreview: RuntimePreviewInfo | null;
   htmlRevision: number;
   gitDiff: RemoteGitDiff | null;
   gitStatus: RemoteGitStatusEntry | null;
@@ -119,10 +119,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       const previous = previewRef.current;
       if (previous?.cached && previous.cached !== next?.cached) previous.cached.dispose();
       if (previous?.htmlPreview && previous.htmlPreview !== next?.htmlPreview) {
-        bestEffortCleanup(client.closeRemoteHtmlPreview(previous.htmlPreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+        bestEffortCleanup(client.native.stopPreview(previous.htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       }
       if (previous?.filePreview && previous.filePreview !== next?.filePreview) {
-        bestEffortCleanup(client.closeRemoteFilePreview(previous.filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+        bestEffortCleanup(client.native.stopPreview(previous.filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       }
       previewRef.current = next;
       setPreview(next);
@@ -144,17 +144,17 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       setGitCollapsedPaths(new Set());
       replacePreview(null);
       try {
-        const listing = await client.listRemoteDirectory(requestedPath);
+        const listing = await client.native.listDirectory(requestedPath);
         if (request !== requestRef.current) return;
         let repository: RemoteGitRepository | null = null;
         let persistedGitMode = false;
         let changes: RemoteGitStatusEntry[] = [];
         let collapsedPaths: string[] = [];
         try {
-          repository = await client.discoverRemoteGitRepository(listing.path);
+          repository = await client.native.discoverGitRepository(listing.path);
           if (repository) {
             [persistedGitMode, collapsedPaths] = await Promise.all([loadRemoteGitMode(hostId, repository.root), loadRemoteGitCollapsedPaths(hostId, repository.root)]);
-            if (persistedGitMode) changes = await client.listRemoteGitChanges(repository.root);
+            if (persistedGitMode) changes = await client.native.gitStatus(repository.root);
           }
         } catch (reason) {
           if (persistedGitMode) setGitError(String(reason));
@@ -192,8 +192,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     () => () => {
       const current = previewRef.current;
       current?.cached?.dispose();
-      if (current?.htmlPreview) bestEffortCleanup(client.closeRemoteHtmlPreview(current.htmlPreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
-      if (current?.filePreview) bestEffortCleanup(client.closeRemoteFilePreview(current.filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+      if (current?.htmlPreview) bestEffortCleanup(client.native.stopPreview(current.htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
+      if (current?.filePreview) bestEffortCleanup(client.native.stopPreview(current.filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       previewRef.current = null;
     },
     [client],
@@ -245,7 +245,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setGitBusy(true);
     setGitError(null);
     try {
-      const changes = await client.listRemoteGitChanges(repository.root);
+      const changes = await client.native.gitStatus(repository.root);
       if (request === gitRequestRef.current) setGitStatus(changes);
     } catch (reason) {
       if (request === gitRequestRef.current) setGitError(String(reason));
@@ -265,7 +265,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (request !== gitRequestRef.current) return;
       setGitMode(next);
       if (next) {
-        const changes = await client.listRemoteGitChanges(gitRepository.root);
+        const changes = await client.native.gitStatus(gitRepository.root);
         if (request === gitRequestRef.current) setGitStatus(changes);
       } else {
         setGitStatus([]);
@@ -318,7 +318,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     };
     replacePreview(loadingPreview);
     try {
-      const gitDiff = await client.loadRemoteGitDiff(gitRepository, status);
+      const gitDiff = await client.native.gitDiff(gitRepository, status);
       if (request === requestRef.current) replacePreview({ ...loadingPreview, gitDiff });
     } catch (reason) {
       if (request === requestRef.current) {
@@ -357,26 +357,26 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     if (kind === 'unsupported') return;
 
     let cached: CachedRemoteFile | null = null;
-    let htmlPreview: RemoteHtmlPreviewHandle | null = null;
-    let filePreview: RemoteFilePreviewHandle | null = null;
+    let htmlPreview: RuntimePreviewInfo | null = null;
+    let filePreview: RuntimePreviewInfo | null = null;
     try {
       let content: string | null = null;
       if (isSftpStreamPreview(kind)) {
-        filePreview = await client.openRemoteFilePreview(entryPath);
+        filePreview = await client.native.startRemoteFilePreview(entryPath);
       } else {
         cached = await cacheRemoteFile(client, entryPath);
         content = isTextPreview(kind) ? await cached.file.text() : null;
       }
       if (request !== requestRef.current) {
         cached?.dispose();
-        if (filePreview) bestEffortCleanup(client.closeRemoteFilePreview(filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+        if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
         return;
       }
-      if (kind === 'html') htmlPreview = await client.openRemoteHtmlPreview(entryPath);
+      if (kind === 'html') htmlPreview = await client.native.startHtmlPreview(entryPath);
       if (request !== requestRef.current) {
         cached?.dispose();
-        if (htmlPreview) bestEffortCleanup(client.closeRemoteHtmlPreview(htmlPreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
-        if (filePreview) bestEffortCleanup(client.closeRemoteFilePreview(filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+        if (htmlPreview) bestEffortCleanup(client.native.stopPreview(htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
+        if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
         return;
       }
       replacePreview({
@@ -390,8 +390,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (kind === 'pdf' && filePreview) await openPdfBrowser(filePreview.url, request);
     } catch (reason) {
       cached?.dispose();
-      if (htmlPreview) bestEffortCleanup(client.closeRemoteHtmlPreview(htmlPreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
-      if (filePreview) bestEffortCleanup(client.closeRemoteFilePreview(filePreview), REMOTE_PREVIEW_CLOSE_CONTEXT);
+      if (htmlPreview) bestEffortCleanup(client.native.stopPreview(htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
+      if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       if (request === requestRef.current) {
         replacePreview({ ...loadingPreview, error: String(reason) });
       }
@@ -402,7 +402,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     const request = ++requestRef.current;
     const directory = parentRemotePath(remotePath);
     const filename = remotePath.slice(remotePath.lastIndexOf('/') + 1);
-    const listing = await client.listRemoteDirectory(directory);
+    const listing = await client.native.listDirectory(directory);
     if (request !== requestRef.current) return;
     pathRef.current = listing.path;
     setPath(listing.path);
@@ -511,7 +511,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     try {
       picked = await pickLocalFileForUpload();
       if (!picked) return;
-      await client.uploadRemoteFile(picked.nativePath, path);
+      await client.native.startUpload(picked.nativePath, path).result;
       const uploadedName = picked.name;
       await loadDirectory(path);
       Alert.alert(t('files.uploadedTitle'), t('files.uploadedCopy', { name: uploadedName }));
@@ -528,7 +528,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     const entryPath = entry.path;
     setDeletingPath(entryPath);
     try {
-      await client.deleteRemoteEntry(entryPath, entry.kind === 'directory');
+      await client.native.removeRemotePath(entryPath, entry.kind === 'directory');
       if (pathRef.current === directoryPath) {
         setEntries(current => current.filter(candidate => remoteEntryName(candidate) !== name));
       }

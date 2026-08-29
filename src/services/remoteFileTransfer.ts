@@ -25,7 +25,9 @@ export async function cacheRemoteFile(client: HerdrClient, remotePath: string): 
   directory.create({ idempotent: true });
   try {
     const nativeDirectoryPath = `${nativePath(directory.uri)}/`;
-    const downloadedPath = await client.downloadRemoteFile(remotePath, nativeDirectoryPath);
+    const result = await client.native.startDownload(remotePath, nativeDirectoryPath).result;
+    const downloadedPath = result.localPath;
+    if (!downloadedPath) throw new Error('Native download returned no local path');
     const file = new File(fileUri(downloadedPath));
     return {
       file,
@@ -48,7 +50,7 @@ export async function saveCachedRemoteText(
   content: string,
 ): Promise<void> {
   cached.file.write(content);
-  await client.uploadRemoteFile(cached.nativePath, remoteDirectoryPath);
+  await client.native.startUpload(cached.nativePath, remoteDirectoryPath).result;
 }
 
 export async function copyCachedRemoteFileToPickedDirectory(cached: CachedRemoteFile): Promise<string> {

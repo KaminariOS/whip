@@ -1,4 +1,5 @@
-import { HerdrClient, isTerminalAttachmentUploadCancelled } from '../src/services/HerdrClient';
+import { errorCode } from '../src/lib/connectionErrors';
+import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
@@ -37,7 +38,7 @@ describe('terminal attachment uploads', () => {
     const native = nativeClient();
     const client = await connectedClient(native);
 
-    const transfer = client.startTerminalAttachmentUpload('/tmp/Screen shot (final).PNG');
+    const transfer = client.native.startAttachmentUpload('/tmp/Screen shot (final).PNG');
     const result = await transfer.result;
 
     expect(native.sftpCreateDirAll).toHaveBeenCalledWith('/home/whip/.whip/uploads');
@@ -47,7 +48,7 @@ describe('terminal attachment uploads', () => {
 
   it('propagates native transfer failures', async () => {
     const client = await connectedClient(nativeClient(async () => { throw new Error('disk full'); }));
-    await expect(client.startTerminalAttachmentUpload('/tmp/image.png').result).rejects.toThrow('disk full');
+    await expect(client.native.startAttachmentUpload('/tmp/image.png').result).rejects.toThrow('disk full');
   });
 
   it('cancels by stable transfer ID', async () => {
@@ -55,11 +56,11 @@ describe('terminal attachment uploads', () => {
     const pending = new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; });
     const native = nativeClient(() => pending);
     const client = await connectedClient(native);
-    const transfer = client.startTerminalAttachmentUpload('/tmp/image.png');
+    const transfer = client.native.startAttachmentUpload('/tmp/image.png');
 
-    expect(client.cancelTransfer(transfer.id)).toBe(true);
+    expect(client.native.cancelTransfer(transfer.id)).toBe(true);
     expect(native.sftpCancelUpload).toHaveBeenCalledTimes(1);
     reject(Object.assign(new Error('transfer cancelled'), { code: 'TRANSFER_CANCELLED' }));
-    expect(isTerminalAttachmentUploadCancelled(await transfer.result.catch(error => error))).toBe(true);
+    expect(errorCode(await transfer.result.catch((error: unknown) => error))).toBe('TRANSFER_CANCELLED');
   });
 });

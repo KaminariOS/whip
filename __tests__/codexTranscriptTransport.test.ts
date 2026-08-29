@@ -45,24 +45,24 @@ describe('HerdrClient native transcript boundary', () => {
     const handler = jest.fn();
     const blob = new Uint8Array([1, 2]).buffer;
 
-    expect(client.openCodexAgentTranscript('terminal-1', sessionId, blob, handler)).toEqual({
+    expect(client.native.openAgentSession('codex', 'terminal-1', sessionId, blob, handler)).toEqual({
       key: `codex:${sessionId}`, state: transcript,
     });
     expect(runtime.openAgentSession).toHaveBeenCalledWith('codex', 'terminal-1', sessionId, blob, handler);
-    expect(client.openOpenCodeAgentTranscript('terminal-2', 'ses_abc123', blob, handler)).toEqual({
+    expect(client.native.openAgentSession('opencode', 'terminal-2', 'ses_abc123', blob, handler)).toEqual({
       key: `codex:${sessionId}`, state: transcript,
     });
     expect(runtime.openAgentSession).toHaveBeenCalledWith('opencode', 'terminal-2', 'ses_abc123', blob, handler);
-    expect(client.bindCodexAgentTranscript('terminal-1', sessionId, handler)).toEqual({
+    expect(client.native.bindAgentSession('codex', 'terminal-1', sessionId, handler)).toEqual({
       key: `codex:${sessionId}`, state: transcript,
     });
     expect(runtime.bindAgentSession).toHaveBeenCalledWith('codex', 'terminal-1', sessionId, handler);
-    expect(client.startAgentTranscript('terminal-1', `codex:${sessionId}`, blob)).toBe(transcript);
+    expect(client.native.startAgentSession('terminal-1', `codex:${sessionId}`, blob)).toBe(transcript);
     expect(runtime.startAgentSession).toHaveBeenCalledWith('terminal-1', `codex:${sessionId}`, blob);
-    expect(client.agentTranscript(`codex:${sessionId}`)).toBe(transcript);
-    expect(client.closeAgentTranscriptTerminal('terminal-1')).toBe(`codex:${sessionId}`);
-    client.closeAgentTranscript(`codex:${sessionId}`);
-    expect(client.confirmAgentTranscriptCache('token')).toBe(true);
+    expect(client.native.agentTranscript(`codex:${sessionId}`)).toBe(transcript);
+    expect(client.native.closeAgentTerminal('terminal-1')).toBe(`codex:${sessionId}`);
+    client.native.closeAgentSession(`codex:${sessionId}`);
+    expect(client.native.confirmAgentTranscriptCache('token')).toBe(true);
     expect(runtime.closeAgentTerminal).toHaveBeenCalledWith('terminal-1');
     expect(runtime.closeAgentSession).toHaveBeenCalledWith(`codex:${sessionId}`);
   });

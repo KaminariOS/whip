@@ -53,7 +53,7 @@ describe('plain SSH shell fallback', () => {
     const onFrame = jest.fn();
 
     await client.connect(profile);
-    await client.openTerminal(SSH_SHELL_TERMINAL_ID, onFrame);
+    await client.terminal.openTerminal(SSH_SHELL_TERMINAL_ID, onFrame);
     control.emitShell('\u001b[32moperator@fresh\u001b[0m $ ');
 
     expect(connectWithPassword).toHaveBeenCalledTimes(1);
@@ -69,8 +69,8 @@ describe('plain SSH shell fallback', () => {
       }),
     );
 
-    await client.writeToTerminal(SSH_SHELL_TERMINAL_ID, 'herdr --version\r');
-    await client.resizeTerminal(SSH_SHELL_TERMINAL_ID, 120, 40);
+    await client.terminal.writeToTerminal(SSH_SHELL_TERMINAL_ID, 'herdr --version\r');
+    await client.terminal.resizeTerminal(SSH_SHELL_TERMINAL_ID, 120, 40);
 
     expect(control.client.writeToShell).toHaveBeenCalledWith('herdr --version\r');
     expect(control.client.resizeShell).toHaveBeenLastCalledWith(120, 40);
@@ -82,11 +82,11 @@ describe('plain SSH shell fallback', () => {
     const client = new HerdrClient();
 
     await client.connect(profile);
-    await client.openTerminal(SSH_SHELL_TERMINAL_ID, jest.fn());
-    await client.closeTerminalBridge(SSH_SHELL_TERMINAL_ID);
+    await client.terminal.openTerminal(SSH_SHELL_TERMINAL_ID, jest.fn());
+    await client.terminal.closeTerminalBridge(SSH_SHELL_TERMINAL_ID);
 
     expect(control.client.closeShell).toHaveBeenCalledTimes(1);
     expect(control.client.disconnect).not.toHaveBeenCalled();
-    expect(client.isTerminalBridgeRetained(SSH_SHELL_TERMINAL_ID)).toBe(false);
+    expect(client.terminal.isTerminalBridgeRetained(SSH_SHELL_TERMINAL_ID)).toBe(false);
   });
 });

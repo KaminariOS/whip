@@ -55,7 +55,10 @@ describe('Codex integration installation flow', () => {
     jest.mocked(native.requestHerdrApi).mockClear();
 
     expect(native.execute).not.toHaveBeenCalled(); // Cancel/no confirmation makes no remote change.
-    await expect(client.installCodexIntegration()).resolves.toEqual(response);
+    await expect(client.native.installAgentIntegration('codex')).resolves.toEqual({
+      kind: 'codex',
+      messages: response.details.messages,
+    });
     expect(native.installAgentIntegration).toHaveBeenCalledTimes(1);
     expect(native.installAgentIntegration).toHaveBeenCalledWith('codex');
     expect(native.requestHerdrApi).not.toHaveBeenCalled();
@@ -79,7 +82,7 @@ describe('Codex integration installation flow', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.installCodexIntegration()).rejects.toThrow('installation failed');
+    await expect(client.native.installAgentIntegration('codex')).rejects.toThrow('installation failed');
     expect(native.installAgentIntegration).toHaveBeenCalledTimes(1);
     expect(native.requestHerdrApi).not.toHaveBeenCalled();
   });
@@ -96,7 +99,7 @@ describe('Codex integration installation flow', () => {
     connectWithPassword.mockResolvedValueOnce(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    await expect(client.codexIntegrationStatus()).resolves.toBe('current');
+    await expect(client.native.agentIntegrationStatus('codex')).resolves.toBe('current');
     expect(native.agentIntegrationStatus).toHaveBeenCalledWith('codex');
     expect(native.execute).not.toHaveBeenCalled();
     expect(native.installAgentIntegration).not.toHaveBeenCalled();

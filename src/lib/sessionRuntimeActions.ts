@@ -1,5 +1,6 @@
+import type { HostRuntimeConnection } from 'react-native-whip-ssh';
+
 import { preferredWorkspacePane } from '../liveHostSessions';
-import type { HerdrClient } from '../services/HerdrClient';
 import type { HerdrSnapshot, PaneInfo } from '../types';
 
 export type SemanticHerdrMutation =
@@ -8,8 +9,8 @@ export type SemanticHerdrMutation =
   | { type: 'rename-workspace'; workspaceId: string; name: string };
 
 type SemanticMutationClient = Pick<
-  HerdrClient,
-  'closeTab' | 'closeWorkspace' | 'renameWorkspace'
+  HostRuntimeConnection,
+  'requestHerdrApi'
 >;
 
 export async function runSemanticHerdrMutation(
@@ -18,25 +19,31 @@ export async function runSemanticHerdrMutation(
 ): Promise<void> {
   switch (mutation.type) {
     case 'close-tab':
-      await client.closeTab(mutation.tabId);
+      await client.requestHerdrApi({
+        method: 'tab.close',
+        params: { tab_id: mutation.tabId },
+      });
       return;
     case 'close-workspace':
-      await client.closeWorkspace(mutation.workspaceId);
+      await client.requestHerdrApi({
+        method: 'workspace.close',
+        params: { workspace_id: mutation.workspaceId },
+      });
       return;
     case 'rename-workspace':
-      await client.renameWorkspace(mutation.workspaceId, mutation.name);
+      await client.requestHerdrApi({
+        method: 'workspace.rename',
+        params: {
+          workspace_id: mutation.workspaceId,
+          label: mutation.name,
+        },
+      });
   }
-}
-
-export async function startNativeHerdrServer(
-  client: Pick<HerdrClient, 'startServer'>,
-): Promise<void> {
-  await client.startServer();
 }
 
 export async function openWorkspaceFromProjection({
   activatePaneTerminal,
-  client,
+  runtime,
   emptyWorkspaceError,
   openPaneTerminal,
   refreshSnapshot,
@@ -46,7 +53,7 @@ export async function openWorkspaceFromProjection({
   workspaceId,
 }: {
   activatePaneTerminal: (pane: PaneInfo) => void;
-  client: Pick<HerdrClient, 'focusWorkspace'>;
+  runtime: Pick<HostRuntimeConnection, 'requestHerdrApi'>;
   emptyWorkspaceError: () => Error;
   openPaneTerminal: (pane: PaneInfo) => void;
   refreshSnapshot: () => Promise<HerdrSnapshot | null>;
@@ -65,7 +72,10 @@ export async function openWorkspaceFromProjection({
   }
 
   selectTerminal();
-  await client.focusWorkspace(workspaceId);
+  await runtime.requestHerdrApi({
+    method: 'workspace.focus',
+    params: { workspace_id: workspaceId },
+  });
   const refreshed = await refreshSnapshot();
   const refreshedPane = refreshed
     ? preferredWorkspacePane(refreshed, workspaceId)

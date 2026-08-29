@@ -34,7 +34,6 @@ import {
 import {
   openWorkspaceFromProjection,
   runSemanticHerdrMutation,
-  startNativeHerdrServer,
   type SemanticHerdrMutation,
 } from '../src/lib/sessionRuntimeActions';
 import {
@@ -143,19 +142,13 @@ test('volatile host projection changes keep the durable live-host identity stabl
 });
 
 describe('native-owned Herdr actions', () => {
-  const client = () => ({
-    closeTab: jest.fn(async () => undefined),
-    closeWorkspace: jest.fn(async () => undefined),
-    focusWorkspace: jest.fn(async () => undefined),
-    refreshHostState: jest.fn(async () => undefined),
-    renameWorkspace: jest.fn(async () => undefined),
-    startServer: jest.fn(async () => undefined),
+  const runtime = () => ({
+    requestHerdrApi: jest.fn(async () => ({ type: 'ok' as const })),
   });
 
   test.each<{
     mutation: SemanticHerdrMutation;
-    method: 'closeTab' | 'closeWorkspace' | 'renameWorkspace';
-    args: string[];
+    request: object;
   }>([
     {
       mutation: {
@@ -163,43 +156,39 @@ describe('native-owned Herdr actions', () => {
         workspaceId: 'space-1',
         name: 'Renamed',
       },
-      method: 'renameWorkspace',
-      args: ['space-1', 'Renamed'],
+      request: {
+        method: 'workspace.rename',
+        params: { workspace_id: 'space-1', label: 'Renamed' },
+      },
     },
     {
       mutation: { type: 'close-workspace', workspaceId: 'space-1' },
-      method: 'closeWorkspace',
-      args: ['space-1'],
+      request: {
+        method: 'workspace.close',
+        params: { workspace_id: 'space-1' },
+      },
     },
     {
       mutation: { type: 'close-tab', tabId: 'tab-1' },
-      method: 'closeTab',
-      args: ['tab-1'],
+      request: {
+        method: 'tab.close',
+        params: { tab_id: 'tab-1' },
+      },
     },
   ])(
     '$mutation.type issues one semantic mutation without a snapshot refresh',
-    async ({ args, method, mutation }) => {
-      const runtime = client();
+    async ({ mutation, request }) => {
+      const native = runtime();
 
-      await runSemanticHerdrMutation(runtime, mutation);
+      await runSemanticHerdrMutation(native, mutation);
 
-      expect(runtime[method]).toHaveBeenCalledTimes(1);
-      expect(runtime[method]).toHaveBeenCalledWith(...args);
-      expect(runtime.refreshHostState).not.toHaveBeenCalled();
+      expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
+      expect(native.requestHerdrApi).toHaveBeenCalledWith(request);
     },
   );
 
-  test('server startup delegates readiness to native state events', async () => {
-    const runtime = client();
-
-    await startNativeHerdrServer(runtime);
-
-    expect(runtime.startServer).toHaveBeenCalledTimes(1);
-    expect(runtime.refreshHostState).not.toHaveBeenCalled();
-  });
-
   test('a populated workspace opens through the navigation-aware pane path', async () => {
-    const runtime = client();
+    const native = runtime();
     const pane = testPane();
     const openPaneTerminal = jest.fn();
     const activatePaneTerminal = jest.fn();
@@ -209,7 +198,7 @@ describe('native-owned Herdr actions', () => {
 
     await openWorkspaceFromProjection({
       activatePaneTerminal,
-      client: runtime,
+      runtime: native,
       emptyWorkspaceError: () => new Error('empty'),
       openPaneTerminal,
       refreshSnapshot,
@@ -221,21 +210,21 @@ describe('native-owned Herdr actions', () => {
 
     expect(selectWorkspace).toHaveBeenCalledTimes(1);
     expect(openPaneTerminal).toHaveBeenCalledWith(pane);
-    expect(runtime.focusWorkspace).not.toHaveBeenCalled();
+    expect(native.requestHerdrApi).not.toHaveBeenCalled();
     expect(refreshSnapshot).not.toHaveBeenCalled();
     expect(selectTerminal).not.toHaveBeenCalled();
     expect(activatePaneTerminal).not.toHaveBeenCalled();
   });
 
   test('an initially empty workspace opens the pane from the explicit native projection', async () => {
-    const runtime = client();
+    const native = runtime();
     const pane = testPane();
     const activatePaneTerminal = jest.fn();
     const refreshSnapshot = jest.fn(async () => testSnapshot(pane));
 
     await openWorkspaceFromProjection({
       activatePaneTerminal,
-      client: runtime,
+      runtime: native,
       emptyWorkspaceError: () => new Error('empty'),
       openPaneTerminal: jest.fn(),
       refreshSnapshot,
@@ -245,7 +234,10 @@ describe('native-owned Herdr actions', () => {
       workspaceId: pane.workspace_id,
     });
 
-    expect(runtime.focusWorkspace).toHaveBeenCalledWith(pane.workspace_id);
+    expect(native.requestHerdrApi).toHaveBeenCalledWith({
+      method: 'workspace.focus',
+      params: { workspace_id: pane.workspace_id },
+    });
     expect(refreshSnapshot).toHaveBeenCalledTimes(1);
     expect(activatePaneTerminal).toHaveBeenCalledWith(pane);
   });

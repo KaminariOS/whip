@@ -483,7 +483,7 @@ export function SessionScreen({
     const previewId = tunnelPreviewRef.current;
     tunnelPreviewRef.current = null;
     if (previewId !== null) {
-      bestEffortCleanup(client.closeWebTunnel(previewId), 'web-tunnel-close');
+      bestEffortCleanup(client.native.stopPreview(previewId), 'web-tunnel-close');
     }
   };
 
@@ -525,17 +525,19 @@ export function SessionScreen({
         await Linking.openURL(target.url);
         return;
       }
-      const tunnel = await client.openWebTunnel(target.url);
+      const tunnel = target.requiresSshTunnel
+        ? await client.native.startWebPreview(target.url)
+        : null;
       if (request !== browserRequestRef.current) {
         if (tunnel) {
           bestEffortCleanup(
-            client.closeWebTunnel(tunnel.previewId),
+            client.native.stopPreview(tunnel.id),
             'stale-web-tunnel-close',
           );
         }
         return;
       }
-      if (tunnel) tunnelPreviewRef.current = tunnel.previewId;
+      if (tunnel) tunnelPreviewRef.current = tunnel.id;
       setBrowserDisplayUrl(target.url);
       setBrowserUrl(tunnel?.url || target.url);
       setBrowserCanGoBack(false);
@@ -554,7 +556,7 @@ export function SessionScreen({
       tunnelPreviewRef.current = null;
       if (previewId !== null) {
         bestEffortCleanup(
-          client.closeWebTunnel(previewId),
+          client.native.stopPreview(previewId),
           'web-tunnel-unmount',
         );
       }
@@ -661,7 +663,7 @@ export function SessionScreen({
           hostSessionId,
           terminalId,
           sessionId,
-          client,
+          client.native,
         );
         nextViews.set(terminalId, {
           agent: nextAgent,
@@ -766,7 +768,7 @@ export function SessionScreen({
         hostSessionId,
         pane.terminal_id,
         sessionId,
-        client,
+        client.native,
       );
       if (codexTranscriptService.hasCachedHistory(key)) {
         setChatViews(current => {
@@ -907,7 +909,7 @@ export function SessionScreen({
     activateServerPane(serverPaneId);
   }, [followServerFocus, pendingCreatedPaneId, serverPaneId]);
 
-  const run = async (action: () => Promise<void>): Promise<boolean> => {
+  const run = async (action: () => Promise<unknown>): Promise<boolean> => {
     try {
       return await runWithInFlightGuard(mutationInFlight, async () => {
         setBusy(true);
@@ -935,9 +937,15 @@ export function SessionScreen({
     reportBackgroundFailure(
       run(async () => {
         if (item.workspace_id !== workspace?.workspace_id) {
-          await client.focusWorkspace(item.workspace_id);
+          await client.native.requestHerdrApi({
+            method: 'workspace.focus',
+            params: { workspace_id: item.workspace_id },
+          });
         }
-        await client.focusTab(item.tab_id);
+        await client.native.requestHerdrApi({
+          method: 'tab.focus',
+          params: { tab_id: item.tab_id },
+        });
       }),
       'session-tab-focus',
     );
@@ -1125,7 +1133,10 @@ export function SessionScreen({
     terminalTabSelectionStarted(pane.terminal_id);
     onActivateTerminal(pane);
     reportBackgroundFailure(
-      run(() => client.focusPane(pane.pane_id)),
+      run(() => client.native.requestHerdrApi({
+        method: 'pane.focus',
+        params: { pane_id: pane.pane_id },
+      })),
       'session-pane-focus',
     );
   };
@@ -1134,13 +1145,29 @@ export function SessionScreen({
     if (mutationInFlight.current) return;
     let succeeded = true;
     if (editorMode === 'rename-tab' && selectedTab) {
-      succeeded = await run(() => client.renameTab(selectedTab.tab_id, name));
+      succeeded = await run(() => client.native.requestHerdrApi({
+        method: 'tab.rename',
+        params: { tab_id: selectedTab.tab_id, label: name },
+      }));
     } else if (editorMode === 'rename-pane' && editingPaneId) {
-      succeeded = await run(() => client.renamePane(editingPaneId, name));
+      succeeded = await run(() => client.native.requestHerdrApi({
+        method: 'pane.rename',
+        params: { pane_id: editingPaneId, label: name.trim() || null },
+      }));
     } else if (workspace) {
       pendingFocus.current = null;
       succeeded = await run(async () => {
-        const created = await client.createTab(workspace.workspace_id, name);
+        const created = await client.native.requestHerdrApi({
+          method: 'tab.create',
+          params: {
+            workspace_id: workspace.workspace_id,
+            label: name.trim() || null,
+            focus: true,
+          },
+        });
+        if (created.type !== 'tab_created') {
+          throw new Error(`Unexpected tab.create result: ${created.type}`);
+        }
         setPendingCreatedSelection(created);
         pendingPaneFocus.current = created.root_pane.pane_id;
         activateCreatedTabLocally(created, {
@@ -1172,7 +1199,10 @@ export function SessionScreen({
     // Herdr focuses a surviving tab after closing the current one.
     pendingPaneFocus.current = null;
     pendingFocus.current = { previousId: item.tab_id };
-    if (!(await run(() => client.closeTab(item.tab_id)))) {
+    if (!(await run(() => client.native.requestHerdrApi({
+      method: 'tab.close',
+      params: { tab_id: item.tab_id },
+    })))) {
       pendingFocus.current = null;
     } else if (pendingCreatedSelection?.tab.tab_id === item.tab_id) {
       setPendingCreatedSelection(null);
@@ -1191,7 +1221,10 @@ export function SessionScreen({
       setEditingPaneId(null);
       setEditorMode(null);
     }
-    await run(() => client.closePane(pane.pane_id));
+    await run(() => client.native.requestHerdrApi({
+      method: 'pane.close',
+      params: { pane_id: pane.pane_id },
+    }));
   };
 
   const closeEditor = () => {
@@ -1258,7 +1291,7 @@ export function SessionScreen({
     setCodexIntegrationPrompt(null);
     setCodexIntegrationInstalling(true);
     try {
-      await client.installCodexIntegration();
+      await client.native.installAgentIntegration('codex');
       if (request !== codexIntegrationInstallRequestRef.current) return;
       // The install result contains messages, not refreshed agent identity.
       await onRefresh();
@@ -1316,7 +1349,7 @@ export function SessionScreen({
         hostSessionId,
         activeTerminalSession.terminalId,
         sessionId,
-        client,
+        client.native,
       );
       setChatViews(current => {
         const next = new Map(current);
@@ -1339,7 +1372,7 @@ export function SessionScreen({
         hostSessionId,
         activeTerminalSession.terminalId,
         sessionId,
-        client,
+        client.native,
       );
       if (!codexTranscriptService.hasCachedHistory(key)) {
         setCodexHistoryWarmup({
@@ -1365,7 +1398,7 @@ export function SessionScreen({
     const paneId = chatPane.pane_id;
     setBusy(true);
     try {
-      const integrationStatus = await client.codexIntegrationStatus();
+      const integrationStatus = await client.native.agentIntegrationStatus('codex');
       const missingIdentityAction =
         codexMissingIdentityAction(integrationStatus);
       if (missingIdentityAction === 'diagnose') {

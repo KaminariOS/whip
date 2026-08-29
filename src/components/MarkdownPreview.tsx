@@ -36,7 +36,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
     setLocalImages({});
     const loadImages = async () => {
       let remainingBytes = MAX_REMOTE_MARKDOWN_IMAGE_BYTES;
-      const directoryListings = new Map<string, Awaited<ReturnType<HerdrClient['listRemoteDirectory']>>>();
+      const directoryListings = new Map<string, Awaited<ReturnType<HerdrClient['native']['listDirectory']>>>();
       const targets = [...new Set(markdownImageTargets(content).map(image => image.target))]
         .slice(0, MAX_REMOTE_MARKDOWN_IMAGES);
       for (const target of targets) {
@@ -46,7 +46,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
           const directory = parentRemotePath(path);
           let listing = directoryListings.get(directory);
           if (!listing) {
-            listing = await client.listRemoteDirectory(directory);
+            listing = await client.native.listDirectory(directory);
             directoryListings.set(directory, listing);
           }
           const filename = path.slice(path.lastIndexOf('/') + 1);

@@ -1,31 +1,10 @@
-import type { NativeAgentTranscriptState, NativeAgentTranscriptUpdate } from 'react-native-whip-ssh';
-
 import { agentChatCache, type AgentChatCache } from './agentChatCache';
-import {
-  NativeTranscriptService,
-  type NativeTranscriptTransport,
-} from './CodexTranscriptService';
-
-export interface OpenCodeTranscriptTransport extends NativeTranscriptTransport {
-  bindOpenCodeAgentTranscript(
-    terminalId: string,
-    sessionId: string,
-    handler: (event: NativeAgentTranscriptUpdate) => void,
-  ): { key: string; state: NativeAgentTranscriptState };
-}
+import { NativeTranscriptService } from './CodexTranscriptService';
 
 /** Thin React listener/cache facade; OpenCode export and DB events live in Rust. */
-export class OpenCodeTranscriptService extends NativeTranscriptService<OpenCodeTranscriptTransport> {
+export class OpenCodeTranscriptService extends NativeTranscriptService {
   constructor(cache: AgentChatCache = agentChatCache) {
-    super(
-      'opencode',
-      (transport, terminalId, sessionId, handler) => transport.bindOpenCodeAgentTranscript(
-        terminalId,
-        sessionId,
-        handler,
-      ),
-      cache,
-    );
+    super('opencode', cache);
   }
 }
 

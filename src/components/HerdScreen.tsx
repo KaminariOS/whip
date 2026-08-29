@@ -60,7 +60,7 @@ import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
-import type { TabLaunchIntent } from '@/src/services/HerdrClient';
+import type { TabLaunchIntent } from '@/src/lib/herdrCreationFlows';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';

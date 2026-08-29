@@ -197,7 +197,7 @@ describe('direct Herdr API requests', () => {
     expect(runtime.disconnect).toHaveBeenCalledTimes(1);
     expect(firstDisconnect).toBe(secondDisconnect);
     expect(disconnected).toBe(false);
-    expect(() => client.hostState()).toThrow('Host runtime is not active');
+    expect(() => client.native.hostState()).toThrow('Host runtime is not active');
 
     finishDisconnect();
     await observedDisconnect;
@@ -212,7 +212,7 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await client.startServer();
+    await client.native.startHerdrServer();
 
     expect(native.startHerdrServer).toHaveBeenCalledTimes(1);
     expect(native.requestHerdrApi).not.toHaveBeenCalled();
@@ -225,8 +225,14 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await client.focusWorkspace('space-1');
-    await client.focusTab('tab-1');
+    await client.native.requestHerdrApi({
+      method: 'workspace.focus',
+      params: { workspace_id: 'space-1' },
+    });
+    await client.native.requestHerdrApi({
+      method: 'tab.focus',
+      params: { tab_id: 'tab-1' },
+    });
 
     expect(native.requestHerdrApi).toHaveBeenCalledTimes(2);
     expect(native.requestHerdrApi).toHaveBeenNthCalledWith(
@@ -262,7 +268,10 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await client.renameWorkspace('space-1', 'Renamed');
+    await client.native.requestHerdrApi({
+      method: 'workspace.rename',
+      params: { workspace_id: 'space-1', label: 'Renamed' },
+    });
 
     const methods = jest.mocked(native.requestHerdrApi).mock.calls
       .map(([, request]) => request.method);
@@ -375,7 +384,10 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.createWorkspace(' New space ', ' /repo ')).resolves.toEqual(created);
+    await expect(client.native.requestHerdrApi({
+      method: 'workspace.create',
+      params: { label: 'New space', cwd: '/repo', focus: true },
+    })).resolves.toEqual(created);
     const request = jest.mocked(native.requestHerdrApi).mock.calls[0][1];
     expect(request).toMatchObject({
       method: 'workspace.create',
@@ -393,7 +405,7 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.createTabWithLaunch(
+    await expect(client.native.createTabWithLaunch(
       'space-1',
       ' Review ',
       { type: 'agent', kind: 'opencode', args: ['--model', 'current model'] },
@@ -417,7 +429,7 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.createTabWithLaunch(
+    await expect(client.native.createTabWithLaunch(
       'space-1', ' Checks ', { type: 'command', command: 'echo codex is installed' },
     )).resolves.toEqual(created);
 
@@ -437,7 +449,7 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.createTabWithLaunch(
+    await expect(client.native.createTabWithLaunch(
       'space-1', 'Codex', { type: 'agent', kind: 'codex', args: ['--profile', 'work'] },
     )).resolves.toEqual(created);
 
@@ -456,7 +468,10 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.createTab('space-1', ' Notes ')).resolves.toEqual(created);
+    await expect(client.native.requestHerdrApi({
+      method: 'tab.create',
+      params: { workspace_id: 'space-1', label: 'Notes', focus: true },
+    })).resolves.toEqual(created);
     const request = jest.mocked(native.requestHerdrApi).mock.calls[0][1];
     expect(request).toMatchObject({
       method: 'tab.create',
@@ -473,13 +488,13 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.createTabWithLaunch('space-1', '   ', { type: 'shell' }))
+    await expect(client.native.createTabWithLaunch('space-1', '   ', { type: 'shell' }))
       .resolves.toMatchObject({ root_pane: { pane_id: 'pane-default-name' } });
 
     expect(native.createTabWithLaunch).toHaveBeenCalledWith('space-1', '   ', { type: 'shell' });
   });
 
-  test('reports typed partial success when native agent startup fails without a second JS send', async () => {
+  test('preserves typed native partial success without a second JS send', async () => {
     const created = tabCreated('pane-partial', 'Checks');
     const failure = Object.assign(new Error('agent startup failed'), {
       code: 'TAB_LAUNCH_FAILED', created, launchType: 'agent',
@@ -492,11 +507,12 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.createTabWithLaunch(
+    await expect(client.native.createTabWithLaunch(
       'space-1', 'Checks', { type: 'agent', kind: 'codex' },
     )).rejects.toMatchObject({
-      name: 'CommandLaunchPartialFailure',
-      message: expect.stringContaining('Tab Checks was created, but agent launch failed'),
+      message: 'agent startup failed',
+      code: 'TAB_LAUNCH_FAILED',
+      launchType: 'agent',
       created: { root_pane: { pane_id: 'pane-partial' } },
     });
     expect(native.createTabWithLaunch).toHaveBeenCalledTimes(1);
@@ -512,7 +528,7 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.createTabWithLaunch(
+    await expect(client.native.createTabWithLaunch(
       'space-1', 'Codex', { type: 'agent', kind: 'codex' },
     )).rejects.toThrow('tab creation failed');
     expect(native.createTabWithLaunch).toHaveBeenCalledTimes(1);
@@ -526,8 +542,11 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await client.pasteIntoPane('pane-1', 'a long paste');
-    await client.submitPastesToPane('pane-1', ['please inspect', '/tmp/image.png']);
+    await client.native.requestHerdrApi({
+      method: 'pane.send_input',
+      params: { pane_id: 'pane-1', text: 'a long paste', keys: [] },
+    });
+    await client.native.submitPastes('pane-1', ['please inspect', '/tmp/image.png']);
 
     expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
     expect(native.submitPastes).toHaveBeenCalledTimes(1);
@@ -551,12 +570,21 @@ describe('direct Herdr API requests', () => {
     jest.mocked(native.requestHerdrApi).mockClear();
 
     let readSettled = false;
-    const readPromise = client.readPane('pane-1', 500).finally(() => {
+    const readPromise = client.native.requestHerdrApi({
+      method: 'pane.read',
+      params: { pane_id: 'pane-1', source: 'recent', lines: 500, format: 'ansi', strip_ansi: false },
+    }).then(result => {
+      if (result.type !== 'pane_read') throw new Error(`Unexpected pane.read result: ${result.type}`);
+      return result.read.text;
+    }).finally(() => {
       readSettled = true;
     });
-    const focusPromise = client.focusPane('pane-1');
+    const focusPromise = client.native.requestHerdrApi({
+      method: 'pane.focus',
+      params: { pane_id: 'pane-1' },
+    });
 
-    await expect(focusPromise).resolves.toBeUndefined();
+    await expect(focusPromise).resolves.toEqual({ type: 'ok' });
 
     expect(native.requestHerdrApi).toHaveBeenCalledTimes(2);
     const requests = jest.mocked(native.requestHerdrApi).mock.calls.map(([, request]) => request);
@@ -587,7 +615,10 @@ describe('direct Herdr API requests', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    await expect(client.createWorkspace('space', '')).rejects.toBe('socket is not established');
+    await expect(client.native.requestHerdrApi({
+      method: 'workspace.create',
+      params: { label: 'space', cwd: null, focus: true },
+    })).rejects.toBe('socket is not established');
   });
 
   test('rechecks an offline server so a later refresh discovers its workspaces', async () => {
@@ -604,10 +635,10 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
 
     await expect(client.snapshot()).rejects.toThrow('channel is not opened.');
-    expect(client.hostState()).toMatchObject({
+    expect(client.native.hostState()).toMatchObject({
       freshness: 'unavailable',
     });
-    expect(client.hostState().snapshot).toBeUndefined();
+    expect(client.native.hostState().snapshot).toBeUndefined();
     await expect(client.snapshot()).resolves.toMatchObject({
       server: { running: true },
       workspaces: [{ workspace_id: 'w1', label: 'work' }],
@@ -630,10 +661,10 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
 
     await expect(client.snapshot()).rejects.toThrow('channel is not opened.');
-    expect(client.hostState()).toMatchObject({
+    expect(client.native.hostState()).toMatchObject({
       freshness: 'unavailable',
     });
-    expect(client.hostState().snapshot).toBeUndefined();
+    expect(client.native.hostState().snapshot).toBeUndefined();
     expect(native.getRemoteHome).toHaveBeenCalledTimes(1);
   });
 

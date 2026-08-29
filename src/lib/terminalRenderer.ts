@@ -47,18 +47,7 @@ export interface TerminalRenderTarget {
 
 export type TerminalRuntimeClient = Pick<
   HerdrClient,
-  | 'closeTerminal'
-  | 'closeTerminalBridge'
-  | 'detachTerminal'
-  | 'isTerminalBridgeRetained'
-  | 'openTerminal'
-  | 'pasteIntoPane'
-  | 'releaseTerminal'
-  | 'resizeTerminal'
-  | 'scrollTerminal'
-  | 'snapshot'
-  | 'submitPastesToPane'
-  | 'writeToTerminal'
+  'native' | 'snapshot' | 'terminal'
 >;
 
 export function terminalRendererKey(

@@ -32,8 +32,10 @@ export function shouldRetainBackgroundRuntimes(
 
 export interface ReleasableRuntime {
   client: {
-    releaseAllTerminals: () => Promise<unknown>;
     disconnect: () => Promise<void>;
+    terminal: {
+      releaseAllTerminals: () => Promise<unknown>;
+    };
   };
 }
 
@@ -48,7 +50,7 @@ export function destroyRuntime(
   const destruction = settledPromise(previous)
     .then(async () => {
       try {
-        await runtime.client.releaseAllTerminals();
+        await runtime.client.terminal.releaseAllTerminals();
       } finally {
         await runtime.client.disconnect();
       }

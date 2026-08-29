@@ -1,52 +1,39 @@
-import type { NativeAgentTranscriptState, NativeAgentTranscriptUpdate } from 'react-native-whip-ssh';
+import type {
+  HostRuntimeConnection,
+  NativeAgentTranscriptUpdate,
+} from 'react-native-whip-ssh';
 
 import type { AgentChatState } from '../agentChat';
 import { agentChatStateFromNative, applyNativeAgentTranscriptUpdate } from '../lib/nativeAgentTranscript';
 import { agentChatCache, type AgentChatCache } from './agentChatCache';
 
-export interface NativeTranscriptTransport {
-  startAgentTranscript(
-    terminalId: string,
-    key: string,
-    cacheBlob: ArrayBuffer | undefined,
-  ): NativeAgentTranscriptState;
-  agentTranscript(key: string): NativeAgentTranscriptState;
-  closeAgentTranscriptTerminal(terminalId: string): string | undefined;
-  confirmAgentTranscriptCache(confirmationToken: string): boolean;
-}
-
-export interface CodexTranscriptTransport extends NativeTranscriptTransport {
-  bindCodexAgentTranscript(
-    terminalId: string,
-    sessionId: string,
-    handler: (event: NativeAgentTranscriptUpdate) => void,
-  ): { key: string; state: NativeAgentTranscriptState };
-}
+export type NativeTranscriptTransport = Pick<
+  HostRuntimeConnection,
+  | 'agentTranscript'
+  | 'bindAgentSession'
+  | 'closeAgentTerminal'
+  | 'confirmAgentTranscriptCache'
+  | 'startAgentSession'
+>;
 
 type Listener = (state: AgentChatState) => void;
 
-interface TranscriptEntry<Transport extends NativeTranscriptTransport> {
+interface TranscriptEntry {
   nativeKey: string;
   hostSessionId: string;
   sessionId: string;
-  transport: Transport;
+  transport: NativeTranscriptTransport;
   listeners: Set<Listener>;
   state: AgentChatState;
   persistChain: Promise<void>;
 }
 
 /** Agent-neutral UI/listener and opaque-storage facade over Rust AgentSessionManager. */
-export class NativeTranscriptService<Transport extends NativeTranscriptTransport> {
-  private readonly entries = new Map<string, TranscriptEntry<Transport>>();
+export class NativeTranscriptService {
+  private readonly entries = new Map<string, TranscriptEntry>();
 
   constructor(
     private readonly agent: 'codex' | 'opencode',
-    private readonly bindNative: (
-      transport: Transport,
-      terminalId: string,
-      sessionId: string,
-      handler: (event: NativeAgentTranscriptUpdate) => void,
-    ) => { key: string; state: NativeAgentTranscriptState },
     private readonly cache: AgentChatCache = agentChatCache,
   ) {}
 
@@ -54,11 +41,11 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     hostSessionId: string,
     terminalId: string,
     sessionId: string,
-    transport: Transport,
+    transport: NativeTranscriptTransport,
   ): string {
-    let boundEntry: TranscriptEntry<Transport> | undefined;
-    const result = this.bindNative(
-      transport,
+    let boundEntry: TranscriptEntry | undefined;
+    const result = transport.bindAgentSession(
+      this.agent,
       terminalId,
       sessionId,
       event => boundEntry && this.acceptEvent(boundEntry, event),
@@ -109,7 +96,7 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
   closeTerminal(hostSessionId: string, terminalId: string, projectionKey?: string): void {
     const transport = [...this.entries.values()]
       .find(entry => entry.hostSessionId === hostSessionId)?.transport;
-    const released = transport?.closeAgentTranscriptTerminal(terminalId);
+    const released = transport?.closeAgentTerminal(terminalId);
     const key = projectionKey ?? released ?? null;
     if (!key) return;
     this.entries.get(key)?.listeners.clear();
@@ -123,7 +110,7 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     this.entries.clear();
   }
 
-  private restoreAndStart(entry: TranscriptEntry<Transport>, terminalId: string): void {
+  private restoreAndStart(entry: TranscriptEntry, terminalId: string): void {
     this.cache.loadNative(entry.nativeKey).then(blob => {
       this.startNative(entry, terminalId, blob || undefined);
     }).catch(error => {
@@ -132,9 +119,9 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     });
   }
 
-  private startNative(entry: TranscriptEntry<Transport>, terminalId: string, cacheBlob: ArrayBuffer | undefined): void {
+  private startNative(entry: TranscriptEntry, terminalId: string, cacheBlob: ArrayBuffer | undefined): void {
     try {
-      this.acceptState(entry, entry.transport.startAgentTranscript(
+      this.acceptState(entry, entry.transport.startAgentSession(
         terminalId,
         entry.nativeKey,
         cacheBlob,
@@ -147,7 +134,7 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     }
   }
 
-  private acceptEvent(entry: TranscriptEntry<Transport>, event: NativeAgentTranscriptUpdate): void {
+  private acceptEvent(entry: TranscriptEntry, event: NativeAgentTranscriptUpdate): void {
     if (event.key !== entry.nativeKey) return;
     const next = applyNativeAgentTranscriptUpdate(entry.state, event);
     if (next === null) {
@@ -169,29 +156,21 @@ export class NativeTranscriptService<Transport extends NativeTranscriptTransport
     });
   }
 
-  private acceptState(entry: TranscriptEntry<Transport>, native: NativeAgentTranscriptState): void {
+  private acceptState(entry: TranscriptEntry, native: ReturnType<NativeTranscriptTransport['agentTranscript']>): void {
     if ((entry.state.revision ?? -1) >= native.revision) return;
     this.publish(entry, agentChatStateFromNative(native));
   }
 
-  private publish(entry: TranscriptEntry<Transport>, state: AgentChatState): void {
+  private publish(entry: TranscriptEntry, state: AgentChatState): void {
     entry.state = state;
     for (const listener of entry.listeners) listener(state);
   }
 
 }
 
-export class CodexTranscriptService extends NativeTranscriptService<CodexTranscriptTransport> {
+export class CodexTranscriptService extends NativeTranscriptService {
   constructor(cache: AgentChatCache = agentChatCache) {
-    super(
-      'codex',
-      (transport, terminalId, sessionId, handler) => transport.bindCodexAgentTranscript(
-        terminalId,
-        sessionId,
-        handler,
-      ),
-      cache,
-    );
+    super('codex', cache);
   }
 }
 

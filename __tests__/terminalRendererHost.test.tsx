@@ -131,31 +131,51 @@ describe('TerminalRendererHost lifecycle', () => {
     let retained = false;
     let nextAttachmentId = 0;
     let frameHandler: ((frame: TerminalFrame) => void) | null = null;
+    const closeTerminalBridge = jest.fn(async () => undefined);
+    const detachTerminal = jest.fn(
+      async (_terminalId: string, _attachmentId: unknown): Promise<void> =>
+        undefined,
+    );
+    const isTerminalBridgeRetained = jest.fn(() => retained);
+    const openTerminal = jest.fn(
+      async (
+        _terminalId: string,
+        onFrame: (frame: TerminalFrame) => void,
+      ) => {
+        retained = true;
+        frameHandler = onFrame;
+        return { testAttachmentId: ++nextAttachmentId };
+      },
+    );
+    const releaseTerminal = jest.fn(
+      async (_terminalId: string, _attachmentId: unknown): Promise<void> => {
+        retained = false;
+      },
+    );
+    const resizeTerminal = jest.fn(async () => undefined);
+    const scrollTerminal = jest.fn(async () => '');
     return {
-      closeTerminalBridge: jest.fn(async () => undefined),
-      detachTerminal: jest.fn(
-        async (_terminalId: string, _attachmentId: unknown): Promise<void> =>
-          undefined,
-      ),
-      isTerminalBridgeRetained: jest.fn(() => retained),
+      terminal: {
+        closeTerminalBridge,
+        detachTerminal,
+        isTerminalBridgeRetained,
+        openTerminal,
+        releaseTerminal,
+        resizeTerminal,
+        scrollTerminal,
+      },
+      native: {
+        requestHerdrApi: jest.fn(async () => ({ type: 'ok' as const })),
+        submitPastes: jest.fn(async () => undefined),
+      },
+      closeTerminalBridge,
+      detachTerminal,
+      isTerminalBridgeRetained,
       emitFrame: (frame: TerminalFrame) => frameHandler?.(frame),
-      openTerminal: jest.fn(
-        async (
-          _terminalId: string,
-          onFrame: (frame: TerminalFrame) => void,
-        ) => {
-          retained = true;
-          frameHandler = onFrame;
-          return { testAttachmentId: ++nextAttachmentId };
-        },
-      ),
-      releaseTerminal: jest.fn(
-        async (_terminalId: string, _attachmentId: unknown): Promise<void> => {
-          retained = false;
-        },
-      ),
-      resizeTerminal: jest.fn(async () => undefined),
-      scrollTerminal: jest.fn(async () => ''),
+      openTerminal,
+      releaseTerminal,
+      resizeTerminal,
+      scrollTerminal,
       snapshot: jest.fn(async () => ({
         panes: Object.entries(paneScrolls).map(([terminalId, scroll]) => ({
           terminal_id: terminalId,
@@ -261,10 +281,18 @@ describe('TerminalRendererHost lifecycle', () => {
   };
 
   test('closes the native bridge when a terminal target is removed', () => {
+    const closeTerminalBridge = jest.fn(async () => undefined);
+    const detachTerminal = jest.fn(async () => undefined);
+    const isTerminalBridgeRetained = jest.fn(() => false);
     const client = {
-      closeTerminalBridge: jest.fn(async () => undefined),
-      detachTerminal: jest.fn(async () => undefined),
-      isTerminalBridgeRetained: jest.fn(() => false),
+      terminal: {
+        closeTerminalBridge,
+        detachTerminal,
+        isTerminalBridgeRetained,
+      },
+      closeTerminalBridge,
+      detachTerminal,
+      isTerminalBridgeRetained,
     };
     const target = {
       key: 'host-1:term-1',
@@ -328,10 +356,18 @@ describe('TerminalRendererHost lifecycle', () => {
 
   test('updates visual insets without fitting or resizing the terminal', async () => {
     const injected: string[] = [];
+    const closeTerminalBridge = jest.fn(async () => undefined);
+    const detachTerminal = jest.fn(async () => undefined);
+    const isTerminalBridgeRetained = jest.fn(() => false);
     const client = {
-      closeTerminalBridge: jest.fn(async () => undefined),
-      detachTerminal: jest.fn(async () => undefined),
-      isTerminalBridgeRetained: jest.fn(() => false),
+      terminal: {
+        closeTerminalBridge,
+        detachTerminal,
+        isTerminalBridgeRetained,
+      },
+      closeTerminalBridge,
+      detachTerminal,
+      isTerminalBridgeRetained,
     };
     const target = {
       key: 'host-1:term-1',

@@ -40,6 +40,36 @@ function moduleName(declaration: ts.ImportDeclaration): string {
 }
 
 describe('module boundaries', () => {
+  test('HerdrClient stays a lifecycle facade instead of duplicating native APIs', () => {
+    const source = parse(join(ROOT, 'src/services/HerdrClient.ts'));
+    const declaration = source.statements.find(
+      statement => ts.isClassDeclaration(statement)
+        && statement.name?.text === 'HerdrClient',
+    );
+    if (!declaration || !ts.isClassDeclaration(declaration)) {
+      throw new Error('HerdrClient class was not found');
+    }
+    const methods = declaration.members
+      .filter(ts.isMethodDeclaration)
+      .map(method => method.name)
+      .filter(ts.isIdentifier)
+      .map(name => name.text)
+      .sort();
+
+    expect(methods).toEqual([
+      'connect',
+      'disconnect',
+      'initialSnapshot',
+      'measureLatency',
+      'reconnectControl',
+      'refreshHostState',
+      'requireProfile',
+      'setRuntimeEventHandler',
+      'snapshot',
+      'snapshotFromHostState',
+    ]);
+  });
+
   test('React has no generated Herdr wire-schema subtree', () => {
     expect(existsSync(join(ROOT, 'src/generated/herdrApi.ts'))).toBe(false);
   });

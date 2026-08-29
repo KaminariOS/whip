@@ -94,15 +94,15 @@ describe('terminal bridge channels', () => {
     await oracle.connect({ ...profile, id: 'host-2', host: 'oracle.example.test' });
 
     for (let index = 1; index <= 8; index += 1) {
-      await savior.openTerminal(`savior-${index}`, jest.fn());
-      await oracle.openTerminal(`oracle-${index}`, jest.fn());
+      await savior.terminal.openTerminal(`savior-${index}`, jest.fn());
+      await oracle.terminal.openTerminal(`oracle-${index}`, jest.fn());
     }
 
     expect(saviorNative.closeHerdrBridge).not.toHaveBeenCalled();
     expect(oracleNative.closeHerdrBridge).not.toHaveBeenCalled();
     for (let index = 1; index <= 8; index += 1) {
-      expect(savior.isTerminalBridgeRetained(`savior-${index}`)).toBe(true);
-      expect(oracle.isTerminalBridgeRetained(`oracle-${index}`)).toBe(true);
+      expect(savior.terminal.isTerminalBridgeRetained(`savior-${index}`)).toBe(true);
+      expect(oracle.terminal.isTerminalBridgeRetained(`oracle-${index}`)).toBe(true);
     }
   });
 
@@ -112,10 +112,10 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    const attachmentId = await client.openTerminal('term-1', jest.fn());
-    await client.releaseTerminal('term-1', attachmentId);
+    const attachmentId = await client.terminal.openTerminal('term-1', jest.fn());
+    await client.terminal.releaseTerminal('term-1', attachmentId);
 
-    expect(client.isTerminalBridgeRetained('term-1')).toBe(false);
+    expect(client.terminal.isTerminalBridgeRetained('term-1')).toBe(false);
     expect(native.closeHerdrBridge).toHaveBeenCalledWith('term-1');
   });
 
@@ -125,10 +125,10 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    const attachmentId = await client.openTerminal('term-1', jest.fn());
-    await client.detachTerminal('term-1', attachmentId);
+    const attachmentId = await client.terminal.openTerminal('term-1', jest.fn());
+    await client.terminal.detachTerminal('term-1', attachmentId);
 
-    expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
+    expect(client.terminal.isTerminalBridgeRetained('term-1')).toBe(true);
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
   });
 
@@ -137,9 +137,9 @@ describe('terminal bridge channels', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn());
+    await client.terminal.openTerminal('term-1', jest.fn());
 
-    const write = client.writeToTerminal('term-1', '\u001b[B');
+    const write = client.terminal.writeToTerminal('term-1', '\u001b[B');
 
     expect(native.herdrBridgeInput).toHaveBeenCalledWith('term-1', '\u001b[B');
     await write;
@@ -153,9 +153,9 @@ describe('terminal bridge channels', () => {
     const replacementOnFrame = jest.fn();
     await client.connect(profile);
 
-    const firstAttachmentId = await client.openTerminal('term-1', firstOnFrame);
-    await client.openTerminal('term-1', replacementOnFrame);
-    await client.detachTerminal('term-1', firstAttachmentId);
+    const firstAttachmentId = await client.terminal.openTerminal('term-1', firstOnFrame);
+    await client.terminal.openTerminal('term-1', replacementOnFrame);
+    await client.terminal.detachTerminal('term-1', firstAttachmentId);
 
     const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
     bridgeHandler({
@@ -177,15 +177,15 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     await client.connect(profile);
 
-    const firstAttachmentId = await client.openTerminal('term-1', jest.fn());
-    const replacementAttachmentId = await client.openTerminal('term-1', jest.fn());
-    await client.releaseTerminal('term-1', firstAttachmentId);
+    const firstAttachmentId = await client.terminal.openTerminal('term-1', jest.fn());
+    const replacementAttachmentId = await client.terminal.openTerminal('term-1', jest.fn());
+    await client.terminal.releaseTerminal('term-1', firstAttachmentId);
 
-    expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
+    expect(client.terminal.isTerminalBridgeRetained('term-1')).toBe(true);
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
 
-    await client.releaseTerminal('term-1', replacementAttachmentId);
-    expect(client.isTerminalBridgeRetained('term-1')).toBe(false);
+    await client.terminal.releaseTerminal('term-1', replacementAttachmentId);
+    expect(client.terminal.isTerminalBridgeRetained('term-1')).toBe(false);
     expect(native.closeHerdrBridge).toHaveBeenCalledWith('term-1');
   });
 
@@ -200,9 +200,9 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     const inputTrace = {} as TerminalInputTrace;
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn());
+    await client.terminal.openTerminal('term-1', jest.fn());
 
-    const write = client.writeToTerminal('term-1', 'status\r', inputTrace);
+    const write = client.terminal.writeToTerminal('term-1', 'status\r', inputTrace);
 
     expect(nativeWriteQueued).not.toHaveBeenCalled();
     resolveWrite();
@@ -223,10 +223,10 @@ describe('terminal bridge channels', () => {
     const laterTrace = { targetKey: 'later' } as TerminalResizeTrace;
     await client.connect(profile);
 
-    await client.resizeTerminal('term-1', 100, 30, 8, 16, initialTrace);
-    const opening = client.openTerminal('term-1', jest.fn());
+    await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16, initialTrace);
+    const opening = client.terminal.openTerminal('term-1', jest.fn());
     await Promise.resolve();
-    await client.resizeTerminal('term-1', 101, 31, 8, 16, laterTrace);
+    await client.terminal.resizeTerminal('term-1', 101, 31, 8, 16, laterTrace);
 
     expect(resizeSuperseded).toHaveBeenCalledWith(laterTrace);
     expect(resizeSuperseded).not.toHaveBeenCalledWith(initialTrace);
@@ -241,11 +241,11 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     const duplicateTrace = { targetKey: 'duplicate' } as TerminalResizeTrace;
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn());
+    await client.terminal.openTerminal('term-1', jest.fn());
     jest.mocked(native.herdrBridgeResize).mockClear();
 
-    await client.resizeTerminal('term-1', 100, 30, 8, 16);
-    await client.resizeTerminal('term-1', 100, 30, 8, 16, duplicateTrace);
+    await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16);
+    await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16, duplicateTrace);
 
     expect(native.herdrBridgeResize).toHaveBeenCalledTimes(1);
     expect(resizeDeduplicated).toHaveBeenCalledWith(duplicateTrace);
@@ -256,11 +256,11 @@ describe('terminal bridge channels', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn());
+    await client.terminal.openTerminal('term-1', jest.fn());
     jest.mocked(native.herdrBridgeResize).mockClear();
 
-    await client.resizeTerminal('term-1', 100, 30, 8, 16);
-    await client.resizeTerminal('term-1', 100, 30, 8, 16, null, true);
+    await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16);
+    await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16, null, true);
 
     expect(native.herdrBridgeResize).toHaveBeenCalledTimes(2);
     expect(resizeDeduplicated).not.toHaveBeenCalled();
@@ -271,14 +271,14 @@ describe('terminal bridge channels', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn());
+    await client.terminal.openTerminal('term-1', jest.fn());
     jest.mocked(native.herdrBridgeResize).mockClear();
     jest.mocked(native.herdrBridgeResize)
       .mockRejectedValueOnce(new Error('resize failed'));
 
-    await expect(client.resizeTerminal('term-1', 100, 30, 8, 16))
+    await expect(client.terminal.resizeTerminal('term-1', 100, 30, 8, 16))
       .rejects.toThrow('resize failed');
-    await client.resizeTerminal('term-1', 100, 30, 8, 16);
+    await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16);
 
     expect(native.herdrBridgeResize).toHaveBeenCalledTimes(2);
   });
@@ -288,9 +288,9 @@ describe('terminal bridge channels', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn());
+    await client.terminal.openTerminal('term-1', jest.fn());
 
-    await client.scrollTerminal('term-1', 'up', 3, 12, 7);
+    await client.terminal.scrollTerminal('term-1', 'up', 3, 12, 7);
 
     expect(native.herdrBridgeScroll).toHaveBeenCalledWith(
       'term-1',
@@ -308,11 +308,11 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     try {
       await client.connect(profile);
-      await client.openTerminal('term-1', jest.fn());
+      await client.terminal.openTerminal('term-1', jest.fn());
       jest.mocked(native.requestHerdrApi).mockClear();
 
-      await client.resizeTerminal('term-1', 100, 30, 8, 16);
-      await client.scrollTerminal('term-1', 'up', 3, 12, 7);
+      await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16);
+      await client.terminal.scrollTerminal('term-1', 'up', 3, 12, 7);
 
       jest.advanceTimersByTime(119);
       await Promise.resolve();
@@ -333,7 +333,7 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     const onFrame = jest.fn();
     await client.connect(profile);
-    await client.openTerminal('term-1', onFrame);
+    await client.terminal.openTerminal('term-1', onFrame);
 
     const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
     bridgeHandler({ type: 'terminal_bell', count: 3 });
@@ -355,7 +355,7 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     const onControl = jest.fn();
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn(), undefined, onControl);
+    await client.terminal.openTerminal('term-1', jest.fn(), undefined, onControl);
 
     const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
     bridgeHandler({ type: 'mouse_capture', flag: true });
@@ -375,15 +375,15 @@ describe('terminal bridge channels', () => {
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    const attachmentId = await client.openTerminal('term-1', jest.fn(), undefined, jest.fn());
+    const attachmentId = await client.terminal.openTerminal('term-1', jest.fn(), undefined, jest.fn());
 
     const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
     bridgeHandler({ type: 'mouse_capture', flag: true });
     bridgeHandler({ type: 'kitty_keyboard_report_all', flag: true });
-    await client.detachTerminal('term-1', attachmentId);
+    await client.terminal.detachTerminal('term-1', attachmentId);
 
     const onControl = jest.fn();
-    await client.openTerminal('term-1', jest.fn(), undefined, onControl);
+    await client.terminal.openTerminal('term-1', jest.fn(), undefined, onControl);
 
     expect(onControl).toHaveBeenCalledWith({
       type: 'protocol-state',
@@ -398,7 +398,7 @@ describe('terminal bridge channels', () => {
     const client = new HerdrClient();
     const onControl = jest.fn();
     await client.connect(profile);
-    await client.openTerminal('term-1', jest.fn(), undefined, onControl);
+    await client.terminal.openTerminal('term-1', jest.fn(), undefined, onControl);
 
     const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
     bridgeHandler({ type: 'clipboard', text: 'copied by opencode' });

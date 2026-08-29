@@ -1,3 +1,4 @@
+import type { HostRuntimeConnection } from 'react-native-whip-ssh';
 import { Camera, Clipboard, FileUp, Image as ImageIcon, Paperclip, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, View } from 'react-native';
@@ -5,9 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 
+import { errorCode } from '../lib/connectionErrors';
 import type { AttachmentSource } from '../services/attachmentPaste';
-import { hasClipboardAttachment, pickLocalAttachment } from '../services/attachmentPaste';
-import { isTerminalAttachmentUploadCancelled, type HerdrClient } from '../services/HerdrClient';
+import {
+  hasClipboardAttachment,
+  pickLocalAttachment,
+} from '../services/attachmentPaste';
+import type { HerdrClient } from '../services/HerdrClient';
 import { useTheme } from '../theme';
 import { hapticPress } from './app-ui';
 import { Button } from './ui/button';
@@ -29,7 +34,7 @@ export interface PastedAttachment {
 interface SelectionOperation {
   cancelled: boolean;
   transferId: string | null;
-  client: HerdrClient;
+  runtime: Pick<HostRuntimeConnection, 'cancelTransfer' | 'startAttachmentUpload'>;
 }
 
 type UploadState = 'idle' | 'uploading' | 'cancelling';
@@ -47,7 +52,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
     const operation = activeOperation.current;
     if (operation && !operation.cancelled) {
       operation.cancelled = true;
-      if (operation.transferId) operation.client.cancelTransfer(operation.transferId);
+      if (operation.transferId) operation.runtime.cancelTransfer(operation.transferId);
       if (mounted.current) setUploadState('cancelling');
     }
     if (close) onClose();
@@ -60,7 +65,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
       const operation = activeOperation.current;
       if (operation && !operation.cancelled) {
         operation.cancelled = true;
-        if (operation.transferId) operation.client.cancelTransfer(operation.transferId);
+        if (operation.transferId) operation.runtime.cancelTransfer(operation.transferId);
       }
     };
   }, []);
@@ -87,7 +92,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
     const operation: SelectionOperation = {
       cancelled: false,
       transferId: null,
-      client,
+      runtime: client.native,
     };
     activeOperation.current = operation;
     setUploadState('uploading');
@@ -95,9 +100,9 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
     try {
       attachment = await pickLocalAttachment(source);
       if (!attachment || operation.cancelled || activeOperation.current !== operation) return;
-      const transfer = client.startTerminalAttachmentUpload(attachment.nativePath);
+      const transfer = operation.runtime.startAttachmentUpload(attachment.nativePath);
       operation.transferId = transfer.id;
-      if (operation.cancelled) client.cancelTransfer(transfer.id);
+      if (operation.cancelled) operation.runtime.cancelTransfer(transfer.id);
       const result = await transfer.result;
       operation.transferId = null;
       const remotePath = result.remotePath;
@@ -117,7 +122,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
       if (
         !operation.cancelled
         && activeOperation.current === operation
-        && !isTerminalAttachmentUploadCancelled(reason)
+        && errorCode(reason) !== 'TRANSFER_CANCELLED'
       ) {
         Alert.alert(t('attachments.failedTitle'), String(reason));
       }

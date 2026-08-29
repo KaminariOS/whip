@@ -48,7 +48,10 @@ describe('SSH control reconnects', () => {
     const client = new HerdrClient();
 
     await client.connect(profile);
-    await client.focusWorkspace('space-1');
+    await client.native.requestHerdrApi({
+      method: 'workspace.focus',
+      params: { workspace_id: 'space-1' },
+    });
 
     expect(connectWithPassword).toHaveBeenCalledTimes(2);
     const staleControlMethods = jest.mocked(stale.requestHerdrApi).mock.calls
@@ -69,7 +72,10 @@ describe('SSH control reconnects', () => {
 
     await client.connect(profile);
 
-    await expect(client.createWorkspace('New space', '')).rejects.toBe('channel is not opened.');
+    await expect(client.native.requestHerdrApi({
+      method: 'workspace.create',
+      params: { label: 'New space', cwd: null, focus: true },
+    })).rejects.toBe('channel is not opened.');
     expect(connectWithPassword).toHaveBeenCalledTimes(1);
     const staleControlMethods = jest.mocked(stale.requestHerdrApi).mock.calls
       .map(([, request]) => (request as { method: string }).method)
