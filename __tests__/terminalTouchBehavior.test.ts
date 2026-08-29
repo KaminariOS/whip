@@ -1,15 +1,13 @@
-import { Terminal } from '@xterm/xterm';
-
 const {
-  forcedTerminalMouseInputSequence,
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
+  terminalMouseClickInput,
+  terminalMouseWheelInput,
 } = require('../scripts/terminal-touch-behavior.cjs') as {
-  forcedTerminalMouseInputSequence: (enabled: boolean) => string;
   handleKeyboardClosedStationaryTap: (options: {
     point: { clientX: number; clientY: number };
     urlAtPoint: (x: number, y: number) => string | null;
-    terminalMouseCaptured: () => boolean;
+    terminalMouseInputEnabled: () => boolean;
     dispatchTerminalClick: (point: { clientX: number; clientY: number }) => boolean;
     send: (message: { type: string; link?: string }) => void;
     clearInteractiveSelection: (clearNativeSelection: boolean) => void;
@@ -21,12 +19,21 @@ const {
     },
     enabled: boolean,
   ) => boolean;
+  terminalMouseClickInput: (
+    column: number,
+    row: number,
+  ) => string;
+  terminalMouseWheelInput: (
+    direction: 'up' | 'down',
+    count: number,
+    column: number,
+    row: number,
+  ) => string;
 };
 
 const point = { clientX: 44, clientY: 40 };
 
-function tapHarness(mouseTrackingMode: string, link: string | null = null) {
-  const terminal = { modes: { mouseTrackingMode } };
+function tapHarness(mouseInputEnabled: boolean, link: string | null = null) {
   const messages: Array<{ type: string; link?: string }> = [];
   const dispatchTerminalClick = jest.fn(() => true);
   const clearInteractiveSelection = jest.fn();
@@ -34,7 +41,7 @@ function tapHarness(mouseTrackingMode: string, link: string | null = null) {
   handleKeyboardClosedStationaryTap({
     point,
     urlAtPoint: () => link,
-    terminalMouseCaptured: () => terminal.modes.mouseTrackingMode !== 'none',
+    terminalMouseInputEnabled: () => mouseInputEnabled,
     dispatchTerminalClick,
     send: message => messages.push(message),
     clearInteractiveSelection,
@@ -43,24 +50,24 @@ function tapHarness(mouseTrackingMode: string, link: string | null = null) {
   return { messages, dispatchTerminalClick, clearInteractiveSelection };
 }
 
-test('keyboard-closed stationary tap emits no input when xterm mouse tracking is disabled', () => {
-  const result = tapHarness('none');
+test('keyboard-closed stationary tap emits no input when mouse input is disabled', () => {
+  const result = tapHarness(false);
 
   expect(result.messages).toEqual([]);
   expect(result.dispatchTerminalClick).not.toHaveBeenCalled();
   expect(result.clearInteractiveSelection).toHaveBeenCalledWith(true);
 });
 
-test('keyboard-closed stationary tap delegates to xterm when mouse tracking is enabled', () => {
-  const result = tapHarness('vt200');
+test('keyboard-closed stationary tap dispatches when mouse input is enabled', () => {
+  const result = tapHarness(true);
 
   expect(result.messages).toEqual([]);
   expect(result.dispatchTerminalClick).toHaveBeenCalledWith(point);
   expect(result.clearInteractiveSelection).not.toHaveBeenCalled();
 });
 
-test('keyboard-closed stationary tap opens a link before considering mouse tracking', () => {
-  const result = tapHarness('vt200', 'https://example.com/');
+test('keyboard-closed stationary tap opens a link before considering mouse input', () => {
+  const result = tapHarness(true, 'https://example.com/');
 
   expect(result.messages).toEqual([{
     type: 'open-link',
@@ -69,24 +76,14 @@ test('keyboard-closed stationary tap opens a link before considering mouse track
   expect(result.dispatchTerminalClick).not.toHaveBeenCalled();
 });
 
-test('forced TUI tapping changes xterm mouse capture without encoding clicks outside xterm', async () => {
-  const terminal = new Terminal();
-  const write = (data: string) => new Promise<void>(resolve => {
-    terminal.write(data, resolve);
-  });
-
-  expect(terminal.modes.mouseTrackingMode).toBe('none');
-
-  await write(forcedTerminalMouseInputSequence(true));
-  expect(terminal.modes.mouseTrackingMode).toBe('vt200');
-
-  const result = tapHarness(terminal.modes.mouseTrackingMode);
-  expect(result.dispatchTerminalClick).toHaveBeenCalledWith(point);
-  expect(result.messages).toEqual([]);
-
-  await write(forcedTerminalMouseInputSequence(false));
-  expect(terminal.modes.mouseTrackingMode).toBe('none');
-  terminal.dispose();
+test('encodes forced TUI clicks and wheel input with SGR cell coordinates', () => {
+  expect(
+    terminalMouseClickInput(11, 6),
+  ).toBe('\u001b[<0;12;7M\u001b[<0;12;7m');
+  expect(terminalMouseWheelInput('up', 2, 11, 6)).toBe(
+    '\u001b[<64;12;7M\u001b[<64;12;7M',
+  );
+  expect(terminalMouseWheelInput('down', 1, 11, 6)).toBe('\u001b[<65;12;7M');
 });
 
 test('keyboard-disabled xterm remains focusable for mouse handling without opening the IME', () => {

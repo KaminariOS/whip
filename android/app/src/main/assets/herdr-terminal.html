@@ -333,7 +333,7 @@
     function handleKeyboardClosedStationaryTap({
   point,
   urlAtPoint,
-  terminalMouseCaptured,
+  terminalMouseInputEnabled,
   dispatchTerminalClick,
   send,
   clearInteractiveSelection,
@@ -343,16 +343,11 @@
     send({ type: 'open-link', link });
     return;
   }
-  if (terminalMouseCaptured()) {
+  if (terminalMouseInputEnabled()) {
     dispatchTerminalClick(point);
     return;
   }
   clearInteractiveSelection(true);
-}
-    function forcedTerminalMouseInputSequence(enabled) {
-  return enabled
-    ? '\u001b[?1000h\u001b[?1006h'
-    : '\u001b[?1000l\u001b[?1006l';
 }
     function setTerminalKeyboardInputEnabled(terminal, enabled) {
   const keyboardEnabled = enabled !== false;
@@ -363,6 +358,22 @@
   }
   if (!keyboardEnabled) terminal.blur();
   return keyboardEnabled;
+}
+    function terminalMouseInputSequence(action, column, row) {
+  const button = action === 'wheel-up' ? 64 : action === 'wheel-down' ? 65 : 0;
+  const suffix = action === 'release' ? 'm' : 'M';
+  const sgrColumn = Math.max(0, Math.min(0xffff, Math.round(Number(column) || 0))) + 1;
+  const sgrRow = Math.max(0, Math.min(0xffff, Math.round(Number(row) || 0))) + 1;
+  return `\u001b[<${button};${sgrColumn};${sgrRow}${suffix}`;
+}
+    function terminalMouseClickInput(column, row) {
+  return terminalMouseInputSequence('press', column, row)
+    + terminalMouseInputSequence('release', column, row);
+}
+    function terminalMouseWheelInput(direction, count, column, row) {
+  const action = direction === 'up' ? 'wheel-up' : 'wheel-down';
+  const repeats = Math.max(1, Math.round(Number(count) || 1));
+  return terminalMouseInputSequence(action, column, row).repeat(repeats);
 }
     function terminalBoundaryFiniteNumber(value, fallback = 0) {
   const number = Number(value);
@@ -954,7 +965,6 @@
       }
       prepareLiveWrite();
       terminal.write(data, () => {
-        restoreForcedTerminalMouseInput();
         offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
         reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
@@ -972,7 +982,6 @@
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       terminal.write(bytes, () => {
-        restoreForcedTerminalMouseInput();
         offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
         reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
@@ -1012,7 +1021,6 @@
       lastReportedOfflineScroll = '';
       clearOsc8Links();
       terminal.reset();
-      restoreForcedTerminalMouseInput();
       clearInteractiveSelection(false);
     };
     api.herdrBeginOfflineTranscript = () => {
@@ -1031,7 +1039,6 @@
       clearOsc8Links();
       clearInteractiveSelection(false);
       terminal.write('c' + transcript, () => {
-        restoreForcedTerminalMouseInput();
         const offset = Math.max(0, Math.round(Number(offsetFromBottom) || 0));
         terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - offset));
         reportOfflineScroll();
@@ -1044,7 +1051,7 @@
       lastReportedOfflineScroll = '';
       clearOsc8Links();
       clearInteractiveSelection(false);
-      terminal.write('c', restoreForcedTerminalMouseInput);
+      terminal.write('c');
     };
     api.herdrOfflineInput = data => handleOfflineInput(data);
     api.herdrConfigure = options => {
@@ -1080,14 +1087,21 @@
       send({ type: 'font-size-change', fontSize });
     };
     const terminalMouseCaptured = () => terminal.modes.mouseTrackingMode !== 'none';
-    const restoreForcedTerminalMouseInput = () => {
-      if (forcedMouseInput && !terminalMouseCaptured()) {
-        terminal.write(forcedTerminalMouseInputSequence(true));
-      }
+    const terminalMouseInputEnabled = () => forcedMouseInput || terminalMouseCaptured();
+    const terminalMouseCell = point => {
+      const screen = terminal.element?.querySelector('.xterm-screen');
+      if (!screen) return null;
+      const bounds = screen.getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0) return null;
+      const clientX = Number.isFinite(point?.clientX) ? point.clientX : bounds.left + bounds.width / 2;
+      const clientY = Number.isFinite(point?.clientY) ? point.clientY : bounds.top + bounds.height / 2;
+      return {
+        col: Math.max(0, Math.min(terminal.cols - 1, Math.floor((clientX - bounds.left) / bounds.width * terminal.cols))),
+        row: Math.max(0, Math.min(terminal.rows - 1, Math.floor((clientY - bounds.top) / bounds.height * terminal.rows))),
+      };
     };
     api.herdrSetForcedMouseInput = enabled => {
       forcedMouseInput = enabled === true;
-      terminal.write(forcedTerminalMouseInputSequence(forcedMouseInput));
     };
     const dispatchTerminalMouse = (action, point) => {
       if (offlineScrollback || !terminalMouseCaptured() || !terminal.element) return false;
@@ -1103,12 +1117,30 @@
       return true;
     };
     const dispatchTerminalClick = point => {
+      if (forcedMouseInput) {
+        const cell = terminalMouseCell(point);
+        if (!cell) return false;
+        send({
+          type: 'input',
+          data: terminalMouseClickInput(cell.col, cell.row),
+        });
+        return true;
+      }
       if (!dispatchTerminalMouse('down', point)) return false;
       dispatchTerminalMouse('up', point);
       if (!keyboardEnabled) terminal.blur();
       return true;
     };
     const dispatchTerminalWheel = (direction, count, point) => {
+      if (forcedMouseInput) {
+        const cell = terminalMouseCell(point);
+        if (!cell) return false;
+        send({
+          type: 'input',
+          data: terminalMouseWheelInput(direction, count, cell.col, cell.row),
+        });
+        return true;
+      }
       if (!terminal.element) return false;
       if (terminal.buffer.active.type !== 'alternate' && terminal.modes.mouseTrackingMode === 'none') return false;
       const bounds = terminal.element.getBoundingClientRect();
@@ -1761,7 +1793,7 @@
       touch.lastY = point.clientY;
       if (
         terminal.buffer.active.type === 'alternate'
-        || terminal.modes.mouseTrackingMode !== 'none'
+        || terminalMouseInputEnabled()
       ) {
         const total = touch.carry + deltaPx / terminalCellHeight();
         const lines = Math.trunc(total);
@@ -1808,7 +1840,7 @@
         handleKeyboardClosedStationaryTap({
           point,
           urlAtPoint,
-          terminalMouseCaptured,
+          terminalMouseInputEnabled,
           dispatchTerminalClick,
           send,
           clearInteractiveSelection,

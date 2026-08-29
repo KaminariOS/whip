@@ -11,9 +11,11 @@ import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const { createTerminalOfflineCache } = terminalOfflineCache;
 const {
-  forcedTerminalMouseInputSequence,
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
+  terminalMouseClickInput,
+  terminalMouseInputSequence,
+  terminalMouseWheelInput,
 } = terminalTouchBehavior;
 // This pure model is the authoritative implementation. The same functions are
 // imported by TypeScript callers/tests and stringified into both WebView assets.
@@ -247,8 +249,10 @@ const terminalSessionHtml = `<!doctype html>
     ${installAndroidImeBridge.toString()}
     ${createTerminalOfflineCache.toString()}
     ${handleKeyboardClosedStationaryTap.toString()}
-    ${forcedTerminalMouseInputSequence.toString()}
     ${setTerminalKeyboardInputEnabled.toString()}
+    ${terminalMouseInputSequence.toString()}
+    ${terminalMouseClickInput.toString()}
+    ${terminalMouseWheelInput.toString()}
     ${terminalBoundaryFiniteNumber.toString()}
     ${terminalBoundaryClamp.toString()}
     ${terminalBoundaryVisualOffset.toString()}
@@ -606,7 +610,6 @@ const terminalSessionHtml = `<!doctype html>
       }
       prepareLiveWrite();
       terminal.write(data, () => {
-        restoreForcedTerminalMouseInput();
         offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
         reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
@@ -624,7 +627,6 @@ const terminalSessionHtml = `<!doctype html>
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       terminal.write(bytes, () => {
-        restoreForcedTerminalMouseInput();
         offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
         reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
@@ -664,7 +666,6 @@ const terminalSessionHtml = `<!doctype html>
       lastReportedOfflineScroll = '';
       clearOsc8Links();
       terminal.reset();
-      restoreForcedTerminalMouseInput();
       clearInteractiveSelection(false);
     };
     window.herdrBeginOfflineTranscript = () => {
@@ -683,7 +684,6 @@ const terminalSessionHtml = `<!doctype html>
       clearOsc8Links();
       clearInteractiveSelection(false);
       terminal.write('\u001bc' + transcript, () => {
-        restoreForcedTerminalMouseInput();
         const offset = Math.max(0, Math.round(Number(offsetFromBottom) || 0));
         terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - offset));
         reportOfflineScroll();
@@ -696,7 +696,7 @@ const terminalSessionHtml = `<!doctype html>
       lastReportedOfflineScroll = '';
       clearOsc8Links();
       clearInteractiveSelection(false);
-      terminal.write('\u001bc', restoreForcedTerminalMouseInput);
+      terminal.write('\u001bc');
     };
     window.herdrOfflineInput = data => handleOfflineInput(data);
     window.herdrConfigure = options => {
@@ -732,14 +732,21 @@ const terminalSessionHtml = `<!doctype html>
       send({ type: 'font-size-change', fontSize });
     };
     const terminalMouseCaptured = () => terminal.modes.mouseTrackingMode !== 'none';
-    const restoreForcedTerminalMouseInput = () => {
-      if (forcedMouseInput && !terminalMouseCaptured()) {
-        terminal.write(forcedTerminalMouseInputSequence(true));
-      }
+    const terminalMouseInputEnabled = () => forcedMouseInput || terminalMouseCaptured();
+    const terminalMouseCell = point => {
+      const screen = terminal.element?.querySelector('.xterm-screen');
+      if (!screen) return null;
+      const bounds = screen.getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0) return null;
+      const clientX = Number.isFinite(point?.clientX) ? point.clientX : bounds.left + bounds.width / 2;
+      const clientY = Number.isFinite(point?.clientY) ? point.clientY : bounds.top + bounds.height / 2;
+      return {
+        col: Math.max(0, Math.min(terminal.cols - 1, Math.floor((clientX - bounds.left) / bounds.width * terminal.cols))),
+        row: Math.max(0, Math.min(terminal.rows - 1, Math.floor((clientY - bounds.top) / bounds.height * terminal.rows))),
+      };
     };
     window.herdrSetForcedMouseInput = enabled => {
       forcedMouseInput = enabled === true;
-      terminal.write(forcedTerminalMouseInputSequence(forcedMouseInput));
     };
     const dispatchTerminalMouse = (action, point) => {
       if (offlineScrollback || !terminalMouseCaptured() || !terminal.element) return false;
@@ -755,12 +762,30 @@ const terminalSessionHtml = `<!doctype html>
       return true;
     };
     const dispatchTerminalClick = point => {
+      if (forcedMouseInput) {
+        const cell = terminalMouseCell(point);
+        if (!cell) return false;
+        send({
+          type: 'input',
+          data: terminalMouseClickInput(cell.col, cell.row),
+        });
+        return true;
+      }
       if (!dispatchTerminalMouse('down', point)) return false;
       dispatchTerminalMouse('up', point);
       if (!keyboardEnabled) terminal.blur();
       return true;
     };
     const dispatchTerminalWheel = (direction, count, point) => {
+      if (forcedMouseInput) {
+        const cell = terminalMouseCell(point);
+        if (!cell) return false;
+        send({
+          type: 'input',
+          data: terminalMouseWheelInput(direction, count, cell.col, cell.row),
+        });
+        return true;
+      }
       if (!terminal.element) return false;
       if (terminal.buffer.active.type !== 'alternate' && terminal.modes.mouseTrackingMode === 'none') return false;
       const bounds = terminal.element.getBoundingClientRect();
@@ -1252,7 +1277,7 @@ const terminalSessionHtml = `<!doctype html>
       touch.lastY = point.clientY;
       if (
         terminal.buffer.active.type === 'alternate'
-        || terminal.modes.mouseTrackingMode !== 'none'
+        || terminalMouseInputEnabled()
       ) {
         const total = touch.carry + deltaPx / terminalCellHeight();
         const lines = Math.trunc(total);
@@ -1299,7 +1324,7 @@ const terminalSessionHtml = `<!doctype html>
         handleKeyboardClosedStationaryTap({
           point,
           urlAtPoint,
-          terminalMouseCaptured,
+          terminalMouseInputEnabled,
           dispatchTerminalClick,
           send,
           clearInteractiveSelection,

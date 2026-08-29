@@ -1,7 +1,7 @@
 function handleKeyboardClosedStationaryTap({
   point,
   urlAtPoint,
-  terminalMouseCaptured,
+  terminalMouseInputEnabled,
   dispatchTerminalClick,
   send,
   clearInteractiveSelection,
@@ -11,17 +11,30 @@ function handleKeyboardClosedStationaryTap({
     send({ type: 'open-link', link });
     return;
   }
-  if (terminalMouseCaptured()) {
+  if (terminalMouseInputEnabled()) {
     dispatchTerminalClick(point);
     return;
   }
   clearInteractiveSelection(true);
 }
 
-function forcedTerminalMouseInputSequence(enabled) {
-  return enabled
-    ? '\u001b[?1000h\u001b[?1006h'
-    : '\u001b[?1000l\u001b[?1006l';
+function terminalMouseInputSequence(action, column, row) {
+  const button = action === 'wheel-up' ? 64 : action === 'wheel-down' ? 65 : 0;
+  const suffix = action === 'release' ? 'm' : 'M';
+  const sgrColumn = Math.max(0, Math.min(0xffff, Math.round(Number(column) || 0))) + 1;
+  const sgrRow = Math.max(0, Math.min(0xffff, Math.round(Number(row) || 0))) + 1;
+  return `\u001b[<${button};${sgrColumn};${sgrRow}${suffix}`;
+}
+
+function terminalMouseClickInput(column, row) {
+  return terminalMouseInputSequence('press', column, row)
+    + terminalMouseInputSequence('release', column, row);
+}
+
+function terminalMouseWheelInput(direction, count, column, row) {
+  const action = direction === 'up' ? 'wheel-up' : 'wheel-down';
+  const repeats = Math.max(1, Math.round(Number(count) || 1));
+  return terminalMouseInputSequence(action, column, row).repeat(repeats);
 }
 
 function setTerminalKeyboardInputEnabled(terminal, enabled) {
@@ -36,7 +49,9 @@ function setTerminalKeyboardInputEnabled(terminal, enabled) {
 }
 
 module.exports = {
-  forcedTerminalMouseInputSequence,
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
+  terminalMouseClickInput,
+  terminalMouseInputSequence,
+  terminalMouseWheelInput,
 };

@@ -3,13 +3,17 @@ import { resolve } from 'node:path';
 import { Script } from 'node:vm';
 
 const {
-  forcedTerminalMouseInputSequence,
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
+  terminalMouseClickInput,
+  terminalMouseInputSequence,
+  terminalMouseWheelInput,
 } = require('../scripts/terminal-touch-behavior.cjs') as {
-  forcedTerminalMouseInputSequence: (...args: unknown[]) => string;
   handleKeyboardClosedStationaryTap: (...args: unknown[]) => void;
   setTerminalKeyboardInputEnabled: (...args: unknown[]) => boolean;
+  terminalMouseClickInput: (...args: unknown[]) => string;
+  terminalMouseInputSequence: (...args: unknown[]) => string;
+  terminalMouseWheelInput: (...args: unknown[]) => string;
 };
 
 const ANDROID_ASSET = 'android/app/src/main/assets/herdr-terminal.html';
@@ -51,9 +55,12 @@ describe('generated terminal artifacts', () => {
     ['iOS', ios],
   ])('%s artifact embeds the generated stationary tap behavior', (_platform, html) => {
     expect(html).toContain(handleKeyboardClosedStationaryTap.toString());
-    expect(html).toContain(forcedTerminalMouseInputSequence.toString());
     expect(html).toContain(setTerminalKeyboardInputEnabled.toString());
+    expect(html).toContain(terminalMouseClickInput.toString());
+    expect(html).toContain(terminalMouseInputSequence.toString());
+    expect(html).toContain(terminalMouseWheelInput.toString());
     expect(html).toContain('herdrSetForcedMouseInput');
+    expect(html).toContain('const terminalMouseCell = point =>');
   });
 
   test('obsolete out-of-band terminal click protocol is absent', () => {
