@@ -80,6 +80,7 @@ function assistantText(service: CodexTranscriptService, key: string): string | u
 describe('Codex native transcript facade', () => {
   beforeEach(() => {
     jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -119,6 +120,50 @@ describe('Codex native transcript facade', () => {
     expect(assistantText(service, key)).toBe('new');
   });
 
+  test('rebases revisions when a replacement native runtime starts from zero', async () => {
+    const unavailable = state(381, 'old native lifecycle');
+    unavailable.status = 'unavailable';
+    unavailable.error = 'old lookup failure';
+    const oldRemote = fakeTransport(unavailable);
+    const service = new CodexTranscriptService(new MemoryAgentChatCache());
+    const key = service.activate(
+      'host-runtime',
+      'terminal-1',
+      sessionId,
+      oldRemote.value,
+    );
+    await flush();
+
+    const loading = state(0, 'replacement native lifecycle');
+    loading.status = 'loading';
+    loading.error = undefined;
+    loading.messages = [];
+    loading.turns = [];
+    const replacement = fakeTransport(loading);
+    service.activate(
+      'host-runtime',
+      'terminal-1',
+      sessionId,
+      replacement.value,
+    );
+    await flush();
+    replacement.update({
+      revision: 1,
+      deltas: [{ type: 'status-changed', status: 'live' }],
+    });
+
+    expect(replacement.value.startAgentSession).toHaveBeenCalledWith(
+      'terminal-1',
+      nativeKey,
+      undefined,
+    );
+    expect(service.getState(key)).toEqual(expect.objectContaining({
+      revision: 1,
+      status: 'live',
+      error: undefined,
+    }));
+  });
+
   test('resyncs from a full snapshot after a revision gap', async () => {
     const remote = fakeTransport();
     const service = new CodexTranscriptService(new MemoryAgentChatCache());
@@ -132,31 +177,27 @@ describe('Codex native transcript facade', () => {
   });
 
   test('logs unavailable lifecycle details without transcript payloads', async () => {
-    const warning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    try {
-      const remote = fakeTransport();
-      const service = new CodexTranscriptService(new MemoryAgentChatCache());
-      service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
-      await flush();
-      remote.update({
-        revision: 2,
-        deltas: [{
-          type: 'status-changed',
-          status: 'unavailable',
-          error: 'Lookup diagnostic: home=/home/me sessions=present',
-        }],
-      });
+    const warning = jest.mocked(console.warn);
+    const remote = fakeTransport();
+    const service = new CodexTranscriptService(new MemoryAgentChatCache());
+    service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
+    await flush();
+    remote.update({
+      revision: 2,
+      deltas: [{
+        type: 'status-changed',
+        status: 'unavailable',
+        error: 'Lookup diagnostic: home=/home/me sessions=present',
+      }],
+    });
 
-      expect(warning).toHaveBeenCalledWith(
-        '[WHIP_CODEX_TRANSCRIPT]',
-        expect.stringContaining('"event":"unavailable"'),
-      );
-      const logged = warning.mock.calls.map(call => call.join(' ')).join('\n');
-      expect(logged).toContain('home=/home/me sessions=present');
-      expect(logged).not.toContain('hello');
-    } finally {
-      warning.mockRestore();
-    }
+    expect(warning).toHaveBeenCalledWith(
+      '[WHIP_CODEX_TRANSCRIPT]',
+      expect.stringContaining('"event":"unavailable"'),
+    );
+    const logged = warning.mock.calls.map(call => call.join(' ')).join('\n');
+    expect(logged).toContain('home=/home/me sessions=present');
+    expect(logged).not.toContain('hello');
   });
 
   test('keeps untouched message identities for one-message deltas', async () => {

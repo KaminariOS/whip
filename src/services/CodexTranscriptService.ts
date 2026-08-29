@@ -78,10 +78,30 @@ export class NativeTranscriptService {
       boundEntry = entry;
       this.restoreAndStart(entry, terminalId);
     } else {
+      const previousRevision = entry.state.revision ?? -1;
+      const nativeLifecycleReset = result.state.revision < previousRevision;
       entry.transport = transport;
+      entry.hostSessionId = hostSessionId;
       entry.sessionId = sessionId;
       boundEntry = entry;
-      this.startNative(entry, terminalId, undefined);
+      if (nativeLifecycleReset) {
+        entry.lastFailureLog = undefined;
+        this.log('revision-rebased', {
+          terminalId,
+          sessionId,
+          previousRevision,
+          boundRevision: result.state.revision,
+          boundStatus: result.state.status,
+        }, true);
+        this.publish(entry, agentChatStateFromNative(result.state));
+      } else {
+        this.acceptState(entry, result.state);
+      }
+      if (nativeLifecycleReset && result.state.status === 'loading') {
+        this.restoreAndStart(entry, terminalId);
+      } else {
+        this.startNative(entry, terminalId, undefined);
+      }
     }
     return key;
   }
