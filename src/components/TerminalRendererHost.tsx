@@ -347,10 +347,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.controllerAttachment = null;
       entry.controllerAttached = false;
       entry.connecting = false;
-      bestEffortCleanup(
-        entry.target.client.terminal.closeTerminalBridge(terminalId),
-        'terminal-bridge-close',
-      );
+      entry.target.client.terminal.closeTerminalBridge(terminalId);
     } else {
       relinquishController(entry, false);
     }
@@ -951,10 +948,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const entry = entries.current.get(key);
       if (entry) disposeEntry(key, entry, true);
       else {
-        bestEffortCleanup(
-          target.client.terminal.closeTerminalBridge(target.session.terminalId),
-          'terminal-bridge-close',
-        );
+        target.client.terminal.closeTerminalBridge(target.session.terminalId);
       }
     }
     knownTargets.current = valid;

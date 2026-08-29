@@ -113,7 +113,7 @@ describe('terminal bridge channels', () => {
     await client.connect(profile);
 
     const attachmentId = await client.terminal.openTerminal('term-1', jest.fn());
-    await client.terminal.releaseTerminal('term-1', attachmentId);
+    client.terminal.releaseTerminal('term-1', attachmentId);
 
     expect(client.terminal.isTerminalBridgeRetained('term-1')).toBe(false);
     expect(native.closeHerdrBridge).toHaveBeenCalledWith('term-1');
@@ -126,7 +126,7 @@ describe('terminal bridge channels', () => {
     await client.connect(profile);
 
     const attachmentId = await client.terminal.openTerminal('term-1', jest.fn());
-    await client.terminal.detachTerminal('term-1', attachmentId);
+    client.terminal.detachTerminal('term-1', attachmentId);
 
     expect(client.terminal.isTerminalBridgeRetained('term-1')).toBe(true);
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
@@ -155,7 +155,7 @@ describe('terminal bridge channels', () => {
 
     const firstAttachmentId = await client.terminal.openTerminal('term-1', firstOnFrame);
     await client.terminal.openTerminal('term-1', replacementOnFrame);
-    await client.terminal.detachTerminal('term-1', firstAttachmentId);
+    client.terminal.detachTerminal('term-1', firstAttachmentId);
 
     const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
     bridgeHandler({
@@ -179,12 +179,12 @@ describe('terminal bridge channels', () => {
 
     const firstAttachmentId = await client.terminal.openTerminal('term-1', jest.fn());
     const replacementAttachmentId = await client.terminal.openTerminal('term-1', jest.fn());
-    await client.terminal.releaseTerminal('term-1', firstAttachmentId);
+    client.terminal.releaseTerminal('term-1', firstAttachmentId);
 
     expect(client.terminal.isTerminalBridgeRetained('term-1')).toBe(true);
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
 
-    await client.terminal.releaseTerminal('term-1', replacementAttachmentId);
+    client.terminal.releaseTerminal('term-1', replacementAttachmentId);
     expect(client.terminal.isTerminalBridgeRetained('term-1')).toBe(false);
     expect(native.closeHerdrBridge).toHaveBeenCalledWith('term-1');
   });
@@ -395,7 +395,7 @@ describe('terminal bridge channels', () => {
     const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
     bridgeHandler({ type: 'mouse_capture', flag: true });
     bridgeHandler({ type: 'kitty_keyboard_report_all', flag: true });
-    await client.terminal.detachTerminal('term-1', attachmentId);
+    client.terminal.detachTerminal('term-1', attachmentId);
 
     const onControl = jest.fn();
     await client.terminal.openTerminal('term-1', jest.fn(), undefined, onControl);

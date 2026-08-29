@@ -83,7 +83,7 @@ describe('plain SSH shell fallback', () => {
 
     await client.connect(profile);
     await client.terminal.openTerminal(SSH_SHELL_TERMINAL_ID, jest.fn());
-    await client.terminal.closeTerminalBridge(SSH_SHELL_TERMINAL_ID);
+    client.terminal.closeTerminalBridge(SSH_SHELL_TERMINAL_ID);
 
     expect(control.client.closeShell).toHaveBeenCalledTimes(1);
     expect(control.client.disconnect).not.toHaveBeenCalled();

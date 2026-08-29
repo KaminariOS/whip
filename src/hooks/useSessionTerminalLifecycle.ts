@@ -21,7 +21,6 @@ import {
   terminalRendererKey,
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
-import { bestEffortCleanup } from '../services/backgroundOperations';
 import type { AgentInfo, HerdrSnapshot, PaneInfo } from '../types';
 
 export function useSessionTerminalLifecycle({
@@ -114,10 +113,9 @@ export function useSessionTerminalLifecycle({
 
   const closeTerminal = useCallback(
     (sessionId: string, terminalId: string) => {
-      const closeBridge = runtimesRef.current
+      runtimesRef.current
         .get(sessionId)
         ?.client.terminal.closeTerminalBridge(terminalId);
-      if (closeBridge) bestEffortCleanup(closeBridge, 'terminal-bridge-close');
       terminals.close(sessionId, terminalId);
     },
     [runtimesRef, terminals],

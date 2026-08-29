@@ -131,10 +131,9 @@ describe('TerminalRendererHost lifecycle', () => {
     let retained = false;
     let nextAttachmentId = 0;
     let frameHandler: ((frame: TerminalFrame) => void) | null = null;
-    const closeTerminalBridge = jest.fn(async () => undefined);
+    const closeTerminalBridge = jest.fn();
     const detachTerminal = jest.fn(
-      async (_terminalId: string, _attachmentId: unknown): Promise<void> =>
-        undefined,
+      (_terminalId: string, _attachmentId: unknown): void => undefined,
     );
     const isTerminalBridgeRetained = jest.fn(() => retained);
     const openTerminal = jest.fn(
@@ -148,7 +147,7 @@ describe('TerminalRendererHost lifecycle', () => {
       },
     );
     const releaseTerminal = jest.fn(
-      async (_terminalId: string, _attachmentId: unknown): Promise<void> => {
+      (_terminalId: string, _attachmentId: unknown): void => {
         retained = false;
       },
     );
@@ -281,8 +280,8 @@ describe('TerminalRendererHost lifecycle', () => {
   };
 
   test('closes the native bridge when a terminal target is removed', () => {
-    const closeTerminalBridge = jest.fn(async () => undefined);
-    const detachTerminal = jest.fn(async () => undefined);
+    const closeTerminalBridge = jest.fn();
+    const detachTerminal = jest.fn();
     const isTerminalBridgeRetained = jest.fn(() => false);
     const client = {
       terminal: {
@@ -356,8 +355,8 @@ describe('TerminalRendererHost lifecycle', () => {
 
   test('updates visual insets without fitting or resizing the terminal', async () => {
     const injected: string[] = [];
-    const closeTerminalBridge = jest.fn(async () => undefined);
-    const detachTerminal = jest.fn(async () => undefined);
+    const closeTerminalBridge = jest.fn();
+    const detachTerminal = jest.fn();
     const isTerminalBridgeRetained = jest.fn(() => false);
     const client = {
       terminal: {
@@ -676,7 +675,7 @@ describe('TerminalRendererHost lifecycle', () => {
       return owner as { testAttachmentId: number };
     });
     client.detachTerminal.mockImplementation(
-      async (_terminalId, attachmentId) => {
+      (_terminalId, attachmentId) => {
         if (owner === attachmentId) owner = null;
       },
     );

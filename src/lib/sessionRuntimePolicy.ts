@@ -34,7 +34,7 @@ export interface ReleasableRuntime {
   client: {
     disconnect: () => Promise<void>;
     terminal: {
-      releaseAllTerminals: () => Promise<unknown>;
+      releaseAllTerminals: () => void;
     };
   };
 }
@@ -50,7 +50,7 @@ export function destroyRuntime(
   const destruction = settledPromise(previous)
     .then(async () => {
       try {
-        await runtime.client.terminal.releaseAllTerminals();
+        runtime.client.terminal.releaseAllTerminals();
       } finally {
         await runtime.client.disconnect();
       }

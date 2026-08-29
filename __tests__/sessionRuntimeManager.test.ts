@@ -32,7 +32,7 @@ describe('session runtime lifecycle policy', () => {
 
   test('cleans up every runtime and clears the registry', async () => {
     const disconnect = jest.fn(() => Promise.resolve());
-    const releaseAllTerminals = jest.fn(() => Promise.resolve());
+    const releaseAllTerminals = jest.fn();
     const runtimes = new Map([
       ['one', { client: { terminal: { releaseAllTerminals }, disconnect } }],
       ['two', { client: { terminal: { releaseAllTerminals }, disconnect } }],
@@ -59,7 +59,7 @@ describe('session runtime lifecycle policy', () => {
     });
     const runtime = {
       client: {
-        terminal: { releaseAllTerminals: jest.fn(() => Promise.resolve()) },
+        terminal: { releaseAllTerminals: jest.fn() },
         disconnect,
       },
     };
@@ -89,7 +89,7 @@ describe('session runtime lifecycle policy', () => {
     });
     const first = {
       client: {
-        terminal: { releaseAllTerminals: jest.fn(() => Promise.resolve()) },
+        terminal: { releaseAllTerminals: jest.fn() },
         disconnect: jest.fn(() => {
           markFirstDisconnectStarted();
           return new Promise<void>(resolve => {
@@ -100,7 +100,7 @@ describe('session runtime lifecycle policy', () => {
     };
     const second = {
       client: {
-        terminal: { releaseAllTerminals: jest.fn(() => Promise.resolve()) },
+        terminal: { releaseAllTerminals: jest.fn() },
         disconnect: jest.fn(() => Promise.resolve()),
       },
     };

@@ -265,9 +265,9 @@ export class TerminalBridgeController {
   releaseTerminal(
     terminalId: string,
     attachmentId: TerminalAttachmentId,
-  ): Promise<void> {
+  ): void {
     const attachment = this.attachments.get(terminalId);
-    if (attachment?.attachmentId !== attachmentId) return Promise.resolve();
+    if (attachment?.attachmentId !== attachmentId) return;
 
     this.attachments.delete(terminalId);
     this.clearBridgeState(terminalId);
@@ -276,30 +276,27 @@ export class TerminalBridgeController {
     } else {
       this.currentRuntime()?.closeHerdrBridge(terminalId);
     }
-    return Promise.resolve();
   }
 
   detachTerminal(
     terminalId: string,
     attachmentId: TerminalAttachmentId,
-  ): Promise<void> {
+  ): void {
     const attachment = this.attachments.get(terminalId);
-    if (attachment?.attachmentId !== attachmentId) return Promise.resolve();
+    if (attachment?.attachmentId !== attachmentId) return;
     this.attachments.delete(terminalId);
     if (isSshShellTerminalId(terminalId)) {
       this.currentRuntime()?.closeSshShell(terminalId);
     } else {
       this.currentRuntime()?.detachHerdrBridge(terminalId);
     }
-    return Promise.resolve();
   }
 
-  closeTerminalBridge(terminalId: string): Promise<void> {
+  closeTerminalBridge(terminalId: string): void {
     this.closeTerminal(terminalId);
-    return Promise.resolve();
   }
 
-  releaseAllTerminals(): Promise<void> {
+  releaseAllTerminals(): void {
     const runtime = this.currentRuntime();
     if (runtime) {
       for (const terminalId of this.attachments.keys()) {
@@ -309,7 +306,6 @@ export class TerminalBridgeController {
     }
     this.cancelStateRefresh();
     this.clearAllState();
-    return Promise.resolve();
   }
 
   /** Clears JS-owned state before its native runtime is disconnected. */
