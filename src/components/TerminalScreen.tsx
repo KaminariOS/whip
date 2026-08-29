@@ -79,6 +79,7 @@ import {
   claimTerminalMouseWarning,
   orderTerminalControls,
   swapTerminalArrowControls,
+  terminalArrowControlCanSwap,
   terminalControlIsVisible,
   TERMINAL_CONTROL_HIT_SLOP,
   TERMINAL_ICON_CONTROL_CLASS,
@@ -1532,7 +1533,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             }
             symbolic={!icon && (useIconicKey || key[2] === 'symbol')}
             onLongPress={
-              control === 'right' || control === 'up'
+              terminalArrowControlCanSwap(control)
                 ? () => swapArrowControls(control)
                 : undefined
             }

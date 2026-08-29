@@ -43,8 +43,10 @@ const terminalControlIds = new Set<string>(defaultTerminalControlOrder);
 const terminalControlSwapTargets: Partial<
   Record<TerminalControlId, TerminalControlId>
 > = {
+  left: 'right',
   right: 'left',
   up: 'down',
+  down: 'up',
 };
 const MAX_USAGE_COUNT = 1_000_000;
 let terminalMouseWarningShown = false;
@@ -73,6 +75,12 @@ export function swapTerminalArrowControls(
   swapped[controlIndex] = target;
   swapped[targetIndex] = control;
   return swapped;
+}
+
+export function terminalArrowControlCanSwap(
+  control: TerminalControlId,
+): boolean {
+  return Boolean(terminalControlSwapTargets[control]);
 }
 
 export function terminalControlIsVisible(
