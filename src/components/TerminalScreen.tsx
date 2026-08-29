@@ -79,6 +79,7 @@ import { retryDelay } from '../lib/retryDelay';
 import {
   claimTerminalMouseWarning,
   orderTerminalControls,
+  swapTerminalArrowControls,
   terminalControlIsVisible,
   TERMINAL_CONTROL_HIT_SLOP,
   TERMINAL_ICON_CONTROL_CLASS,
@@ -227,6 +228,7 @@ const TERMINAL_FOCUS_DEFER_MS = 40;
 const COMPOSER_FOCUS_DEFER_MS = 40;
 const IOS_COMPOSER_FOCUS_DEFER_MS = 100;
 const COMPOSER_COLLAPSE_FOCUS_DEFER_MS = 80;
+const TERMINAL_CONTROL_LONG_PRESS_MS = 450;
 
 const TERMINAL_KEYS: Partial<Record<TerminalControlId, TerminalKeyDefinition>> =
   {
@@ -523,7 +525,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       targetKey: string;
       scroll: TerminalRenderTarget['scroll'];
     } | null>(null);
-    const [controlOrder] = useState(() => orderTerminalControls(controlUsage));
+    const [controlOrder, setControlOrder] = useState(() =>
+      orderTerminalControls(controlUsage),
+    );
     const scrollThumb = alternateScreen
       ? null
       : terminalScrollThumb(scrollPosition);
@@ -1501,6 +1505,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       if (terminalId) onComposerDraftChange(terminalId, value);
     };
 
+    const swapArrowControls = (control: TerminalControlId) => {
+      setControlOrder(order => swapTerminalArrowControls(order, control));
+    };
+
     const renderTerminalControl = (control: TerminalControlId) => {
       const key = TERMINAL_KEYS[control];
       if (key) {
@@ -1523,6 +1531,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 : undefined
             }
             symbolic={!icon && (useIconicKey || key[2] === 'symbol')}
+            onLongPress={
+              control === 'right' || control === 'up'
+                ? () => swapArrowControls(control)
+                : undefined
+            }
             onPress={() => {
               onControlUse(control);
               reportBackgroundFailure(
@@ -1887,7 +1900,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             modifier.value === 'locked' &&
               'border-primary bg-primary/70 active:bg-primary/80',
           )}
-          delayLongPress={450}
+          delayLongPress={TERMINAL_CONTROL_LONG_PRESS_MS}
           variant="secondary"
           onLongPress={() => modifier.setValue('locked')}
           onPress={() => {
@@ -2701,12 +2714,14 @@ function TerminalKey({
   icon,
   accessibilityLabel,
   symbolic = false,
+  onLongPress,
   onPress,
 }: {
   label: string;
   icon?: LucideIcon;
   accessibilityLabel?: string;
   symbolic?: boolean;
+  onLongPress?: () => void;
   onPress: () => void;
 }) {
   return (
@@ -2717,7 +2732,9 @@ function TerminalKey({
           ? TERMINAL_ICON_CONTROL_CLASS
           : TERMINAL_TEXT_CONTROL_CLASS
       }
+      delayLongPress={TERMINAL_CONTROL_LONG_PRESS_MS}
       variant="secondary"
+      onLongPress={onLongPress}
       onPress={onPress}
     >
       {icon ? (

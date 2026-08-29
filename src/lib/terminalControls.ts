@@ -40,6 +40,12 @@ export const TERMINAL_TEXT_CONTROL_CLASS =
   `h-9 min-h-0 min-w-11 items-center justify-center rounded-sm border border-border px-2.5 py-0 ${APP_GLASS_FLOATING_CONTROL_CLASS}`;
 
 const terminalControlIds = new Set<string>(defaultTerminalControlOrder);
+const terminalControlSwapTargets: Partial<
+  Record<TerminalControlId, TerminalControlId>
+> = {
+  right: 'left',
+  up: 'down',
+};
 const MAX_USAGE_COUNT = 1_000_000;
 let terminalMouseWarningShown = false;
 
@@ -52,6 +58,21 @@ export function orderTerminalControls(usage: TerminalControlUsage): TerminalCont
   ordered.splice(mouseIndex, 1);
   ordered.splice(ordered.indexOf('keyboard') + 1, 0, 'mouse');
   return ordered;
+}
+
+export function swapTerminalArrowControls(
+  order: TerminalControlId[],
+  control: TerminalControlId,
+): TerminalControlId[] {
+  const target = terminalControlSwapTargets[control];
+  if (!target) return order;
+  const controlIndex = order.indexOf(control);
+  const targetIndex = order.indexOf(target);
+  if (controlIndex < 0 || targetIndex < 0) return order;
+  const swapped = [...order];
+  swapped[controlIndex] = target;
+  swapped[targetIndex] = control;
+  return swapped;
 }
 
 export function terminalControlIsVisible(

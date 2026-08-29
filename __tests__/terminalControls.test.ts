@@ -4,6 +4,7 @@ import {
   incrementTerminalControlUsage,
   orderTerminalControls,
   parseTerminalControlUsage,
+  swapTerminalArrowControls,
   terminalControlIsVisible,
   TERMINAL_CONTROL_HIT_SLOP,
   TERMINAL_ICON_CONTROL_CLASS,
@@ -52,6 +53,25 @@ test('pins mouse immediately after keyboard regardless of usage', () => {
   const order = orderTerminalControls({ mouse: 100, paste: 50, keyboard: 1 });
 
   expect(order.indexOf('mouse')).toBe(order.indexOf('keyboard') + 1);
+});
+
+test('swaps arrow control positions from the right and up long-press controls', () => {
+  const order = orderTerminalControls({ left: 4, down: 3, right: 2, up: 1 });
+
+  const horizontal = swapTerminalArrowControls(order, 'right');
+  expect(horizontal.indexOf('right')).toBe(order.indexOf('left'));
+  expect(horizontal.indexOf('left')).toBe(order.indexOf('right'));
+
+  const vertical = swapTerminalArrowControls(horizontal, 'up');
+  expect(vertical.indexOf('up')).toBe(horizontal.indexOf('down'));
+  expect(vertical.indexOf('down')).toBe(horizontal.indexOf('up'));
+});
+
+test('does not swap arrow controls from other buttons', () => {
+  const order = orderTerminalControls({});
+
+  expect(swapTerminalArrowControls(order, 'left')).toBe(order);
+  expect(swapTerminalArrowControls(order, 'down')).toBe(order);
 });
 
 test('shows forced mouse input only in terminal view with the software keyboard disabled', () => {
