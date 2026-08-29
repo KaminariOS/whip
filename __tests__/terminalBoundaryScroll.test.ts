@@ -6,6 +6,7 @@ import {
 
 const CELL_HEIGHT = 20;
 const TOP_ALLOWANCE = 0;
+const TOP_PULL_ALLOWANCE = 55;
 const BOTTOM_ALLOWANCE = 139;
 
 function state(
@@ -74,6 +75,53 @@ test('zero top clearance does not retain invisible overscroll', () => {
     visualOffset: 0,
   });
   expect(scroll(atTop, -CELL_HEIGHT)).toMatchObject({
+    offsetFromBottom: 9,
+    rowScrollDelta: -1,
+  });
+});
+
+test('top pull allowance reveals the first terminal rows after reaching the beginning', () => {
+  expect(scroll(state(10, 10), 35, {
+    topAllowancePx: TOP_PULL_ALLOWANCE,
+  })).toMatchObject({
+    boundary: 'top',
+    boundaryRevealPx: 35,
+    rowScrollDelta: 0,
+    visualOffset: 35,
+  });
+});
+
+test('top reveal reverses pixel by pixel before terminal rows move', () => {
+  const options = { topAllowancePx: TOP_PULL_ALLOWANCE };
+  const beginning = scroll(state(8, 10), 2 * CELL_HEIGHT, options);
+  expect(beginning).toMatchObject({
+    offsetFromBottom: 10,
+    boundary: null,
+    rowScrollDelta: 2,
+    visualOffset: 0,
+  });
+
+  const full = scroll(beginning, TOP_PULL_ALLOWANCE, options);
+  expect(full).toMatchObject({
+    boundary: 'top',
+    boundaryRevealPx: TOP_PULL_ALLOWANCE,
+    rowScrollDelta: 0,
+    visualOffset: TOP_PULL_ALLOWANCE,
+  });
+  const partial = scroll(full, -20, options);
+  expect(partial).toMatchObject({
+    boundaryRevealPx: TOP_PULL_ALLOWANCE - 20,
+    rowScrollDelta: 0,
+    visualOffset: TOP_PULL_ALLOWANCE - 20,
+  });
+  const consumed = scroll(partial, -(TOP_PULL_ALLOWANCE - 20), options);
+  expect(consumed).toMatchObject({
+    boundary: null,
+    boundaryRevealPx: 0,
+    rowScrollDelta: 0,
+    visualOffset: 0,
+  });
+  expect(scroll(consumed, -CELL_HEIGHT, options)).toMatchObject({
     offsetFromBottom: 9,
     rowScrollDelta: -1,
   });

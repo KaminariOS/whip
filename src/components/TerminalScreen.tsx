@@ -66,6 +66,7 @@ import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import {
   contentInsetsWithSessionChrome,
   shouldShowTerminalSessionChrome,
+  terminalInsetsWithTopPull,
   terminalControlBarInset,
   terminalLatestButtonBottom,
   terminalViewportLayout,
@@ -570,16 +571,23 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       }),
       [sessionChromeInset, sessionChromeVisible, viewportLayout.overlayInsets],
     );
+    const terminalVisualInsets = useMemo(
+      () =>
+        terminalInsetsWithTopPull(terminalScrollingInsets, sessionChromeInset),
+      [sessionChromeInset, terminalScrollingInsets],
+    );
     const terminalVisualViewport = useMemo(
       () => ({
-        insets: terminalScrollingInsets,
+        // Keep the renderer pullable below the top edge at the beginning of
+        // scrollback without adding false occlusion to chat or the scrollbar.
+        insets: terminalVisualInsets,
         // Floating controls overlay a genuinely full-screen xterm. Their measured
         // height is only a visual boundary allowance and never fitted geometry.
         geometryBottomInset: 0,
         alternateScreen,
         scroll: scrollPosition,
       }),
-      [alternateScreen, scrollPosition, terminalScrollingInsets],
+      [alternateScreen, scrollPosition, terminalVisualInsets],
     );
     const terminalLatestButtonOffset = terminalLatestButtonBottom({
       sessionChromeInset,

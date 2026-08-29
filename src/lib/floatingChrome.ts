@@ -73,6 +73,16 @@ export function visualContentInsets(
   };
 }
 
+export function terminalInsetsWithTopPull(
+  insets: VisualContentInsets,
+  pullAllowance: number,
+): VisualContentInsets {
+  return {
+    ...insets,
+    top: Math.max(insets.top, Math.max(0, pullAllowance)),
+  };
+}
+
 export function insetContentPadding(
   insets: VisualContentInsets,
   spacing: VisualContentInsets,

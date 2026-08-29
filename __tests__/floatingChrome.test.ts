@@ -4,6 +4,7 @@ import {
   terminalBottomChromeClearance,
   terminalBottomChromeInset,
   terminalControlBarInset,
+  terminalInsetsWithTopPull,
   terminalLatestButtonBottom,
   terminalSessionChromeHeight,
   visualContentInsets,
@@ -92,6 +93,20 @@ describe('floating chrome geometry', () => {
     expect(insetContentPadding(insets, { top: 16, bottom: 24 })).toEqual({
       top: 16,
       bottom: 207,
+    });
+  });
+
+  test('keeps a top pull allowance without changing edge-to-edge content insets', () => {
+    const contentInsets = visualContentInsets(0, 183);
+
+    expect(terminalInsetsWithTopPull(contentInsets, 55)).toEqual({
+      top: 55,
+      bottom: 183,
+    });
+    expect(contentInsets).toEqual({ top: 0, bottom: 183 });
+    expect(terminalInsetsWithTopPull({ top: 92, bottom: 183 }, 55)).toEqual({
+      top: 92,
+      bottom: 183,
     });
   });
 });
