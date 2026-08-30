@@ -65,6 +65,21 @@ describe('useAppNavigation', () => {
     expect(onFirstTabMounted).toHaveBeenCalledTimes(1);
   });
 
+  test('keeps the terminal mounted after switching to another tab', () => {
+    act(() => {
+      renderer = create(<NavigationHarness onFirstTabMounted={jest.fn()} />);
+    });
+
+    act(() => navigation?.selectTab('terminal'));
+    expect(navigation?.mountedTabs.has('terminal')).toBe(true);
+
+    act(() => navigation?.selectTab('more'));
+
+    expect(navigation?.state.tab).toBe('more');
+    expect(navigation?.mountedTabs.has('terminal')).toBe(true);
+    expect(navigation?.mountedTabs.has('more')).toBe(true);
+  });
+
   test('owns Android back handling for terminal navigation', () => {
     act(() => {
       renderer = create(<NavigationHarness onFirstTabMounted={jest.fn()} />);
