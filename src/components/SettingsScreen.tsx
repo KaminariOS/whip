@@ -36,6 +36,10 @@ import {
   type LanguagePreference,
   type TerminalPreferences,
 } from '@/src/services/devicePreferences';
+import {
+  developerMembershipStates,
+  type DeveloperMembershipState,
+} from '@/src/billing/tiers';
 import { removeAppBackgroundImage, selectAppBackgroundImage } from '@/src/services/appBackground';
 import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
@@ -112,7 +116,7 @@ export interface SettingsSectionProps {
   customTerminalBackgroundUnlocked: boolean;
   glassUnlocked: boolean;
   developerOptionsEnabled: boolean;
-  rancherPaymentsEnabled: boolean;
+  developerMembershipState: DeveloperMembershipState;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -133,7 +137,7 @@ export interface SettingsSectionProps {
   onAppGlassEnabledChange: (value: boolean) => void;
   onOpenRancher: () => Promise<unknown>;
   onDeveloperOptionsEnabledChange: (value: boolean) => void;
-  onRancherPaymentsEnabledChange: (value: boolean) => void;
+  onDeveloperMembershipStateChange: (value: DeveloperMembershipState) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
   onReopenTerminalOnLaunchChange: (value: boolean) => void;
@@ -433,11 +437,9 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
         {props.developerOptionsEnabled ? (
           <>
-            <SettingRow
-              title={t('settings.rancherPayments')}
-              copy={t('settings.rancherPaymentsCopy')}
-              value={props.rancherPaymentsEnabled}
-              onChange={props.onRancherPaymentsEnabledChange}
+            <DeveloperMembershipRow
+              value={props.developerMembershipState}
+              onChange={props.onDeveloperMembershipStateChange}
               divided
             />
             <SettingRow
@@ -482,6 +484,51 @@ const appearanceOptions: { labelKey: string; value: AppearancePreference }[] = [
   { labelKey: 'settings.light', value: 'light' },
   { labelKey: 'settings.dark', value: 'dark' },
 ];
+
+const developerMembershipLabelKeys: Record<
+  DeveloperMembershipState,
+  string
+> = {
+  cowboy: 'membership.cowboy',
+  'free-trial': 'settings.membershipFreeTrial',
+  rancher: 'membership.rancher',
+};
+
+function DeveloperMembershipRow({
+  divided = false,
+  onChange,
+  value,
+}: {
+  divided?: boolean;
+  onChange: (value: DeveloperMembershipState) => void;
+  value: DeveloperMembershipState;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View className={divided ? 'border-t border-border p-3.5' : 'p-3.5'}>
+      <DetailsTitle
+        title={t('settings.membershipState')}
+        copy={t('settings.membershipStateCopy')}
+      />
+      <View className="mt-3 flex-row gap-2">
+        {developerMembershipStates.map(state => {
+          const selected = state === value;
+          return (
+            <Button
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              className="flex-1 rounded-full px-2"
+              key={state}
+              onPress={hapticPress(() => onChange(state))}
+              variant={selected ? 'default' : 'outline'}>
+              <Text className="text-xs">{t(developerMembershipLabelKeys[state])}</Text>
+            </Button>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 function AppearanceRow({ value, onChange }: { value: AppearancePreference; onChange: (value: AppearancePreference) => void }) {
   const { t } = useTranslation();

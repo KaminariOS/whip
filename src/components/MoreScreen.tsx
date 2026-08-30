@@ -1,4 +1,5 @@
-import { Alert, ScrollView } from 'react-native';
+import { useState } from 'react';
+import { ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AboutSection } from './AboutScreen';
@@ -15,6 +16,7 @@ import { hasCapability } from '../billing/capabilities';
 import type { WhipTier } from '../billing/tiers';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import { MembershipSection } from './MembershipSection';
+import { RancherPurchaseSheet } from './RancherPurchaseSheet';
 
 type Props = Omit<
   SettingsSectionProps,
@@ -25,18 +27,17 @@ type Props = Omit<
 > & {
   accessTier: WhipTier;
   entitlements: WhipEntitlementsController;
+  membershipSimulationEnabled: boolean;
   onOpenLicenses: () => void;
 };
 
 export function MoreScreen(props: Props) {
   const { t } = useTranslation();
-  const openRancher = async () => {
-    if (!props.rancherPaymentsEnabled) return;
-    try {
-      await props.entitlements.presentRancherPaywall();
-    } catch (error) {
-      Alert.alert(t('membership.errorTitle'), String(error));
-    }
+  const [purchaseScreenVisible, setPurchaseScreenVisible] = useState(false);
+  const openRancher = () => {
+    if (!props.membershipSimulationEnabled) return Promise.resolve();
+    setPurchaseScreenVisible(true);
+    return Promise.resolve();
   };
   return (
     <SettingsDetailsProvider>
@@ -46,8 +47,11 @@ export function MoreScreen(props: Props) {
             {t('nav.more')}
           </Text>
         </GlassSurface>
-        {props.rancherPaymentsEnabled ? (
-          <MembershipSection entitlements={props.entitlements} />
+        {props.membershipSimulationEnabled ? (
+          <MembershipSection
+            entitlements={props.entitlements}
+            onOpenPurchaseScreen={() => setPurchaseScreenVisible(true)}
+          />
         ) : null}
         <AboutSection onOpenLicenses={props.onOpenLicenses} />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
@@ -99,9 +103,9 @@ export function MoreScreen(props: Props) {
           onDeveloperOptionsEnabledChange={
             props.onDeveloperOptionsEnabledChange
           }
-          rancherPaymentsEnabled={props.rancherPaymentsEnabled}
-          onRancherPaymentsEnabledChange={
-            props.onRancherPaymentsEnabledChange
+          developerMembershipState={props.developerMembershipState}
+          onDeveloperMembershipStateChange={
+            props.onDeveloperMembershipStateChange
           }
           onLanguageChange={props.onLanguageChange}
           onKeepScreenOnChange={props.onKeepScreenOnChange}
@@ -112,6 +116,11 @@ export function MoreScreen(props: Props) {
         />
         {props.developerOptionsEnabled ? <AppLogsSection /> : null}
       </ScrollView>
+      <RancherPurchaseSheet
+        entitlements={props.entitlements}
+        onClose={() => setPurchaseScreenVisible(false)}
+        visible={purchaseScreenVisible}
+      />
     </SettingsDetailsProvider>
   );
 }

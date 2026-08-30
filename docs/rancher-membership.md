@@ -9,8 +9,9 @@ ownership.
 
 ## Product contract
 
-- Production lifetime price: USD 29.99. The app displays the localized store
-  price returned by RevenueCat rather than hardcoding this amount in UI.
+- Production lifetime price: USD 29.99. The purchase comparison displays the
+  localized store price returned by RevenueCat when available and uses the
+  confirmed USD price as a fallback while the catalog is unavailable.
 - Entitlement: `whip_rancher`
 - Offering: `default`, selected as the current offering
 - Package: `$rc_lifetime`
@@ -73,13 +74,13 @@ price of 29.99 before final purchase testing.
 Add the Google Play app to the same RevenueCat project, import the Google Play
 `lifetime` product, mark it non-consumable in RevenueCat, attach it to
 `whip_rancher`, and select it as the Google Play product for `$rc_lifetime` in
-the current `default` offering. Publish a RevenueCat Paywall for that offering
-and verify that a completed purchase reports an active `whip_rancher`
-entitlement.
+the current `default` offering. Verify that a completed purchase reports an
+active `whip_rancher` entitlement.
 
-Whip presents the RevenueCat Paywall for purchase and keeps Restore Purchases
-available on native store builds. Customer Center is not presented because
-there is no subscription to manage.
+Whip presents its own Cowboy-versus-Rancher comparison screen, then purchases
+the configured lifetime package through the RevenueCat SDK. Restore Purchases
+remains available on native store builds. A RevenueCat-hosted Paywall and
+Customer Center are not required because there is no subscription to manage.
 
 ## Google Play Console
 
@@ -115,14 +116,15 @@ Existing consumable tip products and feedback flows remain unchanged.
 
 ## Development rollout gate
 
-Rancher payments are currently a developer preview. Developer Options contains
-a separate **Rancher payments** toggle that defaults to off. While it is off,
-Whip does not initialize the Rancher RevenueCat controller, hides Membership and
-paywall UI, and grants all cosmetic capabilities locally. This lets every user
-retain full access during development.
+Rancher payments are currently a developer preview. Enabling Developer Options
+reveals a local **Membership state** selector with Cowboy, Free trial, and
+Rancher choices. The selected state controls the membership presentation and
+cosmetic capability gates without creating or persisting a RevenueCat
+entitlement. Cowboy and Free trial still expose the purchase comparison so its
+live store availability and purchase action can be exercised.
 
-Enabling both Developer Options and Rancher payments activates RevenueCat
-entitlement gating and purchase UI for testing. Turning Developer Options off
-also resets Rancher payments to off. This local rollout preference does not
-persist or fabricate a RevenueCat entitlement; when the gate is enabled,
-RevenueCat remains the source of truth.
+While Developer Options is off, Whip does not initialize the Rancher RevenueCat
+controller, hides Membership and purchase UI, and grants all cosmetic
+capabilities locally. The selected simulator state is retained for the next
+developer session but has no effect outside Developer Options. RevenueCat
+remains the source of truth once this development rollout gate is removed.

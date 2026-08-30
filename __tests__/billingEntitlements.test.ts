@@ -1,5 +1,6 @@
 import { hasCapability } from '../src/billing/capabilities';
 import { effectiveDevicePreferences } from '../src/billing/effectiveSettings';
+import { simulateDeveloperMembership } from '../src/billing/developerMembership';
 import { revenueCatPublicSdkKey } from '../src/billing/revenueCatConfiguration';
 import { resolveWhipEntitlements } from '../src/billing/revenueCatEntitlements';
 import {
@@ -8,6 +9,7 @@ import {
   resolveRancherTrial,
 } from '../src/billing/rancherTrial';
 import { resolveAccessTier } from '../src/billing/tiers';
+import type { WhipEntitlementsController } from '../src/billing/useWhipEntitlements';
 import type { DevicePreferences } from '../src/services/devicePreferences';
 
 describe('Whip billing entitlements', () => {
@@ -85,10 +87,75 @@ describe('Whip billing entitlements', () => {
       .toBe(false);
   });
 
-  test('keeps full access until the developer payment toggle is enabled', () => {
-    expect(resolveAccessTier('cowboy', false)).toBe('rancher');
-    expect(resolveAccessTier('cowboy', true)).toBe('cowboy');
-    expect(resolveAccessTier('rancher', true)).toBe('rancher');
+  test('resolves access from each developer membership state', () => {
+    expect(resolveAccessTier(null)).toBe('rancher');
+    expect(resolveAccessTier('cowboy')).toBe('cowboy');
+    expect(resolveAccessTier('free-trial')).toBe('rancher');
+    expect(resolveAccessTier('rancher')).toBe('rancher');
+  });
+
+  test('simulates Cowboy, free-trial, and Rancher without replacing purchase operations', () => {
+    const purchaseRancher = jest.fn<Promise<'purchased'>, []>(
+      async () => 'purchased',
+    );
+    const liveController: WhipEntitlementsController = {
+      tier: 'cowboy',
+      hasCapability: capability => hasCapability('cowboy', capability),
+      isLoading: false,
+      rancherPackage: null,
+      localizedLifetimePrice: '$29.99',
+      distributionChannel: 'google-play',
+      hasLifetimeAccess: false,
+      isTrialActive: false,
+      trialDaysRemaining: 0,
+      trialEndsAt: null,
+      purchasesAvailable: true,
+      canRestore: true,
+      purchaseRancher,
+      presentRancherPaywall: jest.fn(async () => 'cancelled'),
+      restorePurchases: jest.fn(async () => undefined),
+      refresh: jest.fn(async () => undefined),
+    };
+    const nowMs = Date.parse('2026-08-30T12:00:00.000Z');
+
+    const cowboy = simulateDeveloperMembership(
+      liveController,
+      'cowboy',
+      nowMs,
+    );
+    expect(cowboy).toMatchObject({
+      tier: 'cowboy',
+      hasLifetimeAccess: false,
+      isTrialActive: false,
+      trialDaysRemaining: 0,
+      trialEndsAt: null,
+    });
+
+    const trial = simulateDeveloperMembership(
+      liveController,
+      'free-trial',
+      nowMs,
+    );
+    expect(trial).toMatchObject({
+      tier: 'rancher',
+      hasLifetimeAccess: false,
+      isTrialActive: true,
+      trialDaysRemaining: 5,
+      trialEndsAt: new Date(nowMs + RANCHER_TRIAL_DURATION_MS),
+    });
+    expect(trial.hasCapability('glass')).toBe(true);
+
+    const rancher = simulateDeveloperMembership(
+      liveController,
+      'rancher',
+      nowMs,
+    );
+    expect(rancher).toMatchObject({
+      tier: 'rancher',
+      hasLifetimeAccess: true,
+      isTrialActive: false,
+    });
+    expect(rancher.purchaseRancher).toBe(purchaseRancher);
   });
 
   test('derives effective cosmetics without mutating stored preferences', () => {
@@ -104,7 +171,7 @@ describe('Whip billing entitlements', () => {
       appBackgroundDimming: 35,
       appGlassEnabled: true,
       developerOptionsEnabled: false,
-      rancherPaymentsEnabled: false,
+      developerMembershipState: 'cowboy',
       language: 'system',
       keepScreenOn: false,
       reopenTerminalOnLaunch: false,

@@ -14,6 +14,7 @@ import type { useLiveHostTelemetry } from '../hooks/useLiveHostTelemetry';
 import type { useTerminalHistory } from '../hooks/useTerminalHistory';
 import type { useTerminalSessions } from '../hooks/useTerminalSessions';
 import { effectiveDevicePreferences } from '../billing/effectiveSettings';
+import { simulateDeveloperMembership } from '../billing/developerMembership';
 import { resolveAccessTier } from '../billing/tiers';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import type { HerdHostQueue } from '../herdQueue';
@@ -78,13 +79,16 @@ export function AppShell({
   const { colors: theme, isDark } = useTheme();
   const navigationBlurTargetRef = useRef<View | null>(null);
   const storedPreferences = preferences.value;
-  const rancherPaymentsEnabled =
-    storedPreferences.developerOptionsEnabled &&
-    storedPreferences.rancherPaymentsEnabled;
-  const accessTier = resolveAccessTier(
-    entitlements.tier,
-    rancherPaymentsEnabled,
+  const developerMembershipState = storedPreferences.developerOptionsEnabled
+    ? storedPreferences.developerMembershipState
+    : null;
+  const displayedEntitlements = useMemo(
+    () => developerMembershipState
+      ? simulateDeveloperMembership(entitlements, developerMembershipState)
+      : entitlements,
+    [developerMembershipState, entitlements],
   );
+  const accessTier = resolveAccessTier(developerMembershipState);
   const effectivePreferences = useMemo(
     () => effectiveDevicePreferences(storedPreferences, accessTier),
     [accessTier, storedPreferences],
@@ -413,9 +417,14 @@ export function AppShell({
                       }
                       appGlassEnabled={storedPreferences.appGlassEnabled}
                       accessTier={accessTier}
-                      entitlements={entitlements}
+                      entitlements={displayedEntitlements}
                       developerOptionsEnabled={developerOptionsEnabled}
-                      rancherPaymentsEnabled={rancherPaymentsEnabled}
+                      developerMembershipState={
+                        storedPreferences.developerMembershipState
+                      }
+                      membershipSimulationEnabled={
+                        developerMembershipState !== null
+                      }
                       language={language}
                       keepScreenOn={keepScreenOn}
                       reopenTerminalOnLaunch={reopenTerminalOnLaunch}
@@ -495,10 +504,6 @@ export function AppShell({
                           value,
                         );
                         if (!value) {
-                          preferences.setPreference(
-                            'rancherPaymentsEnabled',
-                            false,
-                          );
                           preferences.setTerminalPreferences(current =>
                             current.visualHints
                               ? { ...current, visualHints: false }
@@ -506,9 +511,9 @@ export function AppShell({
                           );
                         }
                       }}
-                      onRancherPaymentsEnabledChange={value =>
+                      onDeveloperMembershipStateChange={value =>
                         preferences.setPreference(
-                          'rancherPaymentsEnabled',
+                          'developerMembershipState',
                           value,
                         )
                       }

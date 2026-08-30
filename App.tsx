@@ -58,11 +58,10 @@ function AppContent() {
   const startupStorage = useStartupStorage();
   const preferences = useDevicePreferences(startupStorage);
   const preferencesLoaded = preferences.hydration.status !== 'loading';
-  const rancherPaymentsEnabled =
+  const membershipSimulationEnabled =
     preferencesLoaded &&
-    preferences.value.developerOptionsEnabled &&
-    preferences.value.rancherPaymentsEnabled;
-  const entitlements = useWhipEntitlements(rancherPaymentsEnabled);
+    preferences.value.developerOptionsEnabled;
+  const entitlements = useWhipEntitlements(membershipSimulationEnabled);
   const terminals = useTerminalSessions();
   const telemetry = useLiveHostTelemetry();
   const notifications = useAgentNotifications();

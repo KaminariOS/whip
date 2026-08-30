@@ -1,6 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
+  DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
+  isDeveloperMembershipState,
+  type DeveloperMembershipState,
+} from '../billing/tiers';
+import {
   parseTerminalDoubleTapAction,
   type TerminalDoubleTapAction,
 } from '../lib/terminalDoubleTap';
@@ -79,7 +84,7 @@ export interface DevicePreferences {
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
   developerOptionsEnabled: boolean;
-  rancherPaymentsEnabled: boolean;
+  developerMembershipState: DeveloperMembershipState;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -101,7 +106,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   appBackgroundDimming: 60,
   appGlassEnabled: false,
   developerOptionsEnabled: false,
-  rancherPaymentsEnabled: false,
+  developerMembershipState: DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
   language: 'system',
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
@@ -259,7 +264,11 @@ function parseDevicePreferences(
       ),
       appGlassEnabled: parsed.appGlassEnabled === true,
       developerOptionsEnabled: parsed.developerOptionsEnabled === true,
-      rancherPaymentsEnabled: parsed.rancherPaymentsEnabled === true,
+      developerMembershipState: isDeveloperMembershipState(
+        parsed.developerMembershipState,
+      )
+        ? parsed.developerMembershipState
+        : DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
       language: isLanguagePreference(parsed.language)
         ? parsed.language
         : defaultDevicePreferences.language,

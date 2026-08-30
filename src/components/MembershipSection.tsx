@@ -1,34 +1,46 @@
-import { useState } from 'react';
-import { Check, Crown, RefreshCcw, Sparkles } from 'lucide-react-native';
-import { ActivityIndicator, Alert, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Check, ChevronUp, RefreshCcw } from 'lucide-react-native';
+import { Alert, Image, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
+import { bundledAsset } from '../lib/bundledAsset';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-type MembershipAction = 'paywall' | 'restore';
+type MembershipAction = 'restore';
+
+const MEMBERSHIP_TIER_ART = {
+  cowboy: bundledAsset(require('../../assets/cowboy.png')),
+  rancher: bundledAsset(require('../../assets/rancher.png')),
+} as const;
 
 const RANCHER_BENEFIT_KEYS = [
-  'membership.benefitAppBackground',
-  'membership.benefitAppDimming',
+  'membership.benefitAppBackgroundSettings',
   'membership.benefitGlass',
-  'membership.benefitTerminalBackground',
-  'membership.benefitTerminalDimming',
+  'membership.benefitTerminalBackgroundSettings',
+  'membership.benefitRancherAvatar',
 ] as const;
 
 export function MembershipSection({
   entitlements,
+  onOpenPurchaseScreen,
 }: {
   entitlements: WhipEntitlementsController;
+  onOpenPurchaseScreen: () => void;
 }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<MembershipAction | null>(null);
   const rancherAccess = entitlements.tier === 'rancher';
   const lifetimeAccess = entitlements.hasLifetimeAccess;
+  const [collapsed, setCollapsed] = useState(lifetimeAccess);
+
+  useEffect(() => {
+    setCollapsed(lifetimeAccess);
+  }, [lifetimeAccess]);
 
   const run = async (
     action: MembershipAction,
@@ -57,6 +69,32 @@ export function MembershipSection({
       : 'membership.unlockRancher',
   );
 
+  if (lifetimeAccess && collapsed) {
+    return (
+      <View className="border-t border-border px-4 py-5">
+        <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">
+          {t('membership.title')}
+        </Text>
+        <GlassSurface className="self-start rounded-xl border border-white/30 dark:border-white/10">
+          <Button
+            accessibilityLabel={t('membership.expand')}
+            className="size-16 overflow-hidden rounded-xl p-0"
+            onPress={hapticPress(() => setCollapsed(false))}
+            size="content"
+            variant="ghost">
+            <Image
+              accessible={false}
+              className="size-full"
+              fadeDuration={150}
+              resizeMode="cover"
+              source={MEMBERSHIP_TIER_ART.rancher}
+            />
+          </Button>
+        </GlassSurface>
+      </View>
+    );
+  }
+
   return (
     <View className="border-t border-border px-4 py-5">
       <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">
@@ -64,11 +102,13 @@ export function MembershipSection({
       </Text>
       <GlassSurface className="rounded-lg border border-white/30 p-4 dark:border-white/10">
         <View className="flex-row items-center gap-3">
-          <View className="size-11 items-center justify-center rounded-full bg-primary/15">
-            <Icon
-              as={rancherAccess ? Crown : Sparkles}
-              className="text-primary"
-              size={22}
+          <View className="size-16 overflow-hidden rounded-xl border border-white/20 bg-black dark:border-white/10">
+            <Image
+              accessible={false}
+              className="size-full"
+              fadeDuration={150}
+              resizeMode="cover"
+              source={MEMBERSHIP_TIER_ART[rancherAccess ? 'rancher' : 'cowboy']}
             />
           </View>
           <View className="min-w-0 flex-1">
@@ -79,12 +119,15 @@ export function MembershipSection({
               {entitlements.isLoading ? t('membership.checking') : status}
             </Text>
           </View>
-          {entitlements.localizedLifetimePrice && !lifetimeAccess ? (
-            <Text className="text-right text-xs font-semibold text-muted-foreground">
-              {t('membership.priceOneTime', {
-                price: entitlements.localizedLifetimePrice,
-              })}
-            </Text>
+          {lifetimeAccess ? (
+            <Button
+              accessibilityLabel={t('membership.collapse')}
+              className="rounded-full"
+              onPress={hapticPress(() => setCollapsed(true))}
+              size="icon"
+              variant="ghost">
+              <Icon as={ChevronUp} size={18} />
+            </Button>
           ) : null}
         </View>
 
@@ -132,7 +175,6 @@ export function MembershipSection({
             <Button
               accessibilityLabel={purchaseLabel}
               accessibilityState={{
-                busy: busy === 'paywall',
                 disabled:
                   entitlements.isLoading ||
                   !entitlements.purchasesAvailable ||
@@ -144,14 +186,11 @@ export function MembershipSection({
                 !entitlements.purchasesAvailable ||
                 busy !== null
               }
-              onPress={hapticPress(() => {
-                void run('paywall', entitlements.presentRancherPaywall);
-              })}>
-              {busy === 'paywall' ? <ActivityIndicator color="currentColor" /> : null}
+              onPress={hapticPress(onOpenPurchaseScreen)}>
               <Text>{purchaseLabel}</Text>
             </Button>
           ) : null}
-          {entitlements.canRestore ? (
+          {entitlements.canRestore && !lifetimeAccess ? (
             <Button
               accessibilityState={{
                 busy: busy === 'restore',
