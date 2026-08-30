@@ -18,6 +18,16 @@ export type NativeTranscriptTransport = Pick<
 
 type Listener = (state: AgentChatState) => void;
 
+export type AgentTranscriptReadiness = 'loading' | 'usable' | 'failed';
+
+export function agentTranscriptReadiness(
+  state: AgentChatState,
+): AgentTranscriptReadiness {
+  if (state.status === 'loading') return 'loading';
+  if (state.status === 'live' || state.status === 'stale') return 'usable';
+  return 'failed';
+}
+
 interface TranscriptEntry {
   nativeKey: string;
   hostSessionId: string;
@@ -98,11 +108,6 @@ export class NativeTranscriptService {
     const entry = this.entries.get(key);
     if (!entry) return null;
     return entry.state;
-  }
-
-  hasCachedHistory(key: string): boolean {
-    const status = this.entries.get(key)?.state.status;
-    return status === 'live' || status === 'stale';
   }
 
   closeTerminal(hostSessionId: string, terminalId: string, projectionKey?: string): void {

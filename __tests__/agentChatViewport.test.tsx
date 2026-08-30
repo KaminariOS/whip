@@ -100,6 +100,10 @@ function flatList(renderer: ReactTestRenderer): ReactTestInstance {
   return renderer.root.find(node => String(node.type) === 'FlatList');
 }
 
+function chatViewport(renderer: ReactTestRenderer): ReactTestInstance {
+  return renderer.root.find(node => node.props.testID === 'agent-chat-viewport');
+}
+
 function scrollEvent(offset: number, contentHeight: number, viewportHeight = 400) {
   return {
     nativeEvent: {
@@ -383,5 +387,123 @@ describe('AgentChatView auto-follow', () => {
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
     )).toHaveLength(0);
+  });
+});
+
+describe('AgentChatView initial viewport readiness', () => {
+  let renderer: ReactTestRenderer;
+  let scrollToOffset: jest.Mock;
+  let nextFrame: number;
+  let frames: Map<number, FrameRequestCallback>;
+
+  beforeEach(() => {
+    scrollToOffset = jest.fn();
+    nextFrame = 1;
+    frames = new Map();
+    jest.spyOn(global, 'requestAnimationFrame').mockImplementation(callback => {
+      const frame = nextFrame;
+      nextFrame += 1;
+      frames.set(frame, callback);
+      return frame;
+    });
+    jest.spyOn(global, 'cancelAnimationFrame').mockImplementation(frame => {
+      frames.delete(frame);
+    });
+  });
+
+  afterEach(() => {
+    act(() => renderer?.unmount());
+    jest.restoreAllMocks();
+  });
+
+  const flushAnimationFrame = () => {
+    const callbacks = [...frames.values()];
+    frames.clear();
+    act(() => callbacks.forEach(callback => callback(0)));
+  };
+
+  const renderChat = (state: AgentChatState, onReady: jest.Mock) => {
+    act(() => {
+      renderer = create(
+        <AgentChatView
+          agent="codex"
+          agentStatus="idle"
+          contentInsets={CONTENT_INSETS}
+          latestButtonBottom={297}
+          onOpenFile={jest.fn()}
+          onInitialViewportReady={onReady}
+          state={state}
+        />,
+        {
+          createNodeMock: element => element.type === 'FlatList'
+            ? { scrollToOffset }
+            : null,
+        },
+      );
+    });
+  };
+
+  test('signals only after outer layout, content measurement, and the initial bottom pass', () => {
+    const onReady = jest.fn();
+    renderChat(chatState([TURN]), onReady);
+
+    act(() => {
+      flatList(renderer).props.onContentSizeChange(0, 1_000);
+    });
+    flushAnimationFrame();
+    flushAnimationFrame();
+    expect(onReady).not.toHaveBeenCalled();
+
+    act(() => {
+      chatViewport(renderer).props.onLayout({
+        nativeEvent: { layout: { height: 400 } },
+      });
+    });
+    expect(scrollToOffset).toHaveBeenLastCalledWith({
+      animated: false,
+      offset: 600,
+    });
+    expect(onReady).not.toHaveBeenCalled();
+
+    flushAnimationFrame();
+    expect(onReady).not.toHaveBeenCalled();
+
+    act(() => {
+      flatList(renderer).props.onContentSizeChange(0, 1_100);
+    });
+    expect(scrollToOffset).toHaveBeenLastCalledWith({
+      animated: false,
+      offset: 700,
+    });
+    expect(onReady).not.toHaveBeenCalled();
+
+    flushAnimationFrame();
+    expect(onReady).not.toHaveBeenCalled();
+    flushAnimationFrame();
+    expect(onReady).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      flatList(renderer).props.onContentSizeChange(0, 1_200);
+    });
+    flushAnimationFrame();
+    flushAnimationFrame();
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('an empty loaded transcript can complete initial readiness', () => {
+    const onReady = jest.fn();
+    renderChat(chatState([]), onReady);
+
+    act(() => {
+      chatViewport(renderer).props.onLayout({
+        nativeEvent: { layout: { height: 400 } },
+      });
+      flatList(renderer).props.onContentSizeChange(0, 0);
+    });
+    flushAnimationFrame();
+    flushAnimationFrame();
+
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).not.toHaveBeenCalled();
   });
 });

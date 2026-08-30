@@ -2180,14 +2180,26 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             )}
           {viewportOverlay && (
             <>
+              {chatViewEnabled && (
+                <View
+                  accessibilityElementsHidden
+                  pointerEvents="none"
+                  className="absolute inset-0 z-10 bg-background"
+                >
+                  {viewportOverlayBackground}
+                </View>
+              )}
               <View
-                accessibilityElementsHidden
-                pointerEvents="none"
-                className="absolute inset-0 z-10 bg-background"
+                accessibilityElementsHidden={!chatViewEnabled}
+                importantForAccessibility={
+                  chatViewEnabled ? 'auto' : 'no-hide-descendants'
+                }
+                pointerEvents={chatViewEnabled ? 'auto' : 'none'}
+                className="absolute inset-0 z-20"
+                style={{ opacity: chatViewEnabled ? 1 : 0 }}
               >
-                {viewportOverlayBackground}
+                {viewportOverlay}
               </View>
-              <View className="absolute inset-0 z-20">{viewportOverlay}</View>
             </>
           )}
         </View>

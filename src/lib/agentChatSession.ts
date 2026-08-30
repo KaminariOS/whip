@@ -37,9 +37,9 @@ export function agentChatControlState(
   pane: PaneInfo | undefined,
   busy: boolean,
   loading: boolean,
-): { agent: ChatAgent; disabled: boolean } | null {
+): { agent: ChatAgent; disabled: boolean; loading: boolean } | null {
   const agent = chatAgentForPane(pane);
-  return agent ? { agent, disabled: busy || loading } : null;
+  return agent ? { agent, disabled: busy || loading, loading } : null;
 }
 
 export function openCodeSessionIdForPane(

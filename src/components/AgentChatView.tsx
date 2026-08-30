@@ -70,6 +70,7 @@ interface Props {
   contentInsets: VisualContentInsets;
   latestButtonBottom: number;
   onOpenFile: (target: TranscriptFileLinkTarget) => void;
+  onInitialViewportReady?: () => void;
 }
 
 const COPY_FEEDBACK_MS = 1_500;
@@ -89,6 +90,14 @@ interface ChatScrollbarDragSnapshot {
   lastOffset: number;
   maxOffset: number;
   startOffset: number;
+}
+
+interface InitialViewportReadiness {
+  contentSizeKnown: boolean;
+  frame: number | null;
+  ready: boolean;
+  revision: number;
+  viewportLaidOut: boolean;
 }
 
 enum ChatScrollInteractionKind {
@@ -754,6 +763,7 @@ export function AgentChatView({
   contentInsets,
   latestButtonBottom,
   onOpenFile,
+  onInitialViewportReady,
 }: Props) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
@@ -772,6 +782,15 @@ export function AgentChatView({
     lastOffset: 0,
   });
   const scrollbarDragRef = useRef<ChatScrollbarDragSnapshot | null>(null);
+  const initialViewportRef = useRef<InitialViewportReadiness>({
+    contentSizeKnown: false,
+    frame: null,
+    ready: false,
+    revision: 0,
+    viewportLaidOut: false,
+  });
+  const initialViewportReadyCallbackRef = useRef(onInitialViewportReady);
+  initialViewportReadyCallbackRef.current = onInitialViewportReady;
   const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
   const agentWorking = agentStatus === 'working';
   const contentPadding = insetContentPadding(contentInsets, {
@@ -851,6 +870,37 @@ export function AgentChatView({
       list.current?.scrollToOffset({ animated: false, offset: nextMaxOffset });
     }
   };
+
+  const scheduleInitialViewportReady = () => {
+    const readiness = initialViewportRef.current;
+    if (
+      readiness.ready ||
+      !readiness.viewportLaidOut ||
+      !readiness.contentSizeKnown
+    ) return;
+    readiness.revision += 1;
+    const revision = readiness.revision;
+    if (readiness.frame !== null) cancelAnimationFrame(readiness.frame);
+    readiness.frame = requestAnimationFrame(() => {
+      readiness.frame = requestAnimationFrame(() => {
+        readiness.frame = null;
+        if (
+          readiness.ready ||
+          readiness.revision !== revision ||
+          !readiness.viewportLaidOut ||
+          !readiness.contentSizeKnown
+        ) return;
+        readiness.ready = true;
+        initialViewportReadyCallbackRef.current?.();
+      });
+    });
+  };
+
+  useEffect(() => () => {
+    const frame = initialViewportRef.current.frame;
+    if (frame !== null) cancelAnimationFrame(frame);
+    initialViewportRef.current.revision += 1;
+  }, []);
 
   const trackScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -968,7 +1018,19 @@ export function AgentChatView({
 
   return (
     <View className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}>
-      <View className="relative flex-1">
+      <View
+        testID="agent-chat-viewport"
+        className="relative flex-1"
+        onLayout={event => {
+          const current = scrollGeometryRef.current;
+          updateScrollExtent({
+            contentHeight: current.contentHeight,
+            viewportHeight: event.nativeEvent.layout.height,
+          });
+          initialViewportRef.current.viewportLaidOut = true;
+          scheduleInitialViewportReady();
+        }}
+      >
         <FlatList
           ref={list}
           data={turns}
@@ -1012,6 +1074,8 @@ export function AgentChatView({
           onContentSizeChange={(_width, height) => {
             const current = scrollGeometryRef.current;
             updateScrollExtent({ contentHeight: height, viewportHeight: current.viewportHeight });
+            initialViewportRef.current.contentSizeKnown = true;
+            scheduleInitialViewportReady();
           }}
           onLayout={event => {
             const current = scrollGeometryRef.current;
