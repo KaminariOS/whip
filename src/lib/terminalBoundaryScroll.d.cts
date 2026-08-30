@@ -28,6 +28,18 @@ export function terminalBoundaryVisualOffset(input: {
   boundaryRevealPx?: number;
 }): number;
 
+export function terminalAtVisualBottom(input: {
+  state?: Partial<TerminalBoundaryScrollState>;
+  bottomAllowancePx: number;
+  alternateScreen?: boolean;
+}): boolean;
+
+export function terminalBoundaryScrollToVisualBottom(input: {
+  state?: Partial<TerminalBoundaryScrollState>;
+  bottomAllowancePx: number;
+  alternateScreen?: boolean;
+}): TerminalBoundaryScrollState;
+
 export function reconcileTerminalBoundaryScroll(input: {
   state?: Partial<TerminalBoundaryScrollState>;
   offsetFromBottom: number;

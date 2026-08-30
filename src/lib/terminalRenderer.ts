@@ -37,6 +37,13 @@ export function terminalVisualOffset({
   });
 }
 
+export function terminalLatestButtonVisible(
+  alternateScreen: boolean,
+  atVisualBottom: boolean,
+): boolean {
+  return !alternateScreen && !atVisualBottom;
+}
+
 export interface TerminalRenderTarget {
   key: string;
   hostSessionId: string;

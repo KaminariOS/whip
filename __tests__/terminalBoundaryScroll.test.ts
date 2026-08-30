@@ -1,6 +1,8 @@
 import {
   reconcileTerminalBoundaryScroll,
+  terminalAtVisualBottom,
   terminalBoundaryScroll,
+  terminalBoundaryScrollToVisualBottom,
   type TerminalBoundaryScrollState,
 } from '../src/lib/terminalBoundaryScroll.cjs';
 
@@ -145,6 +147,45 @@ test('bottom reveal reverses pixel by pixel before remote rows move', () => {
   expect(scroll(consumed, CELL_HEIGHT)).toMatchObject({ offsetFromBottom: 1, rowScrollDelta: 1, visualOffset: 0 });
 });
 
+test('visual bottom requires latest rows and the full bottom reveal', () => {
+  expect(terminalAtVisualBottom({
+    state: state(1, 10),
+    bottomAllowancePx: BOTTOM_ALLOWANCE,
+  })).toBe(false);
+  expect(terminalAtVisualBottom({
+    state: scroll(state(0, 10), -40),
+    bottomAllowancePx: BOTTOM_ALLOWANCE,
+  })).toBe(false);
+  expect(terminalAtVisualBottom({
+    state: scroll(state(0, 10), -BOTTOM_ALLOWANCE),
+    bottomAllowancePx: BOTTOM_ALLOWANCE,
+  })).toBe(true);
+  expect(terminalAtVisualBottom({
+    state: scroll(state(0, 0), 30, { topAllowancePx: TOP_PULL_ALLOWANCE }),
+    bottomAllowancePx: 0,
+  })).toBe(false);
+});
+
+test('scroll to visual bottom resets row carry and fully reveals measured chrome', () => {
+  expect(terminalBoundaryScrollToVisualBottom({
+    state: {
+      ...state(8, 20),
+      boundary: 'top',
+      boundaryRevealPx: 30,
+      boundaryAllowancePx: 55,
+      rowRemainderPx: 12,
+    },
+    bottomAllowancePx: BOTTOM_ALLOWANCE,
+  })).toEqual({
+    offsetFromBottom: 0,
+    maxOffsetFromBottom: 20,
+    boundary: 'bottom',
+    boundaryRevealPx: BOTTOM_ALLOWANCE,
+    boundaryAllowancePx: BOTTOM_ALLOWANCE,
+    rowRemainderPx: 0,
+  });
+});
+
 test('downward row scrolling reaches latest before a later gesture reveals chrome', () => {
   const latest = scroll(state(2, 10), -2 * CELL_HEIGHT);
   expect(latest).toMatchObject({ offsetFromBottom: 0, rowScrollDelta: -2, visualOffset: 0 });
@@ -262,13 +303,36 @@ test('chrome allowance changes preserve partial reveals and track fully revealed
   })).toMatchObject({ boundaryRevealPx: 40, boundaryAllowancePx: 183 });
 
   const full = scroll(state(0, 10), -BOTTOM_ALLOWANCE);
-  expect(reconcileTerminalBoundaryScroll({
+  const resizedFull = reconcileTerminalBoundaryScroll({
     state: full,
     offsetFromBottom: 0,
     maxOffsetFromBottom: 10,
     topAllowancePx: 0,
     bottomAllowancePx: 183,
-  })).toMatchObject({ boundaryRevealPx: 183, boundaryAllowancePx: 183 });
+  });
+  expect(resizedFull).toMatchObject({ boundaryRevealPx: 183, boundaryAllowancePx: 183 });
+  expect(terminalAtVisualBottom({
+    state: resizedFull,
+    bottomAllowancePx: 183,
+  })).toBe(true);
+});
+
+test('alternate screen has no normal-buffer visual bottom reveal', () => {
+  const result = terminalBoundaryScrollToVisualBottom({
+    state: state(4, 10),
+    bottomAllowancePx: BOTTOM_ALLOWANCE,
+    alternateScreen: true,
+  });
+  expect(result).toMatchObject({
+    offsetFromBottom: 4,
+    boundary: null,
+    boundaryRevealPx: 0,
+  });
+  expect(terminalAtVisualBottom({
+    state: result,
+    bottomAllowancePx: BOTTOM_ALLOWANCE,
+    alternateScreen: true,
+  })).toBe(false);
 });
 
 test('font-size changes retain pixel carry without changing the visual anchor', () => {

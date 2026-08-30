@@ -541,6 +541,50 @@
   if (boundary === 'bottom') return -reveal;
   return 0;
 }
+    function terminalAtVisualBottom({
+  state,
+  bottomAllowancePx,
+  alternateScreen = false,
+}) {
+  if (alternateScreen) return false;
+  const offset = Math.max(
+    0,
+    Math.round(terminalBoundaryFiniteNumber(state?.offsetFromBottom)),
+  );
+  if (offset !== 0) return false;
+
+  const allowance = Math.max(0, terminalBoundaryFiniteNumber(bottomAllowancePx));
+  if (allowance === 0) {
+    return state?.boundary !== 'top'
+      || Math.max(0, terminalBoundaryFiniteNumber(state.boundaryRevealPx)) === 0;
+  }
+  return state?.boundary === 'bottom'
+    && Math.max(0, terminalBoundaryFiniteNumber(state.boundaryRevealPx)) >= allowance;
+}
+    function terminalBoundaryScrollToVisualBottom({
+  state,
+  bottomAllowancePx,
+  alternateScreen = false,
+}) {
+  const maximum = Math.max(
+    0,
+    Math.round(terminalBoundaryFiniteNumber(state?.maxOffsetFromBottom)),
+  );
+  const offset = terminalBoundaryClamp(
+    Math.round(terminalBoundaryFiniteNumber(state?.offsetFromBottom)),
+    0,
+    maximum,
+  );
+  const allowance = Math.max(0, terminalBoundaryFiniteNumber(bottomAllowancePx));
+  return {
+    offsetFromBottom: alternateScreen ? offset : 0,
+    maxOffsetFromBottom: maximum,
+    boundary: !alternateScreen && allowance > 0 ? 'bottom' : null,
+    boundaryRevealPx: !alternateScreen ? allowance : 0,
+    boundaryAllowancePx: !alternateScreen ? allowance : 0,
+    rowRemainderPx: 0,
+  };
+}
     function reconcileTerminalBoundaryScroll({
   state,
   offsetFromBottom,
@@ -818,6 +862,7 @@
       maxScrollOffsetFromBottom: undefined,
     };
     let lastTerminalVisualState = '';
+    let lastReportedAtVisualBottom;
     let remoteVisualScrollOffset;
     let remoteVisualScrollMaximum;
     let remoteVisualInputOffset;
@@ -850,6 +895,11 @@
       send({ type: 'offline-scroll', ...scroll });
     };
     const finiteInset = value => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
+    const reportTerminalVisualScrollState = atVisualBottom => {
+      if (atVisualBottom === lastReportedAtVisualBottom) return;
+      lastReportedAtVisualBottom = atVisualBottom;
+      send({ type: 'visual-scroll-state', atVisualBottom });
+    };
     const reportTerminalVisualState = state => {
       const signature = JSON.stringify(state);
       const debug = root.querySelector('#terminal-visual-debug');
@@ -902,6 +952,12 @@
         boundaryRevealPx: terminalBoundaryScrollState.boundaryRevealPx,
       });
       geometryElement.style.setProperty('--terminal-visual-offset', visualOffset + 'px');
+      const atVisualBottom = terminalAtVisualBottom({
+        state: terminalBoundaryScrollState,
+        bottomAllowancePx: bottomAllowance,
+        alternateScreen,
+      });
+      reportTerminalVisualScrollState(atVisualBottom);
       const surfaceRect = geometryElement.getBoundingClientRect();
       reportTerminalVisualState({
         alternateScreen,
@@ -913,6 +969,7 @@
         visualOffset,
         boundary: terminalBoundaryScrollState.boundary,
         boundaryRevealPx: terminalBoundaryScrollState.boundaryRevealPx,
+        atVisualBottom,
         remoteScroll: hasRemoteScroll,
         inputOffset: remoteVisualInputOffset,
         pendingDelta: remoteVisualPendingDelta,
@@ -1384,6 +1441,38 @@
       );
     };
     api.herdrScroll = (direction, lines) => scrollTerminal(direction, lines);
+    api.herdrScrollToVisualBottom = () => {
+      const alternateScreen = terminalVisualInsets.alternateScreen
+        || terminal.buffer.active.type === 'alternate';
+      if (alternateScreen) {
+        applyTerminalVisualInsets();
+        return;
+      }
+      terminal.scrollToBottom();
+      const local = offlineScrollInfo();
+      const hasRemoteScroll = Number.isFinite(remoteVisualScrollOffset)
+        && Number.isFinite(remoteVisualScrollMaximum);
+      if (hasRemoteScroll) {
+        remoteVisualScrollOffset = 0;
+        remoteVisualPendingDelta = -Math.max(0, Number(remoteVisualInputOffset) || 0);
+      }
+      terminalBoundaryScrollState = terminalBoundaryScrollToVisualBottom({
+        state: {
+          ...terminalBoundaryScrollState,
+          offsetFromBottom: 0,
+          maxOffsetFromBottom: hasRemoteScroll
+            ? remoteVisualScrollMaximum
+            : local.maxOffsetFromBottom,
+        },
+        bottomAllowancePx: Math.max(
+          0,
+          finiteInset(terminalVisualInsets.bottom)
+            - finiteInset(terminalVisualInsets.geometryBottomInset),
+        ),
+      });
+      applyTerminalVisualInsets();
+      reportOfflineScroll();
+    };
     api.herdrPaste = data => { pasteBridge.paste(data); hideToolbar(); };
     api.herdrSubmitPastes = parts => {
       const values = [];
@@ -2178,6 +2267,7 @@
     };
     window.herdrChangeFontSize = (key, delta) => call(key, 'herdrChangeFontSize', [delta]);
     window.herdrScroll = (key, direction, lines) => call(key, 'herdrScroll', [direction, lines]);
+    window.herdrScrollToVisualBottom = key => call(key, 'herdrScrollToVisualBottom');
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
     window.herdrSubmitPastes = (key, parts) => call(key, 'herdrSubmitPastes', [parts]);
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');

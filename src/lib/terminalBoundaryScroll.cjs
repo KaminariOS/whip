@@ -19,6 +19,52 @@ function terminalBoundaryVisualOffset({
   return 0;
 }
 
+function terminalAtVisualBottom({
+  state,
+  bottomAllowancePx,
+  alternateScreen = false,
+}) {
+  if (alternateScreen) return false;
+  const offset = Math.max(
+    0,
+    Math.round(terminalBoundaryFiniteNumber(state?.offsetFromBottom)),
+  );
+  if (offset !== 0) return false;
+
+  const allowance = Math.max(0, terminalBoundaryFiniteNumber(bottomAllowancePx));
+  if (allowance === 0) {
+    return state?.boundary !== 'top'
+      || Math.max(0, terminalBoundaryFiniteNumber(state.boundaryRevealPx)) === 0;
+  }
+  return state?.boundary === 'bottom'
+    && Math.max(0, terminalBoundaryFiniteNumber(state.boundaryRevealPx)) >= allowance;
+}
+
+function terminalBoundaryScrollToVisualBottom({
+  state,
+  bottomAllowancePx,
+  alternateScreen = false,
+}) {
+  const maximum = Math.max(
+    0,
+    Math.round(terminalBoundaryFiniteNumber(state?.maxOffsetFromBottom)),
+  );
+  const offset = terminalBoundaryClamp(
+    Math.round(terminalBoundaryFiniteNumber(state?.offsetFromBottom)),
+    0,
+    maximum,
+  );
+  const allowance = Math.max(0, terminalBoundaryFiniteNumber(bottomAllowancePx));
+  return {
+    offsetFromBottom: alternateScreen ? offset : 0,
+    maxOffsetFromBottom: maximum,
+    boundary: !alternateScreen && allowance > 0 ? 'bottom' : null,
+    boundaryRevealPx: !alternateScreen ? allowance : 0,
+    boundaryAllowancePx: !alternateScreen ? allowance : 0,
+    rowRemainderPx: 0,
+  };
+}
+
 function reconcileTerminalBoundaryScroll({
   state,
   offsetFromBottom,
@@ -235,8 +281,10 @@ function terminalBoundaryScroll({
 }
 
 module.exports = {
+  terminalAtVisualBottom,
   terminalBoundaryClamp,
   terminalBoundaryFiniteNumber,
+  terminalBoundaryScrollToVisualBottom,
   reconcileTerminalBoundaryScroll,
   terminalBoundaryScroll,
   terminalBoundaryVisualOffset,

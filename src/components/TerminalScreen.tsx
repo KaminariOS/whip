@@ -90,6 +90,7 @@ import {
 import { OfflineTerminalBackend } from '../lib/offlineTerminalBackend';
 import {
   directTerminalKeyboardEnabled,
+  terminalLatestButtonVisible,
   terminalScrollbackMode,
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
@@ -507,6 +508,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       kittyKeyboardReportAll: false,
     });
     const [scrollPosition, setScrollPosition] = useState(activeTarget?.scroll);
+    const [visualBottomByTarget, setVisualBottomByTarget] = useState<
+      Partial<Record<string, boolean>>
+    >({});
     const scrollPositionRef = useRef(scrollPosition);
     const terminalScrollbarDragRef =
       useRef<TerminalScrollbarDragSnapshot | null>(null);
@@ -520,6 +524,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const scrollThumb = alternateScreen
       ? null
       : terminalScrollThumb(scrollPosition);
+    const atVisualBottom = activeTarget
+      ? visualBottomByTarget[activeTarget.key] ?? false
+      : false;
     const title = reportedTitle || sessionTitle;
     const directKeyboardEnabled = directTerminalKeyboardEnabled(
       status,
@@ -807,10 +814,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     };
 
     const jumpTerminalToLatest = () => {
-      const target = activeTargetRef.current;
-      const current = scrollPositionRef.current;
-      if (!target || !current || current.offset_from_bottom <= 0) return;
-      requestTerminalScrollOffset(target, current.offset_from_bottom, 0);
+      renderer.current?.scrollToVisualBottom();
     };
 
     const finishTerminalScrollbarDrag = () => {
@@ -2113,6 +2117,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               setAlternateScreen(alternate);
               setSearchResult({ count: 0, index: -1, invalid: false });
             }}
+            onVisualScrollState={(target, nextAtVisualBottom) => {
+              setVisualBottomByTarget(current =>
+                current[target.key] === nextAtVisualBottom
+                  ? current
+                  : { ...current, [target.key]: nextAtVisualBottom },
+              );
+            }}
             onProtocolStateChange={(target, state) => {
               if (target.key === activeTarget?.key) setProtocolState(state);
             }}
@@ -2146,8 +2157,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               onDragStart={beginTerminalScrollbarDrag}
             />
           )}
-          {!alternateScreen &&
-            (scrollPosition?.offset_from_bottom || 0) > 0 && (
+          {activeTarget &&
+            terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
               <Button
                 accessibilityLabel="Jump to latest terminal output"
                 className={cn(

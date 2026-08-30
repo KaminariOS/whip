@@ -185,6 +185,7 @@ export interface TerminalRendererHandle {
   retry: () => void;
   scanLinks: () => void;
   scroll: (direction: 'up' | 'down', lines: number) => void;
+  scrollToVisualBottom: () => void;
   search: (query: string, caseSensitive: boolean, regex: boolean, direction: number) => void;
   setForcedMouseInput: (enabled: boolean) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
@@ -214,6 +215,10 @@ interface Props {
   onOpenLink: (link: string) => void;
   onPaste: (target: TerminalRenderTarget, text: string) => void;
   onBufferModeChange: (target: TerminalRenderTarget, alternate: boolean) => void;
+  onVisualScrollState: (
+    target: TerminalRenderTarget,
+    atVisualBottom: boolean,
+  ) => void;
   onProtocolStateChange: (target: TerminalRenderTarget, state: TerminalProtocolState) => void;
   onTitleChange: (target: TerminalRenderTarget, title: string) => void;
   onFontSizeChange: (target: TerminalRenderTarget, fontSize: number) => void;
@@ -245,6 +250,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onOpenLink,
   onPaste,
   onBufferModeChange,
+  onVisualScrollState,
   onProtocolStateChange,
   onTitleChange,
   onFontSizeChange,
@@ -277,6 +283,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportOpenLink = useEffectEvent(onOpenLink);
   const reportPaste = useEffectEvent(onPaste);
   const reportBufferMode = useEffectEvent(onBufferModeChange);
+  const reportVisualScrollState = useEffectEvent(onVisualScrollState);
   const reportProtocolState = useEffectEvent(onProtocolStateChange);
   const reportTitle = useEffectEvent(onTitleChange);
   const reportFontSize = useEffectEvent(onFontSizeChange);
@@ -888,6 +895,34 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     },
     scanLinks: () => activeCall('herdrScanLinks'),
     scroll: (direction, lines) => activeCall('herdrScroll', [direction, lines]),
+    scrollToVisualBottom: () => {
+      const key = activeKey.current;
+      const entry = key ? entries.current.get(key) : null;
+      if (!entry) return;
+      cancelResumeScroll(entry);
+      const currentViewport = visualViewportRef.current;
+      const alternateScreen = currentViewport.alternateScreen === true
+        || entry.alternateScreen;
+      const currentScroll = currentViewport.scroll || entry.target.scroll;
+      if (
+        !alternateScreen
+        && entry.target.session.kind !== 'ssh'
+        && entry.target.session.status === 'connected'
+        && currentScroll
+        && currentScroll.offset_from_bottom > 0
+      ) {
+        const lines = Math.max(0, Math.round(currentScroll.offset_from_bottom));
+        if (lines > 0) {
+          reportScroll(entry.target, 'down', lines);
+          entry.target.client.terminal.scrollTerminal(
+            entry.target.session.terminalId,
+            'down',
+            lines,
+          ).catch(reason => reportError(entry.target, String(reason)));
+        }
+      }
+      activeCall('herdrScrollToVisualBottom');
+    },
     search: (query, caseSensitive, regex, direction) => activeCall(
       'herdrSearch',
       [query, caseSensitive, regex, direction],
@@ -1378,6 +1413,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.alternateScreen = message.alternate === true;
       if (entry.alternateScreen) cancelResumeScroll(entry);
       reportBufferMode(entry.target, entry.alternateScreen);
+    } else if (message.type === 'visual-scroll-state') {
+      if (typeof message.atVisualBottom !== 'boolean') return;
+      reportVisualScrollState(entry.target, message.atVisualBottom);
     } else if (message.type === 'visual-insets-debug') {
       console.info('[WHIP_TERMINAL_VISUAL]', JSON.stringify({
         key: entry.target.key,

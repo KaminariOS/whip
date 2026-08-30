@@ -1,3 +1,4 @@
+import { createRef } from 'react';
 import {
   act,
   create,
@@ -5,7 +6,10 @@ import {
   type ReactTestRenderer,
 } from 'react-test-renderer';
 
-import { TerminalRendererHost } from '../src/components/TerminalRendererHost';
+import {
+  TerminalRendererHost,
+  type TerminalRendererHandle,
+} from '../src/components/TerminalRendererHost';
 import type { TerminalFrame } from '../src/lib/terminalBridge';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
@@ -110,6 +114,7 @@ describe('TerminalRendererHost lifecycle', () => {
     onOpenLink: jest.fn(),
     onPaste: jest.fn(),
     onBufferModeChange: jest.fn(),
+    onVisualScrollState: jest.fn(),
     onProtocolStateChange: jest.fn(),
     onTitleChange: jest.fn(),
     onFontSizeChange: jest.fn(),
@@ -319,6 +324,7 @@ describe('TerminalRendererHost lifecycle', () => {
       onOpenLink: jest.fn(),
       onPaste: jest.fn(),
       onBufferModeChange: jest.fn(),
+      onVisualScrollState: jest.fn(),
       onProtocolStateChange: jest.fn(),
       onTitleChange: jest.fn(),
       onFontSizeChange: jest.fn(),
@@ -393,6 +399,7 @@ describe('TerminalRendererHost lifecycle', () => {
       onOpenLink: jest.fn(),
       onPaste: jest.fn(),
       onBufferModeChange: jest.fn(),
+      onVisualScrollState: jest.fn(),
       onProtocolStateChange: jest.fn(),
       onTitleChange: jest.fn(),
       onFontSizeChange: jest.fn(),
@@ -479,6 +486,140 @@ describe('TerminalRendererHost lifecycle', () => {
 
     expect(injected.join('\n')).toContain('"debug":true');
     expect(injected.join('\n')).not.toContain('window.herdrFit');
+  });
+
+  test('scrollToVisualBottom synchronizes remote rows and invokes the renderer', () => {
+    const client = createClient({
+      'term-1': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 100,
+        viewport_rows: 24,
+      },
+    });
+    const target = createTarget('term-1', client, {
+      offset_from_bottom: 17,
+      max_offset_from_bottom: 100,
+      viewport_rows: 24,
+    });
+    const callbacks = createCallbacks();
+    const handle = createRef<TerminalRendererHandle>();
+    const injected: string[] = [];
+
+    act(() => {
+      renderer = create(
+        <TerminalRendererHost
+          {...callbacks}
+          ref={handle}
+          activeTarget={target}
+          preferences={preferences}
+          targets={[target]}
+          visible
+          visualViewport={{
+            insets: { top: 0, bottom: 84 },
+            geometryBottomInset: 0,
+            scroll: target.scroll,
+          }}
+        />,
+        {
+          createNodeMock: element =>
+            element.type === 'WebView'
+              ? {
+                  injectJavaScript: (script: string) => injected.push(script),
+                  requestFocus: jest.fn(),
+                }
+              : null,
+        },
+      );
+    });
+
+    act(() => handle.current?.scrollToVisualBottom());
+
+    expect(callbacks.onScroll).toHaveBeenCalledWith(target, 'down', 17);
+    expect(client.scrollTerminal).toHaveBeenCalledWith('term-1', 'down', 17);
+    expect(injected.join('\n')).toContain('window.herdrScrollToVisualBottom');
+    expect(callbacks.onVisualScrollState).not.toHaveBeenCalled();
+  });
+
+  test('scrollToVisualBottom still invokes the reveal when remote rows are already latest', () => {
+    const client = createClient({});
+    const target = createTarget('term-1', client, {
+      offset_from_bottom: 0,
+      max_offset_from_bottom: 100,
+      viewport_rows: 24,
+    });
+    const callbacks = createCallbacks();
+    const handle = createRef<TerminalRendererHandle>();
+    const injected: string[] = [];
+
+    act(() => {
+      renderer = create(
+        <TerminalRendererHost
+          {...callbacks}
+          ref={handle}
+          activeTarget={target}
+          preferences={preferences}
+          targets={[target]}
+          visible
+          visualViewport={{
+            insets: { top: 0, bottom: 84 },
+            geometryBottomInset: 0,
+            scroll: target.scroll,
+          }}
+        />,
+        {
+          createNodeMock: element =>
+            element.type === 'WebView'
+              ? {
+                  injectJavaScript: (script: string) => injected.push(script),
+                  requestFocus: jest.fn(),
+                }
+              : null,
+        },
+      );
+    });
+
+    act(() => handle.current?.scrollToVisualBottom());
+
+    expect(client.scrollTerminal).not.toHaveBeenCalled();
+    expect(injected.join('\n')).toContain('window.herdrScrollToVisualBottom');
+  });
+
+  test('reports visual-bottom state from the renderer without inferring it from rows', async () => {
+    const client = createClient({
+      'term-1': {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 100,
+        viewport_rows: 24,
+      },
+    });
+    const target = createTarget('term-1', client, {
+      offset_from_bottom: 0,
+      max_offset_from_bottom: 100,
+      viewport_rows: 24,
+    });
+    const { eventCallbacks, webView } = await mountReadyHost(target);
+
+    await sendRendererMessage(webView, {
+      type: 'visual-scroll-state',
+      key: target.key,
+      atVisualBottom: false,
+    });
+    await sendRendererMessage(webView, {
+      type: 'visual-scroll-state',
+      key: target.key,
+      atVisualBottom: true,
+    });
+
+    expect(eventCallbacks.onVisualScrollState).toHaveBeenNthCalledWith(
+      1,
+      target,
+      false,
+    );
+    expect(eventCallbacks.onVisualScrollState).toHaveBeenNthCalledWith(
+      2,
+      target,
+      true,
+    );
   });
 
   test('live frames make lifecycle transitions persist the renderer cache', async () => {

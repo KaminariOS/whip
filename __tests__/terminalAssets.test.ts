@@ -93,6 +93,9 @@ describe('generated terminal artifacts', () => {
       expect(html).toContain('--terminal-geometry-bottom');
       expect(html).toContain('--terminal-visual-offset');
       expect(html).toContain('function terminalBoundaryScroll(');
+      expect(html).toContain('function terminalAtVisualBottom(');
+      expect(html).toContain('api.herdrScrollToVisualBottom = () =>');
+      expect(html).toContain("type: 'visual-scroll-state'");
       expect(html).toContain('scrollTerminalPixels(deltaPx, point)');
       expect(html).not.toContain('terminalVisualBoundaryPreference');
       expect(html).not.toContain('transition: transform 120ms');

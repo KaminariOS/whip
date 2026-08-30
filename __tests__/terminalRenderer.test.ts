@@ -2,6 +2,7 @@ import {
   directTerminalKeyboardEnabled,
   isOfflineTerminalNavigationInput,
   TerminalRendererContentState,
+  terminalLatestButtonVisible,
   terminalOfflineRestoreAction,
   terminalResizeForcesNativeDispatch,
   terminalScrollbackMode,
@@ -161,5 +162,16 @@ describe('terminal visual boundary insets', () => {
       boundary: 'bottom',
       boundaryRevealPx: 210,
     })).toBe(0);
+  });
+});
+
+describe('terminal Latest visibility', () => {
+  it('stays visible until the renderer reports the true visual bottom', () => {
+    expect(terminalLatestButtonVisible(false, false)).toBe(true);
+    expect(terminalLatestButtonVisible(false, true)).toBe(false);
+  });
+
+  it('stays hidden in the alternate screen', () => {
+    expect(terminalLatestButtonVisible(true, false)).toBe(false);
   });
 });

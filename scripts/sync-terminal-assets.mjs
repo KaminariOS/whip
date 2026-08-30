@@ -23,9 +23,11 @@ const {
 // imported by TypeScript callers/tests and stringified into both WebView assets.
 const {
   reconcileTerminalBoundaryScroll,
+  terminalAtVisualBottom,
   terminalBoundaryClamp,
   terminalBoundaryFiniteNumber,
   terminalBoundaryScroll,
+  terminalBoundaryScrollToVisualBottom,
   terminalBoundaryVisualOffset,
 } = terminalBoundaryScrollModel;
 const {
@@ -260,6 +262,8 @@ const terminalSessionHtml = `<!doctype html>
     ${terminalBoundaryFiniteNumber.toString()}
     ${terminalBoundaryClamp.toString()}
     ${terminalBoundaryVisualOffset.toString()}
+    ${terminalAtVisualBottom.toString()}
+    ${terminalBoundaryScrollToVisualBottom.toString()}
     ${reconcileTerminalBoundaryScroll.toString()}
     ${terminalBoundaryScroll.toString()}
     const terminalFontFamily = '${androidTerminalFontFamily}';
@@ -330,6 +334,7 @@ const terminalSessionHtml = `<!doctype html>
       maxScrollOffsetFromBottom: undefined,
     };
     let lastTerminalVisualState = '';
+    let lastReportedAtVisualBottom;
     let remoteVisualScrollOffset;
     let remoteVisualScrollMaximum;
     let remoteVisualInputOffset;
@@ -362,6 +367,11 @@ const terminalSessionHtml = `<!doctype html>
       send({ type: 'offline-scroll', ...scroll });
     };
     const finiteInset = value => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
+    const reportTerminalVisualScrollState = atVisualBottom => {
+      if (atVisualBottom === lastReportedAtVisualBottom) return;
+      lastReportedAtVisualBottom = atVisualBottom;
+      send({ type: 'visual-scroll-state', atVisualBottom });
+    };
     const reportTerminalVisualState = state => {
       const signature = JSON.stringify(state);
       const debug = document.getElementById('terminal-visual-debug');
@@ -414,6 +424,12 @@ const terminalSessionHtml = `<!doctype html>
         boundaryRevealPx: terminalBoundaryScrollState.boundaryRevealPx,
       });
       geometryElement.style.setProperty('--terminal-visual-offset', visualOffset + 'px');
+      const atVisualBottom = terminalAtVisualBottom({
+        state: terminalBoundaryScrollState,
+        bottomAllowancePx: bottomAllowance,
+        alternateScreen,
+      });
+      reportTerminalVisualScrollState(atVisualBottom);
       const surfaceRect = geometryElement.getBoundingClientRect();
       reportTerminalVisualState({
         alternateScreen,
@@ -425,6 +441,7 @@ const terminalSessionHtml = `<!doctype html>
         visualOffset,
         boundary: terminalBoundaryScrollState.boundary,
         boundaryRevealPx: terminalBoundaryScrollState.boundaryRevealPx,
+        atVisualBottom,
         remoteScroll: hasRemoteScroll,
         inputOffset: remoteVisualInputOffset,
         pendingDelta: remoteVisualPendingDelta,
@@ -885,6 +902,38 @@ const terminalSessionHtml = `<!doctype html>
       );
     };
     window.herdrScroll = (direction, lines) => scrollTerminal(direction, lines);
+    window.herdrScrollToVisualBottom = () => {
+      const alternateScreen = terminalVisualInsets.alternateScreen
+        || terminal.buffer.active.type === 'alternate';
+      if (alternateScreen) {
+        applyTerminalVisualInsets();
+        return;
+      }
+      terminal.scrollToBottom();
+      const local = offlineScrollInfo();
+      const hasRemoteScroll = Number.isFinite(remoteVisualScrollOffset)
+        && Number.isFinite(remoteVisualScrollMaximum);
+      if (hasRemoteScroll) {
+        remoteVisualScrollOffset = 0;
+        remoteVisualPendingDelta = -Math.max(0, Number(remoteVisualInputOffset) || 0);
+      }
+      terminalBoundaryScrollState = terminalBoundaryScrollToVisualBottom({
+        state: {
+          ...terminalBoundaryScrollState,
+          offsetFromBottom: 0,
+          maxOffsetFromBottom: hasRemoteScroll
+            ? remoteVisualScrollMaximum
+            : local.maxOffsetFromBottom,
+        },
+        bottomAllowancePx: Math.max(
+          0,
+          finiteInset(terminalVisualInsets.bottom)
+            - finiteInset(terminalVisualInsets.geometryBottomInset),
+        ),
+      });
+      applyTerminalVisualInsets();
+      reportOfflineScroll();
+    };
     window.herdrPaste = data => { pasteBridge.paste(data); hideToolbar(); };
     window.herdrSubmitPastes = parts => {
       const values = [];
@@ -1592,6 +1641,7 @@ const terminalHtml = `<!doctype html>
     };
     window.herdrChangeFontSize = (key, delta) => call(key, 'herdrChangeFontSize', [delta]);
     window.herdrScroll = (key, direction, lines) => call(key, 'herdrScroll', [direction, lines]);
+    window.herdrScrollToVisualBottom = key => call(key, 'herdrScrollToVisualBottom');
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
     window.herdrSubmitPastes = (key, parts) => call(key, 'herdrSubmitPastes', [parts]);
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');
