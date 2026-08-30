@@ -496,23 +496,29 @@ describe('AgentChatView auto-follow', () => {
 });
 
 describe('AgentChatView initial viewport readiness', () => {
+  const animationFrameGlobals = global as typeof global & {
+    requestAnimationFrame: typeof requestAnimationFrame;
+    cancelAnimationFrame: typeof cancelAnimationFrame;
+  };
   let renderer: ReactTestRenderer;
   let scrollToOffset: jest.Mock;
   let nextFrame: number;
-  let frames: Map<number, FrameRequestCallback>;
+  let frames: Map<number, Parameters<typeof requestAnimationFrame>[0]>;
 
   beforeEach(() => {
     scrollToOffset = jest.fn();
     nextFrame = 1;
     frames = new Map();
-    jest.spyOn(global, 'requestAnimationFrame').mockImplementation(callback => {
+    jest.spyOn(animationFrameGlobals, 'requestAnimationFrame').mockImplementation(callback => {
       const frame = nextFrame;
       nextFrame += 1;
       frames.set(frame, callback);
       return frame;
     });
-    jest.spyOn(global, 'cancelAnimationFrame').mockImplementation(frame => {
-      frames.delete(frame);
+    jest.spyOn(animationFrameGlobals, 'cancelAnimationFrame').mockImplementation(frame => {
+      if (frame != null) {
+        frames.delete(frame);
+      }
     });
   });
 
